@@ -70,7 +70,7 @@ _See link:specification/error-handling.adoc[Error Handling Specification]_
 * [ ] Create InvalidClaimException and MalformedTokenException
 * [ ] Add structured error details to exceptions
 * [ ] Ensure sensitive data is not logged
-* _Important: Must follow CUI logging standards_
+* _Important: Must follow project logging standards_
 
 === Security
 
@@ -114,7 +114,7 @@ _See link:specification/testing.adoc#_unit_testing[Unit Testing Specification]_
 
 == Documentation
 
-* [ ] Complete JavaDoc for all public APIs with code examples
+* [ ] Complete API documentation for all public APIs with code examples
 * [ ] Document security considerations and configuration options
 * [ ] Create user guide with configuration examples and troubleshooting
 * [x] Update specifications with implementation links
@@ -154,5 +154,5 @@ This example demonstrates:
 - [Document Structure Standards](document-structure.md) - Header format and core sections
 - [Task Organization Standards](task-organization.md) - Hierarchical structure and grouping
 - [Status Tracking Standards](status-tracking.md) - Status indicators and notes
-- [Traceability Standards](traceability.md) - Linking to requirements
+- [Requirement Linking Standards](requirement-linking.md) - Linking to requirements
 - [Maintenance Standards](maintenance.md) - Keeping documents current

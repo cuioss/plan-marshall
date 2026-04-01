@@ -2,7 +2,7 @@
 
 Standard templates for initial requirements documentation.
 
-> **Note**: For general-purpose AsciiDoc templates (standard, readme, guide), use `pm-documents:ref-asciidoc` → `create-from-template` workflow. The templates below are requirements-specific and follow the same AsciiDoc formatting rules defined in `pm-documents:ref-asciidoc` → `references/asciidoc-formatting.md`.
+> **Format note**: Templates below use AsciiDoc syntax. For AsciiDoc header attributes, formatting rules, and general-purpose templates, see `pm-documents:ref-asciidoc`. This document provides requirements-specific document templates only.
 
 [[requirements-template]]
 ## Requirements.adoc Template

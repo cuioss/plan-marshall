@@ -1,4 +1,4 @@
-# CUI Java Expert
+# Java Expert
 
 Comprehensive Java development expertise bundle providing domain knowledge skills for standards-compliant implementation, testing, and verification.
 
@@ -10,9 +10,6 @@ This bundle provides a complete Java development knowledge base. Skills contain 
 
 ```
 pm-dev-java/
-├── agents/                  # 2 verification agents
-│   ├── java-coverage-agent.md       # Analyze coverage (read-only)
-│   └── java-verify-agent.md         # Verify compliance (read-only)
 └── skills/                  # 12 domain knowledge skills
     ├── java-core/           # Core Java patterns, modern features
     ├── java-null-safety/    # JSpecify null annotations
@@ -54,15 +51,9 @@ pm-dev-java/
 - **manage-maven-profiles** - Maven build profile classification
 - **plan-marshall-plugin** - Core build system integration (Maven/Gradle)
 
-> **Note**: CUI library-specific patterns (CuiLogger, LogRecord, test generators) are in the separate `pm-dev-java-cui` bundle.
+> **Note**: Library-specific patterns (CuiLogger, LogRecord, test generators) are in the separate `pm-dev-java-cui` bundle.
 >
 > **Planning Integration**: Java domain skills are loaded by plan-marshall task executors during plan execution via `task.skills` array.
-
-### Agents (2 verification agents)
-
-**Analysis Agents** (read-only, used by `extension.py:provides_verify_steps()`):
-- **java-coverage-agent** - Coverage analysis
-- **java-verify-agent** - Standards verification
 
 ## Dependencies
 

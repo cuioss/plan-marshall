@@ -342,14 +342,13 @@ class ExtensionBase(ABC):
             for internal routing.
 
         Purpose:
-            Loaded by the workflow-outline-change-type skill (via
-            phase-3-outline skill). Provides domain-specific outline
-            instructions instead of generic plan-marshall:workflow-outline-change-type
+            Loaded by the phase-3-outline skill. Provides domain-specific
+            outline instructions instead of generic plan-marshall:phase-3-outline
             standards.
 
         Fallback:
             If a domain returns None, generic instructions from
-            plan-marshall:workflow-outline-change-type/standards/change-{type}.md
+            plan-marshall:phase-3-outline/standards/change-{type}.md
             are used.
         """
         return None
@@ -390,9 +389,9 @@ class ExtensionBase(ABC):
 
         Returns:
             List of step dicts, each containing:
-            - name: str — Fully-qualified agent reference used in the steps list
-              (e.g., 'pm-dev-java:java-verify-agent')
-            - skill: str — Same as name (the fully-qualified agent reference)
+            - name: str — Fully-qualified skill reference used in the steps list
+              (e.g., 'my-bundle:my-verify-step')
+            - skill: str — Same as name (the fully-qualified skill reference)
             - description: str — Human-readable description for wizard presentation
 
         Default implementation returns empty list (no domain-specific verify steps).

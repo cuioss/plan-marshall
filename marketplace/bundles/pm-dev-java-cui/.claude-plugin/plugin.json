@@ -16,8 +16,7 @@
     "./skills/cui-http",
     "./skills/cui-logging",
     "./skills/cui-testing",
-    "./skills/cui-testing-http",
-    "./skills/java-enforce-logrecords",
-    "./skills/java-maintain-logger"
+    "./skills/cui-http-testing",
+    "./skills/recipe-cui-logging-enforce"
   ]
 }

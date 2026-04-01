@@ -21,8 +21,13 @@ user-invocable: false
 - All specifications must include backtracking links to requirements
 - Sequential numbering must be maintained; never reuse IDs
 - Cross-references must be verified and functional before finalizing
+- For document markup syntax, see `pm-documents:ref-asciidoc`
 
 Comprehensive standards for creating, structuring, and maintaining requirements and specification documents in projects following SMART principles, ensuring complete traceability, and maintaining documentation integrity throughout the project lifecycle.
+
+## Scope Boundary
+
+This skill covers **creating and maintaining content** in requirements and specification documents: structure, SMART principles, ID schemes, lifecycle management, and quality. For **linking documents to implementation code**, see `pm-requirements:traceability`. For what belongs in specifications vs. API documentation, see `pm-requirements:traceability` → `standards/information-distribution.md`.
 
 ## What This Skill Provides
 
@@ -133,12 +138,13 @@ Standards are organized into focused documents:
 - Clarity and completeness standards
 - Maintainability principles
 
-**maintenance-and-deprecation-handling.md**
+**requirements-maintenance.md**
 - Adding new requirements (numbering, format, linking)
 - Modifying existing requirements (preserve IDs, update content)
-- Removing requirements (never delete, deprecate instead)
-- Pre-1.0 vs. post-1.0 deprecation handling
+- Removing requirements (pre-1.0 vs. post-1.0 deprecation handling)
+- Deprecation process with migration guidance, removal process when user approves
 - Refactoring requirements (maintain IDs, update references)
+- Commit guidelines for requirement changes
 
 ## Integration
 
@@ -147,30 +153,31 @@ This skill integrates with:
 - **pm-requirements:setup** - Provides initial structure that authoring populates
 - **pm-requirements:planning** - Planning tasks trace to requirements created here
 - **pm-requirements:traceability** - Links authored specs to implementation code
-- **pm-documents:ref-asciidoc** - AsciiDoc formatting and validation standards
-- **pm-dev-java:javadoc** - JavaDoc standards for referencing requirements
+- **pm-documents:ref-asciidoc** - Document formatting and validation (AsciiDoc syntax, templates, link verification)
+
+Language-specific API documentation standards for referencing requirements from code are covered in `pm-requirements:traceability` → `standards/code-to-specification-linking.md`.
 
 ## Anti-Patterns to Avoid
 
 **Over-specification in requirements:**
-- ❌ "The system must use a HashMap to store tokens"
-- ✅ "The system must cache validated tokens for performance"
+- Avoid: "The system must use a HashMap to store tokens"
+- Preferred: "The system must cache validated tokens for performance"
 
 **Vague requirements:**
-- ❌ "The system should be fast and secure"
-- ✅ "Token validation must complete within 50ms for 95% of requests"
+- Avoid: "The system should be fast and secure"
+- Preferred: "Token validation must complete within 50ms for 95% of requests"
 
 **Implementation details in requirements:**
-- ❌ "The TokenValidator class must use jose4j library"
-- ✅ "The system must validate JWT signatures according to RFC 7519"
+- Avoid: "The TokenValidator class must use jose4j library"
+- Preferred: "The system must validate JWT signatures according to RFC 7519"
 
 **Duplicating content across documents:**
-- ❌ Copying requirement text into specifications
-- ✅ Using backtracking links to reference requirements
+- Avoid: Copying requirement text into specifications
+- Preferred: Using backtracking links to reference requirements
 
 **Hallucinated functionality:**
-- ❌ Documenting features that don't exist or aren't planned
-- ✅ Verifying all documented features against code or approved plans
+- Avoid: Documenting features that don't exist or aren't planned
+- Preferred: Verifying all documented features against code or approved plans
 
 ## Quality Rules
 
@@ -196,5 +203,5 @@ Before completing requirements/specification work:
 
 **External:**
 - pm-documents:ref-asciidoc - AsciiDoc formatting
-- pm-dev-java:javadoc - JavaDoc requirement references
+- pm-dev-java:javadoc - JavaDoc requirement references (Java projects)
 - plan-marshall:workflow-integration-git - Committing requirement changes

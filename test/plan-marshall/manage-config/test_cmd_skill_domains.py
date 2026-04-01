@@ -365,7 +365,7 @@ def test_resolve_domain_skills_javascript_implementation():
         # Should include core defaults (cui-javascript)
         assert 'pm-dev-frontend:javascript' in result.stdout
         # Should include implementation optionals (renamed from cui-javascript-linting)
-        assert 'pm-dev-frontend:js-enforce-eslint' in result.stdout
+        assert 'pm-dev-frontend:lint-config' in result.stdout
 
 
 def test_resolve_domain_skills_unknown_domain():
@@ -484,7 +484,7 @@ def test_resolve_workflow_skill_extension_plugin_dev():
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-plugin-development:ext-outline-plugin' in result.stdout
+        assert 'pm-plugin-development:ext-outline-workflow' in result.stdout
 
 
 # =============================================================================

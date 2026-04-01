@@ -44,28 +44,30 @@ CUI HTTP client patterns for HTTP operations.
 
 **Library**: `de.cuioss.http.client.*`
 
-### cui-testing-http
-CUI MockWebServer wrapper for HTTP testing.
+### cui-http-testing
+CUI MockWebServer standards for HTTP client testing with JUnit 5 integration.
 
 **Key patterns:**
-- CUI MockWebServer usage
-- HTTP test patterns
+- `@EnableMockWebServer` annotation for automatic server lifecycle
+- `@MockResponseConfig` for declarative response mocking (repeatable, method/class level)
+- `@ModuleDispatcher` with `ModuleDispatcherElement` for complex routing
+- HTTPS testing with automatic certificate generation (`useHttps = true`)
+- Request verification via `MockWebServer` parameter injection
+- `URIBuilder` for constructing test URIs
 
-### java-enforce-logrecords
-Enforce CUI logging standards by validating LogRecord usage, testing coverage, and identifier organization.
+**Library**: `de.cuioss.test:cui-test-mockwebserver-junit5`
 
-**Key workflows:**
-- Validate LogRecord patterns across modules
-- Enforce LogMessages class conventions
-- Verify test coverage for logging paths
+### recipe-cui-logging-enforce
+Recipe for enforcing CUI logging standards across all modules. Discovers modules, creates one deliverable per module, and flows through the plan phase system (outline → plan → execute → finalize).
 
-### java-maintain-logger
-Systematic logging standards maintenance with plan tracking and comprehensive test coverage.
+**Key enforcement steps per module:**
+- Logger migration (SLF4J/Log4j → CuiLogger)
+- LogRecord implementation for INFO/WARN/ERROR/FATAL
+- Unused LogRecord removal
+- LogAssert test coverage in business logic tests
+- Identifier renumbering and documentation update
 
-**Key workflows:**
-- Migrate legacy loggers to CuiLogger
-- Add LogRecord usage where missing
-- Create/update LogMessages classes
+**Invoked via:** `/plan-marshall action=recipe` → select "Enforce CUI Logging Standards"
 
 ## Usage
 
@@ -81,8 +83,7 @@ skills:
   # CUI-specific (from this bundle)
   - pm-dev-java-cui:cui-logging
   - pm-dev-java-cui:cui-testing
-  - pm-dev-java-cui:java-enforce-logrecords
-  - pm-dev-java-cui:java-maintain-logger
+  - pm-dev-java-cui:cui-logging-enforce
 ```
 
 ## Dependencies

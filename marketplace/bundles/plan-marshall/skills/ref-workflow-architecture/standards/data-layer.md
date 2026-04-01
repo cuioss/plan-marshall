@@ -342,9 +342,9 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 │  │  .plan/ FILES                         PROJECT FILES                  │  │
 │  │  ════════════                         ═════════════                  │  │
 │  │                                                                      │  │
-│  │  ✓ Access via execute-script.py       ✓ Access via Read/Write/Edit  │  │
-│  │  ✗ Direct Read/Write/Edit             ✓ Access via Glob/Grep        │  │
-│  │  ✗ cat/head/tail/ls                   ✓ Access via Bash             │  │
+│  │  PASS Access via execute-script.py       PASS Access via Read/Write/Edit  │  │
+│  │  ✗ Direct Read/Write/Edit             PASS Access via Glob/Grep        │  │
+│  │  ✗ cat/head/tail/ls                   PASS Access via Bash             │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │

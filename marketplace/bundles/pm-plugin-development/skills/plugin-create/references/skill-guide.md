@@ -49,13 +49,13 @@ plugin-architecture/
 
 All resource paths use relative paths for portability.
 
-❌ **Wrong** (hardcoded):
+FAIL **Wrong** (hardcoded):
 ```markdown
 Read: ~/.claude/skills/my-skill/references/guide.md
 bash ./scripts/analyzer.py
 ```
 
-✅ **Correct** (relative paths):
+PASS **Correct** (relative paths):
 ```markdown
 Read references/guide.md
 bash scripts/analyzer.py
@@ -132,7 +132,6 @@ cui-java-core/
 
 **Characteristics**:
 - Pattern 10 (Reference Library)
-- allowed-tools: Read
 - No scripts (pure documentation)
 - Standards in standards/ directory
 
@@ -154,7 +153,6 @@ plugin-architecture/
 
 **Characteristics**:
 - Pattern 10 (Reference Library)
-- allowed-tools: Read
 - References in references/ directory
 - Examples in references/examples/
 
@@ -176,7 +174,6 @@ diagnostic-patterns/
 
 **Characteristics**:
 - Pattern 1 (Script Automation) or Pattern 3 (Search-Analyze-Report)
-- allowed-tools: Read, Bash, Grep, Glob
 - Scripts for deterministic logic
 - Standards for interpretation
 
@@ -188,7 +185,7 @@ diagnostic-patterns/
 ---
 name: skill-name
 description: One sentence (<100 chars)
-allowed-tools: Read  # or other tools if needed
+user-invocable: true
 ---
 
 # Skill Name
@@ -298,12 +295,12 @@ Keep SKILL.md concise:
 - **Purpose**: Overview and loading guidance
 - **Not**: Embedded standards content
 
-❌ **Wrong** (bloated):
+FAIL **Wrong** (bloated):
 ```markdown
 SKILL.md: 3000 lines with all standards embedded
 ```
 
-✅ **Correct** (progressive):
+PASS **Correct** (progressive):
 ```markdown
 SKILL.md: 500 lines with references catalog
 references/: 5 files × 400 lines = 2000 lines (loaded on-demand)
@@ -311,53 +308,23 @@ references/: 5 files × 400 lines = 2000 lines (loaded on-demand)
 
 ## Frontmatter Format
 
-### Minimal Frontmatter
+Skills use only `name`, `description`, and `user-invocable` in frontmatter. They do NOT support `tools`, `allowed-tools`, `model`, or `color` fields. See `plugin-architecture:frontmatter-standards` for the complete specification.
+
+### Standard Frontmatter
 
 ```yaml
 ---
 name: skill-name
 description: One sentence description
----
-```
-
-### With Tools
-
-```yaml
----
-name: skill-name
-description: One sentence description
-allowed-tools: Read, Grep, Bash
----
-```
-
-### With Requirements (Optional)
-
-```yaml
----
-name: skill-name
-description: One sentence description
-allowed-tools: Read
-requirements:
-  - Other skill references
-  - External dependencies
+user-invocable: true
 ---
 ```
 
 ### Format Rules
 
-- **allowed-tools**: Comma-separated (NOT array syntax)
-- **name**: kebab-case
+- **name**: kebab-case (`^[a-z0-9-]+$`)
 - **description**: <100 chars
-
-❌ **Wrong**:
-```yaml
-allowed-tools: [Read, Grep]  # Array syntax
-```
-
-✅ **Correct**:
-```yaml
-allowed-tools: Read, Grep    # Comma-separated
-```
+- **user-invocable**: Required — `true` for user-facing, `false` for internal
 
 ## Progressive Disclosure Implementation
 
@@ -368,7 +335,7 @@ Minimal metadata:
 ---
 name: java-testing
 description: JUnit testing patterns and best practices
-allowed-tools: Read
+user-invocable: false
 ---
 ```
 
@@ -412,7 +379,7 @@ Cost: ~200-600 lines each (loaded individually)
 
 ### Anti-Pattern: Load All
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```markdown
 ## Workflow
 
@@ -428,7 +395,7 @@ Read standards/integration.md
 [Loaded 3500 lines before knowing what's needed]
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```markdown
 ## Workflow
 
@@ -503,14 +470,14 @@ skill-name/
 
 Skills are knowledge repositories, not executors.
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```markdown
 ## CONTINUOUS IMPROVEMENT RULE
 
 **YOU MUST update this skill**...
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```markdown
 # Skill Name
 
@@ -542,10 +509,10 @@ Brief description of what this standard covers.
 
 **Examples**:
 
-✅ **Good**:
+PASS **Good**:
 [Code example]
 
-❌ **Bad**:
+FAIL **Bad**:
 [Counter-example]
 
 ### Standard 2: {Name}
@@ -598,7 +565,8 @@ Before creating skill, verify:
 **Frontmatter**:
 - Name is kebab-case and descriptive
 - Description is <100 chars
-- Uses `allowed-tools:` (not `tools:`) - comma-separated format
+- `user-invocable` field present (true or false)
+- No `tools`, `allowed-tools`, `model`, or `color` fields
 
 **Structure**:
 - SKILL.md is 400-800 lines (not bloated)
@@ -622,45 +590,45 @@ Before creating skill, verify:
 
 ### Pitfall 1: Bloated SKILL.md
 
-❌ **Wrong**: 3000-line SKILL.md with embedded content
+FAIL **Wrong**: 3000-line SKILL.md with embedded content
 
-✅ **Correct**: 500-line SKILL.md with references catalog
+PASS **Correct**: 500-line SKILL.md with references catalog
 
 ### Pitfall 2: Improper Path Reference
 
-❌ **Wrong**: `Read: standards/file.md`
+FAIL **Wrong**: `Read: standards/file.md`
 
-✅ **Correct**: `Read standards/file.md`
+PASS **Correct**: `Read standards/file.md`
 
 ### Pitfall 3: Loading All References
 
-❌ **Wrong**: Load all 10 reference files upfront
+FAIL **Wrong**: Load all 10 reference files upfront
 
-✅ **Correct**: Load specific reference based on task
+PASS **Correct**: Load specific reference based on task
 
 ### Pitfall 4: Unfocused Standards Files
 
-❌ **Wrong**: Single 2000-line "everything" file
+FAIL **Wrong**: Single 2000-line "everything" file
 
-✅ **Correct**: Multiple 300-500 line focused files
+PASS **Correct**: Multiple 300-500 line focused files
 
 ### Pitfall 5: Wrong Pattern Choice
 
-❌ **Wrong**: Using Pattern 5 (Wizard) for standards
+FAIL **Wrong**: Using Pattern 5 (Wizard) for standards
 
-✅ **Correct**: Using Pattern 10 (Reference Library)
+PASS **Correct**: Using Pattern 10 (Reference Library)
 
 ### Pitfall 6: Including Continuous Improvement Rule
 
-❌ **Wrong**: Skill has CONTINUOUS IMPROVEMENT RULE
+FAIL **Wrong**: Skill has CONTINUOUS IMPROVEMENT RULE
 
-✅ **Correct**: Skills don't have this (only agents/commands)
+PASS **Correct**: Skills don't have this (only agents/commands)
 
 ### Pitfall 7: Missing Execution Directive
 
-❌ **Wrong**: Skill loaded by command, Claude explains it instead of executing
+FAIL **Wrong**: Skill loaded by command, Claude explains it instead of executing
 
-✅ **Correct**: Skill has EXECUTION MODE directive that forces action:
+PASS **Correct**: Skill has EXECUTION MODE directive that forces action:
 ```markdown
 # Skill Name
 
@@ -673,7 +641,7 @@ Before creating skill, verify:
 ---
 name: java-logging-standards
 description: Logging patterns and best practices for Java projects
-allowed-tools: Read
+user-invocable: false
 ---
 
 # Java Logging Standards
@@ -720,12 +688,6 @@ standards/
 ├── testing-guide.md            (Testing log output)
 └── logrecord-organization.md   (LogRecord structure)
 ```
-
-## Tool Access
-
-**Read**: Load standards files on-demand
-
-No other tools needed (pure reference skill).
 
 ## Quality Verification
 

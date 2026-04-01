@@ -283,7 +283,7 @@ pre-commit:quality-gate,coverage:coverage,javadoc:javadoc
 **Effect**: Maps profiles to canonical commands:
 - `pre-commit` → `quality-gate`
 - `coverage` → `coverage`
-- `javadoc` → `javadoc` (CUI-specific canonical command)
+- `javadoc` → `javadoc` (extension-defined canonical command)
 
 **Standard Canonical Commands** (from extension_base.py):
 - `quality-gate` - Pre-commit quality checks
@@ -291,7 +291,7 @@ pre-commit:quality-gate,coverage:coverage,javadoc:javadoc
 - `coverage` - Code coverage measurement
 - `performance` - Benchmark/performance tests
 
-**Note**: Extensions can define additional canonical commands (e.g., `javadoc` for CUI projects).
+**Note**: Extensions can define additional canonical commands (e.g., `javadoc`).
 
 ### Python Constants
 
@@ -308,7 +308,7 @@ from _maven_cmd_discover import (
 
 ```python
 def config_defaults(self, project_root: str) -> None:
-    """Configure CUI-specific Maven defaults."""
+    """Configure extension-specific Maven defaults."""
     from _config_core import ext_defaults_set_default
     from _maven_cmd_discover import EXT_KEY_PROFILES_SKIP, EXT_KEY_PROFILES_MAP
 
@@ -324,3 +324,17 @@ def config_defaults(self, project_root: str) -> None:
 ```
 
 **Contract**: `ext_defaults_set_default` only writes if the key doesn't exist (write-once semantics).
+
+---
+
+## Coverage Report Paths
+
+The coverage report parser (`_maven_cmd_coverage_report.py`) searches these JaCoCo XML report paths in order:
+
+| Path | Description |
+|------|-------------|
+| `target/site/jacoco/jacoco.xml` | Standard single-module report |
+| `target/jacoco/report.xml` | Alternative report location |
+| `target/site/jacoco-aggregate/jacoco.xml` | Multi-module aggregate report |
+
+For multi-module projects, pass `--module-path {module-dir}` to scope the search to a specific module's `target/` directory.

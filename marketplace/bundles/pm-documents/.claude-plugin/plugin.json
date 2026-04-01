@@ -10,14 +10,12 @@
   "homepage": "https://github.com/cuioss/plan-marshall",
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["documentation", "asciidoc", "standards", "review", "validation", "formatting"],
-  "agents": [
-    "./agents/doc-verify.md"
-  ],
-  "commands": [
-    "./commands/tools-verify-architecture-diagrams.md"
-  ],
+  "agents": [],
+  "commands": [],
   "skills": [
     "./skills/ext-triage-docs",
+    "./skills/manage-adr",
+    "./skills/manage-interface",
     "./skills/ref-asciidoc",
     "./skills/ref-documentation"
   ]

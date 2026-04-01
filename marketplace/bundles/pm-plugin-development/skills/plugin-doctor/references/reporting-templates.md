@@ -17,9 +17,9 @@ Bundles Processed: {total_bundles}
 Total {Components}: {total_components}
 
 Overall Statistics:
-- {Components} clean: {count} ✅
-- {Components} with warnings: {count} ⚠️
-- {Components} with critical issues: {count} ❌
+- {Components} clean: {count} PASS
+- {Components} with warnings: {count} WARN
+- {Components} with critical issues: {count} FAIL
 
 Total Issues:
 - Critical: {count}
@@ -37,7 +37,7 @@ By Bundle:
 ...
 
 {if all clean}
-✅ All {components} across all bundles are high quality!
+PASS All {components} across all bundles are high quality!
 {endif}
 ```
 
@@ -64,9 +64,9 @@ Bundles Processed: 8
 Total Agents: 15
 
 Overall Statistics:
-- Agents clean: 12 ✅
-- Agents with warnings: 2 ⚠️
-- Agents with critical issues: 1 ❌
+- Agents clean: 12 PASS
+- Agents with warnings: 2 WARN
+- Agents with critical issues: 1 FAIL
 
 Total Issues:
 - Critical: 3
@@ -83,7 +83,7 @@ By Bundle:
 - pm-dev-java: 3 agents | 3 issues | 2 fixed
 - pm-dev-frontend: 4 agents | 3 issues | 1 fixed
 
-✅ All agents across all bundles are high quality!
+PASS All agents across all bundles are high quality!
 ```
 
 ## Fix Workflow Pattern
@@ -115,7 +115,7 @@ Common workflow pattern for categorizing and applying fixes.
 For each safe issue:
 1. Apply fix using Edit tool
 2. Increment counter: `safe_fixes_applied`
-3. Log to console: "✅ Fixed: {description}"
+3. Log to console: "PASS Fixed: {description}"
 4. Track file path for verification
 
 **Step 2: Handle Risky Fixes**
@@ -125,7 +125,7 @@ For each risky issue:
 2. If approved:
    - Apply fix using Edit tool
    - Increment counter: `risky_fixes_applied`
-   - Log: "✅ Fixed (with approval): {description}"
+   - Log: "PASS Fixed (with approval): {description}"
 3. If rejected:
    - Skip fix
    - Increment counter: `risky_fixes_skipped`

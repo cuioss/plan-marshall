@@ -33,7 +33,7 @@ from file_ops import atomic_write_file, base_path
 ### Anti-Pattern (DO NOT USE)
 
 ```python
-# ❌ WRONG - sys.path manipulation
+# FAIL WRONG - sys.path manipulation
 import sys
 from pathlib import Path
 
@@ -46,7 +46,7 @@ from plan_logging import log_entry
 ### Correct Pattern
 
 ```python
-# ✅ CORRECT - direct import (executor sets PYTHONPATH)
+# PASS CORRECT - direct import (executor sets PYTHONPATH)
 from plan_logging import log_entry
 ```
 
@@ -164,7 +164,7 @@ output = serialize_toon({'status': 'success', 'count': 42})
 ### Anti-Pattern (DO NOT USE)
 
 ```python
-# ❌ WRONG - subprocess call to Python script
+# FAIL WRONG - subprocess call to Python script
 import subprocess
 import json
 
@@ -178,7 +178,7 @@ result = subprocess.run([
 ### Correct Pattern
 
 ```python
-# ✅ CORRECT - direct import and function call
+# PASS CORRECT - direct import and function call
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 log_entry('script', 'global', 'INFO', 'message')
@@ -208,7 +208,7 @@ log_entry('script', 'global', 'INFO', 'message')
 ### Anti-Pattern (DO NOT USE)
 
 ```python
-# ❌ WRONG - silent failure
+# FAIL WRONG - silent failure
 try:
     result = parse_toon(content)
 except Exception:
@@ -218,10 +218,10 @@ except Exception:
 ### Correct Patterns
 
 ```python
-# ✅ CORRECT - let errors propagate
+# PASS CORRECT - let errors propagate
 result = parse_toon(content)
 
-# ✅ CORRECT - catch specific exceptions with recovery logic
+# PASS CORRECT - catch specific exceptions with recovery logic
 try:
     status = parse_toon(status_file.read_text())
     result['current_phase'] = status.get('current_phase', 'unknown')
@@ -255,17 +255,17 @@ When subprocess calls ARE appropriate (external commands), use minimal parameter
 ### Examples
 
 ```python
-# ❌ WRONG - unnecessary parameters
+# FAIL WRONG - unnecessary parameters
 subprocess.run(cmd, capture_output=True, cwd=project_root, timeout=5)
 
-# ✅ CORRECT - minimal (when not reading output)
+# PASS CORRECT - minimal (when not reading output)
 subprocess.run(cmd, timeout=5)
 
-# ✅ CORRECT - when reading output
+# PASS CORRECT - when reading output
 result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 value = result.stdout.strip()
 
-# ✅ CORRECT - with automatic error checking
+# PASS CORRECT - with automatic error checking
 subprocess.run(['git', 'status'], check=True, timeout=30)
 ```
 

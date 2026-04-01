@@ -1,16 +1,16 @@
 ---
 name: ext-triage-js
-description: Triage extension for JavaScript/TypeScript findings during plan-finalize phase
+description: Triage extension for JavaScript findings during plan-finalize phase
 user-invocable: false
 ---
 
 # JavaScript Triage Extension
 
-Provides decision-making knowledge for triaging JavaScript and TypeScript findings during the finalize phase.
+Provides decision-making knowledge for triaging JavaScript findings during the finalize phase.
 
 ## Purpose
 
-This skill is a **triage extension** loaded by the plan-finalize workflow skill when processing JavaScript/TypeScript-related findings. It provides domain-specific knowledge for deciding whether to fix, suppress, or accept findings.
+This skill is a **triage extension** loaded by the plan-finalize workflow skill when processing JavaScript-related findings. It provides domain-specific knowledge for deciding whether to fix, suppress, or accept findings.
 
 **Key Principle**: This skill provides **knowledge**, not workflow control. The finalize skill owns the process.
 
@@ -19,29 +19,16 @@ This skill is a **triage extension** loaded by the plan-finalize workflow skill 
 Loaded via `resolve-workflow-skill-extension --domain javascript --type triage` during finalize phase when:
 
 1. ESLint reports rule violations
-2. TypeScript compiler reports type errors
-3. Jest test failures occur
-4. Prettier formatting issues are detected
-5. Stylelint reports CSS issues
+2. Jest test failures occur
+3. Prettier formatting issues are detected
+4. Stylelint reports CSS issues
 
 ## Standards
 
 | Document | Purpose |
 |----------|---------|
-| [suppression.md](standards/suppression.md) | JavaScript suppression syntax (eslint-disable, ts-ignore) |
+| [suppression.md](standards/suppression.md) | JavaScript suppression syntax (eslint-disable) |
 | [severity.md](standards/severity.md) | JavaScript-specific severity guidelines and decision criteria |
-
-## Extension Registration
-
-Registered in marshal.json under the javascript domain:
-
-```json
-"javascript": {
-  "workflow_skill_extensions": {
-    "triage": "pm-dev-frontend:ext-triage-js"
-  }
-}
-```
 
 ## Quick Reference
 
@@ -51,7 +38,6 @@ Registered in marshal.json under the javascript domain:
 |--------------|--------|
 | ESLint rule | `// eslint-disable-next-line rule-name` |
 | ESLint block | `/* eslint-disable rule-name */` |
-| TypeScript error | `// @ts-ignore` or `// @ts-expect-error` |
 | Prettier | Not suppressible (fix or configure) |
 | Stylelint | `/* stylelint-disable rule-name */` |
 
@@ -66,9 +52,8 @@ Registered in marshal.json under the javascript domain:
 ### Acceptable to Accept
 
 - Generated code in `**/generated/**`, `**/dist/**`
-- Third-party type definitions when incompatible
-- Legacy JavaScript files pending TypeScript migration
-- Test mocks with intentional type violations
+- Legacy JavaScript files with tracked plan to address
+- Test mocks requiring flexibility
 
 ## Related Documents
 

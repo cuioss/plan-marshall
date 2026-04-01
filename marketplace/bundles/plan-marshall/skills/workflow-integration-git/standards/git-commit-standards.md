@@ -1,6 +1,6 @@
 # Git Commit Standards
 
-Standardized git commit format for all CUI LLM projects following conventional commits.
+Standardized git commit format following conventional commits.
 
 ## Commit Message Format
 
@@ -204,23 +204,23 @@ Refs #456
 ### Avoid These
 
 ```text
-❌ Updated stuff
-❌ Fixed bug
-❌ WIP
-❌ Checkpoint
-❌ asdfasdf
-❌ minor changes
-❌ Merge branch 'feature-x'
+FAIL Updated stuff
+FAIL Fixed bug
+FAIL WIP
+FAIL Checkpoint
+FAIL asdfasdf
+FAIL minor changes
+FAIL Merge branch 'feature-x'
 ```
 
 ### Instead Use
 
 ```text
-✅ feat(auth): add JWT token validation
-✅ fix(api): handle null response in user endpoint
-✅ refactor(database): extract connection pooling logic
-✅ docs(readme): add installation instructions
-✅ test(auth): add unit tests for token validation
+PASS feat(auth): add JWT token validation
+PASS fix(api): handle null response in user endpoint
+PASS refactor(database): extract connection pooling logic
+PASS docs(readme): add installation instructions
+PASS test(auth): add unit tests for token validation
 ```
 
 ## Verify

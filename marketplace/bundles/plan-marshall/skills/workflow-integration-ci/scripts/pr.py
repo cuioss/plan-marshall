@@ -236,7 +236,13 @@ def cmd_fetch_comments(args):
 
 
 def classify_comment(body: str) -> tuple[str, str, str]:
-    """Classify comment and determine action and priority."""
+    """Classify comment and determine action and priority.
+
+    Priority order: ignore → explain → code_change → default.
+    Explain is checked before code_change because questions containing
+    action words (e.g. "Why did you fix it this way?") should be
+    classified as questions, not code change requests.
+    """
     body_lower = body.lower()
 
     # Check for ignore patterns first
@@ -244,19 +250,21 @@ def classify_comment(body: str) -> tuple[str, str, str]:
         if re.search(pattern, body_lower):
             return 'ignore', 'none', 'Automated or acknowledgment comment'
 
+    # Check for explanation patterns before code_change — questions
+    # often contain action words ("fix", "change") that would otherwise
+    # match code_change patterns and cause misclassification.
+    for pattern in PATTERNS['explain']:
+        if re.search(pattern, body_lower):
+            return 'explain', 'low', 'Question or clarification request'
+
     # Check for code change patterns with priority
     for priority in ['high', 'medium', 'low']:
         for pattern in PATTERNS['code_change'][priority]:
             if re.search(pattern, body_lower):
                 return 'code_change', priority, f'Matches {priority} priority pattern: {pattern}'
 
-    # Check for explanation patterns
-    for pattern in PATTERNS['explain']:
-        if re.search(pattern, body_lower):
-            return 'explain', 'low', 'Question or clarification request'
-
-    # Default to code_change with low priority if none match
-    if len(body) > 50:  # Substantial comment likely needs attention
+    # Default: review comment without clear action signal
+    if len(body) > 100:
         return 'code_change', 'low', 'Substantial review comment requires attention'
 
     return 'ignore', 'none', 'Brief comment with no actionable content'

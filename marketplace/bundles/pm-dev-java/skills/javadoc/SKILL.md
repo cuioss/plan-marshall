@@ -118,9 +118,18 @@ public Config parse(String filename) { }
 
 ## Related Skills
 
-- `plan-marshall:dev-general-code-documentation` - Language-agnostic documentation principles
+- `plan-marshall:dev-general-code-quality` - Language-agnostic code quality and documentation principles
 - `pm-dev-java:java-core` - Core Java patterns
 - `pm-dev-java:java-null-safety` - Null annotations in docs
+
+## Templates
+
+**JavaDoc class and method** — reference templates for documentation structure:
+```
+Read: templates/javadoc-class.java.tmpl
+```
+
+Contains both class-level and method-level JavaDoc patterns with all standard tags.
 
 ## Standards Reference
 

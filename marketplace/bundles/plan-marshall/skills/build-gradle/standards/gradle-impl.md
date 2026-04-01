@@ -250,3 +250,16 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
 **Output format**: Tab-separated TOON (default) or JSON with `--format json`
 
 **Fields**: `status`, `exit_code`, `duration_seconds`, `log_file`, `command`
+
+---
+
+## Coverage Report Paths
+
+The coverage report parser (`_gradle_cmd_coverage_report.py`) searches these JaCoCo XML report paths in order:
+
+| Path | Description |
+|------|-------------|
+| `build/reports/jacoco/test/jacocoTestReport.xml` | Standard Gradle JaCoCo report |
+| `build/reports/jacoco/jacocoTestReport.xml` | Alternative report location |
+
+For multi-project builds, pass `--module-path {module-dir}` to scope the search to a specific subproject's `build/` directory.

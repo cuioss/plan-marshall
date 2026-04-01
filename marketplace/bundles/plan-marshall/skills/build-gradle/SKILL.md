@@ -37,12 +37,17 @@ Gradle build execution with output parsing, module discovery, and wrapper detect
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
-    --targets "<tasks>" \
-    [--module <module>] \
+    --command-args "<tasks>" \
     [--format <toon|json>] \
     [--timeout <seconds>] \
     [--mode <mode>]
 ```
+
+**Parameters**:
+- `--command-args` - Complete Gradle command arguments, e.g. `":module:build"` or `"build"` (required)
+- `--format` - Output format: toon (default), json
+- `--timeout` - Timeout in seconds (default: 300, adaptive — doubles on timeout failure)
+- `--mode` - Output mode: actionable (default), structured, errors
 
 ### Low-level Operations
 

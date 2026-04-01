@@ -16,12 +16,12 @@ Standards for maintaining documentation integrity, preventing hallucinations, el
 
 **Example**:
 ```
-✅ CORRECT - Consistent terminology
+PASS CORRECT - Consistent terminology
 Requirement REQ-001: The system shall authenticate users via OAuth2
 Specification SPEC-001: OAuth2 authentication implementation
 Test TEST-001: Verify OAuth2 authentication flow
 
-❌ WRONG - Inconsistent terminology
+FAIL WRONG - Inconsistent terminology
 Requirement REQ-001: The system shall authenticate users via OAuth2
 Specification SPEC-001: User login implementation
 Test TEST-001: Verify authentication
@@ -56,10 +56,10 @@ Test TEST-001: Verify authentication
 
 **Example**:
 ```
-❌ WRONG - Ambiguous
+FAIL WRONG - Ambiguous
 REQ-001: The system shall provide fast authentication
 
-✅ CORRECT - Clear and measurable
+PASS CORRECT - Clear and measurable
 REQ-001: The system shall complete user authentication within 2 seconds
 for 95% of requests under normal load conditions (≤1000 concurrent users)
 ```
@@ -95,11 +95,11 @@ for 95% of requests under normal load conditions (≤1000 concurrent users)
 
 **Example Violations**:
 ```
-❌ HALLUCINATION - Feature doesn't exist
+FAIL HALLUCINATION - Feature doesn't exist
 REQ-042: The system shall support automatic backup to cloud storage
 (When no such feature is implemented or planned)
 
-✅ CORRECT - Document only what exists
+PASS CORRECT - Document only what exists
 REQ-042: [FUTURE] Cloud backup integration (planned for v2.0)
 (Clearly marked as future functionality)
 ```
@@ -116,11 +116,11 @@ REQ-042: [FUTURE] Cloud backup integration (planned for v2.0)
 
 **Cross-Reference Pattern**:
 ```asciidoc
-// ✅ CORRECT - Cross-reference
+// Preferred: CORRECT - Cross-reference
 See xref:Requirements.adoc#req-001[REQ-001: User Authentication] for
 complete authentication requirements.
 
-// ❌ WRONG - Duplication
+// Avoid: WRONG - Duplication
 REQ-001 requires that the system shall authenticate users via OAuth2
 with support for multiple identity providers...
 (Copying entire requirement text)
@@ -153,9 +153,9 @@ with support for multiple identity providers...
 xref:Requirements.adoc#req-001[REQ-001]
 link:Requirements.adoc#req-001[REQ-001]
 
-// Code reference
-Implementation: `de.cuioss.portal.authentication.TokenValidator`
-link:../src/main/java/de/cuioss/portal/authentication/TokenValidator.java[TokenValidator]
+// Code reference (adapt path to project language/structure)
+Implementation: `TokenValidator`
+link:../path/to/TokenValidator[TokenValidator]
 
 // External reference
 OAuth2 Specification: https://oauth.net/2/
@@ -218,9 +218,9 @@ Requirement REQ-001
     ↓ (specified by)
 Specification SPEC-001
     ↓ (implemented by)
-Code: TokenValidator.java
+Code: TokenValidator (source file)
     ↓ (tested by)
-Test: TokenValidatorTest.java
+Test: TokenValidatorTest (test file)
 ```
 
 ### No Hallucinated Functionality
@@ -277,4 +277,4 @@ For common anti-patterns in requirements authoring (vague language, implementati
 
 ## Quality Rules
 
-For the consolidated quality checklist, see the SKILL.md Quality Rules section.
+This document is the authoritative source for quality criteria. The SKILL.md Quality Rules section provides a quick-reference summary; domain-specific quality checks appear in `smart-requirements-principles.md` (SMART checks), `requirements-format-and-structure.md` (format checks), and `specification-structure-and-backtracking.md` (specification checks).

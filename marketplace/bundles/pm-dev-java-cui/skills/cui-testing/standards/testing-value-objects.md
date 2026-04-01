@@ -109,7 +109,7 @@ public TokenConfig getUnderTest() {
 ### Bad Examples (Do NOT use):
 
 ```java
-// ❌ Manual data creation
+// Avoid: Manual data creation
 @Override
 public TokenConfig getUnderTest() {
     return TokenConfig.builder()
@@ -118,7 +118,7 @@ public TokenConfig getUnderTest() {
         .build();
 }
 
-// ❌ Using Random or other libraries
+// Avoid: Using Random or other libraries
 @Override
 public TokenConfig getUnderTest() {
     Random random = new Random();
@@ -160,7 +160,7 @@ class ImmutableConfigTest implements ShouldHandleObjectContracts<ImmutableConfig
 ### 1. Testing Enums as Value Objects
 
 ```java
-// ❌ Wrong - Enums don't need contract testing
+// Avoid: Wrong - Enums don't need contract testing
 class TokenTypeTest implements ShouldHandleObjectContracts<TokenType> {
     // Unnecessary - enums have proper equals/hashCode from Java
 }
@@ -169,7 +169,7 @@ class TokenTypeTest implements ShouldHandleObjectContracts<TokenType> {
 ### 2. Testing Infrastructure Classes
 
 ```java
-// ❌ Wrong - Parsers are not value objects
+// Avoid: Wrong - Parsers are not value objects
 class TokenParserTest implements ShouldHandleObjectContracts<TokenParser> {
     // Infrastructure classes should have functional tests, not contract tests
 }
@@ -178,7 +178,7 @@ class TokenParserTest implements ShouldHandleObjectContracts<TokenParser> {
 ### 3. Mixing Business Logic with Contract Testing
 
 ```java
-// ❌ Wrong - Don't mix contract testing with business logic tests
+// Avoid: Wrong - Don't mix contract testing with business logic tests
 class UserDataTest implements ShouldHandleObjectContracts<UserData> {
 
     @Test
@@ -187,7 +187,7 @@ class UserDataTest implements ShouldHandleObjectContracts<UserData> {
     }
 }
 
-// ✅ Correct - Separate contract and business logic tests
+// Preferred: Correct - Separate contract and business logic tests
 class UserDataContractTest implements ShouldHandleObjectContracts<UserData> {
     // Only contract testing
 }

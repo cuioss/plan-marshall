@@ -28,7 +28,7 @@ Standards and workflows for content quality, tone, organization, and review orch
 
 For code documentation, use:
 - `pm-dev-java:javadoc` for Java code documentation
-- `pm-dev-frontend:js-fix-jsdoc` for JavaScript documentation
+- `pm-dev-frontend:javascript` for JavaScript documentation
 
 ## Available Workflows
 
@@ -84,27 +84,9 @@ For directories:
 python3 .plan/execute-script.py pm-documents:ref-documentation:docs review --directory {directory}
 ```
 
-**Step 4: Parse JSON Output**
+**Step 4: Parse Output**
 
-Script returns structured JSON:
-```json
-{
-  "status": "success",
-  "data": {
-    "files_analyzed": N,
-    "average_quality_score": N,
-    "issues": [
-      {
-        "file": "path",
-        "line": N,
-        "type": "tone|correctness|completeness",
-        "severity": "critical|high|medium|low",
-        "message": "description"
-      }
-    ]
-  }
-}
-```
+Script returns structured output with analysis data including files analyzed, quality score, and issues with file, line, type, severity, and message fields.
 
 **Step 5: Apply Deep Analysis**
 
@@ -197,10 +179,10 @@ Provides consolidated report with aggregated results.
 
 ### Steps
 
-**Step 1: Load Documentation Standards**
+**Step 1: Load Orchestration Standards**
 
-Read workflows/review-orchestration.md
-Read workflows/content-review.md
+Read workflows/review-orchestration.md for detailed phase sequencing, failure handling, and consolidated report template.
+Read workflows/content-review.md for the tone analysis decision framework.
 
 **Step 2: Discover Files**
 
@@ -222,183 +204,36 @@ Parameters:
   apply_fixes: {apply_fixes}
 ```
 
-Parse results:
-- Extract format issues count
-- Store format status (PASS/WARNINGS/FAILURES)
-
-**Decision Point:**
-
-If format FAILURES found AND stop_on_error=true:
-- **STOP** - Skip Phase 2 and 3
-- Generate partial report (format only)
-- Message: "Format validation FAILED. Fix errors before link/content review."
-
-Otherwise:
-- **CONTINUE** to Phase 2
+If format FAILURES found AND stop_on_error=true: **STOP** and generate partial report.
+Otherwise: **CONTINUE** to Phase 2.
 
 **Step 4: Phase 2 - Link Verification**
 
-Delegate to ref-asciidoc verify-links workflow:
-```
-Skill: pm-documents:ref-asciidoc
-Execute workflow: verify-links
-Parameters:
-  target: {target}
-  fix_links: {apply_fixes}
-```
-
-**Enhanced Link Verification:**
-
-After running verify-links, classify results:
+Delegate to ref-asciidoc verify-links workflow, then classify results:
 
 ```bash
 python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-links --input target/links.json --output target/classified.json
 ```
 
-Parse classified results:
-- likely-false-positive: Keep links (report for info)
-- must-verify-manual: Use Read tool to verify each
-- definitely-broken: Ask user before removal
+For `must-verify-manual` links, follow the manual verification protocol in workflows/review-orchestration.md.
 
-**Manual Verification (link-verification protocol):**
-
-For each must-verify-manual link:
-1. Extract target path from xref
-2. Resolve absolute path: `realpath {path}`
-3. Verify with Read tool
-4. If EXISTS: Keep link (report false positive)
-5. If NOT FOUND: Ask user before removal
-
-Store link results:
-- Broken links count
-- False positives count
-- Manual verification outcomes
-
-**CONTINUE** to Phase 3 (regardless of link results)
+**CONTINUE** to Phase 3 regardless of link results.
 
 **Step 5: Phase 3 - Content Quality Review**
 
-Skip if skip_content=true
-
-Execute review-content workflow with ULTRATHINK:
-```
-Parameters:
-  target: {target}
-  apply_fixes: {apply_fixes}
-```
-
-**Enhanced Content Analysis:**
+Skip if skip_content=true. Run tone analysis:
 
 ```bash
 python3 .plan/execute-script.py pm-documents:ref-documentation:docs analyze-tone --file {file_path} --output target/tone-analysis.json
 ```
 
-Parse tone analysis JSON:
-- promotional: Marketing/buzzword language
-- performance_claim: Performance assertions requiring data
-- standards_claim: Standards/compatibility claims requiring citations
-- missing_sources: Claims without attribution
+Apply the tone analysis decision framework from workflows/content-review.md to each flagged phrase.
 
-**ULTRATHINK Analysis (content-review framework):**
+**Step 6: Aggregate and Report**
 
-For each flagged promotional phrase:
-1. Apply decision framework:
-   - Does this describe verifiable, specific capability? → Factual
-   - Can this be measured or tested? → Factual
-   - Does it compare favorably without evidence? → Promotional
-2. Generate finding with reasoning
-3. Suggest factual alternative
+Combine all phase results and generate consolidated report following the template in workflows/review-orchestration.md.
 
-Store content results:
-- Promotional language count
-- Unverified claims count
-- Missing sources count
-- ULTRATHINK findings
-
-**Step 6: Aggregate Results**
-
-Combine all phase results:
-```
-Total files: {count}
-Phase 1 (Format): {PASS|WARNINGS|FAILURES} - {issue_count} issues
-Phase 2 (Links): {PASS|WARNINGS|FAILURES} - {issue_count} issues
-Phase 3 (Content): {PASS|WARNINGS|FAILURES} - {issue_count} issues
-```
-
-Overall status:
-- PASS: All phases passed
-- WARNINGS: Some non-critical issues
-- FAILURES: Critical issues found
-
-**Step 7: Generate Consolidated Report**
-
-```
-# Comprehensive Documentation Review Report
-
-**Target:** {file_path | directory_path}
-**Date:** {ISO timestamp}
-**Status:** PASS | WARNINGS | FAILURES
-
-## Executive Summary
-
-- Files reviewed: {count}
-- Total issues: {count}
-- Critical issues: {count}
-
-### Issues by Phase
-
-| Phase | Status | Issues |
-|-------|--------|--------|
-| Format Validation | {status} | {count} |
-| Link Verification | {status} | {count} |
-| Content Review | {status} | {count} |
-
-## Phase 1: Format Validation
-
-{Results from ref-asciidoc validate-format workflow}
-
-## Phase 2: Link Verification
-
-### Broken Links
-- {file}:{line} - xref:{target} - {reason}
-
-### False Positives
-- {file}:{line} - {link} - Verified manually as valid
-
-### Manual Verification Performed
-- {count} links verified with Read tool
-- {count} confirmed broken
-- {count} false positives
-
-## Phase 3: Content Review
-
-### Promotional Language (ULTRATHINK Analysis)
-- Line {N}: "{text}"
-  - Issue: {marketing/self-praise/subjective}
-  - Reasoning: {ULTRATHINK analysis}
-  - Suggestion: "{factual alternative}"
-
-### Missing Sources
-- Line {N}: Claim requires citation: "{text}"
-  - Type: {performance/compatibility/usage}
-
-### Unverified Claims
-- Line {N}: {description}
-
-## Recommendations
-
-### Immediate Actions (Critical)
-1. {action required}
-
-### Improvements (Warnings)
-1. {suggested improvement}
-
-## Tool Usage Statistics
-- validate-format: {time}ms
-- verify-links: {time}ms
-- review-content: {time}ms
-- Total: {time}ms
-```
+Overall status: PASS (zero issues), WARNINGS (non-critical), FAILURES (critical issues found).
 
 ---
 
@@ -573,7 +408,7 @@ All workflow procedures are in the `workflows/` directory:
 
 | Workflow | Purpose | When to Load |
 |----------|---------|--------------|
-| `content-review.md` | ULTRATHINK-based tone analysis framework | Content review workflow |
+| `content-review.md` | Tone analysis decision framework | Content review workflow |
 | `review-orchestration.md` | Comprehensive review orchestration | comprehensive-review workflow |
 
 ## Scripts

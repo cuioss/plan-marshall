@@ -191,7 +191,7 @@ Decision entries are written to a dedicated log file. They do NOT include a `[DE
 ```
 
 ```
-[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
+[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
   phase: 3-outline
   detail: marketplace/bundles structure detected
 ```

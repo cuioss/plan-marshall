@@ -2,22 +2,31 @@
 
 Standards for linking from specification documents to implementation code, providing bidirectional navigation.
 
+> **Format note**: Link syntax examples below use AsciiDoc. For AsciiDoc link and cross-reference syntax, see `pm-documents:ref-asciidoc` → `references/asciidoc-formatting.md`. The linking concepts (status tracking, bidirectional navigation) apply regardless of document format.
+
 ## Linking Format
 
-**Java class references**:
+**Source file references**:
 ```asciidoc
 link:../src/main/java/com/example/TokenValidator.java[TokenValidator]
+link:../src/token_validator.py[token_validator]
+link:../src/components/TokenValidator.ts[TokenValidator]
 ```
 
-**Package references**:
+**Package/module references**:
 ```asciidoc
 link:../src/main/java/com/example/jwt/[jwt package]
+link:../src/jwt/[jwt module]
 ```
 
 **Test references**:
 ```asciidoc
 link:../src/test/java/com/example/TokenValidatorTest.java[TokenValidatorTest]
+link:../tests/test_token_validator.py[test_token_validator]
+link:../src/__tests__/TokenValidator.test.ts[TokenValidator.test]
 ```
+
+Adapt paths to match the project's language and directory conventions.
 
 ## Status Section Template
 
@@ -30,12 +39,12 @@ _See Requirement link:../Requirements.adoc#REQ-ID[REQ-ID: Title]_
 === Status: [PLANNED|IN PROGRESS|IMPLEMENTED]
 
 [For IMPLEMENTED] This specification is implemented in:
-* link:../src/main/java/path/ClassName.java[ClassName] - Brief description
+* link:../path/to/ImplementingFile[ClassName/ModuleName] - Brief description
 
-For detailed behavior, refer to the JavaDoc of implementing classes.
+For detailed behavior, refer to the API documentation of implementing classes/modules.
 
 === Verification
-* link:../src/test/java/path/ClassNameTest.java[ClassNameTest]
+* link:../path/to/TestFile[TestName]
 ```
 
 ## Status Indicators
@@ -46,12 +55,12 @@ For detailed behavior, refer to the JavaDoc of implementing classes.
 
 **IN PROGRESS**:
 - Implementation has started
-- Add links to implementing classes as they are created
+- Add links to implementing files as they are created
 - Update with implementation decisions
 
 **IMPLEMENTED**:
 - Full implementation complete
-- Links to all implementing classes
+- Links to all implementing files
 - Links to verification tests
 - Remove redundant code examples
 - Keep architectural guidance and standards

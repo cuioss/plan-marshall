@@ -58,6 +58,11 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 - `standards/basic.md` — Injection, scopes, scope mismatch rule, optional dependencies, producers, error handling
 - `standards/advanced.md` — Events, observers, interceptors
 
+## Templates
+
+- `templates/cdi-bean.java.tmpl` — ApplicationScoped bean with constructor injection and Instance<T> for optional dependencies
+- `templates/cdi-producer.java.tmpl` — Producer method with Null Object pattern (never returns null)
+
 ## Quality Rules
 
 - Constructor injection used (never field/setter injection)

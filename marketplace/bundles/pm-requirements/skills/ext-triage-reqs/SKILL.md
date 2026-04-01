@@ -18,7 +18,7 @@ This skill is a **triage extension** loaded by the plan-finalize workflow skill 
 
 Loaded via `resolve-workflow-skill-extension --domain requirements --type triage` during finalize phase when:
 
-1. AsciiDoc validation errors occur in requirements documents
+1. Document validation errors occur in requirements documents (for AsciiDoc-specific validation, see `pm-documents:ref-asciidoc`)
 2. Requirements structure issues are detected
 3. Traceability gaps are identified
 4. Acceptance criteria format issues are found
@@ -48,7 +48,7 @@ Registered in marshal.json under the requirements domain:
 
 | Finding Type | Syntax |
 |--------------|--------|
-| AsciiDoc lint | `// asciidoc-lint-disable` comment |
+| Document lint | Inline comment suppression (see `pm-documents:ref-asciidoc` for format-specific syntax) |
 | Link validation | `// skip-link-check` comment |
 | Structure issue | Document exception in requirements metadata |
 

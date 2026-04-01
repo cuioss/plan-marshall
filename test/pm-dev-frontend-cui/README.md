@@ -4,6 +4,5 @@ Tests for the `pm-dev-frontend-cui` bundle.
 
 ## Test Files
 
-- `test_npm_output.py` - Tests for npm build output analysis script
-- `build/` - Build log fixtures for npm output tests
+- `test_cui_js_extension.py` - Tests for CUI JavaScript extension API
 - `coverage/` - Coverage report fixtures

@@ -65,20 +65,20 @@ Metadata files (plugin.json) define marketplace bundles and their components (ag
 ### Validation Rules
 
 **Name Format**:
-- ✅ kebab-case: "my-bundle-name"
-- ❌ camelCase: "myBundleName"
-- ❌ snake_case: "my_bundle_name"
-- ❌ spaces: "my bundle name"
+- Preferred: kebab-case: "my-bundle-name"
+- Avoid: camelCase: "myBundleName"
+- Avoid: snake_case: "my_bundle_name"
+- Avoid: spaces: "my bundle name"
 
 **Version Format** (Semantic Versioning):
-- ✅ "1.0.0", "2.1.3", "0.5.0"
-- ❌ "1.0", "v1.0.0", "1.0.0-beta"
+- Preferred: "1.0.0", "2.1.3", "0.5.0"
+- Avoid: "1.0", "v1.0.0", "1.0.0-beta"
 
 **Path Format**:
-- ✅ Relative from bundle root: "agents/agent.md"
-- ❌ Absolute: "/Users/..."
-- ❌ Traversing: "../../agents/agent.md"
-- ✅ Skills: directory path without .md: "skills/skill-name"
+- Preferred: Relative from bundle root: "agents/agent.md"
+- Avoid: Absolute: "/Users/..."
+- Avoid: Traversing: "../../agents/agent.md"
+- Preferred: Skills: directory path without .md: "skills/skill-name"
 
 **JSON Syntax**:
 - Valid JSON (proper quotes, commas, brackets)
@@ -108,8 +108,8 @@ Glob: pattern="skills/*/", path="{bundle_dir}"
 **1. Missing Entries** (files exist but not in plugin.json):
 ```
 # Files found:
-agents/agent-a.md ✅ (in plugin.json)
-agents/agent-b.md ❌ (NOT in plugin.json)
+agents/agent-a.md PASS (in plugin.json)
+agents/agent-b.md FAIL (NOT in plugin.json)
 
 # Fix: Add agent-b to plugin.json agents array
 ```
@@ -117,8 +117,8 @@ agents/agent-b.md ❌ (NOT in plugin.json)
 **2. Extra Entries** (in plugin.json but files don't exist):
 ```
 # plugin.json lists:
-agents/agent-a.md ✅ (file exists)
-agents/agent-c.md ❌ (file NOT found)
+agents/agent-a.md PASS (file exists)
+agents/agent-c.md FAIL (file NOT found)
 
 # Fix: Remove agent-c from plugin.json or create the file
 ```
@@ -129,7 +129,7 @@ agents/agent-c.md ❌ (file NOT found)
 "path": "agents/my-agent.md"
 
 # Actual file:
-agents/my_agent.md  ❌ (name mismatch: hyphen vs underscore)
+agents/my_agent.md  FAIL (name mismatch: hyphen vs underscore)
 
 # Fix: Update plugin.json path or rename file
 ```
@@ -197,7 +197,7 @@ bundle-name/
 
 **Examples**:
 ```
-# ✅ Correct
+# PASS Correct
 Directory: marketplace/bundles/pm-dev-java/
 plugin.json: {"name": "pm-dev-java"}
 
@@ -207,7 +207,7 @@ plugin.json: {"name": "diagnose-code", "path": "agents/diagnose-code.md"}
 skills/cui-java-core/SKILL.md
 plugin.json: {"name": "cui-java-core", "path": "skills/cui-java-core"}
 
-# ❌ Incorrect
+# FAIL Incorrect
 Directory: marketplace/bundles/cui_java_expert/  (underscore)
 plugin.json: {"name": "pm-dev-java"}  (mismatch)
 ```
@@ -232,12 +232,12 @@ plugin.json: {"name": "pm-dev-java"}  (mismatch)
 Read {bundle_dir}/plugin.json
 
 Check:
-- ✅ Valid JSON syntax
-- ✅ Required fields present (name, version, description)
-- ✅ Field types correct (strings, arrays, objects)
-- ✅ Name format valid (kebab-case)
-- ✅ Version format valid (semantic versioning)
-- ✅ Arrays present for agents, commands, skills
+- Preferred: Valid JSON syntax
+- Preferred: Required fields present (name, version, description)
+- Preferred: Field types correct (strings, arrays, objects)
+- Preferred: Name format valid (kebab-case)
+- Preferred: Version format valid (semantic versioning)
+- Preferred: Arrays present for agents, commands, skills
 ```
 
 ### Step 2: Component Inventory
@@ -269,10 +269,10 @@ For each entry in plugin.json:
 ### Verify Bundle Structure
 
 Check:
-- ✅ plugin.json exists
-- ✅ Bundle name matches directory
-- ✅ Component directories follow naming conventions
-- ✅ At least one component exists
+- Preferred: plugin.json exists
+- Preferred: Bundle name matches directory
+- Preferred: Component directories follow naming conventions
+- Preferred: At least one component exists
 ```
 
 ## Safe vs Risky Fixes
@@ -337,19 +337,19 @@ Check:
 
 **Examples**:
 ```json
-// ❌ Trailing comma
+// Avoid: Trailing comma
 {
   "name": "bundle",
   "version": "1.0.0",  // trailing comma before }
 }
 
-// ❌ Missing quote
+// Avoid: Missing quote
 {
   name: "bundle",  // key not quoted
   "version": "1.0.0"
 }
 
-// ❌ Single quotes
+// Avoid: Single quotes
 {
   'name': 'bundle',  // must use double quotes
   'version': '1.0.0'
@@ -358,7 +358,7 @@ Check:
 
 **Fix**:
 ```json
-// ✅ Correct
+// Preferred: Correct
 {
   "name": "bundle",
   "version": "1.0.0"
@@ -408,12 +408,12 @@ agents/my_agent.md  (underscore instead of hyphen)
 
 **Examples**:
 ```json
-// ❌ Invalid
+// Avoid: Invalid
 "version": "1.0"      // must be X.Y.Z
 "version": "v1.0.0"   // no 'v' prefix
 "version": "1"        // incomplete
 
-// ✅ Valid
+// Preferred: Valid
 "version": "1.0.0"
 "version": "2.1.3"
 "version": "0.5.0"
@@ -425,16 +425,16 @@ Update to semantic versioning format (MAJOR.MINOR.PATCH).
 ## Metadata Quality Rules
 
 **Before marking bundle metadata as "quality approved"**:
-- ✅ plugin.json exists and is valid JSON
-- ✅ Required fields present (name, version, description)
-- ✅ Name matches bundle directory (kebab-case)
-- ✅ Version follows semantic versioning (X.Y.Z)
-- ✅ All component files have entries in plugin.json
-- ✅ No extra entries (entries without files)
-- ✅ All paths correct (match actual files)
-- ✅ Bundle structure follows conventions
-- ✅ Component names follow kebab-case
-- ✅ At least one component (agent, command, or skill)
+- Preferred: plugin.json exists and is valid JSON
+- Preferred: Required fields present (name, version, description)
+- Preferred: Name matches bundle directory (kebab-case)
+- Preferred: Version follows semantic versioning (X.Y.Z)
+- Preferred: All component files have entries in plugin.json
+- Preferred: No extra entries (entries without files)
+- Preferred: All paths correct (match actual files)
+- Preferred: Bundle structure follows conventions
+- Preferred: Component names follow kebab-case
+- Preferred: At least one component (agent, command, or skill)
 
 ## Automated Validation Script
 

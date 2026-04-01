@@ -175,14 +175,14 @@ Script: `plan-marshall:workflow-integration-sonar` → `sonar.py`
 
 ### sonar.py fetch
 
-**Purpose:** Generate structure for fetching Sonar issues.
+**Purpose:** Generate MCP tool call parameters for fetching Sonar issues. Does not fetch directly — returns the MCP instruction that the caller must execute via the SonarQube MCP tool.
 
 **Usage:**
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch --project <key> [--pr <id>] [--severities <list>]
 ```
 
-**Output:** TOON with MCP instruction and expected structure
+**Output:** TOON with MCP instruction and expected response structure
 
 ### sonar.py triage
 
@@ -194,18 +194,6 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 ```
 
 **Output:** TOON with action decision
-
-## References (Load On-Demand)
-
-### Sonar Fix Guide
-```
-Read references/sonar-fix-guide.md
-```
-
-Provides:
-- Common rule fixes
-- Suppression patterns by language
-- Valid suppression reasons
 
 ## Issue Classification
 
@@ -239,24 +227,7 @@ Provides:
 
 ## Integration
 
-### Commands Using This Skill
-- **/pr-fix-sonar-issues** - Dedicated Sonar fix command
-- **/pr-handle-pull-request** - Full PR workflow
-
 ### Related Skills
-- **pr-workflow** - Often used together in PR workflows
-- **git-workflow** - Commits fixes
-
-## Quality Verification
-
-- Self-contained with relative path pattern
-- Progressive disclosure (references loaded on-demand)
-- Scripts output TOON for machine processing
-- Both fetcher and triager agents absorbed
-- Clear workflow definitions
-- MCP tool integration documented
-
-## References
-
-- SonarQube Rules: https://rules.sonarsource.com/
-- SonarQube Documentation: https://docs.sonarqube.org/
+- **workflow-integration-ci** - Often used together in PR workflows
+- **workflow-integration-git** - Commits fixes
+- **workflow-pr-doctor** - Orchestrates this skill with CI and git workflows

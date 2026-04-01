@@ -128,10 +128,10 @@ updated: 2025-12-02T14:30:00Z
 ┌───────────┬─────────────┐
 │   Phase   │   Status    │
 ├───────────┼─────────────┤
-│ init      │ done        │ ✓
-│ refine    │ done        │ ✓
-│ outline   │ done        │ ✓
-│ plan      │ done        │ ✓
+│ init      │ done        │ PASS
+│ refine    │ done        │ PASS
+│ outline   │ done        │ PASS
+│ plan      │ done        │ PASS
 │ execute   │ in_progress │ ◄── current
 │ finalize  │ pending     │
 └───────────┴─────────────┘
@@ -369,7 +369,7 @@ description: |
 steps[3]{number,target,status}:
 1,pm-plugin-development/agents/tool-coverage-agent.md,pending
 2,pm-dev-builder/agents/gradle-builder.md,pending
-3,pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md,pending
+3,pm-dev-frontend/skills/javascript/SKILL.md,pending
 
 verification:
   commands[1]:
@@ -586,7 +586,7 @@ Decision entries do NOT include a `[DECISION]` prefix since the file itself indi
 [2025-12-11T11:14:48Z] [INFO] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
   phase: 1-init
 
-[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-plugin) Scope: bundles=all
+[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
   phase: 3-outline
   detail: marketplace/bundles structure detected
 ```

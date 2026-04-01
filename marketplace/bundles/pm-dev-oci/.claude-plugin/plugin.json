@@ -14,6 +14,7 @@
   "commands": [],
   "skills": [
     "./skills/oci-standards",
-    "./skills/oci-security"
+    "./skills/oci-security",
+    "./skills/ext-triage-oci"
   ]
 }

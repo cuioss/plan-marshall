@@ -1,6 +1,6 @@
 # Setup Workflow
 
-Step-by-step workflow for establishing requirements documentation in new CUI projects.
+Step-by-step workflow for establishing requirements documentation in new projects.
 
 ## Setup Process
 

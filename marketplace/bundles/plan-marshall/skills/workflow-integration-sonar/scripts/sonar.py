@@ -72,25 +72,26 @@ def generate_mcp_instruction(project: str, pr: str | None = None, severities: st
 def create_fetch_output(
     project: str, pr: str | None = None, severities: str | None = None, types: str | None = None
 ) -> dict:
-    """Create output structure showing expected format for fetch."""
+    """Generate MCP tool instruction and expected response structure.
+
+    This does NOT fetch issues directly — it produces the MCP tool call
+    parameters that the caller (the LLM) must execute via the SonarQube
+    MCP tool to retrieve actual issues.
+    """
     return {
         'project_key': project,
         'pull_request_id': pr,
-        'issues': [
-            {
-                'key': 'EXAMPLE-001',
-                'type': 'BUG',
-                'severity': 'MAJOR',
-                'file': 'src/main/java/Example.java',
-                'line': 42,
-                'rule': 'java:S1234',
-                'message': 'Example issue message',
-                '_note': 'This is sample structure - actual issues from MCP tool',
-            }
-        ],
-        'statistics': {'total_issues_fetched': 0, 'issues_after_filtering': 0, 'by_severity': {}, 'by_type': {}},
         'mcp_instruction': generate_mcp_instruction(project, pr, severities),
-        'status': 'instruction_generated',
+        'expected_response_structure': {
+            'key': 'EXAMPLE-001',
+            'type': 'BUG|CODE_SMELL|VULNERABILITY',
+            'severity': 'BLOCKER|CRITICAL|MAJOR|MINOR|INFO',
+            'file': 'src/main/java/Example.java',
+            'line': 42,
+            'rule': 'java:S1234',
+            'message': 'Issue description',
+        },
+        'status': 'success',
     }
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Base file operations module for CUI workflow scripts.
+Base file operations module for workflow scripts.
 
 Provides atomic file operations, metadata parsing, JSON output helpers,
 and base directory configuration for workflow files.

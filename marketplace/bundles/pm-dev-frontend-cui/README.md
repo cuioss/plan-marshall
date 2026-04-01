@@ -17,8 +17,6 @@ JavaScript project structure, package.json configuration, dependency management,
 - SonarQube configuration for JavaScript
 - Quarkus DevUI and NiFi project types
 
-**Script**: `pm-dev-frontend-cui:cui-javascript-project` -> `npm-output.py` (npm build output parser)
-
 ### plan-marshall-plugin
 Domain manifest declaring the `javascript-cui` domain for plan-marshall workflow integration.
 
@@ -31,7 +29,7 @@ Load skills based on project needs:
 skills:
   # General (from pm-dev-frontend)
   - pm-dev-frontend:javascript
-  - pm-dev-frontend:js-enforce-eslint
+  - pm-dev-frontend:lint-config
   # CUI-specific (from this bundle)
   - pm-dev-frontend-cui:cui-javascript-project
 ```

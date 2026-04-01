@@ -47,7 +47,7 @@ Format: `link:https://example.com[Text]` or `https://example.com`
 
 === Step 1: Run Automated Detection
 
-Execute the verify-adoc-links.py script to identify potential broken links:
+Execute the verify-links subcommand to identify potential broken links:
 
 [source,bash]
 ----
@@ -58,7 +58,7 @@ python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links 
 
 === Step 2: Classify Broken Link Candidates
 
-Use verify-links-false-positives.py to categorize detected issues:
+Use the classify-links subcommand to categorize detected issues:
 
 [source,bash]
 ----
@@ -125,11 +125,11 @@ Read(file_path="/project/requirements/spec.adoc")
 
 ==== Search for Similar Files (Optional)
 
-If file not found, search for similar names:
+If file not found, search for similar names using Glob:
 
-[source,bash]
+[source]
 ----
-find project/requirements -name "*spec*" -type f
+Glob(pattern="project/requirements/**/*spec*")
 ----
 
 Suggest alternatives to user before removal.
@@ -443,8 +443,8 @@ Reference this protocol in the verify-links workflow:
 ----
 workflow: verify-links
 steps:
-  1. Run verify-adoc-links.py script
-  2. Classify with verify-links-false-positives.py
+  1. Run asciidoc verify-links
+  2. Classify with asciidoc classify-links
   3. Manual verification (link-verification.md)
   4. User confirmation for removals
   5. Re-validation
@@ -492,19 +492,19 @@ steps:
 
 == Tools and Scripts
 
-=== verify-adoc-links.py
+=== asciidoc verify-links
 
 **Purpose:** Automated detection of broken links
 
-**Location:** `scripts/verify-adoc-links.py`
+**Invocation:** `python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links`
 
 **Output:** JSON with broken link candidates
 
-=== verify-links-false-positives.py
+=== asciidoc classify-links
 
 **Purpose:** Classify broken link candidates to reduce false positives
 
-**Location:** `scripts/verify-links-false-positives.py`
+**Invocation:** `python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-links`
 
 **Output:** JSON with categorized issues (likely-false-positive, must-verify-manual, definitely-broken)
 

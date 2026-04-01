@@ -232,6 +232,7 @@ In GitHub Actions:
 
 The OCI-standard filename is `Containerfile` (used by Podman and Buildah). Docker uses `Dockerfile`. Both are functionally identical.
 
-- Use `Containerfile` for OCI-first projects or Podman-based workflows
+- Use `Containerfile` for OCI-first projects or Podman/Buildah-based workflows
 - Use `Dockerfile` when Docker is the primary build tool
 - Both `docker build` and `podman build` accept either name via `-f` flag
+- Buildah provides fine-grained image building without a daemon: `buildah bud -f Containerfile -t myapp .`

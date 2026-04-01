@@ -1,6 +1,6 @@
 ---
 name: oci-security
-description: OCI container security best practices covering runtime hardening, supply chain security, and OWASP container controls
+description: "Use when hardening container runtime configuration, scanning for vulnerabilities, securing the image supply chain, or auditing against OWASP Docker Top 10. Covers capability dropping, read-only filesystems, image signing, SBOMs, and Trivy/Cosign/Syft workflows."
 user-invocable: false
 ---
 
@@ -38,55 +38,7 @@ Activate when:
 
 Load references progressively based on current task. **Never load all references at once.**
 
-### 1. Runtime Security
-
-**File**: `standards/runtime-security.md`
-
-**Load When**:
-- Configuring container runtime security
-- Hardening docker-compose or Kubernetes deployments
-- Setting resource limits and capabilities
-- Reviewing CIS Docker Benchmark compliance
-
-**Contents**:
-- Non-root user mapping
-- Capability dropping and selective adds
-- Read-only filesystems with tmpfs
-- CPU/memory/PID resource limits
-- Docker daemon socket protection
-- Network segmentation
-- Immutable/ephemeral container patterns
-- CIS Docker Benchmark overview
-
-**Load Command**:
-```
-Read standards/runtime-security.md
-```
-
-### 2. Supply Chain Security
-
-**File**: `standards/supply-chain-security.md`
-
-**Load When**:
-- Setting up vulnerability scanning in CI/CD
-- Implementing image signing workflows
-- Generating SBOMs for compliance
-- Configuring SLSA provenance
-
-**Contents**:
-- Vulnerability scanning tools (Trivy, Grype, Snyk, Docker Scout)
-- CI/CD scan workflow
-- Regular rebuild schedules
-- Image signing with Cosign
-- SBOM generation with Syft
-- SLSA provenance attestation
-
-**Load Command**:
-```
-Read standards/supply-chain-security.md
-```
-
-### 3. OWASP Container Security
+### 1. OWASP Container Security (Primary Reference)
 
 **File**: `standards/owasp-container-security.md`
 
@@ -106,26 +58,35 @@ Read standards/supply-chain-security.md
 Read standards/owasp-container-security.md
 ```
 
-### 4. Certificate Management
+### 2. Runtime Security (Quick Reference)
 
-**File**: `standards/certificate-management.md`
+**File**: `standards/runtime-security.md`
 
 **Load When**:
-- Configuring TLS certificates for containers
-- Choosing between PEM and PKCS12 formats
-- Setting up certificate generation or rotation
-- Mounting certificates securely in containers
+- Need a quick hardening checklist without full OWASP detail
+- Copy-pasteable docker-compose hardened template
+- Capability reference table
 
-**Contents**:
-- PEM vs PKCS12 comparison
-- Certificate generation script
-- PKCS12 to PEM conversion
-- Dockerfile and Compose integration patterns
-- File permission and security requirements
+Cross-references OWASP controls D01, D03, D04, D05, D07, D09, D10.
 
 **Load Command**:
 ```
-Read standards/certificate-management.md
+Read standards/runtime-security.md
+```
+
+### 3. Supply Chain Security (Quick Reference)
+
+**File**: `standards/supply-chain-security.md`
+
+**Load When**:
+- Need a quick pipeline workflow and tool reference
+- Copy-pasteable Trivy, Cosign, Syft commands
+
+Cross-references OWASP controls D02, D08.
+
+**Load Command**:
+```
+Read standards/supply-chain-security.md
 ```
 
 ## Quick Reference

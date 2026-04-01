@@ -409,9 +409,9 @@ B.java,89,MEDIUM
 ```
 
 **Step 4**: Validate
-- Length declaration `[2]` matches row count: ✓
-- Field count matches header: ✓
-- Token count reduced: ✓
+- Length declaration `[2]` matches row count: PASS
+- Field count matches header: PASS
+- Token count reduced: PASS
 
 ### Handling Non-Uniform Data
 
@@ -449,20 +449,20 @@ messages[1]{id,text}:
 
 ### DO
 
-✅ Use TOON for uniform arrays (issues, files, metrics)
-✅ Include `[N]` length declarations for validation
-✅ Declare `{field1,field2}` headers explicitly
-✅ Use CSV escaping for commas in values
-✅ Keep nesting depth ≤ 3 levels
-✅ Validate row count matches length declaration
+PASS Use TOON for uniform arrays (issues, files, metrics)
+PASS Include `[N]` length declarations for validation
+PASS Declare `{field1,field2}` headers explicitly
+PASS Use CSV escaping for commas in values
+PASS Keep nesting depth ≤ 3 levels
+PASS Validate row count matches length declaration
 
 ### DON'T
 
-❌ Use TOON for non-uniform data (use nested objects)
-❌ Skip length declarations (reduces LLM accuracy)
-❌ Mix field order across rows
-❌ Exceed 3 levels of nesting
-❌ Use TOON for API interchange (internal only)
+FAIL Use TOON for non-uniform data (use nested objects)
+FAIL Skip length declarations (reduces LLM accuracy)
+FAIL Mix field order across rows
+FAIL Exceed 3 levels of nesting
+FAIL Use TOON for API interchange (internal only)
 
 ## Quality Rules
 

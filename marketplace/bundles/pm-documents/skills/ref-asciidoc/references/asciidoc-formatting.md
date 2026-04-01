@@ -209,12 +209,12 @@ xref:quality-standards.adoc#parameterized-tests[Parameterized Tests]
 
 **Examples**:
 
-✅ Good:
+PASS Good:
 ```asciidoc
 xref:../testing/quality-standards.adoc[Testing Quality Standards and Requirements]
 ```
 
-❌ Bad:
+FAIL Bad:
 ```asciidoc
 xref:../testing/quality-standards.adoc[here]
 ```
@@ -297,26 +297,26 @@ Before finalizing any AsciiDoc document:
 **Error**: Missing blank line before list
 ```asciidoc
 This is a paragraph.
-* List item 1  ❌ INCORRECT
+* List item 1  FAIL INCORRECT
 ```
 
 **Correction**: Add blank line
 ```asciidoc
 This is a paragraph.
 
-* List item 1  ✅ CORRECT
+* List item 1  PASS CORRECT
 ```
 
 #### Cross-Reference Violations
 
 **Error**: Using deprecated reference syntax
 ```asciidoc
-<<../other/file.adoc#,Other Document>>  ❌ INCORRECT
+<<../other/file.adoc#,Other Document>>  FAIL INCORRECT
 ```
 
 **Correction**: Use xref syntax
 ```asciidoc
-xref:../other/file.adoc[Other Document]  ✅ CORRECT
+xref:../other/file.adoc[Other Document]  PASS CORRECT
 ```
 
 #### Code Block Violations
@@ -326,7 +326,7 @@ xref:../other/file.adoc[Other Document]  ✅ CORRECT
 ----
 public class Example {
 }
-----  ❌ INCORRECT
+----  FAIL INCORRECT
 ```
 
 **Correction**: Include language specification
@@ -335,7 +335,7 @@ public class Example {
 ----
 public class Example {
 }
-----  ✅ CORRECT
+----  PASS CORRECT
 ```
 
 ## Quality Rules
@@ -354,7 +354,7 @@ public class Example {
 
 ## References
 
-* [documentation-core.md](documentation-core.md) - Core documentation principles
 * [readme-structure.md](readme-structure.md) - README structure patterns
-* [tone-and-style.md](tone-and-style.md) - Professional tone requirements
-* [organization-standards.md](organization-standards.md) - Organization and structure
+* [documentation-core.md](../../ref-documentation/references/documentation-core.md) - Core documentation principles
+* [tone-and-style.md](../../ref-documentation/references/tone-and-style.md) - Professional tone requirements
+* [organization-standards.md](../../ref-documentation/references/organization-standards.md) - Organization and structure

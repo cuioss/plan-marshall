@@ -98,7 +98,7 @@ When you invoke this command, I will:
 **Good Delegation** (with handoff):
 ```markdown
 ### Step 1: Load Diagnostic Skill
-Skill: pm-plugin-development:plugin-diagnose
+Skill: pm-plugin-development:plugin-doctor
 
 **CRITICAL HANDOFF**: Execute skill workflow immediately. Do not explain.
 
@@ -133,18 +133,22 @@ Every command must have:
 
 ## Frontmatter Format
 
+See `plugin-architecture:frontmatter-standards` for the complete specification.
+
 ### Basic Command
 
 ```yaml
 ---
 name: command-name
 description: One sentence description (<100 chars)
+tools: Read, Bash, Skill
 ---
 ```
 
 ### Notes
 
-- **NO tools field** in command frontmatter (tools specified in workflow, not frontmatter)
+- **tools** field lists tools the command needs (comma-separated, NOT array syntax)
+- Commands CAN include `Task` tool for agent orchestration
 - Name must be kebab-case
 - Description must be concise (<100 chars)
 
@@ -181,7 +185,7 @@ If you discover issues or improvements during execution, record them:
 **options** - Additional options (optional)
 ```
 
-Usage: `/plugin-diagnose my-agent --fix`
+Usage: `/plugin-doctor my-agent --fix`
 
 ### Pattern 2: Named Parameters
 
@@ -193,7 +197,7 @@ Usage: `/plugin-diagnose my-agent --fix`
 **verbose** - Show detailed output (true/false, default: false)
 ```
 
-Usage: `/plugin-diagnose name=my-agent scope=agent verbose=true`
+Usage: `/plugin-doctor name=my-agent scope=agent verbose=true`
 
 ### Pattern 3: Flag Parameters
 
@@ -204,7 +208,7 @@ Usage: `/plugin-diagnose name=my-agent scope=agent verbose=true`
 **--fix** - Automatically fix issues (flag, default: true)
 ```
 
-Usage: `/plugin-fix my-agent`
+Usage: `/plugin-doctor my-agent`
 
 ### Pattern 4: No Parameters
 
@@ -224,7 +228,7 @@ Usage: `/plugin-verify`
 ## WORKFLOW
 
 ### Step 1: Load Skill
-Skill: pm-plugin-development:plugin-diagnose
+Skill: pm-plugin-development:plugin-doctor
 
 ### Step 2: Execute Workflow
 Execute diagnose-agent workflow with parameters
@@ -243,11 +247,11 @@ Determine scope from parameters
 
 ### Step 2: Route Based on Scope
 If scope=agent:
-  Load plugin-diagnose skill, execute analyze-agent workflow
+  Load plugin-doctor skill, execute analyze-agent workflow
 If scope=command:
-  Load plugin-diagnose skill, execute analyze-command workflow
+  Load plugin-doctor skill, execute analyze-command workflow
 If scope=skill:
-  Load plugin-diagnose skill, execute analyze-skill workflow
+  Load plugin-doctor skill, execute analyze-skill workflow
 
 ### Step 3: Display Results
 ```
@@ -258,7 +262,7 @@ If scope=skill:
 ## WORKFLOW
 
 ### Step 1: Diagnose
-Load plugin-diagnose skill, find issues
+Load plugin-doctor skill, find issues
 
 ### Step 2: Confirm Fix
 If issues found:
@@ -267,7 +271,7 @@ If issues found:
   If no: Exit
 
 ### Step 3: Apply Fixes
-Load plugin-fix skill, apply fixes
+Load plugin-doctor skill, apply fixes
 
 ### Step 4: Verify
 Re-run diagnosis to confirm fixes applied
@@ -300,7 +304,7 @@ Commands should be concise. If exceeding 400 lines:
 
 ### No Embedded Templates
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```markdown
 ### Step 3: Generate Report
 
@@ -310,7 +314,7 @@ Create report with this structure:
 ╚═══════════════════════════════════════╝
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```markdown
 ### Step 3: Generate Report
 
@@ -323,7 +327,7 @@ Fill template with findings
 
 Don't over-specify. Let AI infer reasonable behavior.
 
-❌ **Wrong** (Over-specified):
+FAIL **Wrong** (Over-specified):
 ```markdown
 ### Step 1: Validate Name
 
@@ -342,7 +346,7 @@ If name starts with number:
 [...20 more validation rules...]
 ```
 
-✅ **Correct** (Trust AI):
+PASS **Correct** (Trust AI):
 ```markdown
 ### Step 1: Validate Name
 
@@ -352,7 +356,7 @@ If invalid: Show error and exit.
 
 ### Reference Skills for Details
 
-❌ **Wrong** (Duplication):
+FAIL **Wrong** (Duplication):
 ```markdown
 ### Step 2: Check Architecture Rules
 
@@ -367,7 +371,7 @@ Rule 2: Progressive disclosure
   [... 50 more lines of rules ...]
 ```
 
-✅ **Correct** (Reference):
+PASS **Correct** (Reference):
 ```markdown
 ### Step 2: Check Architecture Rules
 
@@ -393,7 +397,7 @@ Example: `/plugin-create agent` → plugin-create skill, create-agent workflow
 Command → Parse Parameters → Route to Different Workflows → Display
 ```
 
-Example: `/plugin-diagnose scope=X` → plugin-diagnose skill, different workflow per scope
+Example: `/plugin-doctor scope=X` → plugin-doctor skill, different workflow per scope
 
 ### Pattern 3: Sequential Orchestration
 
@@ -433,9 +437,9 @@ If validation fails: Show error and exit
 
 Execute diagnosis workflow
 If diagnosis fails:
-  Show warning: "⚠️ Diagnosis failed: {error}"
+  Show warning: "WARN Diagnosis failed: {error}"
   Note: "Component created but not validated"
-  Suggest: "Run /plugin-diagnose {name} manually"
+  Suggest: "Run /plugin-doctor {name} manually"
   Continue (don't abort entire command)
 ```
 
@@ -506,7 +510,7 @@ Orchestrates complete marketplace verification.
 ## WORKFLOW
 
 ### Step 1: Load Skills
-Skill: plugin-diagnose
+Skill: plugin-doctor
 Skill: plugin-architecture
 
 ### Step 2: Run All Diagnostics
@@ -548,7 +552,7 @@ Analyzes components and reports findings.
 Determine what to analyze from parameters
 
 ### Step 2: Execute Analysis
-Load plugin-diagnose skill
+Load plugin-doctor skill
 Execute appropriate workflow based on scope
 
 ### Step 3: Display Findings
@@ -616,14 +620,14 @@ Applies automated fixes to component issues.
 ## WORKFLOW
 
 ### Step 1: Diagnose
-Load plugin-diagnose skill
+Load plugin-doctor skill
 Find issues in target component
 
 ### Step 2: Categorize Issues
 Separate auto-fixable vs manual issues
 
 ### Step 3: Apply Fixes
-Load plugin-fix skill
+Load plugin-doctor skill
 Apply automated fixes
 
 ### Step 4: Verify
@@ -637,7 +641,7 @@ Before creating command, verify:
 
 - Name is kebab-case with verb (create-agent, run-tests, diagnose-code)
 - Description is <100 chars
-- Frontmatter has only name and description (no tools)
+- Frontmatter has name, description, and tools (comma-separated)
 - CONTINUOUS IMPROVEMENT RULE uses manage-lessons skill
 - All required sections present
 - Workflow is numbered steps
@@ -653,44 +657,45 @@ Before creating command, verify:
 
 ### Pitfall 1: Fat Commands
 
-❌ **Wrong**: Command contains 800 lines of embedded logic
+FAIL **Wrong**: Command contains 800 lines of embedded logic
 
-✅ **Correct**: Command is 150 lines, delegates to skill with logic
+PASS **Correct**: Command is 150 lines, delegates to skill with logic
 
 ### Pitfall 2: Missing CONTINUOUS IMPROVEMENT RULE
 
-❌ **Wrong**: No continuous improvement section
+FAIL **Wrong**: No continuous improvement section
 
-✅ **Correct**: Includes CONTINUOUS IMPROVEMENT RULE with manage-lessons skill
+PASS **Correct**: Includes CONTINUOUS IMPROVEMENT RULE with manage-lessons skill
 
 ### Pitfall 3: No Parameter Validation
 
-❌ **Wrong**: Assumes parameters are valid
+FAIL **Wrong**: Assumes parameters are valid
 
-✅ **Correct**: Validates parameters in Step 1, fails early
+PASS **Correct**: Validates parameters in Step 1, fails early
 
 ### Pitfall 4: Over-Specification
 
-❌ **Wrong**: 50 lines describing exact error message format
+FAIL **Wrong**: 50 lines describing exact error message format
 
-✅ **Correct**: "Show error and exit" - trust AI
+PASS **Correct**: "Show error and exit" - trust AI
 
-### Pitfall 5: Tools in Frontmatter
+### Pitfall 5: Array Syntax for Tools
 
-❌ **Wrong**:
+FAIL **Wrong**:
 ```yaml
 ---
 name: my-command
 description: Does stuff
-tools: Read, Write  # Commands don't have tools in frontmatter
+tools: [Read, Write]  # Array syntax not supported
 ---
 ```
 
-✅ **Correct**:
+PASS **Correct**:
 ```yaml
 ---
 name: my-command
 description: Does stuff
+tools: Read, Write  # Comma-separated
 ---
 ```
 

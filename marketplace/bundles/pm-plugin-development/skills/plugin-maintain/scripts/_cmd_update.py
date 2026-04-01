@@ -7,7 +7,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_json
+from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_toon
 
 
 def create_backup(path: Path) -> str:
@@ -158,16 +158,16 @@ def cmd_update(args) -> int:
         try:
             input_data = json.loads(args.updates)
         except json.JSONDecodeError as e:
-            output_json({'error': f'Invalid JSON in --updates: {e}'})
+            output_toon({'error': f'Invalid JSON in --updates: {e}'})
             return EXIT_ERROR
     else:
         try:
             input_data = json.loads(sys.stdin.read())
         except json.JSONDecodeError as e:
-            output_json({'error': f'Invalid JSON input: {e}'})
+            output_toon({'error': f'Invalid JSON input: {e}'})
             return EXIT_ERROR
 
     updates = input_data.get('updates', [])
     result = apply_updates(args.component, updates)
-    output_json(result)
+    output_toon(result)
     return EXIT_SUCCESS if result.get('success') else EXIT_ERROR

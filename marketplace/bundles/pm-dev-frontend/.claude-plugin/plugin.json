@@ -15,7 +15,8 @@
   "skills": [
     "./skills/ext-triage-js",
     "./skills/javascript",
-    "./skills/js-enforce-eslint",
-    "./skills/js-fix-jsdoc"
+    "./skills/lint-config",
+    "./skills/css",
+    "./skills/jest-testing"
   ]
 }

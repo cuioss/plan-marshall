@@ -474,7 +474,7 @@ def test_documents_extension_no_outline_skill():
     """Test pm-documents does not provide outline_skill (uses generic)."""
     ext = load_extension('pm-documents')
 
-    # pm-documents uses generic workflow-outline-change-type standards, so should return None
+    # pm-documents uses generic phase-3-outline standards, so should return None
     outline_skill = ext.provides_outline_skill()
     assert outline_skill is None, 'pm-documents should not provide domain-specific outline_skill'
 
@@ -833,6 +833,137 @@ def test_all_extensions_accept_active_profiles():
         # Should not raise
         result = ext.applies_to_module(data, active_profiles={'implementation'})
         assert 'applicable' in result, f'{bundle}: missing applicable key'
+
+
+# =============================================================================
+# pm-dev-oci Extension Tests
+# =============================================================================
+
+
+def _docker_module_data(sources: list[str] | None = None) -> dict:
+    """Sample module with container config files."""
+    return {
+        'name': 'app',
+        'build_systems': ['maven'],
+        'paths': {
+            'module': '.',
+            'sources': sources if sources is not None else ['Dockerfile', 'src/main/java'],
+            'tests': [],
+        },
+        'metadata': {},
+        'packages': {},
+        'dependencies': [],
+        'commands': {},
+        'stats': {},
+    }
+
+
+def test_oci_extension_skill_domains_structure():
+    """Test pm-dev-oci get_skill_domains returns valid structure."""
+    ext = load_extension('pm-dev-oci')
+    domains = ext.get_skill_domains()[0]
+
+    issues = validate_skill_domains_structure(domains, 'pm-dev-oci')
+    assert not issues, f'Structure issues: {issues}'
+
+    assert domains['domain']['key'] == 'oci-containers', "Domain key should be 'oci-containers'"
+
+
+def test_oci_extension_skill_references_exist():
+    """Test pm-dev-oci skill references point to existing skills."""
+    ext = load_extension('pm-dev-oci')
+    domains = ext.get_skill_domains()[0]
+
+    issues = validate_skill_references(domains, 'pm-dev-oci')
+    assert not issues, f'Missing skills: {issues}'
+
+
+def test_oci_extension_triage_reference():
+    """Test pm-dev-oci provides_triage returns valid reference."""
+    ext = load_extension('pm-dev-oci')
+    issues = validate_triage_and_outline_skill(ext, 'pm-dev-oci')
+    assert not issues, f'Reference issues: {issues}'
+
+
+def test_oci_applies_to_dockerfile_module():
+    """OCI ext: module with Dockerfile -> applicable (high)."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_docker_module_data())
+    assert result['applicable'] is True
+    assert result['confidence'] == 'high'
+    assert any('Dockerfile' in s for s in result['signals'])
+
+
+def test_oci_applies_to_containerfile_module():
+    """OCI ext: module with Containerfile -> applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_docker_module_data(sources=['Containerfile']))
+    assert result['applicable'] is True
+
+
+def test_oci_applies_to_compose_module():
+    """OCI ext: module with compose.yml -> applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_docker_module_data(sources=['compose.yml']))
+    assert result['applicable'] is True
+
+
+def test_oci_applies_to_dockerignore():
+    """OCI ext: module with .dockerignore -> applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_docker_module_data(sources=['.dockerignore']))
+    assert result['applicable'] is True
+
+
+def test_oci_applies_to_containerignore():
+    """OCI ext: module with .containerignore -> applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_docker_module_data(sources=['.containerignore']))
+    assert result['applicable'] is True
+
+
+def test_oci_applies_to_hadolint_config():
+    """OCI ext: module with .hadolint.yaml -> applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_docker_module_data(sources=['.hadolint.yaml']))
+    assert result['applicable'] is True
+
+
+def test_oci_applies_to_trivyignore():
+    """OCI ext: module with .trivyignore -> applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_docker_module_data(sources=['.trivyignore']))
+    assert result['applicable'] is True
+
+
+def test_oci_applies_to_docker_directory():
+    """OCI ext: module with docker/ directory path -> applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_docker_module_data(sources=['docker/Dockerfile']))
+    assert result['applicable'] is True
+
+
+def test_oci_applies_to_container_metadata():
+    """OCI ext: module with container metadata -> applicable."""
+    ext = load_extension('pm-dev-oci')
+    data = _docker_module_data(sources=['src/main/java'])
+    data['metadata']['packaging'] = 'docker'
+    result = ext.applies_to_module(data)
+    assert result['applicable'] is True
+
+
+def test_oci_not_applicable_to_plain_module():
+    """OCI ext: plain module without container signals -> not applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_maven_module_data())
+    assert result['applicable'] is False
+
+
+def test_oci_not_applicable_to_empty_module():
+    """OCI ext: empty module -> not applicable."""
+    ext = load_extension('pm-dev-oci')
+    result = ext.applies_to_module(_empty_module_data())
+    assert result['applicable'] is False
 
 
 # =============================================================================

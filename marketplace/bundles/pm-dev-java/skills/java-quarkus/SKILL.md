@@ -58,6 +58,11 @@ Read: standards/container.md
 
 Use when: Configuring container images, Docker Compose, health checks, or certificate management.
 
+## Templates
+
+- `templates/quarkus-test.java.tmpl` — @QuarkusTest with CDI injection and nested test structure
+- `templates/quarkus-integration-test.java.tmpl` — @QuarkusIntegrationTest with REST Assured (HTTP-only, no CDI)
+
 ## Related Skills
 
 - `pm-dev-java:java-cdi` - Core CDI patterns

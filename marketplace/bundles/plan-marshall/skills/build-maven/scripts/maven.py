@@ -20,6 +20,7 @@ import argparse
 import sys
 
 from _maven_cmd_check_warnings import cmd_check_warnings
+from _maven_cmd_coverage_report import cmd_coverage_report
 from _maven_cmd_parse import cmd_parse
 from _maven_cmd_search_markers import cmd_search_markers
 
@@ -42,11 +43,14 @@ def main():
         help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
     )
     run_parser.add_argument(
-        '--timeout', type=int, default=120000, help='Build timeout in milliseconds (default: 120000 = 2 min)'
+        '--timeout', type=int, default=300, help='Build timeout in seconds (default: 300 = 5 min)'
     )
     run_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)')
     run_parser.add_argument(
         '--mode', choices=['actionable', 'structured', 'errors'], default='actionable', help='Output mode'
+    )
+    run_parser.add_argument(
+        '--project-dir', dest='project_dir', default='.', help='Project root directory'
     )
     run_parser.set_defaults(func=cmd_run)
 
@@ -66,6 +70,13 @@ def main():
     markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
     markers_parser.add_argument('--extensions', default='.java', help='Comma-separated extensions')
     markers_parser.set_defaults(func=cmd_search_markers)
+
+    # coverage-report subcommand
+    cov_parser = subparsers.add_parser('coverage-report', help='Parse JaCoCo coverage report')
+    cov_parser.add_argument('--module-path', dest='module_path', help='Module directory path')
+    cov_parser.add_argument('--report-path', dest='report_path', help='Override JaCoCo XML report path')
+    cov_parser.add_argument('--threshold', type=int, default=80, help='Coverage threshold percent (default: 80)')
+    cov_parser.set_defaults(func=cmd_coverage_report)
 
     # check-warnings subcommand
     warn_parser = subparsers.add_parser('check-warnings', help='Categorize build warnings')

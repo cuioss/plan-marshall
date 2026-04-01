@@ -1,0 +1,32 @@
+package ${PACKAGE};
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Produces;
+
+/**
+ * CDI producer for {@link ${PRODUCED_TYPE}}.
+ */
+@ApplicationScoped
+public class ${CLASS_NAME}Producer {
+
+    private final ${CONFIG_TYPE} ${config};
+
+    public ${CLASS_NAME}Producer(${CONFIG_TYPE} ${config}) {
+        this.${config} = ${config};
+    }
+
+    /**
+     * Produces a configured {@link ${PRODUCED_TYPE}} instance.
+     * Never returns null — uses Null Object pattern when disabled.
+     *
+     * @return configured instance
+     */
+    @Produces
+    @ApplicationScoped
+    public ${PRODUCED_TYPE} produce${CLASS_NAME}() {
+        if (${config}.isEnabled()) {
+            return new ${PRODUCED_TYPE}Impl(${config});
+        }
+        return new NoOp${PRODUCED_TYPE}();
+    }
+}

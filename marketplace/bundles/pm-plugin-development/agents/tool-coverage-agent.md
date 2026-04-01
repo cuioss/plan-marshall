@@ -4,7 +4,7 @@ description: |
   Analyze tool declarations vs actual usage in a component file.
   Input: file_path, declared_tools list, component_type.
   Output: JSON with declared_tools, used_tools, analysis (missing/unused/false_positives), confidence.
-tools: Read, Skill
+tools: Read, Grep, Skill
 ---
 
 # Tool Coverage Analysis Agent
@@ -30,7 +30,7 @@ You will receive:
 
 ## Task
 
-1. **Read the component file** using Read tool
+1. **Read the component file** using Read tool. For skills with sub-documents (references/, standards/), use Grep to search for tool invocation patterns across the skill directory.
 
 2. **Identify actual tool invocations** - Look for patterns that indicate REAL tool usage:
 
@@ -60,29 +60,36 @@ You will receive:
 
 ## Output
 
-Return JSON:
+Return TOON format (see `plan-marshall:ref-toon-format` for specification):
 
-```json
-{
-  "file_path": "{path}",
-  "component_type": "{type}",
-  "declared_tools": ["Read", "Write"],
-  "used_tools": ["Read"],
-  "analysis": {
-    "missing_tools": ["Skill"],
-    "unused_tools": ["Write"],
-    "false_positives": [
-      {"tool": "Task", "reason": "Mentioned in Rule 6 documentation, not actual usage"}
-    ]
-  },
-  "confidence": "high|medium|low",
-  "notes": "Optional clarification"
-}
+```toon
+status: success
+file_path: "{path}"
+component_type: "{type}"
+
+declared_tools[N]:
+  - Read
+  - Write
+
+used_tools[N]:
+  - Read
+
+analysis:
+  missing_tools[N]:
+    - Skill
+  unused_tools[N]:
+    - Write
+  false_positives[N]{tool,reason}:
+    Task,"Mentioned in Rule 6 documentation, not actual usage"
+
+confidence: "high|medium|low"
+notes: "Optional clarification"
+```
 ```
 
 ## Critical Rules
 
 - **Semantic understanding required**: Don't pattern match - UNDERSTAND context
-- **Rule 6 enforcement**: Never suggest Task for agents
+- **Rule 6 enforcement**: Agents cannot use the Task tool (unavailable at runtime). Never suggest Task as missing for agents. Canonical definition: `pm-plugin-development:plugin-create/references/agent-guide.md` § "Rule 6: Agents CANNOT Use Task Tool"
 - **Conservative on missing**: Only flag as missing if clearly invoked
 - **Document false positives**: Explain why something looks like usage but isn't

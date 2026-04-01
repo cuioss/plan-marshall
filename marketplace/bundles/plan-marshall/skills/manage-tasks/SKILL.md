@@ -82,7 +82,7 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
   "steps": [
     {"number": 1, "title": "pm-plugin-development/agents/tool-coverage-agent.md", "status": "pending"},
     {"number": 2, "title": "pm-dev-builder/agents/gradle-builder.md", "status": "pending"},
-    {"number": 3, "title": "pm-dev-frontend/skills/js-fix-jsdoc/SKILL.md", "status": "pending"}
+    {"number": 3, "title": "pm-dev-frontend/skills/javascript/SKILL.md", "status": "pending"}
   ],
   "verification": {
     "commands": ["grep -L '```json' {files} | wc -l"],
@@ -203,7 +203,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
   --plan-id migrate-json-to-toon \
-  --content "title: Migrate agent outputs to TOON\ndeliverable: 1\ndomain: plan-marshall-plugin-dev\ndescription: Update agents to use TOON format instead of JSON.\nsteps:\n  - Update java-verify-agent.md\n  - Update java-coverage-agent.md\n  - Update gradle-builder.md\nverification:\n  commands:\n    - grep -l '```json' marketplace/bundles/pm-dev-java/agents/*.md | wc -l\n  criteria: All grep commands return 0 (no JSON blocks remain)"
+  --content "title: Migrate skill outputs to TOON\ndeliverable: 1\ndomain: plan-marshall-plugin-dev\ndescription: Update skills to use TOON format instead of JSON.\nsteps:\n  - Update recipe-doc-verify SKILL.md\nverification:\n  commands:\n    - grep -l '```json' marketplace/bundles/pm-documents/skills/recipe-doc-verify/*.md | wc -l\n  criteria: All grep commands return 0 (no JSON blocks remain)"
 ```
 
 ### Get next task/step (respects dependencies)

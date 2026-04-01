@@ -21,17 +21,17 @@ Requirements must clearly state what the system must do without ambiguity.
 ### Good Examples
 
 ```asciidoc
-✅ The system must support OAuth 2.0 authentication with PKCE extension
-✅ Token validation must verify signature, expiration, and issuer claims
-✅ The API must accept JSON requests with Content-Type: application/json
+PASS The system must support OAuth 2.0 authentication with PKCE extension
+PASS Token validation must verify signature, expiration, and issuer claims
+PASS The API must accept JSON requests with Content-Type: application/json
 ```
 
 ### Bad Examples
 
 ```asciidoc
-❌ The system should handle authentication
-❌ The system must be secure
-❌ The API should work well
+FAIL The system should handle authentication
+FAIL The system must be secure
+FAIL The API should work well
 ```
 
 ### Guidelines
@@ -50,19 +50,19 @@ Requirements must define testable criteria that can be objectively verified.
 ### Good Examples
 
 ```asciidoc
-✅ Token validation must complete within 50ms for 95% of requests
-✅ The system must support at least 1000 concurrent users
-✅ API response codes must follow RFC 7231 HTTP status code standards
-✅ Log entries must include ISO 8601 formatted timestamps
+PASS Token validation must complete within 50ms for 95% of requests
+PASS The system must support at least 1000 concurrent users
+PASS API response codes must follow RFC 7231 HTTP status code standards
+PASS Log entries must include ISO 8601 formatted timestamps
 ```
 
 ### Bad Examples
 
 ```asciidoc
-❌ The system must be fast
-❌ Authentication should be quick
-❌ The system must handle many users
-❌ Logs should be detailed
+FAIL The system must be fast
+FAIL Authentication should be quick
+FAIL The system must handle many users
+FAIL Logs should be detailed
 ```
 
 ### Guidelines
@@ -81,17 +81,17 @@ Requirements must be realistic given project constraints, technology, and resour
 ### Good Examples
 
 ```asciidoc
-✅ The system must cache validation results for 5 minutes
-✅ Token expiration must be configurable between 5 minutes and 24 hours
-✅ The system must support RS256 and HS256 signature algorithms
+PASS The system must cache validation results for 5 minutes
+PASS Token expiration must be configurable between 5 minutes and 24 hours
+PASS The system must support RS256 and HS256 signature algorithms
 ```
 
 ### Bad Examples
 
 ```asciidoc
-❌ The system must validate tokens in 0.001ms
-❌ The system must support all JWT signature algorithms
-❌ The system must achieve 100% uptime with no infrastructure
+FAIL The system must validate tokens in 0.001ms
+FAIL The system must support all JWT signature algorithms
+FAIL The system must achieve 100% uptime with no infrastructure
 ```
 
 ### Guidelines
@@ -110,23 +110,23 @@ Requirements must align with project goals and provide clear value.
 ### Good Examples
 
 ```asciidoc
-✅ JWT-1: Token validation framework
+PASS JWT-1: Token validation framework
    Relevant because: Core security requirement for API authentication
 
-✅ JWT-4: Token expiration handling
+PASS JWT-4: Token expiration handling
    Relevant because: Prevents unauthorized access with expired tokens
 
-✅ JWT-6: Security audit logging
+PASS JWT-6: Security audit logging
    Relevant because: Enables security monitoring and incident response
 ```
 
 ### Bad Examples
 
 ```asciidoc
-❌ The system must support XML configuration
+FAIL The system must support XML configuration
    (When project uses YAML and has no XML requirement)
 
-❌ The system must provide a GUI dashboard
+FAIL The system must provide a GUI dashboard
    (For a library component with no UI requirement)
 ```
 
@@ -146,10 +146,10 @@ Requirements specify delivery expectations when timing is critical.
 ### Good Examples
 
 ```asciidoc
-✅ JWT-5: Performance Requirements
+PASS JWT-5: Performance Requirements
    Token validation must complete within 50ms for 95% of requests
 
-✅ JWT-4: Token Expiration Handling
+PASS JWT-4: Token Expiration Handling
    Expired tokens must be rejected within the configured clock skew tolerance (default: 60 seconds)
 ```
 
@@ -175,11 +175,11 @@ Every requirement must be verifiable through testing.
 ### Testable Requirements
 
 ```asciidoc
-✅ JWT-1: Token Validation Framework
+PASS JWT-1: Token Validation Framework
    Test: Validate a correctly signed token → expect success
    Test: Validate an invalid signature → expect failure
 
-✅ JWT-4: Token Expiration Handling
+PASS JWT-4: Token Expiration Handling
    Test: Validate expired token → expect rejection
    Test: Validate non-expired token → expect success
 ```
@@ -187,10 +187,10 @@ Every requirement must be verifiable through testing.
 ### Non-Testable Requirements
 
 ```asciidoc
-❌ The system should be easy to use
+FAIL The system should be easy to use
    (How do you measure "easy"?)
 
-❌ The code must be maintainable
+FAIL The code must be maintainable
    (Subjective and not verifiable through tests)
 ```
 
@@ -248,13 +248,7 @@ Every requirement must be verifiable through testing.
 
 ## Quality Rules
 
-Before finalizing requirements, verify each is:
-
-- **Specific**: Clearly states what is needed
-- **Measurable**: Includes testable criteria
-- **Achievable**: Realistic within constraints
-- **Relevant**: Aligned with project goals
-- **Testable**: Can be verified through tests
+For comprehensive quality criteria (completeness, clarity, maintainability, traceability), see `integrity-and-quality-standards.md`. SMART-specific checks: verify each requirement is Specific, Measurable, Achievable, Relevant, and Testable.
 
 ## Common Anti-Patterns
 

@@ -127,7 +127,7 @@ After fixes: Verify build, commit via git workflow, push to PR branch.
 
 ### Step 7: Generate Summary
 
-Display: `✓ {fixed} fixed, ⚠ {remaining} remaining, → {next_action}`
+Display: `PASS {fixed} fixed, ⚠ {remaining} remaining, → {next_action}`
 
 ---
 

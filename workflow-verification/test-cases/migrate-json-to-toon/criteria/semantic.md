@@ -19,8 +19,8 @@ The workflow must analyze the correct scope:
 
 **Expected scope decision** (in decision.log):
 ```
-(pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
-(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
+(pm-plugin-development:ext-outline-workflow) Component scope: [skills, agents, commands, scripts, tests]
+(pm-plugin-development:ext-outline-workflow) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
 ```
 
 ## Completeness
@@ -93,7 +93,7 @@ All expected items must be found:
 
 **Expected decision logs**:
 ```
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 3-4 skills with JSON code blocks in plan-marshall
+[PROGRESS] (pm-plugin-development:ext-outline-workflow) Inventory: 3-4 skills with JSON code blocks in plan-marshall
 ```
 
 ## Scoring Guidance

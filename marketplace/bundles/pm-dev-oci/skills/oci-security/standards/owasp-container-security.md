@@ -11,7 +11,7 @@ Detailed mapping of OWASP Docker Top 10 controls with threat descriptions, mitig
 **Mitigation**:
 - Set `USER` in Dockerfile to a non-root UID
 - Use user namespaces (`--userns-remap`) to remap container UIDs to unprivileged host UIDs
-- Run rootless Docker/Podman to eliminate host root entirely
+- Run rootless Docker or Podman to eliminate host root entirely (Podman runs rootless by default)
 - Verify with: `docker exec <container> id` (should show non-zero UID)
 
 **Implementation**:

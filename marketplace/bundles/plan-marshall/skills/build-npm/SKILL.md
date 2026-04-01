@@ -26,7 +26,8 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 | Script | Type | Purpose |
 |--------|------|---------|
 | `npm.py` | CLI + Library | npm/npx operations, `execute_direct()` |
-| `js-coverage.py` | CLI | JavaScript coverage analysis |
+| `js_coverage.py` | CLI | JavaScript coverage analysis |
+| `_npm_cmd_coverage_report.py` | Library | Coverage report parsing (TOON output) |
 | `_npm_parse_typescript.py` | Library | TypeScript error parsing |
 | `_npm_parse_jest.py` | Library | Jest/Vitest test output parsing |
 | `_npm_parse_eslint.py` | Library | ESLint output parsing |
@@ -37,13 +38,23 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
-    --targets "<command>" \
-    [--workspace <name>] \
+    --command-args "<command>" \
     [--working-dir <path>] \
     [--env "NODE_ENV=production"] \
-    [--timeout <ms>] \
-    [--mode <mode>]
+    [--timeout <seconds>] \
+    [--project-dir <path>] \
+    [--mode <mode>] \
+    [--format <toon|json>]
 ```
+
+**Parameters**:
+- `--command-args` - Complete npm command arguments, e.g. `"run test"` or `"run test --workspace=pkg"` (required)
+- `--working-dir` - Working directory for command execution
+- `--env` - Environment variables (e.g. `"NODE_ENV=test CI=true"`)
+- `--timeout` - Timeout in seconds (default: 120, adaptive — doubles on timeout failure)
+- `--project-dir` - Project root directory (default: `.`)
+- `--mode` - Output mode: actionable (default), structured, errors
+- `--format` - Output format: toon (default), json
 
 ## npm vs npx Detection
 
@@ -74,6 +85,22 @@ npm build output → detect_tool_type(content, command)
 | `lint_error` | ESLint, Prettier, StyleLint violations |
 | `dependency_error` | Module not found, npm 404, ERESOLVE |
 | `playwright_error` | Browser automation failures, timeouts |
+
+## Coverage Report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-npm:npm coverage-report \
+    [--project-path <path>] \
+    [--report-path <path>] \
+    [--threshold <percent>]
+```
+
+**Parameters**:
+- `--project-path` - Project directory (for auto-detection of report files)
+- `--report-path` - Override coverage report path (default: auto-detect)
+- `--threshold` - Coverage threshold percent (default: 80)
+
+Supports Jest/Istanbul JSON (`coverage-summary.json`) and LCOV formats. Auto-detects format from file extension.
 
 ## References
 

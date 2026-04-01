@@ -83,8 +83,8 @@ Standards for integrating JavaScript tooling with Maven builds using frontend-ma
 
 ### Node.js and npm Versions
 
-- **Node.js**: `v24.14.0` LTS (exact version, installed automatically — current active LTS "Krypton")
-- **npm**: `11.9.0+` (see [project-structure.md](project-structure.md) for version requirements)
+Version pins are maintained in **[project-structure.md](project-structure.md#node-js-version-requirements)** — update there first, then sync the `<nodeVersion>` and `<npmVersion>` in the XML snippet above.
+
 - **installDirectory**: `target/` -- cleaned with `mvn clean`, no global pollution
 
 ## Maven Phase Integration

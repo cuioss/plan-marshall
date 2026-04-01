@@ -1,10 +1,10 @@
-# CUI Requirements Bundle
+# Requirements Bundle
 
-Comprehensive standards for requirements and specification documentation in CUI projects, covering the complete lifecycle from project setup through implementation and maintenance.
+Comprehensive standards for requirements and specification documentation, covering the complete lifecycle from project setup through implementation and maintenance.
 
 ## Overview
 
-This bundle provides Claude Code with expert knowledge in creating, structuring, and maintaining requirements and specification documentation following CUI standards. It ensures consistent documentation practices across all CUI projects with complete traceability from requirements through implementation.
+This bundle provides Claude Code with expert knowledge in creating, structuring, and maintaining requirements and specification documentation. It ensures consistent documentation practices with complete traceability from requirements through implementation.
 
 ## Skills Included
 
@@ -15,7 +15,6 @@ This bundle provides Claude Code with expert knowledge in creating, structuring,
 | `planning` | Standards for planning documents, task tracking, and status indicators |
 | `traceability` | Standards for maintaining bidirectional traceability between requirements, specifications, and implementation code |
 | `ext-triage-reqs` | Extension point for requirements finding triage |
-| `plan-marshall-plugin` | Extension registration |
 
 ## What This Bundle Provides
 
@@ -51,7 +50,7 @@ This bundle provides Claude Code with expert knowledge in creating, structuring,
 ### Implementation Linkage Standards
 
 - Bidirectional traceability between specifications and code
-- JavaDoc standards for referencing specifications
+- API documentation standards for referencing specifications (JavaDoc, docstrings, JSDoc)
 - Specification updates during and after implementation
 - Maintaining holistic system view across documentation levels
 
@@ -61,7 +60,7 @@ This bundle provides Claude Code with expert knowledge in creating, structuring,
 
 ```
 Create requirements documentation for a JWT token validation library.
-The project should follow CUI standards with proper structure and traceability.
+The project should follow standards with proper structure and traceability.
 ```
 
 ### Maintaining Existing Requirements
@@ -80,16 +79,16 @@ to link to the implementation and mark it as complete.
 
 ## Integration with Other Bundles
 
-### CUI Documentation Standards Bundle
+### Documentation Standards Bundle
 
 Works closely with general documentation standards:
 - Follows AsciiDoc formatting standards
 - Uses standard document structure conventions
 
-### CUI Java Expert Bundle
+### Language-Specific Development Bundles
 
-Integrates with Java development standards:
-- JavaDoc references to specifications
+Integrates with language development standards:
+- API documentation references to specifications (JavaDoc, docstrings, JSDoc)
 - Implementation traceability patterns
 
 ## Support

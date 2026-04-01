@@ -6,19 +6,14 @@ user-invocable: false
 
 # Java Null Safety Skill
 
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
+
+Null safety standards using JSpecify annotations for consistent, compiler-verifiable null contracts.
+
 ## Prerequisites
 
 This skill requires JSpecify annotations:
 - `org.jspecify:jspecify` (NullMarked, Nullable, NonNull)
-
-## Required Imports
-
-```java
-// JSpecify Null Safety Annotations
-import org.jspecify.annotations.NullMarked;
-import org.jspecify.annotations.Nullable;
-import org.jspecify.annotations.NonNull;
-```
 
 ## Maven Dependency
 
@@ -29,267 +24,60 @@ import org.jspecify.annotations.NonNull;
 </dependency>
 ```
 
-## Core Annotations
+## Workflow
 
-* `@NullMarked` - Marks a package or class where all types are non-null by default
-* `@Nullable` - Marks a type as nullable (exception to @NullMarked default)
-* `@NonNull` - Explicitly marks a type as non-null (only needed without @NullMarked)
+### Step 1: Load Core Null Safety Standards
 
-## Package-Level Configuration (PREFERRED)
+**Important**: Load this standard for any null safety work — package configuration, annotations, API return types.
 
-Always prefer `@NullMarked` in `package-info.java` for consistent null-safety across the entire package.
-
-### Correct package-info.java Structure
-
-The `package-info.java` file has a **unique syntax** that differs from regular Java classes:
-
-```java
-// package-info.java
-/*
- * Copyright headers and license...
- */
-
-/**
- * Token validation and authentication services.
- *
- * <p>All types in this package are non-null by default due to {@code @NullMarked}.
- * Use {@code @Nullable} to explicitly mark nullable types.
- */
-@NullMarked
-package com.example.authentication;
-
-import org.jspecify.annotations.NullMarked;
+```
+Read: standards/null-safety-core.md
 ```
 
-**CRITICAL: Unique package-info.java Syntax**
+This provides rules for:
+- `@NullMarked` package-level configuration with `package-info.java` syntax
+- Core annotations (`@NullMarked`, `@Nullable`, `@NonNull`)
+- API return type guidelines (non-null default, Optional, never `@Nullable` returns)
+- Required imports
 
-The structure is special and MUST follow this exact order:
+### Step 2: Load Implementation Patterns (As Needed)
 
-1. **File header comment** (copyright, license)
-2. **Package JavaDoc comment** (describes the package)
-3. **Package annotations** (like `@NullMarked`)
-4. **`package` declaration**
-5. **`import` statements** (AFTER the package declaration)
+**Load for implementation work** — writing null-safe code, collections, testing, migration:
 
-**Why This Is Different:**
-
-In regular Java classes, imports come BEFORE the class declaration:
-```java
-import java.util.List;  // Import first
-
-public class MyClass {  // Then class
-}
+```
+Read: standards/null-safety-patterns.md
 ```
 
-In `package-info.java`, imports come AFTER the package declaration:
-```java
-@NullMarked            // Annotation first
-package com.example;   // Then package
+This provides rules for:
+- Null-safe implementation patterns with and without `@NullMarked`
+- Nullable parameter handling and overload alternatives
+- Collections and generics null safety
+- Unit testing null contracts
+- Migration strategy for new and existing code
 
-import org.jspecify.annotations.NullMarked;  // Import last
+## Key Rules Summary
+
+| Rule | Guidance |
+|------|----------|
+| Package default | Always add `@NullMarked` to `package-info.java` |
+| Return types | Never use `@Nullable` — use `Optional<T>` instead |
+| Parameters | Use `@Nullable` sparingly; prefer method overloads |
+| API boundaries | `Objects.requireNonNull()` for defensive checks |
+| Collections | `List<@Nullable String>` for nullable elements |
+
+## Templates
+
+**package-info.java** — starting point for new packages with `@NullMarked`:
+```
+Read: templates/package-info.java.tmpl
 ```
 
-This reverse ordering is the **Java Language Specification** requirement for package-info.java files. Placing imports before the package declaration will cause compilation errors.
-
-**Benefits**:
-* Consistent null-safety across entire package
-* Less annotation noise (default is non-null)
-* Clear contract for package APIs
-* Easier to maintain
-
-## API Return Type Guidelines
-
-### Pattern 1: Guaranteed Non-Null Return (Default)
-
-Methods return non-null by default with package-level `@NullMarked`:
-
-```java
-/**
- * Validates the JWT token and returns the result.
- *
- * @param token the token to validate, must not be null
- * @return validation result, never null
- */
-public ValidationResult validate(String token) {
-    // Implementation must ensure non-null return
-    return new ValidationResult(token, checkSignature(token));
-}
-```
-
-### Pattern 2: Optional Result
-
-Use `Optional<T>` when the method may not have a result to return:
-
-```java
-/**
- * Finds a user by their unique identifier.
- *
- * @param userId the user identifier, must not be null
- * @return the user if found, or Optional.empty() if not found
- */
-public Optional<User> findById(String userId) {
-    User user = repository.get(userId);
-    return Optional.ofNullable(user);
-}
-```
-
-### CRITICAL RULE: Never Use @Nullable for Return Types
-
-**NEVER** use `@Nullable` for return types. Either guarantee a non-null return or use Optional.
-
-```java
-// ❌ BAD - Never do this
-public @Nullable ValidationResult validate(String token) {
-    // Nullable returns are forbidden
-}
-
-// ✅ GOOD - Guaranteed non-null
-public ValidationResult validate(String token) {
-    // Must return non-null
-}
-
-// ✅ GOOD - Use Optional for "no result" scenarios
-public Optional<ValidationResult> tryValidate(String token) {
-    // Returns Optional.empty() when no result
-}
-```
-
-## Null-Safe Implementation Patterns
-
-### With @NullMarked (Package Level)
-
-```java
-// With @NullMarked at package level, everything is non-null by default
-public class TokenValidator {
-
-    // Field is non-null by default
-    private final TokenConfig config;
-
-    // Parameter is non-null by default
-    public TokenValidator(TokenConfig config) {
-        // No null check needed if caller respects contract
-        // But defensive programming is still acceptable:
-        this.config = Objects.requireNonNull(config, "config must not be null");
-    }
-
-    // Parameter and return are non-null by default
-    public ValidationResult validate(String token) {
-        Objects.requireNonNull(token, "token must not be null");
-        // Implementation must return non-null
-        return new ValidationResult(/*...*/);
-    }
-
-    // Mark nullable parameters explicitly
-    public String processWithDefault(@Nullable String input) {
-        return input != null ? input.toUpperCase() : "DEFAULT";
-    }
-
-    // Use Optional instead of @Nullable returns
-    public Optional<UserInfo> extractUserInfo(String token) {
-        return parseToken(token)
-            .map(this::extractUser);
-    }
-}
-```
-
-### Without @NullMarked (Legacy Code)
-
-For code without package-level `@NullMarked`, use explicit `@NonNull` on every field, parameter, and return type. This is verbose — prefer migrating to `@NullMarked` at the package level.
-
-## Nullable Parameters
-
-Use `@Nullable` sparingly for parameters that genuinely accept null:
-
-```java
-// Good - null has clear meaning (use default)
-public String format(@Nullable Locale locale) {
-    Locale effectiveLocale = locale != null ? locale : Locale.getDefault();
-    return formatter.format(effectiveLocale);
-}
-
-// Best - overload methods instead of nullable parameters
-public String format() {
-    return format(Locale.getDefault());
-}
-
-public String format(Locale locale) {
-    return formatter.format(locale);
-}
-```
-
-## Collections and Generics
-
-Apply null-safety to collection types:
-
-```java
-// With @NullMarked, all elements are non-null
-public List<User> getActiveUsers() {
-    // Returns non-null list of non-null User objects
-    return users.stream()
-        .filter(User::isActive)
-        .toList();
-}
-
-// Use @Nullable for nullable elements
-public List<@Nullable String> getOptionalValues() {
-    // List is non-null, but elements can be null
-    return Arrays.asList("value1", null, "value3");
-}
-```
-
-## Unit Testing
-
-Test that non-nullable methods never return null under any valid input conditions:
-
-```java
-@Test
-void shouldNeverReturnNull() {
-    // With @NullMarked, non-nullable methods must never return null
-    assertNotNull(service.processToken("valid"));
-    assertNotNull(service.processToken(""));
-
-    // Non-nullable methods should handle edge cases without returning null
-    assertNotNull(service.processToken("edge-case"));
-}
-
-@Test
-void shouldUseOptionalForMissingValues() {
-    // Use Optional.empty() instead of null returns
-    assertTrue(service.findUser("unknown").isEmpty());
-    assertTrue(service.findUser("existing").isPresent());
-}
-
-@Test
-void shouldRejectNullParameters() {
-    // Non-nullable parameters should be validated
-    assertThrows(NullPointerException.class,
-        () -> service.processToken(null));
-}
-```
-
-## Migration Strategy
-
-### For New Code
-
-1. Add `@NullMarked` to `package-info.java`
-2. Write code assuming non-null by default
-3. Use `@Nullable` only where null is explicitly allowed
-4. Use `Optional<T>` for "no result" return types
-5. Validate with unit tests
-
-### For Existing Code
-
-1. Add `@NullMarked` to package
-2. Review all public APIs
-3. Add `@Nullable` where null is currently accepted/returned
-4. Refactor nullable returns to Optional where appropriate
-5. Add null checks with `Objects.requireNonNull()` at API boundaries
-6. Update tests to verify null-safety contracts
+Replace `${YEAR}`, `${PACKAGE}`, and `${PACKAGE_DESCRIPTION}` with actual values. The import-after-package ordering is critical — see `standards/null-safety-core.md` for why.
 
 ## Quality Rules
 
-- Package has @NullMarked in package-info.java
-- No @Nullable used for return types (use Optional instead)
+- Package has `@NullMarked` in `package-info.java`
+- No `@Nullable` used for return types (use `Optional` instead)
 - Nullable parameters documented and justified
 - Defensive null checks at API boundaries
 - Unit tests verify non-null contracts (see `pm-dev-java:junit-core` skill)

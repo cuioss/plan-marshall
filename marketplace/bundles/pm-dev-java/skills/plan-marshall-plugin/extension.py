@@ -49,8 +49,8 @@ class Extension(ExtensionBase):
                 'implementation': {
                     'defaults': [
                         {
-                            'skill': 'plan-marshall:dev-general-code-documentation',
-                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                            'skill': 'plan-marshall:dev-general-code-quality',
+                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
                     ],
                     'optionals': [
@@ -160,18 +160,4 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-dev-java:ext-triage-java'
 
-    def provides_verify_steps(self) -> list[dict]:
-        """Return Java-specific verification steps."""
-        return [
-            {
-                'name': 'pm-dev-java:java-verify-agent',
-                'skill': 'pm-dev-java:java-verify-agent',
-                'description': 'Verify implementation standards compliance',
-            },
-            {
-                'name': 'pm-dev-java:java-coverage-agent',
-                'skill': 'pm-dev-java:java-coverage-agent',
-                'description': 'Verify test coverage meets thresholds',
-            },
-        ]
 

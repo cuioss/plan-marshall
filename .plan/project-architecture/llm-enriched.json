@@ -156,15 +156,15 @@
       "best_practices": []
     },
     "pm-dev-frontend": {
-      "responsibility": "JavaScript and frontend development standards covering modern ES modules, ESLint enforcement, JSDoc fixing, and triage extensions for JS findings during finalization.",
-      "responsibility_reasoning": "source: derived-data description + 4 skills (javascript, js-enforce-eslint, js-fix-jsdoc, ext-triage-js)",
+      "responsibility": "JavaScript and frontend development standards covering modern ES modules, ESLint configuration, JSDoc documentation, and triage extensions for JS findings during finalization.",
+      "responsibility_reasoning": "source: derived-data description + 3 skills (javascript, lint-config, ext-triage-js); JSDoc absorbed into javascript skill",
       "purpose": "library",
-      "purpose_reasoning": "Plugin bundle with 4 skills, no agents or commands",
+      "purpose_reasoning": "Plugin bundle with 3 skills, no agents or commands",
       "key_packages": {
         "skill:javascript": {
           "description": "Core JavaScript development standards covering ES modules, modern patterns, and async programming"
         },
-        "skill:js-enforce-eslint": {
+        "skill:lint-config": {
           "description": "Enforce ESLint standards by fixing violations systematically"
         }
       },

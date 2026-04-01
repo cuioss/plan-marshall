@@ -1,6 +1,6 @@
 # Requirement Prefix Selection
 
-Standards for selecting and using requirement prefixes in CUI projects.
+Standards for selecting and using requirement prefixes.
 
 ## Prefix Purpose
 

@@ -286,7 +286,7 @@ class TestContextWithMarshal(PlanTestContext):
 **Purpose**: Test input files and expected outputs
 
 ```
-test/pm-plugin-development/plugin-diagnose/fixtures/
+test/pm-plugin-development/plugin-doctor/fixtures/
 └── analyze-markdown-file/
     ├── valid-agent.md
     ├── bloated-command.md

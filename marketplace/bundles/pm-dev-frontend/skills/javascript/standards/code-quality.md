@@ -13,79 +13,19 @@ Beyond the general thresholds in `plan-marshall:dev-general-code-quality`, JavaS
 
 ### Strategy 1: Extract Methods
 
-Break down large functions into focused, single-purpose functions.
-
-#### Before
+Break down large functions into focused, single-purpose functions. Move state checks, rendering logic, or data transformations into named helper methods.
 
 ```javascript
-// ❌ Complex monolithic function (20+ statements)
+// Avoid: Monolithic function with 20+ statements
 _doRender() {
-  if (this._loading && !this._configuration) {
-    return html`<div class="loading">Loading...</div>`;
-  }
-  if (this._error) {
-    return html`<div class="error">${this._error}</div>`;
-  }
-  if (!this._configuration) {
-    return html`<div class="loading">No data available</div>`;
-  }
-
-  const config = this._configuration;
-  return html`
-    <div class="container">
-      <section class="general">
-        <h2>General</h2>
-        ${this._renderGeneralFields(config)}
-      </section>
-      <section class="parser">
-        <h2>Parser</h2>
-        ${this._renderParserFields(config)}
-      </section>
-      <section class="health">
-        <h2>Health</h2>
-        ${this._renderHealthStatus(config)}
-      </section>
-    </div>
-  `;
+  if (this._loading) return html`<div class="loading">Loading...</div>`;
+  if (this._error) return html`<div class="error">${this._error}</div>`;
+  // ... many more lines of rendering logic
 }
-```
 
-#### After
-
-```javascript
-// ✅ Refactored with helper methods
+// Preferred: Decomposed into helpers
 _doRender() {
-  const loadingOrErrorContent = this._renderLoadingOrError();
-  if (loadingOrErrorContent) {
-    return loadingOrErrorContent;
-  }
-
-  if (!this._configuration) {
-    return html`<div class="loading">No data available</div>`;
-  }
-
-  return this._renderConfiguration();
-}
-
-_renderLoadingOrError() {
-  if (this._loading && !this._configuration) {
-    return html`<div class="loading">Loading...</div>`;
-  }
-  if (this._error) {
-    return html`<div class="error">${this._error}</div>`;
-  }
-  return null;
-}
-
-_renderConfiguration() {
-  const config = this._configuration;
-  return html`
-    <div class="container">
-      ${this._renderGeneralSection(config)}
-      ${this._renderParserSection(config)}
-      ${this._renderHealthSection(config)}
-    </div>
-  `;
+  return this._renderLoadingOrError() ?? this._renderConfiguration();
 }
 ```
 
@@ -96,7 +36,7 @@ Reduce nesting with guard clauses and early returns.
 #### Before
 
 ```javascript
-// ❌ Deep nesting (complexity: 8)
+// Avoid: Deep nesting (complexity: 8)
 function processData(data) {
   if (data) {
     if (data.isValid) {
@@ -121,7 +61,7 @@ function processData(data) {
 #### After
 
 ```javascript
-// ✅ Early returns with guard clauses (complexity: 4)
+// Preferred: Early returns with guard clauses (complexity: 4)
 function processData(data) {
   if (!data) {
     throw new Error('No data provided');
@@ -147,7 +87,7 @@ Simplify complex conditionals by extracting boolean expressions into well-named 
 #### Before
 
 ```javascript
-// ❌ Complex inline conditional
+// Avoid: Complex inline conditional
 if (user && user.isActive && user.permissions.includes('admin') &&
     user.lastLogin && (Date.now() - user.lastLogin) < 86400000) {
   // Handle active admin
@@ -157,7 +97,7 @@ if (user && user.isActive && user.permissions.includes('admin') &&
 #### After
 
 ```javascript
-// ✅ Extracted boolean methods
+// Preferred: Extracted boolean methods
 function isActiveAdmin(user) {
   return user &&
          user.isActive &&
@@ -178,128 +118,16 @@ if (isActiveAdmin(user)) {
 
 ### Strategy 4: Extract Configuration Objects
 
-Replace multiple parameters with configuration objects.
-
-#### Before
+Replace multiple parameters with a single options object when a function exceeds the 5-parameter limit.
 
 ```javascript
-// ❌ Too many parameters (6 parameters)
-function createUser(name, email, role, department, manager, startDate) {
-  return {
-    id: generateId(),
-    name,
-    email,
-    role,
-    department,
-    manager,
-    startDate,
-  };
+// Avoid: Too many parameters
+function createUser(name, email, role, department, manager, startDate) { ... }
+
+// Preferred: Configuration object with destructuring
+function createUser({ name, email, role, department, manager, startDate }) {
+  return { id: generateId(), name, email, role, department, manager, startDate };
 }
-```
-
-#### After
-
-```javascript
-// ✅ Configuration object (1 parameter)
-function createUser(config) {
-  const { name, email, role, department, manager, startDate } = config;
-  return {
-    id: generateId(),
-    name,
-    email,
-    role,
-    department,
-    manager,
-    startDate,
-  };
-}
-
-// Usage
-const user = createUser({
-  name: 'John Doe',
-  email: 'john@example.com',
-  role: 'developer',
-  department: 'Engineering',
-  manager: 'Jane Smith',
-  startDate: new Date(),
-});
-```
-
-### Strategy 5: Extract Test Helpers
-
-Move test helper functions outside describe blocks to reduce callback complexity.
-
-#### Before
-
-```javascript
-// ❌ All functions inside describe block (too many statements)
-describe('ComponentName', () => {
-  let component;
-  let container;
-
-  // 10+ helper functions defined here
-  function setupComponent() { /* ... */ }
-  function createMockElements() { /* ... */ }
-  function setupQuerySelector() { /* ... */ }
-  // ... 7 more functions
-
-  beforeEach(async () => {
-    // 20+ statements for setup
-    resetDevUIMocks();
-    container = document.createElement('div');
-    document.body.append(container);
-    component = new Component();
-    // ... 16 more statements
-  });
-});
-```
-
-#### After
-
-```javascript
-// ✅ Helper functions extracted to module level
-// Test helper functions
-function setupTestEnvironment() {
-  resetDevUIMocks();
-  const container = document.createElement('div');
-  document.body.append(container);
-  return container;
-}
-
-function setupComponent() {
-  const component = new Component();
-  component.shadowRoot = document.createElement('div');
-  return component;
-}
-
-function createMockElements() {
-  return {
-    input: createInput(),
-    button: createButton(),
-    output: createOutput(),
-  };
-}
-
-async function performInitialRender(container, component) {
-  container.append(component);
-  component.render();
-  await waitForComponentUpdate(component);
-}
-
-describe('ComponentName', () => {
-  let component;
-  let container;
-
-  beforeEach(async () => {
-    container = setupTestEnvironment();
-    component = setupComponent();
-    const elements = createMockElements();
-    setupQuerySelectorMock(component, elements);
-    await performInitialRender(container, component);
-  });
-
-  // Tests...
-});
 ```
 
 ## Common Refactoring Patterns
@@ -307,7 +135,7 @@ describe('ComponentName', () => {
 ### Replace Switch with Object Lookup
 
 ```javascript
-// ❌ Switch statement
+// Avoid: Switch statement
 function getStatusMessage(status) {
   switch (status) {
     case 'pending':
@@ -323,7 +151,7 @@ function getStatusMessage(status) {
   }
 }
 
-// ✅ Object lookup
+// Preferred: Object lookup
 const STATUS_MESSAGES = {
   pending: 'Processing...',
   success: 'Completed successfully',
@@ -339,7 +167,7 @@ function getStatusMessage(status) {
 ### Replace Nested Ternaries with If-Else
 
 ```javascript
-// ❌ Nested ternary
+// Avoid: Nested ternary
 const message = user
   ? user.isActive
     ? user.isPremium
@@ -348,7 +176,7 @@ const message = user
     : 'Inactive user'
   : 'No user';
 
-// ✅ Clear if-else
+// Preferred: Clear if-else
 function getUserMessage(user) {
   if (!user) return 'No user';
   if (!user.isActive) return 'Inactive user';
@@ -362,7 +190,7 @@ const message = getUserMessage(user);
 ### Split Large Functions into Pipelines
 
 ```javascript
-// ❌ Large processing function
+// Avoid: Large processing function
 function processUserData(rawData) {
   // 20+ statements of validation, transformation, enrichment
   const validated = validateData(rawData);
@@ -372,7 +200,7 @@ function processUserData(rawData) {
   return formatted;
 }
 
-// ✅ Pipeline of focused functions
+// Preferred: Pipeline of focused functions
 const processUserData = (rawData) => {
   return [
     validateData,
@@ -388,5 +216,5 @@ const processUserData = (rawData) => {
 - `plan-marshall:dev-general-code-quality` - General code quality principles (SRP, CQS, complexity, error handling)
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core language patterns
 - [Modern Patterns](modern-patterns.md) - Advanced JavaScript patterns
-- [Async Programming](async-programming.md) - Asynchronous code quality
-- `pm-dev-frontend:js-enforce-eslint` - Linting and quality tools
+- [Async Programming](async-programming.md) - Asynchronous code quality and error handling patterns
+- `pm-dev-frontend:lint-config` - Linting and quality tools

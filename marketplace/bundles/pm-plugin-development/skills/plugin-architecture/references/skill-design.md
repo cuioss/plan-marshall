@@ -8,12 +8,12 @@ Workflow-focused design principles for building goal-based skills.
 
 **Example**:
 ```markdown
-# ❌ BAD: Monolithic skill
+# FAIL BAD: Monolithic skill
 Skill: analyze-everything
   - Analyzes agents, commands, skills, metadata, scripts all in one workflow
 
-# ✅ GOOD: Workflow-based skill
-Skill: plugin-diagnose
+# PASS GOOD: Workflow-based skill
+Skill: plugin-doctor
   - Workflow 1: analyze-component (single component)
   - Workflow 2: analyze-all-of-type (all components of one type)
   - Workflow 3: validate-marketplace (complete marketplace)
@@ -62,13 +62,13 @@ Step 3: Write formatted output
 **Structure**:
 ```markdown
 ---
-name: plugin-diagnose
+name: plugin-doctor
 description: Find and understand quality issues in marketplace components
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Skill
 ---
 
-# Plugin Diagnose Skill
+# Plugin Doctor Skill
 
 ## Workflows
 
@@ -150,7 +150,7 @@ If neither provided:
 
 ```markdown
 # Command specifies workflow explicitly
-Skill: plugin-diagnose
+Skill: plugin-doctor
 Workflow: analyze-component
 Parameters: {component_path: "...", component_type: "agent"}
 ```
@@ -278,7 +278,7 @@ Step 3: Deep Analysis
 
 **Avoid**:
 ```markdown
-# ❌ Workflow trying to do too much
+# FAIL Workflow trying to do too much
 Workflow: do-everything
   - Analyzes component
   - Fixes all issues
@@ -289,7 +289,7 @@ Workflow: do-everything
 
 **Prefer**:
 ```markdown
-# ✅ Focused workflows
+# PASS Focused workflows
 Workflow 1: analyze-component (analysis only)
 Workflow 2: fix-issues (fixing only, separate skill)
 Workflow 3: generate-docs (documentation only, separate skill)
@@ -371,11 +371,11 @@ Step 3: Apply Standards
 **Rule**: Skills should not circularly depend on each other.
 
 ```markdown
-# ❌ BAD: Circular dependency
+# FAIL BAD: Circular dependency
 Skill A loads Skill B
 Skill B loads Skill A
 
-# ✅ GOOD: Linear dependency
+# PASS GOOD: Linear dependency
 Skill A loads Skill B (foundation)
 Skill C loads both A and B
 ```
@@ -442,13 +442,13 @@ Never load all references at once. Load only what's needed for current task.
 
 ```markdown
 ---
-name: plugin-diagnose
+name: plugin-doctor
 description: Find and understand quality issues in marketplace components
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Skill
 ---
 
-# Plugin Diagnose Skill
+# Plugin Doctor Skill
 
 ## Workflows
 

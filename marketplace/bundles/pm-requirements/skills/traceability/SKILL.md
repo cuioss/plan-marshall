@@ -21,8 +21,13 @@ user-invocable: false
 - All specifications must link to implementation code and vice versa
 - Documentation must evolve through lifecycle phases (pre-implementation, during, post)
 - Link accuracy must be verified whenever referenced files change
+- For document markup syntax (link format, cross-references), see `pm-documents:ref-asciidoc`
 
 Standards for connecting specification documents with implementation code, establishing bidirectional traceability, and maintaining documentation throughout the implementation lifecycle.
+
+## Scope Boundary
+
+This skill covers **linking between documents and code**: bidirectional navigation, API documentation references, test coverage documentation, and link maintenance. For **creating and maintaining document content** (structure, SMART principles, ID schemes, lifecycle management), see `pm-requirements:requirements-authoring`. For what belongs in specifications vs. API documentation, see `standards/information-distribution.md`.
 
 ## Core Principles
 
@@ -42,15 +47,11 @@ Each piece of information should have one authoritative location:
 
 - **Specifications**: Architectural decisions, standards, constraints
 - **Implementation code**: Detailed behavior, algorithms, edge cases
-- **JavaDoc**: Usage guidance, API contracts, implementation notes
+- **API documentation**: Usage guidance, API contracts, implementation notes
 
 ### Documentation Lifecycle
 
-Documentation evolves through implementation:
-
-1. **Pre-Implementation**: Specifications contain detailed design and examples
-2. **During Implementation**: Specifications updated with implementation decisions
-3. **Post-Implementation**: Specifications link to code, redundant details removed
+Documentation evolves through implementation phases (PLANNED → IN PROGRESS → IMPLEMENTED). For the complete lifecycle model, see `pm-requirements:requirements-authoring` → `standards/documentation-lifecycle-management.md`. This skill provides the traceability-focused subset in the "Documentation Update Workflow by Phase" section below.
 
 ## Workflow
 
@@ -62,7 +63,7 @@ Documentation evolves through implementation:
    ```
    Read: standards/information-distribution.md
    ```
-   Defines what belongs in specifications vs JavaDoc.
+   Defines what belongs in specifications vs API documentation.
 
 2. **Load standards based on task context**:
 
@@ -71,15 +72,12 @@ Documentation evolves through implementation:
      Read: standards/specification-to-code-linking.md
      ```
 
-   - If linking from code to specifications (JavaDoc):
+   - If linking from code to specifications (API documentation):
      ```
      Read: standards/code-to-specification-linking.md
      ```
 
-   - If updating documentation through implementation phases:
-     ```
-     Read: standards/documentation-update-workflow.md
-     ```
+   - If updating documentation through implementation phases, use the phase guidance below.
 
    - If documenting test coverage and validation:
      ```
@@ -101,13 +99,13 @@ Documentation evolves through implementation:
 Apply the loaded standards to your specific task:
 
 **For New Implementation**:
-1. Add JavaDoc specification references using code-to-specification-linking templates
+1. Add API documentation specification references using code-to-specification-linking templates
 2. Update specification with implementation links using specification-to-code-linking templates
-3. Follow documentation-update-workflow for lifecycle phase
+3. Follow the Documentation Update Workflow by Phase section below
 
 **For Documentation Updates**:
 1. Determine current lifecycle phase (PLANNED/IN PROGRESS/IMPLEMENTED)
-2. Apply appropriate updates from documentation-update-workflow
+2. Apply appropriate updates from the Documentation Update Workflow by Phase section below
 3. Ensure information distribution standards are followed
 
 **For Test Documentation**:
@@ -131,6 +129,37 @@ Use quality-standards checklists to verify:
 - Navigation is bidirectional
 - Status indicators are correct
 
+## Documentation Update Workflow by Phase
+
+Traceability-specific guidance for updating documentation through implementation lifecycle phases. For the complete lifecycle model (PLANNED → IN PROGRESS → IMPLEMENTED → DEPRECATED), see `pm-requirements:requirements-authoring` → `standards/documentation-lifecycle-management.md`.
+
+### Pre-Implementation (PLANNED)
+- Write comprehensive specification with design and expected API
+- No implementation links yet — spec defines "what" and "how"
+
+### During Implementation (IN PROGRESS)
+- Add implementation links as source files are created
+- Add API documentation (JavaDoc, docstrings, JSDoc) with specification references (see `code-to-specification-linking.md`)
+- Document implementation decisions and library choices
+- Update status indicator
+
+### Post-Implementation (IMPLEMENTED)
+- Complete all traceability links (spec → code → tests)
+- Add test references in Verification section
+- Remove redundant code examples that duplicate implementation
+- Keep architectural guidance and design rationale
+- Refer readers to API documentation for detailed behavior
+
+### Separation of Concerns
+
+| Document | Contains | Does NOT Contain |
+|----------|----------|------------------|
+| Specification | What and why | Implementation details |
+| API docs (JavaDoc, docstrings, JSDoc) | How and when | Architecture decisions |
+| Tests | Validation and coverage | Design rationale |
+
+Use cross-references instead of duplicating information across these layers. Update links immediately when source files are created.
+
 ## Related Standards
 
 ### Related Skills in Bundle
@@ -141,5 +170,6 @@ Use quality-standards checklists to verify:
 
 ### External Standards
 
-- JavaDoc standards (for implementation documentation)
-- Testing standards (for test documentation)
+- `pm-dev-java:javadoc` - JavaDoc specification references (Java projects)
+- `pm-dev-frontend:javascript` - JSDoc specification references (JavaScript projects)
+- `pm-documents:ref-asciidoc` - AsciiDoc formatting for specification documents

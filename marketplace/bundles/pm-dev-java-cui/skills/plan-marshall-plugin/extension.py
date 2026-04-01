@@ -26,7 +26,7 @@ class Extension(ExtensionBase):
                 'implementation': {'defaults': [], 'optionals': ['pm-dev-java-cui:cui-http']},
                 'module_testing': {
                     'defaults': [],
-                    'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-testing-http'],
+                    'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-http-testing'],
                 },
                 'quality': {'defaults': [], 'optionals': []},
             },
@@ -52,6 +52,19 @@ class Extension(ExtensionBase):
                                               module_data=module_data,
                                               active_profiles=active_profiles)
 
+    def provides_recipes(self) -> list[dict]:
+        """Return CUI-specific recipes."""
+        return [
+            {
+                'key': 'cui-logging-enforce',
+                'name': 'Enforce CUI Logging Standards',
+                'description': 'Enforce CUI logging standards across all modules — migrate loggers, implement LogRecords, add test coverage',
+                'skill': 'pm-dev-java-cui:recipe-cui-logging-enforce',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+        ]
+
     def config_defaults(self, project_root: str) -> None:
         """Configure CUI-specific Maven defaults.
 
@@ -60,8 +73,6 @@ class Extension(ExtensionBase):
         - Skip list for internal/infrastructure profiles
 
         Uses write-once semantics - only sets values if not already configured.
-
-        See: pm-dev-java:plan-marshall-plugin:standards/maven-impl.md
         """
         from _config_core import ext_defaults_set_default  # type: ignore[import-not-found]
         from _maven_cmd_discover import EXT_KEY_PROFILES_MAP, EXT_KEY_PROFILES_SKIP  # type: ignore[import-not-found]
@@ -78,6 +89,6 @@ class Extension(ExtensionBase):
         # Skip internal profiles that shouldn't generate commands
         ext_defaults_set_default(
             EXT_KEY_PROFILES_SKIP,
-            'build-plantuml,rewrite-maven-clean, release, release-snapshot, license-cleanup, sonar, only-eclipse,release-pom',
+            'build-plantuml,rewrite-maven-clean,release,release-snapshot,license-cleanup,sonar,only-eclipse,release-pom',
             project_root,
         )

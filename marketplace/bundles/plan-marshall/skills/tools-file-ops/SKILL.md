@@ -1,12 +1,12 @@
 ---
 name: tools-file-ops
-description: Base module providing reusable file operations patterns for CUI workflow scripts
+description: Base module providing reusable file operations patterns for workflow scripts
 user-invocable: false
 ---
 
 # File Operations Base Skill
 
-**Role**: Shared Python module providing atomic file operations, metadata parsing, JSON output helpers, and base directory configuration for CUI workflow scripts.
+**Role**: Shared Python module providing atomic file operations, metadata parsing, JSON output helpers, and base directory configuration for workflow scripts.
 
 ## Enforcement
 

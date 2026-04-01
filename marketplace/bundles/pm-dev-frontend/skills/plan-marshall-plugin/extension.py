@@ -34,24 +34,23 @@ class Extension(ExtensionBase):
                             'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
                         },
                     ],
-                    'optionals': [
-                        {
-                            'skill': 'pm-dev-frontend:js-fix-jsdoc',
-                            'description': 'Fix JSDoc errors and warnings from build/lint with content preservation',
-                        },
-                    ],
+                    'optionals': [],
                 },
                 'implementation': {
                     'defaults': [
                         {
-                            'skill': 'plan-marshall:dev-general-code-documentation',
-                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                            'skill': 'plan-marshall:dev-general-code-quality',
+                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
                     ],
                     'optionals': [
                         {
-                            'skill': 'pm-dev-frontend:js-enforce-eslint',
+                            'skill': 'pm-dev-frontend:lint-config',
                             'description': 'ESLint, Prettier, and Stylelint configuration and enforcement with systematic fixing',
+                        },
+                        {
+                            'skill': 'pm-dev-frontend:css',
+                            'description': 'Modern CSS standards covering essentials, responsive design, quality practices, and tooling',
                         },
                     ],
                 },
@@ -61,10 +60,13 @@ class Extension(ExtensionBase):
                             'skill': 'plan-marshall:dev-general-module-testing',
                             'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
                         },
+                        {
+                            'skill': 'pm-dev-frontend:jest-testing',
+                            'description': 'JavaScript unit testing with Jest, DOM testing, mocking, async patterns',
+                        },
                     ],
                     'optionals': [],
                 },
-                'quality': {'defaults': [], 'optionals': []},
             },
         }]
 

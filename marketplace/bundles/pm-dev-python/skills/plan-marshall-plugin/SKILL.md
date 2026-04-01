@@ -1,12 +1,12 @@
 ---
 name: plan-marshall-plugin
-description: Python domain extension with skill domains, module applicability, and workflow integration
+description: Python domain manifest for plan-marshall workflow integration
 user-invocable: false
 ---
 
 # Plan Marshall Plugin - Python Domain
 
-Domain extension providing Python development skill registration to plan-marshall workflows.
+Domain manifest skill providing Python development capabilities to plan-marshall workflows.
 
 ## Enforcement
 
@@ -24,33 +24,29 @@ Domain extension providing Python development skill registration to plan-marshal
 
 ## Purpose
 
-- Domain identity and workflow extensions
-- Profile-based skill organization for Python projects
+Declares the Python domain configuration including:
+- Domain identity (key: python)
+- Profile-based skill organization (core, implementation, module_testing, quality)
 - Module applicability detection based on Python build systems
 
-## Extension API
+## Configuration
 
-Configuration in `extension.py` implements the Extension API contract:
+All configuration is in `extension.py` which implements the Extension API:
+- `get_skill_domains()` - Domain metadata with profiles
+- `applies_to_module()` - Check Python applicability via build systems and `.py` files
+- `provides_triage()` - Returns `pm-dev-python:ext-triage-python`
 
-| Function | Purpose |
-|----------|---------|
-| `get_skill_domains()` | Domain metadata with profiles |
-| `applies_to_module()` | Check Python applicability via build systems |
-| `provides_triage()` | Returns `None` (future: ext-triage-python) |
+## Detection
 
-## Build Operations
+This domain is applicable when:
+- `python` is listed in the module's `build_systems`
+- `.py` files are found in source or test paths
 
-Build operations (pyprojectx execution, parsing, discovery) are provided by:
-- `plan-marshall:build-python` - Python build execution and module discovery
+Build operations (pyprojectx execution, parsing, discovery) are provided by `plan-marshall:build-python`, not this bundle.
 
 ## Integration
 
-This extension is discovered by:
-- `extension-api` - Domain registration
-- `skill-domains` - Domain configuration
-- `marshall-steward` - Project setup wizard
-
-## References
-
-- `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:build-python` - Python build operations
+This manifest is read by:
+- `skill-domains get-available` - Lists available domains
+- `skill-domains configure` - Applies domain configuration to marshal.json
+- `marshall-steward` wizard - Domain selection during project setup

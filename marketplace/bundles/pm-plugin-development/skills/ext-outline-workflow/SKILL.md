@@ -1,12 +1,12 @@
 ---
 name: ext-outline-workflow
-description: Shared workflow steps and verification knowledge for plugin development outline, loaded by workflow-outline-change-type skill
+description: Shared workflow steps and verification knowledge for plugin development outline, loaded by phase-3-outline skill
 user-invocable: false
 ---
 
 # Plugin Development Outline Workflow
 
-Shared workflow steps for plugin development outline, loaded by the `workflow-outline-change-type` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
+Shared workflow steps for plugin development outline, loaded by the `phase-3-outline` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
 
 ## Step 1: Load Foundational Practices
 
@@ -144,7 +144,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 |---------|-------|
 | `**Metadata:**` with change_type, execution_mode, domain, module, depends | Present and valid. `execution_mode` must be one of: `automated`, `manual`, `mixed` (NOTE: `verification` is a valid change_type but NOT a valid execution_mode) |
 | `**Profiles:**` | At least one profile listed |
-| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns. **Every path MUST exist on disk** (verify with `ls`). Use paths from inventory scan — do NOT guess or construct paths from component names. |
+| `**Affected files:**` | Explicit paths, no wildcards, no glob patterns. **Every path MUST exist on disk** (verify with Glob tool). Use paths from inventory scan — do NOT guess or construct paths from component names. |
 | `**Change per file:**` | Entry for each affected file |
 | `**Verification:**` | Both Command and Criteria present |
 | `**Success Criteria:**` | At least one criterion |

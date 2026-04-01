@@ -131,7 +131,7 @@ Prefer these over manual spread patterns — they return new arrays without muta
 ```javascript
 const items = [3, 1, 4, 1, 5];
 
-// ✅ ES2023: toSorted(), toReversed(), toSpliced(), with()
+// Preferred: ES2023: toSorted(), toReversed(), toSpliced(), with()
 const sorted = items.toSorted((a, b) => a - b);    // [1, 1, 3, 4, 5]
 const reversed = items.toReversed();                 // [5, 1, 4, 1, 3]
 const spliced = items.toSpliced(1, 2, 9);           // [3, 9, 1, 5]
@@ -140,14 +140,14 @@ const replaced = items.with(2, 99);                  // [3, 1, 99, 1, 5]
 // Original is unchanged
 console.log(items); // [3, 1, 4, 1, 5]
 
-// ❌ Avoid: mutating originals or manual spread patterns
+// Avoid: mutating originals or manual spread patterns
 // items.sort(), items.reverse(), items.splice()
 // [...items.slice(0, index), ...items.slice(index + 1)]
 ```
 
-### Set Methods (ES2025)
+### Set Methods
 
-Native set operations — no manual iteration needed:
+Native set operations (finalized in ES2025, supported in all modern browsers):
 
 ```javascript
 const frontend = new Set(['js', 'css', 'html']);
@@ -253,42 +253,9 @@ const createApiClient = (baseUrl, options = {}) => {
 };
 ```
 
-### Module Pattern
-
-```javascript
-const CacheManager = (() => {
-  const cache = new Map();
-  const isExpired = (entry) => Date.now() > entry.expiresAt;
-
-  return {
-    set(key, value, ttl = 60000) {
-      cache.set(key, { value, expiresAt: Date.now() + ttl });
-    },
-    get(key) {
-      const entry = cache.get(key);
-      if (!entry || isExpired(entry)) { cache.delete(key); return null; }
-      return entry.value;
-    },
-    clear() { cache.clear(); },
-  };
-})();
-```
-
 ## Functional Programming
 
-### Pure Functions
-
-Write pure functions whenever possible - same input always produces same output, no side effects:
-
-```javascript
-const calculateTax = (amount, rate) => amount * rate;
-
-const formatCurrency = (amount, currency = 'USD') =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
-
-const normalizeText = (text) =>
-  text.trim().toLowerCase().replace(/\s+/g, ' ');
-```
+Favor pure functions (same input → same output, no side effects) wherever possible.
 
 ### Higher-Order Functions and Currying
 
@@ -337,7 +304,7 @@ const updateUser = (user, updates) => ({
 
 const addItem = (items, newItem) => [...items, newItem];
 
-// ✅ ES2023: use toSpliced() and with() instead of manual spread
+// Preferred: ES2023: use toSpliced() and with() instead of manual spread
 const removeItem = (items, index) => items.toSpliced(index, 1);
 
 const updateItem = (items, index, updates) =>
@@ -351,11 +318,11 @@ Use `structuredClone()` for deep copies instead of `JSON.parse(JSON.stringify())
 ```javascript
 const original = { name: 'Alice', tags: ['admin'], meta: { created: new Date() } };
 
-// ✅ structuredClone — handles nested objects, Date, Map, Set, ArrayBuffer
+// Preferred: structuredClone — handles nested objects, Date, Map, Set, ArrayBuffer
 const deep = structuredClone(original);
 deep.tags.push('editor'); // original.tags unchanged
 
-// ❌ Avoid: loses Date objects, fails on circular references
+// Avoid: loses Date objects, fails on circular references
 // const broken = JSON.parse(JSON.stringify(original));
 
 // Spread is fine for shallow copies only
@@ -363,34 +330,6 @@ const shallow = { ...original };
 ```
 
 ## Performance Patterns
-
-### Memoization
-
-```javascript
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
-```
-
-### Lazy Evaluation with Generators
-
-```javascript
-function* lazyRange(start, end) {
-  for (let i = start; i <= end; i++) yield i;
-}
-
-const numbers = lazyRange(1, 1000000);
-for (const num of numbers) {
-  if (num > 10) break; // Only generates 10 numbers
-}
-```
 
 ### Debouncing and Throttling
 
@@ -423,4 +362,4 @@ const handleScroll = throttle(() => { /* Update UI */ }, 100);
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core patterns
 - [Code Quality](code-quality.md) - Refactoring and maintainability
 - [Async Programming](async-programming.md) - Asynchronous patterns
-- `pm-dev-frontend:js-enforce-eslint` - ESLint and development tools
+- `pm-dev-frontend:lint-config` - ESLint and development tools

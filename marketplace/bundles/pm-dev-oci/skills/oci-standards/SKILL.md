@@ -1,6 +1,6 @@
 ---
 name: oci-standards
-description: General OCI container standards covering image building, Dockerfile best practices, multi-platform builds, and distroless health probes
+description: "Use when writing, reviewing, or debugging Dockerfiles and Containerfiles — covers base image selection, multi-stage builds, version pinning, .dockerignore, multi-platform builds, OCI labels, certificate management, and Quarkus distroless health probes. Activate for any container image building task."
 user-invocable: false
 ---
 
@@ -13,15 +13,10 @@ user-invocable: false
 **Execution mode**: Reference library; load standards on-demand for OCI container image building tasks.
 
 **Prohibited actions:**
-- Do not use `latest` tags for base images; always pin versions or digests
-- Do not use ADD instead of COPY unless extracting archives
-- Do not embed secrets in Dockerfile ENV, ARG, or COPY instructions
 - Do not load all standards at once; load progressively based on current task
 
 **Constraints:**
-- All container images must use minimal base images (distroless, alpine, or slim)
-- Multi-stage builds required to separate build and runtime layers
-- OCI labels (`org.opencontainers.image.*`) must be present
+- Standards in `image-building.md` define the authoritative rules for Dockerfiles
 - Hadolint must pass without errors
 
 ## When to Use This Skill
@@ -30,7 +25,8 @@ Activate when:
 - **Building container images** - Dockerfile best practices, base image selection, layer optimization
 - **Multi-platform builds** - Building for amd64/arm64, manifest lists, buildx configuration
 - **OCI image metadata** - Standard labels, annotations, image specification compliance
-- **Health probes for distroless** - Management interface, Kubernetes probes, Prometheus scraping without TLS
+- **Health probes for distroless** - Quarkus management interface, Kubernetes probes, Prometheus scraping without TLS
+- **Certificate management** - PEM format, generation, container integration, rotation
 - **Reviewing Dockerfiles** - Linting, hygiene, .dockerignore, secrets handling
 
 ## Available References
@@ -66,16 +62,16 @@ Load references progressively based on current task. **Never load all references
 Read standards/image-building.md
 ```
 
-### 2. Distroless Health Probes
+### 2. Quarkus Distroless Health Probes
 
-**File**: `standards/distroless-health-probes.md`
+**File**: `standards/quarkus-distroless-health-probes.md`
 
 **Load When**:
-- Adding health checks to distroless container images
+- Adding health checks to Quarkus distroless container images
 - Configuring Quarkus management interface for health/metrics separation
 - Setting up Prometheus scraping without TLS complexity
-- Debugging missing health endpoints after native image builds
-- Writing Kubernetes liveness/readiness probes for distroless containers
+- Debugging missing health endpoints after Quarkus native image builds
+- Writing Kubernetes liveness/readiness probes for Quarkus distroless containers
 
 **Contents**:
 - Why standard HEALTHCHECK fails in distroless (no shell, no curl)
@@ -88,7 +84,29 @@ Read standards/image-building.md
 
 **Load Command**:
 ```
-Read standards/distroless-health-probes.md
+Read standards/quarkus-distroless-health-probes.md
+```
+
+### 3. Certificate Management
+
+**File**: `standards/certificate-management.md`
+
+**Load When**:
+- Configuring TLS certificates for containers
+- Choosing between PEM and PKCS12 formats
+- Setting up certificate generation or rotation
+- Mounting certificates securely in containers
+
+**Contents**:
+- PEM vs PKCS12 comparison
+- Certificate generation script
+- PKCS12 to PEM conversion
+- Dockerfile and Compose integration patterns
+- File permission and security requirements
+
+**Load Command**:
+```
+Read standards/certificate-management.md
 ```
 
 ## Quick Reference
@@ -105,4 +123,4 @@ Read standards/distroless-health-probes.md
 - BuildKit secrets for build-time credentials
 - OCI labels (`org.opencontainers.image.*`) present
 - Hadolint passes without errors
-- Health probe strategy for distroless (management interface or orchestrator-native probes)
+- Quarkus health probe strategy for distroless (management interface or orchestrator-native probes)

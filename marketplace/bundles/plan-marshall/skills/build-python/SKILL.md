@@ -25,6 +25,7 @@ Python build execution via pyprojectx (`./pw` wrapper) with output parsing for m
 | Script | Type | Purpose |
 |--------|------|---------|
 | `python_build.py` | CLI + Library | pyprojectx operations, `execute_direct()` |
+| `_python_cmd_coverage_report.py` | Library | Coverage report parsing (Cobertura XML → TOON) |
 
 ## python_build run (Primary API)
 
@@ -50,6 +51,22 @@ python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
 | `lint_error` | ruff violations |
 | `test_failure` | pytest test failures |
 | `import_error` | Module import errors |
+
+## Coverage Report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-python:python_build coverage-report \
+    [--project-path <path>] \
+    [--report-path <path>] \
+    [--threshold <percent>]
+```
+
+**Parameters**:
+- `--project-path` - Project directory (for auto-detection of report files)
+- `--report-path` - Override coverage XML report path (default: auto-detect)
+- `--threshold` - Coverage threshold percent (default: 80)
+
+Parses coverage.py Cobertura XML (`coverage.xml`). Generate with `pytest --cov --cov-report=xml`.
 
 ## References
 

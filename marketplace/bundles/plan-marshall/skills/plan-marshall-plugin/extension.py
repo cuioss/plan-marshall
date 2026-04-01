@@ -74,11 +74,7 @@ class Extension(ExtensionBase):
                     'defaults': [
                         {
                             'skill': 'plan-marshall:dev-general-code-quality',
-                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
-                        },
-                        {
-                            'skill': 'plan-marshall:dev-general-code-documentation',
-                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
                     ],
                     'optionals': [],
@@ -100,11 +96,7 @@ class Extension(ExtensionBase):
                     'defaults': [
                         {
                             'skill': 'plan-marshall:dev-general-code-quality',
-                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
-                        },
-                        {
-                            'skill': 'plan-marshall:dev-general-code-documentation',
-                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
                     ],
                     'optionals': [],

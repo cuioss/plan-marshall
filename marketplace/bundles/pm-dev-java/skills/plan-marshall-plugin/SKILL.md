@@ -34,12 +34,12 @@ Build operations (Maven/Gradle execution, parsing, discovery) are provided by:
 ## Integration
 
 This extension is discovered by:
-- `extension-api` - Domain registration
-- `skill-domains` - Domain configuration
-- `marshall-steward` - Project setup wizard
+- `plan-marshall:extension-api` - Domain registration
+- `plan-marshall:manage-config` (skill-domains subcommand) - Domain configuration
+- `plan-marshall:marshall-steward` - Project setup wizard
 
 ## References
 
 - `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:build-maven` - Maven build operations
-- `plan-marshall:build-gradle` - Gradle build operations
+- `plan-marshall:build-maven` - Maven build operations (includes `standards/maven-impl.md`)
+- `plan-marshall:build-gradle` - Gradle build operations (includes `standards/gradle-impl.md`)

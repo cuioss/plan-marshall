@@ -317,20 +317,15 @@
           "type": "skill",
           "description": "Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, and tooling"
         },
-        "skill:js-enforce-eslint": {
-          "path": "skills/js-enforce-eslint",
+        "skill:lint-config": {
+          "path": "skills/lint-config",
           "type": "skill",
-          "description": "Enforce ESLint standards by fixing violations systematically"
-        },
-        "skill:js-fix-jsdoc": {
-          "path": "skills/js-fix-jsdoc",
-          "type": "skill",
-          "description": "Fix JSDoc errors and warnings from build/lint with content preservation"
+          "description": "ESLint v10, Prettier, and Stylelint configuration and rule standards for JavaScript projects"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 4,
+        "skill_count": 3,
         "agent_count": 0,
         "command_count": 0
       },

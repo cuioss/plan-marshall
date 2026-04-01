@@ -38,7 +38,7 @@ try {
 Let errors bubble up by default. Only catch to add meaningful context or transform errors:
 
 ```javascript
-// ✅ Catch to add context
+// Preferred: Catch to add context
 const fetchUserWithContext = async (userId) => {
   try {
     const response = await fetch(`/api/users/${userId}`);
@@ -61,24 +61,10 @@ const fetchUserWithContext = async (userId) => {
 Use await for operations that must run in sequence:
 
 ```javascript
-// Sequential processing
 const processUserWorkflow = async (userId) => {
   const user = await fetchUser(userId);
   const preferences = await fetchPreferences(user.id);
-  const settings = await applySettings(user, preferences);
-  return settings;
-};
-
-// Processing array items sequentially
-const processItemsSequentially = async (items) => {
-  const results = [];
-
-  for (const item of items) {
-    const result = await processItem(item);
-    results.push(result);
-  }
-
-  return results;
+  return await applySettings(user, preferences);
 };
 ```
 
@@ -152,49 +138,13 @@ const withTimeout = (promise, timeoutMs) => {
 
 // Usage
 const data = await withTimeout(fetch('/api/data'), 5000);
-
-// Race between multiple endpoints
-const fetchFromFastestEndpoint = async (urls) => {
-  return await Promise.race(
-    urls.map(url =>
-      fetch(url).then(response => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response.json();
-      })
-    )
-  );
-};
 ```
 
 ## Error Handling
 
-### Custom Error Classes
-
-Define specific error types for different error conditions:
-
-```javascript
-class NetworkError extends Error {
-  constructor(url, status, message) {
-    super(message);
-    this.name = 'NetworkError';
-    this.url = url;
-    this.status = status;
-  }
-}
-
-class ValidationError extends Error {
-  constructor(field, value, message) {
-    super(message);
-    this.name = 'ValidationError';
-    this.field = field;
-    this.value = value;
-  }
-}
-```
-
 ### Error Handling Strategies
+
+Define custom error classes (e.g., `NetworkError`, `ValidationError`) with contextual fields (`url`, `status`, `field`) when you need to distinguish error types programmatically.
 
 **Strategy 1: Let errors bubble up** (preferred):
 
@@ -222,18 +172,7 @@ const saveWithRecovery = async (data) => {
 };
 ```
 
-**Strategy 3: Result pattern** (avoid throwing):
-
-```javascript
-const validateAndSaveResult = async (data) => {
-  try {
-    const result = await saveData(data);
-    return { success: true, data: result };
-  } catch (error) {
-    return { success: false, error: error.message, type: error.constructor.name };
-  }
-};
-```
+Use Strategy 1 by default. Use Strategy 2 when you need recovery logic or must add context before rethrowing.
 
 ## Promise Utilities
 
@@ -241,33 +180,16 @@ const validateAndSaveResult = async (data) => {
 
 ```javascript
 const retryOperation = async (operation, maxRetries = 3, delay = 1000) => {
-  let lastError;
-
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await operation();
     } catch (error) {
-      lastError = error;
-
-      if (attempt === maxRetries) {
-        throw error;
-      }
-
-      console.warn(`Attempt ${attempt} failed, retrying in ${delay}ms:`, error.message);
+      if (attempt === maxRetries) throw error;
       await new Promise(resolve => setTimeout(resolve, delay));
       delay *= 2;
     }
   }
-
-  throw lastError;
 };
-
-// Usage
-const data = await retryOperation(
-  () => fetch('/api/data').then(r => r.json()),
-  3,
-  1000
-);
 ```
 
 ### Batch Processing with Concurrency Limit
@@ -282,55 +204,14 @@ const parallelLimit = async (items, limit, asyncFn) => {
       executing.splice(executing.indexOf(promise), 1);
       return result;
     });
-
     results.push(promise);
     executing.push(promise);
 
-    if (executing.length >= limit) {
-      await Promise.race(executing);
-    }
+    if (executing.length >= limit) await Promise.race(executing);
   }
 
   return Promise.all(results);
 };
-
-// Usage - limit to 5 concurrent requests
-const data = await parallelLimit(
-  urls,
-  5,
-  async (url) => {
-    const response = await fetch(url);
-    return response.json();
-  }
-);
-```
-
-## Async Iteration
-
-### Async Generators
-
-Use async generators for streaming or paginated data:
-
-```javascript
-async function* fetchAllPages(endpoint) {
-  let page = 1;
-  let hasMore = true;
-
-  while (hasMore) {
-    const response = await fetch(`${endpoint}?page=${page}`);
-    const data = await response.json();
-
-    yield data.items;
-
-    hasMore = data.hasNextPage;
-    page++;
-  }
-}
-
-// Usage with for-await-of
-for await (const items of fetchAllPages('/api/users')) {
-  processItems(items);
-}
 ```
 
 ## Promise.withResolvers (ES2024)
@@ -338,7 +219,7 @@ for await (const items of fetchAllPages('/api/users')) {
 Creates a deferred promise without the executor callback pattern:
 
 ```javascript
-// ✅ ES2024: Promise.withResolvers()
+// Preferred: ES2024: Promise.withResolvers()
 const { promise, resolve, reject } = Promise.withResolvers();
 
 // Useful when resolve/reject must be called outside the executor
@@ -400,66 +281,16 @@ class DataFetcher {
 
 ## Advanced Concepts
 
-- **AsyncQueue**: A promise-based queue that serializes async operations, ensuring only one runs at a time. Useful for rate-limited APIs or ordered writes.
-
 ## Common Pitfalls
 
-### Avoid: Unnecessary Try-Catch
-
-```javascript
-// ❌ Useless catch that just rethrows
-const fetchData = async () => {
-  try {
-    return await fetch('/api/data').then(r => r.json());
-  } catch (error) {
-    throw error;
-  }
-};
-
-// ✅ Let error bubble naturally
-const fetchData = async () => {
-  const response = await fetch('/api/data');
-  return response.json();
-};
-```
-
-### Avoid: Missing Await
-
-```javascript
-// ❌ Forgot await - returns Promise, not data
-const getData = async () => {
-  const data = fetch('/api/data'); // Missing await!
-  return data.results; // Undefined
-};
-
-// ✅ Proper await usage
-const getData = async () => {
-  const response = await fetch('/api/data');
-  const data = await response.json();
-  return data.results;
-};
-```
-
-### Avoid: Sequential When Parallel Is Possible
-
-```javascript
-// ❌ Unnecessary sequential execution
-const loadData = async () => {
-  const users = await fetchUsers();
-  const posts = await fetchPosts();
-  return { users, posts };
-};
-
-// ✅ Parallel execution
-const loadData = async () => {
-  const [users, posts] = await Promise.all([fetchUsers(), fetchPosts()]);
-  return { users, posts };
-};
-```
+- **Unnecessary try-catch**: Don't catch just to rethrow — let errors bubble naturally
+- **Missing await**: Forgetting `await` returns a Promise instead of the resolved value
+- **Sequential when parallel is possible**: Use `Promise.all()` for independent operations instead of sequential `await`
+- **Await in loops**: Use `Promise.all(items.map(...))` instead of `for...of` with `await` when items are independent
 
 ## See Also
 
 - [JavaScript Fundamentals](javascript-fundamentals.md) - Core language features
 - [Code Quality](code-quality.md) - Complexity and error handling
 - [Modern Patterns](modern-patterns.md) - Advanced patterns
-- `pm-dev-frontend:js-enforce-eslint` - ESLint async rules
+- `pm-dev-frontend:lint-config` - ESLint async rules

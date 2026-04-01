@@ -55,13 +55,13 @@ For scripts:
 
 In decision.log:
 ```
-(pm-plugin-development:ext-outline-plugin) Component scope: [skills, agents, commands, scripts, tests]
-(pm-plugin-development:ext-outline-plugin) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
+(pm-plugin-development:ext-outline-workflow) Component scope: [skills, agents, commands, scripts, tests]
+(pm-plugin-development:ext-outline-workflow) Context loaded: domains=[plan-marshall-plugin-dev], bundle=plan-marshall
 ```
 
 In work.log:
 ```
-[PROGRESS] (pm-plugin-development:ext-outline-plugin) Inventory: 3-4 skills with JSON code blocks in plan-marshall
+[PROGRESS] (pm-plugin-development:ext-outline-workflow) Inventory: 3-4 skills with JSON code blocks in plan-marshall
 ```
 
 ## Script Migration Decision
@@ -75,7 +75,7 @@ In work.log:
 
 **Decision log should include**:
 ```
-(pm-plugin-development:ext-outline-plugin) Migration type: full
+(pm-plugin-development:ext-outline-workflow) Migration type: full
   detail: Scripts will emit TOON, docs will document TOON, tests will verify TOON
 ```
 
@@ -109,7 +109,7 @@ In work.log:
 
 **Format** (in work.log):
 ```
-[ARTIFACT] (pm-plugin-development:ext-outline-plugin) Created solution_outline.md - 3 deliverables
+[ARTIFACT] (pm-plugin-development:ext-outline-workflow) Created solution_outline.md - 3 deliverables
 ```
 
 ## Deliverable Grouping Decision

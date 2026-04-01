@@ -22,10 +22,17 @@ class Extension(ExtensionBase):
 
         signals = []
         all_paths = [module_path] + sources
+        container_filenames = ('dockerfile', 'containerfile', 'docker-compose',
+                               'compose.yml', 'compose.yaml', '.dockerignore',
+                               '.containerignore', '.hadolint.yaml',
+                               '.hadolint.yml', '.trivyignore')
+        container_dirs = ('docker/',)
         for p in all_paths:
             p_lower = str(p).lower()
-            if 'dockerfile' in p_lower or 'containerfile' in p_lower:
-                signals.append(f'Dockerfile in {p}')
+            if any(name in p_lower for name in container_filenames):
+                signals.append(f'Container config: {p}')
+            elif any(d in p_lower for d in container_dirs):
+                signals.append(f'Container directory: {p}')
 
         # Check metadata for container indicators
         metadata = module_data.get('metadata', {})
@@ -38,6 +45,10 @@ class Extension(ExtensionBase):
         return self._build_applicable_result('high', signals,
                                               module_data=module_data,
                                               active_profiles=active_profiles)
+
+    def provides_triage(self) -> str | None:
+        """Return triage skill reference."""
+        return 'pm-dev-oci:ext-triage-oci'
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
@@ -55,15 +66,18 @@ class Extension(ExtensionBase):
                             'description': 'OCI container standards and Dockerfile best practices',
                         },
                     ],
-                    'optionals': [
+                    'optionals': [],
+                },
+                'implementation': {'defaults': [], 'optionals': []},
+                'module_testing': {'defaults': [], 'optionals': []},
+                'quality': {
+                    'defaults': [
                         {
                             'skill': 'pm-dev-oci:oci-security',
                             'description': 'Container security standards and OWASP best practices',
                         },
                     ],
+                    'optionals': [],
                 },
-                'implementation': {'defaults': [], 'optionals': []},
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
             },
         }]

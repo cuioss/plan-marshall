@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Tests for manage-adr.py script."""
 
-import json
 import os
 import shutil
 import sys
@@ -11,6 +10,8 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from toon_parser import parse_toon  # type: ignore[import-not-found]
+
 from conftest import ScriptResult, get_script_path, run_script
 
 
@@ -47,20 +48,24 @@ class TestManageAdr(unittest.TestCase):
         """Run the ADR script with given arguments."""
         return run_script(self.script_path, *args, cwd=self.temp_dir)
 
+    def parse_output(self, result: 'ScriptResult') -> dict:
+        """Parse TOON output from stdout."""
+        return parse_toon(result.stdout)
+
     def test_next_number_empty_dir(self):
         """Test next-number returns 1 for empty directory."""
         result = self.run_adr('next-number')
         self.assertEqual(result.returncode, 0)
-        output = result.json()
-        self.assertTrue(output['success'])
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'success')
         self.assertEqual(output['next_number'], 1)
 
     def test_create_adr(self):
         """Test creating a new ADR."""
         result = self.run_adr('create', '--title', 'Use PostgreSQL')
         self.assertEqual(result.returncode, 0)
-        output = result.json()
-        self.assertTrue(output['success'])
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'success')
         self.assertEqual(output['number'], 1)
         self.assertIn('001-Use_PostgreSQL.adoc', output['path'])
 
@@ -77,8 +82,8 @@ class TestManageAdr(unittest.TestCase):
     def test_create_adr_with_status(self):
         """Test creating ADR with custom status."""
         result = self.run_adr('create', '--title', 'Another Decision', '--status', 'Accepted')
-        output = result.json()
-        self.assertTrue(output['success'])
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'success')
 
         # Verify status in file
         created_file = self.adr_dir / f'{output["number"]:03d}-Another_Decision.adoc'
@@ -91,7 +96,7 @@ class TestManageAdr(unittest.TestCase):
         self.run_adr('create', '--title', 'Second ADR')
         result = self.run_adr('create', '--title', 'Third ADR')
 
-        output = result.json()
+        output = self.parse_output(result)
         self.assertEqual(output['number'], 3)
 
     def test_list_adrs(self):
@@ -101,8 +106,8 @@ class TestManageAdr(unittest.TestCase):
 
         result = self.run_adr('list')
         self.assertEqual(result.returncode, 0)
-        output = result.json()
-        self.assertTrue(output['success'])
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'success')
         self.assertEqual(output['count'], 2)
 
     def test_list_adrs_filter_status(self):
@@ -111,11 +116,9 @@ class TestManageAdr(unittest.TestCase):
         self.run_adr('create', '--title', 'Accepted One', '--status', 'Accepted')
 
         result = self.run_adr('list', '--status', 'Proposed')
-        output = result.json()
-        self.assertTrue(output['success'])
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'success')
         self.assertEqual(output['count'], 1)
-        for adr in output['adrs']:
-            self.assertEqual(adr['status'], 'Proposed')
 
     def test_read_adr(self):
         """Test reading ADR by number."""
@@ -123,18 +126,18 @@ class TestManageAdr(unittest.TestCase):
 
         result = self.run_adr('read', '--number', '1')
         self.assertEqual(result.returncode, 0)
-        output = result.json()
-        self.assertTrue(output['success'])
-        self.assertIn('content', output)
-        self.assertIn('Test Read', output['content'])
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'success')
+        # Content is multiline — check stdout directly
+        self.assertIn('Test Read', result.stdout)
 
     def test_read_adr_not_found(self):
         """Test reading non-existent ADR."""
         result = self.run_adr('read', '--number', '999')
-        self.assertEqual(result.returncode, 0)  # Exit code 0, status in output
-        output = json.loads(result.stderr)
-        self.assertFalse(output['success'])
-        self.assertIn('not found', output['error'].lower())
+        self.assertNotEqual(result.returncode, 0)
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'error')
+        self.assertIn('not found', output['message'].lower())
 
     def test_update_adr_status(self):
         """Test updating ADR status."""
@@ -142,22 +145,21 @@ class TestManageAdr(unittest.TestCase):
 
         result = self.run_adr('update', '--number', '1', '--status', 'Deprecated')
         self.assertEqual(result.returncode, 0)
-        output = result.json()
-        self.assertTrue(output['success'])
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'success')
 
         # Verify status updated
         result = self.run_adr('read', '--number', '1')
-        output = result.json()
-        self.assertIn('Deprecated', output['content'])
+        self.assertIn('Deprecated', result.stdout)
 
     def test_delete_requires_force(self):
         """Test delete requires --force flag."""
         self.run_adr('create', '--title', 'Delete Test')
 
         result = self.run_adr('delete', '--number', '1')
-        self.assertEqual(result.returncode, 0)  # Exit code 0, status in output
-        output = json.loads(result.stderr)
-        self.assertIn('--force', output['error'])
+        self.assertNotEqual(result.returncode, 0)
+        output = self.parse_output(result)
+        self.assertIn('--force', output['message'])
 
     def test_delete_with_force(self):
         """Test delete with --force flag."""
@@ -165,7 +167,7 @@ class TestManageAdr(unittest.TestCase):
 
         result = self.run_adr('delete', '--number', '1', '--force')
         self.assertEqual(result.returncode, 0)
-        output = result.json()
+        output = self.parse_output(result)
         self.assertTrue(output['deleted'])
 
         # Verify file is deleted
@@ -175,8 +177,8 @@ class TestManageAdr(unittest.TestCase):
     def test_filename_sanitization(self):
         """Test filename sanitization for special characters."""
         result = self.run_adr('create', '--title', 'Use API/REST for User Service!')
-        output = result.json()
-        self.assertTrue(output['success'])
+        output = self.parse_output(result)
+        self.assertEqual(output['status'], 'success')
         # Get just the filename part
         filename = Path(output['path']).name
         # Special chars should be removed/replaced

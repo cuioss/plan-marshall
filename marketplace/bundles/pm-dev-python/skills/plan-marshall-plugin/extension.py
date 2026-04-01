@@ -26,8 +26,8 @@ class Extension(ExtensionBase):
                 'core': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-python:python-best-practices',
-                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                            'skill': 'pm-dev-python:python-core',
+                            'description': 'Core Python patterns — types, data structures, error handling, naming',
                         },
                         {
                             'skill': 'plan-marshall:dev-general-code-quality',
@@ -39,8 +39,12 @@ class Extension(ExtensionBase):
                 'implementation': {
                     'defaults': [
                         {
-                            'skill': 'plan-marshall:dev-general-code-documentation',
-                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                            'skill': 'pm-dev-python:python-core',
+                            'description': 'Core Python patterns — types, data structures, error handling, naming',
+                        },
+                        {
+                            'skill': 'plan-marshall:dev-general-code-quality',
+                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
                     ],
                     'optionals': [],
@@ -48,8 +52,8 @@ class Extension(ExtensionBase):
                 'module_testing': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-python:python-best-practices',
-                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                            'skill': 'pm-dev-python:pytest-testing',
+                            'description': 'Pytest standards — fixtures, isolation, mocking, assertions, coverage',
                         },
                         {
                             'skill': 'plan-marshall:dev-general-module-testing',
@@ -61,8 +65,8 @@ class Extension(ExtensionBase):
                 'quality': {
                     'defaults': [
                         {
-                            'skill': 'pm-dev-python:python-best-practices',
-                            'description': 'Modern Python patterns with pyprojectx, ruff, mypy, pytest',
+                            'skill': 'pm-dev-python:python-core',
+                            'description': 'Core Python patterns — types, data structures, error handling, naming',
                         },
                     ],
                     'optionals': [],
@@ -82,7 +86,7 @@ class Extension(ExtensionBase):
         if 'python' in build_systems:
             signals.append('build_systems=python')
         all_paths = sources + tests
-        py_paths = [p for p in all_paths if '.py' in str(p) or 'py' in str(p).lower()]
+        py_paths = [p for p in all_paths if str(p).endswith('.py') or '/py/' in str(p) or str(p).endswith('/py')]
         if py_paths:
             signals.append(f'*.py in {",".join(py_paths[:3])}')
 
@@ -95,5 +99,5 @@ class Extension(ExtensionBase):
                                               active_profiles=active_profiles)
 
     def provides_triage(self) -> str | None:
-        """Return triage skill reference (future)."""
-        return None  # ext-triage-python to be added later
+        """Return triage skill reference."""
+        return 'pm-dev-python:ext-triage-python'

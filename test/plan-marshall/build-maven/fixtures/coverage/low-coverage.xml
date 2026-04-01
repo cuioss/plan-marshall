@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="low-coverage-module">
+  <sessioninfo id="low-session" start="1700000000000" dump="1700000100000"/>
+  <package name="de/cuioss/portal/legacy">
+    <class name="de/cuioss/portal/legacy/LegacyService" sourcefilename="LegacyService.java">
+      <method name="processData" desc="(Ljava/lang/String;)Ljava/lang/String;" line="15">
+        <counter type="INSTRUCTION" missed="35" covered="15"/>
+        <counter type="BRANCH" missed="6" covered="2"/>
+        <counter type="LINE" missed="10" covered="5"/>
+        <counter type="COMPLEXITY" missed="4" covered="1"/>
+        <counter type="METHOD" missed="0" covered="1"/>
+      </method>
+      <method name="handleError" desc="(Ljava/lang/Exception;)V" line="40">
+        <counter type="INSTRUCTION" missed="20" covered="0"/>
+        <counter type="BRANCH" missed="2" covered="0"/>
+        <counter type="LINE" missed="5" covered="0"/>
+        <counter type="COMPLEXITY" missed="2" covered="0"/>
+        <counter type="METHOD" missed="1" covered="0"/>
+      </method>
+      <method name="cleanup" desc="()V" line="50">
+        <counter type="INSTRUCTION" missed="10" covered="0"/>
+        <counter type="LINE" missed="3" covered="0"/>
+        <counter type="COMPLEXITY" missed="1" covered="0"/>
+        <counter type="METHOD" missed="1" covered="0"/>
+      </method>
+      <counter type="INSTRUCTION" missed="65" covered="15"/>
+      <counter type="BRANCH" missed="8" covered="2"/>
+      <counter type="LINE" missed="18" covered="5"/>
+      <counter type="COMPLEXITY" missed="7" covered="1"/>
+      <counter type="METHOD" missed="2" covered="1"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+    <counter type="INSTRUCTION" missed="65" covered="15"/>
+    <counter type="BRANCH" missed="8" covered="2"/>
+    <counter type="LINE" missed="18" covered="5"/>
+    <counter type="COMPLEXITY" missed="7" covered="1"/>
+    <counter type="METHOD" missed="2" covered="1"/>
+    <counter type="CLASS" missed="0" covered="1"/>
+  </package>
+  <counter type="INSTRUCTION" missed="65" covered="15"/>
+  <counter type="BRANCH" missed="8" covered="2"/>
+  <counter type="LINE" missed="18" covered="5"/>
+  <counter type="COMPLEXITY" missed="7" covered="1"/>
+  <counter type="METHOD" missed="2" covered="1"/>
+  <counter type="CLASS" missed="0" covered="1"/>
+</report>

@@ -302,18 +302,6 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage 
 
 **Output:** TOON with action decision
 
-## References (Load On-Demand)
-
-### Review Response Guide
-```
-Read references/review-response-guide.md
-```
-
-Provides:
-- Comment classification patterns
-- Response templates
-- Best practices for reviewer communication
-
 ## Comment Classification
 
 | Pattern | Action | Priority |
@@ -327,26 +315,7 @@ Provides:
 
 ## Integration
 
-### Commands Using This Skill
-- **/pr-handle-pull-request** - Full PR workflow
-- **/pr-respond-to-review-comments** - Comment response
-
 ### Related Skills
-- **sonar-workflow** - Often used together in PR workflows
-- **git-workflow** - Commits changes after responses
-
-## Quality Verification
-
-- Self-contained with relative path pattern
-- Progressive disclosure (references loaded on-demand)
-- Scripts output TOON for machine processing
-- Both fetcher and triager agents absorbed
-- Clear workflow definitions
-- Provider-agnostic via tools-integration-ci
-
-## References
-
-- tools-integration-ci: `plan-marshall:tools-integration-ci` skill
-- GitHub CLI: https://cli.github.com/
-- GitLab CLI: https://gitlab.com/gitlab-org/cli
-- Code Review Best Practices: https://google.github.io/eng-practices/review/
+- **workflow-integration-sonar** - Often used together in PR workflows
+- **workflow-integration-git** - Commits changes after responses
+- **workflow-pr-doctor** - Orchestrates this skill with Sonar and git workflows

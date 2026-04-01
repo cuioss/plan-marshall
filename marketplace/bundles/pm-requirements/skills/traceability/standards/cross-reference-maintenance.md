@@ -6,15 +6,15 @@ Standards for maintaining traceability links as implementation and specification
 
 If implementation significantly changes, follow this workflow:
 
-1. **Update JavaDoc** with new behavior
-   - Modify class and method documentation
+1. **Update API documentation** with new behavior
+   - Modify class/module and method/function documentation
    - Update code examples if present
    - Adjust implementation detail descriptions
 
 2. **Review specification** for accuracy
    - Check if design assumptions still hold
    - Verify architectural guidance is current
-   - Ensure links point to correct classes
+   - Ensure links point to correct source files
 
 3. **Update specification** if design changed
    - Document new architectural decisions
@@ -36,8 +36,8 @@ If implementation significantly changes, follow this workflow:
 If specifications are updated, follow this workflow:
 
 1. **Identify affected implementation**
-   - Find all classes referenced in specification
-   - Check for classes implementing related requirements
+   - Find all source files referenced in specification
+   - Check for files implementing related requirements
    - Identify tests validating the specification
 
 2. **Review implementation** for compliance
@@ -50,7 +50,7 @@ If specifications are updated, follow this workflow:
    - Add features for new requirements
    - Remove obsolete functionality
 
-4. **Update JavaDoc** with new references
+4. **Update API documentation** with new references
    - Add new requirement IDs
    - Update specification links if file structure changed
    - Adjust implementation descriptions
@@ -66,7 +66,7 @@ Periodically verify traceability integrity:
 
 ### Link Validation
 - All specification links point to correct files
-- All JavaDoc references are accurate
+- All API documentation references are accurate
 - Test references are complete
 - No broken links exist
 
@@ -78,17 +78,17 @@ Periodically verify traceability integrity:
 
 ### Content Quality
 - No redundant content exists
-- Information is in appropriate location (spec vs JavaDoc)
+- Information is in appropriate location (spec vs API docs)
 - Documentation provides value
 - Cross-references are bidirectional
 
 ## Refactoring Impact
 
-### When Moving Classes
+### When Moving/Renaming Source Files
 
 **Actions required**:
-1. Update specification links to new class locations
-2. Verify JavaDoc relative paths still work
+1. Update specification links to new file locations
+2. Verify API documentation relative paths still work
 3. Update test references
 4. Check for broken cross-references
 
@@ -100,10 +100,10 @@ Periodically verify traceability integrity:
 ### When Restructuring Specifications
 
 **Actions required**:
-1. Update all JavaDoc links to specifications
+1. Update all API documentation links to specifications
 2. Update internal cross-references in specs
 3. Verify requirement ID references are current
-4. Check test class specification links
+4. Check test file specification links
 
 **Best practices**:
 - Update links immediately after restructuring
@@ -115,14 +115,14 @@ Periodically verify traceability integrity:
 Run this checklist quarterly or after major changes:
 
 **Specification Review**:
-- All IMPLEMENTED specifications have class links
+- All IMPLEMENTED specifications have source file links
 - All IMPLEMENTED specifications have test links
 - Status indicators match implementation state
 - Coverage metrics are current
 
 **Code Review**:
-- All classes have specification references
-- All test classes reference specifications
+- All implementation files have specification references
+- All test files reference specifications
 - Requirement IDs are accurate
 - Relative paths are correct
 

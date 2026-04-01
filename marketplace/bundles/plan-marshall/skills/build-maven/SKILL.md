@@ -37,19 +37,17 @@ Maven build execution with output parsing, module discovery, and wrapper detecti
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
-    --targets "<goals>" \
-    [--module <module>] \
-    [--profile <profile>] \
+    --command-args "<goals>" \
     [--timeout <seconds>] \
-    [--mode <mode>]
+    [--mode <mode>] \
+    [--format <toon|json>]
 ```
 
 **Parameters**:
-- `--targets` - Maven goals to execute (required)
-- `--module` - Target module for multi-module projects
-- `--profile` - Maven profile to activate
-- `--timeout` - Timeout in seconds (default from run-config)
+- `--command-args` - Complete Maven command arguments, e.g. `"verify -Ppre-commit -pl my-module"` (required)
+- `--timeout` - Timeout in seconds (default: 300, adaptive — doubles on timeout failure)
 - `--mode` - Output mode: actionable (default), structured, errors
+- `--format` - Output format: toon (default), json
 
 **Output Format (TOON)**:
 
@@ -81,6 +79,38 @@ tests:
   skipped: 1
 ```
 
+### Coverage Report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven coverage-report \
+    [--module-path <path>] \
+    [--report-path <path>] \
+    [--threshold <percent>]
+```
+
+**Parameters**:
+- `--module-path` - Module directory path (for multi-module projects)
+- `--report-path` - Override JaCoCo XML report path (default: auto-detect in target/)
+- `--threshold` - Coverage threshold percent (default: 80)
+
+**Output Format (TOON)**:
+
+```
+status	success
+passed	true
+threshold	80
+message	"Coverage meets threshold: 82.4% line, 75.0% branch"
+
+overall:
+  line	82.35
+  branch	75.0
+  instruction	79.69
+  method	83.33
+
+low_coverage[1]{class,line_pct,missed_methods}:
+  de.cuioss.portal.sample.UserService,66.67,deleteUser
+```
+
 ### Low-level Operations
 
 | Command | Purpose |
@@ -88,6 +118,7 @@ tests:
 | `maven parse` | Parse build output from log file |
 | `maven search-markers` | Search OpenRewrite TODO markers |
 | `maven check-warnings` | Categorize warnings against patterns |
+| `maven coverage-report` | Parse JaCoCo coverage report |
 
 ## Wrapper Detection
 

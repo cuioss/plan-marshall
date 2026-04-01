@@ -491,42 +491,42 @@ System scans multiple sources and aggregates skills:
 
 ## Anti-Patterns to Avoid
 
-### ❌ Hardcoded Paths
+### FAIL Hardcoded Paths
 Never use absolute paths or relative traversal (`../../../../`).
 
 **Why**: Breaks when skill installed in different location.
 
 **Fix**: Use relative paths.
 
-### ❌ Eager Loading
+### FAIL Eager Loading
 Loading all references in SKILL.md upfront.
 
 **Why**: Wastes context, slow skill selection.
 
 **Fix**: Load references on-demand when workflow reaches specific step.
 
-### ❌ Over-Permissioning
+### FAIL Over-Permissioning
 Requesting more tools than needed.
 
 **Why**: Security risk, unclear capabilities.
 
 **Fix**: Only request tools actually used.
 
-### ❌ Large SKILL.md
+### FAIL Large SKILL.md
 Embedding all documentation in main file.
 
 **Why**: Context overflow, slow skill selection.
 
 **Fix**: Move detailed content to references/, load on-demand.
 
-### ❌ Conversational Instructions
+### FAIL Conversational Instructions
 Vague, conversational guidance.
 
 **Why**: Ambiguous, hard to follow.
 
 **Fix**: Use imperative commands, clear steps.
 
-### ❌ Universal Mega-Skills
+### FAIL Universal Mega-Skills
 Trying to do everything in one skill.
 
 **Why**: Hard to maintain, violates progressive disclosure.

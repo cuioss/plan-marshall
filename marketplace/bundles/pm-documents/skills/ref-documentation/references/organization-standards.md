@@ -17,12 +17,12 @@ Each document should represent one coherent aspect or domain:
 
 **Examples:**
 
-✅ **Good - Single Aspect:**
+PASS **Good - Single Aspect:**
 * `jwt-validation.md` - Covers JWT validation only
 * `oauth2-configuration.md` - Covers OAuth2 configuration only
 * `security-best-practices.md` - Covers security practices only
 
-❌ **Bad - Multiple Aspects:**
+FAIL **Bad - Multiple Aspects:**
 * `authentication.md` - Mixing JWT, OAuth2, SAML, and security practices
 
 ### Document Size Guidelines
@@ -98,7 +98,7 @@ Comprehensive review process ensures documentation quality:
 
 **Example:**
 
-❌ **Bad - Duplicated:**
+FAIL **Bad - Duplicated:**
 ```markdown
 <!-- In jwt-validation.md -->
 Token validation requires the following steps:
@@ -113,7 +113,7 @@ Token validation requires the following steps:
 3. Check expiration
 ```
 
-✅ **Good - Cross-Referenced:**
+PASS **Good - Cross-Referenced:**
 ```markdown
 <!-- Example: Hypothetical files showing cross-referencing pattern -->
 
@@ -139,14 +139,14 @@ Standard token validation requires:
 
 **Examples:**
 
-❌ **Bad - Transitional:**
+FAIL **Bad - Transitional:**
 ```markdown
 ## Configuration
 
 Previously, configuration was done via XML files. As of version 2.0, we now use YAML.
 ```
 
-✅ **Good - Current State:**
+PASS **Good - Current State:**
 ```markdown
 ## Configuration
 
@@ -162,7 +162,7 @@ Configuration uses YAML format.
 
 **Example:**
 
-✅ **Good - Attributed:**
+PASS **Good - Attributed:**
 ```markdown
 JWT validation follows [RFC 7519](https://tools.ietf.org/html/rfc7519) requirements for signature verification and claim validation.
 ```

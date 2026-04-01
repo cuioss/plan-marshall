@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Standards for setting up requirements and specification documentation in new CUI projects with proper directory structure and initial documents
+description: Standards for setting up requirements and specification documentation in new projects with proper directory structure and initial documents
 user-invocable: false
 ---
 
@@ -17,12 +17,12 @@ user-invocable: false
 - Do not load all standards at once; load progressively based on current task
 
 **Constraints:**
-- Minimum required files: `doc/Requirements.adoc` and `doc/Specification.adoc`
+- Minimum required files: `doc/Requirements.adoc` and `doc/Specification.adoc` (see `pm-documents:ref-asciidoc` for AsciiDoc format rules)
 - Requirement prefix must be selected before creating any requirements
 - Document templates must be used as the starting point for all initial documents
 - Setup must be verified against the quality checklist before proceeding to authoring
 
-Standards for establishing requirements and specification documentation structure in new CUI projects, including directory layout, initial document creation, and prefix selection.
+Standards for establishing requirements and specification documentation structure in new projects, including directory layout, initial document creation, and prefix selection.
 
 ## What This Skill Provides
 
@@ -39,82 +39,34 @@ This skill provides comprehensive standards for:
 
 Use this skill when:
 
-- Starting a new CUI project that needs requirements documentation
+- Starting a new project that needs requirements documentation
 - Setting up documentation structure before implementation
 - Standardizing documentation across multiple projects
-- Onboarding teams to CUI documentation practices
+- Onboarding teams to documentation practices
 - Establishing traceability from project inception
 
 ## Workflow
 
-### Step 1: Understand Documentation Principles
+Load standards progressively based on the current task — do not load all at once.
 
-Load core principles and directory structure:
+| Task Context | Standard | Key Content |
+|-------------|----------|-------------|
+| Directory layout and file organization | `standards/directory-structure.md` | Required layout, minimal vs. complete setup |
+| Choosing requirement prefixes | `standards/prefix-selection.md` | Recommended prefixes by domain, hierarchical patterns |
+| Creating initial documents | `standards/document-templates.md` | Templates for Requirements.adoc, Specification.adoc, LogMessages.adoc |
+| Step-by-step setup process | `standards/setup-workflow.md` | Setup sequence, common issues, cross-reference verification |
+| Validating setup completeness | `standards/quality-checklist.md` | Structure verification, content quality, traceability checks |
 
-```
-Read: standards/directory-structure.md
-Read: standards/lifecycle-integration.md
-```
+### Lifecycle Integration
 
-These standards provide:
-- Required directory layout and file organization
-- Documentation-first approach principles
-- Minimal vs. complete setup guidance
-- Integration with project lifecycle phases
+**Documentation-First Approach**: Establish documentation structure before implementing core functional components. Create requirements and specifications before writing business logic, APIs, or main features.
 
-### Step 2: Select Requirement Prefix
+1. Create documentation structure (see `directory-structure.md`)
+2. Define requirements based on project goals
+3. Create specifications with architectural overview
+4. Use specifications to guide implementation planning
 
-Load prefix selection guidance:
-
-```
-Read: standards/prefix-selection.md
-```
-
-This standard provides:
-- Recommended prefixes by domain
-- Custom prefix guidelines
-- Hierarchical prefix patterns
-- Cross-domain project guidance
-
-### Step 3: Create Initial Documents
-
-Load document templates:
-
-```
-Read: standards/document-templates.md
-```
-
-This standard provides templates for:
-- Requirements.adoc
-- Specification.adoc
-- Individual specification files
-- LogMessages.adoc
-
-### Step 4: Follow Setup Workflow
-
-Load workflow guidance:
-
-```
-Read: standards/setup-workflow.md
-```
-
-This standard provides:
-- Step-by-step setup process
-- Common setup issues and solutions
-- Cross-reference verification steps
-
-### Step 5: Verify Quality
-
-Load quality checklist:
-
-```
-Read: standards/quality-checklist.md
-```
-
-This standard provides:
-- Documentation structure verification
-- Content quality checks
-- Traceability validation
+For the complete lifecycle model (PLANNED → IN PROGRESS → IMPLEMENTED → DEPRECATED), see `pm-requirements:requirements-authoring` → `standards/documentation-lifecycle-management.md`.
 
 ## Integration with Other Skills
 
@@ -153,6 +105,6 @@ This skill works with other pm-requirements bundle skills:
 
 ## Related Documentation
 
-- **CUI Documentation Standards**: General AsciiDoc formatting and structure
+- **Documentation Standards**: See `pm-documents:ref-asciidoc` for AsciiDoc formatting and structure
 - **Logging Standards**: LogMessages.adoc content requirements
 - **Git Standards**: Committing documentation files

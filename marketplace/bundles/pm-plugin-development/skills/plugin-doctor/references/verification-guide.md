@@ -193,7 +193,7 @@ After verification, consider full re-diagnosis:
 
 ```bash
 # Re-run full diagnostic
-plugin-diagnose:diagnose-agents {bundle_dir}
+plugin-doctor {bundle_dir}
 ```
 
 This catches:

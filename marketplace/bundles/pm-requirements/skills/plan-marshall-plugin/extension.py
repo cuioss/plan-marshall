@@ -8,21 +8,17 @@ from extension_base import ExtensionBase  # type: ignore[import-not-found]
 
 
 class Extension(ExtensionBase):
-    """Requirements extension for pm-requirements bundle."""
+    """Requirements extension for pm-requirements bundle.
+
+    This is a knowledge-only domain: it provides authoring standards but no
+    implementation, testing, or quality-gate skills.  The empty profiles
+    below are intentional — requirements engineering guides content creation,
+    it does not generate or verify code.
+    """
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
         return 'pm-requirements:ext-triage-reqs'
-
-    def provides_verify_steps(self) -> list[dict]:
-        """Return requirements-specific verification steps."""
-        return [
-            {
-                'name': 'pm-requirements:spec-verify',
-                'skill': 'pm-requirements:spec-verify',
-                'description': 'Verify formal specification compliance',
-            },
-        ]
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
@@ -42,6 +38,7 @@ class Extension(ExtensionBase):
                     ],
                     'optionals': [],
                 },
+                # Knowledge-only domain: no implementation, testing, or quality skills
                 'implementation': {'defaults': [], 'optionals': []},
                 'module_testing': {'defaults': [], 'optionals': []},
                 'quality': {'defaults': [], 'optionals': []},

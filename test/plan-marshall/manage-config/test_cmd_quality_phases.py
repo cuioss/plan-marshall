@@ -55,7 +55,7 @@ def test_execute_set_steps():
             'phase-5-execute',
             'set-steps',
             '--steps',
-            'default:quality_check,default:build_verify,pm-dev-java:java-verify-agent',
+            'default:quality_check,default:build_verify,pm-documents:doc-verify',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -64,7 +64,7 @@ def test_execute_set_steps():
         assert config['plan']['phase-5-execute']['steps'] == [
             'default:quality_check',
             'default:build_verify',
-            'pm-dev-java:java-verify-agent',
+            'pm-documents:doc-verify',
         ]
 
 
@@ -79,15 +79,15 @@ def test_execute_add_step():
             'phase-5-execute',
             'add-step',
             '--step',
-            'pm-dev-java:java-verify-agent',
+            'pm-documents:doc-verify',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-5-execute']['steps']
-        assert 'pm-dev-java:java-verify-agent' in steps
-        assert steps[-1] == 'pm-dev-java:java-verify-agent'
+        assert 'pm-documents:doc-verify' in steps
+        assert steps[-1] == 'pm-documents:doc-verify'
 
 
 def test_execute_remove_step():

@@ -28,7 +28,78 @@ CUI-specific HTTP client standards for projects using `de.cuioss:cui-http`. Cove
 
 - `de.cuioss:cui-http` (HttpHandler, HttpResult, HttpAdapter)
 
-## Standards
+## Workflow
+
+### Step 1: Load HTTP Client Standards
+
+**CRITICAL**: Load these standards for any HTTP client implementation work.
+
+```
+Read: standards/cui-http.md
+```
+
+This provides the foundational rules:
+- MUST use `HttpHandler` builder for all HTTP client configuration
+- MUST use `HttpResult<T>` sealed interface for result handling
+- Async adapters with composable retry and caching
+
+### Step 2: Apply the Right Pattern (Based on Task)
+
+**Simple HTTP request** — Use HttpHandler directly:
+```java
+HttpHandler handler = HttpHandler.builder()
+    .uri("https://api.example.com/data")
+    .connectionTimeoutSeconds(10)
+    .readTimeoutSeconds(30)
+    .build();
+```
+
+**Resilient HTTP with caching** — Compose ETag + retry adapters:
+```java
+HttpAdapter<String> adapter = ResilientHttpAdapter.wrap(
+    ETagAwareHttpAdapter.<String>builder()
+        .httpHandler(httpHandler)
+        .responseConverter(StringContentConverter.identity())
+        .build(),
+    RetryConfig.defaults()
+);
+```
+
+**Result handling** — Use pattern matching on HttpResult:
+```java
+return switch (result) {
+    case HttpResult.Success<ConfigData>(var config, var etag, var status) -> {
+        updateCache(config, etag);
+        yield true;
+    }
+    case HttpResult.Failure<ConfigData> failure -> {
+        if (failure.fallbackContent() != null) {
+            yield true;  // Graceful degradation
+        }
+        yield failure.isRetryable();
+    }
+};
+```
+
+## Key Concepts
+
+### HttpResult Sealed Interface
+
+Type-safe result handling with exhaustive pattern matching:
+- `HttpResult.Success<T>` — Content with ETag and HTTP status
+- `HttpResult.Failure<T>` — Error with optional fallback content and error category
+
+### HttpErrorCategory
+
+| Category | Retryable | Examples |
+|----------|-----------|----------|
+| `NETWORK_ERROR` | Yes | Connection failures, timeouts |
+| `SERVER_ERROR` | Yes | 5xx responses |
+| `CLIENT_ERROR` | No | 4xx responses |
+| `INVALID_CONTENT` | No | Content conversion failures |
+| `CONFIGURATION_ERROR` | No | Setup/config issues |
+
+## Standards Reference
 
 | Standard | Purpose |
 |----------|---------|
@@ -37,4 +108,4 @@ CUI-specific HTTP client standards for projects using `de.cuioss:cui-http`. Cove
 ## Related Skills
 
 - `pm-dev-java:java-core` — General Java patterns
-- `pm-dev-java-cui:cui-testing-http` — HTTP testing with CUI MockWebServer
+- `pm-dev-java-cui:cui-http-testing` — HTTP testing with CUI MockWebServer

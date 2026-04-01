@@ -183,13 +183,13 @@ JavaScript/Frontend development with Jest testing.
 | Field | Skills |
 |-------|--------|
 | defaults | `pm-dev-frontend:javascript` |
-| optionals | `pm-dev-frontend:js-fix-jsdoc` |
+| optionals | (none) |
 
 **implementation**:
 | Field | Skills |
 |-------|--------|
 | defaults | (none) |
-| optionals | `pm-dev-frontend:js-enforce-eslint` |
+| optionals | `pm-dev-frontend:lint-config` |
 
 **module_testing**:
 | Field | Skills |
@@ -265,7 +265,7 @@ domain: java
 profile: implementation
 
 defaults:
-  pm-dev-java:java-core: Java patterns, CUI conventions, CuiLogger, null-safety
+  pm-dev-java:java-core: Java patterns, conventions, null-safety
 
 optionals:
   pm-dev-java:java-null-safety: JSpecify annotations (@NullMarked, @Nullable)

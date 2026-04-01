@@ -450,54 +450,130 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 <!-- ─── Complex Track (Steps 9-11) ─── -->
 <!-- For codebase-wide changes requiring discovery and analysis. -->
 
-## Step 9: Follow Outline-Change-Type Skill (Complex Track)
+## Step 9: Resolve Domain Skill and Load Change-Type Instructions (Complex Track)
 
-**Purpose**: Follow the `workflow-outline-change-type` skill workflow inline to handle discovery, analysis, and deliverable creation. The skill routes to domain-specific or generic sub-skill instructions based on change_type and domain.
+**Purpose**: Route to domain-specific or generic change-type instructions for discovery, analysis, and deliverable creation.
 
-### Execute Skill Workflow
-
-Follow the `workflow-outline-change-type` skill workflow with `plan_id`. The skill handles:
-- Read change_type from status.json metadata
-- Load context (request, domains, compatibility, module mapping)
-- Resolve domain skill (if domain provides outline_skill)
-- Load change-type sub-skill instructions (domain-specific or generic)
-- Discovery (running inventory scan or targeted search)
-- Analysis (assessing components, resolving uncertainties)
-- Persist assessments -> assessments.jsonl
-- Group into deliverables
-- Write solution_outline.md (must include `compatibility: {value} — {description}` in header metadata)
-
-### Log Skill Start
+### 9a: Resolve Domain Outline Skill
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Starting workflow-outline-change-type skill for {domain}"
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-outline-skill --domain {domain} --trace-plan-id {plan_id}
 ```
 
----
+**Output** (TOON):
+```toon
+status: success
+domain: {domain}
+skill: pm-plugin-development:ext-outline-workflow
+source: domain_specific
+```
 
-## Step 10: Skill Workflow Completion (Complex Track)
-
-**Purpose**: Skill workflow returns minimal status; data is in sinks.
-
-### Skill Return Value
+or:
 
 ```toon
 status: success
-plan_id: {plan_id}
-deliverable_count: {N}
-change_type: {change_type}
-domain: {domain or "generic"}
+domain: {domain}
+skill: none
+source: generic
 ```
 
-### Log Skill Completion
+### 9b: Load Change-Type Instructions
+
+**IF source == domain_specific** (domain has registered outline_skill):
+1. Load the domain skill: `Skill: {resolved_skill}` (e.g., `Skill: pm-plugin-development:ext-outline-workflow`)
+2. Log the loaded skill:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-3-outline) Loaded domain skill: {resolved_skill}"
+```
+3. Read the domain-specific change-type instructions from the skill's standards directory. The file path is: `marketplace/bundles/{bundle}/skills/{skill_name}/standards/change-{change_type}.md`
+4. Follow the instructions from that file for discovery, analysis, and deliverable creation
+
+**IF source == generic** (no domain override):
+1. Read the generic change-type instructions from this skill's own standards directory: read `standards/change-{change_type}.md` (relative to this skill)
+2. Follow the instructions from that file for discovery, analysis, and deliverable creation
+
+---
+
+## Step 10: Execute Change-Type Workflow and Write Solution (Complex Track)
+
+**Purpose**: Execute the loaded change-type instructions, resolve verification commands, and write the solution outline.
+
+### 10a: Execute Discovery and Analysis
+
+Follow the loaded change-type instructions from Step 9b. These instructions define:
+- Discovery approach (inventory scan, targeted search, direct mapping)
+- Analysis logic (component assessment, scope determination)
+- Deliverable structure (type-specific metadata and sections)
+
+### 10b: Resolve Verification Commands
+
+For each deliverable, resolve verification commands from architecture:
+
+```bash
+# Build/compile verification
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  resolve --command compile --name {module} \
+  --trace-plan-id {plan_id}
+
+# Test verification (for deliverables with module_testing profile)
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  resolve --command module-tests --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+**Available architecture commands**: `compile`, `test-compile`, `module-tests`, `quality-gate`, `verify`, `coverage`, `clean`. Do NOT use `test` (use `module-tests` instead).
+
+Use the returned `executable` value as the Verification Command.
+
+### 10c: Write Solution Outline
+
+Use `write` on first entry (solution_outline.md does not exist yet).
+Use `update` on re-entry (Q-Gate loop — solution_outline.md already exists).
+
+**CRITICAL — Deliverable Heading Format**: Each deliverable MUST use exactly `### N. Title` (e.g., `### 1. Migrate component X`). The validation regex is `^### \d+\. .+$`.
+
+Check first:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline exists \
+  --plan-id {plan_id}
+```
+
+If `exists: false`:
+```bash
+# 1. Get target path
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  resolve-path --plan-id {plan_id}
+
+# 2. Write content directly via Write tool
+Write({resolved_path}) with solution outline content including:
+  - Header with plan_id and compatibility
+  - Summary, Overview, Deliverables sections
+  - Each deliverable with Metadata, Profiles, Affected files, Verification, Success Criteria
+
+# 3. Validate
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  write --plan-id {plan_id}
+```
+
+If `exists: true`:
+```bash
+# 1. Read current content, modify as needed
+# 2. Write updated content via Write tool to the same path
+# 3. Validate
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline \
+  update --plan-id {plan_id}
+```
+
+### Log Completion
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Skill workflow complete: {deliverable_count} deliverables"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Change-type workflow complete: {N} deliverables ({change_type})"
 ```
 
-**If skill workflow returns error**: HALT and return error.
+**If workflow fails**: HALT and return error. Do NOT fall back to grep/search.
 
 ---
 
@@ -674,16 +750,20 @@ qgate_pending_count: {0 if no findings}
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-status:manage_status` - Read/write change_type metadata
 - `plan-marshall:manage-logging:manage-log` - Decision and work logging
+- `plan-marshall:manage-config:manage-config` - Resolve outline skill, read compatibility
+- `plan-marshall:manage-architecture:architecture` - Resolve verification commands
+- `plan-marshall:manage-assessments:manage-assessments` - Log assessments (domain skills)
 
 **Spawns** (Complex Track):
-- `plan-marshall:detect-change-type-agent` (Step 3 - change type detection)
-- `plan-marshall:q-gate-validation-agent` (Q-Gate verification)
+- `plan-marshall:detect-change-type-agent` (Step 4 - change type detection)
+- `plan-marshall:q-gate-validation-agent` (Step 11 - Q-Gate verification)
 
 **Loads Skills** (Recipe path):
-- `{recipe_skill}` (Step 2.5 - recipe skill with input parameters, built-in or custom)
+- `{recipe_skill}` (Step 3 - recipe skill with input parameters, built-in or custom)
 
-**Inline Skills** (Complex Track):
-- `plan-marshall:workflow-outline-change-type` (Step 8 - skill-based outline for all change types and domains)
+**Loads Skills** (Complex Track):
+- Domain outline skill via `resolve-outline-skill` (Step 9a, e.g., `pm-plugin-development:ext-outline-workflow`)
+- Change-type instructions from `standards/change-{change_type}.md` (Step 9b, generic fallback)
 
 **Consumed By**:
 - `plan-marshall:phase-4-plan` skill (reads deliverables for task creation)

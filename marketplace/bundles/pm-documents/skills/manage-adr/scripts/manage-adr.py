@@ -12,16 +12,16 @@ Operations:
     delete      - Delete ADR (requires --force)
     next-number - Get next available ADR number
 
-Output format: JSON to stdout
+Output format: TOON to stdout
 """
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # ADR directory relative to project root
 ADR_DIR = Path('doc/adr')
@@ -42,12 +42,16 @@ TEMPLATE_DEFAULTS = {
 }
 
 
-def output_json(data: dict, success: bool = True, to_stderr: bool = False):
-    """Output JSON response."""
-    data['success'] = success
-    stream = sys.stderr if to_stderr else sys.stdout
-    print(json.dumps(data, indent=2), file=stream)
-    sys.exit(0)  # Status modeled in output, not exit code
+def output_toon(data: dict):
+    """Output TOON format to stdout."""
+    print(serialize_toon(data))
+
+
+def output_error(data: dict):
+    """Output TOON error to stdout and exit with code 1."""
+    data['status'] = 'error'
+    print(serialize_toon(data))
+    sys.exit(1)
 
 
 def get_template_path() -> Path:
@@ -117,7 +121,8 @@ def parse_adr_file(filepath: Path) -> dict:
 def cmd_list(args):
     """List all ADRs."""
     if not ADR_DIR.exists():
-        output_json({'operation': 'list', 'count': 0, 'adrs': []})
+        output_toon({'status': 'success', 'operation': 'list', 'count': 0, 'adrs': []})
+        return
 
     adrs = []
     for filepath in sorted(ADR_DIR.glob('*.adoc')):
@@ -126,7 +131,7 @@ def cmd_list(args):
             continue
         adrs.append(adr)
 
-    output_json({'operation': 'list', 'count': len(adrs), 'adrs': adrs})
+    output_toon({'status': 'success', 'operation': 'list', 'count': len(adrs), 'adrs': adrs})
 
 
 def cmd_create(args):
@@ -144,21 +149,13 @@ def cmd_create(args):
     # Check if file already exists
     if filepath.exists():
         log_entry('script', 'global', 'ERROR', f'[ADR] File already exists: {filepath}')
-        output_json(
-            {'operation': 'create', 'error': f'ADR file already exists: {filepath}'},
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'create', 'message': f'ADR file already exists: {filepath}'})
 
     # Load template
     template_path = get_template_path()
     if not template_path.exists():
         log_entry('script', 'global', 'ERROR', f'[ADR] Template not found: {template_path}')
-        output_json(
-            {'operation': 'create', 'error': f'Template not found: {template_path}'},
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'create', 'message': f'Template not found: {template_path}'})
 
     template_content = template_path.read_text()
 
@@ -169,13 +166,8 @@ def cmd_create(args):
     status = args.status if args.status else 'Proposed'
     if status not in VALID_STATUSES:
         log_entry('script', 'global', 'ERROR', f'[ADR] Invalid status: {status}')
-        output_json(
-            {
-                'operation': 'create',
-                'error': f'Invalid status: {status}. Valid: {VALID_STATUSES}',
-            },
-            success=False,
-            to_stderr=True,
+        output_error(
+            {'operation': 'create', 'message': f'Invalid status: {status}. Valid: {VALID_STATUSES}'}
         )
 
     content = content.replace('{{STATUS}}', status)
@@ -189,13 +181,14 @@ def cmd_create(args):
     filepath.write_text(content)
 
     log_entry('script', 'global', 'INFO', f'[ADR] Created ADR-{number:03d}: {args.title}')
-    output_json(
+    output_toon(
         {
+            'status': 'success',
             'operation': 'create',
             'number': number,
             'path': str(filepath),
             'title': args.title,
-            'status': status,
+            'adr_status': status,
         }
     )
 
@@ -203,40 +196,29 @@ def cmd_create(args):
 def cmd_read(args):
     """Read ADR content."""
     if not ADR_DIR.exists():
-        output_json(
-            {'operation': 'read', 'error': 'ADR directory does not exist'},
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'read', 'message': 'ADR directory does not exist'})
 
     # Find ADR by number
     pattern = f'{args.number:03d}-*.adoc'
     matches = list(ADR_DIR.glob(pattern))
 
     if not matches:
-        output_json(
-            {'operation': 'read', 'error': f'ADR {args.number} not found'},
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'read', 'message': f'ADR {args.number} not found'})
 
     filepath = matches[0]
     adr = parse_adr_file(filepath)
     adr['content'] = filepath.read_text()
+    adr['status'] = 'success'
     adr['operation'] = 'read'
 
-    output_json(adr)
+    output_toon(adr)
 
 
 def cmd_update(args):
     """Update ADR status or field."""
     if not ADR_DIR.exists():
         log_entry('script', 'global', 'ERROR', '[ADR] Directory does not exist')
-        output_json(
-            {'operation': 'update', 'error': 'ADR directory does not exist'},
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'update', 'message': 'ADR directory does not exist'})
 
     # Find ADR by number
     pattern = f'{args.number:03d}-*.adoc'
@@ -244,11 +226,7 @@ def cmd_update(args):
 
     if not matches:
         log_entry('script', 'global', 'ERROR', f'[ADR] ADR {args.number} not found')
-        output_json(
-            {'operation': 'update', 'error': f'ADR {args.number} not found'},
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'update', 'message': f'ADR {args.number} not found'})
 
     filepath = matches[0]
     content = filepath.read_text()
@@ -256,13 +234,8 @@ def cmd_update(args):
     if args.status:
         if args.status not in VALID_STATUSES:
             log_entry('script', 'global', 'ERROR', f'[ADR] Invalid status: {args.status}')
-            output_json(
-                {
-                    'operation': 'update',
-                    'error': f'Invalid status: {args.status}. Valid: {VALID_STATUSES}',
-                },
-                success=False,
-                to_stderr=True,
+            output_error(
+                {'operation': 'update', 'message': f'Invalid status: {args.status}. Valid: {VALID_STATUSES}'}
             )
 
         # Update status section
@@ -280,12 +253,13 @@ def cmd_update(args):
         'INFO',
         f'[ADR] Updated ADR-{args.number:03d} status={args.status if args.status else "unchanged"}',
     )
-    output_json(
+    output_toon(
         {
+            'status': 'success',
             'operation': 'update',
             'number': args.number,
             'path': str(filepath),
-            'status': args.status if args.status else 'unchanged',
+            'adr_status': args.status if args.status else 'unchanged',
         }
     )
 
@@ -293,22 +267,11 @@ def cmd_update(args):
 def cmd_delete(args):
     """Delete ADR."""
     if not args.force:
-        output_json(
-            {
-                'operation': 'delete',
-                'error': 'Use --force to confirm deletion',
-            },
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'delete', 'message': 'Use --force to confirm deletion'})
 
     if not ADR_DIR.exists():
         log_entry('script', 'global', 'ERROR', '[ADR] Directory does not exist')
-        output_json(
-            {'operation': 'delete', 'error': 'ADR directory does not exist'},
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'delete', 'message': 'ADR directory does not exist'})
 
     # Find ADR by number
     pattern = f'{args.number:03d}-*.adoc'
@@ -316,23 +279,19 @@ def cmd_delete(args):
 
     if not matches:
         log_entry('script', 'global', 'ERROR', f'[ADR] ADR {args.number} not found')
-        output_json(
-            {'operation': 'delete', 'error': f'ADR {args.number} not found'},
-            success=False,
-            to_stderr=True,
-        )
+        output_error({'operation': 'delete', 'message': f'ADR {args.number} not found'})
 
     filepath = matches[0]
     filepath.unlink()
 
     log_entry('script', 'global', 'INFO', f'[ADR] Deleted ADR-{args.number:03d}')
-    output_json({'operation': 'delete', 'number': args.number, 'path': str(filepath), 'deleted': True})
+    output_toon({'status': 'success', 'operation': 'delete', 'number': args.number, 'path': str(filepath), 'deleted': True})
 
 
 def cmd_next_number(args):
     """Get next available ADR number."""
     number = get_next_number()
-    output_json({'operation': 'next-number', 'next_number': number})
+    output_toon({'status': 'success', 'operation': 'next-number', 'next_number': number})
 
 
 def main():

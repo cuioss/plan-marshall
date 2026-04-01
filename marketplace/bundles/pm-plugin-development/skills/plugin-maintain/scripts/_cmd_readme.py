@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 
-from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_json
+from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_toon
 
 
 def extract_description(file_path: Path) -> str:
@@ -133,11 +133,11 @@ def cmd_readme(args) -> int:
 
     # Validate path
     if not bundle_path.exists():
-        output_json({'error': f'Bundle directory not found: {args.bundle_path}'})
+        output_toon({'error': f'Bundle directory not found: {args.bundle_path}'})
         return EXIT_ERROR
 
     if not bundle_path.is_dir():
-        output_json({'error': f'Not a directory: {args.bundle_path}'})
+        output_toon({'error': f'Not a directory: {args.bundle_path}'})
         return EXIT_ERROR
 
     # Check for plugin.json (both standard and legacy locations)
@@ -145,7 +145,7 @@ def cmd_readme(args) -> int:
     if not plugin_json.exists():
         plugin_json = bundle_path / 'plugin.json'
     if not plugin_json.exists():
-        output_json({'error': f'Missing plugin.json in bundle: {args.bundle_path}'})
+        output_toon({'error': f'Missing plugin.json in bundle: {args.bundle_path}'})
         return EXIT_ERROR
 
     # Get bundle name
@@ -171,5 +171,5 @@ def cmd_readme(args) -> int:
         'skills': skills,
     }
 
-    output_json(result)
+    output_toon(result)
     return EXIT_SUCCESS

@@ -32,14 +32,14 @@
       "max_iterations": 3,
       "review_bot_buffer_seconds": 300,
       "steps": [
-        "default:commit_push",
-        "default:create_pr",
-        "default:automated_review",
-        "default:sonar_roundtrip",
-        "default:knowledge_capture",
-        "default:lessons_capture",
-        "default:branch_cleanup",
-        "default:archive"
+        "default:commit-push",
+        "default:create-pr",
+        "default:automated-review",
+        "default:sonar-roundtrip",
+        "default:knowledge-capture",
+        "default:lessons-capture",
+        "default:branch-cleanup",
+        "default:archive-plan"
       ]
     }
   },

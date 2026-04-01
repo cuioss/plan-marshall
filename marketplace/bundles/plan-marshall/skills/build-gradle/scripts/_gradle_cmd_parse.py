@@ -182,16 +182,29 @@ def _extract_issues_as_dataclass(lines: list[str]) -> list[Issue]:
         List of Issue dataclasses with severity, file, line, message, category.
         Deduplicates issues by key (type:file:line:message_prefix).
     """
-    issues = []
-    seen = set()
+    issues: list[Issue] = []
+    seen: set[str] = set()
+    stack_lines: list[str] = []
 
     for line in lines:
+        stripped = line.strip()
+
+        # Collect stack trace lines and attach to previous issue
+        if stripped.startswith('at ') or stripped.startswith('Caused by:'):
+            stack_lines.append(stripped)
+            continue
+
+        # When we hit a non-stack line, flush collected stack to last issue
+        if stack_lines and issues:
+            issues[-1].stack_trace = '\n'.join(stack_lines)
+            stack_lines = []
+
         issue_type = categorize_line(line)
         if not issue_type:
             continue
 
         file_path, file_line, _ = extract_file_location(line)
-        message = line.strip()
+        message = stripped
 
         # Deduplication
         dedup_key = f'{issue_type}:{file_path}:{file_line}:{message[:100]}'
@@ -211,6 +224,10 @@ def _extract_issues_as_dataclass(lines: list[str]) -> list[Issue]:
                 category=issue_type,
             )
         )
+
+    # Flush any remaining stack lines
+    if stack_lines and issues:
+        issues[-1].stack_trace = '\n'.join(stack_lines)
 
     return issues
 

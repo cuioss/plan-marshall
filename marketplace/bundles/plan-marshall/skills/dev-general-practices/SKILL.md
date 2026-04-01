@@ -20,102 +20,43 @@ Foundational development practices applicable across all technology stacks and d
 Read: standards/general-development-rules.md
 ```
 
-This provides:
-- Decision tree for when to ask users vs proceed autonomously
-- Research patterns using research-best-practices-agent
-- Tool selection guide (Read/Write/Edit/Glob/Grep over Bash equivalents)
-- Document proliferation guidelines
-- Dependency approval requirements
+Covers Boy Scout Rule, decision tree for when to ask users, research patterns, tool selection guide, document proliferation guidelines, and dependency approval.
 
 ### Step 2: Load Tool Usage Standards (As Needed)
 
-**Tool usage patterns** (load for diagnostic/automation work):
+**Tool usage patterns** (load for file operations, content search, or automation work):
 ```
 Read: standards/tool-usage-patterns.md
 ```
 
-Use when: Building automated workflows, diagnostic commands, or agent implementations.
-
-**File operations** (load for file system work):
-```
-Read: standards/file-operations.md
-```
-
-Use when: Implementing file discovery, existence checks, or content validation patterns.
-
-**Search operations** (load for content analysis):
-```
-Read: standards/search-operations.md
-```
-
-Use when: Implementing content search, pattern matching, or integration validation.
+Covers tool selection guide, file operations (discovery, existence checks, validation), content search patterns (Grep modes, filtering), Bash safety rules (one command per call, no shell constructs, no heredocs), and build command resolution via architecture API.
 
 ## Hard Rules (never override)
 
-These rules apply to ALL tool calls. Violations trigger user permission prompts and block execution.
-
 ### Bash: One command per call
 
-Each Bash tool call must contain exactly ONE command. NEVER:
-- Combine commands with newlines, `&`, `&&`, or `;`
-- Use `python3 -c "..."` with inline multiline scripts
-- Use `2>&1 &` to background commands
-
-If two commands are independent, make two separate Bash calls.
+Each Bash tool call must contain exactly ONE command. Never combine with newlines, `&`, `&&`, or `;`.
 
 ### Bash: No file operations
 
-NEVER use Bash for file discovery or reading. Use dedicated tools:
-- `find`, `ls` → use **Glob** tool
-- `grep`, `rg` → use **Grep** tool
-- `cat`, `head`, `tail` → use **Read** tool
+Never use Bash for file discovery or reading. Use Glob, Grep, Read instead.
 
 ### `.plan/` access: Scripts only
 
-ALL `.plan/` file access MUST go through `python3 .plan/execute-script.py`. NEVER:
-- Read/Write/Edit any `.plan/**` file directly
-- Use `python3 -c` to parse `.plan/` JSON/TOON files
-- Use Bash to cat/grep `.plan/` files
-
-**Exception**: When the currently loaded skill's workflow explicitly documents a `Write(...)` or `Read(...)` call targeting a `.plan/` path, follow the skill's instruction. The skill author already determined that direct access is appropriate for that step. Do NOT substitute `manage-files` for an explicitly documented `Write(...)` call.
+ALL `.plan/` file access MUST go through `python3 .plan/execute-script.py`. Exception: when the loaded skill's workflow explicitly documents a direct `Write(...)` or `Read(...)` call.
 
 ### Skill workflow: No improvisation
 
-Execute ONLY the commands documented in the loaded skill's workflow. NEVER:
-- Add discovery steps not in the skill
-- Invent script arguments (e.g., `--field all`)
-- Substitute a different command for one documented in the skill
-- Skip steps documented in the skill (including phase transitions)
-
-## Key Rules Summary
-
-### Ask When In Doubt
-
-Never guess or be creative. If uncertain about requirements, ask the user for guidance. When multiple valid approaches exist, present options rather than choosing arbitrarily.
-
-### Research Current Best Practices
-
-Use research-best-practices-agent for finding latest recommendations. Do not rely on outdated knowledge or use unstructured web searches directly.
-
-### Don't Proliferate Documents
-
-Search for existing documents before creating new ones. Only create new documents with explicit user approval.
-
-### Get Dependency Approval
-
-Never add dependencies without user approval. Present recommendations with rationale and wait for confirmation.
+Execute ONLY the commands documented in the loaded skill's workflow. Never add discovery steps, invent arguments, or skip documented steps.
 
 ## Related Skills
 
-- `plan-marshall:dev-general-code-quality` — Code quality principles (SRP, CQS, complexity)
-- `plan-marshall:dev-general-code-documentation` — Documentation principles
+- `plan-marshall:dev-general-code-quality` — Code quality, refactoring, and documentation principles
 - `plan-marshall:dev-general-module-testing` — Testing methodology
 
 ## Standards Reference
 
 | Standard | Purpose |
 |----------|---------|
-| general-development-rules.md | Core principles: ask users, research, tool usage, dependencies |
-| file-operations.md | File discovery, existence checks, content validation patterns |
-| search-operations.md | Content search, pattern matching, result parsing |
-| tool-usage-patterns.md | Tool selection guide, non-prompting alternatives |
+| general-development-rules.md | Boy Scout Rule, ask users, research, tool usage, dependencies |
+| tool-usage-patterns.md | Tool selection, file operations, content search, Bash safety, build resolution |

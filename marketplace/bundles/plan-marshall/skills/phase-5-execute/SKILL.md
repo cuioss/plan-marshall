@@ -84,7 +84,7 @@ The `steps` list in phase-5-execute config contains verification step references
 |------|----------|------------|
 | **built-in** | `default:` prefix (e.g., `default:quality_check`) | Execute built-in verification command (see dispatch table) |
 | **project** | `project:` prefix (e.g., `project:verify-step-lint`) | `Skill: {notation}` with interface contract |
-| **skill** | fully-qualified `bundle:skill` (e.g., `pm-documents:doc-verify`) | `Skill: {notation}` with interface contract |
+| **skill** | fully-qualified `bundle:skill` (e.g., `my-bundle:my-verify-step`) | `Skill: {notation}` with interface contract |
 
 **Type detection logic**:
 - Starts with `default:` -> built-in type (strip prefix, execute built-in command)
@@ -97,6 +97,9 @@ The `steps` list in phase-5-execute config contains verification step references
 |-----------|--------|-------------|
 | `default:quality_check` | Run quality-gate build command | Code quality checks |
 | `default:build_verify` | Run full test suite | Build verification |
+| `default:coverage_check` | Run coverage build, then parse JaCoCo report | Coverage threshold verification |
+
+**`coverage_check` dispatch**: Resolve via `architecture resolve --command coverage` to run the coverage build, then invoke `build-maven:maven coverage-report` (or `build-gradle:gradle coverage-report`) to parse the JaCoCo report. Pass `--report-path` pointing to the module's target directory and `--threshold` from config.
 
 ### Interface Contract for External Steps
 

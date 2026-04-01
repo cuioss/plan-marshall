@@ -125,12 +125,11 @@ class TestFormatCommit(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn('--type', stderr)
 
-    def test_claude_footer_present(self):
-        """Test that Claude footer is present."""
+    def test_co_authored_by_footer_present(self):
+        """Test that Co-Authored-By footer is present."""
         stdout, _, code = run_git_script(['format-commit', '--type', 'feat', '--subject', 'add feature'])
         self.assertEqual(code, 0)
-        self.assertIn('Claude Code', stdout)
-        self.assertIn('Co-Authored-By', stdout)
+        self.assertIn('Co-Authored-By: Claude <noreply@anthropic.com>', stdout)
 
 
 class TestAnalyzeDiff(unittest.TestCase):

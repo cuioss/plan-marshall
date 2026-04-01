@@ -56,7 +56,7 @@ Create the core service class in `de.cuioss.auth.jwt` package.
 
 ### 2. Add configuration support
 
-Integrate with CUI configuration system.
+Integrate with the project configuration system.
 
 **Configuration keys**:
 - `auth.jwt.issuer` - Expected issuer claim
@@ -80,7 +80,7 @@ Create comprehensive test coverage.
 
 ### 4. Add JavaDoc documentation
 
-Document public API following CUI JavaDoc standards.
+Document public API following JavaDoc standards.
 
 **Coverage**:
 - Class-level documentation with usage example

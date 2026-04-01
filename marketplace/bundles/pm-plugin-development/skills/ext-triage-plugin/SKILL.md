@@ -52,6 +52,8 @@ Registered in marshal.json under the plugin development domain:
 | Python typing | `# type: ignore` |
 | Pytest skip | `@pytest.mark.skip(reason="...")` |
 | Markdown lint | `<!-- markdownlint-disable MD001 -->` |
+| YAML validation | Configure `.yamllint` rules |
+| Plugin-doctor | Fix structurally (no suppression) |
 
 ### Decision Guidelines
 
@@ -61,13 +63,48 @@ Registered in marshal.json under the plugin development domain:
 | Plugin-doctor error | **Fix** (quality gate) |
 | Script type error | Fix or add type ignore |
 | Documentation issue | Fix for consistency |
+| Frontmatter warning | **Fix** (required for loading) |
+
+### Common False Positives
+
+These findings frequently appear in plugin development but are typically acceptable:
+
+| Finding | Context | Why It's a False Positive |
+|---------|---------|--------------------------|
+| MD041 (first line heading) | SKILL.md, agent.md, command.md | YAML frontmatter precedes the first heading |
+| MD013 (line length) | Tables in standards/*.md | Tables with multiple columns cannot be wrapped |
+| MD033 (inline HTML) | HTML comments for markdownlint control | `<!-- markdownlint-disable -->` is intentional |
+| E501 (line too long) | Script help text, URL strings | Long help strings and URLs are not splittable |
+| F401 (unused import) | `__init__.py` re-exports | Imports for public API re-export |
+| Type ignore on `json.loads` | Dynamic JSON parsing in scripts | Return type depends on input, not statically known |
+| Plugin-doctor Rule 8 | Bootstrap/init scripts | Bootstrap scripts need absolute paths for initial setup |
+| Heading skip (MD001) | Skills with `## Enforcement` after `#` title | Intentional structure per enforcement block pattern |
+
+### YAML Frontmatter Edge Cases
+
+| Issue | Resolution |
+|-------|-----------|
+| `tools:` as comma-separated string | Correct format — not YAML array syntax |
+| `description:` with pipe or colon | Wrap in quotes: `description: "Analyze: find issues"` |
+| `user-invocable:` as string | Must be boolean: `true` or `false`, not `"true"` |
+| Multi-line description | Use `>-` folded scalar or single-line |
 
 ### Acceptable to Accept
 
-- Markdown formatting in code examples
-- Test skip for environment-specific tests
-- Type ignores for dynamic patterns
+- Markdown formatting inside code blocks and examples
+- Test skip for environment-specific tests (with reason)
+- Type ignores for dynamic patterns (with explanation comment)
 - Plugin-doctor warnings in experimental code
+- MD013 in wide tables (>4 columns)
+- Pytest xfail with tracked issue reference
+
+### Never Accept
+
+- Test failures without skip/xfail annotation
+- Plugin-doctor critical issues (component will not load)
+- Import errors in scripts (will not execute)
+- YAML syntax errors in frontmatter (component invisible to marketplace)
+- Missing `name` or `description` in frontmatter
 
 ## Related Documents
 

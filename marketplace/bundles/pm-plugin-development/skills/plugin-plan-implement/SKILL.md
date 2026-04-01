@@ -224,7 +224,7 @@ If verification fails:
 ## Integration
 
 ### Called By
-- `pm-plugin-development:plugin-plan-implement-agent` - Thin wrapper agent
+- `plan-marshall:phase-agent` - Generic phase agent (via skill delegation)
 
 ### Uses
 - `pm-plugin-development:plugin-architecture` - Architecture principles

@@ -62,22 +62,19 @@ List all interfaces with optional type filtering.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list [--type {type}]
 ```
 
-**Step 3: Parse Output**
+**Step 2: Parse Output**
 
-Parse JSON output containing interface list with metadata.
+Parse TOON output containing interface list with metadata.
 
 ### Output
 
-```json
-{
-  "success": true,
-  "operation": "list",
-  "count": 2,
-  "interfaces": [
-    {"number": 1, "title": "User Service API", "type": "REST_API", "path": "doc/interfaces/001-User_Service_API.adoc"},
-    {"number": 2, "title": "Event Bus", "type": "Event", "path": "doc/interfaces/002-Event_Bus.adoc"}
-  ]
-}
+```toon
+status: success
+operation: list
+count: 2
+interfaces[2]{number,title,type,path}:
+1,User Service API,REST_API,doc/interfaces/001-User_Service_API.adoc
+2,Event Bus,Event,doc/interfaces/002-Event_Bus.adoc
 ```
 
 ## Workflow: create-interface
@@ -97,15 +94,15 @@ Create a new interface specification with automatic numbering.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create --title "{title}" --type "{type}"
 ```
 
-**Step 3: Parse Output**
+**Step 2: Parse Output**
 
-Extract created file path from JSON output.
+Extract created file path from TOON output.
 
-**Step 4: Open for Editing**
+**Step 3: Open for Editing**
 
 Read the created file and inform user to fill in content sections.
 
-**Step 5: Validate Format**
+**Step 4: Validate Format**
 
 ```
 Skill: pm-documents:ref-asciidoc
@@ -146,7 +143,7 @@ Read interface content by number.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface read --number {number}
 ```
 
-**Step 3: Display Content**
+**Step 2: Display Content**
 
 Show interface metadata and content to user.
 
@@ -168,7 +165,7 @@ Update interface field content.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update --number {number} --field {field} --value "{value}"
 ```
 
-**Step 3: Confirm Update**
+**Step 2: Confirm Update**
 
 Report updated field to user.
 
@@ -189,7 +186,7 @@ Delete interface with confirmation.
 python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface delete --number {number} --force
 ```
 
-**Step 3: Confirm Deletion**
+**Step 2: Confirm Deletion**
 
 Report deletion to user.
 
@@ -265,6 +262,30 @@ Examples:
 - `doc/interfaces/001-User_Service_API.adoc`
 - `doc/interfaces/002-Event_Bus_Interface.adoc`
 - `doc/interfaces/003-Database_Schema_V2.adoc`
+
+## Scripts
+
+Script: `pm-documents:manage-interface` → `manage-interface.py`
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all interfaces with optional type filtering |
+| `create` | Create new interface from template with automatic numbering |
+| `read` | Read interface content by number |
+| `update` | Update interface field content |
+| `delete` | Delete interface (requires --force) |
+
+**Usage Examples:**
+```bash
+# List all interfaces
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list
+
+# Create new interface
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create --title "User Service API" --type REST_API
+
+# Update interface field
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update --number 1 --field overview --value "Updated description"
+```
 
 ## Related Skills
 

@@ -303,6 +303,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 |--------|--------|-------------|
 | pm-dev-java | java | `pm-dev-java:ext-triage-java` |
 | pm-dev-frontend | javascript | `pm-dev-frontend:ext-triage-js` |
+| pm-dev-python | python | `pm-dev-python:ext-triage-python` |
+| pm-dev-oci | oci-containers | `pm-dev-oci:ext-triage-oci` |
 | pm-documents | documentation | `pm-documents:ext-triage-docs` |
 | pm-requirements | requirements | `pm-requirements:ext-triage-reqs` |
 | pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-triage-plugin` |
@@ -318,14 +320,14 @@ Declares a domain-specific outline skill with change-type routing for solution o
 **Lifecycle**: Called during `skill-domains configure`. Stored in `marshal.json` and resolved at runtime by phase-3-outline.
 
 ```
-Extension discovery → get_skill_domains() → ➤ provides_outline_skill() → stored in marshal.json → resolved by workflow-outline-change-type
+Extension discovery → get_skill_domains() → ➤ provides_outline_skill() → stored in marshal.json → resolved by phase-3-outline
 ```
 
 ```python
 def provides_outline_skill(self) -> str | None:
     """Return domain-specific outline skill reference as 'bundle:skill', or None.
 
-    Fallback: If None, generic plan-marshall:workflow-outline-change-type
+    Fallback: If None, generic plan-marshall:phase-3-outline
     standards are used.
 
     Default: None
@@ -353,7 +355,7 @@ def provides_outline_skill(self) -> str | None:
 | `analysis` | Investigate, research, understand |
 | `verification` | Validate, check, confirm |
 
-Not all change types need coverage — unsupported types fall back to `plan-marshall:workflow-outline-change-type/standards/change-{type}.md`.
+Not all change types need coverage — unsupported types fall back to `plan-marshall:phase-3-outline/standards/change-{type}.md`.
 
 #### Storage in marshal.json
 
@@ -388,7 +390,7 @@ Returns `source: domain_specific` when a custom skill exists, or `source: generi
 |--------|--------|--------------|
 | pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-outline-workflow` |
 
-All other domains return `None` and use the generic `plan-marshall:workflow-outline-change-type` standards.
+All other domains return `None` and use the generic `plan-marshall:phase-3-outline` standards.
 
 ---
 
@@ -516,8 +518,8 @@ def provides_verify_steps(self) -> list[dict]:
     """Return domain-specific verification steps.
 
     Each step dict contains:
-        - name: Fully-qualified agent reference (e.g., 'pm-dev-java:java-verify-agent')
-        - skill: Same as name (the fully-qualified agent reference)
+        - name: Fully-qualified skill reference (e.g., 'my-bundle:my-verify-step')
+        - skill: Same as name (the fully-qualified skill reference)
         - description: Human-readable description for wizard presentation
 
     Default: []
@@ -528,8 +530,8 @@ def provides_verify_steps(self) -> list[dict]:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | str | Fully-qualified agent reference (`bundle:agent`) — used directly in steps list |
-| `skill` | str | Same as name (the fully-qualified agent reference) |
+| `name` | str | Fully-qualified skill reference (`bundle:skill`) — used directly in steps list |
+| `skill` | str | Same as name (the fully-qualified skill reference) |
 | `description` | str | Human-readable description for `/marshall-steward` wizard |
 
 #### Storage in marshal.json
@@ -543,9 +545,7 @@ Extension steps are appended to the flat `plan.phase-5-execute.steps` list after
       "steps": [
         "quality_check",
         "build_verify",
-        "pm-dev-java:java-verify-agent",
-        "pm-dev-java:java-coverage-agent",
-        "pm-documents:doc-verify"
+        "coverage_check"
       ]
     }
   }
@@ -559,11 +559,11 @@ Built-in steps (`quality_check`, `build_verify`) are always first. Extension ste
 ```bash
 # Add a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute add-step --step pm-dev-java:java-verify-agent
+  plan phase-5-execute add-step --step my-bundle:my-verify-step
 
 # Remove a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute remove-step --step pm-dev-java:java-verify-agent
+  plan phase-5-execute remove-step --step my-bundle:my-verify-step
 
 # Replace entire steps list
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -589,27 +589,20 @@ class Extension(ExtensionBase):
     def provides_verify_steps(self) -> list[dict]:
         return [
             {
-                'name': 'pm-dev-java:java-verify-agent',
-                'skill': 'pm-dev-java:java-verify-agent',
-                'description': 'Verify implementation standards compliance',
-            },
-            {
-                'name': 'pm-dev-java:java-coverage-agent',
-                'skill': 'pm-dev-java:java-coverage-agent',
-                'description': 'Verify test coverage meets thresholds',
+                'name': 'my-bundle:my-verify-step',
+                'skill': 'my-bundle:my-verify-step',
+                'description': 'Custom domain verification',
             },
         ]
 ```
 
 #### Existing Implementations
 
-| Bundle | Domain | Steps | Details |
-|--------|--------|-------|---------|
-| pm-dev-java | java | 2 | `pm-dev-java:java-verify-agent`, `pm-dev-java:java-coverage-agent` |
-| pm-documents | documentation | 1 | `pm-documents:doc-verify` |
-| pm-requirements | requirements | 1 | `pm-requirements:spec-verify` |
+No bundles currently provide verification steps. pm-documents uses `provides_recipes()` instead (recipe `doc-verify` for documentation verification).
 
-Bundles without verification steps (returns `[]`): pm-dev-frontend, pm-dev-java-cui, pm-plugin-development.
+Bundles returning `[]`: pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-documents, pm-plugin-development, pm-requirements.
+
+> **Note**: Coverage verification is handled by the built-in `default:coverage_check` step, not by an extension agent. See the dispatch table in `phase-5-execute`.
 
 ---
 
@@ -850,13 +843,7 @@ class Extension(ExtensionBase):
         return "pm-dev-java:ext-triage-java"
 
     def provides_verify_steps(self) -> list[dict]:
-        return [
-            {
-                'name': 'technical_impl',
-                'agent': 'pm-dev-java:java-verify-agent',
-                'description': 'Verify implementation standards compliance',
-            },
-        ]
+        return []  # Coverage is now a built-in verify step (default:coverage_check)
 
     def discover_modules(self, project_root: str) -> list:
         # Delegate to script in scripts/ directory
@@ -912,9 +899,9 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 | pm-dev-java-cui | java-cui | - | - | - | - | Additive to pm-dev-java |
 | pm-dev-frontend | javascript | ext-triage-js | - | - | - | |
 | pm-dev-python | python | - | - | - | - | |
-| pm-dev-oci | oci-containers | - | - | - | - | |
+| pm-dev-oci | oci-containers | ext-triage-oci | - | - | - | |
 | pm-documents | documentation | ext-triage-docs | - | - | 1 (doc_sync) | Uses generic skills |
-| pm-requirements | requirements | ext-triage-reqs | - | - | 1 (formal_spec) | |
+| pm-requirements | requirements | ext-triage-reqs | - | - | - | |
 | pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | |
 | plan-marshall | build, general-dev | - | - | 1 (refactor-to-profile-standards) | - | Multi-domain |
 

@@ -139,9 +139,7 @@ def format_message(
         if footer:
             parts.append(footer)
 
-    # Add Claude footer
-    parts.append('')
-    parts.append('🤖 Generated with [Claude Code](https://claude.com/claude-code)')
+    # Add Co-Authored-By footer
     parts.append('')
     parts.append('Co-Authored-By: Claude <noreply@anthropic.com>')
 

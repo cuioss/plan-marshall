@@ -52,7 +52,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fi
 ```
 
 **Interpret results**:
-- `added: []` → All wildcards present ✓
+- `added: []` → All wildcards present PASS
 - `added: [...]` → Missing wildcards, offer to add them
 
 If missing wildcards found, ask user:
@@ -93,7 +93,7 @@ python3 .plan/execute-script.py plan-marshall:marshall-steward:determine-mode ch
 ```
 
 **Interpret results**:
-- `status: exists` → Project structure configured ✓
+- `status: exists` → Project structure configured PASS
 - `status: missing` → No project structure (placement context unavailable)
 
 If missing, show info message (not blocking):
@@ -113,7 +113,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health sta
 ```
 
 **Interpret results**:
-- `overall: healthy` → All CI tools ready ✓
+- `overall: healthy` → All CI tools ready PASS
 - `overall: degraded` → Provider detected but tool not authenticated
 - `overall: unknown` → Could not detect CI provider
 

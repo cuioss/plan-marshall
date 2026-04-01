@@ -229,7 +229,7 @@ Partial Results:
 
 **Target:** {file_path | directory_path}
 **Date:** {ISO timestamp}
-**Status:** ✅ PASS | ⚠️ WARNINGS | ❌ FAILURES
+**Status:** PASS | WARNINGS | FAILURES
 
 ## Executive Summary
 
@@ -241,9 +241,9 @@ Partial Results:
 
 | Phase | Status | Issues |
 |-------|--------|--------|
-| Format Validation | {✅ PASS / ⚠️ WARN / ❌ FAIL} | {count} |
-| Link Verification | {✅ PASS / ⚠️ WARN / ❌ FAIL} | {count} |
-| Content Review | {✅ PASS / ⚠️ WARN / ❌ FAIL} | {count} |
+| Format Validation | {PASS / WARN / FAIL} | {count} |
+| Link Verification | {PASS / WARN / FAIL} | {count} |
+| Content Review | {PASS / WARN / FAIL} | {count} |
 
 ## Phase 1: Format Validation
 
@@ -301,18 +301,18 @@ Partial Results:
 
 === Status Determination
 
-**✅ PASS:**
+**PASS:**
 
 * Zero errors in all phases
 * Zero warnings (or only informational)
 
-**⚠️ WARNINGS:**
+**WARNINGS:**
 
 * Non-critical issues found
 * Broken links (if verified as false positives)
 * Minor tone/style suggestions
 
-**❌ FAILURES:**
+**FAILURES:**
 
 * Format errors (Phase 1)
 * Confirmed broken links requiring fixes
@@ -379,21 +379,11 @@ done
 
 === Command Integration
 
-**doc-review-single-asciidoc command:**
-
-* Runs comprehensive-review for single file
-* Exposes all workflow parameters
-* Returns consolidated report
-
-**doc-review-technical-docs command:**
-
-* Runs comprehensive-review for directory
-* Iterates through all .adoc files
-* Aggregates results across files
+The comprehensive-review workflow can be invoked from any skill or agent that loads `pm-documents:ref-documentation`. For single-file or directory-level review, use the workflow parameters documented above.
 
 == Script Contracts
 
-=== validate-format.py
+=== asciidoc validate
 
 **Input:** File path or directory
 
@@ -405,19 +395,19 @@ done
 * 1: Format errors found
 * 2: Script error
 
-=== verify-links-false-positives.py
+=== asciidoc classify-links
 
-**Input:** Broken links JSON from verify-adoc-links.py
+**Input:** Broken links JSON from asciidoc verify-links
 
 **Output:** JSON with categorized links (false-positive, must-verify, definitely-broken)
 
 **Usage in orchestration:**
 
-1. Run verify-adoc-links.py
-2. Classify with verify-links-false-positives.py
+1. Run `python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc verify-links`
+2. Classify with `python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc classify-links`
 3. Present categorized results to user
 
-=== analyze-content-tone.py
+=== docs analyze-tone
 
 **Input:** File path or directory
 
@@ -425,8 +415,8 @@ done
 
 **Usage in orchestration:**
 
-1. Run analyze-content-tone.py
-2. Apply ULTRATHINK analysis to flagged sections
+1. Run `python3 .plan/execute-script.py pm-documents:ref-documentation:docs analyze-tone`
+2. Apply careful analysis to flagged sections
 3. Generate content review findings
 
 == Best Practices
@@ -491,7 +481,7 @@ done
 
 **Process:**
 
-1. Use verify-links-false-positives.py for link classification
+1. Use asciidoc classify-links for link classification
 2. Manual verification with Read tool
 3. Document false positives in report
 4. Consider updating script patterns

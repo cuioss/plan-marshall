@@ -27,14 +27,14 @@ Modern JavaScript development uses ES2022+ features with a preference for vanill
 ### Examples
 
 ```javascript
-// ✅ Preferred: Vanilla JavaScript fetch
+// Preferred: Vanilla JavaScript fetch
 const response = await fetch('/api/data');
 const data = await response.json();
 
-// ❌ Avoid: jQuery ajax
+// Avoid: jQuery ajax
 $.ajax({ url: '/api/data', success: (data) => { /* ... */ } });
 
-// ✅ Preferred: Native DOM APIs
+// Preferred: Native DOM APIs
 document.querySelector('.button').addEventListener('click', handleClick);
 element.classList.add('active');
 element.classList.toggle('expanded');
@@ -120,7 +120,7 @@ Use `const` by default, `let` when reassignment is needed. **Never use `var`**.
 ### Const for Immutable Bindings
 
 ```javascript
-// ✅ Preferred: const for values that don't change
+// Preferred: const for values that don't change
 const apiEndpoint = 'https://api.example.com';
 const userConfig = { timeout: 5000 };
 const MAX_RETRIES = 3;
@@ -136,7 +136,7 @@ config.retries = 3; // Valid
 ### Let for Reassignment
 
 ```javascript
-// ✅ Use let when reassignment is necessary
+// Preferred: Use let when reassignment is necessary
 let currentUser = null;
 let retryCount = 0;
 let isProcessing = false;
@@ -156,10 +156,10 @@ if (condition) {
 ### Never Use Var
 
 ```javascript
-// ❌ Never use var - function-scoped, hoisting issues
+// Avoid: Never use var - function-scoped, hoisting issues
 // var deprecatedVariable = 'avoid this';
 
-// ✅ Use const or let instead
+// Preferred: Use const or let instead
 const properVariable = 'use this';
 ```
 
@@ -230,7 +230,7 @@ const calculator = {
 
 ### Function Parameters
 
-For comprehensive coverage of function parameter patterns including destructuring, default parameters, and rest parameters, see [modern-patterns.md](modern-patterns.md) section "Destructuring Patterns".
+For comprehensive coverage of function parameter patterns including destructuring, default parameters, and rest parameters, see [modern-patterns.md](modern-patterns.md) "Destructuring" section.
 
 ## Common Patterns
 
@@ -273,4 +273,4 @@ const hasProperty = Object.hasOwn(obj, 'property');
 - [Code Quality](code-quality.md) - Complexity limits and refactoring
 - [Modern Patterns](modern-patterns.md) - Advanced JavaScript patterns
 - [Async Programming](async-programming.md) - Promises and async/await
-- `pm-dev-frontend:js-enforce-eslint` - ESLint and development tools
+- `pm-dev-frontend:lint-config` - ESLint and development tools

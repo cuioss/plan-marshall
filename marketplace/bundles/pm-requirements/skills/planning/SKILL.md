@@ -17,7 +17,7 @@ user-invocable: false
 - Do not load all standards at once; load progressively based on current task
 
 **Constraints:**
-- Planning documents must use AsciiDoc format in target projects
+- Planning documents follow the project's documentation format (see `pm-documents:ref-asciidoc` for AsciiDoc format rules)
 - Status indicators must follow the defined set (PLANNED, IN PROGRESS, IMPLEMENTED, etc.)
 - Task groups must link to originating requirements or specifications
 - Documents must be kept current as living documentation
@@ -28,12 +28,7 @@ Standards for creating, structuring, and maintaining project planning documents 
 
 ### Format Note
 
-**Important**: This skill's standards files are in **Markdown** (`.md`) format as required for marketplace bundles. However, the standards themselves describe how to create **AsciiDoc** (`.adoc`) planning documents in target projects.
-
-- **Transport format** (marketplace): Markdown (`.md`) - these standards files
-- **Target format** (projects): AsciiDoc (`.adoc`) - TODO.adoc, ROADMAP.adoc, etc.
-
-Code examples within the standards show AsciiDoc syntax because they demonstrate what users should write in their project's planning documents.
+This skill's standards files are in Markdown (`.md`) format as required for marketplace bundles. The standards describe planning document structure and conventions that are format-agnostic. Code examples use AsciiDoc syntax; for AsciiDoc formatting rules, see `pm-documents:ref-asciidoc`.
 
 ### Comprehensive Planning Standards
 
@@ -77,88 +72,16 @@ Activate this skill when:
 
 ## Workflow
 
-### Step 1: Load Document Structure Standards
+Load standards progressively based on the current task — do not load all at once.
 
-When creating or reviewing planning document structure:
-
-```
-Read: standards/document-structure.md
-```
-
-This standard covers:
-- Document location and naming conventions
-- Header format with proper AsciiDoc configuration
-- Core sections every planning document needs
-- Separation of concerns between planning, requirements, and specifications
-
-### Step 2: Load Task Organization Standards
-
-When organizing tasks hierarchically:
-
-```
-Read: standards/task-organization.md
-```
-
-This standard covers:
-- Hierarchical task structure using AsciiDoc headings
-- Grouping strategies (by component, feature, layer, or phase)
-- Testing task organization
-- Choosing the right grouping strategy for your project
-
-### Step 3: Load Status Tracking Standards
-
-When tracking task status and lifecycle:
-
-```
-Read: standards/status-tracking.md
-```
-
-This standard covers:
-- Status indicator syntax and meaning
-- Status usage examples for all states
-- Implementation note patterns
-- Task lifecycle (adding, completing, refactoring)
-
-### Step 4: Load Traceability Standards
-
-When linking tasks to requirements:
-
-```
-Read: standards/traceability.md
-```
-
-This standard covers:
-- Linking task groups to requirements
-- Linking task groups to specifications
-- Handling multiple requirement references
-- Traceability benefits for impact analysis and verification
-
-### Step 5: Load Maintenance Standards
-
-When maintaining planning documents:
-
-```
-Read: standards/maintenance.md
-```
-
-This standard covers:
-- Keeping documents current with update frequency guidance
-- Archive strategy (don't archive, leave completed tasks)
-- Quality standards (clarity, completeness, traceability, maintainability)
-- Common anti-patterns to avoid
-
-### Step 6: Load Examples (Optional)
-
-When you need concrete examples:
-
-```
-Read: standards/examples.md
-```
-
-This standard provides:
-- Complete example planning document
-- All patterns demonstrated in context
-- Key pattern highlights and explanations
+| Task Context | Standard | Key Content |
+|-------------|----------|-------------|
+| Creating/reviewing document structure | `standards/document-structure.md` | Location, naming, header format, core sections, separation of concerns |
+| Organizing tasks hierarchically | `standards/task-organization.md` | Heading structure, grouping strategies (component/feature/layer/phase) |
+| Tracking task status and lifecycle | `standards/status-tracking.md` | Status indicators, usage examples, implementation notes, task lifecycle |
+| Linking tasks to requirements | `standards/requirement-linking.md` | Requirement/specification links, multiple references, traceability |
+| Maintaining planning documents | `standards/maintenance.md` | Update frequency, archive strategy, quality standards, anti-patterns |
+| Need concrete examples | `standards/examples.md` | Complete example document with all patterns demonstrated |
 
 ## Related Skills
 
@@ -170,6 +93,5 @@ This standard provides:
 
 ### External Standards
 
-- AsciiDoc formatting standards - For document structure and formatting
-- Git commit standards - For tracking task completion in commits
-- Project management best practices - For effective task organization and tracking
+- `pm-documents:ref-asciidoc` - AsciiDoc formatting and structure
+- `plan-marshall:workflow-integration-git` - Committing planning document changes

@@ -1,6 +1,6 @@
 # CSS Essentials
 
-Core CSS principles, naming conventions, code organization, and component architecture for CUI projects.
+Core CSS principles, naming conventions, code organization, and component architecture.
 
 ## Modern CSS Features
 
@@ -69,7 +69,7 @@ Use native CSS nesting with the `&` selector for component-scoped styles:
 }
 ```
 
-**Note**: `postcss-nested` is now a polyfill for native nesting syntax. Projects targeting modern browsers can use native nesting directly.
+**Note**: Native CSS nesting is baseline across modern browsers. Use it directly without preprocessors or polyfills.
 
 ### Cascade Layers (`@layer`) (Baseline 2022)
 
@@ -159,18 +159,18 @@ label:has(+ input:focus) {
 - Block names describe *what it is*, not what it looks like
 - Elements use double underscore `__`
 - Modifiers use double dash `--`
-- Avoid nested elements: `.card__body__title` ❌ Use `.card__title` ✓
+- Avoid nested elements: `.card__body__title` (avoid) — use `.card__title` instead
 
 ### Custom Properties Naming
 
 ```css
-/* ✅ Semantic names */
+/* Preferred: Semantic names */
 --primary-color
 --text-base
 --spacing-md
 --border-radius-sm
 
-/* ❌ Presentational names */
+/* Avoid: Presentational names */
 --blue
 --size-16
 ```
@@ -191,11 +191,11 @@ Temporary states use `.is-*` or `.has-*` prefix:
 ### Keep Specificity Low
 
 ```css
-/* ✅ Low specificity (0,1,0) */
+/* Preferred: Low specificity (0,1,0) */
 .button { }
 .button--primary { }
 
-/* ❌ High specificity (1,3,1) */
+/* Avoid: High specificity (1,3,1) */
 #sidebar .nav ul li a.active { }
 ```
 
@@ -204,20 +204,20 @@ Temporary states use `.is-*` or `.has-*` prefix:
 ### Avoid IDs for Styling
 
 ```css
-/* ✅ Use classes */
+/* Preferred: Use classes */
 .header { }
 
-/* ❌ Don't use IDs */
+/* Avoid: Don't use IDs */
 #header { }
 ```
 
 ### Nesting Limit: 3 Levels
 
 ```css
-/* ✅ Good - 2 levels */
+/* Preferred: Good - 2 levels */
 .card__header-title { }
 
-/* ❌ Too nested - 4 levels */
+/* Avoid: Too nested - 4 levels */
 .card .inner .header .title { }
 ```
 
@@ -240,48 +240,14 @@ Temporary states use `.is-*` or `.has-*` prefix:
 **Line Height: Unitless**
 ```css
 .text {
-  line-height: 1.5;  /* ✅ Scales */
-  line-height: 24px; /* ❌ Fixed */
+  line-height: 1.5;  /* Preferred: Scales */
+  line-height: 24px; /* Avoid: Fixed */
 }
 ```
 
 ## Property Organization
 
-Order properties logically:
-
-```css
-.component {
-  /* Display & Position */
-  display: flex;
-  position: relative;
-  z-index: 10;
-
-  /* Flexbox/Grid */
-  flex-direction: column;
-  justify-content: center;
-  gap: 1rem;
-
-  /* Box Model */
-  width: 100%;
-  margin: 1rem;
-  padding: 1rem;
-  border: 1px solid gray;
-
-  /* Visual */
-  background: white;
-  border-radius: 0.25rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-
-  /* Typography */
-  color: #333;
-  font-size: 1rem;
-  line-height: 1.5;
-
-  /* Interaction */
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-```
+Order properties logically by category: **Display & Position** → **Flexbox/Grid** → **Box Model** (width, margin, padding, border) → **Visual** (background, border-radius, box-shadow) → **Typography** → **Interaction** (cursor, transition).
 
 ## File Structure
 
@@ -334,268 +300,19 @@ src/css/
 
 ## Component Architecture
 
-### Component File Pattern
-
-```css
-/* ==========================================================================
-   Component Name
-   ========================================================================== */
-
-/**
- * Component Description
- *
- * Variants: .component--variant
- * States: :hover, :focus, .is-active
- * Custom Properties: --component-var
- */
-
-/* Base Component */
-.component {
-  /* Base styles */
-}
-
-/* Component Elements */
-.component__element {
-  /* Element styles */
-}
-
-/* Component Modifiers */
-.component--modifier {
-  /* Modifier styles */
-}
-
-/* Component States */
-.component:hover { }
-.component.is-active { }
-```
-
-### Button Component Example
-
-```css
-/**
- * Button Component
- *
- * @example
- * <button class="button button--primary">Click me</button>
- */
-
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.5rem;
-  padding: 0.5rem 1rem;
-
-  background: var(--button-bg, var(--color-neutral-100));
-  border: 1px solid var(--button-border, var(--color-neutral-300));
-  border-radius: var(--border-radius-md);
-
-  font-family: inherit;
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--button-color, var(--color-neutral-900));
-
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.button__icon {
-  margin-right: 0.5rem;
-}
-
-.button--primary {
-  --button-bg: var(--color-primary-600);
-  --button-color: white;
-}
-
-.button--large {
-  min-height: 3rem;
-  padding: 0.75rem 1.5rem;
-  font-size: 1.125rem;
-}
-
-.button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.button:focus-visible {
-  outline: 2px solid var(--color-primary-500);
-  outline-offset: 2px;
-}
-
-.button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-```
+Each component file follows: **base component** → **elements** (`__element`) → **modifiers** (`--modifier`) → **states** (`:hover`, `.is-active`). Include a file header comment documenting variants, states, and custom properties.
 
 ## Utility Classes
 
-Small, single-purpose classes for common patterns:
+Small, single-purpose classes (`.flex`, `.hidden`, `.p-4`, `.text-sm`) for layout adjustments and spacing. When the same utility combination repeats, extract a component class instead.
 
-```css
-/* Display */
-.flex { display: flex; }
-.grid { display: grid; }
-.hidden { display: none; }
+## Theming
 
-/* Flexbox */
-.flex-col { flex-direction: column; }
-.items-center { align-items: center; }
-.justify-between { justify-content: space-between; }
-
-/* Spacing (scale: 0-8) */
-.p-0 { padding: 0; }
-.p-2 { padding: 0.5rem; }
-.p-4 { padding: 1rem; }
-.m-2 { margin: 0.5rem; }
-.mx-auto { margin-left: auto; margin-right: auto; }
-
-/* Typography */
-.text-sm { font-size: 0.875rem; }
-.text-lg { font-size: 1.125rem; }
-.font-bold { font-weight: 700; }
-```
-
-### When to Use Utilities
-
-**Use utilities for:**
-- Quick layout adjustments
-- Common spacing patterns
-- One-off styling needs
-
-**Don't use utilities for:**
-- Complex components (create proper component class)
-- Styles that always appear together (create a component)
-
-```html
-<!-- ✅ Good: Utilities for layout, component for semantics -->
-<div class="flex items-center gap-4">
-  <button class="button button--primary">Save</button>
-</div>
-
-<!-- ❌ Bad: Too many utilities, should be a component -->
-<div class="inline-flex items-center px-4 py-2 bg-blue text-white rounded">
-  Button
-</div>
-```
-
-## Architecture Patterns
-
-### Component-Based (Recommended)
-
-Organize CSS around reusable components:
-
-```text
-✅ Advantages:
-- Easy to find related styles
-- Components are portable
-- Scales well
-
-✅ Use when:
-- Building component library
-- Large applications
-- Team collaboration
-```
-
-### Hybrid Approach (Recommended)
-
-Components + utilities:
-
-```css
-/* Components for reusable patterns */
-.card { }
-.button { }
-
-/* Utilities for layout and spacing */
-.flex { }
-.gap-4 { }
-```
-
-## Comments and Documentation
-
-### Component Documentation
-
-```css
-/**
- * Button Component
- *
- * Primary interactive element for user actions.
- *
- * Variants:
- * - .button--primary: Main call-to-action
- * - .button--secondary: Alternative action
- * - .button--large: Increased size
- *
- * Custom Properties:
- * - --button-bg: Background color
- * - --button-color: Text color
- */
-.button {
-  /* Implementation */
-}
-```
-
-### Inline Comments
-
-```css
-.element {
-  /* Prevent FOUC on page load */
-  opacity: 0;
-
-  /* Create new stacking context */
-  transform: translateZ(0);
-}
-```
-
-## Theming with Custom Properties
-
-Use CSS custom properties for theming to enable easy color scheme switching:
-
-```css
-:root {
-  --bg-primary: white;
-  --text-primary: #1c1b1f;
-}
-
-/* Components use custom properties */
-.page {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-}
-```
-
-For complete dark mode implementation including system preference detection and manual toggle, see [CSS Quality & Tooling](css-quality-tooling.md#dark-mode).
+Use custom properties for theming. For dark mode with system preference detection, see [CSS Quality & Tooling](css-quality-tooling.md#dark-mode).
 
 ## Browser Compatibility
 
-Target modern browsers (latest 2 versions):
-- Chrome, Firefox, Safari, Edge
-
-**Vendor Prefixes:**
-- Use Autoprefixer - don't write manually
-- Configure via browserslist in package.json
-
-```json
-{
-  "browserslist": [
-    "last 2 Chrome versions",
-    "last 2 Firefox versions",
-    "last 2 Safari versions",
-    "last 2 Edge versions"
-  ]
-}
-```
-
-## Maintenance Guidelines
-
-- Remove unused CSS regularly (PurgeCSS)
-- Check for duplicate patterns
-- Follow BEM strictly
-- Document complex logic
-- Keep variable naming consistent
+Target modern browsers (latest 2 versions). Use Autoprefixer via browserslist in package.json -- never write vendor prefixes manually.
 
 ## See Also
 

@@ -2,6 +2,8 @@
 
 Standards for linking specifications to test code and documenting test coverage.
 
+> **Format note**: Specification-side examples use AsciiDoc syntax. For AsciiDoc link syntax, see `pm-documents:ref-asciidoc`. The linking concepts apply regardless of document format.
+
 ## Test References in Specifications
 
 Include test verification sections in specifications to show how requirements are validated.
@@ -9,9 +11,14 @@ Include test verification sections in specifications to show how requirements ar
 **Test Reference Format**:
 ```asciidoc
 === Verification
-* link:../src/test/java/com/example/TokenValidatorTest.java[TokenValidatorTest] - Unit tests for token validation
-* link:../src/test/java/com/example/integration/AuthenticationIT.java[AuthenticationIT] - Integration tests for authentication flow
+* link:../path/to/TokenValidatorTest[TokenValidatorTest] - Unit tests for token validation
+* link:../path/to/AuthenticationIT[AuthenticationIT] - Integration tests for authentication flow
 ```
+
+**Language-specific path examples**:
+- Java: `link:../src/test/java/com/example/TokenValidatorTest.java[TokenValidatorTest]`
+- Python: `link:../tests/test_token_validator.py[test_token_validator]`
+- JS/TS: `link:../src/__tests__/TokenValidator.test.ts[TokenValidator.test]`
 
 **What to Include**:
 - List unit tests with brief descriptions
@@ -37,11 +44,12 @@ Test coverage metrics:
 - When coverage data is available
 - For security-critical components (always show 100% requirement)
 
-## Test Class JavaDoc
+## Test File API Documentation
 
-Reference specifications from test classes to complete bidirectional traceability.
+Reference specifications from test files to complete bidirectional traceability.
 
-**Test Class Template**:
+### Java (JavaDoc)
+
 ```java
 /**
  * Unit tests for {@link TokenValidator}.
@@ -54,49 +62,97 @@ Reference specifications from test classes to complete bidirectional traceabilit
  *   <li>Valid token validation</li>
  *   <li>Expired token handling</li>
  *   <li>Invalid signature detection</li>
- *   <li>Malformed token handling</li>
  * </ul>
  */
-public class TokenValidatorTest {
-    // Tests
-}
+public class TokenValidatorTest { }
 ```
 
-**Elements to Include**:
-- Reference to class under test
-- Link to specification document
-- List of test scenarios covered
-- Special focus areas (security, performance, edge cases)
+### Python (Docstrings)
+
+```python
+class TestTokenValidator:
+    """Unit tests for TokenValidator.
+
+    Verifies the implementation against the requirements specified in
+    doc/specification/token-validation.adoc.
+
+    Tests cover:
+        - Valid token validation
+        - Expired token handling
+        - Invalid signature detection
+    """
+```
+
+### JavaScript/TypeScript (JSDoc)
+
+```javascript
+/**
+ * Unit tests for TokenValidator.
+ *
+ * Verifies the implementation against the requirements specified in
+ * doc/specification/token-validation.adoc.
+ *
+ * Tests cover:
+ * - Valid token validation
+ * - Expired token handling
+ * - Invalid signature detection
+ */
+describe('TokenValidator', () => { });
+```
 
 ## Integration Test Documentation
 
-**Integration Test Template**:
+Integration tests should additionally list the requirement IDs they validate:
+
+### Java Example
+
 ```java
 /**
  * Integration tests for the complete authentication flow.
  * <p>
  * Validates end-to-end behavior specified in
- * <a href="../../../../../../../doc/specification/authentication.adoc">Authentication Specification</a>.
- * <p>
- * Test scenarios:
- * <ul>
- *   <li>Successful login with valid credentials</li>
- *   <li>Failed login with invalid credentials</li>
- *   <li>Session timeout and renewal</li>
- *   <li>Concurrent session handling</li>
- * </ul>
+ * <a href="path/to/doc/specification/authentication.adoc">Authentication Specification</a>.
  * <p>
  * Requirements validated:
  * <ul>
  *   <li>{@code AUTH-201: User Login}</li>
  *   <li>{@code AUTH-202: Session Management}</li>
- *   <li>{@code SEC-105: Password Security}</li>
  * </ul>
  */
-@QuarkusIntegrationTest
-public class AuthenticationIT {
-    // Integration tests
-}
+```
+
+### Python Example
+
+```python
+class TestAuthenticationFlow:
+    """Integration tests for the complete authentication flow.
+
+    Validates end-to-end behavior specified in
+    doc/specification/authentication.adoc.
+
+    Requirements validated:
+        - AUTH-201: User Login
+        - AUTH-202: Session Management
+    """
+```
+
+### JavaScript/TypeScript Example
+
+```javascript
+/**
+ * Integration tests for the complete authentication flow.
+ *
+ * Validates end-to-end behavior specified in
+ * doc/specification/authentication.adoc.
+ *
+ * Requirements validated:
+ * - AUTH-201: User Login
+ * - AUTH-202: Session Management
+ */
+describe('Authentication Flow', () => {
+  it('should complete user login', () => { });
+  it('should manage sessions', () => { });
+});
 ```
 
 ## Best Practices

@@ -1,6 +1,6 @@
 # Information Distribution Standards
 
-Standards for deciding what information belongs in specifications versus implementation code documentation (JavaDoc).
+Standards for deciding what information belongs in specifications versus implementation code documentation (API docs such as JavaDoc, docstrings, or JSDoc).
 
 ## What Belongs in Specifications
 
@@ -23,20 +23,20 @@ Specification documents must contain:
 - Standards compliance requirements
 
 **References**:
-- Links to implementing classes
+- Links to implementing source files
 - Links to verification tests
 - Links to related specifications
 
-## What Belongs in JavaDoc
+## What Belongs in API Documentation
 
-Implementation code documentation (JavaDoc) must contain:
+Implementation code documentation (JavaDoc, docstrings, JSDoc) must contain:
 
 **API Documentation**:
-- Purpose of class/method
+- Purpose of class/module/function
 - Usage instructions and examples
 - Parameter descriptions
 - Return value descriptions
-- Exception conditions
+- Exception/error conditions
 
 **Implementation Details**:
 - How the code works internally
@@ -52,17 +52,17 @@ Implementation code documentation (JavaDoc) must contain:
 **References**:
 - Links back to specification documents
 - Requirement references
-- Related classes and methods
+- Related classes/modules and methods/functions
 
 ## What to Avoid
 
 **In specifications**:
-- Detailed method-level implementation
+- Detailed method/function-level implementation
 - Internal algorithms and data structures
 - Transitional language ("was moved", "will be refactored")
 - Code that duplicates actual implementation
 
-**In JavaDoc**:
+**In API documentation**:
 - Extensive architectural overviews spanning multiple components
 - Requirement definitions and rationale
 - Standards definitions that apply broadly

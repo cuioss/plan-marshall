@@ -29,11 +29,7 @@ Refactoring should:
 5. Update cross-references
 6. Delete old components
 
-**Example**:
-```
-Before: plugin-update-agent, plugin-update-command
-After: plugin-maintain skill with update-component workflow
-```
+**Example**: `plugin-maintain` skill with `update-component` workflow handles all component types via parameters instead of separate commands per type.
 
 ### split
 
@@ -51,11 +47,7 @@ After: plugin-maintain skill with update-component workflow
 4. Update references
 5. Test all parts
 
-**Example**:
-```
-Before: monolithic-diagnose-command (1200 lines)
-After: diagnose-agents, diagnose-commands, diagnose-skills
-```
+**Example**: A monolithic 1200-line diagnose command split into focused `plugin-doctor` skill with separate workflow per component type.
 
 ### extract
 
@@ -178,7 +170,7 @@ After refactoring:
 
 2. **Run Diagnosis**: Check for issues
    ```
-   /plugin-diagnose-{type}
+   /plugin-doctor
    ```
 
 3. **Test Functionality**: Verify components work
@@ -191,18 +183,12 @@ After refactoring:
 
 **Pattern**: Multiple related commands → One skill with workflows
 
-**Before**:
 ```
-commands/
-  create-agent.md
-  create-command.md
-  create-skill.md
-```
-
-**After**:
-```
+# Instead of separate commands per type:
+#   create-agent.md, create-command.md, create-skill.md
+# Use one skill with workflows:
 skills/plugin-create/
-  SKILL.md (with 3 workflows)
+  SKILL.md (with create-agent, create-command, create-skill workflows)
   scripts/
   references/
 ```
@@ -211,18 +197,12 @@ skills/plugin-create/
 
 **Pattern**: Related agents → Skill with shared patterns
 
-**Before**:
 ```
-agents/
-  diagnose-agent-a.md
-  diagnose-agent-b.md
-```
-
-**After**:
-```
-skills/plugin-diagnose/
-  SKILL.md
-  agents/ (if needed)
+# Instead of separate agents per type:
+#   diagnose-agent-a.md, diagnose-agent-b.md
+# Use one skill with component-type parameter:
+skills/plugin-doctor/
+  SKILL.md (analyze-component workflow with type parameter)
 ```
 
 ## Directory Structure Standards

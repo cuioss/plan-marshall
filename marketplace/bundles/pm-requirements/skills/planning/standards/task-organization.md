@@ -114,4 +114,4 @@ _See link:specification/testing.adoc#_integration_testing[Integration Testing Sp
 
 - [Document Structure Standards](document-structure.md) - Document location, header, and core sections
 - [Status Tracking Standards](status-tracking.md) - Status indicators for tasks
-- [Traceability Standards](traceability.md) - Linking tasks to requirements
+- [Requirement Linking Standards](requirement-linking.md) - Linking tasks to requirements

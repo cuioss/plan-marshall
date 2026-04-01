@@ -8,7 +8,7 @@ This bundle provides documentation domain knowledge through two core skills (`re
 
 ## Components Included
 
-### Skills (4 skills)
+### Skills (5 registered)
 
 **ref-asciidoc** - AsciiDoc formatting and validation skill (5 workflows):
 
@@ -29,7 +29,7 @@ This bundle provides documentation domain knowledge through two core skills (`re
 | **sync-with-code** | Sync docs with code changes |
 | **cleanup-stale** | Remove stale documentation |
 
-**manage-adr** - Architectural Decision Records skill (5 workflows, script-only):
+**manage-adr** - Architectural Decision Records skill (5 workflows):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -39,7 +39,7 @@ This bundle provides documentation domain knowledge through two core skills (`re
 | **update-adr** | Update ADR status |
 | **delete-adr** | Delete ADR with confirmation |
 
-**manage-interface** - Interface specifications skill (5 workflows, script-only):
+**manage-interface** - Interface specifications skill (5 workflows):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -51,13 +51,13 @@ This bundle provides documentation domain knowledge through two core skills (`re
 
 **ext-triage-docs** - Extension point for documentation finding triage
 
-**plan-marshall-plugin** - Extension registration
+### Extensions (not registered in plugin.json)
 
-### Commands (1 command)
+**plan-marshall-plugin** - Documentation domain manifest for plan-marshall workflow integration
 
-| Command | Purpose |
-|---------|---------|
-| **tools-verify-architecture-diagrams** | Specialized PlantUML verification |
+**recipe-doc-verify** - Recipe for verifying documentation quality (format, links, drift)
+
+**recipe-verify-architecture-diagrams** - Recipe for verifying and updating PlantUML diagrams
 
 ### Templates
 
@@ -71,8 +71,6 @@ Located in skill `templates/` directories:
 
 ```
 pm-documents/
-├── commands/
-│   └── tools-verify-architecture-diagrams.md
 └── skills/
     ├── ref-asciidoc/             # AsciiDoc formatting skill (5 workflows)
     │   ├── SKILL.md
@@ -93,6 +91,10 @@ pm-documents/
     │   ├── SKILL.md
     │   ├── scripts/
     │   └── templates/
+    ├── recipe-doc-verify/        # Documentation verification recipe
+    │   └── SKILL.md
+    ├── recipe-verify-architecture-diagrams/  # PlantUML diagram recipe
+    │   └── SKILL.md
     ├── ext-triage-docs/          # Triage extension point
     └── plan-marshall-plugin/     # Extension registration
 ```

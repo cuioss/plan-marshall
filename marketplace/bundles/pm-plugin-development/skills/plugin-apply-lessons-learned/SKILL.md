@@ -41,10 +41,16 @@ Skill: plan-marshall:manage-lessons
 
 ### Step 3: Query Unapplied Lessons
 
-- Use `query-lessons.py` script to filter lesson files
-- For specific component: Filter by `component.name`
-- For --all: Filter all where `applied: false`
-- For --list: Display lessons without applying
+Query unapplied lessons using the manage-lessons script:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson query \
+  --applied false [--component-name {name}]
+```
+
+- For specific component: Add `--component-name {name}`
+- For --all: Query all where `applied: false`
+- For --list: Display results without applying
 
 ### Step 4: For Each Unapplied Lesson
 
@@ -156,8 +162,15 @@ Add to warnings or "avoid" sections:
 - Lessons skipped: 0
 ```
 
+## Dependencies
+
+**Cross-bundle dependency**: This skill relies on `plan-marshall:manage-lessons` for lesson storage, retrieval, and the `query-lessons.py` script used in Step 3. The manage-lessons skill must be available and its script registered in the executor.
+
+```
+Skill: plan-marshall:manage-lessons
+```
+
 ## Related
 
-- `plan-marshall:manage-lessons` - Skill for lesson storage/retrieval
 - `/plugin-maintain` - General component maintenance
 - `/plugin-doctor` - Diagnose component issues

@@ -1,33 +1,33 @@
 # CSS Quality & Tooling
 
-Performance optimization, accessibility standards, dark mode implementation, and development tools setup for CUI projects.
+Performance optimization, accessibility standards, dark mode implementation, and development tools setup.
 
 ## Performance
 
 ### Efficient Selectors
 
 ```css
-/* ✅ Fast - single class */
+/* Preferred: Fast - single class */
 .button { }
 .card__header { }
 
-/* ❌ Slow - deep nesting */
+/* Avoid: Slow - deep nesting */
 .header .nav ul li a span { }
 
-/* ❌ Slow - attribute without tag */
+/* Avoid: Slow - attribute without tag */
 [type="text"] { }
 
-/* ✅ Better */
+/* Preferred: Better */
 input[type="text"] { }
 ```
 
 ### Minimize Specificity
 
 ```css
-/* ❌ High specificity (1,3,1) */
+/* Avoid: High specificity (1,3,1) */
 #sidebar .widget .title span { }
 
-/* ✅ Low specificity (0,1,0) */
+/* Preferred: Low specificity (0,1,0) */
 .widget-title { }
 ```
 
@@ -38,7 +38,7 @@ Low specificity is easier to override and prevents specificity wars.
 Use sparingly: `box-shadow`, `border-radius`, `filter`, `transform`, `opacity`
 
 ```css
-/* ✅ Apply on state change only */
+/* Preferred: Apply on state change only */
 .button {
   transition: transform 0.2s;
 }
@@ -47,7 +47,7 @@ Use sparingly: `box-shadow`, `border-radius`, `filter`, `transform`, `opacity`
   transform: translateY(-2px);
 }
 
-/* ❌ Animated constantly */
+/* Avoid: Animated constantly */
 .element {
   animation: pulse 1s infinite;
 }
@@ -96,12 +96,12 @@ Inline above-the-fold styles:
 ### Focus Management
 
 ```css
-/* ❌ Never remove outlines globally */
+/* Avoid: Never remove outlines globally */
 * {
   outline: none;
 }
 
-/* ✅ Use :focus-visible for keyboard-only focus */
+/* Preferred: Use :focus-visible for keyboard-only focus */
 *:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
@@ -114,25 +114,6 @@ Inline above-the-fold styles:
 }
 ```
 
-**Skip to Content Link:**
-
-```css
-.skip-to-content {
-  position: absolute;
-  left: -9999px;
-}
-
-.skip-to-content:focus {
-  position: fixed;
-  top: 1rem;
-  left: 1rem;
-  background: var(--color-primary);
-  color: white;
-  padding: 1rem;
-  z-index: 999;
-}
-```
-
 ### Color Contrast
 
 **WCAG AA Standards:**
@@ -141,13 +122,13 @@ Inline above-the-fold styles:
 - UI components: 3:1
 
 ```css
-/* ✅ Good contrast */
+/* Preferred: Good contrast */
 .button {
   background: #1976d2;  /* Blue */
   color: #ffffff;       /* White - 4.54:1 */
 }
 
-/* ❌ Poor contrast */
+/* Avoid: Poor contrast */
 .button {
   background: #64b5f6;  /* Light blue */
   color: #ffffff;       /* White - 2.46:1 - FAIL */
@@ -182,50 +163,9 @@ Respect user preferences:
 }
 ```
 
-### Screen Reader Considerations
+### Screen Reader Support
 
-**Visually Hidden:**
-
-```css
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-```
-
-**Interactive States:**
-
-```css
-/* Ensure disabled elements are clear */
-.button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Loading states */
-.button[aria-busy="true"] {
-  position: relative;
-  color: transparent;
-}
-
-.button[aria-busy="true"]::after {
-  content: '';
-  position: absolute;
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-```
+Use `.sr-only` (position: absolute, 1px clip) for visually hidden but accessible content. Ensure disabled elements have `opacity: 0.6; cursor: not-allowed`.
 
 ### Touch Targets
 
@@ -241,6 +181,8 @@ Minimum 44x44px:
 ```
 
 ## Dark Mode
+
+Dark mode relies on CSS custom properties for theming. For custom property fundamentals and naming conventions, see [CSS Essentials](css-essentials.md#css-custom-properties).
 
 ### System Preference
 
@@ -267,9 +209,9 @@ Minimum 44x44px:
 }
 ```
 
-### `light-dark()` Function (Baseline 2024)
+### `light-dark()` Function
 
-Simplify dark mode with single-declaration color switching:
+Simplify dark mode with single-declaration color switching (Baseline 2024):
 
 ```css
 :root {
@@ -351,64 +293,6 @@ document.documentElement.setAttribute('data-theme', theme);
 localStorage.setItem('theme', theme);
 ```
 
-## Maintainability
-
-### DRY Principle
-
-```css
-/* ❌ Repetitive */
-.button-primary {
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
-  font-weight: 500;
-}
-
-.button-secondary {
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
-  font-weight: 500;
-}
-
-/* ✅ Use shared class + modifier */
-.button {
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
-  font-weight: 500;
-}
-
-.button--primary { /* variant styles */ }
-.button--secondary { /* variant styles */ }
-```
-
-### Avoid Magic Numbers
-
-```css
-/* ❌ What is 23px? */
-.element {
-  margin-top: 23px;
-}
-
-/* ✅ Use variables with semantic names */
-.element {
-  margin-top: var(--spacing-md);
-}
-```
-
-### Documentation
-
-```css
-/**
- * Complex component requiring explanation
- *
- * This uses a specific technique because...
- * Browser-specific workaround for Safari flex rendering.
- */
-.complex-component {
-  /* Safari flex gap fallback */
-  gap: 1rem;
-}
-```
-
 ## Development Tools
 
 ### Package.json Setup
@@ -421,7 +305,6 @@ localStorage.setItem('theme', theme);
     "autoprefixer": "^10.4.0",
     "postcss-preset-env": "^9.0.0",
     "postcss-import": "^15.0.0",
-    "postcss-nested": "^6.0.0",
     "stylelint": "^17.4.0",
     "stylelint-config-standard": "^34.0.0",
     "stylelint-order": "^6.0.0",
@@ -452,7 +335,6 @@ export default (ctx) => {
   return {
     plugins: {
       'postcss-import': {},
-      'postcss-nested': {},
       'postcss-preset-env': {
         stage: isDev ? 0 : 1,
       },
@@ -469,144 +351,37 @@ export default (ctx) => {
 
 **What PostCSS Does:**
 - **postcss-import** - Inlines `@import` statements
-- **postcss-nested** - Nesting support (polyfill for native CSS nesting; can be removed when targeting modern browsers only)
 - **postcss-preset-env** - Modern CSS features with fallbacks
 - **autoprefixer** - Adds vendor prefixes automatically
 - **csso** - Minifies CSS in production
 
 ### Stylelint Configuration
 
-For complete Stylelint configuration including property ordering, BEM naming enforcement, and CSS-in-JS setup, see `pm-dev-frontend:js-enforce-eslint` → `standards/stylelint-setup.md`.
+For complete Stylelint configuration including property ordering, BEM naming enforcement, and CSS-in-JS setup, see `pm-dev-frontend:lint-config` → `standards/stylelint-setup.md`.
 
-### Prettier Configuration
+For Prettier and IDE integration, see `pm-dev-frontend:lint-config` → `standards/prettier-configuration.md`.
 
-Create `.prettierrc`:
+### PurgeCSS
 
-```json
-{
-  "printWidth": 100,
-  "tabWidth": 2,
-  "useTabs": false,
-  "semi": true,
-  "singleQuote": true,
-  "trailingComma": "es5",
-  "bracketSpacing": true
-}
-```
-
-### IDE Integration
-
-**VS Code** - `.vscode/settings.json`:
-
-```json
-{
-  "editor.defaultFormatter": "esbenp.prettier-vscode",
-  "editor.formatOnSave": true,
-  "css.validate": false,
-  "stylelint.validate": ["css"],
-  "[css]": {
-    "editor.codeActionsOnSave": {
-      "source.fixAll.stylelint": true
-    }
-  }
-}
-```
-
-### Build Pipeline
-
-**Development:**
-```bash
-npm run css:dev  # Watch and rebuild
-```
-
-**Production:**
-```bash
-npm run css:build  # Minify and optimize
-npm run css:purge  # Remove unused CSS
-```
-
-**Quality Checks:**
-```bash
-npm run css:lint       # Check linting
-npm run css:format:check  # Check formatting
-npm run css:quality    # Both checks
-```
-
-### PurgeCSS Setup
-
-Create `purgecss.config.js`:
+Remove unused CSS in production builds. Configure `safelist` for dynamic classes (state classes, ARIA selectors):
 
 ```javascript
 export default {
-  content: [
-    './src/**/*.html',
-    './src/**/*.js'
-  ],
+  content: ['./src/**/*.html', './src/**/*.js'],
   css: ['./dist/css/**/*.css'],
-  output: './dist/css',
   safelist: {
     standard: ['is-active', 'is-open', 'is-loading'],
     deep: [/^data-/, /^aria-/],
-    greedy: [/^modal-/, /^dropdown-/]
-  }
+  },
 };
 ```
 
-## CI/CD Integration
+## Performance Targets
 
-### GitHub Actions Example
-
-```yaml
-name: CSS Quality
-
-on: [push, pull_request]
-
-jobs:
-  quality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm ci
-      - run: npm run css:quality
-      - run: npm run css:build
-```
-
-## Performance Metrics
-
-### Target Metrics
-
-- CSS Bundle Size: < 50KB gzipped
+- CSS bundle: < 50KB gzipped
 - First Paint: < 1s
-- Layout Shifts (CLS): < 0.1
-- No unused CSS: > 90% used
-
-### Monitoring
-
-```bash
-# Check bundle size
-ls -lh dist/styles.css
-
-# Analyze with DevTools
-- Coverage tab for unused CSS
-- Performance tab for paint times
-- Lighthouse for overall score
-```
-
-## Best Practices
-
-1. **Write efficient selectors** - Use single classes
-2. **Keep specificity low** - Max 0,4,0
-3. **Use containment** - Isolate layout calculations
-4. **Inline critical CSS** - Above-the-fold styles
-5. **Ensure focus visibility** - Use :focus-visible
-6. **Meet contrast ratios** - 4.5:1 for text
-7. **Respect motion preferences** - Use prefers-reduced-motion
-8. **Support dark mode** - Use custom properties
-9. **Remove unused CSS** - PurgeCSS in builds
-10. **Run quality checks** - Lint and format before committing
+- CLS: < 0.1
+- Use DevTools Coverage tab to identify unused CSS
 
 ## See Also
 

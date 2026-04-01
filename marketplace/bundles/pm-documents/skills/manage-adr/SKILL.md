@@ -62,22 +62,19 @@ List all ADRs with optional status filtering.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list [--status {status}]
 ```
 
-**Step 3: Parse Output**
+**Step 2: Parse Output**
 
-Parse JSON output containing ADR list with metadata.
+Parse TOON output containing ADR list with metadata.
 
 ### Output
 
-```json
-{
-  "success": true,
-  "operation": "list",
-  "count": 3,
-  "adrs": [
-    {"number": 1, "title": "Use PostgreSQL", "status": "Accepted", "path": "doc/adr/001-Use_PostgreSQL.adoc"},
-    {"number": 2, "title": "Adopt Quarkus", "status": "Proposed", "path": "doc/adr/002-Adopt_Quarkus.adoc"}
-  ]
-}
+```toon
+status: success
+operation: list
+count: 2
+adrs[2]{number,title,status,path}:
+1,Use PostgreSQL,Accepted,doc/adr/001-Use_PostgreSQL.adoc
+2,Adopt Quarkus,Proposed,doc/adr/002-Adopt_Quarkus.adoc
 ```
 
 ## Workflow: create-adr
@@ -97,15 +94,15 @@ Create a new ADR with automatic numbering.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --title "{title}" [--status "{status}"]
 ```
 
-**Step 3: Parse Output**
+**Step 2: Parse Output**
 
-Extract created file path from JSON output.
+Extract created file path from TOON output.
 
-**Step 4: Open for Editing**
+**Step 3: Open for Editing**
 
 Read the created file and inform user to fill in content sections.
 
-**Step 5: Validate Format**
+**Step 4: Validate Format**
 
 ```
 Skill: pm-documents:ref-asciidoc
@@ -146,7 +143,7 @@ Read ADR content by number.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr read --number {number}
 ```
 
-**Step 3: Display Content**
+**Step 2: Display Content**
 
 Show ADR metadata and content to user.
 
@@ -167,7 +164,7 @@ Update ADR status through lifecycle.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update --number {number} --status {status}
 ```
 
-**Step 3: Confirm Update**
+**Step 2: Confirm Update**
 
 Report updated status to user.
 
@@ -188,7 +185,7 @@ Delete ADR with confirmation.
 python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr delete --number {number} --force
 ```
 
-**Step 3: Confirm Deletion**
+**Step 2: Confirm Deletion**
 
 Report deletion to user.
 
@@ -263,6 +260,30 @@ Examples:
 - `doc/adr/001-Use_PostgreSQL_for_Persistence.adoc`
 - `doc/adr/002-Adopt_Quarkus_Framework.adoc`
 - `doc/adr/003-Implement_CQRS_Pattern.adoc`
+
+## Scripts
+
+Script: `pm-documents:manage-adr` → `manage-adr.py`
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all ADRs with optional status filtering |
+| `create` | Create new ADR from template with automatic numbering |
+| `read` | Read ADR content by number |
+| `update` | Update ADR status through lifecycle |
+| `delete` | Delete ADR (requires --force) |
+
+**Usage Examples:**
+```bash
+# List all ADRs
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list
+
+# Create new ADR
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --title "Use PostgreSQL"
+
+# Update ADR status
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update --number 1 --status Accepted
+```
 
 ## Related Skills
 

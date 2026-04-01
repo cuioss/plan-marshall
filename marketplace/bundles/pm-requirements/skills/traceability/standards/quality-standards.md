@@ -9,18 +9,18 @@ Verify all necessary traceability links are in place:
 ### Specification Completeness
 - All specifications link to implementation when it exists
 - Status indicators present (PLANNED/IN PROGRESS/IMPLEMENTED)
-- Implementation links include class names and descriptions
+- Implementation links include file/class names and descriptions
 - Test verification sections included for IMPLEMENTED specs
 
 ### Code Completeness
-- All implementation classes reference specifications
-- JavaDoc includes specification links
-- Requirement IDs documented in JavaDoc
-- All test classes reference specifications
+- All implementation files reference specifications
+- API documentation (JavaDoc, docstrings, JSDoc) includes specification links
+- Requirement IDs documented in API documentation
+- All test files reference specifications
 
 ### Test Completeness
 - All tests reference specifications they validate
-- Test scenarios documented in test class JavaDoc
+- Test scenarios documented in test file documentation
 - Requirement IDs listed for integration tests
 - Coverage metrics documented in specifications
 
@@ -42,8 +42,8 @@ Verify all traceability information is correct and current:
 
 ### Reference Accuracy
 - Requirement IDs match requirements document
-- Class names match actual implementation
-- Package paths are correct
+- File/class names match actual implementation
+- Paths are correct
 - Test names match actual test files
 
 ## Navigation
@@ -59,12 +59,12 @@ Verify users can easily navigate between documentation levels:
 ### Backward Navigation (Code → Spec)
 - Can easily navigate from implementation to specification
 - Can easily navigate from tests to specification
-- JavaDoc links are visible and accessible
+- API documentation links are visible and accessible
 - Path through documentation is clear
 
 ### Cross-Navigation
 - Can navigate between related specifications
-- Can navigate between related classes
+- Can navigate between related source files
 - Can navigate between related tests
 - All navigation is bidirectional
 
@@ -93,8 +93,8 @@ Verify documentation remains maintainable over time:
 ## Verification Checklist
 
 - All specifications link to implementation (when it exists)
-- All implementation classes link back to specification
-- All test classes link to specification
+- All implementation files link back to specification
+- All test files link to specification
 - Status indicators are current (PLANNED/IN PROGRESS/IMPLEMENTED)
 - No broken cross-reference links
 - Bidirectional navigation works (spec ↔ code ↔ tests)

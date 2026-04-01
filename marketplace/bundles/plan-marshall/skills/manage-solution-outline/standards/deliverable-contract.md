@@ -98,7 +98,7 @@ Each profile has a distinct verification purpose. Implementation verifies compil
 | `implementation` | Compile/build only |
 | `module_testing` | Run tests |
 
-Verification commands are resolved during the **outline phase** (phase-3-outline / workflow-outline-change-type) using architecture resolution or domain-specific commands. The deliverable's Verification block is the single source of truth — downstream phases copy it verbatim.
+Verification commands are resolved during the **outline phase** (phase-3-outline Steps 9-10) using architecture resolution or domain-specific commands. The deliverable's Verification block is the single source of truth — downstream phases copy it verbatim.
 
 ### 1:N Task Creation
 

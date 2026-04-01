@@ -16,7 +16,7 @@ class Extension(ExtensionBase):
         """Return triage skill reference."""
         return 'pm-documents:ext-triage-docs'
 
-    # Note: Documentation domain uses generic workflow-outline-change-type standards from plan-marshall.
+    # Note: Documentation domain uses generic phase-3-outline standards from plan-marshall.
     # Domain-specific skills can be added later if needed by implementing
     # provides_outline_skill() with documentation-specific outline instructions.
 
@@ -43,16 +43,7 @@ class Extension(ExtensionBase):
                     'optionals': [],
                 },
                 'documentation': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-documents:ref-asciidoc',
-                            'description': 'AsciiDoc formatting, validation, link verification, and template creation',
-                        },
-                        {
-                            'skill': 'pm-documents:ref-documentation',
-                            'description': 'Content quality, tone analysis, organization standards, and review orchestration',
-                        },
-                    ],
+                    'defaults': [],
                     'optionals': [
                         {
                             'skill': 'pm-documents:manage-adr',
@@ -94,12 +85,27 @@ class Extension(ExtensionBase):
                                               active_profiles=active_profiles)
 
     def provides_verify_steps(self) -> list[dict]:
-        """Return documentation-specific verification steps."""
+        """No verify steps — documentation verification is handled via recipe."""
+        return []
+
+    def provides_recipes(self) -> list[dict]:
+        """Return documentation recipes."""
         return [
             {
-                'name': 'pm-documents:doc-verify',
-                'skill': 'pm-documents:doc-verify',
-                'description': 'Verify documentation is synchronized',
+                'key': 'doc-verify',
+                'name': 'Verify Documentation Quality',
+                'description': 'Validate AsciiDoc format, links, and documentation drift',
+                'skill': 'pm-documents:recipe-doc-verify',
+                'default_change_type': 'verification',
+                'scope': 'codebase_wide',
+            },
+            {
+                'key': 'verify-architecture-diagrams',
+                'name': 'Verify Architecture Diagrams',
+                'description': 'Verify and update PlantUML diagrams to reflect current codebase state',
+                'skill': 'pm-documents:recipe-verify-architecture-diagrams',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
             },
         ]
 

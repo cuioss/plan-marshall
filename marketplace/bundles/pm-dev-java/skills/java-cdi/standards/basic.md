@@ -50,11 +50,11 @@ public class ConfigurableService {
 ### Anti-Patterns
 
 ```java
-// ❌ Field Injection - FORBIDDEN
+// Avoid: Field Injection - FORBIDDEN
 @Inject
 private UserService userService;
 
-// ❌ Setter Injection - FORBIDDEN
+// Avoid: Setter Injection - FORBIDDEN
 @Inject
 public void setUserService(UserService userService) {
     this.userService = userService;
@@ -78,7 +78,7 @@ public void setUserService(UserService userService) {
 **NEVER** inject a shorter-lived bean directly into a longer-lived bean. The longer-lived bean holds a proxy, but the underlying instance may already be destroyed:
 
 ```java
-// ❌ WRONG - RequestScoped injected into ApplicationScoped
+// Avoid: WRONG - RequestScoped injected into ApplicationScoped
 @ApplicationScoped
 public class ReportService {
     private final HttpServletRequest request; // Stale after request ends
@@ -88,7 +88,7 @@ public class ReportService {
     }
 }
 
-// ✅ CORRECT - Use Instance<T> for shorter-lived dependencies
+// Preferred: CORRECT - Use Instance<T> for shorter-lived dependencies
 @ApplicationScoped
 public class ReportService {
     private final Instance<HttpServletRequest> request;
@@ -141,14 +141,14 @@ public class NotificationService {
 Never return null from producers — use the Null Object pattern:
 
 ```java
-// ❌ ILLEGAL - will throw IllegalProductException
+// Avoid: ILLEGAL - will throw IllegalProductException
 @Produces
 @RequestScoped
 public SomeService createService() {
     return null;  // CDI will throw exception at runtime
 }
 
-// ✅ CORRECT - Null Object pattern
+// Preferred: CORRECT - Null Object pattern
 @Produces
 @RequestScoped
 public NotificationService createNotificationService() {

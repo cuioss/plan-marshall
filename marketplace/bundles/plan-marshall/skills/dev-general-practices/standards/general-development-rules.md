@@ -1,6 +1,6 @@
 # General Development Rules
 
-Core principles that guide all development work in CUI projects.
+Core principles that guide all development work.
 
 ## Overview
 
@@ -12,6 +12,12 @@ These foundational rules apply across ALL development activities:
 - Architectural decisions
 
 ## Core Development Principles
+
+### Boy Scout Rule
+
+Leave code cleaner than you found it. When modifying a file, fix existing quality issues you encounter — poor naming, SRP violations, dead code, missing error handling, missing assertions, hardcoded test data, poor documentation. Never dismiss code smells with "not introduced by current changes" — always fix them. If fixes cascade beyond reasonable scope, stop and ask the user how to proceed.
+
+This applies equally to production code, test code, and documentation.
 
 ### Principle 1: Ask When In Doubt
 
@@ -30,23 +36,7 @@ These foundational rules apply across ALL development activities:
 - Previous similar decisions provide clear guidance
 - Standards and conventions clearly apply
 
-**Examples:**
-
-**DON'T GUESS:**
-```
-User says: "Add error handling"
-Agent thinks: "I'll add try-catch blocks everywhere"
-WRONG: User might want specific error handling strategy
-```
-
-**ASK FOR CLARIFICATION:**
-```
-User says: "Add error handling"
-Agent asks: "What error handling approach would you prefer?
-  1. Try-catch with logging
-  2. Result pattern with error types
-  3. Exception propagation to caller"
-```
+**Example:** User says "Add error handling" → don't guess the strategy, ask: "What error handling approach would you prefer? (try-catch with logging, Result pattern, exception propagation)"
 
 ### Principle 2: Always Research Topics
 
@@ -89,50 +79,24 @@ Task:
 - Maintains reference trails
 - Synthesizes findings from multiple sources
 
-**Examples:**
+**Example:** Need Java testing best practices → spawn `plan-marshall:research-best-practices-agent` with prompt "Research best practices for Java unit testing with JUnit 5"
 
-**Researching Java Testing Practices:**
-```
-Task:
-  subagent_type: plan-marshall:research-best-practices-agent
-  prompt: Research best practices for Java unit testing with JUnit 5
-```
+### Principle 3: Apply Judgment Within Constraints
 
-**Researching CDI Patterns:**
-```
-Task:
-  subagent_type: plan-marshall:research-best-practices-agent
-  prompt: Research current CDI (Contexts and Dependency Injection) best practices for Quarkus applications
-```
+**Rule:** Use good judgment, but don't invent requirements or conventions. When the path forward is unclear, research first, then ask the user.
 
-### Principle 3: Never Guess or Be Creative
+**Use judgment for:**
+- Choosing between well-established approaches when the result is equivalent
+- Applying documented standards to specific situations
+- Making reasonable implementation decisions within clear requirements
 
-**Rule:** If you cannot find best practices for a topic, ask the user.
+**Ask the user when:**
+- Requirements are ambiguous or underspecified
+- Multiple valid approaches exist with different trade-offs
+- No established best practice exists for the situation
+- The decision has significant downstream impact
 
-**Prohibited Behaviors:**
-- Guessing at requirements
-- Making up standards or conventions
-- Inventing approaches without research
-- Being "creative" with unclear requirements
-
-**Required Behaviors:**
-- Ask for clarification when uncertain
-- Research established best practices
-- Follow documented standards
-- Request user guidance when best practices unavailable
-
-**Examples:**
-
-**WRONG (Guessing):**
-```
-Agent thinks: "User didn't specify test coverage, I'll aim for 50%"
-```
-
-**CORRECT (Asking):**
-```
-Agent asks: "What test coverage threshold should I target?
-CUI projects typically use 80% line/branch coverage."
-```
+**Example:** User says "Add validation" → don't guess, ask: "What should I validate? (input format, business rules, data constraints)"
 
 ### Principle 4: Use Proper Tools for File Operations
 
@@ -160,45 +124,7 @@ CUI projects typically use 80% line/branch coverage."
 - Build commands (`mvn`, `./mvnw`, `npm`, etc.)
 - Operations that truly require shell execution
 
-**Detailed Patterns:**
-
-For complete tool usage patterns, see the standards in this skill:
-- `file-operations.md` — File discovery, existence checking, validation
-- `search-operations.md` — Content search, pattern matching
-- `tool-usage-patterns.md` — Tool selection guide, non-prompting alternatives
-
-**Examples:**
-
-**File Discovery:**
-```
-Glob: pattern="**/*.java", path="src/main/java"
-```
-
-**File Discovery (WRONG):**
-```
-Bash: find src/main/java -name "*.java"
-```
-
-**Check File Exists:**
-```
-Read: file_path="path/to/file.java"
-# Handle error gracefully if file doesn't exist
-```
-
-**Check File Exists (WRONG):**
-```
-Bash: test -f "path/to/file.java"
-```
-
-**Search Content:**
-```
-Grep: pattern="TODO", path="src/", output_mode="files_with_matches"
-```
-
-**Search Content (WRONG):**
-```
-Bash: grep -r "TODO" src/
-```
+For complete patterns including file operations, content search, and Bash safety rules, see `tool-usage-patterns.md`.
 
 ### Principle 5: Don't Proliferate Documents
 
@@ -219,20 +145,7 @@ Bash: grep -r "TODO" src/
    - Ask user: "Should I create a new document or update existing {related document}?"
    - Get explicit approval before creating
 
-**Examples:**
-
-**WRONG (Proliferating):**
-```
-Agent creates: "feature-overview.md"
-(When README.md already has feature documentation)
-```
-
-**CORRECT (Reusing):**
-```
-Agent: "I found feature documentation in README.md. Should I:
-  1. Update README.md with new feature details
-  2. Create separate feature-overview.md document"
-```
+**Example:** Don't create `feature-overview.md` when README.md already covers features — ask the user whether to update the existing document or create a new one.
 
 ### Principle 6: Never Add Dependencies Without User Approval
 
@@ -258,26 +171,7 @@ Agent: "I found feature documentation in README.md. Should I:
    ```
 4. **Wait for approval** before modifying pom.xml, package.json, etc.
 
-**Examples:**
-
-**WRONG (Adding without approval):**
-```
-Agent modifies pom.xml:
-<dependency>
-  <groupId>com.google.guava</groupId>
-  <artifactId>guava</artifactId>
-</dependency>
-```
-
-**CORRECT (Asking first):**
-```
-Agent: "I need collection utilities for {feature}. I recommend adding Google Guava because:
-- Provides immutable collections
-- Well-tested and widely used
-- Actively maintained
-
-Should I add Guava as a dependency?"
-```
+**Example:** Don't silently add Guava to pom.xml — ask: "I need collection utilities for {feature}. I recommend Google Guava because {reasons}. Should I add this dependency?"
 
 ## Quick Reference
 
@@ -292,58 +186,3 @@ Should I add Guava as a dependency?"
 | Need to create document | Ask user first |
 | Need to add dependency | Ask user first |
 
-## Anti-Patterns
-
-### DON'T: Guess at Requirements
-```
-User: "Add validation"
-Agent: *adds generic validation without asking what to validate*
-```
-
-### DO: Ask for Clarification
-```
-User: "Add validation"
-Agent: "What should I validate? (e.g., input format, business rules, data constraints)"
-```
-
-### DON'T: Use Outdated Research Methods
-```
-Agent: "Let me search GitHub for examples..."
-```
-
-### DO: Use Structured Research
-```
-Agent: "Using research-best-practices-agent to find current best practices..."
-```
-
-### DON'T: Use Bash for File Operations
-```
-Bash: cat file.txt
-Bash: find . -name "*.java"
-```
-
-### DO: Use Proper Tools
-```
-Read: file_path="file.txt"
-Glob: pattern="**/*.java"
-```
-
-### DON'T: Create Documents Without Asking
-```
-Agent: *creates new-feature-guide.md*
-```
-
-### DO: Ask Before Creating
-```
-Agent: "Should I create new-feature-guide.md or add to existing README.md?"
-```
-
-### DON'T: Add Dependencies Silently
-```
-Agent: *adds library to pom.xml*
-```
-
-### DO: Request Approval
-```
-Agent: "I recommend adding {library} for {reason}. Should I add this dependency?"
-```

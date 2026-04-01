@@ -1,10 +1,10 @@
 # Trusted Domains
 
-Pre-approved domains for WebFetch operations that have passed comprehensive security assessment and meet CUI trust criteria.
+Pre-approved domains for WebFetch operations that have passed comprehensive security assessment.
 
 ## Purpose
 
-This document provides a curated list of domains that are pre-approved for WebFetch operations in CUI projects. These domains have been evaluated against security criteria defined in [domain-security-assessment.md](domain-security-assessment.md) and deemed safe for automated web fetching operations.
+This document provides a curated list of domains that are pre-approved for WebFetch operations. These domains have been evaluated against security criteria defined in [domain-security-assessment.md](domain-security-assessment.md) and deemed safe for automated web fetching operations.
 
 **When to use this list:**
 - Before requesting WebFetch permissions for a domain, check if it's already trusted

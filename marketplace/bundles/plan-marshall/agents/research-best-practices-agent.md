@@ -255,7 +255,7 @@ After completing all work, return findings in this format:
 ```
 ## Research Best Practices - {TOPIC} Complete
 
-**Status**: ✅ SUCCESS | ❌ FAILURE | ⚠️ PARTIAL
+**Status**: SUCCESS | FAILURE | PARTIAL
 
 **Summary**:
 {Brief 1-2 sentence description of research performed}

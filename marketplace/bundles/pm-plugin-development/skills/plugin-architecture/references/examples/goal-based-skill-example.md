@@ -1,11 +1,11 @@
-# Example: Goal-Based Skill (plugin-diagnose)
+# Example: Goal-Based Skill (plugin-doctor)
 
 This example demonstrates a complete goal-based skill following Pattern 3 (Search-Analyze-Report) with multiple workflows.
 
 ## Skill Structure
 
 ```
-plugin-diagnose/
+plugin-doctor/
 ├── SKILL.md                (~800 lines, 5 workflows)
 ├── scripts/
 │   ├── analyze-structure.sh      (structural analysis)
@@ -24,14 +24,14 @@ plugin-diagnose/
 
 ```markdown
 ---
-name: plugin-diagnose
-description: Find and understand quality issues in marketplace components (agents, commands, skills, metadata, scripts)
+name: plugin-doctor
+description: Diagnose and fix quality issues in marketplace components (agents, commands, skills, metadata, scripts)
 allowed-tools: [Read, Bash, Glob, Grep, Skill]
 ---
 
-# Plugin Diagnose Skill
+# Plugin Doctor Skill
 
-Comprehensive diagnostic workflows for marketplace component quality analysis.
+Comprehensive diagnostic and fix workflows for marketplace component quality analysis.
 
 ## When to Use This Skill
 
@@ -419,7 +419,7 @@ All scripts return JSON for structured parsing:
 
 ## Key Patterns Demonstrated
 
-1. **Goal-Based Organization**: Skill serves DIAGNOSE goal with multiple workflows
+1. **Goal-Based Organization**: Skill serves DOCTOR goal with multiple workflows
 2. **Progressive Disclosure**: References loaded on-demand based on workflow
 3. **Relative Path Pattern**: All resource use relative paths
 4. **Script Automation (Pattern 1)**: Deterministic logic in scripts, Claude interprets
@@ -431,12 +431,12 @@ All scripts return JSON for structured parsing:
 
 ```
 # Command invokes skill
-/plugin-diagnose agent=my-agent
+/plugin-doctor agent=my-agent
 
 # Command workflow:
 Step 1: Parse parameters → component_path="my-agent.md", component_type="agent"
 Step 2: Invoke skill
-  Skill: plugin-diagnose
+  Skill: plugin-doctor
   Workflow: analyze-component
   Parameters: {component_path: "...", component_type: "agent"}
 Step 3: Display results from skill
