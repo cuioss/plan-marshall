@@ -518,8 +518,8 @@ def provides_verify_steps(self) -> list[dict]:
     """Return domain-specific verification steps.
 
     Each step dict contains:
-        - name: Fully-qualified agent reference (e.g., 'pm-documents:doc-verify')
-        - skill: Same as name (the fully-qualified agent reference)
+        - name: Fully-qualified skill reference (e.g., 'my-bundle:my-verify-step')
+        - skill: Same as name (the fully-qualified skill reference)
         - description: Human-readable description for wizard presentation
 
     Default: []
@@ -530,8 +530,8 @@ def provides_verify_steps(self) -> list[dict]:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | str | Fully-qualified agent reference (`bundle:agent`) — used directly in steps list |
-| `skill` | str | Same as name (the fully-qualified agent reference) |
+| `name` | str | Fully-qualified skill reference (`bundle:skill`) — used directly in steps list |
+| `skill` | str | Same as name (the fully-qualified skill reference) |
 | `description` | str | Human-readable description for `/marshall-steward` wizard |
 
 #### Storage in marshal.json
@@ -545,8 +545,7 @@ Extension steps are appended to the flat `plan.phase-5-execute.steps` list after
       "steps": [
         "quality_check",
         "build_verify",
-        "coverage_check",
-        "pm-documents:doc-verify"
+        "coverage_check"
       ]
     }
   }
@@ -560,11 +559,11 @@ Built-in steps (`quality_check`, `build_verify`) are always first. Extension ste
 ```bash
 # Add a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute add-step --step pm-documents:doc-verify
+  plan phase-5-execute add-step --step my-bundle:my-verify-step
 
 # Remove a verify step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute remove-step --step pm-documents:doc-verify
+  plan phase-5-execute remove-step --step my-bundle:my-verify-step
 
 # Replace entire steps list
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -590,20 +589,18 @@ class Extension(ExtensionBase):
     def provides_verify_steps(self) -> list[dict]:
         return [
             {
-                'name': 'pm-documents:doc-verify',
-                'skill': 'pm-documents:doc-verify',
-                'description': 'Verify documentation quality and synchronization',
+                'name': 'my-bundle:my-verify-step',
+                'skill': 'my-bundle:my-verify-step',
+                'description': 'Custom domain verification',
             },
         ]
 ```
 
 #### Existing Implementations
 
-| Bundle | Domain | Steps | Details |
-|--------|--------|-------|---------|
-| pm-documents | documentation | 1 | `pm-documents:doc-verify` |
+No bundles currently provide verification steps. pm-documents uses `provides_recipes()` instead (recipe `doc-verify` for documentation verification).
 
-Bundles without verification steps (returns `[]`): pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-plugin-development, pm-requirements.
+Bundles returning `[]`: pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-documents, pm-plugin-development, pm-requirements.
 
 > **Note**: Coverage verification is handled by the built-in `default:coverage_check` step, not by an extension agent. See the dispatch table in `phase-5-execute`.
 

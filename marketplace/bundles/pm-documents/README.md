@@ -55,6 +55,8 @@ This bundle provides documentation domain knowledge through two core skills (`re
 
 **plan-marshall-plugin** - Documentation domain manifest for plan-marshall workflow integration
 
+**recipe-doc-verify** - Recipe for verifying documentation quality (format, links, drift)
+
 ### Commands (1 command)
 
 | Command | Purpose |
@@ -95,6 +97,8 @@ pm-documents/
     │   ├── SKILL.md
     │   ├── scripts/
     │   └── templates/
+    ├── recipe-doc-verify/        # Documentation verification recipe
+    │   └── SKILL.md
     ├── ext-triage-docs/          # Triage extension point
     └── plan-marshall-plugin/     # Extension registration
 ```

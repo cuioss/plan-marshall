@@ -389,9 +389,9 @@ class ExtensionBase(ABC):
 
         Returns:
             List of step dicts, each containing:
-            - name: str — Fully-qualified agent reference used in the steps list
-              (e.g., 'pm-documents:doc-verify')
-            - skill: str — Same as name (the fully-qualified agent reference)
+            - name: str — Fully-qualified skill reference used in the steps list
+              (e.g., 'my-bundle:my-verify-step')
+            - skill: str — Same as name (the fully-qualified skill reference)
             - description: str — Human-readable description for wizard presentation
 
         Default implementation returns empty list (no domain-specific verify steps).

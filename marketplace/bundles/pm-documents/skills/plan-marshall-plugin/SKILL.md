@@ -37,6 +37,8 @@ Configuration in `extension.py` implements the Extension API contract:
 | `get_skill_domains()` | Domain metadata with profiles |
 | `provides_triage()` | Returns `pm-documents:ext-triage-docs` |
 | `provides_outline_skill()` | Returns `None` (uses generic outline) |
+| `provides_recipes()` | Returns `pm-documents:recipe-doc-verify` |
+| `provides_verify_steps()` | Returns `[]` (verification via recipe) |
 
 ## Integration
 

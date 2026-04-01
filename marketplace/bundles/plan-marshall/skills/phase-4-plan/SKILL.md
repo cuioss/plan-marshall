@@ -262,7 +262,7 @@ Iterate over the `steps` list. For each step, create a holistic verification tas
 - `quality_check` → Resolve via `architecture resolve --command quality-gate` (no `--name` — uses root module for cross-module check)
 - `build_verify` → Resolve via `architecture resolve --command module-tests` (no `--name` — uses root module for cross-module check)
 
-**Extension steps** (contain colon, e.g., `pm-documents:doc-verify`):
+**Extension steps** (contain colon, e.g., `my-bundle:my-verify-step`):
 - Use the step name directly as the step target (do NOT resolve via architecture)
 
 All holistic verification tasks share: `profile: verification`, `deliverable: 0`, `origin: holistic`, `depends_on: [ALL non-holistic tasks]`

@@ -84,7 +84,7 @@ The `steps` list in phase-5-execute config contains verification step references
 |------|----------|------------|
 | **built-in** | `default:` prefix (e.g., `default:quality_check`) | Execute built-in verification command (see dispatch table) |
 | **project** | `project:` prefix (e.g., `project:verify-step-lint`) | `Skill: {notation}` with interface contract |
-| **skill** | fully-qualified `bundle:skill` (e.g., `pm-documents:doc-verify`) | `Skill: {notation}` with interface contract |
+| **skill** | fully-qualified `bundle:skill` (e.g., `my-bundle:my-verify-step`) | `Skill: {notation}` with interface contract |
 
 **Type detection logic**:
 - Starts with `default:` -> built-in type (strip prefix, execute built-in command)

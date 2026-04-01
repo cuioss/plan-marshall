@@ -85,12 +85,19 @@ class Extension(ExtensionBase):
                                               active_profiles=active_profiles)
 
     def provides_verify_steps(self) -> list[dict]:
-        """Return documentation-specific verification steps."""
+        """No verify steps — documentation verification is handled via recipe."""
+        return []
+
+    def provides_recipes(self) -> list[dict]:
+        """Return documentation verification recipe."""
         return [
             {
-                'name': 'pm-documents:doc-verify',
-                'skill': 'pm-documents:doc-verify',
-                'description': 'Verify documentation is synchronized',
+                'key': 'doc-verify',
+                'name': 'Verify Documentation Quality',
+                'description': 'Validate AsciiDoc format, links, and documentation drift',
+                'skill': 'pm-documents:recipe-doc-verify',
+                'default_change_type': 'verification',
+                'scope': 'codebase_wide',
             },
         ]
 

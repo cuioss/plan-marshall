@@ -481,7 +481,7 @@ Set a domain verification step's agent reference.
 
 ```bash
 manage-config plan phase-5-execute set-domain-step-agent \
-  --domain documentation --step 1_doc_sync --agent pm-documents:doc-verify
+  --domain java --step 1_lint --agent my-bundle:my-verify-step
 ```
 
 ### phase-6-finalize get
