@@ -25,6 +25,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 # Tool definitions: {tool: requires_auth}
 # Note: python3 not checked - if it wasn't available, this script couldn't run
 TOOLS = {
@@ -168,21 +170,21 @@ def determine_overall_health(provider: str, tools: dict) -> str:
     return 'healthy'
 
 
-def output_json(data: dict) -> None:
-    """Output JSON to stdout."""
-    print(json.dumps(data, indent=2))
+def output_toon(data: dict) -> None:
+    """Output TOON to stdout."""
+    print(serialize_toon(data))
 
 
-def error_json(message: str, **extra) -> int:
-    """Output error JSON to stderr and return error exit code."""
-    print(json.dumps({'status': 'error', 'error': message, **extra}), file=sys.stderr)
+def error_toon(message: str, **extra) -> int:
+    """Output error TOON to stderr and return error exit code."""
+    print(serialize_toon({'status': 'error', 'error': message, **extra}), file=sys.stderr)
     return 1
 
 
 def cmd_detect(args: argparse.Namespace) -> int:
     """Handle the 'detect' subcommand."""
     result = detect_provider()
-    output_json(
+    output_toon(
         {
             'status': 'success',
             'provider': result['provider'],
@@ -198,9 +200,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if args.tool:
         # Verify specific tool
         if args.tool not in TOOLS:
-            return error_json(f'Unknown tool: {args.tool}', known_tools=list(TOOLS.keys()))
+            return error_toon(f'Unknown tool: {args.tool}', known_tools=list(TOOLS.keys()))
         tool_result = verify_tool(args.tool)
-        output_json(
+        output_toon(
             {
                 'status': 'success',
                 'tools': {args.tool: tool_result},
@@ -217,7 +219,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 if not tools_result[tool]['installed'] or not tools_result[tool]['authenticated']:
                     all_available = False
 
-        output_json(
+        output_toon(
             {
                 'status': 'success',
                 'tools': tools_result,
@@ -248,7 +250,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     # Determine overall health
     overall = determine_overall_health(provider_result['provider'], tools_result)
 
-    output_json(
+    output_toon(
         {
             'status': 'success',
             'provider': {
@@ -274,7 +276,7 @@ def cmd_persist(args: argparse.Namespace) -> int:
     marshal_path = plan_dir / 'marshal.json'
 
     if not marshal_path.exists():
-        return error_json(f'marshal.json not found at {marshal_path}. Run /marshall-steward first.')
+        return error_toon(f'marshal.json not found at {marshal_path}. Run /marshall-steward first.')
 
     # Detect provider
     provider_result = detect_provider()
@@ -318,15 +320,14 @@ def cmd_persist(args: argparse.Namespace) -> int:
     ci_config = config.get('ci', {})
     result_code = _handle_persist(persist_args, config, ci_config)
     if result_code != 0:
-        return error_json('Failed to persist CI config')
+        return error_toon('Failed to persist CI config')
 
-    # Output in TOON format
-    print('status: success')
-    print('persisted_to: marshal.json')
-    print()
-    print('ci_config{key,value}:')
-    print(f'provider\t{provider_result["provider"]}')
-    print(f'repo_url\t{provider_result["repo_url"] or "none"}')
+    output_toon({
+        'status': 'success',
+        'persisted_to': 'marshal.json',
+        'provider': provider_result['provider'],
+        'repo_url': provider_result['repo_url'] or 'none',
+    })
 
     return 0
 

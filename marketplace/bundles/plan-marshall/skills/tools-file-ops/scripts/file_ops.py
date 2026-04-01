@@ -2,9 +2,8 @@
 """
 Base file operations module for workflow scripts.
 
-Provides atomic file operations, metadata parsing, JSON output helpers,
+Provides atomic file operations, metadata parsing, TOON output helpers,
 and base directory configuration for workflow files.
-Stdlib-only - no external dependencies.
 
 Usage:
     from file_ops import (
@@ -156,26 +155,28 @@ def ensure_directory(path: str | Path) -> Path:
 
 
 def output_success(operation: str, **kwargs: Any) -> None:
-    """Print JSON success output to stdout.
+    """Print TOON success output to stdout.
 
     Args:
         operation: Name of the operation
         **kwargs: Additional fields to include in output
     """
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
     result = {'success': True, 'operation': operation}
     result.update(kwargs)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(serialize_toon(result))
 
 
 def output_error(operation: str, error: str) -> None:
-    """Print JSON error output to stderr.
+    """Print TOON error output to stderr.
 
     Args:
         operation: Name of the operation
         error: Error message
     """
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
     result = {'success': False, 'operation': operation, 'error': error}
-    print(json.dumps(result, indent=2), file=sys.stderr)
+    print(serialize_toon(result), file=sys.stderr)
 
 
 def parse_markdown_metadata(content: str) -> dict[str, str]:

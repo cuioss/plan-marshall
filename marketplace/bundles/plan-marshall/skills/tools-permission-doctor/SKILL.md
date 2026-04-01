@@ -65,20 +65,15 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
   --local-settings {local_path}
 ```
 
-**Output JSON**:
-```json
-{
-  "redundant": [
-    {"permission": "Bash(git:*)", "reason": "Exact duplicate", "type": "exact_duplicate"}
-  ],
-  "marketplace_in_local": [
-    {"permission": "Skill(pm-dev-builder:*)", "reason": "Should be in global", "type": "marketplace_permission"}
-  ],
-  "summary": {
-    "redundant_count": 1,
-    "marketplace_in_local_count": 1
-  }
-}
+**Output (TOON)**:
+```
+redundant[1]{permission,reason,type}:
+Bash(git:*)	Exact duplicate	exact_duplicate
+marketplace_in_local[1]{permission,reason,type}:
+Skill(pm-dev-builder:*)	Should be in global	marketplace_permission
+summary:
+  redundant_count: 1
+  marketplace_in_local_count: 1
 ```
 
 **Usage**: Call before fixing to identify redundancies between global and local settings.
@@ -98,18 +93,18 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
   [--approved-file {run_config_path}]
 ```
 
-**Output JSON**:
-```json
-{
-  "suspicious": [
-    {"permission": "Write(/tmp/**)", "reason": "System temp access", "severity": "medium"}
-  ],
-  "already_approved": ["Bash(sudo:*)"],
-  "summary": {
-    "total_suspicious": 1,
-    "by_severity": {"high": 0, "medium": 1, "low": 0}
-  }
-}
+**Output (TOON)**:
+```
+suspicious[1]{permission,reason,severity}:
+Write(/tmp/**)	System temp access	medium
+already_approved[1]:
+- Bash(sudo:*)
+summary:
+  total_suspicious: 1
+  by_severity:
+    high: 0
+    medium: 1
+    low: 0
 ```
 
 **Usage**: Call to identify security anti-patterns. User-approved permissions are excluded.
@@ -128,17 +123,16 @@ global_settings: ~/.claude/settings.json
 local_settings: .claude/settings.json
 ```
 
-**Output JSON**:
-```json
-{
-  "redundant_issues": {...},
-  "suspicious_issues": {...},
-  "total_issues": 5,
-  "recommendations": [
-    "Remove 3 redundant permissions from local settings",
-    "Review 2 suspicious permissions in global settings"
-  ]
-}
+**Output (TOON)**:
+```
+redundant_issues:
+  ...
+suspicious_issues:
+  ...
+total_issues: 5
+recommendations[2]:
+- Remove 3 redundant permissions from local settings
+- Review 2 suspicious permissions in global settings
 ```
 
 **Usage**: Entry point for permission analysis. Consolidates multiple detection results.

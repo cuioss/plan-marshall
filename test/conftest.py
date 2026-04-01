@@ -39,8 +39,6 @@ TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 # Pre-existing issues: duplicate test file basenames cause pytest collection errors
 # These need to be renamed to unique names in a separate cleanup
 collect_ignore = [
-    # Duplicate: test_permission.py exists in tools-permission-doctor and tools-permission-fix
-    'plan-marshall/tools-permission-fix/test_permission.py',
     # Duplicate: test_discover_modules.py exists in build-maven and build-npm
     'plan-marshall/build-npm/test_discover_modules.py',
     # Duplicate: test_extension.py exists in extension-api and plugin-doctor
@@ -124,6 +122,14 @@ class ScriptResult:
         data: dict[str, Any] = json.loads(self.stdout)
         return data
 
+    def toon(self) -> dict[str, Any]:
+        """Parse stdout as TOON. Raises ValueError if invalid."""
+        from toon_parser import parse_toon
+        if not self.stdout.strip():
+            raise ValueError(f'Empty stdout. stderr: {self.stderr}')
+        data: dict[str, Any] = parse_toon(self.stdout)
+        return data
+
     def json_or_error(self) -> dict[str, Any]:
         """Parse stdout as JSON, or stderr if stdout is empty."""
         if self.stdout.strip():
@@ -131,6 +137,17 @@ class ScriptResult:
             return data
         if self.stderr.strip():
             data = json.loads(self.stderr)
+            return data
+        return {'error': 'No output'}
+
+    def toon_or_error(self) -> dict[str, Any]:
+        """Parse stdout as TOON, or stderr if stdout is empty."""
+        from toon_parser import parse_toon
+        if self.stdout.strip():
+            data: dict[str, Any] = parse_toon(self.stdout)
+            return data
+        if self.stderr.strip():
+            data = parse_toon(self.stderr)
             return data
         return {'error': 'No output'}
 

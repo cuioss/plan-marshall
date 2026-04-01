@@ -9,6 +9,10 @@ Tests subcommands:
 - ensure: Ensure multiple permissions exist
 - consolidate: Consolidate timestamped build output permissions
 - ensure-wildcards: Ensure marketplace wildcards exist in settings
+- generate-wildcards: Generate permission wildcards from marketplace inventory
+- ensure-executor: Ensure the executor permission exists
+- cleanup-scripts: Remove redundant individual script permissions
+- migrate-executor: Full migration to executor-only permission pattern
 """
 
 import json
@@ -55,7 +59,7 @@ class TestConsolidate(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'consolidate', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('consolidated', data)
         self.assertEqual(data['consolidated'], 3)
@@ -80,7 +84,7 @@ class TestConsolidate(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'consolidate', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('wildcards_added', data)
         self.assertIn('Read(target/build-output-*.log)', data['wildcards_added'])
@@ -140,7 +144,7 @@ class TestEnsureWildcards(ScriptTestCase):
             '--dry-run',
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('added', data)
         # Should suggest adding wildcards for bundles
@@ -179,7 +183,7 @@ class TestEnsureWildcards(ScriptTestCase):
             '--dry-run',
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('already_present', data)
         self.assertEqual(data['already_present'], 2)  # Both Skill and SlashCommand already exist
@@ -224,7 +228,7 @@ class TestEnsureWildcards(ScriptTestCase):
             '--dry-run',
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         # Should generate wildcards for both bundles
         self.assertIn('added', data)
@@ -271,7 +275,7 @@ class TestEnsureWildcards(ScriptTestCase):
             '--dry-run',
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         # Should generate wildcards for ALL bundles (assume both skills and commands)
         self.assertIn('added', data)
@@ -305,7 +309,7 @@ class TestApplyFixes(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'apply-fixes', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('duplicates_removed', data)
         self.assertEqual(data['duplicates_removed'], 1)
@@ -319,7 +323,7 @@ class TestApplyFixes(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'apply-fixes', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('sorted', data)
         self.assertTrue(data['sorted'])
@@ -331,7 +335,7 @@ class TestApplyFixes(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'apply-fixes', '--settings', str(settings_file), '--dry-run')
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('defaults_added', data)
         defaults = data['defaults_added']
@@ -376,7 +380,7 @@ class TestAdd(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'add', '--permission', 'Bash(git:*)', '--target', 'project', cwd=self.temp_dir)
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         # Should indicate already exists
         self.assertEqual(data.get('action'), 'already_exists')
@@ -425,7 +429,7 @@ class TestRemove(ScriptTestCase):
             SCRIPT_PATH, 'remove', '--permission', 'Bash(npm:*)', '--target', 'project', cwd=self.temp_dir
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         # Should indicate not found
         self.assertEqual(data.get('action'), 'not_found')
@@ -454,7 +458,7 @@ class TestScopeOption(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'apply-fixes', '--scope', 'project', '--dry-run', cwd=self.temp_dir)
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('duplicates_removed', data)
         self.assertEqual(data['duplicates_removed'], 1)
@@ -482,7 +486,7 @@ class TestScopeOption(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'consolidate', '--scope', 'project', '--dry-run', cwd=self.temp_dir)
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('consolidated', data)
         self.assertEqual(data['consolidated'], 2)
@@ -494,6 +498,180 @@ class TestScopeOption(ScriptTestCase):
         )
         # Should fail due to mutual exclusivity
         self.assertEqual(result.returncode, 2)
+
+
+# =============================================================================
+# Tests for generate-wildcards subcommand
+# =============================================================================
+
+
+class TestGenerateWildcards(ScriptTestCase):
+    """Test permission-fix.py generate-wildcards subcommand."""
+
+    bundle = 'plan-marshall'
+    skill = 'tools-permission-fix'
+    script = 'permission-fix.py'
+
+    def test_generates_skill_wildcards(self):
+        """Should generate Skill() wildcards from inventory."""
+        inventory = {
+            'bundles': [
+                {
+                    'name': 'builder',
+                    'skills': [{'name': 'builder-gradle-rules'}, {'name': 'builder-maven-rules'}],
+                    'commands': [],
+                }
+            ]
+        }
+
+        result = run_script(SCRIPT_PATH, 'generate-wildcards', input_data=json.dumps(inventory))
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertIn('permissions', data)
+        self.assertIn('skill_wildcards', data['permissions'])
+        self.assertIn('Skill(builder:*)', data['permissions']['skill_wildcards'])
+
+    def test_generates_command_wildcards(self):
+        """Should generate SlashCommand() wildcards from inventory."""
+        inventory = {
+            'bundles': [
+                {'name': 'plan-marshall', 'skills': [], 'commands': [{'name': 'plan-manage'}, {'name': 'task-standalone'}]}
+            ]
+        }
+
+        result = run_script(SCRIPT_PATH, 'generate-wildcards', input_data=json.dumps(inventory))
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertIn('permissions', data)
+        self.assertIn('command_bundle_wildcards', data['permissions'])
+        self.assertIn('SlashCommand(/plan-marshall:*)', data['permissions']['command_bundle_wildcards'])
+
+    def test_includes_statistics(self):
+        """Should include statistics in output."""
+        inventory = {
+            'bundles': [{'name': 'test-bundle', 'skills': [{'name': 'skill1'}], 'commands': [{'name': 'cmd1'}]}]
+        }
+
+        result = run_script(SCRIPT_PATH, 'generate-wildcards', input_data=json.dumps(inventory))
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertIn('statistics', data)
+        self.assertIn('bundles_scanned', data['statistics'])
+
+
+# =============================================================================
+# Tests for executor pattern subcommands
+# =============================================================================
+
+
+class TestExecutorPattern(ScriptTestCase):
+    """Test permission-fix.py executor pattern subcommands."""
+
+    bundle = 'plan-marshall'
+    skill = 'tools-permission-fix'
+    script = 'permission-fix.py'
+
+    def test_ensure_executor_adds_permission(self):
+        """Should add executor permission when missing."""
+        claude_dir = self.temp_dir / '.claude'
+        claude_dir.mkdir()
+        settings_file = claude_dir / 'settings.json'
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
+
+        result = run_script(SCRIPT_PATH, 'ensure-executor', '--target', 'project', cwd=self.temp_dir)
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertTrue(data.get('success'))
+        self.assertEqual(data.get('action'), 'added')
+
+        settings = json.loads(settings_file.read_text())
+        self.assertIn('Bash(python3 .plan/execute-script.py *)', settings['permissions']['allow'])
+
+    def test_ensure_executor_already_exists(self):
+        """Should report when executor permission already exists."""
+        claude_dir = self.temp_dir / '.claude'
+        claude_dir.mkdir()
+        settings_file = claude_dir / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(python3 .plan/execute-script.py *)'], 'deny': [], 'ask': []}})
+        )
+
+        result = run_script(SCRIPT_PATH, 'ensure-executor', '--target', 'project', cwd=self.temp_dir)
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertTrue(data.get('success'))
+        self.assertEqual(data.get('action'), 'already_exists')
+
+    def test_cleanup_scripts_removes_individual_permissions(self):
+        """Should remove individual script permissions."""
+        claude_dir = self.temp_dir / '.claude'
+        claude_dir.mkdir()
+        settings_file = claude_dir / 'settings.json'
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Bash(git:*)',
+                            'Bash(python3 /path/to/marketplace/bundles/test/skills/foo/scripts/*:*)',
+                            'Bash(python3 /path/to/marketplace/bundles/test/skills/bar/scripts/*:*)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
+        )
+
+        result = run_script(SCRIPT_PATH, 'cleanup-scripts', '--target', 'project', cwd=self.temp_dir)
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertTrue(data.get('success'))
+        self.assertEqual(data.get('individual_count'), 2)
+
+        settings = json.loads(settings_file.read_text())
+        self.assertEqual(len(settings['permissions']['allow']), 1)
+        self.assertIn('Bash(git:*)', settings['permissions']['allow'])
+
+    def test_migrate_executor_full_migration(self):
+        """Should add executor and remove individual permissions."""
+        claude_dir = self.temp_dir / '.claude'
+        claude_dir.mkdir()
+        settings_file = claude_dir / 'settings.json'
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Bash(git:*)',
+                            'Bash(python3 /path/to/marketplace/bundles/test/skills/foo/scripts/*:*)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
+        )
+
+        result = run_script(SCRIPT_PATH, 'migrate-executor', '--target', 'project', cwd=self.temp_dir)
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertTrue(data.get('success'))
+        self.assertIn('executor', data)
+        self.assertIn('cleanup', data)
+
+        settings = json.loads(settings_file.read_text())
+        self.assertIn('Bash(python3 .plan/execute-script.py *)', settings['permissions']['allow'])
+        self.assertIn('Bash(git:*)', settings['permissions']['allow'])
+        # Individual script permission should be removed
+        self.assertEqual(len(settings['permissions']['allow']), 2)
 
 
 # =============================================================================
@@ -548,6 +726,30 @@ def test_ensure_help():
     assert result.returncode == 0
 
 
+def test_generate_wildcards_help():
+    """generate-wildcards subcommand should have help."""
+    result = run_script(SCRIPT_PATH, 'generate-wildcards', '--help')
+    assert result.returncode == 0
+
+
+def test_ensure_executor_help():
+    """ensure-executor subcommand should have help."""
+    result = run_script(SCRIPT_PATH, 'ensure-executor', '--help')
+    assert result.returncode == 0
+
+
+def test_cleanup_scripts_help():
+    """cleanup-scripts subcommand should have help."""
+    result = run_script(SCRIPT_PATH, 'cleanup-scripts', '--help')
+    assert result.returncode == 0
+
+
+def test_migrate_executor_help():
+    """migrate-executor subcommand should have help."""
+    result = run_script(SCRIPT_PATH, 'migrate-executor', '--help')
+    assert result.returncode == 0
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -570,6 +772,8 @@ if __name__ == '__main__':
     suite.addTests(loader.loadTestsFromTestCase(TestAdd))
     suite.addTests(loader.loadTestsFromTestCase(TestRemove))
     suite.addTests(loader.loadTestsFromTestCase(TestScopeOption))
+    suite.addTests(loader.loadTestsFromTestCase(TestGenerateWildcards))
+    suite.addTests(loader.loadTestsFromTestCase(TestExecutorPattern))
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
@@ -588,6 +792,10 @@ if __name__ == '__main__':
         test_add_help,
         test_remove_help,
         test_ensure_help,
+        test_generate_wildcards_help,
+        test_ensure_executor_help,
+        test_cleanup_scripts_help,
+        test_migrate_executor_help,
     ]
 
     # Run simple function tests

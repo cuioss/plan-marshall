@@ -50,54 +50,44 @@ Output: TOON format
 
 import argparse
 import json
-import subprocess
 import sys
 import time
 from datetime import UTC, datetime
 from typing import Any
 
+from ci_base import (  # type: ignore[import-not-found]
+    add_pr_create_args,
+    build_parser,
+    check_auth_cli,
+    dispatch,
+    output_error,
+    run_cli,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
+# ---------------------------------------------------------------------------
+# CLI wrappers
+# ---------------------------------------------------------------------------
+
 def run_gh(args: list[str], capture_json: bool = False, timeout: int = 60) -> tuple[int, str, str]:
     """Run gh CLI command and return (returncode, stdout, stderr)."""
-    cmd = ['gh'] + args
-    if capture_json:
-        cmd.extend(['--json'] if '--json' not in args else [])
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except FileNotFoundError:
-        return 127, '', 'gh CLI not found. Install from https://cli.github.com/'
-    except subprocess.TimeoutExpired:
-        return 124, '', 'Command timed out'
-    except Exception as e:
-        return 1, '', str(e)
+    return run_cli(
+        'gh', args,
+        capture_json=capture_json,
+        timeout=timeout,
+        not_found_msg='gh CLI not found. Install from https://cli.github.com/',
+    )
 
 
 def check_auth() -> tuple[bool, str]:
     """Check if gh is authenticated. Returns (is_authenticated, error_message)."""
-    returncode, _, stderr = run_gh(['auth', 'status'])
-    if returncode != 0:
-        return False, "Not authenticated. Run 'gh auth login' first."
-    return True, ''
+    return check_auth_cli('gh', "Not authenticated. Run 'gh auth login' first.", run_gh)
 
 
-def output_error(operation: str, error: str, context: str = '') -> int:
-    """Output error in TOON format to stderr."""
-    print('status: error', file=sys.stderr)
-    print(f'operation: {operation}', file=sys.stderr)
-    print(f'error: {error}', file=sys.stderr)
-    if context:
-        print(f'context: {context}', file=sys.stderr)
-    return 1
-
+# ---------------------------------------------------------------------------
+# Provider-specific helpers
+# ---------------------------------------------------------------------------
 
 def get_repo_info() -> tuple[str | None, str | None]:
     """Get owner and repo name from git remote URL.
@@ -139,6 +129,10 @@ def run_graphql(query: str, variables: dict) -> tuple[int, dict | None, str]:
     except json.JSONDecodeError:
         return 1, None, f'Failed to parse GraphQL response: {stdout[:100]}'
 
+
+# ---------------------------------------------------------------------------
+# Command handlers
+# ---------------------------------------------------------------------------
 
 def cmd_pr_create(args: argparse.Namespace) -> int:
     """Handle 'pr create' subcommand."""
@@ -952,171 +946,47 @@ def cmd_issue_close(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description='GitHub operations via gh CLI')
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    parser, pr_sub, ci_sub, issue_sub = build_parser('GitHub operations via gh CLI')
 
-    # pr subcommand
-    pr_parser = subparsers.add_parser('pr', help='Pull request operations')
-    pr_subparsers = pr_parser.add_subparsers(dest='pr_command', required=True)
+    # GitHub-specific parser additions
+    add_pr_create_args(pr_sub, body_required=False, body_file=True)
 
-    # pr create
-    pr_create_parser = pr_subparsers.add_parser('create', help='Create a pull request')
-    pr_create_parser.add_argument('--title', required=True, help='PR title')
-    pr_create_parser.add_argument('--body', default='', help='PR description')
-    pr_create_parser.add_argument('--body-file', help='Read PR body from file (takes precedence over --body)')
-    pr_create_parser.add_argument('--base', help='Base branch (default: repo default)')
-    pr_create_parser.add_argument('--draft', action='store_true', help='Create as draft PR')
-
-    # pr view
-    pr_subparsers.add_parser('view', help='View PR for current branch')
-
-    # pr list
-    pr_list_parser = pr_subparsers.add_parser('list', help='List pull requests')
-    pr_list_parser.add_argument('--head', help='Filter by head branch name')
-    pr_list_parser.add_argument('--state', default='open', choices=['open', 'closed', 'all'],
-                                help='Filter by state (default: open)')
-
-    # pr reply
-    pr_reply_parser = pr_subparsers.add_parser('reply', help='Reply to a PR with a comment')
-    pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_reply_parser.add_argument('--body', required=True, help='Comment text')
-
-    # pr resolve-thread
-    pr_resolve_parser = pr_subparsers.add_parser('resolve-thread', help='Resolve a review thread')
-    pr_resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
-    pr_resolve_parser.add_argument('--thread-id', required=True, help='Review thread ID')
-
-    # pr thread-reply
-    pr_thread_reply_parser = pr_subparsers.add_parser('thread-reply', help='Reply to a review thread')
-    pr_thread_reply_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_thread_reply_parser.add_argument('--thread-id', required=True, help='Comment ID to reply to')
-    pr_thread_reply_parser.add_argument('--body', required=True, help='Reply text')
-
-    # pr reviews
-    pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get PR reviews')
-    pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-
-    # pr comments
-    pr_comments_parser = pr_subparsers.add_parser('comments', help='Get PR inline code comments')
-    pr_comments_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_comments_parser.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
-
-    # pr merge
-    pr_merge_parser = pr_subparsers.add_parser('merge', help='Merge a pull request')
-    pr_merge_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_merge_parser.add_argument('--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
-                                 help='Merge strategy (default: merge)')
-    pr_merge_parser.add_argument('--delete-branch', action='store_true', help='Delete branch after merge')
-
-    # pr auto-merge
-    pr_auto_merge_parser = pr_subparsers.add_parser('auto-merge', help='Enable auto-merge on a PR')
-    pr_auto_merge_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_auto_merge_parser.add_argument('--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
-                                      help='Merge strategy (default: merge)')
-
-    # pr close
-    pr_close_parser = pr_subparsers.add_parser('close', help='Close a pull request')
-    pr_close_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-
-    # pr ready
-    pr_ready_parser = pr_subparsers.add_parser('ready', help='Mark draft PR as ready for review')
-    pr_ready_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-
-    # pr edit
-    pr_edit_parser = pr_subparsers.add_parser('edit', help='Edit PR title and/or body')
-    pr_edit_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_edit_parser.add_argument('--title', help='New PR title')
-    pr_edit_parser.add_argument('--body', help='New PR body')
-
-    # ci subcommand
-    ci_parser = subparsers.add_parser('ci', help='CI operations')
-    ci_subparsers = ci_parser.add_subparsers(dest='ci_command', required=True)
-
-    # ci status
-    ci_status_parser = ci_subparsers.add_parser('status', help='Check CI status')
-    ci_status_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-
-    # ci wait
-    ci_wait_parser = ci_subparsers.add_parser('wait', help='Wait for CI to complete')
-    ci_wait_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    ci_wait_parser.add_argument('--timeout', type=int, default=300, help='Max wait time in seconds (default: 300)')
-    ci_wait_parser.add_argument('--interval', type=int, default=30, help='Poll interval in seconds (default: 30)')
-
-    # ci rerun
-    ci_rerun_parser = ci_subparsers.add_parser('rerun', help='Rerun a workflow run')
-    ci_rerun_parser.add_argument('--run-id', required=True, help='Workflow run ID')
-
-    # ci logs
-    ci_logs_parser = ci_subparsers.add_parser('logs', help='Get failed run logs')
-    ci_logs_parser.add_argument('--run-id', required=True, help='Workflow run ID')
-
-    # issue subcommand
-    issue_parser = subparsers.add_parser('issue', help='Issue operations')
-    issue_subparsers = issue_parser.add_subparsers(dest='issue_command', required=True)
-
-    # issue create
-    issue_create_parser = issue_subparsers.add_parser('create', help='Create an issue')
-    issue_create_parser.add_argument('--title', required=True, help='Issue title')
-    issue_create_parser.add_argument('--body', required=True, help='Issue description')
-    issue_create_parser.add_argument('--labels', help='Comma-separated labels')
-
-    # issue view
-    issue_view_parser = issue_subparsers.add_parser('view', help='View issue details')
-    issue_view_parser.add_argument('--issue', required=True, help='Issue number or URL')
-
-    # issue close
-    issue_close_parser = issue_subparsers.add_parser('close', help='Close an issue')
-    issue_close_parser.add_argument('--issue', required=True, help='Issue number or URL')
+    # GitHub: --pr-number on resolve-thread is optional (accepted for API uniformity)
+    resolve_parser = pr_sub.choices.get('resolve-thread')
+    if resolve_parser:
+        resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
 
     args = parser.parse_args()
 
-    if args.command == 'pr':
-        if args.pr_command == 'create':
-            return cmd_pr_create(args)
-        elif args.pr_command == 'view':
-            return cmd_pr_view(args)
-        elif args.pr_command == 'list':
-            return cmd_pr_list(args)
-        elif args.pr_command == 'reply':
-            return cmd_pr_reply(args)
-        elif args.pr_command == 'resolve-thread':
-            return cmd_pr_resolve_thread(args)
-        elif args.pr_command == 'thread-reply':
-            return cmd_pr_thread_reply(args)
-        elif args.pr_command == 'reviews':
-            return cmd_pr_reviews(args)
-        elif args.pr_command == 'comments':
-            return cmd_pr_comments(args)
-        elif args.pr_command == 'merge':
-            return cmd_pr_merge(args)
-        elif args.pr_command == 'auto-merge':
-            return cmd_pr_auto_merge(args)
-        elif args.pr_command == 'close':
-            return cmd_pr_close(args)
-        elif args.pr_command == 'ready':
-            return cmd_pr_ready(args)
-        elif args.pr_command == 'edit':
-            return cmd_pr_edit(args)
-    elif args.command == 'ci':
-        if args.ci_command == 'status':
-            return cmd_ci_status(args)
-        elif args.ci_command == 'wait':
-            return cmd_ci_wait(args)
-        elif args.ci_command == 'rerun':
-            return cmd_ci_rerun(args)
-        elif args.ci_command == 'logs':
-            return cmd_ci_logs(args)
-    elif args.command == 'issue':
-        if args.issue_command == 'create':
-            return cmd_issue_create(args)
-        elif args.issue_command == 'view':
-            return cmd_issue_view(args)
-        elif args.issue_command == 'close':
-            return cmd_issue_close(args)
+    handlers = {
+        ('pr', 'create'): cmd_pr_create,
+        ('pr', 'view'): cmd_pr_view,
+        ('pr', 'list'): cmd_pr_list,
+        ('pr', 'reply'): cmd_pr_reply,
+        ('pr', 'resolve-thread'): cmd_pr_resolve_thread,
+        ('pr', 'thread-reply'): cmd_pr_thread_reply,
+        ('pr', 'reviews'): cmd_pr_reviews,
+        ('pr', 'comments'): cmd_pr_comments,
+        ('pr', 'merge'): cmd_pr_merge,
+        ('pr', 'auto-merge'): cmd_pr_auto_merge,
+        ('pr', 'close'): cmd_pr_close,
+        ('pr', 'ready'): cmd_pr_ready,
+        ('pr', 'edit'): cmd_pr_edit,
+        ('ci', 'status'): cmd_ci_status,
+        ('ci', 'wait'): cmd_ci_wait,
+        ('ci', 'rerun'): cmd_ci_rerun,
+        ('ci', 'logs'): cmd_ci_logs,
+        ('issue', 'create'): cmd_issue_create,
+        ('issue', 'view'): cmd_issue_view,
+        ('issue', 'close'): cmd_issue_close,
+    }
 
-    parser.print_help()
-    return 1
+    return dispatch(args, handlers, parser)
 
 
 if __name__ == '__main__':

@@ -12,6 +12,8 @@ import re
 import sys
 from pathlib import Path
 
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 # Exit codes
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
@@ -49,7 +51,7 @@ def load_settings(path: str | None) -> tuple[dict, str | None]:
 def output_result(result: dict, format_type: str = 'json') -> None:
     """Output result in specified format."""
     if format_type == 'json':
-        print(json.dumps(result, indent=2))
+        print(serialize_toon(result))
 
 
 def get_global_settings_path() -> Path:
@@ -162,12 +164,12 @@ def cmd_detect_redundant(args) -> int:
 
     global_settings, global_error = load_settings(global_path)
     if global_error:
-        print(json.dumps({'error': global_error, 'global_exists': False}))
+        print(serialize_toon({'error': global_error, 'global_exists': False}))
         return EXIT_ERROR
 
     local_settings, local_error = load_settings(local_path)
     if local_error:
-        print(json.dumps({'error': local_error, 'local_exists': False}))
+        print(serialize_toon({'error': local_error, 'local_exists': False}))
         return EXIT_ERROR
 
     global_allow = set(global_settings.get('permissions', {}).get('allow', []))
@@ -228,7 +230,7 @@ def cmd_detect_redundant(args) -> int:
         'global_path': global_path,
         'local_path': local_path,
     }
-    print(json.dumps(result, indent=2))
+    print(serialize_toon(result))
     return EXIT_SUCCESS
 
 
@@ -410,7 +412,7 @@ def cmd_detect_suspicious(args) -> int:
 
     settings, error = load_settings(settings_path)
     if error:
-        print(json.dumps({'error': error}))
+        print(serialize_toon({'error': error}))
         return EXIT_ERROR
 
     approved_permissions = load_approved_permissions(args.approved_file)
@@ -448,7 +450,7 @@ def cmd_detect_suspicious(args) -> int:
     if args.approved_file:
         result['approved_file'] = args.approved_file
 
-    print(json.dumps(result, indent=2))
+    print(serialize_toon(result))
     return EXIT_SUCCESS
 
 

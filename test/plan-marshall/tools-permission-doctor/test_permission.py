@@ -47,7 +47,7 @@ class TestDetectRedundant(ScriptTestCase):
             SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('redundant', data)
         redundant_perms = [r['permission'] for r in data['redundant']]
@@ -68,7 +68,7 @@ class TestDetectRedundant(ScriptTestCase):
             SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('marketplace_in_local', data)
         marketplace_perms = [m['permission'] for m in data['marketplace_in_local']]
@@ -128,7 +128,7 @@ This is a project-local command.
             cwd=self.temp_dir,
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('marketplace_in_local', data)
         marketplace_perms = [m['permission'] for m in data['marketplace_in_local']]
@@ -153,7 +153,7 @@ This is a project-local command.
             SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
         )
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('summary', data)
         self.assertIn('redundant_count', data['summary'])
@@ -179,7 +179,7 @@ class TestDetectSuspicious(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('suspicious', data)
         suspicious_perms = [s['permission'] for s in data['suspicious']]
@@ -192,7 +192,7 @@ class TestDetectSuspicious(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         suspicious_perms = [s['permission'] for s in data['suspicious']]
         self.assertIn('Write(/etc/**)', suspicious_perms)
@@ -204,7 +204,7 @@ class TestDetectSuspicious(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         if data['suspicious']:
             for item in data['suspicious']:
@@ -243,7 +243,7 @@ class TestScopeOption(ScriptTestCase):
 
         result = run_script(SCRIPT_PATH, 'detect-suspicious', '--scope', 'project', cwd=self.temp_dir)
         self.assert_success(result)
-        data = result.json()
+        data = result.toon()
 
         self.assertIn('suspicious', data)
         suspicious_perms = [s['permission'] for s in data['suspicious']]

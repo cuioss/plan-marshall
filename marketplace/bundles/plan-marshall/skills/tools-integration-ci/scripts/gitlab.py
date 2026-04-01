@@ -60,46 +60,38 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
+from ci_base import (  # type: ignore[import-not-found]
+    add_pr_create_args,
+    add_pr_resolve_thread_pr_number,
+    build_parser,
+    check_auth_cli,
+    dispatch,
+    output_error,
+    run_cli,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
+# ---------------------------------------------------------------------------
+# CLI wrappers
+# ---------------------------------------------------------------------------
+
 def run_glab(args: list[str]) -> tuple[int, str, str]:
     """Run glab CLI command and return (returncode, stdout, stderr)."""
-    cmd = ['glab'] + args
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except FileNotFoundError:
-        return 127, '', 'glab CLI not found. Install from https://gitlab.com/gitlab-org/cli'
-    except subprocess.TimeoutExpired:
-        return 124, '', 'Command timed out'
-    except Exception as e:
-        return 1, '', str(e)
+    return run_cli(
+        'glab', args,
+        not_found_msg='glab CLI not found. Install from https://gitlab.com/gitlab-org/cli',
+    )
 
 
 def check_auth() -> tuple[bool, str]:
     """Check if glab is authenticated. Returns (is_authenticated, error_message)."""
-    returncode, _, stderr = run_glab(['auth', 'status'])
-    if returncode != 0:
-        return False, "Not authenticated. Run 'glab auth login' first."
-    return True, ''
+    return check_auth_cli('glab', "Not authenticated. Run 'glab auth login' first.", run_glab)
 
 
-def output_error(operation: str, error: str, context: str = '') -> int:
-    """Output error in TOON format to stderr."""
-    print('status: error', file=sys.stderr)
-    print(f'operation: {operation}', file=sys.stderr)
-    print(f'error: {error}', file=sys.stderr)
-    if context:
-        print(f'context: {context}', file=sys.stderr)
-    return 1
-
+# ---------------------------------------------------------------------------
+# Provider-specific helpers
+# ---------------------------------------------------------------------------
 
 def get_project_path() -> str | None:
     """Get project path (namespace/repo) from current repository.
@@ -132,6 +124,10 @@ def run_api(endpoint: str) -> tuple[int, list | dict | None, str]:
     except json.JSONDecodeError:
         return 1, None, f'Failed to parse API response: {stdout[:100]}'
 
+
+# ---------------------------------------------------------------------------
+# Command handlers
+# ---------------------------------------------------------------------------
 
 def cmd_pr_create(args: argparse.Namespace) -> int:
     """Handle 'pr create' subcommand (creates MR in GitLab)."""
@@ -236,7 +232,7 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
     if not is_auth:
         return output_error('pr_list', err)
 
-    # Map state for glab: open→opened, closed→closed, all→all
+    # Map state for glab: open->opened, closed->closed, all->all
     state_map = {'open': 'opened', 'closed': 'closed', 'all': 'all'}
     glab_state = state_map.get(args.state, 'opened')
 
@@ -685,6 +681,67 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
         time.sleep(interval)
 
 
+def cmd_ci_rerun(args: argparse.Namespace) -> int:
+    """Handle 'ci rerun' subcommand - retry a pipeline."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('ci_rerun', err)
+
+    returncode, stdout, stderr = run_glab(['ci', 'retry', str(args.run_id)])
+    if returncode != 0:
+        return output_error('ci_rerun', f'Failed to retry pipeline {args.run_id}', stderr.strip())
+
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'ci_rerun',
+        'run_id': args.run_id,
+    }, table_separator='\t'))
+    return 0
+
+
+def cmd_ci_logs(args: argparse.Namespace) -> int:
+    """Handle 'ci logs' subcommand - get job logs."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return output_error('ci_logs', err)
+
+    # Use subprocess.run directly for longer timeout (120s)
+    cmd = ['glab', 'ci', 'trace', str(args.run_id)]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        returncode = result.returncode
+        stdout = result.stdout
+        stderr = result.stderr
+    except FileNotFoundError:
+        return output_error('ci_logs', 'glab CLI not found')
+    except subprocess.TimeoutExpired:
+        return output_error('ci_logs', 'Command timed out')
+    except Exception as e:
+        return output_error('ci_logs', str(e))
+
+    if returncode != 0:
+        return output_error('ci_logs', f'Failed to get logs for job {args.run_id}', stderr.strip())
+
+    # Truncate to first 200 lines
+    lines = stdout.splitlines()
+    truncated = lines[:200]
+    content = '\n'.join(truncated)
+
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'ci_logs',
+        'run_id': args.run_id,
+        'log_lines': len(truncated),
+        'content': content.replace(chr(10), '\\n'),
+    }, table_separator='\t'))
+    return 0
+
+
 def cmd_issue_create(args: argparse.Namespace) -> int:
     """Handle 'issue create' subcommand."""
     # Check auth
@@ -893,67 +950,6 @@ def cmd_pr_edit(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_ci_rerun(args: argparse.Namespace) -> int:
-    """Handle 'ci rerun' subcommand - retry a pipeline."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('ci_rerun', err)
-
-    returncode, stdout, stderr = run_glab(['ci', 'retry', str(args.run_id)])
-    if returncode != 0:
-        return output_error('ci_rerun', f'Failed to retry pipeline {args.run_id}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_rerun',
-        'run_id': args.run_id,
-    }, table_separator='\t'))
-    return 0
-
-
-def cmd_ci_logs(args: argparse.Namespace) -> int:
-    """Handle 'ci logs' subcommand - get job logs."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('ci_logs', err)
-
-    # Use subprocess.run directly for longer timeout (120s)
-    cmd = ['glab', 'ci', 'trace', str(args.run_id)]
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        returncode = result.returncode
-        stdout = result.stdout
-        stderr = result.stderr
-    except FileNotFoundError:
-        return output_error('ci_logs', 'glab CLI not found')
-    except subprocess.TimeoutExpired:
-        return output_error('ci_logs', 'Command timed out')
-    except Exception as e:
-        return output_error('ci_logs', str(e))
-
-    if returncode != 0:
-        return output_error('ci_logs', f'Failed to get logs for job {args.run_id}', stderr.strip())
-
-    # Truncate to first 200 lines
-    lines = stdout.splitlines()
-    truncated = lines[:200]
-    content = '\n'.join(truncated)
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_logs',
-        'run_id': args.run_id,
-        'log_lines': len(truncated),
-        'content': content.replace(chr(10), '\\n'),
-    }, table_separator='\t'))
-    return 0
-
-
 def cmd_issue_close(args: argparse.Namespace) -> int:
     """Handle 'issue close' subcommand - close an issue."""
     is_auth, err = check_auth()
@@ -972,170 +968,45 @@ def cmd_issue_close(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description='GitLab operations via glab CLI')
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    parser, pr_sub, ci_sub, issue_sub = build_parser('GitLab operations via glab CLI')
 
-    # pr subcommand (maps to MR in GitLab)
-    pr_parser = subparsers.add_parser('pr', help='Pull request (MR) operations')
-    pr_subparsers = pr_parser.add_subparsers(dest='pr_command', required=True)
+    # GitLab-specific parser additions
+    add_pr_create_args(pr_sub, body_required=True, body_file=False)
 
-    # pr create
-    pr_create_parser = pr_subparsers.add_parser('create', help='Create a merge request')
-    pr_create_parser.add_argument('--title', required=True, help='MR title')
-    pr_create_parser.add_argument('--body', required=True, help='MR description')
-    pr_create_parser.add_argument('--base', help='Target branch (default: repo default)')
-    pr_create_parser.add_argument('--draft', action='store_true', help='Create as draft MR')
-
-    # pr view
-    pr_subparsers.add_parser('view', help='View MR for current branch')
-
-    # pr list
-    pr_list_parser = pr_subparsers.add_parser('list', help='List merge requests')
-    pr_list_parser.add_argument('--head', help='Filter by source branch name')
-    pr_list_parser.add_argument('--state', default='open', choices=['open', 'closed', 'all'],
-                                help='Filter by state (default: open)')
-
-    # pr reply
-    pr_reply_parser = pr_subparsers.add_parser('reply', help='Reply to a MR with a comment')
-    pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-    pr_reply_parser.add_argument('--body', required=True, help='Comment text')
-
-    # pr resolve-thread
-    pr_resolve_parser = pr_subparsers.add_parser('resolve-thread', help='Resolve a discussion thread')
-    pr_resolve_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-    pr_resolve_parser.add_argument('--thread-id', required=True, help='Discussion ID')
-
-    # pr thread-reply
-    pr_thread_reply_parser = pr_subparsers.add_parser('thread-reply', help='Reply to a discussion thread')
-    pr_thread_reply_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-    pr_thread_reply_parser.add_argument('--thread-id', required=True, help='Discussion ID')
-    pr_thread_reply_parser.add_argument('--body', required=True, help='Reply text')
-
-    # pr reviews
-    pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get MR approvals')
-    pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-
-    # pr comments
-    pr_comments_parser = pr_subparsers.add_parser('comments', help='Get MR discussion comments')
-    pr_comments_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-    pr_comments_parser.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
-
-    # pr merge
-    pr_merge_parser = pr_subparsers.add_parser('merge', help='Merge a merge request')
-    pr_merge_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-    pr_merge_parser.add_argument('--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
-                                 help='Merge strategy (default: merge)')
-    pr_merge_parser.add_argument('--delete-branch', action='store_true', help='Delete branch after merge')
-
-    # pr auto-merge
-    pr_auto_merge_parser = pr_subparsers.add_parser('auto-merge', help='Enable auto-merge when pipeline succeeds')
-    pr_auto_merge_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-    pr_auto_merge_parser.add_argument('--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
-                                      help='Merge strategy (default: merge)')
-
-    # pr close
-    pr_close_parser = pr_subparsers.add_parser('close', help='Close a merge request')
-    pr_close_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-
-    # pr ready
-    pr_ready_parser = pr_subparsers.add_parser('ready', help='Mark draft MR as ready for review')
-    pr_ready_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-
-    # pr edit
-    pr_edit_parser = pr_subparsers.add_parser('edit', help='Edit MR title and/or description')
-    pr_edit_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-    pr_edit_parser.add_argument('--title', help='New MR title')
-    pr_edit_parser.add_argument('--body', help='New MR description')
-
-    # ci subcommand
-    ci_parser = subparsers.add_parser('ci', help='CI/Pipeline operations')
-    ci_subparsers = ci_parser.add_subparsers(dest='ci_command', required=True)
-
-    # ci status
-    ci_status_parser = ci_subparsers.add_parser('status', help='Check pipeline status')
-    ci_status_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-
-    # ci wait
-    ci_wait_parser = ci_subparsers.add_parser('wait', help='Wait for pipeline to complete')
-    ci_wait_parser.add_argument('--pr-number', required=True, type=int, help='MR number (iid)')
-    ci_wait_parser.add_argument('--timeout', type=int, default=300, help='Max wait time in seconds (default: 300)')
-    ci_wait_parser.add_argument('--interval', type=int, default=30, help='Poll interval in seconds (default: 30)')
-
-    # ci rerun
-    ci_rerun_parser = ci_subparsers.add_parser('rerun', help='Retry a pipeline')
-    ci_rerun_parser.add_argument('--run-id', required=True, help='Pipeline ID')
-
-    # ci logs
-    ci_logs_parser = ci_subparsers.add_parser('logs', help='Get job logs')
-    ci_logs_parser.add_argument('--run-id', required=True, help='Job ID')
-
-    # issue subcommand
-    issue_parser = subparsers.add_parser('issue', help='Issue operations')
-    issue_subparsers = issue_parser.add_subparsers(dest='issue_command', required=True)
-
-    # issue create
-    issue_create_parser = issue_subparsers.add_parser('create', help='Create an issue')
-    issue_create_parser.add_argument('--title', required=True, help='Issue title')
-    issue_create_parser.add_argument('--body', required=True, help='Issue description')
-    issue_create_parser.add_argument('--labels', help='Comma-separated labels')
-
-    # issue view
-    issue_view_parser = issue_subparsers.add_parser('view', help='View issue details')
-    issue_view_parser.add_argument('--issue', required=True, help='Issue number (iid) or URL')
-
-    # issue close
-    issue_close_parser = issue_subparsers.add_parser('close', help='Close an issue')
-    issue_close_parser.add_argument('--issue', required=True, help='Issue number (iid) or URL')
+    # GitLab: --pr-number on resolve-thread is required
+    add_pr_resolve_thread_pr_number(pr_sub)
 
     args = parser.parse_args()
 
-    if args.command == 'pr':
-        if args.pr_command == 'create':
-            return cmd_pr_create(args)
-        elif args.pr_command == 'view':
-            return cmd_pr_view(args)
-        elif args.pr_command == 'list':
-            return cmd_pr_list(args)
-        elif args.pr_command == 'reply':
-            return cmd_pr_reply(args)
-        elif args.pr_command == 'resolve-thread':
-            return cmd_pr_resolve_thread(args)
-        elif args.pr_command == 'thread-reply':
-            return cmd_pr_thread_reply(args)
-        elif args.pr_command == 'reviews':
-            return cmd_pr_reviews(args)
-        elif args.pr_command == 'comments':
-            return cmd_pr_comments(args)
-        elif args.pr_command == 'merge':
-            return cmd_pr_merge(args)
-        elif args.pr_command == 'auto-merge':
-            return cmd_pr_auto_merge(args)
-        elif args.pr_command == 'close':
-            return cmd_pr_close(args)
-        elif args.pr_command == 'ready':
-            return cmd_pr_ready(args)
-        elif args.pr_command == 'edit':
-            return cmd_pr_edit(args)
-    elif args.command == 'ci':
-        if args.ci_command == 'status':
-            return cmd_ci_status(args)
-        elif args.ci_command == 'wait':
-            return cmd_ci_wait(args)
-        elif args.ci_command == 'rerun':
-            return cmd_ci_rerun(args)
-        elif args.ci_command == 'logs':
-            return cmd_ci_logs(args)
-    elif args.command == 'issue':
-        if args.issue_command == 'create':
-            return cmd_issue_create(args)
-        elif args.issue_command == 'view':
-            return cmd_issue_view(args)
-        elif args.issue_command == 'close':
-            return cmd_issue_close(args)
+    handlers = {
+        ('pr', 'create'): cmd_pr_create,
+        ('pr', 'view'): cmd_pr_view,
+        ('pr', 'list'): cmd_pr_list,
+        ('pr', 'reply'): cmd_pr_reply,
+        ('pr', 'resolve-thread'): cmd_pr_resolve_thread,
+        ('pr', 'thread-reply'): cmd_pr_thread_reply,
+        ('pr', 'reviews'): cmd_pr_reviews,
+        ('pr', 'comments'): cmd_pr_comments,
+        ('pr', 'merge'): cmd_pr_merge,
+        ('pr', 'auto-merge'): cmd_pr_auto_merge,
+        ('pr', 'close'): cmd_pr_close,
+        ('pr', 'ready'): cmd_pr_ready,
+        ('pr', 'edit'): cmd_pr_edit,
+        ('ci', 'status'): cmd_ci_status,
+        ('ci', 'wait'): cmd_ci_wait,
+        ('ci', 'rerun'): cmd_ci_rerun,
+        ('ci', 'logs'): cmd_ci_logs,
+        ('issue', 'create'): cmd_issue_create,
+        ('issue', 'view'): cmd_issue_view,
+        ('issue', 'close'): cmd_issue_close,
+    }
 
-    parser.print_help()
-    return 1
+    return dispatch(args, handlers, parser)
 
 
 if __name__ == '__main__':

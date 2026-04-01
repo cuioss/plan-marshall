@@ -6,7 +6,7 @@ user-invocable: false
 
 # File Operations Base Skill
 
-**Role**: Shared Python module providing atomic file operations, metadata parsing, JSON output helpers, and base directory configuration for workflow scripts.
+**Role**: Shared Python module providing atomic file operations, metadata parsing, TOON output helpers, and base directory configuration for workflow scripts.
 
 ## Enforcement
 
@@ -79,17 +79,17 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 - **Output**: None
 - **Note**: If path looks like file, creates parent directory
 
-**JSON Output Helpers**
+**TOON Output Helpers**
 
 **6. output_success(operation, **kwargs)**
-- **Purpose**: Print JSON success output to stdout
+- **Purpose**: Print TOON success output to stdout
 - **Input**: `operation` (str), additional kwargs
-- **Output**: Prints JSON to stdout
+- **Output**: Prints TOON to stdout
 
 **7. output_error(operation, error)**
-- **Purpose**: Print JSON error output to stderr
+- **Purpose**: Print TOON error output to stderr
 - **Input**: `operation` (str), `error` (str)
-- **Output**: Prints JSON to stderr
+- **Output**: Prints TOON to stderr
 
 **Metadata Functions**
 
@@ -162,7 +162,6 @@ if __name__ == '__main__':
 | Script | Purpose |
 |--------|---------|
 | `file_ops.py` | Core file operations module (importable) |
-| `test-file-ops.py` | Test suite for file operations |
 
 ---
 
