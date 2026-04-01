@@ -31,25 +31,25 @@ Language-agnostic principles for code documentation across all technology stacks
 * Avoid stating the obvious or repeating the function/method name
 * Focus on behavior and contract, not implementation details
 
-**Good — specific and purposeful:**
+**Good -- specific and purposeful:**
 ```
 Validates the JWT token signature and expiration time against the configured
 issuer and clock skew tolerance.
 
 Parameters:
-  token — the JWT token to validate, must not be null or empty
+  token -- the JWT token to validate, must not be null or empty
 Returns:
   validation result containing status and any error messages
 Throws:
-  IllegalArgumentError — if token is null or empty
+  IllegalArgumentError -- if token is null or empty
 ```
 
-**Bad — stating the obvious:**
+**Bad -- stating the obvious:**
 ```
 Validates a token.
 
 Parameters:
-  token — the token
+  token -- the token
 Returns:
   the result
 ```
@@ -79,37 +79,37 @@ Returns:
 
 ## Writing Style
 
-* **Stay focused and crisp** — convey core aspects with minimal text, never be verbose
-* **Present tense** — "Validates input", not "Will validate"
-* **Active voice** — "Calculates total", not "Total is calculated"
-* **Complete sentences** — proper capitalization and punctuation
-* **Clear and specific** — avoid vague descriptions like "processes data"
-* **No redundancy** — don't repeat the function name in the description
+* **Stay focused and crisp** -- convey core aspects with minimal text, never be verbose
+* **Present tense** -- "Validates input", not "Will validate"
+* **Active voice** -- "Calculates total", not "Total is calculated"
+* **Complete sentences** -- proper capitalization and punctuation
+* **Clear and specific** -- avoid vague descriptions like "processes data"
+* **No redundancy** -- don't repeat the function name in the description
 
 ## Documentation Anti-Patterns
 
 ### 1. Stating the Obvious
 
 ```
-// BAD — obvious documentation
+// BAD
 Sets the name.
-  parameter: name — the name to set
+  parameter: name -- the name to set
 
-// GOOD — documents business rules
+// GOOD -- documents business rules
 Sets the user's display name. The name is trimmed and validated
 to ensure it meets minimum length requirements.
-  parameter: name — the display name (minimum 2 characters after trimming)
-  throws: ValidationError — if name is too short
+  parameter: name -- the display name (minimum 2 characters after trimming)
+  throws: ValidationError -- if name is too short
 ```
 
 ### 2. Documenting Implementation Instead of Contract
 
 ```
-// BAD — exposes implementation details
+// BAD -- exposes implementation details
 Uses a HashMap to store the users and iterates through the entrySet
 to find the matching user by email.
 
-// GOOD — documents the contract
+// GOOD -- documents the contract
 Retrieves the first user with the specified email address.
 Returns empty/null if no user matches.
 ```
@@ -122,23 +122,6 @@ Documentation that doesn't match current code is worse than no documentation. It
 * Review documentation during every code change
 * Include documentation updates in code review checklists
 * Check for broken cross-references
-* Run documentation generation tools to catch errors
-
-### 4. Vague Descriptions
-
-```
-// BAD — vague, uninformative
-Processes the data.
-  parameter: data — the data
-  returns: the result
-
-// GOOD — specific and informative
-Enriches user data by adding geolocation information based on IP address
-and validating email deliverability.
-  parameter: userData — the user data to enrich
-  returns: enriched user data with geolocation and email status
-  throws: EnrichmentError — if external services are unavailable
-```
 
 ## Code Examples in Documentation
 
@@ -147,7 +130,7 @@ For complex APIs, include usage examples:
 * Show the most common use case
 * Include error handling if relevant
 * Keep examples concise but complete
-* Test examples to ensure they work (or use verified snippets)
+* Test examples to ensure they work
 
 ## When to Update Documentation
 
@@ -156,14 +139,4 @@ For complex APIs, include usage examples:
 * When adding new public APIs
 * When deprecating existing APIs
 * When fixing bugs that affect documented behavior
-* During code reviews — always check documentation accuracy
-
-## Thread-Safety and Concurrency
-
-For code with thread-safety implications:
-
-* Document whether the type is thread-safe
-* Document synchronization requirements for callers
-* Note if returned values may be stale under concurrent access
-* Document any lock ordering requirements
-
+* During code reviews -- always check documentation accuracy

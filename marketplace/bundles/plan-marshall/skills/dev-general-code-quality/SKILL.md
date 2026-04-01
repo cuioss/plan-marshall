@@ -1,14 +1,14 @@
 ---
 name: dev-general-code-quality
-description: Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, and error handling
+description: Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, error handling, and documentation standards
 user-invocable: false
 ---
 
-# Code Quality Principles Skill
+# Code Quality and Documentation Skill
 
 **REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
 
-Language-agnostic code quality principles applicable across all technology stacks. This skill covers design principles, complexity management, refactoring triggers, and error handling.
+Language-agnostic code quality and documentation principles applicable across all technology stacks. Covers design principles, complexity management, refactoring triggers, error handling, and API documentation.
 
 ## Workflow
 
@@ -20,21 +20,9 @@ Language-agnostic code quality principles applicable across all technology stack
 Read: standards/code-organization.md
 ```
 
-This provides foundational rules for:
-- Single Responsibility Principle
-- Command-Query Separation
-- Parameter objects when count hurts readability (language-dependent threshold)
-- Package/module structure (feature-based)
-- Immutability preference
+Covers SRP, CQS, parameter objects, package structure, immutability, refactoring triggers, complexity thresholds, and maintenance prioritization.
 
 ### Step 2: Load Additional Standards (As Needed)
-
-**Refactoring Triggers** (load for code analysis/maintenance):
-```
-Read: standards/refactoring-triggers.md
-```
-
-Use when: Identifying when code needs refactoring based on metrics and patterns.
 
 **Error Handling** (load for error/exception work):
 ```
@@ -43,51 +31,24 @@ Read: standards/error-handling.md
 
 Use when: Designing error handling, exception hierarchies, or recovery patterns.
 
-## Key Rules Summary
+**Documentation Principles** (load for API documentation work):
+```
+Read: standards/documentation-principles.md
+```
 
-### Boy Scout Rule
-
-Leave code cleaner than you found it. When modifying a file, fix existing quality issues you encounter — poor naming, SRP violations, dead code, missing error handling. Never dismiss code smells with "not introduced by current changes" — always fix them. If fixes cascade beyond reasonable scope, stop and ask the user how to proceed.
-
-### Design Principles
-
-- **Single Responsibility** — each class/module/function does one thing
-- **Command-Query Separation** — methods either modify state (command) or return data (query), not both
-- **Parameter objects** — group related parameters into objects when count becomes unwieldy (threshold varies by language)
-- **Composition over inheritance** — prefer delegation
-- **Immutability** — prefer immutable data structures
-
-### Complexity Thresholds
-
-- Method/function length: prefer < 50 lines
-- Cyclomatic complexity: max 15
-- Nesting depth: max 3 levels
-- Parameters: reduce when count hurts readability (language-dependent)
-
-### Refactoring Triggers
-
-- Method exceeds length or complexity threshold
-- Class has multiple unrelated responsibilities
-- Duplicated code across methods/classes
-- Deep nesting or complex boolean expressions
-
-### Error Handling
-
-- Use specific exception/error types, never generic
-- Include meaningful error messages with context
-- Preserve error causes with chaining
-- Use guard clauses and early returns
+Use when: Writing or reviewing public API documentation, updating docs during code changes.
 
 ## Related Skills
 
 - `pm-dev-java:java-core` — Java-specific patterns and features
 - `pm-dev-java:java-maintenance` — Java maintenance prioritization
-- `pm-dev-frontend:javascript` — JavaScript-specific patterns
+- `pm-dev-java:javadoc` — JavaDoc tag syntax and Java-specific patterns
+- `pm-dev-frontend:javascript` — JavaScript-specific patterns including JSDoc
 
 ## Standards Reference
 
 | Standard | Purpose |
 |----------|---------|
-| code-organization.md | SRP, CQS, package structure, parameter objects |
-| refactoring-triggers.md | Complexity thresholds, method length, triggers |
+| code-organization.md | SRP, CQS, package structure, refactoring triggers, complexity, maintenance |
 | error-handling.md | Exception philosophy, propagation, recovery |
+| documentation-principles.md | What/when/how to document public APIs |

@@ -13,6 +13,12 @@ These foundational rules apply across ALL development activities:
 
 ## Core Development Principles
 
+### Boy Scout Rule
+
+Leave code cleaner than you found it. When modifying a file, fix existing quality issues you encounter — poor naming, SRP violations, dead code, missing error handling, missing assertions, hardcoded test data, poor documentation. Never dismiss code smells with "not introduced by current changes" — always fix them. If fixes cascade beyond reasonable scope, stop and ask the user how to proceed.
+
+This applies equally to production code, test code, and documentation.
+
 ### Principle 1: Ask When In Doubt
 
 **Rule:** If in doubt, ask the user.
@@ -105,33 +111,26 @@ Task:
   prompt: Research current CDI (Contexts and Dependency Injection) best practices for Quarkus applications
 ```
 
-### Principle 3: Never Guess or Be Creative
+### Principle 3: Apply Judgment Within Constraints
 
-**Rule:** If you cannot find best practices for a topic, ask the user.
+**Rule:** Use good judgment, but don't invent requirements or conventions. When the path forward is unclear, research first, then ask the user.
 
-**Prohibited Behaviors:**
-- Guessing at requirements
-- Making up standards or conventions
-- Inventing approaches without research
-- Being "creative" with unclear requirements
+**Use judgment for:**
+- Choosing between well-established approaches when the result is equivalent
+- Applying documented standards to specific situations
+- Making reasonable implementation decisions within clear requirements
 
-**Required Behaviors:**
-- Ask for clarification when uncertain
-- Research established best practices
-- Follow documented standards
-- Request user guidance when best practices unavailable
+**Ask the user when:**
+- Requirements are ambiguous or underspecified
+- Multiple valid approaches exist with different trade-offs
+- No established best practice exists for the situation
+- The decision has significant downstream impact
 
-**Examples:**
-
-**WRONG (Guessing):**
+**Example:**
 ```
-Agent thinks: "User didn't specify test coverage, I'll aim for 50%"
-```
-
-**CORRECT (Asking):**
-```
-Agent asks: "What test coverage threshold should I target?
-Projects typically use 80% line/branch coverage."
+User says: "Add validation"
+DON'T: Guess what to validate and how
+DO: "What should I validate? (e.g., input format, business rules, data constraints)"
 ```
 
 ### Principle 4: Use Proper Tools for File Operations

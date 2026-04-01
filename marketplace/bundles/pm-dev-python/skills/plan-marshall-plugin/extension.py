@@ -43,8 +43,8 @@ class Extension(ExtensionBase):
                             'description': 'Core Python patterns — types, data structures, error handling, naming',
                         },
                         {
-                            'skill': 'plan-marshall:dev-general-code-documentation',
-                            'description': 'Language-agnostic documentation principles (what/when/how to document)',
+                            'skill': 'plan-marshall:dev-general-code-quality',
+                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
                         },
                     ],
                     'optionals': [],

@@ -9,7 +9,6 @@ Language-agnostic testing principles for writing reliable, maintainable tests ac
 * **No branching logic in tests**. Tests must never contain `if/else`, `switch`, or ternary operators. Each test exercises exactly one deterministic path. If you need to test multiple scenarios, write separate test methods.
 * **Explicit assertions over implicit checks**. Always assert the expected outcome explicitly. Never rely on "no exception thrown" as the only verification.
 * **Always test corner cases**: null/undefined inputs, empty collections, boundary values, error paths. Group corner cases in dedicated test classes or nested groups.
-* **Boy Scout Rule**. Leave test code cleaner than you found it. When modifying a test file, fix existing issues you encounter — missing assertions, hardcoded data, poor naming, coverage-only tests. Do not defer known test defects. Never dismiss a flaky or invalid test with "not introduced by current changes" — always fix it. If fixes cascade beyond reasonable scope, stop and ask the user how to proceed.
 
 ## Test Categories
 
@@ -105,10 +104,7 @@ Test names should describe the expected behavior:
 
 Tests should use generated/random data to prove behavior works for any valid input:
 
-* Use framework-specific generators — examples by language:
-  * **Java**: [cui-test-generator](https://github.com/cuioss/cui-test-generator) for type-safe generators
-  * **JavaScript**: [@faker-js/faker](https://fakerjs.dev) for realistic fake data (names, emails, dates, etc.)
-  * **Python**: [Faker](https://github.com/joke2k/faker) for fake data, [Hypothesis](https://github.com/HypothesisWorks/hypothesis) for property-based test generation
+* Use framework-specific generators (consult your language-specific testing skill for recommended libraries)
 * Generate values within valid ranges for the domain
 * Use meaningful variable names even for generated data
 
@@ -141,10 +137,7 @@ function createValidUser(overrides = {}) {
 Never use fixed-time waits in tests:
 
 * **Anti-pattern**: `sleep(2000)`, `Thread.sleep(5000)`, `cy.wait(3000)`
-* **Correct**: Use polling/retry mechanisms — examples by language:
-  * **Java**: [Awaitility](https://github.com/awaitility/awaitility) — DSL for polling async conditions with timeout
-  * **JavaScript**: [Testing Library `waitFor`](https://testing-library.com) for DOM assertions, Cypress built-in retry for E2E
-  * **Python**: [tenacity](https://github.com/jd/tenacity) — retry with backoff/stop conditions, or `asyncio.wait_for()` for async code
+* **Correct**: Use polling/retry mechanisms provided by your testing framework (consult your language-specific testing skill for recommended libraries)
 
 Fixed delays make tests slow and flaky — they either wait too long (slow CI) or not long enough (intermittent failures).
 
@@ -189,6 +182,69 @@ All assertions should include descriptive failure messages:
 
 Test one logical concept per test method. Use grouped assertions (like `assertAll`) when verifying multiple properties of a single result — but don't test unrelated behaviors in one test.
 
+## Property-Based Testing
+
+Property-based testing complements example-based tests by generating many random inputs and verifying that invariants (properties) hold for all of them. This is particularly effective for:
+
+* **Pure functions** with well-defined input/output contracts
+* **Serialization/deserialization** roundtrips (encode then decode yields original)
+* **Mathematical properties** (commutativity, associativity, idempotency)
+* **Data structure invariants** (sorted output stays sorted, size constraints hold)
+
+### When to use property-based tests
+
+* The function has a clear contract expressible as "for all valid inputs, this property holds"
+* Example-based tests feel incomplete — you suspect edge cases exist but can't enumerate them
+* The input space is large or complex (strings, collections, nested structures)
+
+### When NOT to use property-based tests
+
+* The behavior is inherently example-specific (UI rendering, specific business rules)
+* Generating valid inputs is harder than writing the test
+* The function has significant side effects that are hard to verify as properties
+
+### Writing properties
+
+A good property is a universal statement about the function's behavior:
+
+```
+// Property: parsing a valid token always succeeds
+for all validToken in generateValidTokens():
+    assert parse(validToken).isSuccess()
+
+// Property: roundtrip -- serialize then deserialize yields original
+for all user in generateUsers():
+    assert deserialize(serialize(user)) == user
+
+// Property: sorting is idempotent
+for all list in generateLists():
+    assert sort(sort(list)) == sort(list)
+```
+
+Consult your language-specific testing skill for framework APIs (e.g., Hypothesis for Python, jqwik for Java, fast-check for JavaScript).
+
+## Test Doubles
+
+Test doubles substitute real dependencies in unit tests. Choose the simplest double that makes the test work.
+
+### Taxonomy (simplest to most complex)
+
+| Double | What it does | When to use |
+|--------|-------------|-------------|
+| **Dummy** | Passed but never used (satisfies a parameter) | Filling required parameters the test doesn't care about |
+| **Stub** | Returns canned answers to calls | Controlling indirect inputs (e.g., config values, lookup results) |
+| **Fake** | Working implementation with shortcuts (e.g., in-memory database) | When real dependency is slow/unavailable but behavior matters |
+| **Spy** | Records calls for later verification | Verifying that a side effect occurred (e.g., event published) |
+| **Mock** | Pre-programmed expectations that verify interactions | Complex interaction verification (use sparingly) |
+
+### Guidelines
+
+* **Prefer real objects** when they're fast and deterministic. A real `ArrayList` is better than a mocked `List`.
+* **Prefer fakes over mocks** for complex dependencies. An in-memory repository is more realistic than a mocked one.
+* **Mock at system boundaries** — external services, databases, file systems, network calls. Don't mock internal collaborators.
+* **Don't verify implementation details** with mocks. Verifying that `service.save()` was called is testing implementation. Verifying the entity appears in the repository tests behavior.
+* **One mock per test** is a good heuristic. If a test needs many mocks, the unit under test may have too many dependencies (SRP violation).
+
 ## Anti-Patterns
 
 | Anti-Pattern | Problem | Solution |
@@ -199,5 +255,5 @@ Test one logical concept per test method. Use grouped assertions (like `assertAl
 | Shared mutable state | Order-dependent failures | Isolated test data |
 | Missing assertions | Tests pass but verify nothing | Explicit assertions |
 | Over-mocking | Tests prove mocks work, not code | Mock at boundaries only, prefer real collaborators |
-| Mocking by default | Mock libraries (Mockito, EasyMock, etc.) add complexity and hide bugs | Only use mocks when they save significant setup code; prefer real objects, test doubles, or in-memory implementations |
+| Mocking by default | Mock libraries add complexity and hide bugs | Only use mocks when they save significant setup; prefer real objects, fakes, or in-memory implementations |
 | Testing implementation | Brittle tests break on refactoring | Test behavior, not implementation |

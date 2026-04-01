@@ -50,7 +50,6 @@
     "./skills/workflow-integration-sonar",
     "./skills/workflow-pr-doctor",
     "./skills/dev-general-module-testing",
-    "./skills/dev-general-code-documentation",
     "./skills/dev-general-code-quality",
     "./skills/dev-general-practices"
   ]

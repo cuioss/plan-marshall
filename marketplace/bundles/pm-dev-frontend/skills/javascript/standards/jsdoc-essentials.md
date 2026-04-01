@@ -1,6 +1,6 @@
 # JSDoc Essentials
 
-For general documentation principles (what/when/how to document, clarity, completeness), see `plan-marshall:dev-general-code-documentation`. This document covers JSDoc-specific tag syntax, ESLint integration, type annotations, and build setup. For complete documented code examples (functions, classes, modules, web components), see [JSDoc Patterns](jsdoc-patterns.md).
+For general documentation principles (what/when/how to document, clarity, completeness), see `plan-marshall:dev-general-code-quality`. This document covers JSDoc-specific tag syntax, ESLint integration, type annotations, and build setup. For complete documented code examples (functions, classes, modules, web components), see [JSDoc Patterns](jsdoc-patterns.md).
 
 ## ESLint Configuration
 
@@ -198,4 +198,4 @@ Common validation errors:
 ## See Also
 
 - [JSDoc Patterns](jsdoc-patterns.md) - Complete documented code examples for functions, classes, modules, web components
-- `plan-marshall:dev-general-code-documentation` - Language-agnostic documentation principles
+- `plan-marshall:dev-general-code-quality` - Language-agnostic documentation principles
