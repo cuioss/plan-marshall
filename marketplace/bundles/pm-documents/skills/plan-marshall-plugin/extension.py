@@ -89,7 +89,7 @@ class Extension(ExtensionBase):
         return []
 
     def provides_recipes(self) -> list[dict]:
-        """Return documentation verification recipe."""
+        """Return documentation recipes."""
         return [
             {
                 'key': 'doc-verify',
@@ -97,6 +97,14 @@ class Extension(ExtensionBase):
                 'description': 'Validate AsciiDoc format, links, and documentation drift',
                 'skill': 'pm-documents:recipe-doc-verify',
                 'default_change_type': 'verification',
+                'scope': 'codebase_wide',
+            },
+            {
+                'key': 'verify-architecture-diagrams',
+                'name': 'Verify Architecture Diagrams',
+                'description': 'Verify and update PlantUML diagrams to reflect current codebase state',
+                'skill': 'pm-documents:recipe-verify-architecture-diagrams',
+                'default_change_type': 'tech_debt',
                 'scope': 'codebase_wide',
             },
         ]

@@ -57,11 +57,7 @@ This bundle provides documentation domain knowledge through two core skills (`re
 
 **recipe-doc-verify** - Recipe for verifying documentation quality (format, links, drift)
 
-### Commands (1 command)
-
-| Command | Purpose |
-|---------|---------|
-| **tools-verify-architecture-diagrams** | Specialized PlantUML verification |
+**recipe-verify-architecture-diagrams** - Recipe for verifying and updating PlantUML diagrams
 
 ### Templates
 
@@ -75,8 +71,6 @@ Located in skill `templates/` directories:
 
 ```
 pm-documents/
-├── commands/
-│   └── tools-verify-architecture-diagrams.md
 └── skills/
     ├── ref-asciidoc/             # AsciiDoc formatting skill (5 workflows)
     │   ├── SKILL.md
@@ -98,6 +92,8 @@ pm-documents/
     │   ├── scripts/
     │   └── templates/
     ├── recipe-doc-verify/        # Documentation verification recipe
+    │   └── SKILL.md
+    ├── recipe-verify-architecture-diagrams/  # PlantUML diagram recipe
     │   └── SKILL.md
     ├── ext-triage-docs/          # Triage extension point
     └── plan-marshall-plugin/     # Extension registration
