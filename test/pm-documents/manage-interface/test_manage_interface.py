@@ -10,9 +10,9 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import ScriptResult, get_script_path, run_script
-
 from toon_parser import parse_toon  # type: ignore[import-not-found]
+
+from conftest import ScriptResult, get_script_path, run_script
 
 
 class TestManageInterface(unittest.TestCase):

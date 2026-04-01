@@ -6,9 +6,10 @@ Tests the analyze subcommand for JavaScript JSDoc compliance.
 
 from pathlib import Path
 
+from toon_parser import parse_toon  # type: ignore[import-not-found]
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import get_script_path, run_script
-from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'javascript', 'jsdoc.py')
