@@ -17,6 +17,7 @@ from _build_parse import (
     Issue,
     UnitTestSummary,
     filter_warnings,
+    generate_summary_from_issues,
     is_warning_accepted,
     load_acceptable_warnings,
     partition_issues,
@@ -391,6 +392,55 @@ def test_partition_issues_preserves_order():
     assert errors[1].message == 'error 2'
 
 
+# =============================================================================
+# generate_summary_from_issues
+# =============================================================================
+
+
+def test_generate_summary_empty():
+    """Returns zero counts for empty issues list."""
+    summary = generate_summary_from_issues([])
+    assert summary['total_issues'] == 0
+    assert summary['compilation_errors'] == 0
+    assert summary['test_failures'] == 0
+
+
+def test_generate_summary_all_categories():
+    """Counts all known categories correctly."""
+    issues = [
+        Issue(None, None, 'msg', SEVERITY_ERROR, category='compilation_error'),
+        Issue(None, None, 'msg', SEVERITY_ERROR, category='test_failure'),
+        Issue(None, None, 'msg', SEVERITY_WARNING, category='javadoc_warning'),
+        Issue(None, None, 'msg', SEVERITY_WARNING, category='deprecation_warning'),
+        Issue(None, None, 'msg', SEVERITY_WARNING, category='unchecked_warning'),
+        Issue(None, None, 'msg', SEVERITY_ERROR, category='dependency_error'),
+        Issue(None, None, 'msg', SEVERITY_WARNING, category='openrewrite_info'),
+    ]
+    summary = generate_summary_from_issues(issues)
+    assert summary['total_issues'] == 7
+    assert summary['compilation_errors'] == 1
+    assert summary['test_failures'] == 1
+    assert summary['javadoc_warnings'] == 1
+    assert summary['deprecation_warnings'] == 1
+    assert summary['unchecked_warnings'] == 1
+    assert summary['dependency_errors'] == 1
+    assert summary['openrewrite_info'] == 1
+    assert summary['other_errors'] == 0
+    assert summary['other_warnings'] == 0
+
+
+def test_generate_summary_other_categories():
+    """Unknown error categories go to other_errors, unknown warnings to other_warnings."""
+    issues = [
+        Issue(None, None, 'msg', SEVERITY_ERROR, category='unknown_error_type'),
+        Issue(None, None, 'msg', SEVERITY_WARNING, category='unknown_warning_type'),
+    ]
+    summary = generate_summary_from_issues(issues)
+    assert summary['other_errors'] == 1
+    assert summary['other_warnings'] == 1
+    assert summary['total_issues'] == 2
+
+
 if __name__ == '__main__':
     import traceback
 
@@ -433,6 +483,9 @@ if __name__ == '__main__':
         test_partition_issues_warnings_only,
         test_partition_issues_mixed,
         test_partition_issues_preserves_order,
+        test_generate_summary_empty,
+        test_generate_summary_all_categories,
+        test_generate_summary_other_categories,
     ]
 
     passed = 0

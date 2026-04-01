@@ -101,8 +101,10 @@ Gradle automatically builds dependencies.
 timeout = last_successful_duration * 1.25
 ```
 
-Minimum timeout: 60000ms (1 minute)
-Maximum timeout: 600000ms (10 minutes)
+Minimum timeout: 60s (1 minute)
+Maximum timeout: 600s (10 minutes)
+
+**Note**: All timeouts use seconds. The build script API accepts `--timeout` in seconds.
 
 ### Timeout Handling
 
@@ -165,6 +167,50 @@ tasks.register("preCommit") {
 ```bash
 ./gradlew preCommit
 ```
+
+---
+
+## Acceptable Warnings
+
+### Configuration
+
+Acceptable warning patterns are stored in `run-configuration.json` under the `gradle` section:
+
+```json
+{
+    "gradle": {
+        "acceptable_warnings": [
+            "uses unchecked or unsafe operations",
+            "^.*deprecated.*$"
+        ]
+    }
+}
+```
+
+Patterns support substring matching and regex (patterns starting with `^`).
+
+### Access
+
+```
+Skill: plan-marshall:manage-run-config
+Workflow: Read Configuration
+Field: gradle.acceptable_warnings
+```
+
+### Infrastructure Warnings (Can Be Acceptable)
+
+1. **Transitive Dependency Conflicts** - Version conflicts from dependencies of dependencies
+2. **Plugin Compatibility Warnings** - Plugin warnings for locked parent configurations
+3. **Platform-Specific Warnings** - Warnings related to OS, JVM version, or hardware
+
+### Fixable Warnings (NEVER Acceptable)
+
+These warnings MUST be fixed and NEVER added to acceptable list:
+
+1. **JavaDoc Warnings** - ALWAYS FIX
+2. **Compilation Warnings** - ALWAYS FIX
+3. **Deprecation Warnings** - ALWAYS FIX (unless external)
+4. **Code Quality Warnings** - ALWAYS FIX
 
 ---
 

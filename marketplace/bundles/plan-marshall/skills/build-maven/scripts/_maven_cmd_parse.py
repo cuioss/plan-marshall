@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
+from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary, generate_summary_from_issues
 from plan_logging import log_entry
 
 
@@ -255,7 +255,7 @@ def cmd_parse(args):
         issues = [i for i in issues if i.category != 'openrewrite_info']
 
     # Build summary from Issue objects
-    summary = _generate_summary_from_issues(issues)
+    summary = generate_summary_from_issues(issues)
 
     # Extract duration from log content
     content = log_path.read_text(encoding='utf-8', errors='replace')
@@ -288,38 +288,3 @@ def cmd_parse(args):
     return 0
 
 
-def _generate_summary_from_issues(issues: list[Issue]) -> dict:
-    """Generate issue summary by category from Issue dataclasses."""
-    summary = {
-        'compilation_errors': 0,
-        'test_failures': 0,
-        'javadoc_warnings': 0,
-        'deprecation_warnings': 0,
-        'unchecked_warnings': 0,
-        'dependency_errors': 0,
-        'openrewrite_info': 0,
-        'other_warnings': 0,
-        'other_errors': 0,
-        'total_issues': len(issues),
-    }
-    for issue in issues:
-        cat, sev = issue.category, issue.severity
-        if cat == 'compilation_error':
-            summary['compilation_errors'] += 1
-        elif cat == 'test_failure':
-            summary['test_failures'] += 1
-        elif cat == 'javadoc_warning':
-            summary['javadoc_warnings'] += 1
-        elif cat == 'deprecation_warning':
-            summary['deprecation_warnings'] += 1
-        elif cat == 'unchecked_warning':
-            summary['unchecked_warnings'] += 1
-        elif cat == 'dependency_error':
-            summary['dependency_errors'] += 1
-        elif cat == 'openrewrite_info':
-            summary['openrewrite_info'] += 1
-        elif sev == SEVERITY_ERROR:
-            summary['other_errors'] += 1
-        else:
-            summary['other_warnings'] += 1
-    return summary

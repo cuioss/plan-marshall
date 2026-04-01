@@ -3,7 +3,7 @@
 
 Tests the Python build operations including:
 - detect_wrapper() - Wrapper detection
-- parse_python_log() - Log parsing for errors
+- parse_log() - Log parsing for errors
 - execute_direct() - Foundation API (mocked subprocess)
 """
 
@@ -101,12 +101,12 @@ def test_detect_wrapper_raises_when_no_wrapper():
 
 
 # =============================================================================
-# Test: parse_python_log() - Error Parsing
+# Test: parse_log() - Error Parsing
 # =============================================================================
 
 
-def test_parse_python_log_parses_mypy_errors():
-    """parse_python_log() extracts mypy type errors."""
+def test_parse_log_parses_mypy_errors():
+    """parse_log() extracts mypy type errors."""
     log_content = """
 src/main.py:10: error: Incompatible types in assignment
 src/utils.py:25: error: Missing return statement
@@ -115,7 +115,7 @@ src/utils.py:25: error: Missing return statement
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = python_build.parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'src/main.py'
@@ -124,8 +124,8 @@ src/utils.py:25: error: Missing return statement
         assert issues[0].category == 'type_error'
 
 
-def test_parse_python_log_parses_ruff_errors():
-    """parse_python_log() extracts ruff lint errors."""
+def test_parse_log_parses_ruff_errors():
+    """parse_log() extracts ruff lint errors."""
     log_content = """
 src/main.py:15:1: E501 Line too long (120 > 88)
 src/utils.py:30:5: F401 'os' imported but unused
@@ -134,7 +134,7 @@ src/utils.py:30:5: F401 'os' imported but unused
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = python_build.parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'src/main.py'
@@ -143,8 +143,8 @@ src/utils.py:30:5: F401 'os' imported but unused
         assert issues[0].category == 'lint_error'
 
 
-def test_parse_python_log_parses_pytest_failures():
-    """parse_python_log() extracts pytest test failures."""
+def test_parse_log_parses_pytest_failures():
+    """parse_log() extracts pytest test failures."""
     log_content = """
 FAILED test/test_main.py::test_addition - AssertionError: assert 1 == 2
 FAILED test/test_utils.py::test_helper
@@ -153,7 +153,7 @@ FAILED test/test_utils.py::test_helper
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = python_build.parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'test/test_main.py'
@@ -162,8 +162,8 @@ FAILED test/test_utils.py::test_helper
         assert issues[1].file == 'test/test_utils.py'
 
 
-def test_parse_python_log_extracts_test_summary():
-    """parse_python_log() extracts pytest summary statistics."""
+def test_parse_log_extracts_test_summary():
+    """parse_log() extracts pytest summary statistics."""
     log_content = """
 ================ 40 passed, 2 failed, 1 skipped in 5.23s ================
 """
@@ -171,7 +171,7 @@ def test_parse_python_log_extracts_test_summary():
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = python_build.parse_log(str(log_file))
 
         assert test_summary is not None
         assert test_summary.passed == 40
@@ -179,22 +179,22 @@ def test_parse_python_log_extracts_test_summary():
         assert test_summary.skipped == 1
 
 
-def test_parse_python_log_handles_missing_file():
-    """parse_python_log() returns empty results for missing log file."""
-    issues, test_summary, build_status = python_build.parse_python_log('/nonexistent/path.log')
+def test_parse_log_handles_missing_file():
+    """parse_log() returns empty results for missing log file."""
+    issues, test_summary, build_status = python_build.parse_log('/nonexistent/path.log')
 
     assert issues == []
     assert test_summary is None
     assert build_status == 'FAILURE'
 
 
-def test_parse_python_log_handles_empty_file():
-    """parse_python_log() returns empty results for empty log file."""
+def test_parse_log_handles_empty_file():
+    """parse_log() returns empty results for empty log file."""
     with BuildContext() as ctx:
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text('')
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = python_build.parse_log(str(log_file))
 
         assert issues == []
         assert test_summary is None

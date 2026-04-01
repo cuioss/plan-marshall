@@ -180,6 +180,35 @@ python3 .plan/execute-script.py plan-marshall:build-npm:npm execute \
 
 ---
 
+## Acceptable Warnings
+
+### Configuration
+
+Acceptable warning patterns are stored in `run-configuration.json` under the `npm` section:
+
+```json
+{
+    "npm": {
+        "acceptable_warnings": [
+            "ExperimentalWarning",
+            "^.*peer dependency.*$"
+        ]
+    }
+}
+```
+
+Patterns support substring matching and regex (patterns starting with `^`).
+
+### Access
+
+```
+Skill: plan-marshall:manage-run-config
+Workflow: Read Configuration
+Field: npm.acceptable_warnings
+```
+
+---
+
 ## Best Practices
 
 ### Build Command Selection

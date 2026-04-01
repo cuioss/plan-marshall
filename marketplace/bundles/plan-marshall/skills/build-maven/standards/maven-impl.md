@@ -90,10 +90,12 @@ timeout = last_successful_duration * 1.25
 
 | Build Type | Default Timeout |
 |------------|-----------------|
-| Unit tests only | 60,000ms (1 min) |
-| Full build | 120,000ms (2 min) |
-| Integration tests | 300,000ms (5 min) |
-| Native image | 600,000ms (10 min) |
+| Unit tests only | 60s (1 min) |
+| Full build | 120s (2 min) |
+| Integration tests | 300s (5 min) |
+| Native image | 600s (10 min) |
+
+**Note**: All timeouts use seconds. The build script API accepts `--timeout` in seconds.
 
 ---
 

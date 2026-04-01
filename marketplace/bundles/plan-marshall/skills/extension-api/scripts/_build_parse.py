@@ -310,6 +310,53 @@ def filter_warnings(warnings: list[Issue], patterns: list[str], mode: str = MODE
     return [w for w in warnings if not is_warning_accepted(w, patterns)]
 
 
+def generate_summary_from_issues(issues: list[Issue]) -> dict:
+    """Generate issue summary by category from Issue dataclasses.
+
+    Provides a consistent category breakdown across all JVM build systems
+    (Maven, Gradle). Used by cmd_parse handlers for structured output.
+
+    Args:
+        issues: List of Issue dataclasses to summarize.
+
+    Returns:
+        Dict with counts per category and total_issues.
+    """
+    summary = {
+        'compilation_errors': 0,
+        'test_failures': 0,
+        'javadoc_warnings': 0,
+        'deprecation_warnings': 0,
+        'unchecked_warnings': 0,
+        'dependency_errors': 0,
+        'openrewrite_info': 0,
+        'other_warnings': 0,
+        'other_errors': 0,
+        'total_issues': len(issues),
+    }
+    for issue in issues:
+        cat, sev = issue.category, issue.severity
+        if cat == 'compilation_error':
+            summary['compilation_errors'] += 1
+        elif cat == 'test_failure':
+            summary['test_failures'] += 1
+        elif cat == 'javadoc_warning':
+            summary['javadoc_warnings'] += 1
+        elif cat == 'deprecation_warning':
+            summary['deprecation_warnings'] += 1
+        elif cat == 'unchecked_warning':
+            summary['unchecked_warnings'] += 1
+        elif cat == 'dependency_error':
+            summary['dependency_errors'] += 1
+        elif cat == 'openrewrite_info':
+            summary['openrewrite_info'] += 1
+        elif sev == SEVERITY_ERROR:
+            summary['other_errors'] += 1
+        else:
+            summary['other_warnings'] += 1
+    return summary
+
+
 def partition_issues(issues: list[Issue]) -> tuple[list[Issue], list[Issue]]:
     """Partition issues into errors and warnings by severity.
 

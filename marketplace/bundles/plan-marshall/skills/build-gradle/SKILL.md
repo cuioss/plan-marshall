@@ -136,6 +136,7 @@ Gradle: ./gradlew > gradle (on PATH)
 | `javadoc_warning` | JavaDoc documentation issues |
 | `deprecation_warning` | Deprecated API usage |
 | `unchecked_warning` | Unchecked type conversions |
+| `openrewrite_info` | OpenRewrite plugin output |
 
 ## References
 

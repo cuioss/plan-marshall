@@ -26,7 +26,7 @@ import sys
 from _build_coverage_report import create_coverage_report_handler  # type: ignore[import-not-found]
 from _build_shared import add_run_subparser  # type: ignore[import-not-found]
 from _build_wrapper import detect_wrapper as _detect_wrapper  # type: ignore[import-not-found]
-from _python_cmd_parse import parse_python_log  # type: ignore[import-not-found]  # noqa: F401
+from _python_cmd_parse import parse_log  # type: ignore[import-not-found]  # noqa: F401
 
 # Re-export from _python_execute for backward compatibility
 from _python_execute import cmd_run, execute_direct  # type: ignore[import-not-found]  # noqa: F401

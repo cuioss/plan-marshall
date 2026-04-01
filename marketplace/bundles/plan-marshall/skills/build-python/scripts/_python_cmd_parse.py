@@ -4,7 +4,7 @@
 Handles output from mypy, ruff, and pytest.
 
 Usage (internal):
-    from _python_cmd_parse import parse_python_log
+    from _python_cmd_parse import parse_log
 """
 
 import re
@@ -13,7 +13,7 @@ from pathlib import Path
 from _build_parse import Issue, UnitTestSummary
 
 
-def parse_python_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
+def parse_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse Python build log for errors.
 
     Handles output from:

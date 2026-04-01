@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
+from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary, generate_summary_from_issues
 from plan_logging import log_entry
 
 # Pattern definitions for categorizing build output
@@ -56,6 +56,7 @@ JAVADOC_PATTERNS = [
 ]
 DEPRECATION_PATTERNS = [r'\[deprecation\]', r'has been deprecated', r'is deprecated']
 UNCHECKED_PATTERNS = [r'\[unchecked\]', r'unchecked conversion', r'unchecked call']
+OPENREWRITE_PATTERNS = [r'org\.openrewrite', r'rewrite-gradle-plugin', r'rewrite:']
 
 
 def categorize_line(line: str) -> str | None:
@@ -78,6 +79,9 @@ def categorize_line(line: str) -> str | None:
     for pattern in UNCHECKED_PATTERNS:
         if re.search(pattern, line, re.IGNORECASE):
             return 'unchecked_warning'
+    for pattern in OPENREWRITE_PATTERNS:
+        if re.search(pattern, line, re.IGNORECASE):
+            return 'openrewrite_info'
     return None
 
 
@@ -282,16 +286,8 @@ def cmd_parse(args):
     if args.mode == 'errors':
         issues = [i for i in issues if i.severity == SEVERITY_ERROR]
 
-    # Build summary from Issue objects
-    summary = {
-        'compilation_errors': sum(1 for i in issues if i.category == 'compilation_error'),
-        'test_failures': sum(1 for i in issues if i.category == 'test_failure'),
-        'javadoc_warnings': sum(1 for i in issues if i.category == 'javadoc_warning'),
-        'deprecation_warnings': sum(1 for i in issues if i.category == 'deprecation_warning'),
-        'unchecked_warnings': sum(1 for i in issues if i.category == 'unchecked_warning'),
-        'dependency_errors': sum(1 for i in issues if i.category == 'dependency_error'),
-        'total_issues': len(issues),
-    }
+    # Build summary from Issue objects (shared with Maven)
+    summary = generate_summary_from_issues(issues)
 
     # Extract metrics from log content
     content = log_path.read_text(encoding='utf-8', errors='replace')
@@ -329,6 +325,7 @@ def cmd_parse(args):
             f'  Compilation Errors: {summary["compilation_errors"]}',
             f'  Test Failures: {summary["test_failures"]}',
             f'  Javadoc Warnings: {summary["javadoc_warnings"]}',
+            f'  OpenRewrite Info: {summary["openrewrite_info"]}',
             f'  Total: {summary["total_issues"]}',
         ]
         print('\n'.join(output_lines))

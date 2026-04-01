@@ -5,7 +5,7 @@ Implements multi-parser architecture for detecting and parsing output from
 npm ecosystem tools (TypeScript, Jest, ESLint, TAP, npm errors).
 
 Usage (internal):
-    from _npm_cmd_parse import parse_with_detector, detect_tool_type
+    from _npm_cmd_parse import parse_log, detect_tool_type
 """
 
 from collections.abc import Callable
@@ -56,12 +56,12 @@ def detect_tool_type(content: str, command: str) -> str:
     return 'generic'
 
 
-def parse_with_detector(log_file: str, command: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
+def parse_log(log_file: str, command: str = '') -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse log file using appropriate tool-specific parser.
 
     Args:
         log_file: Path to the log file.
-        command: Original command string.
+        command: Original command string (used for tool type detection).
 
     Returns:
         Tuple of (issues, test_summary, build_status)

@@ -12,7 +12,7 @@ Usage:
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers
 from _build_wrapper import detect_wrapper as _detect_wrapper
-from _python_cmd_parse import parse_python_log
+from _python_cmd_parse import parse_log
 
 
 def _python_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[list[str], str]:
@@ -49,4 +49,4 @@ _CONFIG = ExecuteConfig(
     extra_result_fn=lambda args, wrapper: {'wrapper': wrapper},
 )
 
-execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_python_log)
+execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log)

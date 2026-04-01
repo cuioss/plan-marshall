@@ -13,7 +13,7 @@ import re
 
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers
-from _npm_cmd_parse import parse_with_detector
+from _npm_cmd_parse import parse_log
 
 # Commands that should use npx instead of npm
 NPX_COMMANDS = ['playwright', 'eslint', 'prettier', 'stylelint', 'tsc', 'jest', 'vitest']
@@ -90,4 +90,4 @@ _CONFIG = ExecuteConfig(
     extra_result_fn=_npm_extra_result_fn,
 )
 
-execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_with_detector)
+execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log)
