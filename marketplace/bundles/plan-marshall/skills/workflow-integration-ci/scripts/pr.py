@@ -26,11 +26,10 @@ Examples:
 
 import argparse
 import re
-import subprocess
 import sys
 from typing import Any
 
-from toon_parser import parse_toon, parse_toon_table, serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 from triage_helpers import cmd_triage_batch_handler, cmd_triage_single  # type: ignore[import-not-found]
 
 # ============================================================================
@@ -69,87 +68,70 @@ PATTERNS: dict[str, Any] = {
 
 
 # ============================================================================
-# FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via ci router)
+# FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via direct import)
 # ============================================================================
 
-# CI router command prefix — the ci.py router reads ci.provider from marshal.json
-# and delegates to the correct provider script (github.py or gitlab.py).
-#
-# NOTE: run_command() shells out to the CI router directly instead of going through
-# the executor. This is intentional — fetch-comments runs as a subprocess of the
-# executor itself, so re-entering the executor would create circular invocations.
-CI_ROUTER = 'python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci'
+# Provider resolution — imports ci.py's get_provider() to determine which
+# provider module to use, then imports the data-returning functions directly.
+# This avoids the previous subprocess chain (executor → pr.py → executor → ci.py)
+# while maintaining provider abstraction.
 
 
-def run_command(cmd: str, extra_args: list[str] | None = None) -> tuple[str, str, int]:
-    """Run a shell command and return stdout, stderr, return code."""
-    full_cmd = cmd
-    if extra_args:
-        full_cmd = f'{cmd} {" ".join(extra_args)}'
+def _get_provider_module():
+    """Resolve the CI provider and return the provider module.
 
-    try:
-        result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=120)
-        return result.stdout, result.stderr, result.returncode
-    except subprocess.TimeoutExpired:
-        return '', 'Command timed out', 124
-    except Exception as e:
-        return '', str(e), 1
-
-
-def get_current_pr_number() -> int | None:
-    """Get PR number for current branch via ci router."""
-    stdout, stderr, returncode = run_command(f'{CI_ROUTER} pr view')
-    if returncode != 0:
-        return None
-
-    # Parse pr_number from TOON output
-    for line in stdout.split('\n'):
-        if line.startswith('pr_number:'):
-            try:
-                return int(line.split(':', 1)[1].strip())
-            except ValueError:
-                return None
-
+    Returns the provider module (github or gitlab), or None if not configured.
+    """
+    from ci import get_provider  # type: ignore[import-not-found]
+    provider = get_provider()
+    if provider == 'github':
+        import github as mod  # type: ignore[import-not-found]
+        return mod
+    elif provider == 'gitlab':
+        import gitlab as mod  # type: ignore[import-not-found]
+        return mod
     return None
 
 
-def parse_comments_output(stdout: str, pr_number: int) -> dict[str, Any]:
-    """Parse TOON output from CI router into structured comment data.
+def get_current_pr_number() -> int | None:
+    """Get PR number for current branch via provider's view_pr_data()."""
+    mod = _get_provider_module()
+    if not mod:
+        return None
 
-    Separated from fetch_comments() for testability.
-    """
-    parsed = parse_toon(stdout)
-    comments = parse_toon_table(stdout, 'comments', null_markers={'-'})
+    result = mod.view_pr_data()
+    if result.get('status') != 'success':
+        return None
 
-    provider = parsed.get('provider', 'unknown')
-    total = parsed.get('total', len(comments))
-    unresolved = parsed.get('unresolved', sum(1 for c in comments if not c.get('resolved', False)))
-
-    return {
-        'pr_number': pr_number,
-        'provider': provider,
-        'comments': comments,
-        'total_comments': total,
-        'unresolved_count': unresolved,
-        'status': 'success',
-    }
+    pr_number = result.get('pr_number')
+    if pr_number is None or pr_number == 'unknown':
+        return None
+    try:
+        return int(pr_number)
+    except (ValueError, TypeError):
+        return None
 
 
 def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
-    """Fetch review comments for a PR using tools-integration-ci ci router."""
-    pr_comments_cmd = f'{CI_ROUTER} pr comments'
+    """Fetch review comments for a PR via provider's fetch_pr_comments_data()."""
+    mod = _get_provider_module()
+    if not mod:
+        return {'error': 'CI provider not configured. Run /marshall-steward first.', 'status': 'failure'}
 
-    # Build command with arguments
-    extra_args = ['--pr-number', str(pr_number)]
-    if unresolved_only:
-        extra_args.append('--unresolved-only')
+    result = mod.fetch_pr_comments_data(pr_number, unresolved_only)
 
-    stdout, stderr, code = run_command(pr_comments_cmd, extra_args)
+    if result.get('status') != 'success':
+        return {'error': result.get('error', 'Failed to fetch PR comments'), 'status': 'failure'}
 
-    if code != 0:
-        return {'error': f'Failed to fetch PR comments: {stderr}', 'status': 'failure'}
-
-    return parse_comments_output(stdout, pr_number)
+    # Transform provider result into pr.py's expected format
+    return {
+        'pr_number': pr_number,
+        'provider': result.get('provider', 'unknown'),
+        'comments': result.get('comments', []),
+        'total_comments': result.get('total', 0),
+        'unresolved_count': result.get('unresolved', 0),
+        'status': 'success',
+    }
 
 
 def cmd_fetch_comments(args):

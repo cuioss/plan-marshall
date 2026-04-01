@@ -183,25 +183,29 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pr_view(args: argparse.Namespace) -> int:
-    """Handle 'pr view' subcommand - get PR for current branch."""
+def view_pr_data() -> dict:
+    """Fetch PR data for current branch, returning structured dict.
+
+    Returns dict with 'status' key ('success' or 'error').
+    Importable by other scripts for direct data access without subprocess.
+    """
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_view', err)
+        return {'status': 'error', 'operation': 'pr_view', 'error': err}
 
     returncode, stdout, stderr = run_gh(
         ['pr', 'view', '--json',
          'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision']
     )
     if returncode != 0:
-        return output_error('pr_view', 'No PR found for current branch', stderr.strip())
+        return {'status': 'error', 'operation': 'pr_view', 'error': 'No PR found for current branch', 'context': stderr.strip()}
 
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return output_error('pr_view', 'Failed to parse gh output', stdout[:100])
+        return {'status': 'error', 'operation': 'pr_view', 'error': 'Failed to parse gh output', 'context': stdout[:100]}
 
-    print(serialize_toon({
+    return {
         'status': 'success',
         'operation': 'pr_view',
         'pr_number': data.get('number', 'unknown'),
@@ -214,7 +218,15 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
         'mergeable': data.get('mergeable', 'unknown').lower() if data.get('mergeable') else 'unknown',
         'merge_state': data.get('mergeStateStatus', 'unknown').lower() if data.get('mergeStateStatus') else 'unknown',
         'review_decision': data.get('reviewDecision', 'none').lower() if data.get('reviewDecision') else 'none',
-    }, table_separator='\t'))
+    }
+
+
+def cmd_pr_view(args: argparse.Namespace) -> int:
+    """Handle 'pr view' subcommand - get PR for current branch."""
+    result = view_pr_data()
+    if result.get('status') != 'success':
+        return output_error(result.get('operation', 'pr_view'), result.get('error', 'Unknown error'), result.get('context', ''))
+    print(serialize_toon(result, table_separator='\t'))
     return 0
 
 
@@ -420,28 +432,32 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 """
 
 
-def cmd_pr_comments(args: argparse.Namespace) -> int:
-    """Handle 'pr comments' subcommand - fetch inline code review comments."""
+def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dict:
+    """Fetch PR review comments, returning structured dict.
+
+    Returns dict with 'status' key ('success' or 'error').
+    Importable by other scripts for direct data access without subprocess.
+    """
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_comments', err)
+        return {'status': 'error', 'operation': 'pr_comments', 'error': err}
 
     # Get repo info
     owner, repo = get_repo_info()
     if not owner or not repo:
-        return output_error('pr_comments', 'Could not determine repository owner/name')
+        return {'status': 'error', 'operation': 'pr_comments', 'error': 'Could not determine repository owner/name'}
 
     # Run GraphQL query
-    returncode, data, err = run_graphql(REVIEW_THREADS_QUERY, {'owner': owner, 'repo': repo, 'pr': args.pr_number})
+    returncode, data, err = run_graphql(REVIEW_THREADS_QUERY, {'owner': owner, 'repo': repo, 'pr': pr_number})
     if returncode != 0 or data is None:
-        return output_error('pr_comments', f'GraphQL query failed: {err}')
+        return {'status': 'error', 'operation': 'pr_comments', 'error': f'GraphQL query failed: {err}'}
 
     # Extract threads
     try:
         threads = data['repository']['pullRequest']['reviewThreads']['nodes']
     except (KeyError, TypeError) as e:
-        return output_error('pr_comments', f'Failed to parse response: {e}')
+        return {'status': 'error', 'operation': 'pr_comments', 'error': f'Failed to parse response: {e}'}
 
     # Normalize comments
     comments: list[dict] = []
@@ -449,7 +465,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
         is_resolved = thread.get('isResolved', False)
 
         # Skip resolved threads if --unresolved-only
-        if args.unresolved_only and is_resolved:
+        if unresolved_only and is_resolved:
             continue
 
         path = thread.get('path', '')
@@ -472,7 +488,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
                 }
             )
 
-    # Output TOON
+    # Build result
     unresolved_count = sum(1 for c in comments if not c['resolved'])
     comment_list = [
         {
@@ -487,15 +503,23 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
         }
         for c in comments
     ]
-    print(serialize_toon({
+    return {
         'status': 'success',
         'operation': 'pr_comments',
         'provider': 'github',
-        'pr_number': args.pr_number,
+        'pr_number': pr_number,
         'total': len(comments),
         'unresolved': unresolved_count,
         'comments': comment_list,
-    }, table_separator='\t'))
+    }
+
+
+def cmd_pr_comments(args: argparse.Namespace) -> int:
+    """Handle 'pr comments' subcommand - fetch inline code review comments."""
+    result = fetch_pr_comments_data(args.pr_number, args.unresolved_only)
+    if result.get('status') != 'success':
+        return output_error(result.get('operation', 'pr_comments'), result.get('error', 'Unknown error'), result.get('context', ''))
+    print(serialize_toon(result, table_separator='\t'))
     return 0
 
 

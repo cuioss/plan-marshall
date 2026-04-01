@@ -172,20 +172,24 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pr_view(args: argparse.Namespace) -> int:
-    """Handle 'pr view' subcommand - get MR for current branch."""
+def view_pr_data() -> dict:
+    """Fetch MR data for current branch, returning structured dict.
+
+    Returns dict with 'status' key ('success' or 'error').
+    Importable by other scripts for direct data access without subprocess.
+    """
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_view', err)
+        return {'status': 'error', 'operation': 'pr_view', 'error': err}
 
     returncode, stdout, stderr = run_glab(['mr', 'view', '--output', 'json'])
     if returncode != 0:
-        return output_error('pr_view', 'No MR found for current branch', stderr.strip())
+        return {'status': 'error', 'operation': 'pr_view', 'error': 'No MR found for current branch', 'context': stderr.strip()}
 
     try:
         data: dict[str, Any] = json.loads(stdout)
     except json.JSONDecodeError:
-        return output_error('pr_view', 'Failed to parse glab output', stdout[:100])
+        return {'status': 'error', 'operation': 'pr_view', 'error': 'Failed to parse glab output', 'context': stdout[:100]}
 
     state = data.get('state', 'unknown')
     if state == 'opened':
@@ -209,7 +213,7 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
     else:
         review_decision = 'none'
 
-    print(serialize_toon({
+    return {
         'status': 'success',
         'operation': 'pr_view',
         'pr_number': data.get('iid', 'unknown'),
@@ -222,7 +226,15 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
         'mergeable': mergeable,
         'merge_state': merge_status,
         'review_decision': review_decision,
-    }, table_separator='\t'))
+    }
+
+
+def cmd_pr_view(args: argparse.Namespace) -> int:
+    """Handle 'pr view' subcommand - get MR for current branch."""
+    result = view_pr_data()
+    if result.get('status') != 'success':
+        return output_error(result.get('operation', 'pr_view'), result.get('error', 'Unknown error'), result.get('context', ''))
+    print(serialize_toon(result, table_separator='\t'))
     return 0
 
 
@@ -382,27 +394,31 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pr_comments(args: argparse.Namespace) -> int:
-    """Handle 'pr comments' subcommand - fetch MR discussion comments."""
+def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dict:
+    """Fetch MR discussion comments, returning structured dict.
+
+    Returns dict with 'status' key ('success' or 'error').
+    Importable by other scripts for direct data access without subprocess.
+    """
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_comments', err)
+        return {'status': 'error', 'operation': 'pr_comments', 'error': err}
 
     # Get project path
     project_path = get_project_path()
     if not project_path:
-        return output_error('pr_comments', 'Could not determine project path')
+        return {'status': 'error', 'operation': 'pr_comments', 'error': 'Could not determine project path'}
 
     # URL-encode the project path for API
     encoded_path = quote(project_path, safe='')
 
     # Get MR discussions via API
     # https://docs.gitlab.com/api/discussions/#list-project-merge-request-discussion-items
-    endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions'
+    endpoint = f'projects/{encoded_path}/merge_requests/{pr_number}/discussions'
     returncode, discussions, err = run_api(endpoint)
     if returncode != 0:
-        return output_error('pr_comments', f'API request failed: {err}')
+        return {'status': 'error', 'operation': 'pr_comments', 'error': f'API request failed: {err}'}
 
     # Normalize comments
     comments: list[dict] = []
@@ -424,7 +440,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
             is_resolved = note.get('resolved', False)
 
             # Skip resolved if --unresolved-only
-            if args.unresolved_only and is_resolved:
+            if unresolved_only and is_resolved:
                 continue
 
             comments.append(
@@ -454,17 +470,25 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
             'created_at': c['created_at'],
         })
 
-    # Output TOON
+    # Build result
     unresolved_count = sum(1 for c in comments if not c['resolved'])
-    print(serialize_toon({
+    return {
         'status': 'success',
         'operation': 'pr_comments',
         'provider': 'gitlab',
-        'pr_number': args.pr_number,
+        'pr_number': pr_number,
         'total': len(comments),
         'unresolved': unresolved_count,
         'comments': toon_comments,
-    }, table_separator='\t'))
+    }
+
+
+def cmd_pr_comments(args: argparse.Namespace) -> int:
+    """Handle 'pr comments' subcommand - fetch MR discussion comments."""
+    result = fetch_pr_comments_data(args.pr_number, args.unresolved_only)
+    if result.get('status') != 'success':
+        return output_error(result.get('operation', 'pr_comments'), result.get('error', 'Unknown error'), result.get('context', ''))
+    print(serialize_toon(result, table_separator='\t'))
     return 0
 
 
