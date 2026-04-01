@@ -153,7 +153,7 @@ def test_init_includes_verification_in_phase_5_execute():
         assert 'phase-6-verify' not in plan, 'Should NOT have plan.phase-6-verify section'
         execute = plan['phase-5-execute']
         assert execute['verification_max_iterations'] == 5
-        assert execute['steps'] == ['default:quality_check', 'default:build_verify']
+        assert execute['steps'] == ['default:quality_check', 'default:build_verify', 'default:coverage_check']
 
 
 def test_init_includes_phase_6_finalize():
