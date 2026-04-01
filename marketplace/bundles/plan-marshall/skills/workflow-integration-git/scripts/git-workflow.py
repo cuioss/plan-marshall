@@ -316,7 +316,11 @@ def analyze_diff(diff_content: str) -> dict:
         suggestions['type'] = 'docs'
         detected_changes.append('Documentation modified')
 
-    # Refactoring
+    # Refactoring — when additions and deletions are roughly balanced (within 30%
+    # of the smaller count), the change is likely restructuring existing code rather
+    # than adding or removing functionality. The 0.3 threshold was chosen empirically:
+    # pure renames have 0% delta, real refactors rarely exceed 30%, while features
+    # typically add 2x+ more lines than they remove.
     elif abs(additions - deletions) < min(additions, deletions) * 0.3:
         suggestions['type'] = 'refactor'
         detected_changes.append('Similar additions/deletions suggests refactoring')

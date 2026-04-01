@@ -24,9 +24,23 @@ Provides git commit workflow following conventional commits specification. Inclu
 
 ## What This Skill Provides
 
+### Workflows
+
+1. **Commit Changes Workflow** - Full commit lifecycle
+   - Artifact cleanup, staging, message generation, commit, optional push
+
+### Capabilities
+
 - Artifact detection and cleanup
 - Commit message generation following conventional commits
 - Optional push to remote
+
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `message` | optional | Custom commit message (auto-generated from diff if omitted) |
+| `push` | optional | Push to remote after committing (default: false) |
 
 ### Commit Standards (Quick Reference)
 

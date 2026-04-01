@@ -22,12 +22,21 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 - Suppressions require inline comments explaining the rationale
 - Fix-vs-suppress decisions must be logged
 
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `project` | required | SonarQube project key |
+| `pr` | optional | Pull request ID |
+| `severities` | optional | Filter by severity (comma-separated: BLOCKER,CRITICAL,MAJOR,MINOR,INFO) |
+| `types` | optional | Filter by type (comma-separated: BUG,CODE_SMELL,VULNERABILITY) |
+
 ## What This Skill Provides
 
 ### Workflows (Absorbs 2 Agents)
 
-1. **Fetch Issues Workflow** - Retrieves Sonar issues for PR
-   - Uses SonarQube MCP tool or API
+1. **Prepare Issue Fetch (MCP Delegation)** - Generates MCP tool call parameters for Sonar issue retrieval
+   - Does NOT fetch issues directly — produces parameters for the SonarQube MCP tool
    - Replaces: sonar-issue-fetcher agent
 
 2. **Fix Issues Workflow** - Processes and resolves issues
@@ -44,9 +53,9 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 ## Workflows
 
-### Workflow 1: Fetch Issues
+### Workflow 1: Prepare Issue Fetch (MCP Delegation)
 
-**Purpose:** Fetch Sonar issues for a PR or project.
+**Purpose:** Generate MCP tool call parameters for fetching Sonar issues. Does NOT fetch issues directly — the caller must execute the returned MCP instruction.
 
 **Input:**
 - **project**: SonarQube project key

@@ -25,6 +25,7 @@ import sys
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from triage_helpers import cmd_triage_batch_handler, cmd_triage_single  # type: ignore[import-not-found]
 
 # ============================================================================
 # TRIAGE CONFIGURATION
@@ -270,38 +271,12 @@ def triage_issue(issue: dict) -> dict:
 
 def cmd_triage(args):
     """Handle triage subcommand - triage a single Sonar issue."""
-    try:
-        issue = json.loads(args.issue)
-    except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
-        return 1
-
-    result = triage_issue(issue)
-    print(serialize_toon(result))
-
-    return 0 if result.get('status') == 'success' else 1
+    return cmd_triage_single(args.issue, triage_issue)
 
 
 def cmd_triage_batch(args):
     """Handle triage-batch subcommand — triage multiple issues at once."""
-    try:
-        issues = json.loads(args.issues)
-    except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
-        return 1
-
-    if not isinstance(issues, list):
-        print(serialize_toon({'error': 'Input must be a JSON array of issues', 'status': 'failure'}))
-        return 1
-
-    results = [triage_issue(issue) for issue in issues]
-    summary = {
-        'total': len(results),
-        'fix': sum(1 for r in results if r['action'] == 'fix'),
-        'suppress': sum(1 for r in results if r['action'] == 'suppress'),
-    }
-    print(serialize_toon({'results': results, 'summary': summary, 'status': 'success'}))
-    return 0
+    return cmd_triage_batch_handler(args.issues, triage_issue, ['fix', 'suppress'])
 
 
 # ============================================================================

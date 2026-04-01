@@ -32,6 +32,7 @@ import sys
 from typing import Any
 
 from toon_parser import parse_toon, parse_toon_table, serialize_toon  # type: ignore[import-not-found]
+from triage_helpers import cmd_triage_batch_handler, cmd_triage_single  # type: ignore[import-not-found]
 
 # ============================================================================
 # TRIAGE CONFIGURATION
@@ -73,7 +74,11 @@ PATTERNS: dict[str, Any] = {
 # ============================================================================
 
 # CI router command prefix — the ci.py router reads ci.provider from marshal.json
-# and delegates to the correct provider script (github.py or gitlab.py)
+# and delegates to the correct provider script (github.py or gitlab.py).
+#
+# NOTE: run_command() shells out to the CI router directly instead of going through
+# the executor. This is intentional — fetch-comments runs as a subprocess of the
+# executor itself, so re-entering the executor would create circular invocations.
 CI_ROUTER = 'python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci'
 
 
@@ -266,39 +271,12 @@ def triage_comment(comment: dict) -> dict:
 
 def cmd_triage(args):
     """Handle triage subcommand."""
-    try:
-        comment = json.loads(args.comment)
-    except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
-        return 1
-
-    result = triage_comment(comment)
-    print(serialize_toon(result))
-
-    return 0 if result.get('status') == 'success' else 1
+    return cmd_triage_single(args.comment, triage_comment)
 
 
 def cmd_triage_batch(args):
     """Handle triage-batch subcommand — triage multiple comments at once."""
-    try:
-        comments = json.loads(args.comments)
-    except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
-        return 1
-
-    if not isinstance(comments, list):
-        print(serialize_toon({'error': 'Input must be a JSON array of comments', 'status': 'failure'}))
-        return 1
-
-    results = [triage_comment(c) for c in comments]
-    summary = {
-        'total': len(results),
-        'code_change': sum(1 for r in results if r['action'] == 'code_change'),
-        'explain': sum(1 for r in results if r['action'] == 'explain'),
-        'ignore': sum(1 for r in results if r['action'] == 'ignore'),
-    }
-    print(serialize_toon({'results': results, 'summary': summary, 'status': 'success'}))
-    return 0
+    return cmd_triage_batch_handler(args.comments, triage_comment, ['code_change', 'explain', 'ignore'])
 
 
 # ============================================================================

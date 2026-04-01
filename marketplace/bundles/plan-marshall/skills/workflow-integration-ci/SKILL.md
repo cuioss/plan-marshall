@@ -22,6 +22,13 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 - Review comment responses must explain the fix or provide rationale for disagreement
 - CI wait timeout must be respected with user prompt on expiry
 
+## Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pr` | optional | PR number (auto-detects current branch's PR if omitted) |
+| `unresolved-only` | optional | Only return unresolved comments (fetch-comments) |
+
 ## What This Skill Provides
 
 ### Workflows (Absorbs 2 Agents)

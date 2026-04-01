@@ -81,7 +81,7 @@ class TestFormatCommit(unittest.TestCase):
 
     def test_all_commit_types(self):
         """Test all valid commit types."""
-        valid_types = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore']
+        valid_types = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'ci']
         for commit_type in valid_types:
             stdout, _, code = run_git_script(['format-commit', '--type', commit_type, '--subject', 'test subject'])
             self.assertEqual(code, 0, f'Failed for type: {commit_type}')
@@ -132,6 +132,20 @@ class TestFormatCommit(unittest.TestCase):
         self.assertEqual(result['type'], 'ci')
         self.assertIn('ci: update workflow', result['formatted_message'])
 
+    def test_imperative_allowlist_no_false_warnings(self):
+        """Test that imperative allowlist words don't trigger past-tense warnings."""
+        # Words ending in -ed/-ing that are valid imperative forms, not past tense/gerund
+        allowlist_samples = ['embed', 'spread', 'thread', 'overhead', 'string', 'bring', 'caching', 'hashing', 'nothing']
+        for word in allowlist_samples:
+            stdout, _, code = run_git_script(['format-commit', '--type', 'fix', '--subject', f'{word} the module'])
+            self.assertEqual(code, 0, f'Failed for allowlist word: {word}')
+            result = parse_toon(stdout)
+            warnings = result['validation']['warnings']
+            imperative_warnings = [w for w in warnings if 'imperative' in w.lower()]
+            self.assertEqual(
+                len(imperative_warnings), 0, f'False imperative warning for allowlisted word "{word}": {warnings}'
+            )
+
     def test_body_wrapping_preserves_indentation(self):
         """Test that body wrapping preserves leading indentation for bullet lists."""
         body = '  - This is a very long bullet point that should wrap at seventy two characters while keeping indentation'
@@ -151,11 +165,12 @@ class TestAnalyzeDiff(unittest.TestCase):
     """Test git-workflow.py analyze-diff subcommand."""
 
     def test_analyze_bug_fix(self):
-        """Test analysis detects bug fix patterns."""
+        """Test analysis detects bug fix patterns from comment keywords."""
         diff_content = """diff --git a/src/main/java/Service.java b/src/main/java/Service.java
 --- a/src/main/java/Service.java
 +++ b/src/main/java/Service.java
 -    return null;
++    // Fix null pointer when value is absent
 +    if (value == null) throw new IllegalArgumentException();
 +    return value;
 """
@@ -167,6 +182,7 @@ class TestAnalyzeDiff(unittest.TestCase):
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['suggestions']['type'], 'fix')
 
     def test_analyze_file_not_found(self):
         """Test error when diff file not found."""
