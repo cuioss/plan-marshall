@@ -302,7 +302,7 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
 
 ## Coverage Report Paths
 
-The coverage report parser (`_gradle_cmd_coverage_report.py`) searches these JaCoCo XML report paths in order:
+The coverage report parser searches these JaCoCo XML report paths in order:
 
 | Path | Description |
 |------|-------------|

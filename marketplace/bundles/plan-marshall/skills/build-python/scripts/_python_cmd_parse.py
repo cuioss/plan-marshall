@@ -29,12 +29,11 @@ def parse_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """
     issues: list[Issue] = []
     test_summary: UnitTestSummary | None = None
-    build_status = 'FAILURE'
 
     try:
         content = Path(log_file).read_text(encoding='utf-8', errors='replace')
     except OSError:
-        return issues, test_summary, build_status
+        return issues, test_summary, 'FAILURE'
 
     # Parse mypy errors: file.py:line: error: message
     mypy_pattern = re.compile(r'^(.+\.py):(\d+): error: (.+)$', re.MULTILINE)
@@ -82,5 +81,9 @@ def parse_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
         r'(\d+) passed(?:.*?(\d+) failed)?(?:.*?(\d+) skipped)?',
         group_map={'passed': 1, 'failed': 2, 'skipped': 3},
     )
+
+    # Determine build status: SUCCESS only when no errors found
+    error_issues = [i for i in issues if i.severity == 'error']
+    build_status = 'FAILURE' if error_issues else 'SUCCESS'
 
     return issues, test_summary, build_status

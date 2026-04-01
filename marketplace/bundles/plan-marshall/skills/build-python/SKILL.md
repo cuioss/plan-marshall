@@ -128,8 +128,6 @@ message	"Coverage meets threshold: 85.2% line, 78.3% branch"
 overall:
   line	85.2
   branch	78.3
-  instruction	81.5
-  method	87.1
 ```
 
 ### check-warnings

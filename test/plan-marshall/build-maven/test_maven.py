@@ -31,7 +31,8 @@ MOCKS_DIR = Path(__file__).parent / 'mocks'
 def test_parse_successful_build():
     """Test parsing successful Maven build output."""
     result = run_script(
-        SCRIPT_PATH, 'parse', '--log', str(FIXTURES_DIR / 'sample-maven-success.log'), '--mode', 'structured'
+        SCRIPT_PATH, 'parse', '--log', str(FIXTURES_DIR / 'sample-maven-success.log'),
+        '--mode', 'structured', '--format', 'json',
     )
     assert result.success, f'Script failed: {result.stderr}'
     data = result.json()
@@ -43,7 +44,8 @@ def test_parse_successful_build():
 def test_parse_compilation_errors():
     """Test parsing build with compilation errors."""
     result = run_script(
-        SCRIPT_PATH, 'parse', '--log', str(FIXTURES_DIR / 'sample-maven-failure.log'), '--mode', 'structured'
+        SCRIPT_PATH, 'parse', '--log', str(FIXTURES_DIR / 'sample-maven-failure.log'),
+        '--mode', 'structured', '--format', 'json',
     )
     data = result.json()
 

@@ -170,8 +170,8 @@ Commands execute from project root by default.
 For projects with nested frontend directories:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:build-npm:npm execute \
-    --command "run test" \
+python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
+    --command-args "run test" \
     --working-dir frontend/
 ```
 

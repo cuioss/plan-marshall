@@ -7,15 +7,19 @@ to avoid duplication.
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from _build_format import format_json, format_toon
 from _build_parse import (
+    SEVERITY_ERROR,
     Issue,
     UnitTestSummary,
     filter_warnings,
+    generate_summary_from_issues,
     load_acceptable_warnings,
     partition_issues,
 )
@@ -32,6 +36,71 @@ from _build_result import (
 # Type alias for parser functions.
 # Accepts (log_file,) or (log_file, command) and returns (issues, test_summary, build_status).
 ParserFn = Callable[..., tuple[list[Issue], UnitTestSummary | None, str]]
+
+
+def cmd_parse_common(
+    args,
+    parse_log_fn: ParserFn,
+    *,
+    extra_filters: dict[str, Callable[[Issue], bool]] | None = None,
+    parser_needs_command: bool = False,
+    output_format: str = 'toon',
+) -> int:
+    """Common parse subcommand logic shared across all build skills.
+
+    Reads a log file, calls the tool-specific parse_log function, applies
+    mode filters, and outputs the result in the requested format.
+
+    Args:
+        args: Parsed argparse namespace with 'log', 'mode', optional 'format'.
+        parse_log_fn: Tool-specific log parser function.
+        extra_filters: Additional mode filters beyond 'errors'.
+            Maps mode name -> filter predicate (keep issues where predicate is True).
+            Example: {'no-openrewrite': lambda i: i.category != 'openrewrite_info'}
+        parser_needs_command: If True, passes command string as second arg to parser_fn.
+        output_format: Output format ('toon' or 'json'). Overridden by args.format if present.
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
+    """
+    log_path = Path(args.log)
+    if not log_path.exists():
+        print(json.dumps({'status': 'error', 'error': f'Log file not found: {args.log}'}, indent=2))
+        return 1
+
+    if parser_needs_command:
+        issues, test_summary, build_status = parse_log_fn(log_path, getattr(args, 'command', ''))
+    else:
+        issues, test_summary, build_status = parse_log_fn(log_path)
+
+    # Apply mode filters
+    mode = getattr(args, 'mode', 'structured')
+    if mode == 'errors':
+        issues = [i for i in issues if i.severity == SEVERITY_ERROR]
+    elif extra_filters and mode in extra_filters:
+        issues = [i for i in issues if extra_filters[mode](i)]
+
+    summary = generate_summary_from_issues(issues)
+    result = {
+        'status': 'success' if build_status == 'SUCCESS' else 'error',
+        'data': {
+            'build_status': build_status,
+            'issues': [i.to_dict() for i in issues],
+            'summary': summary,
+        },
+        'metrics': {
+            'tests_run': test_summary.total if test_summary else 0,
+            'tests_failed': test_summary.failed if test_summary else 0,
+        },
+    }
+
+    fmt = getattr(args, 'format', None) or output_format
+    if fmt == 'toon':
+        print(format_toon(result))
+    else:
+        print(json.dumps(result, indent=2))
+    return 0
+
 
 # Buffer added to inner timeout for Bash tool timeout calculation.
 # The Bash tool has a default 120-second timeout. For long-running builds,

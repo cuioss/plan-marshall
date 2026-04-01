@@ -21,14 +21,11 @@ Subcommands:
 """
 
 import argparse
-import json
 import sys
-from pathlib import Path
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
-from _build_parse import SEVERITY_ERROR, generate_summary_from_issues
-from _build_shared import add_coverage_subparser, add_run_subparser
+from _build_shared import add_coverage_subparser, add_run_subparser, cmd_parse_common
 from _gradle_cmd_find_project import cmd_find_project
 from _gradle_cmd_parse import parse_log
 from _gradle_execute import cmd_run
@@ -52,34 +49,10 @@ cmd_check_warnings = create_check_warnings_handler(
 
 def _cmd_parse(args):
     """Handle parse subcommand using shared parse_log."""
-    log_path = Path(args.log)
-    if not log_path.exists():
-        print(json.dumps({'status': 'error', 'error': f'Log file not found: {args.log}'}, indent=2))
-        return 1
-
-    issues, test_summary, build_status = parse_log(log_path)
-
-    if args.mode == 'errors':
-        issues = [i for i in issues if i.severity == SEVERITY_ERROR]
-
-    summary = generate_summary_from_issues(issues)
-    result = {
-        'status': 'success' if build_status == 'SUCCESS' else 'error',
-        'data': {
-            'build_status': build_status,
-            'issues': [i.to_dict() for i in issues],
-            'summary': summary,
-        },
-        'metrics': {
-            'tests_run': test_summary.total if test_summary else 0,
-            'tests_failed': test_summary.failed if test_summary else 0,
-        },
-    }
-    print(json.dumps(result, indent=2))
-    return 0
+    return cmd_parse_common(args, parse_log)
 
 
-def main():
+def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description='Gradle build operations', formatter_class=argparse.RawDescriptionHelpFormatter
@@ -98,6 +71,9 @@ def main():
     parse_parser.add_argument('--log', required=True, help='Path to Gradle build log file')
     parse_parser.add_argument(
         '--mode', choices=['default', 'errors', 'structured'], default='structured', help='Output mode'
+    )
+    parse_parser.add_argument(
+        '--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)',
     )
     parse_parser.set_defaults(func=_cmd_parse)
 
@@ -128,7 +104,8 @@ def main():
     warn_parser.set_defaults(func=cmd_check_warnings)
 
     args = parser.parse_args()
-    return args.func(args)
+    result: int = args.func(args)
+    return result
 
 
 if __name__ == '__main__':

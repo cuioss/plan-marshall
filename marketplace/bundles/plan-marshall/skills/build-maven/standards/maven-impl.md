@@ -331,7 +331,7 @@ def config_defaults(self, project_root: str) -> None:
 
 ## Coverage Report Paths
 
-The coverage report parser (`_maven_cmd_coverage_report.py`) searches these JaCoCo XML report paths in order:
+The coverage report parser searches these JaCoCo XML report paths in order:
 
 | Path | Description |
 |------|-------------|

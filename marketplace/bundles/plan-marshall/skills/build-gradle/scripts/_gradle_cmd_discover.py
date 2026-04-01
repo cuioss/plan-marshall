@@ -145,10 +145,10 @@ def discover_gradle_modules(project_root: str) -> list:
 
 
 def _get_gradle_metadata(module_path: str, project_root: Path) -> dict | None:
-    """Get metadata using Gradle properties and dependencies commands.
+    """Get metadata using a single combined Gradle command.
 
-    Per module-discovery.md specification, runs Gradle commands
-    to extract resolved metadata rather than parsing build.gradle directly.
+    Combines properties and dependencies tasks in a single Gradle call
+    to minimize daemon startup overhead (same approach as Maven discovery).
 
     Args:
         module_path: Module path relative to root (empty string for root module)
@@ -162,35 +162,20 @@ def _get_gradle_metadata(module_path: str, project_root: Path) -> dict | None:
     # Build module prefix for Gradle task addressing
     module_prefix = f':{module_path.replace("/", ":")}' if module_path else ''
 
-    # Run properties task to get coordinates
-    props_result = execute_direct(
-        args=f'{module_prefix}:properties -q',
-        command_key='gradle:discover-properties',
+    # Run properties + dependencies in a single Gradle call
+    result = execute_direct(
+        args=f'{module_prefix}:properties {module_prefix}:dependencies --configuration compileClasspath -q',
+        command_key='gradle:discover',
         default_timeout=120,
         project_dir=str(project_root),
     )
 
-    if props_result['status'] != 'success':
+    if result['status'] != 'success':
         return None
 
-    # Read output from log file
-    log_content = Path(props_result['log_file']).read_text() if props_result.get('log_file') else ''
+    log_content = Path(result['log_file']).read_text() if result.get('log_file') else ''
     metadata = _parse_properties_output(log_content)
-
-    # Run dependencies task
-    deps_result = execute_direct(
-        args=f'{module_prefix}:dependencies --configuration compileClasspath -q',
-        command_key='gradle:discover-dependencies',
-        default_timeout=120,
-        project_dir=str(project_root),
-    )
-
-    if deps_result['status'] == 'success':
-        # Read output from log file
-        deps_log_content = Path(deps_result['log_file']).read_text() if deps_result.get('log_file') else ''
-        metadata['dependencies'] = _parse_dependencies_output(deps_log_content)
-    else:
-        metadata['dependencies'] = []
+    metadata['dependencies'] = _parse_dependencies_output(log_content)
 
     return metadata
 
