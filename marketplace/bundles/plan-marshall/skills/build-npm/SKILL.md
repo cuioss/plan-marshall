@@ -105,4 +105,5 @@ Supports Jest/Istanbul JSON (`coverage-summary.json`) and LCOV formats. Auto-det
 ## References
 
 - `plan-marshall:extension-api` - Extension API contract
+- `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle
 - `standards/npm-impl.md` - npm execution details

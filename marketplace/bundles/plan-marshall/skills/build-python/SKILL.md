@@ -72,3 +72,4 @@ Parses coverage.py Cobertura XML (`coverage.xml`). Generate with `pytest --cov -
 
 - `plan-marshall:extension-api` - Extension API contract
 - `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle
+- `standards/python-impl.md` - Python/pyprojectx execution details
