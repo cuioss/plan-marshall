@@ -321,5 +321,6 @@ def test_default_timeout_is_reasonable():
 
 
 def test_min_timeout_is_enforced():
-    """MIN_TIMEOUT prevents too-short timeouts."""
-    assert python_build.MIN_TIMEOUT == 60  # 1 minute minimum
+    """MIN_TIMEOUT is enforced globally in _build_execute."""
+    from _build_execute import MIN_TIMEOUT
+    assert MIN_TIMEOUT == 60  # 1 minute minimum, enforced for all build systems

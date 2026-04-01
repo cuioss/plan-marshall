@@ -26,12 +26,10 @@ Maven build execution with output parsing, module discovery, and wrapper detecti
 
 | Script | Type | Purpose |
 |--------|------|---------|
-| `maven.py` | CLI | Maven operations dispatcher |
-| `_maven_execute.py` | Library | Foundation execution, wrapper detection |
+| `maven.py` | CLI | Maven operations dispatcher (includes coverage + warning config) |
+| `_maven_execute.py` | Library | Execution config via factory pattern |
 | `_maven_cmd_discover.py` | Library | Module discovery via pom.xml |
 | `_maven_cmd_parse.py` | Library | Log parsing, issue extraction |
-| `_maven_cmd_check_warnings.py` | Library | Warning categorization |
-| `_maven_cmd_search_markers.py` | Library | OpenRewrite TODO marker detection |
 
 ## Maven run (Primary API)
 
@@ -45,7 +43,7 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
 
 **Parameters**:
 - `--command-args` - Complete Maven command arguments, e.g. `"verify -Ppre-commit -pl my-module"` (required)
-- `--timeout` - Timeout in seconds (default: 300, adaptive — doubles on timeout failure)
+- `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
 - `--mode` - Output mode: actionable (default), structured, errors
 - `--format` - Output format: toon (default), json
 

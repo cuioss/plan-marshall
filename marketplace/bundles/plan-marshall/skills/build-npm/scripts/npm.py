@@ -27,6 +27,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from _build_coverage_report import create_coverage_report_handler
 from _build_execute import CaptureStrategy, execute_direct_base
 from _build_parse import (
     Issue,
@@ -54,6 +55,17 @@ NPM_COMMAND = 'npm'
 
 # Commands that should use npx instead of npm
 NPX_COMMANDS = ['playwright', 'eslint', 'prettier', 'stylelint', 'tsc', 'jest', 'vitest']
+
+# --- Tool-specific coverage configuration (inlined from former wrapper) ---
+
+cmd_coverage_report = create_coverage_report_handler(
+    search_paths=[
+        ('coverage/coverage-summary.json', 'jest_json'),
+        ('coverage/lcov.info', 'lcov'),
+        ('dist/coverage/coverage-summary.json', 'jest_json'),
+    ],
+    not_found_message='No coverage report found. Run tests with coverage first.',
+)
 
 
 
@@ -320,8 +332,6 @@ def main() -> int:
     run_parser.set_defaults(func=cmd_run)
 
     # coverage-report subcommand
-    from _npm_cmd_coverage_report import cmd_coverage_report
-
     cov_parser = subparsers.add_parser('coverage-report', help='Parse JavaScript coverage report')
     cov_parser.add_argument('--project-path', dest='project_path', help='Project directory path')
     cov_parser.add_argument('--report-path', dest='report_path', help='Override coverage report path')

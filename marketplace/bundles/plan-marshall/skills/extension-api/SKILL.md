@@ -165,10 +165,15 @@ These are co-located here for PYTHONPATH convenience but are NOT part of the ext
 
 | Script | Type | Purpose |
 |--------|------|---------|
+| `_build_execute.py` | Library | Subprocess execution, timeout learning, capture strategies |
+| `_build_execute_factory.py` | Library | Factory for build-system-specific execute_direct/cmd_run |
 | `_build_result.py` | Library | Log file creation, result dict construction |
 | `_build_parse.py` | Library | Issue structures, warning filtering |
 | `_build_format.py` | Library | TOON and JSON output formatting |
+| `_build_shared.py` | Library | cmd_run_common(), bash timeout helpers |
 | `_build_wrapper.py` | Library | Build tool wrapper detection |
+| `_build_coverage_report.py` | Library | Coverage report parsing with factory |
+| `_build_check_warnings.py` | Library | Warning categorization with factory |
 
 ### CLI Commands
 

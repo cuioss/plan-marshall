@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gradle build operations - run, parse, find projects, search markers, check warnings.
+Gradle build operations - run, parse, find projects, search markers, check warnings, coverage report.
 
 Usage:
     gradle.py run --command-args <args> [--format toon|json] [--mode actionable|structured|errors] [options]
@@ -8,6 +8,7 @@ Usage:
     gradle.py find-project --project-name <name> | --project-path <path>
     gradle.py search-markers --source-dir <dir>
     gradle.py check-warnings --warnings <json> [--acceptable-warnings <json>]
+    gradle.py coverage-report [--module-path <path>] [--threshold <percent>]
     gradle.py --help
 
 Subcommands:
@@ -16,19 +17,38 @@ Subcommands:
     find-project    Find Gradle project path from project name
     search-markers  Search for OpenRewrite TODO markers in source files
     check-warnings  Categorize build warnings against acceptable patterns
+    coverage-report Parse JaCoCo coverage report
 """
 
 import argparse
 import sys
 
-from _gradle_cmd_check_warnings import cmd_check_warnings
-from _gradle_cmd_coverage_report import cmd_coverage_report
+from _build_check_warnings import create_check_warnings_handler
+from _build_coverage_report import create_coverage_report_handler
 from _gradle_cmd_find_project import cmd_find_project
 from _gradle_cmd_parse import cmd_parse
-from _gradle_cmd_search_markers import cmd_search_markers
+from _markers_search import cmd_search_markers
 
 # Import command handlers from internal modules (underscore prefix = private)
 from _gradle_execute import cmd_run
+
+# --- Tool-specific configuration inlined from former wrapper files ---
+
+cmd_coverage_report = create_coverage_report_handler(
+    search_paths=[
+        ('build/reports/jacoco/test/jacocoTestReport.xml', 'jacoco'),
+        ('build/reports/jacoco/jacocoTestReport.xml', 'jacoco'),
+        ('target/site/jacoco/jacoco.xml', 'jacoco'),
+        ('target/jacoco/report.xml', 'jacoco'),
+        ('target/site/jacoco-aggregate/jacoco.xml', 'jacoco'),
+    ],
+    not_found_message='No JaCoCo XML report found. Run coverage build first.',
+)
+
+cmd_check_warnings = create_check_warnings_handler(
+    matcher='wildcard',
+    supports_patterns_arg=False,
+)
 
 
 def main():

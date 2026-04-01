@@ -37,7 +37,6 @@ def _call_execute(
     scope_fn=None,
     env_vars=None,
     working_dir=None,
-    min_timeout=None,
     extra_result_fields=None,
     project_dir=None,
 ):
@@ -56,7 +55,6 @@ def _call_execute(
             scope_fn=scope_fn,
             env_vars=env_vars,
             working_dir=working_dir,
-            min_timeout=min_timeout,
             extra_result_fields=extra_result_fields,
         )
 
@@ -527,45 +525,33 @@ class TestEnvVarsInjection:
 
 
 class TestMinTimeoutEnforcement:
-    """Tests for minimum timeout floor."""
+    """Tests for global minimum timeout floor (MIN_TIMEOUT=60)."""
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute.subprocess.run')
     @patch('_build_execute.timeout_get', return_value=30)
     @patch('_build_execute.create_log_file')
-    def test_min_timeout_enforces_floor(self, mock_log_file, mock_tget, mock_run, mock_tset):
+    def test_floor_enforced_when_learned_too_low(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = MagicMock(returncode=0)
 
-        result = _call_execute(min_timeout=60)
+        result = _call_execute()
 
-        # Learned timeout is 30, but min_timeout is 60 -> should use 60
+        # Learned timeout is 30, but global floor is 60 -> should use 60
         assert result['timeout_used_seconds'] == 60
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute.subprocess.run')
     @patch('_build_execute.timeout_get', return_value=120)
     @patch('_build_execute.create_log_file')
-    def test_min_timeout_no_effect_when_learned_higher(self, mock_log_file, mock_tget, mock_run, mock_tset):
+    def test_floor_no_effect_when_learned_higher(self, mock_log_file, mock_tget, mock_run, mock_tset):
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = MagicMock(returncode=0)
 
-        result = _call_execute(min_timeout=60)
+        result = _call_execute()
 
-        # Learned timeout is 120, min_timeout is 60 -> should use 120
+        # Learned timeout is 120, floor is 60 -> should use 120
         assert result['timeout_used_seconds'] == 120
-
-    @patch('_build_execute.timeout_set')
-    @patch('_build_execute.subprocess.run')
-    @patch('_build_execute.timeout_get', return_value=30)
-    @patch('_build_execute.create_log_file')
-    def test_no_min_timeout_uses_learned(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        mock_log_file.return_value = '/tmp/test.log'
-        mock_run.return_value = MagicMock(returncode=0)
-
-        result = _call_execute(min_timeout=None)
-
-        assert result['timeout_used_seconds'] == 30
 
 
 # =============================================================================

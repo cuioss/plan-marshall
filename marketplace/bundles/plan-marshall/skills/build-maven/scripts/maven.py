@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Maven build operations - run, parse, search markers, check warnings.
+Maven build operations - run, parse, search markers, check warnings, coverage report.
 
 Usage:
     maven.py run --command-args <args> [options]
     maven.py parse --log <path> [--mode <mode>]
     maven.py search-markers --source-dir <dir>
     maven.py check-warnings --warnings <json> [--patterns <json>]
+    maven.py coverage-report [--module-path <path>] [--threshold <percent>]
     maven.py --help
 
 Subcommands:
@@ -14,18 +15,36 @@ Subcommands:
     parse           Parse Maven build output and categorize issues
     search-markers  Search for OpenRewrite TODO markers in source files
     check-warnings  Categorize build warnings against acceptable patterns
+    coverage-report Parse JaCoCo coverage report
 """
 
 import argparse
 import sys
 
-from _maven_cmd_check_warnings import cmd_check_warnings
-from _maven_cmd_coverage_report import cmd_coverage_report
+from _build_check_warnings import create_check_warnings_handler
+from _build_coverage_report import create_coverage_report_handler
+from _markers_search import cmd_search_markers
 from _maven_cmd_parse import cmd_parse
-from _maven_cmd_search_markers import cmd_search_markers
 
 # Import command handlers from internal modules (underscore prefix = private)
 from _maven_execute import cmd_run
+
+# --- Tool-specific configuration inlined from former wrapper files ---
+
+cmd_coverage_report = create_coverage_report_handler(
+    search_paths=[
+        ('target/site/jacoco/jacoco.xml', 'jacoco'),
+        ('target/jacoco/report.xml', 'jacoco'),
+        ('target/site/jacoco-aggregate/jacoco.xml', 'jacoco'),
+    ],
+    not_found_message='No JaCoCo XML report found. Run coverage build first.',
+)
+
+cmd_check_warnings = create_check_warnings_handler(
+    matcher='substring',
+    filter_severity='WARNING',
+    supports_patterns_arg=True,
+)
 
 
 def main():

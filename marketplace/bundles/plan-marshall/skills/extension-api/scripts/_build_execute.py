@@ -34,6 +34,12 @@ from plan_logging import log_entry
 from run_config import timeout_get, timeout_set
 
 
+# Minimum timeout floor (seconds) — prevents adaptive learning from producing
+# dangerously short timeouts (e.g., a warm cache run teaching 5s that then
+# fails on a cold start).
+MIN_TIMEOUT = 60
+
+
 class CaptureStrategy(Enum):
     """How build output is captured to the log file."""
 
@@ -69,7 +75,6 @@ def execute_direct_base(
     scope_fn: ScopeFn | None = None,
     env_vars: dict[str, str] | None = None,
     working_dir: str | None = None,
-    min_timeout: int | None = None,
     extra_result_fields: dict | None = None,
 ) -> DirectCommandResult:
     """Execute a build command with adaptive timeout learning.
@@ -93,7 +98,6 @@ def execute_direct_base(
             Defaults to returning 'default'.
         env_vars: Additional environment variables to inject.
         working_dir: Working directory override (defaults to project_dir).
-        min_timeout: Minimum timeout floor in seconds (e.g., Python uses 60).
         extra_result_fields: Additional fields to include in all result dicts
             (e.g., {"wrapper": "./mvnw"} or {"command_type": "npm"}).
 
@@ -119,10 +123,8 @@ def execute_direct_base(
             **extras,
         }
 
-    # Step 2: Get timeout from run-config with optional minimum enforcement
-    timeout_seconds = timeout_get(command_key, default_timeout, project_dir)
-    if min_timeout is not None:
-        timeout_seconds = max(timeout_seconds, min_timeout)
+    # Step 2: Get timeout from run-config, enforce minimum floor
+    timeout_seconds = max(timeout_get(command_key, default_timeout, project_dir), MIN_TIMEOUT)
 
     # Step 3: Build command using tool-specific function
     # log_file is passed so Maven can embed it via -l flag

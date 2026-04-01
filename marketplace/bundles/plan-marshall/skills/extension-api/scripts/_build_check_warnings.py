@@ -10,8 +10,30 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Callable
 
 from _warnings_classify import categorize_warnings, flatten_patterns  # type: ignore[import-not-found]
+
+
+def create_check_warnings_handler(
+    matcher: str = 'substring',
+    filter_severity: str | None = None,
+    supports_patterns_arg: bool = False,
+) -> Callable:
+    """Factory: create a tool-specific check-warnings subcommand handler.
+
+    Args:
+        matcher: Pattern matcher type ('substring', 'wildcard', 'regex').
+        filter_severity: If set, only warnings with this severity are processed.
+        supports_patterns_arg: If True, supports --patterns as flat list input.
+
+    Returns:
+        A cmd_check_warnings(args) -> int function ready for argparse set_defaults.
+    """
+    def cmd_check_warnings(args) -> int:
+        return cmd_check_warnings_base(args, matcher=matcher, filter_severity=filter_severity,
+                                       supports_patterns_arg=supports_patterns_arg)
+    return cmd_check_warnings
 
 
 def cmd_check_warnings_base(

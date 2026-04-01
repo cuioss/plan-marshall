@@ -24,8 +24,7 @@ Python build execution via pyprojectx (`./pw` wrapper) with output parsing for m
 
 | Script | Type | Purpose |
 |--------|------|---------|
-| `python_build.py` | CLI + Library | pyprojectx operations, `execute_direct()` |
-| `_python_cmd_coverage_report.py` | Library | Coverage report parsing (Cobertura XML → TOON) |
+| `python_build.py` | CLI + Library | pyprojectx operations, `execute_direct()`, coverage config |
 
 ## python_build run (Primary API)
 
@@ -41,7 +40,7 @@ python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
 - `--command-args` - Canonical command to execute (required)
 - `--format` - Output format: toon (default) or json
 - `--mode` - Output mode: actionable (default), structured, errors
-- `--timeout` - Timeout in seconds (default from run-config)
+- `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
 
 ## Error Categories
 

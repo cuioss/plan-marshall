@@ -4,12 +4,34 @@
 Extracts the common cmd_coverage_report() flow that was duplicated across
 build-maven, build-gradle, build-npm, and build-python. Each skill provides
 its own search paths and error message; the logic is identical.
+
+Use create_coverage_report_handler() to build a tool-specific handler from config.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from _coverage_parse import find_report, parse_coverage_report  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+
+def create_coverage_report_handler(
+    search_paths: list[tuple[str, str]],
+    not_found_message: str = 'No coverage report found. Run coverage build first.',
+) -> Callable:
+    """Factory: create a tool-specific coverage-report subcommand handler.
+
+    Args:
+        search_paths: Ordered list of (relative_path, format_hint) tuples.
+        not_found_message: Error message when no report is found.
+
+    Returns:
+        A cmd_coverage_report(args) -> int function ready for argparse set_defaults.
+    """
+    def cmd_coverage_report(args) -> int:
+        return cmd_coverage_report_base(args, search_paths, not_found_message)
+    return cmd_coverage_report
 
 
 def cmd_coverage_report_base(

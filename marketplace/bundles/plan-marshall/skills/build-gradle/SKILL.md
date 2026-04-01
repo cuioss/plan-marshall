@@ -26,13 +26,11 @@ Gradle build execution with output parsing, module discovery, and wrapper detect
 
 | Script | Type | Purpose |
 |--------|------|---------|
-| `gradle.py` | CLI | Gradle operations dispatcher |
-| `_gradle_execute.py` | Library | Foundation execution, wrapper detection |
+| `gradle.py` | CLI | Gradle operations dispatcher (includes coverage + warning config) |
+| `_gradle_execute.py` | Library | Execution config via factory pattern |
 | `_gradle_cmd_discover.py` | Library | Module discovery via build.gradle |
 | `_gradle_cmd_parse.py` | Library | Log parsing, issue extraction |
 | `_gradle_cmd_find_project.py` | Library | Gradle subproject location |
-| `_gradle_cmd_check_warnings.py` | Library | Warning categorization |
-| `_gradle_cmd_search_markers.py` | Library | Marker detection in Gradle projects |
 
 ## Gradle run (Primary API)
 
@@ -47,7 +45,7 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
 **Parameters**:
 - `--command-args` - Complete Gradle command arguments, e.g. `":module:build"` or `"build"` (required)
 - `--format` - Output format: toon (default), json
-- `--timeout` - Timeout in seconds (default: 300, adaptive — doubles on timeout failure)
+- `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
 - `--mode` - Output mode: actionable (default), structured, errors
 
 **Output Format (TOON)**:

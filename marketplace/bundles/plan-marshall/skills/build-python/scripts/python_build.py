@@ -25,6 +25,7 @@ import re
 import sys
 from pathlib import Path
 
+from _build_coverage_report import create_coverage_report_handler  # type: ignore[import-not-found]
 from _build_execute import CaptureStrategy, execute_direct_base  # type: ignore[import-not-found]
 from _build_parse import (  # type: ignore[import-not-found]
     Issue,
@@ -44,8 +45,15 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 # Default timeout for Python builds (seconds)
 DEFAULT_TIMEOUT = 300
 
-# Minimum timeout enforced (seconds)
-MIN_TIMEOUT = 60
+# --- Tool-specific coverage configuration (inlined from former wrapper) ---
+
+cmd_coverage_report = create_coverage_report_handler(
+    search_paths=[
+        ('coverage.xml', 'cobertura'),
+        ('htmlcov/coverage.xml', 'cobertura'),
+    ],
+    not_found_message='No coverage.py XML report found. Run pytest with --cov --cov-report=xml first.',
+)
 
 
 # =============================================================================
@@ -139,7 +147,6 @@ def execute_direct(
         build_command_fn=_python_build_command_fn,
         wrapper=wrapper,
         capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
-        min_timeout=MIN_TIMEOUT,
         extra_result_fields={'wrapper': wrapper},
     )
 
@@ -307,8 +314,6 @@ def main() -> int:
     run_parser.set_defaults(func=cmd_run)
 
     # coverage-report subcommand
-    from _python_cmd_coverage_report import cmd_coverage_report
-
     cov_parser = subparsers.add_parser('coverage-report', help='Parse coverage.py XML report')
     cov_parser.add_argument('--project-path', dest='project_path', help='Project directory path')
     cov_parser.add_argument('--report-path', dest='report_path', help='Override coverage XML report path')
