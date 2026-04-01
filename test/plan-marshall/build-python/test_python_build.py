@@ -252,7 +252,7 @@ def test_execute_direct_returns_success_on_zero_exit():
 
         with (
             patch('subprocess.run', return_value=mock_result),
-            patch.object(python_build, 'create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
+            patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = python_build.execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
@@ -277,7 +277,7 @@ def test_execute_direct_returns_error_on_nonzero_exit():
 
         with (
             patch('subprocess.run', return_value=mock_result),
-            patch.object(python_build, 'create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
+            patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = python_build.execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
@@ -300,7 +300,7 @@ def test_execute_direct_returns_timeout_on_timeout():
 
         with (
             patch('subprocess.run', side_effect=subprocess.TimeoutExpired(cmd='./pw verify', timeout=60)),
-            patch.object(python_build, 'create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
+            patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
             result = python_build.execute_direct(
                 args='verify', command_key='python:verify', default_timeout=60, project_dir=str(ctx.temp_dir)

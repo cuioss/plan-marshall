@@ -1,11 +1,11 @@
-"""Tests for build-common shared utilities."""
+"""Tests for _build_shared utilities."""
 
 import importlib
 import sys
 from pathlib import Path
 
 # Add script path for imports
-_SCRIPT_DIR = Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-common' / 'scripts'
+_SCRIPT_DIR = Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 _build_shared = importlib.import_module('_build_shared')
@@ -28,5 +28,3 @@ class TestGetBashTimeout:
 
     def test_buffer_constant_is_30(self):
         assert _build_shared.OUTER_TIMEOUT_BUFFER == 30
-
-

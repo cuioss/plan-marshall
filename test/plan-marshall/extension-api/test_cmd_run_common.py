@@ -1,4 +1,4 @@
-"""Tests for build-common cmd_run_common() shared logic.
+"""Tests for cmd_run_common() shared logic.
 
 Tests the centralized cmd_run routing that replaces duplicated code
 across Maven, Gradle, npm, and Python build skills.
@@ -9,7 +9,6 @@ from pathlib import Path
 
 # Add script paths for imports
 _SCRIPT_DIRS = [
-    Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-common' / 'scripts',
     Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts',
 ]
 for d in _SCRIPT_DIRS:

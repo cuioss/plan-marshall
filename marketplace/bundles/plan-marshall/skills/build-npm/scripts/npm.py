@@ -22,19 +22,18 @@ Usage:
 """
 
 import argparse
-import subprocess
+import re
 import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 
+from _build_execute import CaptureStrategy, execute_direct_base
 from _build_parse import (
     Issue,
     UnitTestSummary,
 )
 from _build_result import (
     DirectCommandResult,
-    create_log_file,
 )
 from _build_shared import cmd_run_common
 from _npm_parse_errors import parse_log as parse_npm_errors
@@ -45,9 +44,6 @@ from _npm_parse_tap import parse_log as parse_tap
 # Import npm parsers from internal modules (underscore prefix = private)
 from _npm_parse_typescript import parse_log as parse_typescript
 from plan_logging import log_entry  # type: ignore[import-not-found]
-
-# Cross-skill imports (PYTHONPATH set by executor)
-from run_config import timeout_get, timeout_set  # type: ignore[import-not-found]
 
 # =============================================================================
 # Constants
@@ -80,6 +76,29 @@ def detect_command_type(args: str) -> str:
         if args_lower.startswith(npx_cmd):
             return 'npx'
     return 'npm'
+
+
+def _npm_scope_fn(args: str) -> str:
+    """Extract scope from npm workspace or prefix arguments."""
+    workspace_match = re.search(r'--workspace[=\s]+(\S+)', args)
+    if workspace_match:
+        return workspace_match.group(1)
+    prefix_match = re.search(r'--prefix\s+(\S+)', args)
+    if prefix_match:
+        return prefix_match.group(1)
+    return 'default'
+
+
+def _npm_build_command_fn(command_type: str):
+    """Create a build command function for the detected command type (npm or npx)."""
+
+    def _build_command(wrapper: str, args: str, log_file: str) -> tuple[list[str], str]:
+        # wrapper is the command_type (npm or npx) for npm
+        cmd_parts = [command_type] + args.split()
+        command_str = ' '.join(cmd_parts)
+        return cmd_parts, command_str
+
+    return _build_command
 
 
 def execute_direct(
@@ -116,131 +135,33 @@ def execute_direct(
         - command_type: str ("npm" or "npx")
         - error: str (on error/timeout only)
     """
-    import os
-    import re
-
-    # Step 1: Detect command type (npm or npx)
+    # Detect command type (npm or npx)
     command_type = detect_command_type(args)
     log_entry('script', 'global', 'INFO', f'[NPM] Executing: {command_type} {args}')
 
-    # Step 2: Get timeout from run-config (with safety margin)
-    timeout_seconds = timeout_get(command_key, default_timeout, project_dir)
-
-    # Step 3: Build command (args is complete and self-contained)
-    cmd_parts = [command_type] + args.split()
-    command_str = ' '.join(cmd_parts)
-
-    # Step 4: Determine scope for log file (extract from embedded routing)
-    scope = 'default'
-    workspace_match = re.search(r'--workspace[=\s]+(\S+)', args)
-    if workspace_match:
-        scope = workspace_match.group(1)
-    else:
-        prefix_match = re.search(r'--prefix\s+(\S+)', args)
-        if prefix_match:
-            scope = prefix_match.group(1)
-
-    # Step 5: Create log file for output (R1 requirement)
-    log_file = create_log_file('npm', scope, project_dir)
-    if not log_file:
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'log_file': '',
-            'command': command_str,
-            'command_type': command_type,
-            'error': 'Failed to create log file',
-        }
-
-    # Step 6: Prepare environment
-    env = os.environ.copy()
+    # Parse env_vars string into dict
+    parsed_env: dict[str, str] | None = None
     if env_vars:
+        parsed_env = {}
         for env_pair in env_vars.split():
             if '=' in env_pair:
                 key, value = env_pair.split('=', 1)
-                env[key] = value
+                parsed_env[key] = value
 
-    # Step 7: Determine working directory
-    cwd = working_dir if working_dir else project_dir
-
-    # Step 8: Execute with output to log file
-    start_time = time.time()
-
-    try:
-        with open(log_file, 'w') as log:
-            result = subprocess.run(
-                cmd_parts, timeout=timeout_seconds, stdout=log, stderr=subprocess.STDOUT, cwd=cwd, env=env
-            )
-        duration_seconds = int(time.time() - start_time)
-
-        # Step 6: Record duration for adaptive learning (only on completion)
-        timeout_set(command_key, duration_seconds, project_dir)
-
-        # Step 7: Return structured result
-        if result.returncode == 0:
-            log_entry('script', 'global', 'INFO', f'[NPM] Completed in {duration_seconds}s')
-            return {
-                'status': 'success',
-                'exit_code': 0,
-                'duration_seconds': duration_seconds,
-                'log_file': log_file,
-                'command': command_str,
-                'timeout_used_seconds': timeout_seconds,
-                'command_type': command_type,
-            }
-        else:
-            log_entry('script', 'global', 'ERROR', f'[NPM] Failed with exit code {result.returncode}')
-            return {
-                'status': 'error',
-                'exit_code': result.returncode,
-                'duration_seconds': duration_seconds,
-                'log_file': log_file,
-                'command': command_str,
-                'timeout_used_seconds': timeout_seconds,
-                'command_type': command_type,
-                'error': f'Build failed with exit code {result.returncode}',
-            }
-
-    except subprocess.TimeoutExpired:
-        duration_seconds = int(time.time() - start_time)
-        log_entry('script', 'global', 'ERROR', f'[NPM] Timeout after {timeout_seconds}s')
-        # Adaptive learning: double the timeout so next run has enough headroom
-        timeout_set(command_key, timeout_seconds * 2, project_dir)
-        return {
-            'status': 'timeout',
-            'exit_code': -1,
-            'duration_seconds': duration_seconds,
-            'log_file': log_file,
-            'command': command_str,
-            'timeout_used_seconds': timeout_seconds,
-            'command_type': command_type,
-            'error': f'Command timed out after {timeout_seconds} seconds',
-        }
-
-    except FileNotFoundError:
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'log_file': log_file,
-            'command': command_str,
-            'timeout_used_seconds': timeout_seconds,
-            'command_type': command_type,
-            'error': f'Command not found: {command_type}',
-        }
-
-    except OSError as e:
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'log_file': log_file,
-            'command': command_str,
-            'timeout_used_seconds': timeout_seconds,
-            'command_type': command_type,
-            'error': str(e),
-        }
+    return execute_direct_base(
+        args=args,
+        command_key=command_key,
+        default_timeout=default_timeout,
+        project_dir=project_dir,
+        tool_name='npm',
+        build_command_fn=_npm_build_command_fn(command_type),
+        wrapper=command_type,  # npm or npx
+        capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+        scope_fn=_npm_scope_fn,
+        env_vars=parsed_env,
+        working_dir=working_dir,
+        extra_result_fields={'command_type': command_type},
+    )
 
 
 

@@ -91,35 +91,35 @@ def cmd_run_common(
         if 'log file' in result.get('error', '').lower():
             error_type = ERROR_LOG_FILE_FAILED
 
-        output = error_result(
+        err_output = error_result(
             error=error_type,
             exit_code=-1,
             duration_seconds=0,
             log_file=log_file,
             command=command_str,
         )
-        print(formatter(output))
+        print(formatter(err_output))
         return 1
 
     # Handle timeout
     if result['status'] == 'timeout':
-        output = timeout_result(
+        timeout_output = timeout_result(
             timeout_used_seconds=result['timeout_used_seconds'],
             duration_seconds=result['duration_seconds'],
             log_file=log_file,
             command=command_str,
         )
-        print(formatter(output))
+        print(formatter(timeout_output))
         return 1
 
     # Success case
     if result['status'] == 'success':
-        output = success_result(
+        success_output = success_result(
             duration_seconds=result['duration_seconds'],
             log_file=log_file,
             command=command_str,
         )
-        print(formatter(output))
+        print(formatter(success_output))
         return 0
 
     # Build failed - parse the log file for errors

@@ -21,22 +21,13 @@ Usage:
     cmd_run(args)  # args from argparse
 """
 
-import subprocess
-import time
-
-from _build_result import (
-    DirectCommandResult,
-    create_log_file,
-)
+from _build_execute import CaptureStrategy, execute_direct_base
+from _build_result import DirectCommandResult
 from _build_shared import cmd_run_common
 from _build_wrapper import detect_wrapper as _detect_wrapper
 
 # Import parser (underscore prefix = private)
 from _gradle_cmd_parse import parse_log
-from plan_logging import log_entry
-
-# Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from run_config import timeout_get, timeout_set
 
 # =============================================================================
 # Constants
@@ -66,6 +57,22 @@ def detect_wrapper(project_dir: str = '.') -> str:
     """
     wrapper = _detect_wrapper(project_dir, 'gradlew', 'gradlew.bat', 'gradle')
     return wrapper or 'gradle'  # Return gradle even if not found, let execution fail with clear error
+
+
+def _gradle_scope_fn(args: str) -> str:
+    """Extract scope from Gradle :module:task prefix."""
+    if args.startswith(':'):
+        parts = args.split(':')
+        if len(parts) >= 2:
+            return parts[1]
+    return 'default'
+
+
+def _gradle_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[list[str], str]:
+    """Build Gradle command with --console=plain for parseable output."""
+    cmd_parts = [wrapper] + args.split() + ['--console=plain']
+    command_str = ' '.join(cmd_parts)
+    return cmd_parts, command_str
 
 
 def execute_direct(
@@ -98,109 +105,19 @@ def execute_direct(
             "error": str (on error only)
         }
     """
-    # Step 1: Create log file in standard location
-    # Extract module from :module:task prefix if present for scoped log files
-    scope = 'default'
-    if args.startswith(':'):
-        # Extract module name from :module:task format
-        parts = args.split(':')
-        if len(parts) >= 2:
-            scope = parts[1]
-    log_file = create_log_file('gradle', scope, project_dir)
-    if not log_file:
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'timeout_used_seconds': 0,
-            'log_file': '',
-            'command': '',
-            'error': 'Failed to create log file',
-        }
-
-    # Step 2: Detect wrapper
     wrapper = detect_wrapper(project_dir)
 
-    # Step 3: Get timeout from run-config (enforces minimum of 120 seconds)
-    timeout_seconds = timeout_get(command_key, default_timeout, project_dir)
-
-    # Step 4: Build command
-    # args is complete and self-contained (includes :module:task prefix)
-    cmd_parts = [wrapper] + args.split() + ['--console=plain']
-    command_str = ' '.join(cmd_parts)
-
-    # Step 5: Execute with output to log file (avoids holding full output in memory)
-    start_time = time.time()
-
-    try:
-        with open(log_file, 'w') as log:
-            result = subprocess.run(
-                cmd_parts, timeout=timeout_seconds, stdout=log, stderr=subprocess.STDOUT, cwd=project_dir
-            )
-        duration_seconds = int(time.time() - start_time)
-
-        # Step 6: Record duration for adaptive learning
-        timeout_set(command_key, duration_seconds, project_dir)
-
-        # Step 7: Return structured result
-        if result.returncode == 0:
-            return {
-                'status': 'success',
-                'exit_code': 0,
-                'duration_seconds': duration_seconds,
-                'timeout_used_seconds': timeout_seconds,
-                'log_file': log_file,
-                'command': command_str,
-            }
-        else:
-            return {
-                'status': 'error',
-                'exit_code': result.returncode,
-                'duration_seconds': duration_seconds,
-                'timeout_used_seconds': timeout_seconds,
-                'log_file': log_file,
-                'command': command_str,
-                'error': f'Build failed with exit code {result.returncode}',
-            }
-
-    except subprocess.TimeoutExpired:
-        duration_seconds = int(time.time() - start_time)
-        log_entry('script', 'global', 'ERROR', f'[GRADLE-EXECUTE] Timeout after {timeout_seconds}s: {command_str}')
-        # Adaptive learning: double the timeout so next run has enough headroom
-        timeout_set(command_key, timeout_seconds * 2, project_dir)
-        return {
-            'status': 'timeout',
-            'exit_code': -1,
-            'duration_seconds': duration_seconds,
-            'timeout_used_seconds': timeout_seconds,
-            'log_file': log_file,
-            'command': command_str,
-            'error': f'Command timed out after {timeout_seconds} seconds',
-        }
-
-    except FileNotFoundError:
-        log_entry('script', 'global', 'ERROR', f'[GRADLE-EXECUTE] Wrapper not found: {wrapper}')
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'timeout_used_seconds': timeout_seconds,
-            'log_file': log_file,
-            'command': command_str,
-            'error': f'Gradle wrapper not found: {wrapper}',
-        }
-
-    except OSError as e:
-        log_entry('script', 'global', 'ERROR', f'[GRADLE-EXECUTE] OS error: {e}')
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'timeout_used_seconds': timeout_seconds,
-            'log_file': log_file,
-            'command': command_str,
-            'error': str(e),
-        }
+    return execute_direct_base(
+        args=args,
+        command_key=command_key,
+        default_timeout=default_timeout,
+        project_dir=project_dir,
+        tool_name='gradle',
+        build_command_fn=_gradle_build_command_fn,
+        wrapper=wrapper,
+        capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+        scope_fn=_gradle_scope_fn,
+    )
 
 
 

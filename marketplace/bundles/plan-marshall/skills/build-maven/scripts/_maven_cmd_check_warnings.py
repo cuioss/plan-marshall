@@ -1,44 +1,15 @@
 #!/usr/bin/env python3
-"""Check-warnings subcommand for categorizing build warnings."""
+"""Check-warnings subcommand for Maven — thin wrapper over shared classifier."""
 
 import json
-import re
 import sys
 
-# Warning types that are always considered fixable
-ALWAYS_FIXABLE_TYPES = ['javadoc_warning', 'compilation_error', 'deprecation_warning', 'unchecked_warning']
-
-
-def is_acceptable(warning_message: str, patterns: list[str]) -> bool:
-    """Check if a warning matches any acceptable pattern."""
-    for pattern in patterns:
-        clean_pattern = pattern[9:].strip() if pattern.startswith('[WARNING]') else pattern
-        if clean_pattern in warning_message:
-            return True
-        try:
-            if re.search(clean_pattern, warning_message, re.IGNORECASE):
-                return True
-        except re.error:
-            pass
-    return False
-
-
-def flatten_patterns(acceptable_warnings: dict) -> list[str]:
-    """Flatten acceptable_warnings object into a list of patterns."""
-    patterns: list[str] = []
-    if isinstance(acceptable_warnings, dict):
-        for value in acceptable_warnings.values():
-            if isinstance(value, list):
-                patterns.extend(str(p) for p in value if p)
-    elif isinstance(acceptable_warnings, list):
-        patterns.extend(str(p) for p in acceptable_warnings if p)
-    return patterns
+from _warnings_classify import categorize_warnings, flatten_patterns
 
 
 def cmd_check_warnings(args):
     """Handle check-warnings subcommand."""
-    warnings = None
-    patterns = []
+    warnings, patterns = None, []
 
     if args.warnings:
         try:
@@ -60,12 +31,7 @@ def cmd_check_warnings(args):
                 return 1
     else:
         if sys.stdin.isatty():
-            print(
-                json.dumps(
-                    {'success': False, 'error': 'No input provided. Use --warnings/--patterns or pipe JSON to stdin.'},
-                    indent=2,
-                )
-            )
+            print(json.dumps({'success': False, 'error': 'No input provided. Use --warnings/--patterns or pipe JSON to stdin.'}, indent=2))
             return 1
         try:
             input_data = json.load(sys.stdin)
@@ -79,31 +45,14 @@ def cmd_check_warnings(args):
         print(json.dumps({'success': False, 'error': 'warnings must be an array'}, indent=2))
         return 1
 
-    warning_items = [w for w in warnings if w.get('severity') == 'WARNING']
-    acceptable, fixable, unknown = [], [], []
-
-    for w in warning_items:
-        wtype = w.get('type', 'other')
-        if wtype in ALWAYS_FIXABLE_TYPES:
-            fixable.append(w)
-        elif is_acceptable(w.get('message', ''), patterns):
-            acceptable.append(w)
-        elif wtype in ['compilation_error', 'test_failure', 'dependency_error']:
-            fixable.append(w)
-        elif wtype == 'openrewrite_info':
-            acceptable.append(w)
-        elif wtype in ['other', 'other_warnings']:
-            unknown.append({**w, 'requires_classification': True})
-        else:
-            fixable.append(w)
-
+    categorized = categorize_warnings(warnings, patterns, matcher='substring', filter_severity='WARNING')
     result = {
         'success': True,
-        'total': len(warning_items),
-        'acceptable': len(acceptable),
-        'fixable': len(fixable),
-        'unknown': len(unknown),
-        'categorized': {'acceptable': acceptable, 'fixable': fixable, 'unknown': unknown},
+        'total': sum(len(v) for v in categorized.values()),
+        'acceptable': len(categorized['acceptable']),
+        'fixable': len(categorized['fixable']),
+        'unknown': len(categorized['unknown']),
+        'categorized': categorized,
     }
     print(json.dumps(result, indent=2))
-    return 1 if len(fixable) > 0 or len(unknown) > 0 else 0
+    return 1 if result['fixable'] > 0 or result['unknown'] > 0 else 0

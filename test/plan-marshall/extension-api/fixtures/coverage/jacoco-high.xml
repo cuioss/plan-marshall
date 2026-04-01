@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="test-module">
+  <package name="com/example">
+    <class name="com/example/UserService" sourcefilename="UserService.java">
+      <method name="findUser" desc="(Ljava/lang/String;)Ljava/util/Optional;" line="10">
+        <counter type="INSTRUCTION" missed="0" covered="10"/>
+        <counter type="LINE" missed="0" covered="3"/>
+        <counter type="METHOD" missed="0" covered="1"/>
+      </method>
+      <method name="deleteUser" desc="(Ljava/lang/String;)V" line="20">
+        <counter type="INSTRUCTION" missed="2" covered="8"/>
+        <counter type="LINE" missed="0" covered="2"/>
+        <counter type="METHOD" missed="0" covered="1"/>
+      </method>
+      <counter type="INSTRUCTION" missed="2" covered="18"/>
+      <counter type="BRANCH" missed="0" covered="2"/>
+      <counter type="LINE" missed="0" covered="5"/>
+      <counter type="METHOD" missed="0" covered="2"/>
+    </class>
+  </package>
+  <counter type="INSTRUCTION" missed="2" covered="18"/>
+  <counter type="BRANCH" missed="0" covered="2"/>
+  <counter type="LINE" missed="0" covered="5"/>
+  <counter type="METHOD" missed="0" covered="2"/>
+</report>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="low-module">
+  <package name="com/example">
+    <class name="com/example/LegacyService" sourcefilename="LegacyService.java">
+      <method name="process" desc="()V" line="10">
+        <counter type="INSTRUCTION" missed="10" covered="5"/>
+        <counter type="LINE" missed="3" covered="2"/>
+        <counter type="METHOD" missed="0" covered="1"/>
+      </method>
+      <method name="cleanup" desc="()V" line="20">
+        <counter type="INSTRUCTION" missed="8" covered="0"/>
+        <counter type="LINE" missed="4" covered="0"/>
+        <counter type="METHOD" missed="1" covered="0"/>
+      </method>
+      <counter type="INSTRUCTION" missed="18" covered="5"/>
+      <counter type="BRANCH" missed="3" covered="1"/>
+      <counter type="LINE" missed="7" covered="2"/>
+      <counter type="METHOD" missed="1" covered="1"/>
+    </class>
+  </package>
+  <counter type="INSTRUCTION" missed="18" covered="5"/>
+  <counter type="BRANCH" missed="3" covered="1"/>
+  <counter type="LINE" missed="7" covered="2"/>
+  <counter type="METHOD" missed="1" covered="1"/>
+</report>

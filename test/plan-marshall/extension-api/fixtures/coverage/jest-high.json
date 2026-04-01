@@ -1,0 +1,20 @@
+{
+  "total": {
+    "lines": { "total": 200, "covered": 180, "skipped": 0, "pct": 90 },
+    "statements": { "total": 220, "covered": 198, "skipped": 0, "pct": 90 },
+    "functions": { "total": 40, "covered": 36, "skipped": 0, "pct": 90 },
+    "branches": { "total": 50, "covered": 42, "skipped": 0, "pct": 84 }
+  },
+  "/src/utils/helper.js": {
+    "lines": { "total": 100, "covered": 95, "skipped": 0, "pct": 95 },
+    "statements": { "total": 110, "covered": 105, "skipped": 0, "pct": 95.45 },
+    "functions": { "total": 20, "covered": 19, "skipped": 0, "pct": 95 },
+    "branches": { "total": 25, "covered": 22, "skipped": 0, "pct": 88 }
+  },
+  "/src/utils/format.js": {
+    "lines": { "total": 100, "covered": 85, "skipped": 0, "pct": 85 },
+    "statements": { "total": 110, "covered": 93, "skipped": 0, "pct": 84.55 },
+    "functions": { "total": 20, "covered": 17, "skipped": 0, "pct": 85 },
+    "branches": { "total": 25, "covered": 20, "skipped": 0, "pct": 80 }
+  }
+}

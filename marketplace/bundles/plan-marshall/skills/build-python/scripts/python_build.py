@@ -22,25 +22,20 @@ Usage:
 
 import argparse
 import re
-import subprocess
 import sys
-import time
 from pathlib import Path
 
+from _build_execute import CaptureStrategy, execute_direct_base  # type: ignore[import-not-found]
 from _build_parse import (  # type: ignore[import-not-found]
     Issue,
     UnitTestSummary,
 )
 from _build_result import (  # type: ignore[import-not-found]
     DirectCommandResult,
-    create_log_file,
 )
 from _build_shared import cmd_run_common  # type: ignore[import-not-found]
 from _build_wrapper import detect_wrapper as _detect_wrapper  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
-
-# Cross-skill imports (PYTHONPATH set by executor)
-from run_config import timeout_get, timeout_set  # type: ignore[import-not-found]
 
 # =============================================================================
 # Constants
@@ -84,6 +79,13 @@ def detect_wrapper(project_dir: str = '.') -> str:
 # =============================================================================
 
 
+def _python_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[list[str], str]:
+    """Build pyprojectx command."""
+    cmd_parts = [wrapper] + args.split()
+    command_str = ' '.join(cmd_parts)
+    return cmd_parts, command_str
+
+
 def execute_direct(
     args: str,
     command_key: str,
@@ -115,7 +117,7 @@ def execute_direct(
     """
     log_entry('script', 'global', 'INFO', f'[PYTHON] Executing: pw {args}')
 
-    # Step 1: Detect wrapper
+    # Detect wrapper early to return a clean error if missing
     try:
         wrapper = detect_wrapper(project_dir)
     except FileNotFoundError as e:
@@ -128,108 +130,18 @@ def execute_direct(
             'error': str(e),
         }
 
-    # Step 2: Get timeout from run-config (with safety margin)
-    timeout_seconds = max(timeout_get(command_key, default_timeout, project_dir), MIN_TIMEOUT)
-
-    # Step 3: Build command
-    cmd_parts = [wrapper] + args.split()
-    command_str = ' '.join(cmd_parts)
-
-    # Step 4: Create log file for output (R1 requirement)
-    log_file = create_log_file('python', 'default', project_dir)
-    if not log_file:
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'log_file': '',
-            'command': command_str,
-            'wrapper': wrapper,
-            'error': 'Failed to create log file',
-        }
-
-    # Step 5: Execute with output to log file
-    start_time = time.time()
-
-    try:
-        with open(log_file, 'w') as log:
-            result = subprocess.run(
-                cmd_parts,
-                timeout=timeout_seconds,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                cwd=project_dir,
-            )
-        duration_seconds = int(time.time() - start_time)
-
-        # Step 6: Record duration for adaptive learning (only on completion)
-        timeout_set(command_key, duration_seconds, project_dir)
-
-        # Step 7: Return structured result
-        if result.returncode == 0:
-            log_entry('script', 'global', 'INFO', f'[PYTHON] Completed in {duration_seconds}s')
-            return {
-                'status': 'success',
-                'exit_code': 0,
-                'duration_seconds': duration_seconds,
-                'log_file': log_file,
-                'command': command_str,
-                'timeout_used_seconds': timeout_seconds,
-                'wrapper': wrapper,
-            }
-        else:
-            log_entry('script', 'global', 'ERROR', f'[PYTHON] Failed with exit code {result.returncode}')
-            return {
-                'status': 'error',
-                'exit_code': result.returncode,
-                'duration_seconds': duration_seconds,
-                'log_file': log_file,
-                'command': command_str,
-                'timeout_used_seconds': timeout_seconds,
-                'wrapper': wrapper,
-                'error': f'Build failed with exit code {result.returncode}',
-            }
-
-    except subprocess.TimeoutExpired:
-        duration_seconds = int(time.time() - start_time)
-        # Adaptive learning: double the timeout so next run has enough headroom.
-        # Using timeout_seconds (not weighted) ensures single-retry convergence.
-        timeout_set(command_key, timeout_seconds * 2, project_dir)
-        log_entry('script', 'global', 'ERROR', f'[PYTHON] Timeout after {timeout_seconds}s')
-        return {
-            'status': 'timeout',
-            'exit_code': -1,
-            'duration_seconds': duration_seconds,
-            'log_file': log_file,
-            'command': command_str,
-            'timeout_used_seconds': timeout_seconds,
-            'wrapper': wrapper,
-            'error': f'Command timed out after {timeout_seconds} seconds',
-        }
-
-    except FileNotFoundError:
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'log_file': log_file,
-            'command': command_str,
-            'timeout_used_seconds': timeout_seconds,
-            'wrapper': wrapper,
-            'error': f'Command not found: {wrapper}',
-        }
-
-    except OSError as e:
-        return {
-            'status': 'error',
-            'exit_code': -1,
-            'duration_seconds': 0,
-            'log_file': log_file,
-            'command': command_str,
-            'timeout_used_seconds': timeout_seconds,
-            'wrapper': wrapper,
-            'error': str(e),
-        }
+    return execute_direct_base(
+        args=args,
+        command_key=command_key,
+        default_timeout=default_timeout,
+        project_dir=project_dir,
+        tool_name='python',
+        build_command_fn=_python_build_command_fn,
+        wrapper=wrapper,
+        capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+        min_timeout=MIN_TIMEOUT,
+        extra_result_fields={'wrapper': wrapper},
+    )
 
 
 # =============================================================================
