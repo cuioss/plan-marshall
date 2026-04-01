@@ -38,7 +38,7 @@ class TestSonarFetch(unittest.TestCase):
         result = parse_toon(stdout)
         self.assertEqual(result['project_key'], 'my-project')
         self.assertIsNone(result['pull_request_id'])
-        self.assertEqual(result['status'], 'instruction_generated')
+        self.assertEqual(result['status'], 'success')
 
     def test_fetch_with_pr(self):
         """Test fetch with project and PR."""

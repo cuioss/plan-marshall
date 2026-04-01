@@ -9,12 +9,18 @@ Use Glob to detect artifacts:
 ```
 Glob pattern="**/*.class"
 Glob pattern="**/*.temp"
+Glob pattern="**/*.pyc"
+Glob pattern="**/__pycache__/**"
+Glob pattern="**/.DS_Store"
 ```
 
 Artifact patterns to clean:
 - `*.class` files in `src/` directories
-- `*.temp` temporary files
-- Files in `target/` or `build/` accidentally staged
+- `*.temp`, `*.backup`, `*.backup*`, `*.orig` temporary files
+- `*.pyc` and `__pycache__/` Python bytecode
+- `.DS_Store` macOS metadata
+- Files in `target/`, `build/`, or `node_modules/` accidentally staged
+- Files in `.plan/temp/` (transient working files)
 
 ## Cleanup Rules
 
@@ -22,8 +28,10 @@ Artifact patterns to clean:
 
 Delete without asking:
 - `*.class` in `src/main/java` or `src/test/java`
-- `*.temp` anywhere
-- Delete using `rm <file>`
+- `*.temp`, `*.backup`, `*.backup*`, `*.orig` anywhere
+- `*.pyc` and `__pycache__/` anywhere
+- `.DS_Store` anywhere
+- Delete using `rm <file>` (or `rm -rf <dir>` for directories)
 
 ### Uncertain Cases (ask user)
 
