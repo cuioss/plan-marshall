@@ -264,6 +264,30 @@ Examples:
 - `doc/adr/002-Adopt_Quarkus_Framework.adoc`
 - `doc/adr/003-Implement_CQRS_Pattern.adoc`
 
+## Scripts
+
+Script: `pm-documents:manage-adr` → `manage-adr.py`
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all ADRs with optional status filtering |
+| `create` | Create new ADR from template with automatic numbering |
+| `read` | Read ADR content by number |
+| `update` | Update ADR status through lifecycle |
+| `delete` | Delete ADR (requires --force) |
+
+**Usage Examples:**
+```bash
+# List all ADRs
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list
+
+# Create new ADR
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --title "Use PostgreSQL"
+
+# Update ADR status
+python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr update --number 1 --status Accepted
+```
+
 ## Related Skills
 
 - `pm-documents:ref-asciidoc` - Format validation

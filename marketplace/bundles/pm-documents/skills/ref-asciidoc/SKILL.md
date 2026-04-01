@@ -72,13 +72,12 @@ If target is a directory:
 **Step 3: Run Auto-Formatter**
 
 Build command with options:
-```bash
-OPTIONS=""
-if [fix_types != "all"]; then OPTIONS="$OPTIONS -t {fix_type}"; fi
-```
+
+- If `fix_types` is "all": omit the `-t` flag
+- If `fix_types` is specific (e.g., "lists", "xref"): add `-t {fix_type}`
 
 ```bash
-python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc format $OPTIONS --path {target}
+python3 .plan/execute-script.py pm-documents:ref-asciidoc:asciidoc format [-t {fix_type}] --path {target}
 ```
 
 **Step 4: Parse Output**

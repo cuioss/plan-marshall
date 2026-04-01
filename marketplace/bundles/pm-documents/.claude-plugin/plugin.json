@@ -18,6 +18,8 @@
   ],
   "skills": [
     "./skills/ext-triage-docs",
+    "./skills/manage-adr",
+    "./skills/manage-interface",
     "./skills/ref-asciidoc",
     "./skills/ref-documentation"
   ]

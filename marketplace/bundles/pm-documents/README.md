@@ -8,7 +8,7 @@ This bundle provides documentation domain knowledge through two core skills (`re
 
 ## Components Included
 
-### Skills (4 skills)
+### Skills (5 registered)
 
 **ref-asciidoc** - AsciiDoc formatting and validation skill (5 workflows):
 
@@ -29,7 +29,7 @@ This bundle provides documentation domain knowledge through two core skills (`re
 | **sync-with-code** | Sync docs with code changes |
 | **cleanup-stale** | Remove stale documentation |
 
-**manage-adr** - Architectural Decision Records skill (5 workflows, script-only):
+**manage-adr** - Architectural Decision Records skill (5 workflows):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -39,7 +39,7 @@ This bundle provides documentation domain knowledge through two core skills (`re
 | **update-adr** | Update ADR status |
 | **delete-adr** | Delete ADR with confirmation |
 
-**manage-interface** - Interface specifications skill (5 workflows, script-only):
+**manage-interface** - Interface specifications skill (5 workflows):
 
 | Workflow | Purpose |
 |----------|---------|
@@ -51,7 +51,9 @@ This bundle provides documentation domain knowledge through two core skills (`re
 
 **ext-triage-docs** - Extension point for documentation finding triage
 
-**plan-marshall-plugin** - Extension registration
+### Extensions (not registered in plugin.json)
+
+**plan-marshall-plugin** - Documentation domain manifest for plan-marshall workflow integration
 
 ### Commands (1 command)
 

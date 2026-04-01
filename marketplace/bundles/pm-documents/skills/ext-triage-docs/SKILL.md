@@ -33,7 +33,7 @@ Loaded via `resolve-workflow-skill-extension --domain documentation --type triag
 
 ## Extension Registration
 
-Registered in marshal.json under the documentation domain:
+Registered in marshall.json under the documentation domain:
 
 ```json
 "documentation": {

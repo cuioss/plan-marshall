@@ -280,7 +280,7 @@ Store link results:
 
 Skip if skip_content=true
 
-Execute review-content workflow with ULTRATHINK:
+Execute review-content workflow with deep analysis:
 ```
 Parameters:
   target: {target}
@@ -299,7 +299,7 @@ Parse tone analysis JSON:
 - standards_claim: Standards/compatibility claims requiring citations
 - missing_sources: Claims without attribution
 
-**ULTRATHINK Analysis (content-review framework):**
+**Deep Analysis (content-review framework):**
 
 For each flagged promotional phrase:
 1. Apply decision framework:
@@ -313,7 +313,7 @@ Store content results:
 - Promotional language count
 - Unverified claims count
 - Missing sources count
-- ULTRATHINK findings
+- deep analysis findings
 
 **Step 6: Aggregate Results**
 
@@ -372,10 +372,10 @@ Overall status:
 
 ## Phase 3: Content Review
 
-### Promotional Language (ULTRATHINK Analysis)
+### Promotional Language (Deep Analysis)
 - Line {N}: "{text}"
   - Issue: {marketing/self-praise/subjective}
-  - Reasoning: {ULTRATHINK analysis}
+  - Reasoning: {deep analysis}
   - Suggestion: "{factual alternative}"
 
 ### Missing Sources
@@ -573,7 +573,7 @@ All workflow procedures are in the `workflows/` directory:
 
 | Workflow | Purpose | When to Load |
 |----------|---------|--------------|
-| `content-review.md` | ULTRATHINK-based tone analysis framework | Content review workflow |
+| `content-review.md` | deep analysis-based tone analysis framework | Content review workflow |
 | `review-orchestration.md` | Comprehensive review orchestration | comprehensive-review workflow |
 
 ## Scripts

@@ -266,6 +266,30 @@ Examples:
 - `doc/interfaces/002-Event_Bus_Interface.adoc`
 - `doc/interfaces/003-Database_Schema_V2.adoc`
 
+## Scripts
+
+Script: `pm-documents:manage-interface` → `manage-interface.py`
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List all interfaces with optional type filtering |
+| `create` | Create new interface from template with automatic numbering |
+| `read` | Read interface content by number |
+| `update` | Update interface field content |
+| `delete` | Delete interface (requires --force) |
+
+**Usage Examples:**
+```bash
+# List all interfaces
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface list
+
+# Create new interface
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface create --title "User Service API" --type REST_API
+
+# Update interface field
+python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface update --number 1 --field overview --value "Updated description"
+```
+
 ## Related Skills
 
 - `pm-documents:ref-asciidoc` - Format validation

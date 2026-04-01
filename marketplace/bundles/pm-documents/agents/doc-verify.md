@@ -121,21 +121,3 @@ context:
   plan_id: "{plan_id if known}"
 ```
 
-## CONTINUOUS IMPROVEMENT RULE
-
-**Critical:** Every time you execute this agent and discover a more precise, better, or more efficient approach, **REPORT the improvement to your caller** with:
-1. More accurate AsciiDoc validation patterns
-2. Better drift detection heuristics
-3. Missing documentation quality checks
-
-Return structured improvement suggestion in your analysis result:
-```
-IMPROVEMENT OPPORTUNITY DETECTED
-
-Area: [specific area]
-Current limitation: [what doesn't work well]
-Suggested enhancement: [specific improvement]
-Expected impact: [benefit of change]
-```
-
-The caller is responsible for recording the lesson via the manage-lessons skill.
