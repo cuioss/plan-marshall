@@ -269,6 +269,60 @@ class TestAnalyzeDiff(unittest.TestCase):
             result = parse_toon(stdout)
             self.assertEqual(result['suggestions']['scope'], 'auth-service')
 
+    def test_analyze_python_scope_detection(self):
+        """Test scope detection for Python file layouts (src/<package>/*.py)."""
+        diff_content = """diff --git a/src/mypackage/utils.py b/src/mypackage/utils.py
+--- a/src/mypackage/utils.py
++++ b/src/mypackage/utils.py
++def helper():
++    return True
++def another():
++    return False
++def third():
++    return None
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['scope'], 'mypackage')
+
+    def test_analyze_js_scope_detection(self):
+        """Test scope detection for JS/TS layouts (src/<component>/*.ts)."""
+        diff_content = """diff --git a/src/components/Button.tsx b/src/components/Button.tsx
+--- a/src/components/Button.tsx
++++ b/src/components/Button.tsx
++export const Button = () => <button>Click</button>;
++export const IconButton = () => <button>Icon</button>;
++export const LinkButton = () => <a>Link</a>;
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['scope'], 'components')
+
+    def test_analyze_generic_scope_detection(self):
+        """Test scope detection falls back to top-level directory."""
+        diff_content = """diff --git a/config/settings.ini b/config/settings.ini
+--- a/config/settings.ini
++++ b/config/settings.ini
++[database]
++host = localhost
++port = 5432
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['scope'], 'config')
+
     def test_analyze_bug_in_comment_lines(self):
         """Test bug detection from comment lines in diff content."""
         diff_content = """diff --git a/src/main/java/Service.java b/src/main/java/Service.java
@@ -286,6 +340,90 @@ class TestAnalyzeDiff(unittest.TestCase):
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['suggestions']['type'], 'fix')
+
+
+class TestDetectArtifacts(unittest.TestCase):
+    """Test git-workflow.py detect-artifacts subcommand."""
+
+    def setUp(self):
+        """Create a temporary directory with artifact files."""
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        """Clean up temporary directory."""
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _create_file(self, relpath: str) -> None:
+        """Create a file within the temp directory."""
+        full = Path(self.tmpdir) / relpath
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text('test')
+
+    def test_detects_safe_artifacts(self):
+        """Test detection of safe-to-delete artifacts."""
+        self._create_file('src/main/java/Example.class')
+        self._create_file('.DS_Store')
+        self._create_file('module/__pycache__/foo.pyc')
+        self._create_file('scratch.temp')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertGreaterEqual(len(result['safe']), 4)
+        # Verify specific patterns
+        safe_str = '\n'.join(result['safe'])
+        self.assertIn('.class', safe_str)
+        self.assertIn('.DS_Store', safe_str)
+
+    def test_detects_uncertain_artifacts(self):
+        """Test detection of uncertain artifacts in target/build dirs."""
+        self._create_file('target/classes/App.class')
+        self._create_file('target/output.jar')
+        self._create_file('build/libs/app.jar')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        # .class in target/ is captured by safe patterns, .jar files are uncertain
+        self.assertTrue(len(result['uncertain']) >= 1 or len(result['safe']) >= 1)
+        self.assertGreater(result['total'], 0)
+
+    def test_clean_directory_returns_empty(self):
+        """Test scanning a directory with no artifacts."""
+        self._create_file('src/main/java/App.java')
+        self._create_file('README.md')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['total'], 0)
+        self.assertEqual(len(result['safe']), 0)
+        self.assertEqual(len(result['uncertain']), 0)
+
+    def test_nonexistent_root_fails(self):
+        """Test error when root directory doesn't exist."""
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', '/nonexistent/path'])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'failure')
+        self.assertIn('not found', result['error'])
+
+    def test_defaults_to_cwd_without_root(self):
+        """Test that detect-artifacts runs without --root argument."""
+        stdout, _, code = run_git_script(['detect-artifacts'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+
+    def test_help_includes_detect_artifacts(self):
+        """Test that help output lists detect-artifacts."""
+        stdout, _, code = run_git_script(['--help'])
+        self.assertEqual(code, 0)
+        self.assertIn('detect-artifacts', stdout)
 
 
 class TestMain(unittest.TestCase):

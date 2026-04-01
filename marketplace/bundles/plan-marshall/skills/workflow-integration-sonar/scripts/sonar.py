@@ -3,24 +3,23 @@
 Sonar workflow operations - fetch issues and triage them.
 
 Usage:
-    sonar.py fetch --project <key> [options]
+    sonar.py prepare-fetch --project <key> [options]
     sonar.py triage --issue <json>
     sonar.py --help
 
 Subcommands:
-    fetch       Fetch Sonar issues for a PR or project
-    triage      Triage a single Sonar issue
+    prepare-fetch  Generate MCP parameters for fetching Sonar issues
+    triage         Triage a single Sonar issue
 
 Examples:
-    # Fetch issues for a project
-    sonar.py fetch --project myproject --pr 123 --severities BLOCKER,CRITICAL
+    # Generate MCP fetch parameters for a project
+    sonar.py prepare-fetch --project myproject --pr 123 --severities BLOCKER,CRITICAL
 
     # Triage a single issue
     sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234",...}'
 """
 
 import argparse
-import json
 import sys
 from typing import Any
 
@@ -235,7 +234,6 @@ def triage_issue(issue: dict) -> dict:
             'priority': priority,
             'suggested_implementation': get_fix_suggestion(rule, message, file, line),
             'suppression_string': None,
-            'command_to_use': None,
             'status': 'success',
         }
 
@@ -264,7 +262,6 @@ def triage_issue(issue: dict) -> dict:
         'priority': priority,
         'suggested_implementation': fix_suggestion,
         'suppression_string': None,
-        'command_to_use': None,
         'status': 'success',
     }
 
@@ -291,15 +288,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  sonar.py fetch --project myproject --pr 123
+  sonar.py prepare-fetch --project myproject --pr 123
   sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234"}'
 """,
     )
 
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    # fetch subcommand
-    fetch_parser = subparsers.add_parser('fetch', help='Fetch Sonar issues for a PR or project')
+    # prepare-fetch subcommand
+    fetch_parser = subparsers.add_parser('prepare-fetch', help='Generate MCP parameters for fetching Sonar issues')
     fetch_parser.add_argument('--project', required=True, help='SonarQube project key')
     fetch_parser.add_argument('--pr', help='Pull request ID')
     fetch_parser.add_argument(

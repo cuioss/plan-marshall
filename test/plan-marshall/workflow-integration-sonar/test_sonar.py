@@ -21,44 +21,44 @@ def run_sonar_script(args: list) -> tuple:
     return result.stdout, result.stderr, result.returncode
 
 
-class TestSonarFetch(unittest.TestCase):
-    """Test sonar.py fetch subcommand."""
+class TestSonarPrepareFetch(unittest.TestCase):
+    """Test sonar.py prepare-fetch subcommand."""
 
-    def test_fetch_with_project_only(self):
-        """Test fetch with just project key."""
-        stdout, stderr, code = run_sonar_script(['fetch', '--project', 'my-project'])
+    def test_prepare_fetch_with_project_only(self):
+        """Test prepare-fetch with just project key."""
+        stdout, stderr, code = run_sonar_script(['prepare-fetch', '--project', 'my-project'])
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['project_key'], 'my-project')
         self.assertIsNone(result['pull_request_id'])
         self.assertEqual(result['status'], 'success')
 
-    def test_fetch_with_pr(self):
-        """Test fetch with project and PR."""
-        stdout, stderr, code = run_sonar_script(['fetch', '--project', 'my-project', '--pr', '123'])
+    def test_prepare_fetch_with_pr(self):
+        """Test prepare-fetch with project and PR."""
+        stdout, stderr, code = run_sonar_script(['prepare-fetch', '--project', 'my-project', '--pr', '123'])
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['project_key'], 'my-project')
         self.assertEqual(str(result['pull_request_id']), '123')
         self.assertIn('pullRequestId', result['mcp_instruction']['parameters'])
 
-    def test_fetch_with_severities(self):
-        """Test fetch with severity filter."""
-        stdout, stderr, code = run_sonar_script(['fetch', '--project', 'my-project', '--severities', 'BLOCKER,CRITICAL'])
+    def test_prepare_fetch_with_severities(self):
+        """Test prepare-fetch with severity filter."""
+        stdout, stderr, code = run_sonar_script(['prepare-fetch', '--project', 'my-project', '--severities', 'BLOCKER,CRITICAL'])
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         mcp_params = result['mcp_instruction']['parameters']
         self.assertEqual(mcp_params['severities'], 'BLOCKER,CRITICAL')
 
-    def test_fetch_missing_project(self):
-        """Test fetch without required project arg."""
-        stdout, stderr, code = run_sonar_script(['fetch'])
+    def test_prepare_fetch_missing_project(self):
+        """Test prepare-fetch without required project arg."""
+        stdout, stderr, code = run_sonar_script(['prepare-fetch'])
         self.assertNotEqual(code, 0)
         self.assertIn('--project', stderr)
 
-    def test_fetch_mcp_instruction_structure(self):
+    def test_prepare_fetch_mcp_instruction_structure(self):
         """Test that MCP instruction is properly formatted."""
-        stdout, stderr, code = run_sonar_script(['fetch', '--project', 'test-proj', '--pr', '456'])
+        stdout, stderr, code = run_sonar_script(['prepare-fetch', '--project', 'test-proj', '--pr', '456'])
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         mcp = result['mcp_instruction']
@@ -168,7 +168,7 @@ class TestSonarTriage(unittest.TestCase):
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['action'], 'fix')
-        self.assertIsNone(result.get('command_to_use'))
+        self.assertNotIn('command_to_use', result)
 
     def test_triage_python_suppression_uses_hash_comment(self):
         """Test triage generates Python-style suppression comment for .py files."""
@@ -293,7 +293,7 @@ class TestSonarMain(unittest.TestCase):
         stdout, stderr, code = run_sonar_script(['--help'])
         # argparse exits with 0 for help
         self.assertEqual(code, 0)
-        self.assertIn('fetch', stdout)
+        self.assertIn('prepare-fetch', stdout)
         self.assertIn('triage', stdout)
         self.assertIn('triage-batch', stdout)
 

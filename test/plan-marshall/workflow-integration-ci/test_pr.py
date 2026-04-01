@@ -299,6 +299,94 @@ class TestPRFetchComments(unittest.TestCase):
         self.assertIn('--unresolved-only', stdout)
 
 
+class TestParseCommentsOutput(unittest.TestCase):
+    """Test parse_comments_output — TOON parsing logic extracted from fetch_comments."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Import parse_comments_output from pr.py via sys.path."""
+        # conftest already added scripts dirs to sys.path
+        from pr import parse_comments_output  # type: ignore[import-not-found]
+        cls.parse = staticmethod(parse_comments_output)
+
+    def test_parses_full_toon_output(self):
+        """Test parsing a complete TOON output with multiple comments."""
+        toon = (
+            'status: success\n'
+            'operation: pr_comments\n'
+            'provider: github\n'
+            'pr_number: 42\n'
+            'total: 2\n'
+            'unresolved: 1\n'
+            'comments[2]{id,thread_id,author,body,path,line,resolved,created_at}:\n'
+            '  PRRC_001\tPRRT_abc\talice\tFix this\tsrc/A.java\t10\ttrue\t2026-01-01\n'
+            '  PRRC_002\tPRRT_def\tbob\tAdd test\tsrc/B.java\t20\tfalse\t2026-01-02\n'
+        )
+        result = self.parse(toon, 42)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['pr_number'], 42)
+        self.assertEqual(result['provider'], 'github')
+        self.assertEqual(result['total_comments'], 2)
+        self.assertEqual(result['unresolved_count'], 1)
+        self.assertEqual(len(result['comments']), 2)
+        self.assertEqual(result['comments'][0]['id'], 'PRRC_001')
+        self.assertEqual(result['comments'][1]['body'], 'Add test')
+
+    def test_parses_empty_comments(self):
+        """Test parsing TOON with zero comments."""
+        toon = (
+            'status: success\n'
+            'provider: gitlab\n'
+            'total: 0\n'
+            'unresolved: 0\n'
+            'comments[0]{id,author,body,path,line,resolved,created_at}:\n'
+        )
+        result = self.parse(toon, 99)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['pr_number'], 99)
+        self.assertEqual(result['total_comments'], 0)
+        self.assertEqual(result['unresolved_count'], 0)
+        self.assertEqual(len(result['comments']), 0)
+
+    def test_dash_null_markers(self):
+        """Test that dash values in path/line are parsed as None."""
+        toon = (
+            'status: success\n'
+            'provider: github\n'
+            'total: 1\n'
+            'unresolved: 1\n'
+            'comments[1]{id,author,body,path,line,resolved,created_at}:\n'
+            '  PRRC_003\treviewer\tGeneral note\t-\t-\tfalse\t2026-01-01\n'
+        )
+        result = self.parse(toon, 10)
+        self.assertEqual(len(result['comments']), 1)
+        self.assertIsNone(result['comments'][0]['path'])
+        self.assertIsNone(result['comments'][0]['line'])
+
+    def test_defaults_provider_when_missing(self):
+        """Test fallback to 'unknown' when provider is not in TOON output."""
+        toon = (
+            'status: success\n'
+            'total: 0\n'
+            'comments[0]{id,author,body,path,line,resolved,created_at}:\n'
+        )
+        result = self.parse(toon, 1)
+        self.assertEqual(result['provider'], 'unknown')
+
+    def test_computes_unresolved_from_comments_when_missing(self):
+        """Test that unresolved count is computed from comment data when not in TOON header."""
+        toon = (
+            'status: success\n'
+            'provider: github\n'
+            'comments[2]{id,author,body,path,line,resolved,created_at}:\n'
+            '  C1\ta\tComment 1\tsrc/A.java\t1\ttrue\t2026-01-01\n'
+            '  C2\tb\tComment 2\tsrc/B.java\t2\tfalse\t2026-01-02\n'
+        )
+        result = self.parse(toon, 5)
+        self.assertEqual(result['total_comments'], 2)
+        self.assertEqual(result['unresolved_count'], 1)
+
+
 class TestPRMain(unittest.TestCase):
     """Test pr.py main entry point."""
 

@@ -5,11 +5,13 @@ Git workflow operations - format commits and analyze diffs.
 Usage:
     git-workflow.py format-commit --type <type> --subject <subject> [options]
     git-workflow.py analyze-diff --file <diff-file>
+    git-workflow.py detect-artifacts [--root <dir>]
     git-workflow.py --help
 
 Subcommands:
-    format-commit    Format commit message following conventional commits
-    analyze-diff     Analyze diff file to suggest commit message
+    format-commit      Format commit message following conventional commits
+    analyze-diff       Analyze diff file to suggest commit message
+    detect-artifacts   Scan for committable artifacts (build outputs, temp files)
 
 Examples:
     # Format a commit message
@@ -17,6 +19,9 @@ Examples:
 
     # Analyze a diff for commit suggestions
     git-workflow.py analyze-diff --file changes.diff
+
+    # Detect artifacts before committing
+    git-workflow.py detect-artifacts --root /path/to/repo
 """
 
 import argparse
@@ -325,6 +330,13 @@ def analyze_diff(diff_content: str) -> dict:
         suggestions['type'] = 'refactor'
         detected_changes.append('Similar additions/deletions suggests refactoring')
 
+    # Fallback scope: if no scope found from src_files, use top-level directory
+    # of first changed file (when it has a directory component)
+    if suggestions['scope'] is None and files_changed:
+        parts = files_changed[0].split('/')
+        if len(parts) > 1:
+            suggestions['scope'] = parts[0]
+
     suggestions['files_changed'] = files_changed[:10]  # Limit to 10
 
     return suggestions
@@ -345,6 +357,74 @@ def cmd_analyze_diff(args):
 
 
 # ============================================================================
+# DETECT-ARTIFACTS SUBCOMMAND
+# ============================================================================
+
+# Patterns that are always safe to delete (never belong in a commit)
+SAFE_ARTIFACT_PATTERNS = [
+    '**/*.class',
+    '**/*.temp',
+    '**/*.backup',
+    '**/*.backup*',
+    '**/*.orig',
+    '**/*.pyc',
+    '**/__pycache__/**',
+    '**/.DS_Store',
+]
+
+# Patterns that require user confirmation before deletion
+UNCERTAIN_ARTIFACT_PATTERNS = [
+    'target/**',
+    'build/**',
+    'node_modules/**',
+    '.plan/temp/**',
+]
+
+
+def scan_artifacts(root: Path) -> dict:
+    """Scan directory for committable artifacts.
+
+    Returns dict with 'safe' (auto-deletable) and 'uncertain' (needs confirmation) lists.
+    """
+    safe: list[str] = []
+    uncertain: list[str] = []
+
+    for pattern in SAFE_ARTIFACT_PATTERNS:
+        for match in root.glob(pattern):
+            if match.is_file():
+                safe.append(str(match.relative_to(root)))
+
+    for pattern in UNCERTAIN_ARTIFACT_PATTERNS:
+        for match in root.glob(pattern):
+            if match.is_file():
+                rel = str(match.relative_to(root))
+                # Skip if already captured by safe patterns
+                if rel not in safe:
+                    uncertain.append(rel)
+
+    return {
+        'safe': sorted(safe),
+        'uncertain': sorted(uncertain),
+        'total': len(safe) + len(uncertain),
+    }
+
+
+def cmd_detect_artifacts(args):
+    """Handle detect-artifacts subcommand."""
+    root = Path(args.root) if args.root else Path.cwd()
+
+    if not root.is_dir():
+        print(serialize_toon({'error': f'Directory not found: {root}', 'status': 'failure'}))
+        return 1
+
+    result = scan_artifacts(root)
+    result['root'] = str(root)
+    result['status'] = 'success'
+    print(serialize_toon(result))
+    return 0
+
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
@@ -358,6 +438,7 @@ def main():
 Examples:
   git-workflow.py format-commit --type feat --scope auth --subject "add login"
   git-workflow.py analyze-diff --file changes.diff
+  git-workflow.py detect-artifacts --root /path/to/repo
 """,
     )
 
@@ -377,6 +458,11 @@ Examples:
     analyze_parser = subparsers.add_parser('analyze-diff', help='Analyze diff file to suggest commit message')
     analyze_parser.add_argument('--file', required=True, help='Diff file to analyze')
     analyze_parser.set_defaults(func=cmd_analyze_diff)
+
+    # detect-artifacts subcommand
+    artifacts_parser = subparsers.add_parser('detect-artifacts', help='Scan for committable artifacts')
+    artifacts_parser.add_argument('--root', help='Root directory to scan (default: cwd)')
+    artifacts_parser.set_defaults(func=cmd_detect_artifacts)
 
     args = parser.parse_args()
     return args.func(args)

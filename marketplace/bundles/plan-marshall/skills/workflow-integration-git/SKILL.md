@@ -79,11 +79,15 @@ If no changes → Report "No changes to commit"
 
 **Step 3: Clean Artifacts**
 
-```
-Read standards/artifact-cleanup.md
+Detect artifacts using the script:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts [--root <repo-root>]
 ```
 
-Follow the detection and cleanup rules. Safe deletions are automatic; uncertain cases require user confirmation.
+The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists.
+For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
+For full detection patterns and cleanup rules, read `standards/artifact-cleanup.md`.
 
 **Step 4: Generate Commit Message**
 
@@ -138,6 +142,7 @@ pushed: true
 |---------|------------|-------------|
 | `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message |
 | `analyze-diff` | `--file` | Analyze diff for commit suggestions |
+| `detect-artifacts` | `[--root]` | Scan for committable artifacts |
 
 ### format-commit
 
@@ -193,6 +198,30 @@ suggestions:
     - Significant new code added
   files_changed[1]:
     - src/main/java/auth/Login.java
+status: success
+```
+
+### detect-artifacts
+
+Scan a directory for build artifacts and temporary files that should not be committed.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
+  [--root /path/to/repo]
+```
+
+**Parameters**:
+- `--root`: Root directory to scan (default: current working directory)
+
+**Output** (TOON):
+```toon
+root: /path/to/repo
+safe[2]:
+  - src/main/java/Example.class
+  - .DS_Store
+uncertain[1]:
+  - target/classes/Config.class
+total: 3
 status: success
 ```
 

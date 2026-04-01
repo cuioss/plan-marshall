@@ -25,7 +25,6 @@ Examples:
 """
 
 import argparse
-import json
 import re
 import subprocess
 import sys
@@ -42,30 +41,30 @@ from triage_helpers import cmd_triage_batch_handler, cmd_triage_single  # type: 
 PATTERNS: dict[str, Any] = {
     'code_change': {
         'high': [
-            r'security',
-            r'vulnerability',
-            r'injection',
-            r'xss',
-            r'csrf',
-            r'bug',
-            r'error',
-            r'fix',
-            r'broken',
-            r'crash',
-            r'null pointer',
-            r'memory leak',
+            r'\bsecurity\b',
+            r'\bvulnerability\b',
+            r'\binjection\b',
+            r'\bxss\b',
+            r'\bcsrf\b',
+            r'\bbug\b',
+            r'\berror\b',
+            r'\bfix\b',
+            r'\bbroken\b',
+            r'\bcrash\b',
+            r'\bnull pointer\b',
+            r'\bmemory leak\b',
         ],
         'medium': [
-            r'please\s+(?:add|remove|change|fix|update)',
-            r'should\s+(?:be|have|use)',
-            r'missing',
-            r'incorrect',
-            r'wrong',
+            r'please\s+(?:add|remove|change|fix|update)\b',
+            r'should\s+(?:be|have|use)\b',
+            r'\bmissing\b',
+            r'\bincorrect\b',
+            r'\bwrong\b',
         ],
-        'low': [r'rename', r'variable name', r'naming', r'typo', r'spelling', r'formatting', r'style', r'^nit:', r'^nitpick:'],
+        'low': [r'\brenam(?:e|ing)\b', r'\bvariable name\b', r'\bnaming\b', r'\btypo\b', r'\bspelling\b', r'\bformatting\b', r'\bstyle\b', r'^nit:', r'^nitpick:'],
     },
-    'explain': [r'why', r'explain', r'reasoning', r'rationale', r'how does', r'what is', r'can you clarify'],
-    'ignore': [r'^lgtm', r'^approved', r'looks good', r'^nice', r'^thanks', r'\[bot\]'],
+    'explain': [r'\bwhy\b', r'\bexplain\b', r'\breasoning\b', r'\brationale\b', r'\bhow does\b', r'\bwhat is\b', r'\bcan you clarify\b'],
+    'ignore': [r'^lgtm', r'^approved', r'\blooks good\b', r'^nice\b', r'^thanks\b', r'\[bot\]'],
 }
 
 
@@ -114,22 +113,11 @@ def get_current_pr_number() -> int | None:
     return None
 
 
-def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
-    """Fetch review comments for a PR using tools-integration-ci ci router."""
-    pr_comments_cmd = f'{CI_ROUTER} pr comments'
+def parse_comments_output(stdout: str, pr_number: int) -> dict[str, Any]:
+    """Parse TOON output from CI router into structured comment data.
 
-    # Build command with arguments
-    extra_args = ['--pr-number', str(pr_number)]
-    if unresolved_only:
-        extra_args.append('--unresolved-only')
-
-    stdout, stderr, code = run_command(pr_comments_cmd, extra_args)
-
-    if code != 0:
-        return {'error': f'Failed to fetch PR comments: {stderr}', 'status': 'failure'}
-
-    # Parse TOON output — use parse_toon_table for the comments array,
-    # with '-' as null marker for missing path/line values
+    Separated from fetch_comments() for testability.
+    """
     parsed = parse_toon(stdout)
     comments = parse_toon_table(stdout, 'comments', null_markers={'-'})
 
@@ -145,6 +133,23 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
         'unresolved_count': unresolved,
         'status': 'success',
     }
+
+
+def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
+    """Fetch review comments for a PR using tools-integration-ci ci router."""
+    pr_comments_cmd = f'{CI_ROUTER} pr comments'
+
+    # Build command with arguments
+    extra_args = ['--pr-number', str(pr_number)]
+    if unresolved_only:
+        extra_args.append('--unresolved-only')
+
+    stdout, stderr, code = run_command(pr_comments_cmd, extra_args)
+
+    if code != 0:
+        return {'error': f'Failed to fetch PR comments: {stderr}', 'status': 'failure'}
+
+    return parse_comments_output(stdout, pr_number)
 
 
 def cmd_fetch_comments(args):

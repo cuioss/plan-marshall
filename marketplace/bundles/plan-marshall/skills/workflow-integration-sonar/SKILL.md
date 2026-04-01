@@ -76,7 +76,7 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
    issues directly. Use it to construct the call, then execute via MCP:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch \
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar prepare-fetch \
      --project {key} [--pr {id}] [--severities BLOCKER,CRITICAL] [--types BUG,VULNERABILITY]
    ```
 
@@ -186,13 +186,13 @@ status: success
 
 Script: `plan-marshall:workflow-integration-sonar` → `sonar.py`
 
-### sonar.py fetch
+### sonar.py prepare-fetch
 
 **Purpose:** Generate MCP tool call parameters for fetching Sonar issues. Does not fetch directly — returns the MCP instruction that the caller must execute via the SonarQube MCP tool.
 
 **Usage:**
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch --project <key> [--pr <id>] [--severities <list>]
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar prepare-fetch --project <key> [--pr <id>] [--severities <list>]
 ```
 
 **Output:** TOON with MCP instruction and expected response structure
