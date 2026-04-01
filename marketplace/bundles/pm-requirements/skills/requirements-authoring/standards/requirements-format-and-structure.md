@@ -163,23 +163,9 @@ See the link:specification/authentication.adoc[Authentication Specification] for
 
 ## Quality Standards
 
-### Format Consistency
+For comprehensive quality criteria (completeness, clarity, maintainability, traceability), see `integrity-and-quality-standards.md`. Format-specific checks:
 
-- Use the same heading levels for similar requirement types
-- Maintain consistent bullet point structure
-- Apply uniform formatting for requirement IDs
-- Follow established prefix conventions
-
-### Structural Integrity
-
-- All requirement IDs must be unique
-- Maintain sequential numbering
-- Preserve deprecated requirement IDs
-- Keep consistent document structure
-
-### Readability
-
-- Use clear, descriptive requirement titles
-- Organize requirements logically by functional area
-- Group related requirements together
-- Use appropriate heading hierarchy
+- All requirement IDs must be unique with sequential numbering
+- Consistent heading levels, bullet point structure, and ID formatting
+- Deprecated requirement IDs preserved (never reused)
+- Clear, descriptive titles organized by functional area

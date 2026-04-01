@@ -277,4 +277,4 @@ For common anti-patterns in requirements authoring (vague language, implementati
 
 ## Quality Rules
 
-For the consolidated quality checklist, see the SKILL.md Quality Rules section.
+This document is the authoritative source for quality criteria. The SKILL.md Quality Rules section provides a quick-reference summary; domain-specific quality checks appear in `smart-requirements-principles.md` (SMART checks), `requirements-format-and-structure.md` (format checks), and `specification-structure-and-backtracking.md` (specification checks).

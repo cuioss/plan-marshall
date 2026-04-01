@@ -248,13 +248,7 @@ FAIL The code must be maintainable
 
 ## Quality Rules
 
-Before finalizing requirements, verify each is:
-
-- **Specific**: Clearly states what is needed
-- **Measurable**: Includes testable criteria
-- **Achievable**: Realistic within constraints
-- **Relevant**: Aligned with project goals
-- **Testable**: Can be verified through tests
+For comprehensive quality criteria (completeness, clarity, maintainability, traceability), see `integrity-and-quality-standards.md`. SMART-specific checks: verify each requirement is Specific, Measurable, Achievable, Relevant, and Testable.
 
 ## Common Anti-Patterns
 

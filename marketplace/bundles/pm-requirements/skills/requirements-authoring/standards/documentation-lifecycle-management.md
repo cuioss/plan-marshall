@@ -221,6 +221,10 @@ Post-implementation specifications include: Status: IMPLEMENTED, Implementation 
 - Expected API definitions covered in API documentation
 - Speculative implementation guidance once actual implementation exists
 
+## Traceability During Phase Transitions
+
+For traceability-specific phase guidance focusing on link updates during lifecycle transitions (when to add implementation links, update status indicators, and complete spec→code→test chains), see `pm-requirements:traceability` → Documentation Update Workflow by Phase section.
+
 ## Information Distribution
 
 ### Specifications Focus On

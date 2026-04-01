@@ -27,14 +27,7 @@ Comprehensive standards for creating, structuring, and maintaining requirements 
 
 ## Scope Boundary
 
-This skill covers **creating and maintaining content** in requirements and specification documents: structure, SMART principles, ID schemes, lifecycle management, and quality.
-
-For **linking documents to implementation code** (bidirectional traceability, API documentation references, test coverage documentation), see `pm-requirements:traceability`.
-
-**Shared concepts, different ownership:**
-- **Backtracking links**: This skill defines the *format and placement* within documents. Traceability defines *when and how to maintain* them as code evolves.
-- **Status indicators** (PLANNED/IN PROGRESS/IMPLEMENTED): This skill defines the *allowed values and meaning*. Traceability defines *when to transition* them during implementation.
-- **Lifecycle phases**: This skill owns the *complete lifecycle model* (`documentation-lifecycle-management.md`). Traceability provides a *traceability-focused subset* for link updates during phase transitions.
+This skill covers **creating and maintaining content** in requirements and specification documents: structure, SMART principles, ID schemes, lifecycle management, and quality. For **linking documents to implementation code**, see `pm-requirements:traceability`. For what belongs in specifications vs. API documentation, see `pm-requirements:traceability` → `standards/information-distribution.md`.
 
 ## What This Skill Provides
 

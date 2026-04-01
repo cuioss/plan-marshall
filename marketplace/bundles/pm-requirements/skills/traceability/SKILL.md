@@ -27,12 +27,7 @@ Standards for connecting specification documents with implementation code, estab
 
 ## Scope Boundary
 
-This skill covers **linking between documents and code**: bidirectional navigation, API documentation references, test coverage documentation, and link maintenance. For **creating and maintaining document content** (structure, SMART principles, ID schemes, lifecycle management), see `pm-requirements:requirements-authoring`.
-
-**Shared concepts, different ownership:**
-- **Backtracking links**: Authoring defines the *format and placement*. This skill defines *when and how to maintain* them as code evolves.
-- **Status indicators**: Authoring defines the *allowed values and meaning*. This skill defines *when to transition* them during implementation phases.
-- **Lifecycle phases**: Authoring owns the *complete lifecycle model*. This skill provides a *traceability-focused subset* (`Documentation Update Workflow by Phase` below) for link updates during phase transitions.
+This skill covers **linking between documents and code**: bidirectional navigation, API documentation references, test coverage documentation, and link maintenance. For **creating and maintaining document content** (structure, SMART principles, ID schemes, lifecycle management), see `pm-requirements:requirements-authoring`. For what belongs in specifications vs. API documentation, see `standards/information-distribution.md`.
 
 ## Core Principles
 
