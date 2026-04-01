@@ -10,7 +10,7 @@ Usage (internal):
 import re
 from pathlib import Path
 
-from _build_parse import Issue, UnitTestSummary
+from _build_parse import Issue, UnitTestSummary, extract_test_summary
 
 
 def parse_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
@@ -77,13 +77,10 @@ def parse_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
         )
 
     # Parse pytest summary: X passed, Y failed, Z skipped
-    summary_pattern = re.compile(r'(\d+) passed(?:.*?(\d+) failed)?(?:.*?(\d+) skipped)?')
-    summary_match = summary_pattern.search(content)
-    if summary_match:
-        passed = int(summary_match.group(1))
-        failed = int(summary_match.group(2)) if summary_match.group(2) else 0
-        skipped = int(summary_match.group(3)) if summary_match.group(3) else 0
-        total = passed + failed + skipped
-        test_summary = UnitTestSummary(passed=passed, failed=failed, skipped=skipped, total=total)
+    test_summary = extract_test_summary(
+        content,
+        r'(\d+) passed(?:.*?(\d+) failed)?(?:.*?(\d+) skipped)?',
+        group_map={'passed': 1, 'failed': 2, 'skipped': 3},
+    )
 
     return issues, test_summary, build_status

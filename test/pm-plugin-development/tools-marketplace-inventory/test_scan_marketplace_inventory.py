@@ -33,9 +33,9 @@ METADATA_KEYS = {
 def get_bundles(data: dict) -> list[dict[str, Any]]:
     """Extract bundle dicts from data where bundles are top-level keys.
 
-    The new format has bundles as top-level keys (e.g., 'plan-marshall:', 'plan-marshall:')
+    The new format has bundles as top-level keys (e.g., 'plan-marshall:')
     rather than a 'bundles' list. This helper extracts them as a list of dicts
-    with 'name' field added for backward compatibility with tests.
+    with 'name' field added.
     """
     bundles = []
     for key, value in data.items():

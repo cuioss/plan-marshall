@@ -193,6 +193,86 @@ def _build_profile_patterns() -> dict[str, str]:
 PROFILE_PATTERNS = _build_profile_patterns()
 
 
+# =============================================================================
+# Profile Pipeline Utilities
+# =============================================================================
+
+
+def filter_command_line_profiles(raw_profiles: list[dict]) -> list[dict]:
+    """Filter profiles to command-line activated only.
+
+    Removes profiles that are default-activated (Active: true in build tool output).
+    Only profiles with Active: false are kept — these require explicit activation.
+
+    Args:
+        raw_profiles: List of profile dicts with 'id' and 'is_active' fields.
+
+    Returns:
+        List of profile dicts with 'id' only (is_active removed).
+    """
+    return [{'id': p['id']} for p in raw_profiles if not p.get('is_active', False)]
+
+
+def filter_skip_profiles(profiles: list[dict], skip_list: list[str] | None) -> list[dict]:
+    """Filter out profiles in the skip list.
+
+    Args:
+        profiles: List of profile dicts with 'id' field.
+        skip_list: Profile IDs to exclude (None or empty keeps all).
+
+    Returns:
+        Filtered list of profile dicts.
+    """
+    if not skip_list:
+        return profiles
+    skip_set = {s.strip() for s in skip_list}
+    return [p for p in profiles if p['id'] not in skip_set]
+
+
+def classify_profile(profile_id: str) -> str:
+    """Classify a profile ID to its canonical command name.
+
+    Uses PROFILE_PATTERNS which maps aliases to canonical command names.
+    Only exact matches are supported (case-insensitive fallback).
+
+    Args:
+        profile_id: The profile identifier (e.g., "pre-commit", "jacoco").
+
+    Returns:
+        Canonical command name (e.g., "quality-gate", "coverage") or "NO-MATCH-FOUND".
+    """
+    if profile_id in PROFILE_PATTERNS:
+        return PROFILE_PATTERNS[profile_id]  # type: ignore[no-any-return]
+    profile_lower = profile_id.lower()
+    for alias, canonical in PROFILE_PATTERNS.items():
+        if alias.lower() == profile_lower:
+            return canonical  # type: ignore[no-any-return]
+    return 'NO-MATCH-FOUND'
+
+
+def map_canonical_profiles(profiles: list[dict], explicit_mapping: dict[str, str] | None = None) -> list[dict]:
+    """Map profiles to canonical command names.
+
+    Resolution order:
+    1. Explicit mapping (from config) takes precedence
+    2. PROFILE_PATTERNS aliases from extension_base.py
+
+    Args:
+        profiles: List of profile dicts with 'id' field.
+        explicit_mapping: Dict mapping profile_id -> canonical (can be None).
+
+    Returns:
+        List of profile dicts with 'canonical' field added.
+    """
+    mapping = explicit_mapping or {}
+    result = []
+    for profile in profiles:
+        pid = profile['id']
+        canonical = mapping.get(pid) or classify_profile(pid)
+        result.append({'id': pid, 'canonical': canonical})
+    return result
+
+
 class ExtensionBase(ABC):
     """Abstract base class for domain bundle extensions.
 

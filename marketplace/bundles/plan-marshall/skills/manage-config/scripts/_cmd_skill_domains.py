@@ -500,7 +500,7 @@ def cmd_skill_domains(args) -> int:
                         result[profile_name] = profiles[profile_name]
             return success_exit(result)
         else:
-            # Flat structure (backward compatible)
+            # Flat structure (non-nested domain config)
             return success_exit(
                 {
                     'domain': domain,

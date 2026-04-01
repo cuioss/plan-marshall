@@ -19,9 +19,6 @@ STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage_status
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-# Alias for backward compatibility
-TestContext = PlanContext
-
 
 def _create_plan(plan_id: str, title: str, phases: str) -> None:
     """Helper to create a plan using manage-status."""
@@ -45,7 +42,7 @@ def _create_plan(plan_id: str, title: str, phases: str) -> None:
 
 def test_get_routing_context():
     """Test getting routing context combines phase, skill, and progress."""
-    with TestContext(plan_id='routing-plan'):
+    with PlanContext(plan_id='routing-plan'):
         _create_plan('routing-plan', 'Routing Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize')
         result = run_script(LIFECYCLE_SCRIPT, 'get-routing-context', '--plan-id', 'routing-plan')
         assert result.success, f'Script failed: {result.stderr}'
@@ -62,7 +59,7 @@ def test_get_routing_context():
 
 def test_get_routing_context_after_transition():
     """Test routing context updates after phase transition."""
-    with TestContext(plan_id='transition-routing'):
+    with PlanContext(plan_id='transition-routing'):
         _create_plan(
             'transition-routing', 'Transition Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize'
         )
@@ -77,7 +74,7 @@ def test_get_routing_context_after_transition():
 
 def test_get_routing_context_not_found():
     """Test get-routing-context with missing plan."""
-    with TestContext():
+    with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'get-routing-context', '--plan-id', 'nonexistent')
         assert not result.success, 'Expected failure for missing plan'
 
@@ -89,14 +86,14 @@ def test_get_routing_context_not_found():
 
 def test_list_empty():
     """Test listing when no plans exist."""
-    with TestContext():
+    with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'list')
         assert result.success, f'Script failed: {result.stderr}'
 
 
 def test_list_with_plan():
     """Test listing when a plan exists."""
-    with TestContext(plan_id='list-plan'):
+    with PlanContext(plan_id='list-plan'):
         _create_plan('list-plan', 'List Test', 'init,execute,finalize')
         result = run_script(LIFECYCLE_SCRIPT, 'list')
         assert result.success, f'Script failed: {result.stderr}'
@@ -109,7 +106,7 @@ def test_list_with_plan():
 
 def test_list_with_filter():
     """Test listing with phase filter."""
-    with TestContext(plan_id='filter-plan'):
+    with PlanContext(plan_id='filter-plan'):
         _create_plan('filter-plan', 'Filter Test', '1-init,2-refine,3-outline')
         # Filter for 1-init phase
         result = run_script(LIFECYCLE_SCRIPT, 'list', '--filter', '1-init')
@@ -122,7 +119,7 @@ def test_list_with_filter():
 
 def test_list_with_filter_no_match():
     """Test listing with filter that doesn't match."""
-    with TestContext(plan_id='nomatch-plan'):
+    with PlanContext(plan_id='nomatch-plan'):
         _create_plan('nomatch-plan', 'No Match Test', '1-init,2-refine')
         # Filter for a phase the plan isn't at
         result = run_script(LIFECYCLE_SCRIPT, 'list', '--filter', '5-execute')
@@ -140,7 +137,7 @@ def test_list_with_filter_no_match():
 
 def test_transition_to_next_phase():
     """Test transitioning to the next phase."""
-    with TestContext(plan_id='transition-plan'):
+    with PlanContext(plan_id='transition-plan'):
         _create_plan('transition-plan', 'Transition Test', '1-init,2-refine,3-outline')
         result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'transition-plan', '--completed', '1-init')
         assert result.success, f'Script failed: {result.stderr}'
@@ -152,7 +149,7 @@ def test_transition_to_next_phase():
 
 def test_transition_last_phase():
     """Test transitioning when completing the last phase."""
-    with TestContext(plan_id='last-phase-plan'):
+    with PlanContext(plan_id='last-phase-plan'):
         _create_plan('last-phase-plan', 'Last Phase Test', '1-init,2-finalize')
         # Transition through all phases
         run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'last-phase-plan', '--completed', '1-init')
@@ -167,7 +164,7 @@ def test_transition_last_phase():
 
 def test_transition_invalid_phase():
     """Test transition with invalid phase name."""
-    with TestContext(plan_id='invalid-transition'):
+    with PlanContext(plan_id='invalid-transition'):
         _create_plan('invalid-transition', 'Invalid Test', '1-init,2-refine')
         result = run_script(
             LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'invalid-transition', '--completed', 'nonexistent'
@@ -180,7 +177,7 @@ def test_transition_invalid_phase():
 
 def test_transition_not_found():
     """Test transition with non-existent plan."""
-    with TestContext():
+    with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'nonexistent', '--completed', '1-init')
         assert not result.success, 'Expected failure for missing plan'
 
@@ -192,7 +189,7 @@ def test_transition_not_found():
 
 def test_route_known_phase():
     """Test getting skill for a known phase."""
-    with TestContext():
+    with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'route', '--phase', '1-init')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -211,7 +208,7 @@ def test_route_all_phases():
         '5-execute': 'plan-execute',
         '6-finalize': 'plan-finalize',
     }
-    with TestContext():
+    with PlanContext():
         for phase, expected_skill in phases.items():
             result = run_script(LIFECYCLE_SCRIPT, 'route', '--phase', phase)
             assert result.success, f'Script failed for {phase}: {result.stderr}'
@@ -221,7 +218,7 @@ def test_route_all_phases():
 
 def test_route_unknown_phase():
     """Test routing for unknown phase."""
-    with TestContext():
+    with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'route', '--phase', 'unknown-phase')
         assert not result.success, 'Expected failure for unknown phase'
         data = parse_toon(result.stdout)
@@ -236,7 +233,7 @@ def test_route_unknown_phase():
 
 def test_archive_dry_run():
     """Test archive dry run mode."""
-    with TestContext(plan_id='archive-plan'):
+    with PlanContext(plan_id='archive-plan'):
         _create_plan('archive-plan', 'Archive Test', '1-init,2-refine')
         result = run_script(LIFECYCLE_SCRIPT, 'archive', '--plan-id', 'archive-plan', '--dry-run')
         assert result.success, f'Script failed: {result.stderr}'
@@ -248,7 +245,7 @@ def test_archive_dry_run():
 
 def test_archive_not_found():
     """Test archive with non-existent plan."""
-    with TestContext():
+    with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'archive', '--plan-id', 'nonexistent')
         assert not result.success, 'Expected failure for missing plan'
         data = parse_toon(result.stdout)

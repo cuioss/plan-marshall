@@ -2,7 +2,6 @@
 """Tests for plan-marshall build-python python_build.py.
 
 Tests the Python build operations including:
-- detect_wrapper() - Wrapper detection
 - parse_log() - Log parsing for errors
 - execute_direct() - Foundation API (mocked subprocess)
 """
@@ -64,40 +63,47 @@ def _load_python_build():
 
 python_build = _load_python_build()
 
+# Direct imports for functions no longer re-exported through python_build
+from _python_cmd_parse import parse_log  # noqa: E402
+from _python_execute import execute_direct  # noqa: E402
+
 
 # =============================================================================
-# Test: detect_wrapper()
+# Test: Wrapper resolution (via _python_execute)
 # =============================================================================
 
 
-def test_detect_wrapper_finds_local_pw():
-    """detect_wrapper() returns ./pw when pw exists in project root."""
+def test_wrapper_resolution_finds_local_pw():
+    """Wrapper resolution finds ./pw when pw exists in project root."""
+    from _python_execute import _python_wrapper_resolve_fn
+
     with BuildContext() as ctx:
-        # Create ./pw wrapper
         pw = ctx.temp_dir / 'pw'
         pw.write_text('#!/bin/bash\necho "pw"')
         pw.chmod(0o755)
 
-        result = python_build.detect_wrapper(str(ctx.temp_dir))
+        result = _python_wrapper_resolve_fn(str(ctx.temp_dir))
         assert result == './pw'
 
 
-def test_detect_wrapper_falls_back_to_system_pwx():
-    """detect_wrapper() returns pwx when no local pw but pwx is in PATH."""
+def test_wrapper_resolution_falls_back_to_system_pwx():
+    """Wrapper resolution returns pwx when no local pw but pwx is in PATH."""
+    from _python_execute import _python_wrapper_resolve_fn
+
     with BuildContext() as ctx:
-        # No ./pw exists, mock shutil.which to return pwx
         with patch('shutil.which', return_value='/usr/local/bin/pwx'):
-            result = python_build.detect_wrapper(str(ctx.temp_dir))
+            result = _python_wrapper_resolve_fn(str(ctx.temp_dir))
             assert result == 'pwx'
 
 
-def test_detect_wrapper_raises_when_no_wrapper():
-    """detect_wrapper() raises FileNotFoundError when no wrapper available."""
+def test_wrapper_resolution_raises_when_no_wrapper():
+    """Wrapper resolution raises FileNotFoundError when no wrapper available."""
+    from _python_execute import _python_wrapper_resolve_fn
+
     with BuildContext() as ctx:
-        # No ./pw exists, mock shutil.which to return None
         with patch('shutil.which', return_value=None):
             with pytest.raises(FileNotFoundError, match='No pyprojectx wrapper found'):
-                python_build.detect_wrapper(str(ctx.temp_dir))
+                _python_wrapper_resolve_fn(str(ctx.temp_dir))
 
 
 # =============================================================================
@@ -115,7 +121,7 @@ src/utils.py:25: error: Missing return statement
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'src/main.py'
@@ -134,7 +140,7 @@ src/utils.py:30:5: F401 'os' imported but unused
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'src/main.py'
@@ -153,7 +159,7 @@ FAILED test/test_utils.py::test_helper
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'test/test_main.py'
@@ -171,7 +177,7 @@ def test_parse_log_extracts_test_summary():
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert test_summary is not None
         assert test_summary.passed == 40
@@ -181,7 +187,7 @@ def test_parse_log_extracts_test_summary():
 
 def test_parse_log_handles_missing_file():
     """parse_log() returns empty results for missing log file."""
-    issues, test_summary, build_status = python_build.parse_log('/nonexistent/path.log')
+    issues, test_summary, build_status = parse_log('/nonexistent/path.log')
 
     assert issues == []
     assert test_summary is None
@@ -194,7 +200,7 @@ def test_parse_log_handles_empty_file():
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text('')
 
-        issues, test_summary, build_status = python_build.parse_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert issues == []
         assert test_summary is None
@@ -210,7 +216,7 @@ def test_execute_direct_returns_error_when_no_wrapper():
     with BuildContext() as ctx:
         # No ./pw and no system pwx
         with patch('shutil.which', return_value=None):
-            result = python_build.execute_direct(
+            result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
             )
 
@@ -239,7 +245,7 @@ def test_execute_direct_returns_success_on_zero_exit():
             patch('subprocess.run', return_value=mock_result),
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
-            result = python_build.execute_direct(
+            result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
             )
 
@@ -264,7 +270,7 @@ def test_execute_direct_returns_error_on_nonzero_exit():
             patch('subprocess.run', return_value=mock_result),
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
-            result = python_build.execute_direct(
+            result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
             )
 
@@ -287,7 +293,7 @@ def test_execute_direct_returns_timeout_on_timeout():
             patch('subprocess.run', side_effect=subprocess.TimeoutExpired(cmd='./pw verify', timeout=60)),
             patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
-            result = python_build.execute_direct(
+            result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=60, project_dir=str(ctx.temp_dir)
             )
 

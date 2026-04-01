@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from _fix_shared import read_json_input, resolve_issue_type
+from _fix_shared import read_json_input
 
 
 def load_templates(script_dir: Path) -> dict:
@@ -364,7 +364,7 @@ FIX_HANDLERS = {
 
 def apply_single_fix(fix: dict, bundle_dir: Path, templates: dict) -> dict:
     """Apply a single fix to a component file."""
-    fix_type = resolve_issue_type(fix.get('type', ''))
+    fix_type = fix.get('type', '')
     file_path = fix.get('file', '')
 
     if not fix_type:

@@ -1,23 +1,11 @@
 #!/usr/bin/env python3
 """npm build operations - run command with auto-parse on failure.
 
-Provides:
-- execute_direct(): Foundation API for npm command execution
-- cmd_run(): Run subcommand handler (execute + auto-parse on failure)
-- detect_command_type(): npm vs npx detection
+CLI entry point for npm/npx build execution. The primary API
+(execute_direct, cmd_run, detect_command_type) lives in _npm_execute.py.
 
 Usage:
-    from npm import execute_direct, cmd_run
-
-    # Foundation API
-    result = execute_direct(
-        args="run test",
-        command_key="npm:test",
-        default_timeout=300
-    )
-
-    # Run subcommand (CLI entry point)
-    cmd_run(args)  # args from argparse
+    python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-args "run test"
 """
 
 import argparse
@@ -25,9 +13,7 @@ import sys
 
 from _build_coverage_report import create_coverage_report_handler
 from _build_shared import add_run_subparser
-
-# Re-export from _npm_execute for backward compatibility
-from _npm_execute import cmd_run, detect_command_type, execute_direct  # noqa: F401
+from _npm_execute import cmd_run
 
 # --- Tool-specific coverage configuration (inlined from former wrapper) ---
 

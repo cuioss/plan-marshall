@@ -24,7 +24,7 @@ for skill_name in ['build-maven', 'build-gradle', 'build-npm', 'build-python']:
         sys.path.insert(0, str(scripts_dir))
 
 from _build_wrapper import has_wrapper  # type: ignore[import-not-found]  # noqa: E402
-from npm import execute_direct  # type: ignore[import-not-found]  # noqa: E402
+from _npm_execute import execute_direct  # type: ignore[import-not-found]  # noqa: E402
 
 # Build file constants
 POM_XML = 'pom.xml'

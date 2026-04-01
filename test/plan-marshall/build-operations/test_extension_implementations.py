@@ -48,7 +48,7 @@ def load_extension(bundle_name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    # Return Extension instance (clean slate - no backward compat functions)
+    # Return Extension instance
     if hasattr(module, 'Extension'):
         return module.Extension()
 

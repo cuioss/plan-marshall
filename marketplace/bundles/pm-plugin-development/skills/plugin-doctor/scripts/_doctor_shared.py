@@ -59,14 +59,6 @@ def get_report_filename(timestamp: str | None = None, scope: str | None = None) 
     return f'{timestamp}-report.json'
 
 
-def get_default_report_dir() -> Path:
-    """Get the fixed report directory path.
-
-    Deprecated: Use get_report_dir() instead. Kept for backward compatibility.
-    """
-    return get_report_dir()
-
-
 def ensure_report_dir(report_dir: Path) -> Path:
     """Ensure report directory exists and return path."""
     report_dir.mkdir(parents=True, exist_ok=True)

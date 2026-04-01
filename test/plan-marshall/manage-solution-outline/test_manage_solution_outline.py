@@ -18,9 +18,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manag
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-# Alias for backward compatibility
-TestContext = PlanContext
-
 
 # Sample valid solution outline with ASCII diagram (contract-compliant)
 VALID_SOLUTION = """# Solution: JWT Validation Service
@@ -145,7 +142,7 @@ Use standard JWT libraries with Quarkus integration.
 
 def test_validate_success():
     """Test validating a well-formed solution document."""
-    with TestContext(plan_id='solution-valid') as ctx:
+    with PlanContext(plan_id='solution-valid') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-valid')
@@ -159,7 +156,7 @@ def test_validate_success():
 
 def test_validate_extracts_compatibility():
     """Test that validate extracts compatibility from header metadata."""
-    with TestContext(plan_id='solution-compat') as ctx:
+    with PlanContext(plan_id='solution-compat') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-compat')
@@ -176,7 +173,7 @@ def test_validate_without_compatibility():
     solution_no_compat = VALID_SOLUTION.replace(
         'compatibility: breaking \u2014 Clean-slate approach, no deprecation nor transitionary comments\n', ''
     )
-    with TestContext(plan_id='solution-no-compat') as ctx:
+    with PlanContext(plan_id='solution-no-compat') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(solution_no_compat)
 
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-compat')
@@ -189,7 +186,7 @@ def test_validate_without_compatibility():
 
 def test_validate_missing_overview():
     """Test validation fails when Overview section is missing."""
-    with TestContext(plan_id='solution-missing-overview') as ctx:
+    with PlanContext(plan_id='solution-missing-overview') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
@@ -213,7 +210,7 @@ Description
 
 def test_validate_no_deliverables():
     """Test validation fails when no numbered deliverables found."""
-    with TestContext(plan_id='solution-no-deliverables') as ctx:
+    with PlanContext(plan_id='solution-no-deliverables') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
@@ -238,7 +235,7 @@ Some text but no ### N. Title items
 
 def test_validate_document_not_found():
     """Test validation fails when document doesn't exist."""
-    with TestContext(plan_id='no-solution'):
+    with PlanContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'no-solution')
         assert not result.success, 'Expected failure for missing document'
         data = parse_toon(result.stdout)
@@ -252,7 +249,7 @@ def test_validate_document_not_found():
 
 def test_list_deliverables():
     """Test listing deliverables from solution document."""
-    with TestContext(plan_id='solution-list') as ctx:
+    with PlanContext(plan_id='solution-list') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'list-deliverables', '--plan-id', 'solution-list')
@@ -270,7 +267,7 @@ def test_list_deliverables():
 
 def test_list_deliverables_empty():
     """Test list-deliverables with no deliverables section."""
-    with TestContext(plan_id='solution-empty') as ctx:
+    with PlanContext(plan_id='solution-empty') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text("""# Solution: Test
 
 ## Summary
@@ -291,7 +288,7 @@ Just summary, no deliverables section
 
 def test_read():
     """Test reading a solution document."""
-    with TestContext(plan_id='solution-read') as ctx:
+    with PlanContext(plan_id='solution-read') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'solution-read')
@@ -307,7 +304,7 @@ def test_read():
 
 def test_read_raw():
     """Test reading a solution document in raw mode."""
-    with TestContext(plan_id='solution-raw') as ctx:
+    with PlanContext(plan_id='solution-raw') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'solution-raw', '--raw')
@@ -321,7 +318,7 @@ def test_read_raw():
 
 def test_read_not_found():
     """Test read fails when document doesn't exist."""
-    with TestContext(plan_id='no-solution'):
+    with PlanContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'no-solution')
         assert not result.success, 'Expected failure for missing document'
         data = parse_toon(result.stdout)
@@ -330,7 +327,7 @@ def test_read_not_found():
 
 def test_read_deliverable_by_number():
     """Test reading a specific deliverable by number."""
-    with TestContext(plan_id='deliverable-num') as ctx:
+    with PlanContext(plan_id='deliverable-num') as ctx:
         # Write valid solution with multiple deliverables
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
@@ -352,7 +349,7 @@ def test_read_deliverable_by_number():
 
 def test_read_deliverable_by_number_second():
     """Test reading the second deliverable by number."""
-    with TestContext(plan_id='deliverable-num-2') as ctx:
+    with PlanContext(plan_id='deliverable-num-2') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         # Read deliverable 2
@@ -373,7 +370,7 @@ def test_read_deliverable_by_number_second():
 
 def test_read_deliverable_not_found():
     """Test reading non-existent deliverable number."""
-    with TestContext(plan_id='deliverable-notfound') as ctx:
+    with PlanContext(plan_id='deliverable-notfound') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(
@@ -397,7 +394,7 @@ def test_read_deliverable_not_found():
 
 def test_exists_present():
     """Test exists returns true when document exists."""
-    with TestContext(plan_id='solution-exists') as ctx:
+    with PlanContext(plan_id='solution-exists') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'solution-exists')
@@ -409,7 +406,7 @@ def test_exists_present():
 
 def test_exists_absent():
     """Test exists returns success with exists=false when document doesn't exist."""
-    with TestContext(plan_id='no-solution'):
+    with PlanContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'no-solution')
         assert result.success
         data = parse_toon(result.stdout)
@@ -424,7 +421,7 @@ def test_exists_absent():
 
 def test_resolve_path():
     """Test resolve-path returns correct path."""
-    with TestContext(plan_id='solution-resolve') as ctx:
+    with PlanContext(plan_id='solution-resolve') as ctx:
         result = run_script(SCRIPT_PATH, 'resolve-path', '--plan-id', 'solution-resolve')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -447,7 +444,7 @@ def test_resolve_path():
 
 def test_write_new():
     """Test validating a new solution outline written to disk."""
-    with TestContext(plan_id='solution-write') as ctx:
+    with PlanContext(plan_id='solution-write') as ctx:
         # Write content directly (simulates Write tool)
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
@@ -462,7 +459,7 @@ def test_write_new():
 
 def test_write_includes_compatibility():
     """Test that write output includes compatibility when present in header."""
-    with TestContext(plan_id='solution-write-compat') as ctx:
+    with PlanContext(plan_id='solution-write-compat') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write-compat')
@@ -475,7 +472,7 @@ def test_write_includes_compatibility():
 
 def test_write_validates_existing_file():
     """Test that write detects validation errors in file on disk."""
-    with TestContext(plan_id='solution-invalid') as ctx:
+    with PlanContext(plan_id='solution-invalid') as ctx:
         # Write invalid content (missing required sections)
         (ctx.plan_dir / 'solution_outline.md').write_text('# Just a title\n\nNo required sections here.')
 
@@ -487,7 +484,7 @@ def test_write_validates_existing_file():
 
 def test_write_file_not_found():
     """Test that write fails when file not on disk."""
-    with TestContext(plan_id='solution-missing'):
+    with PlanContext(plan_id='solution-missing'):
         result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-missing')
         assert not result.success, 'Expected failure when file not on disk'
         data = parse_toon(result.stdout)
@@ -501,7 +498,7 @@ def test_write_file_not_found():
 
 def test_update_existing():
     """Test validating an updated solution outline."""
-    with TestContext(plan_id='solution-update') as ctx:
+    with PlanContext(plan_id='solution-update') as ctx:
         # Write updated content directly
         updated_solution = VALID_SOLUTION.replace(
             'Implement JWT validation service for authentication.',
@@ -519,7 +516,7 @@ def test_update_existing():
 
 def test_update_nonexistent():
     """Test that update fails when solution outline does not exist."""
-    with TestContext(plan_id='solution-no-update'):
+    with PlanContext(plan_id='solution-no-update'):
         result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-no-update')
         assert not result.success, 'Expected failure when updating non-existent outline'
         data = parse_toon(result.stdout)
@@ -573,7 +570,7 @@ Add JWT configuration to application.properties.
 **Affected files:**
 - `src/main/resources/application.properties`""",
     )
-    with TestContext(plan_id='solution-warn-profile') as ctx:
+    with PlanContext(plan_id='solution-warn-profile') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(solution_with_bad_profile)
 
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-warn-profile')
@@ -587,7 +584,7 @@ Add JWT configuration to application.properties.
 
 def test_validate_no_warning_module_testing_with_test_files():
     """Test that module_testing profile with test file paths does not generate a warning."""
-    with TestContext(plan_id='solution-no-warn-profile') as ctx:
+    with PlanContext(plan_id='solution-no-warn-profile') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-warn-profile')
@@ -605,7 +602,7 @@ def test_validate_no_warning_module_testing_with_test_files():
 
 def test_invalid_plan_id_uppercase():
     """Test that uppercase plan IDs are rejected."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'My-Plan')
         assert not result.success, 'Expected rejection of uppercase plan ID'
         data = parse_toon(result.stdout)
@@ -614,7 +611,7 @@ def test_invalid_plan_id_uppercase():
 
 def test_invalid_plan_id_underscore():
     """Test that underscores in plan IDs are rejected."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'my_plan')
         assert not result.success, 'Expected rejection of underscore plan ID'
         data = parse_toon(result.stdout)

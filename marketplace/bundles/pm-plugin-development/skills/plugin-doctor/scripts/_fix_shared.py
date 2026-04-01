@@ -73,21 +73,6 @@ RISKY_FIX_TYPES = {
     'skill-invokable-mismatch',
 }
 
-# Backward-compatibility aliases: old identifier → new identifier.
-# Allows external consumers to use old names during migration.
-RULE_ID_ALIASES = {
-    'rule-6-violation': 'agent-task-tool-prohibited',
-    'rule-7-violation': 'agent-maven-restricted',
-    'rule-8-violation': 'workflow-hardcoded-script-path',
-    'rule-11-violation': 'agent-skill-tool-visibility',
-    'rule-12-violation': 'workflow-prose-parameter-inconsistency',
-    'pattern-22-violation': 'agent-lessons-via-skill',
-}
-
-
-def resolve_issue_type(issue_type: str) -> str:
-    """Resolve an issue type, accepting old aliases for backward compatibility."""
-    return RULE_ID_ALIASES.get(issue_type, issue_type)
 
 
 # =============================================================================

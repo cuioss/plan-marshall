@@ -14,9 +14,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findin
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-# Alias for backward compatibility
-TestContext = PlanContext
-
 
 # =============================================================================
 # Test: Finding Add Command
@@ -25,7 +22,7 @@ TestContext = PlanContext
 
 def test_finding_add_basic():
     """Test adding a basic finding."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -44,7 +41,7 @@ def test_finding_add_basic():
 
 def test_finding_add_with_file_info():
     """Test adding finding with file location."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'add',
@@ -83,7 +80,7 @@ def test_finding_add_all_types():
         'sonar-issue',
         'pr-comment',
     ]
-    with TestContext():
+    with PlanContext():
         for ftype in finding_types:
             result = run_script(
                 SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', ftype, '--title', f'Test {ftype}', '--detail', f'Testing {ftype} type'
@@ -98,7 +95,7 @@ def test_finding_add_all_types():
 
 def test_finding_query_empty():
     """Test querying with no findings."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'query', '--plan-id', 'test-plan')
         assert result.success
         data = parse_toon(result.stdout)
@@ -107,7 +104,7 @@ def test_finding_query_empty():
 
 def test_finding_query_by_type():
     """Test filtering findings by type."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'bug', '--title', 'Bug 1', '--detail', 'd')
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'tip', '--title', 'Tip 1', '--detail', 'd')
         run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'bug', '--title', 'Bug 2', '--detail', 'd')
@@ -120,7 +117,7 @@ def test_finding_query_by_type():
 
 def test_finding_query_by_resolution():
     """Test filtering findings by resolution."""
-    with TestContext():
+    with PlanContext():
         # Add a finding
         add_result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'bug', '--title', 'Bug to fix', '--detail', 'd')
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
@@ -142,7 +139,7 @@ def test_finding_query_by_resolution():
 
 def test_finding_resolve():
     """Test resolving a finding."""
-    with TestContext():
+    with PlanContext():
         add_result = run_script(
             SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'build-error', '--title', 'Compilation error', '--detail', 'Missing import'
         )
@@ -166,7 +163,7 @@ def test_finding_resolve():
 def test_finding_resolve_all_statuses():
     """Test all resolution statuses."""
     resolutions = ['pending', 'fixed', 'suppressed', 'accepted']
-    with TestContext():
+    with PlanContext():
         for res in resolutions:
             add_result = run_script(
                 SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'bug', '--title', f'Bug for {res}', '--detail', 'd'
@@ -184,7 +181,7 @@ def test_finding_resolve_all_statuses():
 
 def test_finding_promote():
     """Test promoting a finding."""
-    with TestContext(plan_id='finding-promote'):
+    with PlanContext(plan_id='finding-promote'):
         add_result = run_script(
             SCRIPT_PATH,
             'add',
@@ -205,7 +202,7 @@ def test_finding_promote():
 
 def test_finding_promote_to_lessons():
     """Test promoting to lessons learned."""
-    with TestContext():
+    with PlanContext():
         add_result = run_script(
             SCRIPT_PATH,
             'add',
@@ -225,7 +222,7 @@ def test_finding_promote_to_lessons():
 
 def test_finding_query_promoted():
     """Test filtering by promoted status."""
-    with TestContext():
+    with PlanContext():
         # Add and promote one
         add_result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'tip', '--title', 'Promoted tip', '--detail', 'd')
         hash_id = str(parse_toon(add_result.stdout)['hash_id'])
@@ -254,7 +251,7 @@ def test_finding_query_promoted():
 
 def test_qgate_add_basic():
     """Test adding a basic Q-Gate finding."""
-    with TestContext(plan_id='qgate-add-basic'):
+    with PlanContext(plan_id='qgate-add-basic'):
         result = run_script(
             SCRIPT_PATH,
             'qgate',
@@ -280,7 +277,7 @@ def test_qgate_add_basic():
 
 def test_qgate_add_with_options():
     """Test adding Q-Gate finding with all options."""
-    with TestContext(plan_id='qgate-add-opts'):
+    with PlanContext(plan_id='qgate-add-opts'):
         result = run_script(
             SCRIPT_PATH,
             'qgate',
@@ -312,7 +309,7 @@ def test_qgate_add_with_options():
 
 def test_qgate_add_invalid_phase():
     """Test that invalid phase is rejected."""
-    with TestContext(plan_id='qgate-inv-phase'):
+    with PlanContext(plan_id='qgate-inv-phase'):
         result = run_script(
             SCRIPT_PATH,
             'qgate',
@@ -334,7 +331,7 @@ def test_qgate_add_invalid_phase():
 
 def test_qgate_add_invalid_source():
     """Test that invalid source is rejected."""
-    with TestContext(plan_id='qgate-inv-source'):
+    with PlanContext(plan_id='qgate-inv-source'):
         result = run_script(
             SCRIPT_PATH,
             'qgate',
@@ -361,7 +358,7 @@ def test_qgate_add_invalid_source():
 
 def test_qgate_query_empty():
     """Test querying with no Q-Gate findings."""
-    with TestContext(plan_id='qgate-query-empty'):
+    with PlanContext(plan_id='qgate-query-empty'):
         result = run_script(SCRIPT_PATH, 'qgate', 'query', '--plan-id', 'qgate-query-empty', '--phase', '3-outline')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -372,7 +369,7 @@ def test_qgate_query_empty():
 
 def test_qgate_query_by_resolution():
     """Test filtering Q-Gate findings by resolution."""
-    with TestContext(plan_id='qgate-query-res'):
+    with PlanContext(plan_id='qgate-query-res'):
         # Add two findings
         run_script(
             SCRIPT_PATH,
@@ -416,7 +413,7 @@ def test_qgate_query_by_resolution():
 
 def test_qgate_query_by_source():
     """Test filtering Q-Gate findings by source."""
-    with TestContext(plan_id='qgate-query-src'):
+    with PlanContext(plan_id='qgate-query-src'):
         run_script(
             SCRIPT_PATH,
             'qgate', 'add', '--plan-id', 'qgate-query-src',
@@ -442,7 +439,7 @@ def test_qgate_query_by_source():
 
 def test_qgate_per_phase_isolation():
     """Test that Q-Gate findings are isolated per phase."""
-    with TestContext(plan_id='qgate-phase-iso'):
+    with PlanContext(plan_id='qgate-phase-iso'):
         # Add to phase 3
         run_script(
             SCRIPT_PATH,
@@ -480,7 +477,7 @@ def test_qgate_per_phase_isolation():
 
 def test_qgate_resolve_taken_into_account():
     """Test resolving a Q-Gate finding with taken_into_account."""
-    with TestContext(plan_id='qgate-resolve-tia'):
+    with PlanContext(plan_id='qgate-resolve-tia'):
         add_result = run_script(
             SCRIPT_PATH,
             'qgate', 'add', '--plan-id', 'qgate-resolve-tia',
@@ -503,7 +500,7 @@ def test_qgate_resolve_taken_into_account():
 def test_qgate_resolve_all_statuses():
     """Test all resolution statuses for Q-Gate findings."""
     resolutions = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account']
-    with TestContext(plan_id='qgate-resolve-all-st'):
+    with PlanContext(plan_id='qgate-resolve-all-st'):
         for res in resolutions:
             add_result = run_script(
                 SCRIPT_PATH,
@@ -528,7 +525,7 @@ def test_qgate_resolve_all_statuses():
 
 def test_qgate_clear():
     """Test clearing Q-Gate findings for a phase."""
-    with TestContext(plan_id='qgate-clear'):
+    with PlanContext(plan_id='qgate-clear'):
         run_script(
             SCRIPT_PATH,
             'qgate', 'add', '--plan-id', 'qgate-clear',
@@ -556,7 +553,7 @@ def test_qgate_clear():
 
 def test_qgate_clear_empty():
     """Test clearing when no Q-Gate findings exist."""
-    with TestContext(plan_id='qgate-clear-empty'):
+    with PlanContext(plan_id='qgate-clear-empty'):
         result = run_script(SCRIPT_PATH, 'qgate', 'clear', '--plan-id', 'qgate-clear-empty', '--phase', '3-outline')
         assert result.success
         data = parse_toon(result.stdout)
@@ -566,7 +563,7 @@ def test_qgate_clear_empty():
 
 def test_qgate_user_review_source():
     """Test that user_review findings work end-to-end."""
-    with TestContext(plan_id='qgate-user-review'):
+    with PlanContext(plan_id='qgate-user-review'):
         # Add user review finding
         add_result = run_script(
             SCRIPT_PATH,
@@ -617,7 +614,7 @@ def test_qgate_user_review_source():
 
 def test_qgate_add_dedup_pending():
     """Test that adding same title twice returns deduplicated, only 1 record."""
-    with TestContext(plan_id='qgate-dedup-pend'):
+    with PlanContext(plan_id='qgate-dedup-pend'):
         result1 = run_script(
             SCRIPT_PATH,
             'qgate', 'add', '--plan-id', 'qgate-dedup-pend',
@@ -651,7 +648,7 @@ def test_qgate_add_dedup_pending():
 
 def test_qgate_add_reopen_resolved():
     """Test that re-adding a resolved finding reopens it."""
-    with TestContext(plan_id='qgate-dedup-reopen'):
+    with PlanContext(plan_id='qgate-dedup-reopen'):
         # Add finding
         add_result = run_script(
             SCRIPT_PATH,
@@ -692,7 +689,7 @@ def test_qgate_add_reopen_resolved():
 
 def test_qgate_add_different_titles_not_deduped():
     """Test that different titles create separate findings."""
-    with TestContext(plan_id='qgate-dedup-diff'):
+    with PlanContext(plan_id='qgate-dedup-diff'):
         run_script(
             SCRIPT_PATH,
             'qgate', 'add', '--plan-id', 'qgate-dedup-diff',
@@ -720,7 +717,7 @@ def test_qgate_add_different_titles_not_deduped():
 
 def test_finding_resolve_taken_into_account():
     """Test that taken_into_account resolution works for regular findings too."""
-    with TestContext():
+    with PlanContext():
         add_result = run_script(
             SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--type', 'triage', '--title', 'Reviewed finding', '--detail', 'd',
         )

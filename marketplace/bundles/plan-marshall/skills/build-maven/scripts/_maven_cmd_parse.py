@@ -10,37 +10,19 @@ Usage (internal):
     issues, test_summary, build_status = parse_log("path/to/build.log")
 """
 
-import json
 import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary, generate_summary_from_issues
-from plan_logging import log_entry
-
-
-def detect_build_status(content: str) -> str:
-    """Detect overall build status from log content."""
-    if 'BUILD SUCCESS' in content:
-        return 'SUCCESS'
-    if 'BUILD FAILURE' in content:
-        return 'FAILURE'
-    if re.search(r'^\[ERROR\]', content, re.MULTILINE):
-        return 'FAILURE'
-    return 'SUCCESS'
-
-
-def extract_duration(content: str) -> int | None:
-    """Extract total build time in milliseconds."""
-    match = re.search(r'Total time:\s+([\d.]+)\s+s', content)
-    if match:
-        return int(float(match.group(1)) * 1000)
-    match = re.search(r'Total time:\s+(\d+):(\d+)\s+min', content)
-    if match:
-        return (int(match.group(1)) * 60 + int(match.group(2))) * 1000
-    return None
-
-
+from _build_parse import (
+    SEVERITY_ERROR,
+    SEVERITY_WARNING,
+    Issue,
+    UnitTestSummary,
+)
+from _build_parse import (
+    detect_build_status as _detect_build_status_base,
+)
 
 
 def categorize_issue(message: str) -> str:
@@ -128,8 +110,8 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     content = path.read_text(encoding='utf-8', errors='replace')
 
     issues = _extract_issues_as_dataclass(content)
-    test_summary = _extract_test_summary_as_dataclass(content)
-    build_status = detect_build_status(content)
+    test_summary = _extract_test_summary(content)
+    build_status = _detect_build_status(content)
 
     return issues, test_summary, build_status
 
@@ -191,100 +173,45 @@ def _extract_issues_as_dataclass(content: str) -> list[Issue]:
     return issues
 
 
-def _extract_test_summary_as_dataclass(content: str) -> UnitTestSummary | None:
-    """Extract test execution summary as UnitTestSummary dataclass.
+def _detect_build_status(content: str) -> str:
+    """Detect Maven build status.
 
-    Args:
-        content: Maven log file content.
-
-    Returns:
-        UnitTestSummary dataclass if tests were run, None otherwise.
-
-    Note:
-        Maven reports "Failures" (assertion failures) and "Errors" (exceptions)
-        separately. This combines them into the "failed" count per UnitTestSummary spec.
+    Maven-specific: also checks for [ERROR] lines as failure indicator.
     """
+    status = _detect_build_status_base(
+        content,
+        success_markers=['BUILD SUCCESS'],
+        failure_markers=['BUILD FAILURE'],
+        default='SUCCESS',
+    )
+    if status == 'SUCCESS' and re.search(r'^\[ERROR\]', content, re.MULTILINE):
+        return 'FAILURE'
+    return status
+
+
+def _extract_test_summary(content: str) -> UnitTestSummary | None:
+    """Extract Maven test summary.
+
+    Maven reports Failures and Errors separately; we combine them into failed.
+    Uses shared extract_test_summary with custom post-processing.
+    """
+    # Maven format: Tests run: X, Failures: Y, Errors: Z, Skipped: W
     pattern = r'Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)'
     matches = list(re.finditer(pattern, content))
-
     if not matches:
         return None
 
-    # Use the last match (final summary)
     m = matches[-1]
-    tests_run = int(m.group(1))
+    total = int(m.group(1))
     failures = int(m.group(2))
     errors = int(m.group(3))
     skipped = int(m.group(4))
-
-    # Maven distinguishes failures from errors; we combine them
     failed = failures + errors
-    passed = tests_run - failed - skipped
 
     return UnitTestSummary(
-        passed=passed,
+        passed=total - failed - skipped,
         failed=failed,
         skipped=skipped,
-        total=tests_run,
+        total=total,
     )
-
-
-def cmd_parse(args):
-    """Handle parse subcommand.
-
-    Uses parse_log() for consistent Issue-based parsing, then formats
-    the result as a structured JSON report.
-    """
-    log_path = Path(args.log)
-    if not log_path.exists():
-        log_entry('script', 'global', 'ERROR', f'[MAVEN-PARSE] Log file not found: {args.log}')
-        print(json.dumps({'status': 'error', 'error': f'Log file not found: {args.log}'}, indent=2))
-        return 1
-
-    try:
-        issues, test_summary, build_status = parse_log(log_path)
-    except Exception as e:
-        log_entry('script', 'global', 'ERROR', f'[MAVEN-PARSE] Failed to parse log file: {e}')
-        print(json.dumps({'status': 'error', 'error': f'Failed to parse log file: {str(e)}'}, indent=2))
-        return 1
-
-    # Apply mode filtering
-    if args.mode == 'errors':
-        issues = [i for i in issues if i.severity == SEVERITY_ERROR]
-    elif args.mode == 'no-openrewrite':
-        issues = [i for i in issues if i.category != 'openrewrite_info']
-
-    # Build summary from Issue objects
-    summary = generate_summary_from_issues(issues)
-
-    # Extract duration from log content
-    content = log_path.read_text(encoding='utf-8', errors='replace')
-    duration = extract_duration(content)
-
-    tests_run = test_summary.total if test_summary else 0
-    tests_failed = test_summary.failed if test_summary else 0
-
-    log_entry(
-        'script',
-        'global',
-        'INFO',
-        f'[MAVEN-PARSE] Parsed log: status={build_status}, issues={len(issues)}, tests_run={tests_run}',
-    )
-
-    result = {
-        'status': 'success' if build_status == 'SUCCESS' else 'error',
-        'data': {
-            'build_status': build_status,
-            'issues': [i.to_dict() for i in issues],
-            'summary': summary,
-        },
-        'metrics': {
-            'duration_ms': duration,
-            'tests_run': tests_run,
-            'tests_failed': tests_failed,
-        },
-    }
-    print(json.dumps(result, indent=2))
-    return 0
-
 

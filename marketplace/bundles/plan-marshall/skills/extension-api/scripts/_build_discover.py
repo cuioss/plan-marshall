@@ -355,7 +355,7 @@ def discover_packages(
                 pkg_dir = src_file.parent
                 source_files_by_dir.setdefault(pkg_dir, []).append(src_file)
 
-        for pkg_dir, files in source_files_by_dir.items():
+        for pkg_dir, _files in source_files_by_dir.items():
             pkg_name = str(pkg_dir.relative_to(source_path)).replace('/', '.').replace('\\', '.')
 
             # Skip root "." package

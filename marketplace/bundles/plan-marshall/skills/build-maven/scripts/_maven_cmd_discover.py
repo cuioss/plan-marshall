@@ -40,12 +40,14 @@ if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
 
 from extension_base import (  # noqa: E402
-    PROFILE_PATTERNS,
     build_module_base,
     count_source_files,
     discover_descriptors,
     discover_packages,
     discover_sources,
+    filter_command_line_profiles,
+    filter_skip_profiles,
+    map_canonical_profiles,
 )
 
 # =============================================================================
@@ -275,8 +277,6 @@ def _parse_coordinates_from_maven_output(log_content: str) -> dict:
 # Profile Extraction (via Maven help:all-profiles)
 # =============================================================================
 
-# PROFILE_PATTERNS imported above from extension_base for canonical classification
-
 
 def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
     """Get coordinates, profiles and dependencies using Maven commands.
@@ -378,7 +378,7 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
     log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] called with {len(raw_profiles)} raw profiles')
 
     # 1. Filter to command-line only (Active: false)
-    profiles = _filter_command_line_profiles(raw_profiles)
+    profiles = filter_command_line_profiles(raw_profiles)
     log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] After command-line filter: {len(profiles)} profiles')
 
     # 2. Get skip list and mapping from configuration (if available)
@@ -409,13 +409,13 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
 
     # 3. Apply skip list
     before_skip = len(profiles)
-    profiles = _filter_skip_profiles(profiles, skip_list)
+    profiles = filter_skip_profiles(profiles, skip_list)
     skipped_count = before_skip - len(profiles)
     if skipped_count > 0:
         log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Filtered out {skipped_count} profiles via skip list')
 
     # 4. Map to canonical names
-    profiles = _map_canonical_profiles(profiles, explicit_mapping)
+    profiles = map_canonical_profiles(profiles, explicit_mapping)
     log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Final profile count: {len(profiles)}')
 
     return profiles
@@ -450,70 +450,6 @@ def _parse_profiles_from_maven_output(log_content: str) -> list:
     return profiles
 
 
-def _filter_command_line_profiles(raw_profiles: list) -> list:
-    """Filter profiles to command-line activated only.
-
-    Removes profiles that are default-activated (Active: true in Maven output).
-    Only profiles with Active: false are kept - these require explicit -P activation.
-
-    Args:
-        raw_profiles: List of profile dicts with id and is_active fields
-
-    Returns:
-        List of profile dicts with is_active field removed
-    """
-    return [{'id': p['id']} for p in raw_profiles if not p.get('is_active', False)]
-
-
-def _filter_skip_profiles(profiles: list, skip_list: list | None) -> list:
-    """Filter out profiles in the skip list.
-
-    Args:
-        profiles: List of profile dicts with id field
-        skip_list: List of profile IDs to exclude (None or empty keeps all)
-
-    Returns:
-        Filtered list of profile dicts
-    """
-    if not skip_list:
-        return profiles
-
-    # Normalize skip list entries (trim whitespace)
-    skip_set = {s.strip() for s in skip_list}
-
-    return [p for p in profiles if p['id'] not in skip_set]
-
-
-def _map_canonical_profiles(profiles: list, explicit_mapping: dict | None) -> list:
-    """Map profiles to canonical command names.
-
-    Resolution order:
-    1. Explicit mapping (from config) takes precedence
-    2. PROFILE_PATTERNS aliases from extension_base.py
-
-    Args:
-        profiles: List of profile dicts with id field
-        explicit_mapping: Dict mapping profile_id -> canonical (can be None)
-
-    Returns:
-        List of profile dicts with canonical field added
-    """
-    mapping = explicit_mapping or {}
-    result = []
-
-    for profile in profiles:
-        profile_id = profile['id']
-
-        # 1. Check explicit mapping first
-        if profile_id in mapping:
-            canonical = mapping[profile_id]
-        else:
-            # 2. Fall back to alias matching
-            canonical = _classify_profile(profile_id)
-
-        result.append({'id': profile_id, 'canonical': canonical})
-
-    return result
 
 
 def _parse_dependencies_from_maven_output(log_content: str) -> list:
@@ -554,31 +490,6 @@ def _parse_dependencies_from_maven_output(log_content: str) -> list:
     return dependencies
 
 
-def _classify_profile(profile_id: str) -> str:
-    """Classify a profile ID to its canonical command name.
-
-    Uses PROFILE_PATTERNS from extension_base.py which maps aliases to
-    canonical command names. Only exact matches are supported - no substring
-    or partial matching.
-
-    Args:
-        profile_id: The profile identifier (e.g., "pre-commit", "jacoco")
-
-    Returns:
-        Canonical command name (e.g., "quality-gate", "coverage") or "NO-MATCH-FOUND"
-    """
-    # PROFILE_PATTERNS is alias -> canonical (from extension_base.py)
-    # Exact match required - no substring matching
-    if profile_id in PROFILE_PATTERNS:
-        return PROFILE_PATTERNS[profile_id]  # type: ignore[no-any-return]
-
-    # Case-insensitive exact match
-    profile_lower = profile_id.lower()
-    for alias, canonical in PROFILE_PATTERNS.items():
-        if alias.lower() == profile_lower:
-            return canonical  # type: ignore[no-any-return]
-
-    return 'NO-MATCH-FOUND'
 
 
 # =============================================================================

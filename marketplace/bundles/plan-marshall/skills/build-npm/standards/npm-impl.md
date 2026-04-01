@@ -246,17 +246,48 @@ PLAYWRIGHT_BASE_URL=http://localhost:3000 npm run test:e2e
 
 ---
 
-## Script Reference
+## Module Discovery
 
-### Primary API: npm_cmd_run.py
+npm module discovery reads `package.json` to detect workspaces and available scripts.
+
+### Workspace Detection
+
+For monorepo projects, the discovery scans `package.json` for a `workspaces` field:
+
+```json
+{
+  "workspaces": ["packages/*", "apps/*"]
+}
+```
+
+Each workspace gets its own module entry with scoped commands.
+
+### Command Generation
+
+Discovery generates canonical commands per module:
+
+| Canonical | npm Command |
+|-----------|-------------|
+| `verify` | `run test` (or `run build && run test`) |
+| `quality-gate` | `run lint` |
+| `compile` | `run build` |
+| `module-tests` | `run test` |
+| `clean` | `run clean` (if script exists) |
+
+Commands are only generated for scripts present in `package.json`.
+
+---
+
+## Script Reference
 
 **Notation**: `plan-marshall:build-npm:npm`
 
 | Subcommand | Description |
 |------------|-------------|
 | `run` | Execute build and auto-parse on failure (primary API) |
+| `coverage-report` | Parse JavaScript coverage report |
 
-**Parameters:**
+### run Parameters
 
 | Parameter | Required | Default | Description |
 |-----------|----------|---------|-------------|
@@ -274,16 +305,6 @@ python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
     --command-args "run test" --timeout 180
 ```
 
-### Internal Functions
-
-The `npm.py` script exposes these internal functions for use by `extension.py`:
-
-| Function | Description |
-|----------|-------------|
-| `execute_direct()` | Execute npm/npx command with adaptive timeout |
-| `detect_command_type()` | Detect npm vs npx based on command |
-| `get_bash_timeout()` | Calculate outer timeout with buffer |
-
 ---
 
 ## Issue Routing
@@ -300,7 +321,7 @@ The `npm.py` script exposes these internal functions for use by `extension.py`:
 
 ## Coverage Report Paths
 
-The coverage report parser (`_npm_cmd_coverage_report.py`) searches these paths in order:
+The coverage report parser searches these paths in order:
 
 | Path | Format |
 |------|--------|

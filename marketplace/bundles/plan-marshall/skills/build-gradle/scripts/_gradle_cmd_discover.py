@@ -33,9 +33,7 @@ from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from extension_base import (
-    build_module_base,
     count_source_files,
-    discover_packages,
     discover_sources,
     find_readme,
 )

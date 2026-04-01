@@ -87,6 +87,17 @@ Generate with: `pytest --cov --cov-report=xml`
 
 ---
 
+## Build Status Determination
+
+| Exit Code | Status |
+|-----------|--------|
+| 0 | SUCCESS |
+| != 0 | FAILURE |
+
+Python builds always default to FAILURE status; a zero exit code is required for success.
+
+---
+
 ## Log File Handling
 
 Build output is captured to timestamped log files:
@@ -96,3 +107,61 @@ Build output is captured to timestamped log files:
 ```
 
 Scope is always `default` (Python builds don't have module-scoped log files like Maven's `-pl`).
+
+---
+
+## Module Discovery
+
+Python module discovery uses the pyprojectx project structure. Modules are directories containing test subdirectories matching the `test/` or `tests/` pattern.
+
+### Command Generation
+
+Discovery generates canonical commands per module:
+
+| Canonical | pyprojectx Command |
+|-----------|-------------------|
+| `verify` | `verify {module}` |
+| `quality-gate` | `quality-gate {module}` |
+| `compile` | `compile {module}` |
+| `module-tests` | `module-tests {module}` |
+| `coverage` | `coverage {module}` |
+| `clean` | `clean` |
+
+Omit `{module}` to run against all modules.
+
+---
+
+## Script Reference
+
+**Notation**: `plan-marshall:build-python:python_build`
+
+| Subcommand | Description |
+|------------|-------------|
+| `run` | Execute build and auto-parse on failure (primary API) |
+| `coverage-report` | Parse coverage.py XML report |
+
+### run Parameters
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `--command-args` | Yes | - | Canonical command (e.g., "verify", "module-tests core") |
+| `--format` | No | toon | Output format: toon or json |
+| `--mode` | No | actionable | Output mode: actionable, structured, errors |
+| `--timeout` | No | 300 | Build timeout in seconds |
+
+**Example:**
+```bash
+python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
+    --command-args "module-tests core" --timeout 600
+```
+
+---
+
+## Issue Routing
+
+| Issue Type | Fix Strategy |
+|------------|-------------|
+| `type_error` | Fix mypy type annotations |
+| `lint_error` | Fix ruff violations or configure exceptions |
+| `test_failure` | Fix test assertions or implementation |
+| `import_error` | Fix module imports or dependencies |

@@ -19,13 +19,16 @@ Subcommands:
 """
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
+from _build_parse import SEVERITY_ERROR, generate_summary_from_issues
 from _build_shared import add_coverage_subparser, add_run_subparser
 from _markers_search import cmd_search_markers
-from _maven_cmd_parse import cmd_parse
+from _maven_cmd_parse import parse_log
 from _maven_execute import cmd_run
 
 # --- Tool-specific configuration inlined from former wrapper files ---
@@ -44,6 +47,37 @@ cmd_check_warnings = create_check_warnings_handler(
     filter_severity='WARNING',
     supports_patterns_arg=True,
 )
+
+
+def _cmd_parse(args):
+    """Handle parse subcommand using shared parse_log."""
+    log_path = Path(args.log)
+    if not log_path.exists():
+        print(json.dumps({'status': 'error', 'error': f'Log file not found: {args.log}'}, indent=2))
+        return 1
+
+    issues, test_summary, build_status = parse_log(log_path)
+
+    if args.mode == 'errors':
+        issues = [i for i in issues if i.severity == SEVERITY_ERROR]
+    elif args.mode == 'no-openrewrite':
+        issues = [i for i in issues if i.category != 'openrewrite_info']
+
+    summary = generate_summary_from_issues(issues)
+    result = {
+        'status': 'success' if build_status == 'SUCCESS' else 'error',
+        'data': {
+            'build_status': build_status,
+            'issues': [i.to_dict() for i in issues],
+            'summary': summary,
+        },
+        'metrics': {
+            'tests_run': test_summary.total if test_summary else 0,
+            'tests_failed': test_summary.failed if test_summary else 0,
+        },
+    }
+    print(json.dumps(result, indent=2))
+    return 0
 
 
 def main():
@@ -69,7 +103,7 @@ def main():
         default='structured',
         help='Output mode',
     )
-    parse_parser.set_defaults(func=cmd_parse)
+    parse_parser.set_defaults(func=_cmd_parse)
 
     # search-markers subcommand
     markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')

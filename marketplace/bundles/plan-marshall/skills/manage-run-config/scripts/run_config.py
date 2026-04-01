@@ -217,8 +217,7 @@ def get_run_config_path(project_dir: str | None = None) -> Path:
     or current directory if env var is not set.
 
     Args:
-        project_dir: Override directory (for Python API backward compatibility).
-                    Ignored if PLAN_BASE_DIR env var is set.
+        project_dir: Override directory. Ignored if PLAN_BASE_DIR env var is set.
     """
     base = os.environ.get('PLAN_BASE_DIR')
     if base is None:

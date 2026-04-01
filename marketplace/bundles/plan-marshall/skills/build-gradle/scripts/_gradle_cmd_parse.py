@@ -10,13 +10,20 @@ Usage (internal):
     issues, test_summary, build_status = parse_log("path/to/build.log")
 """
 
-import json
 import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary, generate_summary_from_issues
-from plan_logging import log_entry
+from _build_parse import (
+    SEVERITY_ERROR,
+    SEVERITY_WARNING,
+    Issue,
+    UnitTestSummary,
+    extract_test_summary,
+)
+from _build_parse import (
+    detect_build_status as _detect_build_status_base,
+)
 
 # Pattern definitions for categorizing build output
 COMPILATION_PATTERNS = [
@@ -93,28 +100,6 @@ def extract_file_location(line: str) -> tuple[str, int, int]:
     return '', 0, 0
 
 
-def parse_metrics(lines: list[str]) -> dict:
-    """Extract build metrics from log."""
-    metrics = {'duration_ms': 0, 'tasks_executed': 0, 'tests_run': 0, 'tests_failed': 0}
-    for line in lines:
-        duration_match = re.search(r'BUILD (?:SUCCESSFUL|FAILED) in (?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?', line)
-        if duration_match:
-            hours, minutes, seconds = (
-                int(duration_match.group(1) or 0),
-                int(duration_match.group(2) or 0),
-                int(duration_match.group(3) or 0),
-            )
-            metrics['duration_ms'] = (hours * 3600 + minutes * 60 + seconds) * 1000
-        tasks_match = re.search(r'(\d+) actionable tasks?: (\d+) executed', line)
-        if tasks_match:
-            metrics['tasks_executed'] = int(tasks_match.group(2))
-        test_match = re.search(r'(\d+) tests? completed(?:, (\d+) failed)?(?:, (\d+) skipped)?', line)
-        if test_match:
-            metrics['tests_run'] = int(test_match.group(1))
-            metrics['tests_failed'] = int(test_match.group(2) or 0)
-    return metrics
-
-
 # =============================================================================
 # BuildParser Protocol Implementation
 # =============================================================================
@@ -142,28 +127,20 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     lines = content.split('\n')
 
     issues = _extract_issues_as_dataclass(lines)
-    test_summary = _extract_test_summary_as_dataclass(lines)
-    build_status = _detect_build_status(lines)
+    test_summary = _extract_test_summary(content)
+    build_status = _detect_build_status(content)
 
     return issues, test_summary, build_status
 
 
-def _detect_build_status(lines: list[str]) -> str:
-    """Determine overall build status from log lines.
-
-    Args:
-        lines: Log file lines.
-
-    Returns:
-        "SUCCESS" or "FAILURE" (never UNKNOWN per contract).
-    """
-    for line in reversed(lines[-50:]):
-        if 'BUILD SUCCESSFUL' in line:
-            return 'SUCCESS'
-        if 'BUILD FAILED' in line:
-            return 'FAILURE'
-    # If neither found, assume failure (conservative)
-    return 'FAILURE'
+def _detect_build_status(content: str) -> str:
+    """Detect Gradle build status using shared detector."""
+    return _detect_build_status_base(
+        content,
+        success_markers=['BUILD SUCCESSFUL'],
+        failure_markers=['BUILD FAILED'],
+        default='FAILURE',
+    )
 
 
 def _extract_issues_as_dataclass(lines: list[str]) -> list[Issue]:
@@ -226,110 +203,15 @@ def _extract_issues_as_dataclass(lines: list[str]) -> list[Issue]:
     return issues
 
 
-def _extract_test_summary_as_dataclass(lines: list[str]) -> UnitTestSummary | None:
-    """Extract test execution summary as UnitTestSummary dataclass.
+def _extract_test_summary(content: str) -> UnitTestSummary | None:
+    """Extract Gradle test summary using shared extractor.
 
-    Args:
-        lines: Log file lines.
-
-    Returns:
-        UnitTestSummary dataclass if tests were run, None otherwise.
-
-    Note:
-        Gradle format: "5 tests completed, 2 failed" or "5 tests completed, 2 failed, 1 skipped"
+    Gradle format: "5 tests completed, 2 failed" or "5 tests completed, 2 failed, 1 skipped"
     """
-    # Look for test completion line
-    pattern = r'(\d+) tests? completed(?:, (\d+) failed)?(?:, (\d+) skipped)?'
-
-    for line in lines:
-        match = re.search(pattern, line)
-        if match:
-            total = int(match.group(1))
-            failed = int(match.group(2) or 0)
-            skipped = int(match.group(3) or 0)
-            passed = total - failed - skipped
-
-            return UnitTestSummary(
-                passed=passed,
-                failed=failed,
-                skipped=skipped,
-                total=total,
-            )
-
-    return None
-
-
-def cmd_parse(args):
-    """Handle parse subcommand.
-
-    Uses parse_log() for consistent Issue-based parsing, then formats
-    the result as a structured JSON report.
-    """
-    log_path = Path(args.log)
-    if not log_path.exists():
-        log_entry('script', 'global', 'ERROR', f'[GRADLE-PARSE] Log file not found: {args.log}')
-        print(
-            json.dumps(
-                {'status': 'error', 'error': 'file_not_found', 'message': f'Log file not found: {args.log}'}, indent=2
-            )
-        )
-        return 1
-
-    try:
-        issues, test_summary, build_status = parse_log(log_path)
-    except Exception as e:
-        log_entry('script', 'global', 'ERROR', f'[GRADLE-PARSE] Failed to parse log file: {e}')
-        print(json.dumps({'status': 'error', 'error': f'Failed to parse log file: {str(e)}'}, indent=2))
-        return 1
-
-    # Apply mode filtering
-    if args.mode == 'errors':
-        issues = [i for i in issues if i.severity == SEVERITY_ERROR]
-
-    # Build summary from Issue objects (shared with Maven)
-    summary = generate_summary_from_issues(issues)
-
-    # Extract metrics from log content
-    content = log_path.read_text(encoding='utf-8', errors='replace')
-    lines = content.split('\n')
-    metrics = parse_metrics(lines)
-    if test_summary:
-        metrics['tests_run'] = test_summary.total
-        metrics['tests_failed'] = test_summary.failed
-
-    log_entry(
-        'script',
-        'global',
-        'INFO',
-        f'[GRADLE-PARSE] Parsed log: status={build_status}, issues={len(issues)}, tests_run={metrics["tests_run"]}',
+    return extract_test_summary(
+        content,
+        r'(\d+) tests? completed(?:, (\d+) failed)?(?:, (\d+) skipped)?',
+        group_map={'total': 1, 'failed': 2, 'skipped': 3},
     )
 
-    result = {
-        'status': 'success' if build_status == 'SUCCESS' else 'error',
-        'data': {
-            'build_status': build_status,
-            'issues': [i.to_dict() for i in issues],
-            'summary': summary,
-        },
-        'metrics': metrics,
-    }
 
-    if args.mode == 'default':
-        output_lines = [
-            f'Build Status: {build_status}',
-            f'Duration: {metrics["duration_ms"]}ms',
-            f'Tasks: {metrics["tasks_executed"]} executed',
-            f'Tests: {metrics["tests_run"]} run, {metrics["tests_failed"]} failed',
-            '',
-            'Issues Summary:',
-            f'  Compilation Errors: {summary["compilation_errors"]}',
-            f'  Test Failures: {summary["test_failures"]}',
-            f'  Javadoc Warnings: {summary["javadoc_warnings"]}',
-            f'  OpenRewrite Info: {summary["openrewrite_info"]}',
-            f'  Total: {summary["total_issues"]}',
-        ]
-        print('\n'.join(output_lines))
-        return 0
-
-    print(json.dumps(result, indent=2))
-    return 0

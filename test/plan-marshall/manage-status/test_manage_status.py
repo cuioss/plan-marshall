@@ -15,9 +15,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage_status.p
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-# Alias for backward compatibility
-TestContext = PlanContext
-
 
 # =============================================================================
 # Test: Create Command
@@ -26,7 +23,7 @@ TestContext = PlanContext
 
 def test_create_status():
     """Test creating a status.json with standard 7-phase model."""
-    with TestContext(plan_id='test-plan'):
+    with PlanContext(plan_id='test-plan'):
         result = run_script(
             SCRIPT_PATH,
             'create',
@@ -47,7 +44,7 @@ def test_create_status():
 
 def test_create_status_custom_phases():
     """Test creating a status.json with custom phases."""
-    with TestContext(plan_id='custom-plan'):
+    with PlanContext(plan_id='custom-plan'):
         result = run_script(
             SCRIPT_PATH,
             'create',
@@ -65,7 +62,7 @@ def test_create_status_custom_phases():
 
 def test_create_status_force_overwrite():
     """Test force overwrite of existing status.json."""
-    with TestContext(plan_id='force-plan'):
+    with PlanContext(plan_id='force-plan'):
         # Create first plan
         run_script(
             SCRIPT_PATH,
@@ -96,7 +93,7 @@ def test_create_status_force_overwrite():
 
 def test_create_status_already_exists():
     """Test create fails if status already exists without force."""
-    with TestContext(plan_id='exists-plan'):
+    with PlanContext(plan_id='exists-plan'):
         # Create first plan
         run_script(
             SCRIPT_PATH,
@@ -127,7 +124,7 @@ def test_create_status_already_exists():
 
 def test_create_invalid_plan_id():
     """Test create fails with invalid plan_id."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'create',
@@ -151,7 +148,7 @@ def test_create_invalid_plan_id():
 
 def test_read_status():
     """Test reading status.json."""
-    with TestContext(plan_id='read-plan'):
+    with PlanContext(plan_id='read-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -173,7 +170,7 @@ def test_read_status():
 
 def test_read_not_found():
     """Test read fails for non-existent plan."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
         assert not result.success, 'Expected failure for missing plan'
         data = parse_toon(result.stdout)
@@ -188,7 +185,7 @@ def test_read_not_found():
 
 def test_set_phase():
     """Test setting phase."""
-    with TestContext(plan_id='phase-plan'):
+    with PlanContext(plan_id='phase-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -209,7 +206,7 @@ def test_set_phase():
 
 def test_set_phase_invalid():
     """Test set-phase fails for invalid phase."""
-    with TestContext(plan_id='invalid-phase-plan'):
+    with PlanContext(plan_id='invalid-phase-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -234,7 +231,7 @@ def test_set_phase_invalid():
 
 def test_update_phase():
     """Test updating a specific phase status."""
-    with TestContext(plan_id='update-phase-plan'):
+    with PlanContext(plan_id='update-phase-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -257,7 +254,7 @@ def test_update_phase():
 
 def test_update_phase_not_found():
     """Test update-phase fails for non-existent phase."""
-    with TestContext(plan_id='update-notfound-plan'):
+    with PlanContext(plan_id='update-notfound-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -291,7 +288,7 @@ def test_update_phase_not_found():
 
 def test_progress_initial():
     """Test progress calculation for initial state."""
-    with TestContext(plan_id='progress-plan'):
+    with PlanContext(plan_id='progress-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -313,7 +310,7 @@ def test_progress_initial():
 
 def test_progress_after_completion():
     """Test progress calculation after completing phases."""
-    with TestContext(plan_id='progress-done-plan'):
+    with PlanContext(plan_id='progress-done-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -345,7 +342,7 @@ def test_progress_after_completion():
 
 def test_metadata_set():
     """Test setting a metadata field."""
-    with TestContext(plan_id='metadata-plan'):
+    with PlanContext(plan_id='metadata-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -376,7 +373,7 @@ def test_metadata_set():
 
 def test_metadata_get():
     """Test getting a metadata field."""
-    with TestContext(plan_id='metadata-get-plan'):
+    with PlanContext(plan_id='metadata-get-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -412,7 +409,7 @@ def test_metadata_get():
 
 def test_metadata_get_not_found():
     """Test getting a non-existent metadata field."""
-    with TestContext(plan_id='metadata-notfound-plan'):
+    with PlanContext(plan_id='metadata-notfound-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -434,7 +431,7 @@ def test_metadata_get_not_found():
 
 def test_metadata_update_existing():
     """Test updating an existing metadata field."""
-    with TestContext(plan_id='metadata-update-plan'):
+    with PlanContext(plan_id='metadata-update-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -482,7 +479,7 @@ def test_metadata_update_existing():
 
 def test_get_context():
     """Test get-context returns combined status context."""
-    with TestContext(plan_id='context-plan'):
+    with PlanContext(plan_id='context-plan'):
         run_script(
             SCRIPT_PATH,
             'create',
@@ -524,7 +521,7 @@ def test_get_context():
 
 def test_get_context_not_found():
     """Test get-context with missing plan."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
         assert not result.success, 'Expected failure for missing plan'
 
@@ -536,7 +533,7 @@ def test_get_context_not_found():
 
 def test_json_storage_format(tmp_path):
     """Test that status is stored in JSON format."""
-    with TestContext(plan_id='json-plan') as ctx:
+    with PlanContext(plan_id='json-plan') as ctx:
         run_script(
             SCRIPT_PATH,
             'create',
@@ -561,7 +558,7 @@ def test_json_storage_format(tmp_path):
 
 def test_json_phases_structure(tmp_path):
     """Test that phases are stored with correct structure."""
-    with TestContext(plan_id='phases-plan') as ctx:
+    with PlanContext(plan_id='phases-plan') as ctx:
         run_script(
             SCRIPT_PATH,
             'create',
@@ -584,7 +581,7 @@ def test_json_phases_structure(tmp_path):
 
 def test_json_metadata_structure(tmp_path):
     """Test that metadata is stored correctly."""
-    with TestContext(plan_id='metadata-json-plan') as ctx:
+    with PlanContext(plan_id='metadata-json-plan') as ctx:
         run_script(
             SCRIPT_PATH,
             'create',

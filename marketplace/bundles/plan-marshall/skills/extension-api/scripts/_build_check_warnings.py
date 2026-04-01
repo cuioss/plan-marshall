@@ -104,13 +104,15 @@ def cmd_check_warnings_base(
 
     categorized = categorize_warnings(warnings, patterns, **classify_kwargs)
     total = sum(len(v) for v in categorized.values()) if supports_patterns_arg else len(warnings)
+    fixable_count = len(categorized['fixable'])
+    unknown_count = len(categorized['unknown'])
     result = {
         'success': True,
         'total': total,
         'acceptable': len(categorized['acceptable']),
-        'fixable': len(categorized['fixable']),
-        'unknown': len(categorized['unknown']),
+        'fixable': fixable_count,
+        'unknown': unknown_count,
         'categorized': categorized,
     }
     print(json.dumps(result, indent=2))
-    return 1 if result['fixable'] > 0 or result['unknown'] > 0 else 0
+    return 1 if fixable_count > 0 or unknown_count > 0 else 0

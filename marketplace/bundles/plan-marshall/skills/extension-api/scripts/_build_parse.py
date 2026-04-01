@@ -381,3 +381,94 @@ def partition_issues(issues: list[Issue]) -> tuple[list[Issue], list[Issue]]:
     errors = [i for i in issues if i.severity == SEVERITY_ERROR]
     warnings = [i for i in issues if i.severity == SEVERITY_WARNING]
     return errors, warnings
+
+
+# =============================================================================
+# Shared Build Status Detection
+# =============================================================================
+
+
+def detect_build_status(
+    content: str,
+    success_markers: list[str],
+    failure_markers: list[str],
+    *,
+    default: str = 'FAILURE',
+) -> str:
+    """Detect SUCCESS or FAILURE from log content using marker strings.
+
+    Checks failure markers first (conservative), then success markers.
+    Returns default if neither found.
+
+    Args:
+        content: Log file content.
+        success_markers: Strings that indicate success (e.g., "BUILD SUCCESS").
+        failure_markers: Strings that indicate failure (e.g., "BUILD FAILURE").
+        default: Status when no markers match (default: "FAILURE").
+
+    Returns:
+        "SUCCESS" or "FAILURE"
+    """
+    for marker in failure_markers:
+        if marker in content:
+            return 'FAILURE'
+    for marker in success_markers:
+        if marker in content:
+            return 'SUCCESS'
+    return default
+
+
+# =============================================================================
+# Shared Test Summary Extraction
+# =============================================================================
+
+
+def extract_test_summary(
+    content: str,
+    pattern: str,
+    *,
+    group_map: dict[str, int] | None = None,
+) -> UnitTestSummary | None:
+    """Extract test summary from log content using a regex pattern.
+
+    The pattern must capture named or positional groups that map to
+    passed/failed/skipped/total counts. Uses the LAST match in content
+    (build tools often emit per-module summaries; the final one is the aggregate).
+
+    Args:
+        content: Log file content.
+        pattern: Regex pattern with capture groups.
+        group_map: Maps field names to group indices. Supported keys:
+                   "total", "passed", "failed", "skipped".
+                   - If "passed" absent: computed as total - failed - skipped
+                   - If "total" absent: computed as passed + failed + skipped
+                   Default: {"total": 1, "failed": 2, "skipped": 3}
+
+    Returns:
+        UnitTestSummary if pattern matches, None otherwise.
+    """
+    matches = list(re.finditer(pattern, content))
+    if not matches:
+        return None
+
+    m = matches[-1]
+    gmap = group_map or {'total': 1, 'failed': 2, 'skipped': 3}
+
+    def _get(key: str) -> int:
+        idx = gmap.get(key)
+        if idx is None:
+            return 0
+        val = m.group(idx)
+        return int(val) if val else 0
+
+    failed = _get('failed')
+    skipped = _get('skipped')
+
+    if 'total' in gmap:
+        total = _get('total')
+        passed = _get('passed') if 'passed' in gmap else total - failed - skipped
+    else:
+        passed = _get('passed')
+        total = passed + failed + skipped
+
+    return UnitTestSummary(passed=passed, failed=failed, skipped=skipped, total=total)
