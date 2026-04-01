@@ -109,23 +109,32 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 1. **Get Comments**
    If not provided, use Fetch Comments workflow first.
 
-2. **Triage Each Comment**
-   For each unresolved comment:
+2. **Triage All Comments (Batch)**
+   Collect all unresolved comments into a JSON array and triage in a single call:
 
    Script: `plan-marshall:workflow-integration-ci`
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{json}'
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{comment1}, {comment2}, ...]'
    ```
 
-   Script outputs decision:
+   Script outputs all decisions at once:
    ```toon
-   comment_id: ...
-   action: code_change|explain|ignore
-   reason: ...
-   priority: high|medium|low|none
-   suggested_implementation: ...
+   results[N]:
+     - comment_id: ...
+       action: code_change|explain|ignore
+       reason: ...
+       priority: high|medium|low|none
+       suggested_implementation: ...
+   summary:
+     total: N
+     code_change: N
+     explain: N
+     ignore: N
+   status: success
    ```
+
+   For single-comment edge cases, `triage --comment '{json}'` is also available.
 
 3. **Process by Action Type**
 

@@ -21,51 +21,6 @@ def run_sonar_script(args: list) -> tuple:
     return result.stdout, result.stderr, result.returncode
 
 
-class TestSonarPrepareFetch(unittest.TestCase):
-    """Test sonar.py prepare-fetch subcommand."""
-
-    def test_prepare_fetch_with_project_only(self):
-        """Test prepare-fetch with just project key."""
-        stdout, stderr, code = run_sonar_script(['prepare-fetch', '--project', 'my-project'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertEqual(result['project_key'], 'my-project')
-        self.assertIsNone(result['pull_request_id'])
-        self.assertEqual(result['status'], 'success')
-
-    def test_prepare_fetch_with_pr(self):
-        """Test prepare-fetch with project and PR."""
-        stdout, stderr, code = run_sonar_script(['prepare-fetch', '--project', 'my-project', '--pr', '123'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertEqual(result['project_key'], 'my-project')
-        self.assertEqual(str(result['pull_request_id']), '123')
-        self.assertIn('pullRequestId', result['mcp_instruction']['parameters'])
-
-    def test_prepare_fetch_with_severities(self):
-        """Test prepare-fetch with severity filter."""
-        stdout, stderr, code = run_sonar_script(['prepare-fetch', '--project', 'my-project', '--severities', 'BLOCKER,CRITICAL'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        mcp_params = result['mcp_instruction']['parameters']
-        self.assertEqual(mcp_params['severities'], 'BLOCKER,CRITICAL')
-
-    def test_prepare_fetch_missing_project(self):
-        """Test prepare-fetch without required project arg."""
-        stdout, stderr, code = run_sonar_script(['prepare-fetch'])
-        self.assertNotEqual(code, 0)
-        self.assertIn('--project', stderr)
-
-    def test_prepare_fetch_mcp_instruction_structure(self):
-        """Test that MCP instruction is properly formatted."""
-        stdout, stderr, code = run_sonar_script(['prepare-fetch', '--project', 'test-proj', '--pr', '456'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        mcp = result['mcp_instruction']
-        self.assertEqual(mcp['tool'], 'mcp__sonarqube__search_sonar_issues_in_projects')
-        self.assertIn('test-proj', mcp['parameters']['projects'])
-
-
 class TestSonarTriage(unittest.TestCase):
     """Test sonar.py triage subcommand."""
 
@@ -280,6 +235,36 @@ class TestSonarTriageBatch(unittest.TestCase):
         self.assertIn('array', result['error'])
 
 
+class TestSonarRulesConfig(unittest.TestCase):
+    """Test that sonar rules are loaded from sonar-rules.json config."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Import sonar module for direct testing."""
+        from sonar import SUPPRESSABLE_RULES, _FIX_SUGGESTIONS, _TEST_ACCEPTABLE_RULES  # type: ignore[import-not-found]
+        cls.suppressable = SUPPRESSABLE_RULES
+        cls.fix_suggestions = _FIX_SUGGESTIONS
+        cls.test_acceptable = _TEST_ACCEPTABLE_RULES
+
+    def test_suppressable_rules_loaded(self):
+        """Test that suppressable rules are loaded from config."""
+        self.assertIn('java:S1135', self.suppressable)
+        self.assertIn('python:S1481', self.suppressable)
+        self.assertIn('javascript:S1135', self.suppressable)
+
+    def test_fix_suggestions_loaded(self):
+        """Test that fix suggestions are loaded from config."""
+        self.assertIn('java:S2095', self.fix_suggestions)
+        self.assertIn('python:S5131', self.fix_suggestions)
+        self.assertIn('javascript:S3649', self.fix_suggestions)
+
+    def test_test_acceptable_rules_loaded(self):
+        """Test that test-acceptable rules are loaded from config."""
+        self.assertIn('java:S106', self.test_acceptable)
+        self.assertIn('java:S2699', self.test_acceptable)
+        self.assertIn('python:S106', self.test_acceptable)
+
+
 class TestSonarMain(unittest.TestCase):
     """Test sonar.py main entry point."""
 
@@ -293,7 +278,6 @@ class TestSonarMain(unittest.TestCase):
         stdout, stderr, code = run_sonar_script(['--help'])
         # argparse exits with 0 for help
         self.assertEqual(code, 0)
-        self.assertIn('prepare-fetch', stdout)
         self.assertIn('triage', stdout)
         self.assertIn('triage-batch', stdout)
 

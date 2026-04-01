@@ -1,54 +1,53 @@
 #!/usr/bin/env python3
 """
-Sonar workflow operations - fetch issues and triage them.
+Sonar workflow operations - triage issues for fix or suppress.
 
 Usage:
-    sonar.py prepare-fetch --project <key> [options]
     sonar.py triage --issue <json>
+    sonar.py triage-batch --issues <json-array>
     sonar.py --help
 
 Subcommands:
-    prepare-fetch  Generate MCP parameters for fetching Sonar issues
     triage         Triage a single Sonar issue
+    triage-batch   Triage multiple Sonar issues at once
 
 Examples:
-    # Generate MCP fetch parameters for a project
-    sonar.py prepare-fetch --project myproject --pr 123 --severities BLOCKER,CRITICAL
-
     # Triage a single issue
     sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234",...}'
+
+    # Triage multiple issues at once
+    sonar.py triage-batch --issues '[{"key":"I1","rule":"java:S1234",...}, ...]'
 """
 
 import argparse
+import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 from triage_helpers import cmd_triage_batch_handler, cmd_triage_single  # type: ignore[import-not-found]
 
 # ============================================================================
-# TRIAGE CONFIGURATION
+# TRIAGE CONFIGURATION (loaded from sonar-rules.json)
 # ============================================================================
 
-# Rules that are typically suppressable (false positives or intentional).
-# Organized by language prefix for multi-language project support.
-SUPPRESSABLE_RULES = {
-    # Java
-    'java:S1135': 'TODO comments - tracked in issue management',
-    'java:S1068': 'Unused fields - may be for reflection/serialization',
-    'java:S1172': 'Unused parameters - may be for API compatibility',
-    'java:S2139': 'Logger vs exception - design decision',
-    # JavaScript / TypeScript
-    'javascript:S1135': 'TODO comments - tracked in issue management',
-    'typescript:S1135': 'TODO comments - tracked in issue management',
-    'javascript:S1854': 'Unused assignments - may be intentional destructuring',
-    'typescript:S1854': 'Unused assignments - may be intentional destructuring',
-    'javascript:S106': 'console.log - acceptable in CLI/dev code',
-    'typescript:S106': 'console.log - acceptable in CLI/dev code',
-    # Python
-    'python:S1135': 'TODO comments - tracked in issue management',
-    'python:S1481': 'Unused variables - may be for unpacking/convention',
-}
+_RULES_FILE = Path(__file__).parent.parent / 'standards' / 'sonar-rules.json'
+
+
+def _load_rules() -> dict[str, Any]:
+    """Load rule configuration from sonar-rules.json."""
+    try:
+        with open(_RULES_FILE) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        # Fallback to empty config — triage will default to fix action
+        return {}
+
+
+_RULES_CONFIG = _load_rules()
+
+SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
 
 # Severity to priority mapping
 SEVERITY_PRIORITY = {'BLOCKER': 'critical', 'CRITICAL': 'high', 'MAJOR': 'medium', 'MINOR': 'low', 'INFO': 'low'}
@@ -63,105 +62,22 @@ TYPE_BOOST = {
 
 
 # ============================================================================
-# FETCH SUBCOMMAND
-# ============================================================================
-
-
-def generate_mcp_instruction(
-    project: str, pr: str | None = None, severities: str | None = None, types: str | None = None
-) -> dict[str, Any]:
-    """Generate MCP tool invocation instruction for Claude."""
-    parameters: dict[str, Any] = {'projects': [project]}
-    instruction: dict[str, Any] = {'tool': 'mcp__sonarqube__search_sonar_issues_in_projects', 'parameters': parameters}
-
-    if pr:
-        parameters['pullRequestId'] = pr
-
-    if severities:
-        parameters['severities'] = severities
-
-    if types:
-        parameters['types'] = types
-
-    return instruction
-
-
-def create_fetch_output(
-    project: str, pr: str | None = None, severities: str | None = None, types: str | None = None
-) -> dict:
-    """Generate MCP tool instruction and expected response structure.
-
-    This does NOT fetch issues directly — it produces the MCP tool call
-    parameters that the caller (the LLM) must execute via the SonarQube
-    MCP tool to retrieve actual issues.
-    """
-    return {
-        'project_key': project,
-        'pull_request_id': pr,
-        'mcp_instruction': generate_mcp_instruction(project, pr, severities, types),
-        'expected_response_structure': {
-            'key': 'EXAMPLE-001',
-            'type': 'BUG|CODE_SMELL|VULNERABILITY',
-            'severity': 'BLOCKER|CRITICAL|MAJOR|MINOR|INFO',
-            'file': 'src/main/java/Example.java',
-            'line': 42,
-            'rule': 'java:S1234',
-            'message': 'Issue description',
-        },
-        'status': 'success',
-    }
-
-
-def cmd_fetch(args):
-    """Handle fetch subcommand - fetch Sonar issues for a PR."""
-    result = create_fetch_output(args.project, args.pr, args.severities, args.types)
-    print(serialize_toon(result))
-    return 0
-
-
-# ============================================================================
 # TRIAGE SUBCOMMAND
 # ============================================================================
+
+
+_FIX_SUGGESTIONS: dict[str, str] = _RULES_CONFIG.get('fix_suggestions', {})
+_TEST_ACCEPTABLE_RULES: set[str] = set(_RULES_CONFIG.get('test_acceptable_rules', []))
 
 
 def get_fix_suggestion(rule: str, message: str, file: str, line: int) -> str:
     """Generate fix suggestion based on rule.
 
-    Supports Java, JavaScript/TypeScript, and Python rules. Falls back to
+    Supports Java, JavaScript/TypeScript, and Python rules. Rule-to-suggestion
+    mappings are loaded from ``standards/sonar-rules.json``. Falls back to
     the Sonar issue message for unrecognized rules.
     """
-    suggestions = {
-        # Java
-        'java:S2095': 'Wrap resource in try-with-resources block',
-        'java:S1192': 'Extract duplicated string to constant',
-        'java:S3649': 'Use parameterized query instead of string concatenation',
-        'java:S1068': 'Remove unused field or add @SuppressWarnings with reason',
-        'java:S1135': 'Complete TODO or track in issue management system',
-        'java:S106': 'Replace System.out with CuiLogger',
-        'java:S1481': 'Remove unused local variable',
-        'java:S1854': 'Remove useless assignment',
-        'java:S1144': 'Remove unused private method',
-        'java:S5131': 'Sanitize user input to prevent XSS',
-        # JavaScript / TypeScript (shared rule IDs)
-        'javascript:S1192': 'Extract duplicated string to constant',
-        'javascript:S3649': 'Use parameterized query to prevent injection',
-        'javascript:S1481': 'Remove unused local variable',
-        'javascript:S1854': 'Remove useless assignment',
-        'javascript:S106': 'Replace console.log with proper logging',
-        'javascript:S1135': 'Complete TODO or track in issue management system',
-        'typescript:S1192': 'Extract duplicated string to constant',
-        'typescript:S1481': 'Remove unused local variable',
-        'typescript:S1854': 'Remove useless assignment',
-        'typescript:S106': 'Replace console.log with proper logging',
-        'typescript:S1135': 'Complete TODO or track in issue management system',
-        # Python
-        'python:S1481': 'Remove unused local variable',
-        'python:S1135': 'Complete TODO or track in issue management system',
-        'python:S5131': 'Sanitize user input to prevent injection',
-        'python:S930': 'Fix function call argument count',
-    }
-
-    suggestion = suggestions.get(rule, f'Review and fix: {message}')
+    suggestion = _FIX_SUGGESTIONS.get(rule, f'Review and fix: {message}')
     return f'{suggestion} at {file}:{line}'
 
 
@@ -201,14 +117,7 @@ def should_suppress(rule: str, file: str, issue_type: str) -> tuple:
     )
     if is_test_file:
         # Console/stdout usage and missing assertions are acceptable in tests
-        test_acceptable_rules = {
-            'java:S106',
-            'java:S2699',
-            'javascript:S106',
-            'typescript:S106',
-            'python:S106',
-        }
-        if rule in test_acceptable_rules:
+        if rule in _TEST_ACCEPTABLE_RULES:
             return True, 'Test code - acceptable pattern'
 
     return False, None
@@ -288,22 +197,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  sonar.py prepare-fetch --project myproject --pr 123
   sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234"}'
+  sonar.py triage-batch --issues '[{"key":"I1","rule":"java:S1234"}, ...]'
 """,
     )
 
     subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # prepare-fetch subcommand
-    fetch_parser = subparsers.add_parser('prepare-fetch', help='Generate MCP parameters for fetching Sonar issues')
-    fetch_parser.add_argument('--project', required=True, help='SonarQube project key')
-    fetch_parser.add_argument('--pr', help='Pull request ID')
-    fetch_parser.add_argument(
-        '--severities', help='Filter by severities (comma-separated: BLOCKER,CRITICAL,MAJOR,MINOR,INFO)'
-    )
-    fetch_parser.add_argument('--types', help='Filter by types (comma-separated: BUG,CODE_SMELL,VULNERABILITY)')
-    fetch_parser.set_defaults(func=cmd_fetch)
 
     # triage subcommand
     triage_parser = subparsers.add_parser('triage', help='Triage a single Sonar issue')

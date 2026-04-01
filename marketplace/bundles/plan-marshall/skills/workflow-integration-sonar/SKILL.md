@@ -35,8 +35,8 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 ### Workflows (Absorbs 2 Agents)
 
-1. **Prepare Issue Fetch (MCP Delegation)** - Generates MCP tool call parameters for Sonar issue retrieval
-   - Does NOT fetch issues directly — produces parameters for the SonarQube MCP tool
+1. **Fetch Issues (MCP Delegation)** - Constructs and executes MCP tool call for Sonar issue retrieval
+   - Assembles parameters inline (no script needed) and calls the SonarQube MCP tool
    - Replaces: sonar-issue-fetcher agent
 
 2. **Fix Issues Workflow** - Processes and resolves issues
@@ -53,9 +53,9 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 ## Workflows
 
-### Workflow 1: Prepare Issue Fetch (MCP Delegation)
+### Workflow 1: Fetch Issues (MCP Delegation)
 
-**Purpose:** Generate MCP tool call parameters for fetching Sonar issues. Does NOT fetch issues directly — the caller must execute the returned MCP instruction.
+**Purpose:** Fetch Sonar issues via the SonarQube MCP tool. No script needed — construct the MCP call directly from the parameters.
 
 **Input:**
 - **project**: SonarQube project key
@@ -65,40 +65,33 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 **Steps:**
 
-1. **Determine Context**
+1. **Determine Context** (optional — get PR number if not provided)
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
    ```
 
-2. **Fetch Issues**
+2. **Fetch Issues via MCP**
 
-   The fetch script generates MCP tool call parameters — it does NOT fetch
-   issues directly. Use it to construct the call, then execute via MCP:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar prepare-fetch \
-     --project {key} [--pr {id}] [--severities BLOCKER,CRITICAL] [--types BUG,VULNERABILITY]
-   ```
-
-   The script outputs an `mcp_instruction` with the tool name and parameters.
-   Execute the returned instruction via the SonarQube MCP tool:
+   Call the SonarQube MCP tool directly with the assembled parameters:
 
    ```
    mcp__sonarqube__search_sonar_issues_in_projects(
      projects: ["{project_key}"],
-     pullRequestId: "{pr_number}",
-     severities: "{filter}",
-     types: "{types}"
+     pullRequestId: "{pr_number}",       # omit if no PR filter
+     severities: "{BLOCKER,CRITICAL}",   # omit if no severity filter
+     types: "{BUG,VULNERABILITY}"        # omit if no type filter
    )
    ```
 
-3. **Return Structured List**
+3. **Structure the Response**
+
+   Parse the MCP response into a structured list for triage.
 
 **Output:**
 ```toon
 project_key: ...
 pull_request_id: ...
-issues[1]{key,type,severity,file,line,rule,message}:
+issues[N]{key,type,severity,file,line,rule,message}:
   - key: ...
     type: BUG|CODE_SMELL|VULNERABILITY
     severity: BLOCKER|CRITICAL|MAJOR|MINOR|INFO
@@ -125,24 +118,32 @@ statistics:
 1. **Get Issues**
    If not provided, use Fetch Issues workflow first.
 
-2. **Triage Each Issue**
-   For each issue:
+2. **Triage All Issues (Batch)**
+   Collect all issues into a JSON array and triage in a single call:
 
    Script: `plan-marshall:workflow-integration-sonar`
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage --issue '{json}'
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch --issues '[{issue1}, {issue2}, ...]'
    ```
 
-   Script outputs decision:
+   Script outputs all decisions at once:
    ```toon
-   issue_key: ...
-   action: fix|suppress
-   reason: ...
-   priority: critical|high|medium|low
-   suggested_implementation: ...
-   suppression_string: "// NOSONAR rule - reason"
+   results[N]:
+     - issue_key: ...
+       action: fix|suppress
+       reason: ...
+       priority: critical|high|medium|low
+       suggested_implementation: ...
+       suppression_string: "// NOSONAR rule - reason"
+   summary:
+     total: N
+     fix: N
+     suppress: N
+   status: success
    ```
+
+   For single-issue edge cases, `triage --issue '{json}'` is also available.
 
 3. **Process by Priority**
    Order: critical → high → medium → low
@@ -185,17 +186,6 @@ status: success
 ## Scripts
 
 Script: `plan-marshall:workflow-integration-sonar` → `sonar.py`
-
-### sonar.py prepare-fetch
-
-**Purpose:** Generate MCP tool call parameters for fetching Sonar issues. Does not fetch directly — returns the MCP instruction that the caller must execute via the SonarQube MCP tool.
-
-**Usage:**
-```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar prepare-fetch --project <key> [--pr <id>] [--severities <list>]
-```
-
-**Output:** TOON with MCP instruction and expected response structure
 
 ### sonar.py triage
 
@@ -258,10 +248,20 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 # NOSONAR python:S1234 - reason for suppression
 ```
 
+## Rule Configuration
+
+Triage rules are data-driven — loaded from `standards/sonar-rules.json`:
+
+- **suppressable_rules**: Rules that may be suppressed with justification
+- **fix_suggestions**: Rule-specific fix guidance
+- **test_acceptable_rules**: Rules acceptable in test files
+
+To add or update Sonar rule handling, edit `standards/sonar-rules.json` instead of the script.
+
 ## Error Handling
 
 When a script or step returns failure:
-- **fetch script failure**: Report error. Verify SonarQube MCP server is connected and project key is correct.
+- **MCP tool failure**: Report error. Verify SonarQube MCP server is connected and project key is correct.
 - **MCP tool returns empty**: No issues found — report success with zero counts.
 - **triage failure** (invalid JSON): Log warning, skip the issue, continue processing remaining.
 - **Fix implementation failure**: Report which file/line failed. Do not suppress as fallback — ask the caller.

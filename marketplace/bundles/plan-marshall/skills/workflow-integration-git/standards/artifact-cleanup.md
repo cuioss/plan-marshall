@@ -4,38 +4,29 @@ Pre-commit artifact detection and cleanup. Run before staging to prevent build a
 
 ## Artifact Detection
 
-Use Glob to detect artifacts:
+The `detect-artifacts` command in `git-workflow.py` is the **source of truth** for artifact patterns. Use it instead of manual Glob calls:
 
-```
-Glob pattern="**/*.class"
-Glob pattern="**/*.temp"
-Glob pattern="**/*.pyc"
-Glob pattern="**/__pycache__/**"
-Glob pattern="**/.DS_Store"
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts [--root <repo-root>]
 ```
 
-Artifact patterns to clean:
-- `*.class` files in `src/` directories
-- `*.temp`, `*.backup`, `*.backup*`, `*.orig` temporary files
-- `*.pyc` and `__pycache__/` Python bytecode
-- `.DS_Store` macOS metadata
-- Files in `target/`, `build/`, or `node_modules/` accidentally staged
-- Files in `.plan/temp/` (transient working files)
+The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists, respecting `.gitignore` by default.
 
 ## Cleanup Rules
 
 ### Safe Deletions (automatic)
 
-Delete without asking:
-- `*.class` in `src/main/java` or `src/test/java`
-- `*.temp`, `*.backup`, `*.backup*`, `*.orig` anywhere
-- `*.pyc` and `__pycache__/` anywhere
-- `.DS_Store` anywhere
-- Delete using `rm <file>` (or `rm -rf <dir>` for directories)
+The script classifies these patterns as safe — delete without asking:
+- `*.class` — compiled Java bytecode
+- `*.temp`, `*.backup`, `*.backup*`, `*.orig` — temporary files
+- `*.pyc` and `__pycache__/` — Python bytecode
+- `.DS_Store` — macOS metadata
+
+Delete using `rm <file>` (or `rm -rf <dir>` for directories).
 
 ### Uncertain Cases (ask user)
 
-Use `AskUserQuestion` before deleting:
+The script classifies these as uncertain — use `AskUserQuestion` before deleting:
+- Files in `target/`, `build/`, `node_modules/`, `.plan/temp/`
 - Files >1MB
-- Files outside safe list
-- Files in `target/` that are tracked
+- Files outside the safe pattern list
