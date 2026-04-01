@@ -43,16 +43,7 @@ class Extension(ExtensionBase):
                     'optionals': [],
                 },
                 'documentation': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-documents:ref-asciidoc',
-                            'description': 'AsciiDoc formatting, validation, link verification, and template creation',
-                        },
-                        {
-                            'skill': 'pm-documents:ref-documentation',
-                            'description': 'Content quality, tone analysis, organization standards, and review orchestration',
-                        },
-                    ],
+                    'defaults': [],
                     'optionals': [
                         {
                             'skill': 'pm-documents:manage-adr',

@@ -379,17 +379,7 @@ done
 
 === Command Integration
 
-**doc-review-single-asciidoc command:**
-
-* Runs comprehensive-review for single file
-* Exposes all workflow parameters
-* Returns consolidated report
-
-**doc-review-technical-docs command:**
-
-* Runs comprehensive-review for directory
-* Iterates through all .adoc files
-* Aggregates results across files
+The comprehensive-review workflow can be invoked from any skill or agent that loads `pm-documents:ref-documentation`. For single-file or directory-level review, use the workflow parameters documented above.
 
 == Script Contracts
 
@@ -426,7 +416,7 @@ done
 **Usage in orchestration:**
 
 1. Run `python3 .plan/execute-script.py pm-documents:ref-documentation:docs analyze-tone`
-2. Apply ULTRATHINK analysis to flagged sections
+2. Apply careful analysis to flagged sections
 3. Generate content review findings
 
 == Best Practices

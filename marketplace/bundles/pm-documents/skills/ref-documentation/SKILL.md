@@ -182,7 +182,7 @@ Provides consolidated report with aggregated results.
 **Step 1: Load Orchestration Standards**
 
 Read workflows/review-orchestration.md for detailed phase sequencing, failure handling, and consolidated report template.
-Read workflows/content-review.md for deep analysis decision framework.
+Read workflows/content-review.md for the tone analysis decision framework.
 
 **Step 2: Discover Files**
 
@@ -227,7 +227,7 @@ Skip if skip_content=true. Run tone analysis:
 python3 .plan/execute-script.py pm-documents:ref-documentation:docs analyze-tone --file {file_path} --output target/tone-analysis.json
 ```
 
-Apply the deep analysis decision framework from workflows/content-review.md to each flagged phrase.
+Apply the tone analysis decision framework from workflows/content-review.md to each flagged phrase.
 
 **Step 6: Aggregate and Report**
 
@@ -408,7 +408,7 @@ All workflow procedures are in the `workflows/` directory:
 
 | Workflow | Purpose | When to Load |
 |----------|---------|--------------|
-| `content-review.md` | deep analysis-based tone analysis framework | Content review workflow |
+| `content-review.md` | Tone analysis decision framework | Content review workflow |
 | `review-orchestration.md` | Comprehensive review orchestration | comprehensive-review workflow |
 
 ## Scripts

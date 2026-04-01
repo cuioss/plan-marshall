@@ -125,11 +125,11 @@ Read(file_path="/project/requirements/spec.adoc")
 
 ==== Search for Similar Files (Optional)
 
-If file not found, search for similar names:
+If file not found, search for similar names using Glob:
 
-[source,bash]
+[source]
 ----
-find project/requirements -name "*spec*" -type f
+Glob(pattern="project/requirements/**/*spec*")
 ----
 
 Suggest alternatives to user before removal.

@@ -5,7 +5,7 @@
 
 == Overview
 
-This standard defines the framework for reviewing AsciiDoc content quality, with emphasis on factual accuracy, clarity, professional tone, and completeness. Uses deep analysis reasoning for deep tone and style analysis.
+This standard defines the framework for reviewing AsciiDoc content quality, with emphasis on factual accuracy, clarity, professional tone, and completeness. Uses careful step-by-step reasoning for tone and style analysis.
 
 == Review Dimensions
 
@@ -178,7 +178,7 @@ Suggestion: "{improved version}"
 
 === Decision Framework
 
-**CRITICAL:** Use careful, step-by-step reasoning for comprehensive tone assessment to distinguish factual descriptions from promotional language.
+**CRITICAL:** Use careful step-by-step reasoning for comprehensive tone assessment to distinguish factual descriptions from promotional language.
 
 === Decision Questions
 
@@ -350,7 +350,7 @@ For each descriptive phrase, ask:
 ----
 Line {N}: "{original text}"
 Issue: {marketing | self-praise | promotional | unverified | subjective}
-Reasoning: {deep analysis analysis}
+Reasoning: {careful analysis}
 Suggestion: "{factual alternative}"
 ----
 
@@ -456,9 +456,9 @@ The docs analyze-tone subcommand implements automated detection of:
 * Missing source citations
 * Superlatives and subjective phrases
 
-**Script output:** JSON with flagged sections requiring deep analysis analysis.
+**Script output:** JSON with flagged sections requiring careful analysis.
 
-**Claude's role:** Apply deep analysis decision framework to script findings.
+**Claude's role:** Apply careful analysis decision framework to script findings.
 
 === review-content Workflow
 
@@ -471,7 +471,7 @@ parameters:
 
 steps:
   1. Run docs analyze-tone (automated detection)
-  2. Apply deep analysis analysis (Claude)
+  2. Apply careful analysis (Claude)
   3. Generate findings report
   4. If apply_fixes: Suggest improvements
   5. User confirmation for changes
@@ -497,7 +497,7 @@ steps:
 * Test for multiple interpretations
 * Check for missing context
 
-=== deep analysis Application
+=== careful analysis Application
 
 **When to apply:**
 
@@ -515,7 +515,6 @@ steps:
 
 == References
 
-* AsciiDoc Writing Best Practices
-* RFC 7322: RFC Style Guide
-* Technical Writing Standards
-* OWASP Documentation Guidelines
+* https://docs.asciidoctor.org/asciidoc/latest/[AsciiDoc Language Documentation]
+* https://www.rfc-editor.org/rfc/rfc7322[RFC 7322: RFC Style Guide]
+* https://cheatsheetseries.owasp.org/[OWASP Cheat Sheet Series]
