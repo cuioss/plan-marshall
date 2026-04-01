@@ -1,17 +1,15 @@
 """Tests for pr.py - consolidated PR workflow script (provider-agnostic)."""
 
 import json
-import os
-import subprocess
 import sys
 import unittest
 from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+from toon_parser import parse_toon, parse_toon_table  # type: ignore[import-not-found]  # noqa: E402
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path  # noqa: E402
+from conftest import get_script_path, run_script  # noqa: E402
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-ci', 'pr.py')
@@ -19,12 +17,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-ci', 'pr.py
 
 def run_pr_script(args: list) -> tuple:
     """Run pr.py with args and return (stdout, stderr, returncode)."""
-    env = os.environ.copy()
-    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
-    if 'PYTHONPATH' in env:
-        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
-    env['PYTHONPATH'] = pythonpath
-    result = subprocess.run([sys.executable, str(SCRIPT_PATH)] + args, capture_output=True, text=True, env=env)
+    result = run_script(SCRIPT_PATH, *args)
     return result.stdout, result.stderr, result.returncode
 
 
@@ -211,21 +204,11 @@ class TestPRTriageBatch(unittest.TestCase):
         self.assertIn('array', result['error'])
 
 
-class TestParseToonComments(unittest.TestCase):
-    """Test parse_toon_comments function directly."""
-
-    def _import_parse_toon_comments(self):
-        """Import parse_toon_comments from pr.py."""
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location('pr', SCRIPT_PATH)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.parse_toon_comments
+class TestParseToonTable(unittest.TestCase):
+    """Test parse_toon_table from toon_parser for PR comment parsing."""
 
     def test_parses_comments_with_space_indented_rows(self):
         """Test that space-indented TOON table rows are parsed correctly."""
-        parse_toon_comments = self._import_parse_toon_comments()
         toon_output = (
             'status: success\n'
             'total: 2\n'
@@ -234,7 +217,7 @@ class TestParseToonComments(unittest.TestCase):
             '  PRRC_001\treviewer1\tFix this bug\tsrc/Main.java\t42\ttrue\t2026-03-25\n'
             '  PRRC_002\treviewer2\tAdd tests\tsrc/Test.java\t10\tfalse\t2026-03-25\n'
         )
-        comments = parse_toon_comments(toon_output)
+        comments = parse_toon_table(toon_output, 'comments')
         self.assertEqual(len(comments), 2)
         self.assertEqual(comments[0]['id'], 'PRRC_001')
         self.assertEqual(comments[0]['author'], 'reviewer1')
@@ -247,42 +230,38 @@ class TestParseToonComments(unittest.TestCase):
 
     def test_parses_empty_comments_table(self):
         """Test parsing a TOON output with no comment rows."""
-        parse_toon_comments = self._import_parse_toon_comments()
         toon_output = 'status: success\ntotal: 0\ncomments[0]{id,author,body,path,line,resolved,created_at}:\n'
-        comments = parse_toon_comments(toon_output)
+        comments = parse_toon_table(toon_output, 'comments')
         self.assertEqual(len(comments), 0)
 
-    def test_handles_dash_values_for_path_and_line(self):
-        """Test that dash values are converted to None."""
-        parse_toon_comments = self._import_parse_toon_comments()
+    def test_handles_dash_values_with_null_markers(self):
+        """Test that dash values are converted to None via null_markers."""
         toon_output = (
             'comments[1]{id,author,body,path,line,resolved,created_at}:\n'
             '  PRRC_003\treviewer\tGeneral comment\t-\t-\tfalse\t2026-03-25\n'
         )
-        comments = parse_toon_comments(toon_output)
+        comments = parse_toon_table(toon_output, 'comments', null_markers={'-'})
         self.assertEqual(len(comments), 1)
         self.assertIsNone(comments[0]['path'])
         self.assertIsNone(comments[0]['line'])
 
     def test_stops_at_next_toon_section(self):
         """Test that parser stops when reaching a new key: value section."""
-        parse_toon_comments = self._import_parse_toon_comments()
         toon_output = (
             'comments[1]{id,author,body,path,line,resolved,created_at}:\n'
             '  PRRC_004\treviewer\tComment\tsrc/A.java\t1\ttrue\t2026-03-25\n'
             'next_section: value\n'
         )
-        comments = parse_toon_comments(toon_output)
+        comments = parse_toon_table(toon_output, 'comments')
         self.assertEqual(len(comments), 1)
 
     def test_parses_thread_id_when_present(self):
         """Test that thread_id is included when the TOON header declares it."""
-        parse_toon_comments = self._import_parse_toon_comments()
         toon_output = (
             'comments[1]{id,thread_id,author,body,path,line,resolved,created_at}:\n'
             '  PRRC_001\tPRRT_abc123\treviewer1\tFix bug\tsrc/Main.java\t42\ttrue\t2026-03-25\n'
         )
-        comments = parse_toon_comments(toon_output)
+        comments = parse_toon_table(toon_output, 'comments')
         self.assertEqual(len(comments), 1)
         self.assertEqual(comments[0]['id'], 'PRRC_001')
         self.assertEqual(comments[0]['thread_id'], 'PRRT_abc123')
@@ -290,14 +269,19 @@ class TestParseToonComments(unittest.TestCase):
 
     def test_no_thread_id_when_not_in_header(self):
         """Test that thread_id is absent when the TOON header does not declare it."""
-        parse_toon_comments = self._import_parse_toon_comments()
         toon_output = (
             'comments[1]{id,author,body,path,line,resolved,created_at}:\n'
             '  PRRC_001\treviewer1\tFix bug\tsrc/Main.java\t42\ttrue\t2026-03-25\n'
         )
-        comments = parse_toon_comments(toon_output)
+        comments = parse_toon_table(toon_output, 'comments')
         self.assertEqual(len(comments), 1)
         self.assertNotIn('thread_id', comments[0])
+
+    def test_missing_key_returns_empty_list(self):
+        """Test that a missing key returns empty list."""
+        toon_output = 'status: success\ntotal: 0\n'
+        comments = parse_toon_table(toon_output, 'comments')
+        self.assertEqual(comments, [])
 
 
 class TestPRFetchComments(unittest.TestCase):

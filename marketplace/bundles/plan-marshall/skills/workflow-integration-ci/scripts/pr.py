@@ -31,7 +31,7 @@ import subprocess
 import sys
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon, parse_toon_table, serialize_toon  # type: ignore[import-not-found]
 
 # ============================================================================
 # TRIAGE CONFIGURATION
@@ -109,61 +109,6 @@ def get_current_pr_number() -> int | None:
     return None
 
 
-def parse_toon_comments(toon_output: str) -> list[dict[str, Any]]:
-    """Parse TOON format comment output from tools-integration-ci.
-
-    Uses the TOON table header to map columns dynamically, so this parser
-    handles any column order and additional fields (e.g. thread_id).
-    """
-    comments: list[dict[str, Any]] = []
-    lines = toon_output.strip().split('\n')
-
-    in_comments_table = False
-    fields: list[str] = []
-    for line in lines:
-        # Detect start of comments table: comments[N]{field1,field2,...}:
-        if line.startswith('comments['):
-            in_comments_table = True
-            # Extract field names from header
-            brace_start = line.find('{')
-            brace_end = line.find('}')
-            if brace_start != -1 and brace_end != -1:
-                fields = line[brace_start + 1 : brace_end].split(',')
-            continue
-
-        # Skip non-table lines or empty lines
-        if not in_comments_table or not line.strip():
-            continue
-
-        # Strip leading whitespace (TOON table rows are indented with 2 spaces)
-        stripped = line.strip()
-
-        # Stop at next section (non-indented line that looks like a key: value)
-        if not line[0].isspace() and ':' in stripped:
-            break
-
-        # Parse tab-separated comment row using header fields
-        parts = stripped.split('\t')
-        if fields and len(parts) >= len(fields):
-            row = dict(zip(fields, parts, strict=False))
-            # Normalize known fields
-            comment: dict[str, Any] = {
-                'id': row.get('id', ''),
-                'author': row.get('author', ''),
-                'body': row.get('body', ''),
-                'path': row.get('path') if row.get('path') != '-' else None,
-                'line': int(row['line']) if row.get('line', '-') not in ('-', '') and row['line'].isdigit() else None,
-                'resolved': row.get('resolved', 'false').lower() == 'true',
-                'created_at': row.get('created_at'),
-            }
-            # Include thread_id if present
-            if 'thread_id' in row:
-                comment['thread_id'] = row['thread_id']
-            comments.append(comment)
-
-    return comments
-
-
 def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
     """Fetch review comments for a PR using tools-integration-ci ci router."""
     pr_comments_cmd = f'{CI_ROUTER} pr comments'
@@ -178,27 +123,14 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
     if code != 0:
         return {'error': f'Failed to fetch PR comments: {stderr}', 'status': 'failure'}
 
-    # Parse TOON output
-    comments = parse_toon_comments(stdout)
+    # Parse TOON output — use parse_toon_table for the comments array,
+    # with '-' as null marker for missing path/line values
+    parsed = parse_toon(stdout)
+    comments = parse_toon_table(stdout, 'comments', null_markers={'-'})
 
-    # Extract metadata from TOON header
-    provider = 'unknown'
-    total = len(comments)
-    unresolved = sum(1 for c in comments if not c.get('resolved', False))
-
-    for line in stdout.split('\n'):
-        if line.startswith('provider:'):
-            provider = line.split(':', 1)[1].strip()
-        elif line.startswith('total:'):
-            try:
-                total = int(line.split(':', 1)[1].strip())
-            except ValueError:
-                pass
-        elif line.startswith('unresolved:'):
-            try:
-                unresolved = int(line.split(':', 1)[1].strip())
-            except ValueError:
-                pass
+    provider = parsed.get('provider', 'unknown')
+    total = parsed.get('total', len(comments))
+    unresolved = parsed.get('unresolved', sum(1 for c in comments if not c.get('resolved', False)))
 
     return {
         'pr_number': pr_number,

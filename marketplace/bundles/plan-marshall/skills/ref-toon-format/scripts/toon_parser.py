@@ -379,6 +379,48 @@ def parse_toon(content: str) -> dict[str, Any]:
         ) from e
 
 
+def parse_toon_table(
+    content: str, key: str, *, null_markers: set[str] | None = None
+) -> list[dict[str, Any]]:
+    """Extract a uniform array table from TOON content.
+
+    Convenience wrapper around parse_toon() for extracting a single table
+    from TOON output. Useful when a script returns TOON with a table and
+    the caller only needs the table rows.
+
+    Args:
+        content: TOON formatted string
+        key: Key of the uniform array to extract (e.g., 'comments', 'issues')
+        null_markers: Optional set of value strings to convert to None
+                      (e.g., {'-', '~'} for tabular data where '-' means empty)
+
+    Returns:
+        List of dictionaries from the table, or empty list if key not found
+
+    Example:
+        >>> toon = '''
+        ... status: success
+        ... total: 2
+        ... users[2]{id,name,active}:
+        ... 1\\tAlice\\ttrue
+        ... 2\\t-\\tfalse
+        ... '''
+        >>> parse_toon_table(toon, 'users', null_markers={'-'})
+        [{'id': 1, 'name': None, 'active': True}, {'id': 2, 'name': None, 'active': False}]
+    """
+    parsed = parse_toon(content)
+    table = parsed.get(key, [])
+    if not isinstance(table, list):
+        return []
+    rows = [row for row in table if isinstance(row, dict)]
+    if null_markers:
+        return [
+            {k: None if v in null_markers else v for k, v in row.items()}
+            for row in rows
+        ]
+    return rows
+
+
 def _serialize_value(value: Any, table_separator: str = ',') -> str:
     """Serialize a Python value to TOON format.
 

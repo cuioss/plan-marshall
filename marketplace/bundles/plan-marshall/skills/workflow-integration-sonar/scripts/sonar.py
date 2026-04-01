@@ -282,6 +282,28 @@ def cmd_triage(args):
     return 0 if result.get('status') == 'success' else 1
 
 
+def cmd_triage_batch(args):
+    """Handle triage-batch subcommand — triage multiple issues at once."""
+    try:
+        issues = json.loads(args.issues)
+    except json.JSONDecodeError as e:
+        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
+        return 1
+
+    if not isinstance(issues, list):
+        print(serialize_toon({'error': 'Input must be a JSON array of issues', 'status': 'failure'}))
+        return 1
+
+    results = [triage_issue(issue) for issue in issues]
+    summary = {
+        'total': len(results),
+        'fix': sum(1 for r in results if r['action'] == 'fix'),
+        'suppress': sum(1 for r in results if r['action'] == 'suppress'),
+    }
+    print(serialize_toon({'results': results, 'summary': summary, 'status': 'success'}))
+    return 0
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -315,6 +337,11 @@ Examples:
     triage_parser = subparsers.add_parser('triage', help='Triage a single Sonar issue')
     triage_parser.add_argument('--issue', required=True, help='JSON string with issue data')
     triage_parser.set_defaults(func=cmd_triage)
+
+    # triage-batch subcommand
+    batch_parser = subparsers.add_parser('triage-batch', help='Triage multiple Sonar issues at once')
+    batch_parser.add_argument('--issues', required=True, help='JSON array of issue objects')
+    batch_parser.set_defaults(func=cmd_triage_batch)
 
     args = parser.parse_args()
     return args.func(args)

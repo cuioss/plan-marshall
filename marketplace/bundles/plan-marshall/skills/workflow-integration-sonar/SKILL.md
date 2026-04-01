@@ -199,6 +199,17 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 
 **Output:** TOON with action decision
 
+### sonar.py triage-batch
+
+**Purpose:** Triage multiple issues in a single call, reducing subprocess overhead.
+
+**Usage:**
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch --issues '[{"key":"I1", "rule":"java:S1234", ...}, ...]'
+```
+
+**Output:** TOON with results array and summary counts
+
 ## Issue Classification
 
 ### Always Fix (enforced by script)

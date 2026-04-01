@@ -9,13 +9,12 @@ Tests memory layer operations and format validation.
 """
 
 import os
-import subprocess
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path
+from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-memories', 'manage-memory.py')
@@ -46,13 +45,7 @@ def memory_test_context():
 
 def run_memory_script(*args):
     """Run the memory script with arguments."""
-    env = os.environ.copy()
-    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
-    if 'PYTHONPATH' in env:
-        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
-    env['PYTHONPATH'] = pythonpath
-    proc = subprocess.run(['python3', str(SCRIPT_PATH), *args], capture_output=True, text=True, env=env)
-    return proc
+    return run_script(SCRIPT_PATH, *args)
 
 
 def parse_json(output):

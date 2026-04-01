@@ -1,7 +1,5 @@
 """Tests for git-workflow.py - consolidated git workflow script."""
 
-import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -11,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path  # noqa: E402
+from conftest import get_script_path, run_script  # noqa: E402
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
@@ -19,12 +17,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-
 
 def run_git_script(args: list) -> tuple:
     """Run git-workflow.py with args and return (stdout, stderr, returncode)."""
-    env = os.environ.copy()
-    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
-    if 'PYTHONPATH' in env:
-        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
-    env['PYTHONPATH'] = pythonpath
-    result = subprocess.run([sys.executable, str(SCRIPT_PATH)] + args, capture_output=True, text=True, env=env)
+    result = run_script(SCRIPT_PATH, *args)
     return result.stdout, result.stderr, result.returncode
 
 

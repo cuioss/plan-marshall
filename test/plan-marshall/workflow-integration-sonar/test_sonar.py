@@ -1,8 +1,6 @@
 """Tests for sonar.py - consolidated Sonar workflow script."""
 
 import json
-import os
-import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -11,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path  # noqa: E402
+from conftest import get_script_path, run_script  # noqa: E402
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'sonar.py')
@@ -19,12 +17,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'so
 
 def run_sonar_script(args: list) -> tuple:
     """Run sonar.py with args and return (stdout, stderr, returncode)."""
-    env = os.environ.copy()
-    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
-    if 'PYTHONPATH' in env:
-        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
-    env['PYTHONPATH'] = pythonpath
-    result = subprocess.run([sys.executable, str(SCRIPT_PATH)] + args, capture_output=True, text=True, env=env)
+    result = run_script(SCRIPT_PATH, *args)
     return result.stdout, result.stderr, result.returncode
 
 
@@ -246,6 +239,47 @@ class TestSonarTriage(unittest.TestCase):
         self.assertEqual(result['priority'], 'high')
 
 
+class TestSonarTriageBatch(unittest.TestCase):
+    """Test sonar.py triage-batch subcommand."""
+
+    def test_triage_batch_multiple_issues(self):
+        """Test batch triage processes multiple issues at once."""
+        issues = [
+            {'key': 'B1', 'type': 'BUG', 'severity': 'MAJOR', 'file': 'src/A.java', 'line': 1, 'rule': 'java:S1234', 'message': 'Bug'},
+            {'key': 'B2', 'type': 'CODE_SMELL', 'severity': 'MINOR', 'file': 'src/B.java', 'line': 5, 'rule': 'java:S1135', 'message': 'TODO'},
+            {'key': 'B3', 'type': 'VULNERABILITY', 'severity': 'CRITICAL', 'file': 'src/C.java', 'line': 10, 'rule': 'java:S3649', 'message': 'SQL injection'},
+        ]
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', json.dumps(issues)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['summary']['total'], 3)
+        self.assertEqual(result['summary']['fix'], 2)
+        self.assertEqual(result['summary']['suppress'], 1)
+
+    def test_triage_batch_empty_list(self):
+        """Test batch triage with empty list."""
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', '[]'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['summary']['total'], 0)
+
+    def test_triage_batch_invalid_json(self):
+        """Test batch triage with invalid JSON."""
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', 'not-json'])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'failure')
+
+    def test_triage_batch_not_array(self):
+        """Test batch triage rejects non-array input."""
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', '{"key": "I1"}'])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'failure')
+        self.assertIn('array', result['error'])
+
+
 class TestSonarMain(unittest.TestCase):
     """Test sonar.py main entry point."""
 
@@ -261,6 +295,7 @@ class TestSonarMain(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('fetch', stdout)
         self.assertIn('triage', stdout)
+        self.assertIn('triage-batch', stdout)
 
 
 if __name__ == '__main__':
