@@ -89,16 +89,6 @@ def extract_file_location(line: str) -> tuple[str, int, int]:
     return '', 0, 0
 
 
-def parse_build_status(lines: list[str]) -> str:
-    """Determine overall build status from log lines."""
-    for line in reversed(lines[-50:]):
-        if 'BUILD SUCCESSFUL' in line:
-            return 'SUCCESS'
-        if 'BUILD FAILED' in line:
-            return 'FAILURE'
-    return 'UNKNOWN'
-
-
 def parse_metrics(lines: list[str]) -> dict:
     """Extract build metrics from log."""
     metrics = {'duration_ms': 0, 'tasks_executed': 0, 'tests_run': 0, 'tests_failed': 0}
@@ -266,9 +256,13 @@ def _extract_test_summary_as_dataclass(lines: list[str]) -> UnitTestSummary | No
 
 
 def cmd_parse(args):
-    """Handle parse subcommand."""
-    path = Path(args.log)
-    if not path.exists():
+    """Handle parse subcommand.
+
+    Uses parse_log() for consistent Issue-based parsing, then formats
+    the result as a structured JSON report.
+    """
+    log_path = Path(args.log)
+    if not log_path.exists():
         log_entry('script', 'global', 'ERROR', f'[GRADLE-PARSE] Log file not found: {args.log}')
         print(
             json.dumps(
@@ -277,47 +271,35 @@ def cmd_parse(args):
         )
         return 1
 
-    with open(path, encoding='utf-8', errors='replace') as f:
-        lines = f.readlines()
+    try:
+        issues, test_summary, build_status = parse_log(log_path)
+    except Exception as e:
+        log_entry('script', 'global', 'ERROR', f'[GRADLE-PARSE] Failed to parse log file: {e}')
+        print(json.dumps({'status': 'error', 'error': f'Failed to parse log file: {str(e)}'}, indent=2))
+        return 1
 
-    issues, seen = [], set()
-    for line_num, line in enumerate(lines, 1):
-        issue_type = categorize_line(line)
-        if issue_type:
-            file_path, file_line, file_col = extract_file_location(line)
-            message = line.strip()
-            dedup_key = f'{issue_type}:{file_path}:{file_line}:{message[:100]}'
-            if dedup_key in seen:
-                continue
-            seen.add(dedup_key)
-            severity = 'ERROR' if 'error' in issue_type else 'WARNING'
-            issues.append(
-                {
-                    'type': issue_type,
-                    'file': file_path,
-                    'line': file_line,
-                    'column': file_col,
-                    'message': message[:500],
-                    'severity': severity,
-                    'log_line': line_num,
-                }
-            )
-
-    build_status = parse_build_status(lines)
-    metrics = parse_metrics(lines)
-
+    # Apply mode filtering
     if args.mode == 'errors':
-        issues = [i for i in issues if i['severity'] == 'ERROR']
+        issues = [i for i in issues if i.severity == SEVERITY_ERROR]
 
+    # Build summary from Issue objects
     summary = {
-        'compilation_errors': sum(1 for i in issues if i['type'] == 'compilation_error'),
-        'test_failures': sum(1 for i in issues if i['type'] == 'test_failure'),
-        'javadoc_warnings': sum(1 for i in issues if i['type'] == 'javadoc_warning'),
-        'deprecation_warnings': sum(1 for i in issues if i['type'] == 'deprecation_warning'),
-        'unchecked_warnings': sum(1 for i in issues if i['type'] == 'unchecked_warning'),
-        'dependency_errors': sum(1 for i in issues if i['type'] == 'dependency_error'),
+        'compilation_errors': sum(1 for i in issues if i.category == 'compilation_error'),
+        'test_failures': sum(1 for i in issues if i.category == 'test_failure'),
+        'javadoc_warnings': sum(1 for i in issues if i.category == 'javadoc_warning'),
+        'deprecation_warnings': sum(1 for i in issues if i.category == 'deprecation_warning'),
+        'unchecked_warnings': sum(1 for i in issues if i.category == 'unchecked_warning'),
+        'dependency_errors': sum(1 for i in issues if i.category == 'dependency_error'),
         'total_issues': len(issues),
     }
+
+    # Extract metrics from log content
+    content = log_path.read_text(encoding='utf-8', errors='replace')
+    lines = content.split('\n')
+    metrics = parse_metrics(lines)
+    if test_summary:
+        metrics['tests_run'] = test_summary.total
+        metrics['tests_failed'] = test_summary.failed
 
     log_entry(
         'script',
@@ -327,8 +309,12 @@ def cmd_parse(args):
     )
 
     result = {
-        'status': 'success',
-        'data': {'build_status': build_status, 'issues': issues, 'summary': summary},
+        'status': 'success' if build_status == 'SUCCESS' else 'error',
+        'data': {
+            'build_status': build_status,
+            'issues': [i.to_dict() for i in issues],
+            'summary': summary,
+        },
         'metrics': metrics,
     }
 

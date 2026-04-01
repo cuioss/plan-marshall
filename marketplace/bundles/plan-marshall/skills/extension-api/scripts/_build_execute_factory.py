@@ -43,13 +43,13 @@ class ExecuteConfig:
     """Build system name (e.g., 'maven', 'gradle'). Used for logging and command keys."""
 
     unix_wrapper: str
-    """Unix wrapper filename (e.g., 'mvnw', 'gradlew')."""
+    """Unix wrapper filename (e.g., 'mvnw', 'gradlew'). Empty string if no wrapper (e.g., npm)."""
 
     windows_wrapper: str
-    """Windows wrapper filename (e.g., 'mvnw.cmd', 'gradlew.bat')."""
+    """Windows wrapper filename (e.g., 'mvnw.cmd', 'gradlew.bat'). Empty string if no wrapper."""
 
     system_fallback: str
-    """System command when no wrapper exists (e.g., 'mvn', 'gradle')."""
+    """System command when no wrapper exists (e.g., 'mvn', 'gradle', 'npm')."""
 
     capture_strategy: CaptureStrategy
     """How output is captured to log file."""
@@ -70,6 +70,26 @@ class ExecuteConfig:
     extra_result_fields: dict = field(default_factory=dict)
     """Additional fields to include in all result dicts."""
 
+    wrapper_resolve_fn: Callable[[str], str] | None = None
+    """Custom wrapper resolution: (project_dir) -> wrapper path.
+    If set, overrides the default detect_wrapper logic. Useful for tools
+    like npm that don't have wrappers, or Python where FileNotFoundError
+    needs early detection."""
+
+    parser_needs_command: bool = False
+    """If True, passes the command string as second arg to parser_fn."""
+
+    supports_env_vars: bool = False
+    """If True, execute_direct() accepts env_vars kwarg and cmd_run() reads args.env."""
+
+    supports_working_dir: bool = False
+    """If True, execute_direct() accepts working_dir kwarg and cmd_run() reads args.working_dir."""
+
+    extra_result_fn: Callable[[str, str], dict] | None = None
+    """Dynamic extra result fields: (args, wrapper) -> dict of additional fields.
+    Called per invocation, unlike extra_result_fields which is static.
+    E.g., npm uses this to add command_type based on args."""
+
 
 def create_execute_handlers(
     config: ExecuteConfig,
@@ -85,14 +105,37 @@ def create_execute_handlers(
         Tuple of (execute_direct, cmd_run) functions.
     """
 
-    def detect_wrapper(project_dir: str = '.') -> str:
+    def _resolve_wrapper(project_dir: str = '.') -> str:
+        if config.wrapper_resolve_fn:
+            return config.wrapper_resolve_fn(project_dir)
         wrapper = _detect_wrapper(project_dir, config.unix_wrapper, config.windows_wrapper, config.system_fallback)
         return wrapper or config.system_fallback
 
     def execute_direct(
-        args: str, command_key: str, default_timeout: int = config.default_timeout, project_dir: str = '.'
+        args: str,
+        command_key: str,
+        default_timeout: int = config.default_timeout,
+        project_dir: str = '.',
+        env_vars: dict[str, str] | None = None,
+        working_dir: str | None = None,
     ) -> DirectCommandResult:
-        wrapper = detect_wrapper(project_dir)
+        try:
+            wrapper = _resolve_wrapper(project_dir)
+        except FileNotFoundError as e:
+            return {
+                'status': 'error',
+                'exit_code': -1,
+                'duration_seconds': 0,
+                'log_file': '',
+                'command': f'{config.system_fallback} {args}',
+                'error': str(e),
+            }
+
+        # Compute dynamic extra fields
+        extras = dict(config.extra_result_fields) if config.extra_result_fields else {}
+        if config.extra_result_fn:
+            extras.update(config.extra_result_fn(args, wrapper))
+
         return execute_direct_base(
             args=args,
             command_key=command_key,
@@ -103,7 +146,9 @@ def create_execute_handlers(
             wrapper=wrapper,
             capture_strategy=config.capture_strategy,
             scope_fn=config.scope_fn,
-            extra_result_fields=config.extra_result_fields or None,
+            env_vars=env_vars,
+            working_dir=working_dir,
+            extra_result_fields=extras or None,
         )
 
     def cmd_run(args) -> int:
@@ -113,8 +158,27 @@ def create_execute_handlers(
         command_key = f'{config.tool_name}:{key_suffix}'
         timeout_seconds = getattr(args, 'timeout', None) or config.default_timeout
 
+        # Optional env_vars support
+        env_vars = None
+        if config.supports_env_vars:
+            env_str = getattr(args, 'env', None)
+            if env_str:
+                env_vars = {}
+                for env_pair in env_str.split():
+                    if '=' in env_pair:
+                        key, value = env_pair.split('=', 1)
+                        env_vars[key] = value
+
+        # Optional working_dir support
+        working_dir = getattr(args, 'working_dir', None) if config.supports_working_dir else None
+
         result = execute_direct(
-            args=command_args, command_key=command_key, default_timeout=timeout_seconds, project_dir=project_dir
+            args=command_args,
+            command_key=command_key,
+            default_timeout=timeout_seconds,
+            project_dir=project_dir,
+            env_vars=env_vars,
+            working_dir=working_dir,
         )
 
         return cmd_run_common(
@@ -124,6 +188,7 @@ def create_execute_handlers(
             output_format=getattr(args, 'format', 'toon'),
             mode=getattr(args, 'mode', 'actionable'),
             project_dir=project_dir,
+            parser_needs_command=config.parser_needs_command,
         )
 
     # Preserve useful names for debugging

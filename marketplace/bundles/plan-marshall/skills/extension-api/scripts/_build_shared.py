@@ -51,6 +51,70 @@ def get_bash_timeout(inner_timeout_seconds: int) -> int:
     return inner_timeout_seconds + OUTER_TIMEOUT_BUFFER
 
 
+def add_run_subparser(
+    subparsers,
+    *,
+    command_args_help: str = "Complete command arguments",
+    default_timeout: int = 300,
+    extra_args_fn=None,
+):
+    """Add standard 'run' subparser with common arguments.
+
+    All build skills share the same run subparser pattern:
+    --command-args, --timeout, --mode, --format, --project-dir.
+
+    Args:
+        subparsers: argparse subparsers object.
+        command_args_help: Help text for --command-args.
+        default_timeout: Default timeout in seconds.
+        extra_args_fn: Optional callable(run_parser) to add tool-specific args
+            (e.g., --working-dir, --env for npm).
+
+    Returns:
+        The created run subparser (for setting defaults like func=cmd_run).
+    """
+    run_parser = subparsers.add_parser('run', help='Execute build and auto-parse on failure (primary API)')
+    run_parser.add_argument(
+        '--command-args', dest='command_args', required=True, help=command_args_help,
+    )
+    run_parser.add_argument(
+        '--timeout', type=int, default=default_timeout,
+        help=f'Build timeout in seconds (default: {default_timeout})',
+    )
+    run_parser.add_argument(
+        '--mode', choices=['actionable', 'structured', 'errors'], default='actionable', help='Output mode',
+    )
+    run_parser.add_argument(
+        '--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)',
+    )
+    run_parser.add_argument(
+        '--project-dir', dest='project_dir', default='.', help='Project root directory',
+    )
+    if extra_args_fn:
+        extra_args_fn(run_parser)
+    return run_parser
+
+
+def add_coverage_subparser(subparsers, *, help_text: str = 'Parse coverage report', default_threshold: int = 80):
+    """Add standard 'coverage-report' subparser with common arguments.
+
+    Args:
+        subparsers: argparse subparsers object.
+        help_text: Help text for the subparser.
+        default_threshold: Default coverage threshold percent.
+
+    Returns:
+        The created coverage-report subparser.
+    """
+    cov_parser = subparsers.add_parser('coverage-report', help=help_text)
+    cov_parser.add_argument('--module-path', dest='module_path', help='Module directory path')
+    cov_parser.add_argument('--report-path', dest='report_path', help='Override coverage report path')
+    cov_parser.add_argument(
+        '--threshold', type=int, default=default_threshold, help=f'Coverage threshold percent (default: {default_threshold})',
+    )
+    return cov_parser
+
+
 def cmd_run_common(
     result: DirectCommandResult,
     parser_fn: ParserFn,

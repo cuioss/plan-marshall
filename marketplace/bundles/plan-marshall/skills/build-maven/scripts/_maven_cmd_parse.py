@@ -41,19 +41,6 @@ def extract_duration(content: str) -> int | None:
     return None
 
 
-def extract_test_summary(content: str) -> dict:
-    """Extract test execution summary."""
-    pattern = r'Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)'
-    matches = list(re.finditer(pattern, content))
-    if matches:
-        m = matches[-1]
-        return {
-            'tests_run': int(m.group(1)),
-            'failures': int(m.group(2)),
-            'errors': int(m.group(3)),
-            'skipped': int(m.group(4)),
-        }
-    return {'tests_run': 0, 'failures': 0, 'errors': 0, 'skipped': 0}
 
 
 def categorize_issue(message: str) -> str:
@@ -113,69 +100,6 @@ def parse_file_location(line: str) -> dict:
     return result
 
 
-def extract_issues(content: str, include_warnings: bool = True) -> list:
-    """Extract all issues from Maven output."""
-    issues = []
-    for line_num, line in enumerate(content.split('\n'), 1):
-        severity = None
-        if '[ERROR]' in line:
-            severity = 'ERROR'
-        elif include_warnings and '[WARNING]' in line:
-            severity = 'WARNING'
-        if severity:
-            message = re.sub(r'^\[(INFO|ERROR|WARNING)\]\s*', '', line.strip())
-            if not message or message.startswith('->') or message.startswith('at '):
-                continue
-            location = parse_file_location(line)
-            issues.append(
-                {
-                    'type': categorize_issue(message),
-                    'file': location.get('file'),
-                    'line': location.get('line'),
-                    'column': location.get('column'),
-                    'message': message[:500],
-                    'severity': severity,
-                    'log_line': line_num,
-                }
-            )
-    return issues
-
-
-def generate_summary(issues: list) -> dict:
-    """Generate issue summary by category."""
-    summary = {
-        'compilation_errors': 0,
-        'test_failures': 0,
-        'javadoc_warnings': 0,
-        'deprecation_warnings': 0,
-        'unchecked_warnings': 0,
-        'dependency_errors': 0,
-        'openrewrite_info': 0,
-        'other_warnings': 0,
-        'other_errors': 0,
-        'total_issues': len(issues),
-    }
-    for issue in issues:
-        t, s = issue['type'], issue['severity']
-        if t == 'compilation_error':
-            summary['compilation_errors'] += 1
-        elif t == 'test_failure':
-            summary['test_failures'] += 1
-        elif t == 'javadoc_warning':
-            summary['javadoc_warnings'] += 1
-        elif t == 'deprecation_warning':
-            summary['deprecation_warnings'] += 1
-        elif t == 'unchecked_warning':
-            summary['unchecked_warnings'] += 1
-        elif t == 'dependency_error':
-            summary['dependency_errors'] += 1
-        elif t == 'openrewrite_info':
-            summary['openrewrite_info'] += 1
-        elif s == 'ERROR':
-            summary['other_errors'] += 1
-        else:
-            summary['other_warnings'] += 1
-    return summary
 
 
 # =============================================================================
@@ -306,42 +230,96 @@ def _extract_test_summary_as_dataclass(content: str) -> UnitTestSummary | None:
 
 
 def cmd_parse(args):
-    """Handle parse subcommand."""
-    path = Path(args.log)
-    if not path.exists():
+    """Handle parse subcommand.
+
+    Uses parse_log() for consistent Issue-based parsing, then formats
+    the result as a structured JSON report.
+    """
+    log_path = Path(args.log)
+    if not log_path.exists():
         log_entry('script', 'global', 'ERROR', f'[MAVEN-PARSE] Log file not found: {args.log}')
         print(json.dumps({'status': 'error', 'error': f'Log file not found: {args.log}'}, indent=2))
         return 1
+
     try:
-        content = path.read_text(encoding='utf-8', errors='replace')
+        issues, test_summary, build_status = parse_log(log_path)
     except Exception as e:
-        log_entry('script', 'global', 'ERROR', f'[MAVEN-PARSE] Failed to read log file: {e}')
-        print(json.dumps({'status': 'error', 'error': f'Failed to read log file: {str(e)}'}, indent=2))
+        log_entry('script', 'global', 'ERROR', f'[MAVEN-PARSE] Failed to parse log file: {e}')
+        print(json.dumps({'status': 'error', 'error': f'Failed to parse log file: {str(e)}'}, indent=2))
         return 1
 
-    build_status = detect_build_status(content)
+    # Apply mode filtering
+    if args.mode == 'errors':
+        issues = [i for i in issues if i.severity == SEVERITY_ERROR]
+    elif args.mode == 'no-openrewrite':
+        issues = [i for i in issues if i.category != 'openrewrite_info']
+
+    # Build summary from Issue objects
+    summary = _generate_summary_from_issues(issues)
+
+    # Extract duration from log content
+    content = log_path.read_text(encoding='utf-8', errors='replace')
     duration = extract_duration(content)
-    test_summary = extract_test_summary(content)
-    issues = extract_issues(content, args.mode not in ['errors'])
-    if args.mode == 'no-openrewrite':
-        issues = [i for i in issues if i['type'] != 'openrewrite_info']
-    summary = generate_summary(issues)
+
+    tests_run = test_summary.total if test_summary else 0
+    tests_failed = test_summary.failed if test_summary else 0
 
     log_entry(
         'script',
         'global',
         'INFO',
-        f'[MAVEN-PARSE] Parsed log: status={build_status}, issues={len(issues)}, tests_run={test_summary["tests_run"]}',
+        f'[MAVEN-PARSE] Parsed log: status={build_status}, issues={len(issues)}, tests_run={tests_run}',
     )
 
     result = {
         'status': 'success' if build_status == 'SUCCESS' else 'error',
-        'data': {'build_status': build_status, 'issues': issues, 'summary': summary},
+        'data': {
+            'build_status': build_status,
+            'issues': [i.to_dict() for i in issues],
+            'summary': summary,
+        },
         'metrics': {
             'duration_ms': duration,
-            'tests_run': test_summary['tests_run'],
-            'tests_failed': test_summary['failures'] + test_summary['errors'],
+            'tests_run': tests_run,
+            'tests_failed': tests_failed,
         },
     }
     print(json.dumps(result, indent=2))
     return 0
+
+
+def _generate_summary_from_issues(issues: list[Issue]) -> dict:
+    """Generate issue summary by category from Issue dataclasses."""
+    summary = {
+        'compilation_errors': 0,
+        'test_failures': 0,
+        'javadoc_warnings': 0,
+        'deprecation_warnings': 0,
+        'unchecked_warnings': 0,
+        'dependency_errors': 0,
+        'openrewrite_info': 0,
+        'other_warnings': 0,
+        'other_errors': 0,
+        'total_issues': len(issues),
+    }
+    for issue in issues:
+        cat, sev = issue.category, issue.severity
+        if cat == 'compilation_error':
+            summary['compilation_errors'] += 1
+        elif cat == 'test_failure':
+            summary['test_failures'] += 1
+        elif cat == 'javadoc_warning':
+            summary['javadoc_warnings'] += 1
+        elif cat == 'deprecation_warning':
+            summary['deprecation_warnings'] += 1
+        elif cat == 'unchecked_warning':
+            summary['unchecked_warnings'] += 1
+        elif cat == 'dependency_error':
+            summary['dependency_errors'] += 1
+        elif cat == 'openrewrite_info':
+            summary['openrewrite_info'] += 1
+        elif sev == SEVERITY_ERROR:
+            summary['other_errors'] += 1
+        else:
+            summary['other_warnings'] += 1
+    return summary

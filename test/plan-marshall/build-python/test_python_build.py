@@ -30,32 +30,17 @@ BUILD_SCRIPT = (
 
 
 def _load_python_build():
-    """Load python_build module avoiding conflicts."""
+    """Load python_build module with minimal mocking.
+
+    Only mocks plan_logging and run_config which are provided by the executor
+    at runtime but not available in test PYTHONPATH.
+    """
     spec = importlib.util.spec_from_file_location('python_build', BUILD_SCRIPT)
     module = importlib.util.module_from_spec(spec)
 
-    # Mock the cross-skill imports before loading, then restore originals
     import sys
 
     mock_modules = {
-        '_build_format': MagicMock(format_json=MagicMock(return_value='{}'), format_toon=MagicMock(return_value='')),
-        '_build_parse': MagicMock(
-            Issue=MagicMock,
-            UnitTestSummary=MagicMock,
-            filter_warnings=MagicMock(return_value=[]),
-            load_acceptable_warnings=MagicMock(return_value=[]),
-            partition_issues=MagicMock(return_value=([], [])),
-        ),
-        '_build_result': MagicMock(
-            ERROR_BUILD_FAILED='build_failed',
-            ERROR_EXECUTION_FAILED='execution_failed',
-            ERROR_LOG_FILE_FAILED='log_file_creation_failed',
-            DirectCommandResult=dict,
-            create_log_file=MagicMock(return_value='/tmp/test.log'),
-            error_result=MagicMock(return_value={}),
-            success_result=MagicMock(return_value={}),
-            timeout_result=MagicMock(return_value={}),
-        ),
         'plan_logging': MagicMock(log_entry=MagicMock()),
         'run_config': MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()),
     }

@@ -37,7 +37,7 @@ python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
 ```
 
 **Parameters**:
-- `--command-args` - Canonical command to execute (required)
+- `--command-args` - Canonical pyprojectx command (e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`) (required)
 - `--format` - Output format: toon (default) or json
 - `--mode` - Output mode: actionable (default), structured, errors
 - `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)

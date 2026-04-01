@@ -19,6 +19,8 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 
 **Constraints:**
 - All commands use `python3 .plan/execute-script.py plan-marshall:build-npm:npm {command} {args}`
+- Output format defaults to TOON; use `--format json` only when explicitly required
+- Always analyze the result TOON: check `status` for success/error/timeout, review `errors` for failures
 - npm vs npx routing is automatic; do not force one over the other
 
 ## Scripts Overview

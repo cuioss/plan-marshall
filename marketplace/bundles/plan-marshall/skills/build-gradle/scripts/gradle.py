@@ -25,12 +25,11 @@ import sys
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
+from _build_shared import add_coverage_subparser, add_run_subparser
 from _gradle_cmd_find_project import cmd_find_project
 from _gradle_cmd_parse import cmd_parse
-from _markers_search import cmd_search_markers
-
-# Import command handlers from internal modules (underscore prefix = private)
 from _gradle_execute import cmd_run
+from _markers_search import cmd_search_markers
 
 # --- Tool-specific configuration inlined from former wrapper files ---
 
@@ -38,9 +37,6 @@ cmd_coverage_report = create_coverage_report_handler(
     search_paths=[
         ('build/reports/jacoco/test/jacocoTestReport.xml', 'jacoco'),
         ('build/reports/jacoco/jacocoTestReport.xml', 'jacoco'),
-        ('target/site/jacoco/jacoco.xml', 'jacoco'),
-        ('target/jacoco/report.xml', 'jacoco'),
-        ('target/site/jacoco-aggregate/jacoco.xml', 'jacoco'),
     ],
     not_found_message='No JaCoCo XML report found. Run coverage build first.',
 )
@@ -59,22 +55,9 @@ def main():
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # run subcommand (primary API)
-    run_parser = subparsers.add_parser('run', help='Execute build and auto-parse on failure (primary API)')
-    run_parser.add_argument(
-        '--command-args', dest='command_args', required=True, help="Complete Gradle command arguments (e.g., ':module:build' or 'build')"
-    )
-    run_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)')
-    run_parser.add_argument(
-        '--mode',
-        choices=['actionable', 'structured', 'errors'],
-        default='actionable',
-        help='Content mode for warnings/errors',
-    )
-    run_parser.add_argument(
-        '--timeout', type=int, default=300, help='Build timeout in seconds (default: 300 = 5 min)'
-    )
-    run_parser.add_argument(
-        '--project-dir', dest='project_dir', default='.', help='Project root directory'
+    run_parser = add_run_subparser(
+        subparsers,
+        command_args_help="Complete Gradle command arguments (e.g., ':module:build' or 'build')",
     )
     run_parser.set_defaults(func=cmd_run)
 
@@ -95,10 +78,7 @@ def main():
     find_parser.set_defaults(func=cmd_find_project)
 
     # coverage-report subcommand
-    cov_parser = subparsers.add_parser('coverage-report', help='Parse JaCoCo coverage report')
-    cov_parser.add_argument('--module-path', dest='module_path', help='Module directory path')
-    cov_parser.add_argument('--report-path', dest='report_path', help='Override JaCoCo XML report path')
-    cov_parser.add_argument('--threshold', type=int, default=80, help='Coverage threshold percent (default: 80)')
+    cov_parser = add_coverage_subparser(subparsers, help_text='Parse JaCoCo coverage report')
     cov_parser.set_defaults(func=cmd_coverage_report)
 
     # search-markers subcommand
