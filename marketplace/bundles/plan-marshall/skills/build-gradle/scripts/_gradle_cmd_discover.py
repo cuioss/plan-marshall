@@ -32,7 +32,13 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from extension_base import find_readme
+from extension_base import (
+    build_module_base,
+    count_source_files,
+    discover_packages,
+    discover_sources,
+    find_readme,
+)
 from plan_logging import log_entry
 
 # =============================================================================
@@ -43,15 +49,6 @@ BUILD_GRADLE = 'build.gradle'
 BUILD_GRADLE_KTS = 'build.gradle.kts'
 SETTINGS_GRADLE = 'settings.gradle'
 SETTINGS_GRADLE_KTS = 'settings.gradle.kts'
-
-# JVM languages and their file extensions
-JVM_LANGUAGES = ['java', 'kotlin', 'groovy', 'scala']
-JVM_EXTENSIONS = {
-    'java': '*.java',
-    'kotlin': '*.kt',
-    'groovy': '*.groovy',
-    'scala': '*.scala',
-}
 
 # Quality task patterns that indicate quality tooling
 QUALITY_TASK_PATTERNS = {
@@ -66,6 +63,48 @@ QUALITY_TASK_PATTERNS = {
 # =============================================================================
 # Module Discovery
 # =============================================================================
+
+
+def _find_gradle_descriptors(project_root: str) -> list[tuple[Path, str]]:
+    """Find all Gradle build files via settings.gradle parsing.
+
+    Returns list of (module_path, relative_path) tuples. The root module
+    always comes first if it has a build file.
+
+    Args:
+        project_root: Absolute path to project root.
+
+    Returns:
+        List of (absolute_module_path, relative_path_from_root) tuples.
+    """
+    root = Path(project_root).resolve()
+    descriptors: list[tuple[Path, str]] = []
+
+    # Root module — check for build.gradle[.kts]
+    for bf in [BUILD_GRADLE_KTS, BUILD_GRADLE]:
+        if (root / bf).exists():
+            descriptors.append((root, '.'))
+            break
+
+    # Submodules from settings.gradle
+    settings_path = None
+    for sf in [SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]:
+        if (root / sf).exists():
+            settings_path = root / sf
+            break
+
+    if settings_path:
+        content = settings_path.read_text()
+        for match in re.finditer(r'include\s*[(\'"]+:?([^)\'\"]+)[)\'"]+', content):
+            module_name = match.group(1).replace(':', '/')
+            module_path = root / module_name
+            if module_path.exists():
+                # Verify it has a build file
+                has_build = any((module_path / bf).exists() for bf in [BUILD_GRADLE_KTS, BUILD_GRADLE])
+                if has_build:
+                    descriptors.append((module_path, module_name))
+
+    return descriptors
 
 
 def discover_gradle_modules(project_root: str) -> list:
@@ -84,36 +123,19 @@ def discover_gradle_modules(project_root: str) -> list:
     modules = []
     log_entry('script', 'global', 'INFO', f'[GRADLE-DISCOVER] Starting discovery in {project_root}')
 
-    # Check for settings.gradle to determine project structure
-    settings_path = None
-    for sf in [SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]:
-        if (root / sf).exists():
-            settings_path = root / sf
-            break
-
     # Get quality tasks once for the whole project
     quality_tasks = _get_quality_tasks(root)
 
-    # Always check for root module first
-    for bf in [BUILD_GRADLE_KTS, BUILD_GRADLE]:
-        if (root / bf).exists():
-            gradle_data = _get_gradle_metadata('', root)
-            module_data = _extract_gradle_module(root, root, '', gradle_data, quality_tasks)
-            if module_data:
-                modules.append(module_data)
-            break
+    # Find all modules via settings.gradle + root build file
+    descriptors = _find_gradle_descriptors(project_root)
 
-    # Then add submodules from settings.gradle
-    if settings_path:
-        content = settings_path.read_text()
-        for match in re.finditer(r'include\s*[(\'"]+:?([^)\'\"]+)[)\'"]+', content):
-            module_name = match.group(1).replace(':', '/')
-            module_path = root / module_name
-            if module_path.exists():
-                gradle_data = _get_gradle_metadata(module_name, root)
-                module_data = _extract_gradle_module(module_path, root, module_name, gradle_data, quality_tasks)
-                if module_data:
-                    modules.append(module_data)
+    for module_path, relative_path in descriptors:
+        gradle_data = _get_gradle_metadata(
+            relative_path if relative_path != '.' else '', root
+        )
+        module_data = _extract_gradle_module(module_path, root, relative_path, gradle_data, quality_tasks)
+        if module_data:
+            modules.append(module_data)
 
     log_entry('script', 'global', 'INFO', f'[GRADLE-DISCOVER] Discovered {len(modules)} modules')
     return modules
@@ -308,12 +330,14 @@ def _extract_gradle_module(
 ) -> dict | None:
     """Extract Gradle module with contract-compliant structure.
 
-    Uses Gradle command data when available, falls back to file system analysis.
+    Uses shared discovery utilities from extension-api for source directories,
+    file counting, and package discovery. Gradle command data provides
+    coordinates and dependencies.
 
     Args:
         module_path: Path to module directory
         project_root: Project root path
-        relative_path: Path relative to project root ("" for root module)
+        relative_path: Path relative to project root ("." for root module)
         gradle_data: Metadata from Gradle commands (None if commands failed)
         quality_tasks: List of detected quality task names
 
@@ -329,10 +353,11 @@ def _extract_gradle_module(
     if not build_file:
         return None
 
-    # Root module is always named "default"
-    is_root_module = not relative_path or relative_path == '.'
+    # Determine if root module
+    is_root_module = relative_path == '.' or not relative_path
+    rel_path_str = relative_path if not is_root_module else '.'
 
-    # Get name - root is "default", submodules use Gradle data or directory name
+    # Get name — use build_module_base for root module naming convention
     if is_root_module:
         name = 'default'
     elif gradle_data and gradle_data.get('name'):
@@ -358,18 +383,19 @@ def _extract_gradle_module(
     description = gradle_data.get('description')
     dependencies = gradle_data.get('dependencies', [])
 
-    # Source directories
-    sources = _discover_sources(module_path)
-    source_paths = [f'{relative_path}/{s}' if relative_path else s for s in sources['main']]
-    test_paths = [f'{relative_path}/{t}' if relative_path else t for t in sources['test']]
+    # Shared source discovery (multi-language + resources)
+    sources = discover_sources(module_path)
+    prefix = relative_path if not is_root_module else ''
+    source_paths = [f'{prefix}/{s}' if prefix else s for s in sources['main']]
+    test_paths = [f'{prefix}/{t}' if prefix else t for t in sources['test']]
 
-    # README
+    # README via shared utility
     readme = find_readme(str(module_path))
-    readme_path = f'{relative_path}/{readme}' if readme and relative_path else readme
+    readme_path = f'{prefix}/{readme}' if readme and prefix else readme
 
-    # Stats
-    source_files = _count_source_files(module_path, sources['main'])
-    test_files = _count_source_files(module_path, sources['test'])
+    # Stats via shared counting
+    source_files = count_source_files(module_path, sources['main'])
+    test_files = count_source_files(module_path, sources['test'])
 
     # Commands
     commands = _build_commands(
@@ -386,8 +412,8 @@ def _extract_gradle_module(
         'paths': {
             k: v
             for k, v in {
-                'module': relative_path if relative_path else '.',
-                'descriptor': f'{relative_path}/{build_file.name}' if relative_path else build_file.name,
+                'module': rel_path_str,
+                'descriptor': f'{prefix}/{build_file.name}' if prefix else build_file.name,
                 'sources': source_paths if source_paths else None,
                 'tests': test_paths if test_paths else None,
                 'readme': readme_path,
@@ -413,49 +439,6 @@ def _extract_gradle_module(
 
 
 # =============================================================================
-# Source Discovery
-# =============================================================================
-
-
-def _discover_sources(module_path: Path) -> dict:
-    """Discover source directories for all JVM languages.
-
-    Checks for Java, Kotlin, Groovy, and Scala source directories.
-
-    Returns:
-        Dict with main and test source directories
-    """
-    sources: dict[str, list[str]] = {'main': [], 'test': []}
-
-    for lang in JVM_LANGUAGES:
-        main_dir = module_path / 'src' / 'main' / lang
-        test_dir = module_path / 'src' / 'test' / lang
-        if main_dir.exists():
-            sources['main'].append(f'src/main/{lang}')
-        if test_dir.exists():
-            sources['test'].append(f'src/test/{lang}')
-
-    return sources
-
-
-def _count_source_files(module_path: Path, source_dirs: list) -> int:
-    """Count JVM source files (Java, Kotlin, Groovy, Scala) in source directories."""
-    count = 0
-    for src in source_dirs:
-        src_path = module_path / src
-        if src_path.exists():
-            # Determine language from path (e.g., src/main/kotlin -> kotlin)
-            lang = Path(src).name
-            if lang in JVM_EXTENSIONS:
-                count += len(list(src_path.rglob(JVM_EXTENSIONS[lang])))
-            else:
-                # Fallback: count all known JVM files
-                for ext in JVM_EXTENSIONS.values():
-                    count += len(list(src_path.rglob(ext)))
-    return count
-
-
-# =============================================================================
 # Commands
 # =============================================================================
 
@@ -478,7 +461,7 @@ def _build_commands(
         module_name: Module name or directory name
         has_sources: Whether module has source files
         has_tests: Whether module has test files
-        relative_path: Path relative to project root ("" for root module)
+        relative_path: Path relative to project root ("." or "" for root module)
         quality_tasks: List of detected quality task names
     """
     base = 'python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run'

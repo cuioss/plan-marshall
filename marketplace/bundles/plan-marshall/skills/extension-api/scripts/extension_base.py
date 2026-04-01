@@ -30,11 +30,16 @@ from abc import ABC, abstractmethod
 # Re-export module discovery utilities from private implementation
 from _build_discover import (  # noqa: F401
     EXCLUDE_DIRS,
+    JVM_EXTENSIONS,
+    JVM_LANGUAGES,
     README_PATTERNS,
     ModuleBase,
     ModulePaths,
     build_module_base,
+    count_source_files,
     discover_descriptors,
+    discover_packages,
+    discover_sources,
     find_readme,
 )
 

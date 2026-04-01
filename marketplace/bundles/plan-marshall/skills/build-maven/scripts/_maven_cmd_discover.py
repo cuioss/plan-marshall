@@ -39,7 +39,14 @@ EXTENSION_API_DIR = (
 if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
 
-from extension_base import PROFILE_PATTERNS, build_module_base, discover_descriptors  # noqa: E402
+from extension_base import (  # noqa: E402
+    PROFILE_PATTERNS,
+    build_module_base,
+    count_source_files,
+    discover_descriptors,
+    discover_packages,
+    discover_sources,
+)
 
 # =============================================================================
 # Extension Defaults Keys (for config_defaults callback)
@@ -137,19 +144,19 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
     # Description from pom.xml (per spec: "description is optional - parse from pom.xml if present")
     description = _get_description(pom_path)
 
-    # Source directories
-    sources = _discover_sources(module_path)
+    # Source directories (shared multi-language discovery)
+    sources = discover_sources(module_path)
     source_paths = [f'{relative_path}/{s}' if relative_path != '.' else s for s in sources['main']]
     test_paths = [f'{relative_path}/{t}' if relative_path != '.' else t for t in sources['test']]
 
-    # Packages
+    # Packages (shared multi-language package discovery)
     rel = relative_path if relative_path != '.' else ''
-    packages = _discover_packages(module_path, sources, rel)
-    test_packages = _discover_test_packages(module_path, sources, rel)
+    packages = discover_packages(module_path, sources.get('main', []), rel)
+    test_packages = discover_packages(module_path, sources.get('test', []), rel)
 
-    # Stats
-    source_files = _count_java_files(module_path, sources['main'])
-    test_files = _count_java_files(module_path, sources['test'])
+    # Stats (shared multi-language file counting)
+    source_files = count_source_files(module_path, sources['main'])
+    test_files = count_source_files(module_path, sources['test'])
 
     # Commands
     commands = _build_commands(
@@ -572,106 +579,6 @@ def _classify_profile(profile_id: str) -> str:
             return canonical  # type: ignore[no-any-return]
 
     return 'NO-MATCH-FOUND'
-
-
-# =============================================================================
-# Source Discovery
-# =============================================================================
-
-
-def _discover_sources(module_path: Path) -> dict:
-    """Discover source directories including resources.
-
-    Returns both code and resources directories:
-    - main: src/main/java, src/main/resources
-    - test: src/test/java, src/test/resources
-    """
-    sources: dict[str, list[str]] = {'main': [], 'test': []}
-
-    # Main sources
-    if (module_path / 'src' / 'main' / 'java').exists():
-        sources['main'].append('src/main/java')
-    if (module_path / 'src' / 'main' / 'resources').exists():
-        sources['main'].append('src/main/resources')
-
-    # Test sources
-    if (module_path / 'src' / 'test' / 'java').exists():
-        sources['test'].append('src/test/java')
-    if (module_path / 'src' / 'test' / 'resources').exists():
-        sources['test'].append('src/test/resources')
-
-    return sources
-
-
-def _discover_packages_from_dirs(
-    module_path: Path, source_dirs: list[str], relative_path: str
-) -> dict:
-    """Discover Java packages from a list of source directories.
-
-    Returns dict keyed by package name with path, optional package_info,
-    and optional files (sorted list of direct .java children).
-    """
-    packages = {}
-
-    for source_dir in source_dirs:
-        source_path = module_path / source_dir
-        if not source_path.exists():
-            continue
-
-        seen = set()
-        for java_file in source_path.rglob('*.java'):
-            pkg_dir = java_file.parent
-            pkg_name = str(pkg_dir.relative_to(source_path)).replace('/', '.').replace('\\', '.')
-
-            # Skip root "." package - files directly in source root are not valid packages
-            if pkg_name and pkg_name != '.' and pkg_name not in seen:
-                seen.add(pkg_name)
-
-                rel_path = str(pkg_dir.relative_to(module_path))
-                if relative_path:
-                    rel_path = f'{relative_path}/{rel_path}'
-
-                pkg_info: dict[str, str | list[str]] = {'path': rel_path}
-
-                # Check for package-info.java
-                info_file = pkg_dir / 'package-info.java'
-                if info_file.exists():
-                    info_path = str(info_file.relative_to(module_path))
-                    if relative_path:
-                        info_path = f'{relative_path}/{info_path}'
-                    pkg_info['package_info'] = info_path
-
-                # List direct .java files (not recursive — sub-package files belong to their own entry)
-                direct_files = sorted(
-                    f.name for f in pkg_dir.iterdir()
-                    if f.is_file() and f.suffix == '.java' and f.name != 'package-info.java'
-                )
-                if direct_files:
-                    pkg_info['files'] = direct_files
-
-                packages[pkg_name] = pkg_info
-
-    return packages
-
-
-def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> dict:
-    """Discover Java packages as dict keyed by package name."""
-    return _discover_packages_from_dirs(module_path, sources.get('main', []), relative_path)
-
-
-def _discover_test_packages(module_path: Path, sources: dict, relative_path: str) -> dict:
-    """Discover Java test packages as dict keyed by package name."""
-    return _discover_packages_from_dirs(module_path, sources.get('test', []), relative_path)
-
-
-def _count_java_files(module_path: Path, source_dirs: list) -> int:
-    """Count Java files in source directories."""
-    count = 0
-    for src in source_dirs:
-        src_path = module_path / src
-        if src_path.exists():
-            count += len(list(src_path.rglob('*.java')))
-    return count
 
 
 # =============================================================================

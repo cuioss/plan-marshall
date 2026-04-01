@@ -29,6 +29,18 @@ README_PATTERNS = ['README.md', 'README.adoc', 'README.txt', 'README']
 EXCLUDE_DIRS = {'.git', 'node_modules', 'target', 'build', '__pycache__', '.plan'}
 """Directory names to exclude from recursive searches."""
 
+# JVM languages and their source file extensions (used by discover_sources / count_source_files)
+JVM_LANGUAGES = ['java', 'kotlin', 'groovy', 'scala']
+"""JVM languages checked during source directory discovery."""
+
+JVM_EXTENSIONS: dict[str, str] = {
+    'java': '*.java',
+    'kotlin': '*.kt',
+    'groovy': '*.groovy',
+    'scala': '*.scala',
+}
+"""Glob patterns for JVM source files, keyed by language name."""
+
 
 # =============================================================================
 # Data Classes
@@ -221,3 +233,159 @@ def find_readme(module_path: str) -> str | None:
             return pattern
 
     return None
+
+
+# =============================================================================
+# Source Directory Discovery
+# =============================================================================
+
+
+def discover_sources(module_path: str | Path) -> dict[str, list[str]]:
+    """Discover source directories for all JVM languages plus resources.
+
+    Checks for Java, Kotlin, Groovy, Scala source directories and
+    resource directories under the standard src/main and src/test layout.
+
+    Args:
+        module_path: Absolute path to module directory.
+
+    Returns:
+        Dict with 'main' and 'test' keys, each containing a list of
+        relative source directory paths that exist. Example::
+
+            {
+                'main': ['src/main/java', 'src/main/kotlin', 'src/main/resources'],
+                'test': ['src/test/java', 'src/test/resources']
+            }
+    """
+    mod = Path(module_path)
+    sources: dict[str, list[str]] = {'main': [], 'test': []}
+
+    for lang in JVM_LANGUAGES:
+        main_dir = mod / 'src' / 'main' / lang
+        test_dir = mod / 'src' / 'test' / lang
+        if main_dir.exists():
+            sources['main'].append(f'src/main/{lang}')
+        if test_dir.exists():
+            sources['test'].append(f'src/test/{lang}')
+
+    # Resources directories
+    if (mod / 'src' / 'main' / 'resources').exists():
+        sources['main'].append('src/main/resources')
+    if (mod / 'src' / 'test' / 'resources').exists():
+        sources['test'].append('src/test/resources')
+
+    return sources
+
+
+def count_source_files(module_path: str | Path, source_dirs: list[str]) -> int:
+    """Count JVM source files in the given source directories.
+
+    Determines the language from the directory path (e.g. ``src/main/kotlin``
+    → ``*.kt``) and counts matching files recursively. Resource directories
+    and directories not mapping to a known JVM language are skipped.
+
+    Args:
+        module_path: Absolute path to module directory.
+        source_dirs: List of relative source directory paths
+            (as returned by :func:`discover_sources`).
+
+    Returns:
+        Total count of JVM source files across all directories.
+    """
+    mod = Path(module_path)
+    count = 0
+    for src in source_dirs:
+        src_path = mod / src
+        if not src_path.exists():
+            continue
+        # Determine language from trailing directory name
+        lang = Path(src).name
+        if lang in JVM_EXTENSIONS:
+            count += len(list(src_path.rglob(JVM_EXTENSIONS[lang])))
+        # Skip resources and other non-code directories
+    return count
+
+
+def discover_packages(
+    module_path: str | Path,
+    source_dirs: list[str],
+    relative_path: str,
+) -> dict:
+    """Discover JVM packages from source directories.
+
+    Scans source directories for JVM source files and groups them by
+    package (directory structure converted to dotted notation).
+
+    Args:
+        module_path: Absolute path to module directory.
+        source_dirs: List of relative source directory paths to scan.
+        relative_path: Module path relative to project root (used to
+            prefix paths in the output). Use ``""`` for root modules.
+
+    Returns:
+        Dict keyed by package name. Each value contains::
+
+            {
+                'path': str,                    # Relative path to package dir
+                'package_info': str | absent,   # Path to package-info.java if exists
+                'files': list[str] | absent     # Sorted source file names
+            }
+    """
+    mod = Path(module_path)
+    packages: dict[str, dict] = {}
+
+    # Collect all JVM file extensions to search for
+    all_extensions = list(JVM_EXTENSIONS.values())
+
+    for source_dir in source_dirs:
+        source_path = mod / source_dir
+        if not source_path.exists():
+            continue
+
+        # Skip resource directories — no packages there
+        if Path(source_dir).name == 'resources':
+            continue
+
+        seen: set[str] = set()
+        # Find all JVM source files across all languages
+        source_files_by_dir: dict[Path, list[Path]] = {}
+        for ext_glob in all_extensions:
+            for src_file in source_path.rglob(ext_glob):
+                pkg_dir = src_file.parent
+                source_files_by_dir.setdefault(pkg_dir, []).append(src_file)
+
+        for pkg_dir, files in source_files_by_dir.items():
+            pkg_name = str(pkg_dir.relative_to(source_path)).replace('/', '.').replace('\\', '.')
+
+            # Skip root "." package
+            if not pkg_name or pkg_name == '.' or pkg_name in seen:
+                continue
+            seen.add(pkg_name)
+
+            rel_path = str(pkg_dir.relative_to(mod))
+            if relative_path:
+                rel_path = f'{relative_path}/{rel_path}'
+
+            pkg_info: dict[str, str | list[str]] = {'path': rel_path}
+
+            # Check for package-info.java
+            info_file = pkg_dir / 'package-info.java'
+            if info_file.exists():
+                info_path = str(info_file.relative_to(mod))
+                if relative_path:
+                    info_path = f'{relative_path}/{info_path}'
+                pkg_info['package_info'] = info_path
+
+            # List direct source files (not recursive — sub-packages have their own entry)
+            direct_files = sorted(
+                f.name for f in pkg_dir.iterdir()
+                if f.is_file() and f.suffix in {'.java', '.kt', '.groovy', '.scala'}
+                and f.name != 'package-info.java'
+            )
+            if direct_files:
+                pkg_info['files'] = direct_files
+
+            packages[pkg_name] = pkg_info
+
+    return packages
