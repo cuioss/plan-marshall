@@ -8,7 +8,7 @@ Usage:
     gradle.py find-project --project-name <name> | --project-path <path>
     gradle.py search-markers --source-dir <dir>
     gradle.py check-warnings --warnings <json> [--acceptable-warnings <json>]
-    gradle.py coverage-report [--module-path <path>] [--threshold <percent>]
+    gradle.py coverage-report [--project-path <path>] [--threshold <percent>]
     gradle.py --help
 
 Subcommands:

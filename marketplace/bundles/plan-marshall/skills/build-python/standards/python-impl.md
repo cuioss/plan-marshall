@@ -41,7 +41,7 @@ Omit `{module}` to run against all modules.
 ## Timeout Behavior
 
 - **Unit**: Seconds
-- **Default**: 300 seconds (5 minutes)
+- **Default**: 300 seconds (5 minutes), same as all other build skills
 - **Minimum**: 60 seconds (enforced via `MIN_TIMEOUT`)
 - **Adaptive learning**: On successful completion, actual duration is recorded. On timeout failure, the cached timeout is doubled for the next run.
 - **Command key format**: `python:{first_subcommand}` (e.g., `python:module_tests`)
@@ -62,15 +62,40 @@ Omit `{module}` to run against all modules.
 ### Parser Detection
 
 The parser detects the tool from output content:
-- Lines containing mypy patterns → type error parsing
-- Lines containing ruff codes → lint error parsing
-- Lines containing pytest markers → test failure parsing
+- Lines containing mypy patterns -> type error parsing
+- Lines containing ruff codes -> lint error parsing
+- Lines containing pytest markers -> test failure parsing
 
 ---
 
 ## Acceptable Warnings
 
 Warnings can be suppressed per-project via `.plan/acceptable-warnings-python.txt`. One pattern per line. Lines starting with `#` are comments. The file is loaded from `{project_dir}/.plan/`.
+
+### Configuration
+
+Acceptable warning patterns are also stored in `run-configuration.json` under the `python` section:
+
+```json
+{
+    "python": {
+        "acceptable_warnings": [
+            "DeprecationWarning",
+            "^.*experimental.*$"
+        ]
+    }
+}
+```
+
+Patterns support substring matching and regex (patterns starting with `^`).
+
+### Access
+
+```
+Skill: plan-marshall:manage-run-config
+Workflow: Read Configuration
+Field: python.acceptable_warnings
+```
 
 ---
 
@@ -138,7 +163,9 @@ Omit `{module}` to run against all modules.
 | Subcommand | Description |
 |------------|-------------|
 | `run` | Execute build and auto-parse on failure (primary API) |
+| `parse` | Parse pyprojectx build output and categorize issues |
 | `coverage-report` | Parse coverage.py XML report |
+| `check-warnings` | Categorize build warnings against acceptable patterns |
 
 ### run Parameters
 

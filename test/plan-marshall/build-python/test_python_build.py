@@ -307,8 +307,9 @@ def test_execute_direct_returns_timeout_on_timeout():
 
 
 def test_default_timeout_is_reasonable():
-    """DEFAULT_TIMEOUT is set to a reasonable value."""
-    assert python_build.DEFAULT_TIMEOUT == 300  # 5 minutes
+    """Default timeout in execute config is set to a reasonable value."""
+    from _python_execute import _CONFIG
+    assert _CONFIG.default_timeout == 300  # 5 minutes, unified across all build skills
 
 
 def test_min_timeout_is_enforced():

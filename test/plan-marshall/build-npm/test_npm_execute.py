@@ -24,8 +24,8 @@ def test_config_tool_name():
 
 
 def test_config_default_timeout():
-    """Config has 120s default timeout (shorter than Maven/Gradle)."""
-    assert _CONFIG.default_timeout == 120
+    """Config has 300s default timeout (unified across all build skills)."""
+    assert _CONFIG.default_timeout == 300
 
 
 def test_config_capture_strategy():

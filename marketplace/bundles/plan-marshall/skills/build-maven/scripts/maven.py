@@ -6,8 +6,8 @@ Usage:
     maven.py run --command-args <args> [options]
     maven.py parse --log <path> [--mode <mode>]
     maven.py search-markers --source-dir <dir>
-    maven.py check-warnings --warnings <json> [--patterns <json>]
-    maven.py coverage-report [--module-path <path>] [--threshold <percent>]
+    maven.py check-warnings --warnings <json> [--acceptable-warnings <json>]
+    maven.py coverage-report [--project-path <path>] [--threshold <percent>]
     maven.py --help
 
 Subcommands:
@@ -45,7 +45,7 @@ cmd_coverage_report = create_coverage_report_handler(
 cmd_check_warnings = create_check_warnings_handler(
     matcher='substring',
     filter_severity='WARNING',
-    supports_patterns_arg=True,
+    supports_patterns_arg=False,
 )
 
 
@@ -118,9 +118,8 @@ def main():
     # check-warnings subcommand
     warn_parser = subparsers.add_parser('check-warnings', help='Categorize build warnings')
     warn_parser.add_argument('--warnings', help='JSON array of warning objects')
-    warn_parser.add_argument('--patterns', help='JSON array of acceptable patterns')
     warn_parser.add_argument(
-        '--acceptable-warnings', dest='acceptable_warnings', help='JSON object with categorized patterns'
+        '--acceptable-warnings', dest='acceptable_warnings', help='JSON object with acceptable patterns'
     )
     warn_parser.set_defaults(func=cmd_check_warnings)
 

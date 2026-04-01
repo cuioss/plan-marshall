@@ -32,7 +32,20 @@ Gradle build execution with output parsing, module discovery, and wrapper detect
 | `_gradle_cmd_parse.py` | Library | Log parsing, issue extraction |
 | `_gradle_cmd_find_project.py` | Library | Gradle subproject location |
 
-## Gradle run (Primary API)
+## Unified API
+
+All build skills share the same subcommand structure. Gradle supports all subcommands:
+
+| Subcommand | Purpose |
+|------------|---------|
+| `run` | Execute build and auto-parse on failure (primary API) |
+| `parse` | Parse Gradle build output from log file |
+| `coverage-report` | Parse JaCoCo coverage report |
+| `check-warnings` | Categorize build warnings against acceptable patterns |
+| `search-markers` | Search OpenRewrite TODO markers in source files |
+| `find-project` | Find Gradle subproject path from name |
+
+### run (Primary API)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
@@ -78,17 +91,28 @@ tests:
   skipped: 1
 ```
 
-### Coverage Report
+### parse
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle parse \
+    --log <path> [--mode <mode>]
+```
+
+**Parameters**:
+- `--log` - Path to Gradle build log file (required)
+- `--mode` - Output mode: default, errors, structured (default)
+
+### coverage-report
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-gradle:gradle coverage-report \
-    [--module-path <path>] \
+    [--project-path <path>] \
     [--report-path <path>] \
     [--threshold <percent>]
 ```
 
 **Parameters**:
-- `--module-path` - Module directory path (for multi-project builds)
+- `--project-path` - Module directory path (for multi-project builds)
 - `--report-path` - Override JaCoCo XML report path (default: auto-detect in build/)
 - `--threshold` - Coverage threshold percent (default: 80)
 
@@ -98,27 +122,55 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle coverage-repor
 status	success
 passed	true
 threshold	80
-message	"Coverage meets threshold: 82.4% line, 75.0% branch"
+message	"Coverage meets threshold: 85.2% line, 78.3% branch"
 
 overall:
-  line	82.35
-  branch	75.0
-  instruction	79.69
-  method	83.33
+  line	85.2
+  branch	78.3
+  instruction	81.5
+  method	87.1
 
 low_coverage[1]{class,line_pct,missed_methods}:
-  de.cuioss.portal.sample.UserService,66.67,deleteUser
+  com.example.service.UserService,68.5,deleteUser
 ```
 
-### Low-level Operations
+### check-warnings
 
-| Command | Purpose |
-|---------|---------|
-| `gradle parse` | Parse Gradle build output |
-| `gradle find-project` | Find Gradle subproject |
-| `gradle search-markers` | Search markers in Gradle project |
-| `gradle check-warnings` | Check Gradle warnings |
-| `gradle coverage-report` | Parse JaCoCo coverage report |
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle check-warnings \
+    --warnings <json> [--acceptable-warnings <json>]
+```
+
+**Parameters**:
+- `--warnings` - JSON array of warnings
+- `--acceptable-warnings` - JSON object with acceptable patterns
+
+### search-markers
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle search-markers \
+    --source-dir <dir> [--extensions <ext>]
+```
+
+**Parameters**:
+- `--source-dir` - Directory to search (default: src)
+- `--extensions` - Comma-separated file extensions (default: .java,.kt)
+
+**Note**: This subcommand is specific to Maven and Gradle (OpenRewrite integration). Not available in npm or Python builds.
+
+### find-project
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle find-project \
+    --project-name <name> | --project-path <path>
+```
+
+**Parameters** (mutually exclusive):
+- `--project-name` - Project name to search for
+- `--project-path` - Explicit project path to validate
+- `--root` - Project root directory (default: .)
+
+**Note**: This subcommand is Gradle-specific. Maven uses `-pl {module}` directly.
 
 ## Wrapper Detection
 
@@ -137,6 +189,22 @@ Gradle: ./gradlew > gradle (on PATH)
 | `deprecation_warning` | Deprecated API usage |
 | `unchecked_warning` | Unchecked type conversions |
 | `openrewrite_info` | OpenRewrite plugin output |
+
+## Module Discovery
+
+Gradle module discovery reads `settings.gradle(.kts)` to detect multi-project builds. Subprojects are identified from `include()` declarations.
+
+### Command Generation
+
+Discovery generates canonical commands per subproject:
+
+| Canonical | Gradle Command |
+|-----------|----------------|
+| `verify` | `:module:build` |
+| `quality-gate` | `:module:check` |
+| `compile` | `:module:compileJava` |
+| `module-tests` | `:module:test` |
+| `clean` | `clean` |
 
 ## References
 

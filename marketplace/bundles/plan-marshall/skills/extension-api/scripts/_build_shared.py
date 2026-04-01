@@ -107,7 +107,7 @@ def add_coverage_subparser(subparsers, *, help_text: str = 'Parse coverage repor
         The created coverage-report subparser.
     """
     cov_parser = subparsers.add_parser('coverage-report', help=help_text)
-    cov_parser.add_argument('--module-path', dest='module_path', help='Module directory path')
+    cov_parser.add_argument('--project-path', dest='project_path', help='Project or module directory path')
     cov_parser.add_argument('--report-path', dest='report_path', help='Override coverage report path')
     cov_parser.add_argument(
         '--threshold', type=int, default=default_threshold, help=f'Coverage threshold percent (default: {default_threshold})',

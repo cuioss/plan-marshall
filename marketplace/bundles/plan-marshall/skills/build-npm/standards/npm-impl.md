@@ -82,10 +82,7 @@ All output goes to log file, not memory (R1 compliance).
 
 **Timeout units:** All timeouts use **seconds** (not milliseconds).
 
-**Default timeouts:**
-- Standard builds: 120 seconds (2 minutes)
-- E2E/Playwright tests: 180 seconds (3 minutes)
-- Lint/format: 60 seconds (1 minute)
+**Default timeout:** 300 seconds (5 minutes), same as all other build skills. Adaptive timeout learning adjusts based on actual build duration.
 
 **Timeout behavior:**
 - Commands exceeding timeout return exit code 124
@@ -285,7 +282,9 @@ Commands are only generated for scripts present in `package.json`.
 | Subcommand | Description |
 |------------|-------------|
 | `run` | Execute build and auto-parse on failure (primary API) |
+| `parse` | Parse npm/npx build output and categorize issues |
 | `coverage-report` | Parse JavaScript coverage report |
+| `check-warnings` | Categorize build warnings against acceptable patterns |
 
 ### run Parameters
 
@@ -294,7 +293,7 @@ Commands are only generated for scripts present in `package.json`.
 | `--command-args` | Yes | - | Complete npm command arguments (e.g., "run test" or "run test --workspace=pkg") |
 | `--working-dir` | No | - | Working directory for command execution |
 | `--env` | No | - | Environment variables (e.g., "NODE_ENV=test CI=true") |
-| `--timeout` | No | 120 | Build timeout in seconds |
+| `--timeout` | No | 300 | Build timeout in seconds |
 | `--project-dir` | No | . | Project root directory |
 | `--mode` | No | actionable | Output mode: actionable, structured, errors |
 | `--format` | No | toon | Output format: toon or json |

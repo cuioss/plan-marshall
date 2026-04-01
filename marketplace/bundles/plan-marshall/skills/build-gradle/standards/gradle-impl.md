@@ -274,11 +274,12 @@ export CI=true
 
 | Subcommand | Description |
 |------------|-------------|
-| `run` | Execute Gradle build with automatic log file handling and parsed output (primary API) |
+| `run` | Execute build and auto-parse on failure (primary API) |
 | `parse` | Parse Gradle build output and categorize issues |
 | `find-project` | Find Gradle project path from project name |
 | `search-markers` | Search for OpenRewrite TODO markers |
 | `check-warnings` | Categorize build warnings against acceptable patterns |
+| `coverage-report` | Parse JaCoCo coverage report |
 
 **Notation**: `plan-marshall:build-gradle:gradle`
 
@@ -308,4 +309,4 @@ The coverage report parser (`_gradle_cmd_coverage_report.py`) searches these JaC
 | `build/reports/jacoco/test/jacocoTestReport.xml` | Standard Gradle JaCoCo report |
 | `build/reports/jacoco/jacocoTestReport.xml` | Alternative report location |
 
-For multi-project builds, pass `--module-path {module-dir}` to scope the search to a specific subproject's `build/` directory.
+For multi-project builds, pass `--project-path {module-dir}` to scope the search to a specific subproject's `build/` directory.

@@ -220,11 +220,11 @@ All other marker types require user confirmation before suppression.
 
 | Subcommand | Description |
 |------------|-------------|
-| `execute` | Execute Maven build with automatic log file handling |
+| `run` | Execute build and auto-parse on failure (primary API) |
 | `parse` | Parse Maven build output and categorize issues |
-| `find-module` | Find Maven module path from artifactId |
 | `search-markers` | Search for OpenRewrite TODO markers |
 | `check-warnings` | Categorize build warnings against acceptable patterns |
+| `coverage-report` | Parse JaCoCo coverage report |
 
 **Notation**: `plan-marshall:build-maven:maven`
 
@@ -339,4 +339,4 @@ The coverage report parser (`_maven_cmd_coverage_report.py`) searches these JaCo
 | `target/jacoco/report.xml` | Alternative report location |
 | `target/site/jacoco-aggregate/jacoco.xml` | Multi-module aggregate report |
 
-For multi-module projects, pass `--module-path {module-dir}` to scope the search to a specific module's `target/` directory.
+For multi-module projects, pass `--project-path {module-dir}` to scope the search to a specific module's `target/` directory.

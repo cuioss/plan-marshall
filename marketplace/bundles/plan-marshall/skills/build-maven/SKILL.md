@@ -31,7 +31,19 @@ Maven build execution with output parsing, module discovery, and wrapper detecti
 | `_maven_cmd_discover.py` | Library | Module discovery via pom.xml |
 | `_maven_cmd_parse.py` | Library | Log parsing, issue extraction |
 
-## Maven run (Primary API)
+## Unified API
+
+All build skills share the same subcommand structure. Maven supports all subcommands:
+
+| Subcommand | Purpose |
+|------------|---------|
+| `run` | Execute build and auto-parse on failure (primary API) |
+| `parse` | Parse build output from log file |
+| `coverage-report` | Parse JaCoCo coverage report |
+| `check-warnings` | Categorize build warnings against acceptable patterns |
+| `search-markers` | Search OpenRewrite TODO markers in source files |
+
+### run (Primary API)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
@@ -77,17 +89,28 @@ tests:
   skipped: 1
 ```
 
-### Coverage Report
+### parse
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven parse \
+    --log <path> [--mode <mode>]
+```
+
+**Parameters**:
+- `--log` - Path to Maven build log file (required)
+- `--mode` - Output mode: default, errors, structured (default), no-openrewrite
+
+### coverage-report
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-maven:maven coverage-report \
-    [--module-path <path>] \
+    [--project-path <path>] \
     [--report-path <path>] \
     [--threshold <percent>]
 ```
 
 **Parameters**:
-- `--module-path` - Module directory path (for multi-module projects)
+- `--project-path` - Module directory path (for multi-module projects)
 - `--report-path` - Override JaCoCo XML report path (default: auto-detect in target/)
 - `--threshold` - Coverage threshold percent (default: 80)
 
@@ -109,14 +132,29 @@ low_coverage[1]{class,line_pct,missed_methods}:
   de.cuioss.portal.sample.UserService,66.67,deleteUser
 ```
 
-### Low-level Operations
+### check-warnings
 
-| Command | Purpose |
-|---------|---------|
-| `maven parse` | Parse build output from log file |
-| `maven search-markers` | Search OpenRewrite TODO markers |
-| `maven check-warnings` | Categorize warnings against patterns |
-| `maven coverage-report` | Parse JaCoCo coverage report |
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven check-warnings \
+    --warnings <json> [--acceptable-warnings <json>]
+```
+
+**Parameters**:
+- `--warnings` - JSON array of warning objects
+- `--acceptable-warnings` - JSON object with acceptable patterns
+
+### search-markers
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven search-markers \
+    --source-dir <dir> [--extensions <ext>]
+```
+
+**Parameters**:
+- `--source-dir` - Directory to search (default: src)
+- `--extensions` - Comma-separated file extensions (default: .java)
+
+**Note**: This subcommand is specific to Maven and Gradle (OpenRewrite integration). Not available in npm or Python builds.
 
 ## Wrapper Detection
 
@@ -135,6 +173,25 @@ Maven:  ./mvnw > mvn (on PATH)
 | `deprecation_warning` | Deprecated API usage |
 | `unchecked_warning` | Unchecked type conversions |
 | `openrewrite_info` | OpenRewrite plugin output |
+
+## Module Discovery
+
+Maven module discovery reads `pom.xml` to detect multi-module projects. Modules are identified from `<modules>` declarations in the parent POM.
+
+### Command Generation
+
+Discovery generates canonical commands per module:
+
+| Canonical | Maven Command |
+|-----------|---------------|
+| `verify` | `verify -pl {module}` |
+| `quality-gate` | `-Ppre-commit verify -pl {module}` |
+| `compile` | `compile -pl {module}` |
+| `module-tests` | `test -pl {module}` |
+| `coverage` | `-Pcoverage verify -pl {module}` |
+| `clean` | `clean` |
+
+Profile-to-canonical mappings are configurable via extension defaults.
 
 ## References
 

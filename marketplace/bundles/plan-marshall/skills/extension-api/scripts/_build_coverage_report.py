@@ -43,7 +43,7 @@ def cmd_coverage_report_base(
 
     Args:
         args: Parsed argparse namespace. Expects optional attributes:
-            module_path or project_path (base path for search),
+            project_path (base path for search),
             report_path (explicit override), threshold (int, default 80).
         search_paths: Ordered list of (relative_path, format_hint) tuples.
         not_found_message: Error message when no report is found.
@@ -51,7 +51,7 @@ def cmd_coverage_report_base(
     Returns:
         Exit code: 0 if coverage meets threshold, 1 otherwise.
     """
-    base_path = getattr(args, 'module_path', None) or getattr(args, 'project_path', None)
+    base_path = getattr(args, 'project_path', None)
     report_file, fmt = find_report(
         search_paths,
         base_path=base_path,
