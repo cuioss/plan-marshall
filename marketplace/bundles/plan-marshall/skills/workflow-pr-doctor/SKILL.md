@@ -31,7 +31,8 @@ Diagnose and fix pull request issues with parameterized checks.
 | `checks` | optional | build\|reviews\|sonar\|all (default: all) |
 | `auto-fix` | optional | Auto-apply fixes without prompting (default: false) |
 | `wait` | optional | Wait for CI/Sonar to complete (default: true) |
-| `handoff` | optional | Handoff structure from previous phase (JSON) |
+| `handoff` | optional | Handoff structure from previous phase (JSON, see schema below) |
+| `max-fix-attempts` | optional | Maximum fix-verify-commit cycles before giving up (default: 3) |
 
 ## Prerequisites
 
@@ -45,7 +46,29 @@ Skill: plan-marshall:workflow-integration-sonar
 
 ### Step 0: Process Handoff Input
 
-If `handoff` parameter provided: Parse JSON, extract artifacts/decisions/constraints.
+If `handoff` parameter provided: Parse JSON with this schema:
+
+```json
+{
+  "artifacts": {
+    "pr_number": 123,
+    "branch": "feature/my-feature",
+    "commit_hash": "abc123",
+    "plan_id": "my-plan"
+  },
+  "decisions": {
+    "auto_fix": true,
+    "checks": "all",
+    "skip_sonar": false
+  },
+  "constraints": {
+    "max_fix_attempts": 3,
+    "protected_files": ["README.md"]
+  }
+}
+```
+
+Extract and merge with explicit parameters (explicit parameters take precedence).
 
 ### Step 1: Get PR Information
 
@@ -115,11 +138,18 @@ Recommended Actions:
 
 Based on checks parameter:
 
-**BUILD_FAILURE**: Run build fix workflow
+**BUILD_FAILURE**: Resolve using the build system:
+1. Fetch build logs via `ci ci status --pr-number {pr}`
+2. Identify failing step (compile, test, lint)
+3. Read failing files from error output
+4. Apply fix using Edit tool
+5. Verify with local build: `python3 .plan/execute-script.py plan-marshall:build-*:* run --command-args "verify"`
 
 **REVIEW_COMMENTS**: Use workflow-integration-ci (Handle Review). For each: triage → fix/explain/acknowledge.
 
 **SONAR_QUALITY**: Use workflow-integration-sonar (Fix Issues). For each: triage → fix/suppress (with approval if not auto-fix).
+
+**Iteration guard**: Track fix attempts per category. After `max-fix-attempts` (default: 3) cycles of fix → verify → still failing, stop and report remaining issues to the user rather than looping indefinitely.
 
 ### Step 6: Verify and Commit
 
@@ -162,6 +192,18 @@ Delegates to skills:
   ├─> workflow-integration-sonar skill (Fetch Issues, Fix Issues)
   └─> workflow-integration-git skill (Commit workflow)
 ```
+
+## Error Handling
+
+| Failure | Action |
+|---------|--------|
+| PR not found | Report error. Verify branch has a PR or use `--pr` parameter. |
+| CI wait timeout | Ask user via `AskUserQuestion` (continue/skip/abort). |
+| CI status check fails | Report error with stderr. Skip build diagnosis. |
+| Sonar MCP unavailable | Skip Sonar checks, report as "skipped — MCP not connected". |
+| Fix breaks build | Revert fix, report to user. Do not commit broken state. |
+| Max fix attempts reached | Report remaining issues with details. Do not loop further. |
+| Push failure | Report error. Never force-push as fallback. |
 
 ## Continuous Improvement
 

@@ -28,11 +28,14 @@ Provides git commit workflow following conventional commits specification. Inclu
 - Commit message generation following conventional commits
 - Optional push to remote
 
-### Commit Standards
+### Commit Standards (Quick Reference)
 
 - **Format:** `<type>(<scope>): <subject>`
 - **Types:** feat, fix, docs, style, refactor, perf, test, chore
-- **Quality:** imperative mood, lowercase, no period, max 50 chars
+- **Subject:** imperative mood, lowercase, no period, max 50 chars (72 absolute max)
+- **Body:** explain "why" not "what", wrap at 72 chars
+- **Footer:** `BREAKING CHANGE:`, `Fixes #123`, `Co-Authored-By:`
+- **Atomic:** one logical change per commit, code compiles and tests pass
 
 ## When to Activate This Skill
 
@@ -50,10 +53,8 @@ Provides git commit workflow following conventional commits specification. Inclu
 
 ### Steps
 
-**Step 1: Load Commit Standards**
-```
-Read standards/git-commit-standards.md
-```
+**Step 1: Verify Commit Standards**
+Use the quick reference above. For edge cases (breaking changes, multi-footer, scope guidelines), read `standards/git-commit-standards.md`.
 
 **Step 2: Check for Uncommitted Changes**
 ```bash
@@ -181,11 +182,21 @@ suggestions:
 status: success
 ```
 
+## Error Handling
+
+When a script or step returns failure:
+- **No changes to commit**: Report "No changes to commit" and return success (not an error).
+- **format-commit validation failure**: Report warnings to caller. Do not commit with invalid message.
+- **analyze-diff on missing file**: Return failure with path. Caller should generate diff first.
+- **Artifact cleanup uncertain**: Ask user via `AskUserQuestion` before deleting. Never auto-delete uncertain files.
+- **git commit failure** (hook rejection, conflict): Report error with full output. Do not retry automatically.
+- **git push failure**: Report error. Never force-push as fallback.
+
 ## Standards (Load On-Demand)
 
 | Standard | When to Load |
 |----------|-------------|
-| `standards/git-commit-standards.md` | Conventional commits format, type definitions, best practices |
+| `standards/git-commit-standards.md` | Edge cases: breaking changes, multi-footer, scope guidelines, anti-patterns |
 | `standards/artifact-cleanup.md` | Artifact detection patterns and cleanup rules |
 
 ## Critical Rules

@@ -30,21 +30,34 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 # TRIAGE CONFIGURATION
 # ============================================================================
 
-# Rules that are typically suppressable (false positives or intentional)
+# Rules that are typically suppressable (false positives or intentional).
+# Organized by language prefix for multi-language project support.
 SUPPRESSABLE_RULES = {
+    # Java
     'java:S1135': 'TODO comments - tracked in issue management',
     'java:S1068': 'Unused fields - may be for reflection/serialization',
     'java:S1172': 'Unused parameters - may be for API compatibility',
     'java:S106': 'System.out - acceptable in CLI/test code',
     'java:S2139': 'Logger vs exception - design decision',
+    # JavaScript / TypeScript
+    'javascript:S1135': 'TODO comments - tracked in issue management',
+    'typescript:S1135': 'TODO comments - tracked in issue management',
+    'javascript:S1854': 'Unused assignments - may be intentional destructuring',
+    'typescript:S1854': 'Unused assignments - may be intentional destructuring',
+    'javascript:S106': 'console.log - acceptable in CLI/dev code',
+    'typescript:S106': 'console.log - acceptable in CLI/dev code',
+    # Python
+    'python:S1135': 'TODO comments - tracked in issue management',
+    'python:S1481': 'Unused variables - may be for unpacking/convention',
 }
 
 # Severity to priority mapping
 SEVERITY_PRIORITY = {'BLOCKER': 'critical', 'CRITICAL': 'high', 'MAJOR': 'medium', 'MINOR': 'low', 'INFO': 'low'}
 
-# Type to priority boost
+# Type to priority boost — includes SECURITY_HOTSPOT (Sonar's 4th issue type)
 TYPE_BOOST = {
     'VULNERABILITY': 1,  # Boost priority
+    'SECURITY_HOTSPOT': 1,  # Boost priority — requires review
     'BUG': 0,
     'CODE_SMELL': -1,  # Lower priority
 }
@@ -55,7 +68,9 @@ TYPE_BOOST = {
 # ============================================================================
 
 
-def generate_mcp_instruction(project: str, pr: str | None = None, severities: str | None = None) -> dict[str, Any]:
+def generate_mcp_instruction(
+    project: str, pr: str | None = None, severities: str | None = None, types: str | None = None
+) -> dict[str, Any]:
     """Generate MCP tool invocation instruction for Claude."""
     parameters: dict[str, Any] = {'projects': [project]}
     instruction: dict[str, Any] = {'tool': 'mcp__sonarqube__search_sonar_issues_in_projects', 'parameters': parameters}
@@ -65,6 +80,9 @@ def generate_mcp_instruction(project: str, pr: str | None = None, severities: st
 
     if severities:
         parameters['severities'] = severities
+
+    if types:
+        parameters['types'] = types
 
     return instruction
 
@@ -81,7 +99,7 @@ def create_fetch_output(
     return {
         'project_key': project,
         'pull_request_id': pr,
-        'mcp_instruction': generate_mcp_instruction(project, pr, severities),
+        'mcp_instruction': generate_mcp_instruction(project, pr, severities, types),
         'expected_response_structure': {
             'key': 'EXAMPLE-001',
             'type': 'BUG|CODE_SMELL|VULNERABILITY',
@@ -108,8 +126,13 @@ def cmd_fetch(args):
 
 
 def get_fix_suggestion(rule: str, message: str, file: str, line: int) -> str:
-    """Generate fix suggestion based on rule."""
+    """Generate fix suggestion based on rule.
+
+    Supports Java, JavaScript/TypeScript, and Python rules. Falls back to
+    the Sonar issue message for unrecognized rules.
+    """
     suggestions = {
+        # Java
         'java:S2095': 'Wrap resource in try-with-resources block',
         'java:S1192': 'Extract duplicated string to constant',
         'java:S3649': 'Use parameterized query instead of string concatenation',
@@ -119,12 +142,27 @@ def get_fix_suggestion(rule: str, message: str, file: str, line: int) -> str:
         'java:S1481': 'Remove unused local variable',
         'java:S1854': 'Remove useless assignment',
         'java:S1144': 'Remove unused private method',
+        'java:S5131': 'Sanitize user input to prevent XSS',
+        # JavaScript / TypeScript (shared rule IDs)
+        'javascript:S1192': 'Extract duplicated string to constant',
+        'javascript:S3649': 'Use parameterized query to prevent injection',
+        'javascript:S1481': 'Remove unused local variable',
+        'javascript:S1854': 'Remove useless assignment',
+        'javascript:S106': 'Replace console.log with proper logging',
+        'javascript:S1135': 'Complete TODO or track in issue management system',
+        'typescript:S1192': 'Extract duplicated string to constant',
+        'typescript:S1481': 'Remove unused local variable',
+        'typescript:S1854': 'Remove useless assignment',
+        'typescript:S106': 'Replace console.log with proper logging',
+        'typescript:S1135': 'Complete TODO or track in issue management system',
+        # Python
+        'python:S1481': 'Remove unused local variable',
+        'python:S1135': 'Complete TODO or track in issue management system',
+        'python:S5131': 'Sanitize user input to prevent injection',
+        'python:S930': 'Fix function call argument count',
     }
 
-    rule_id = rule.split(':')[-1] if ':' in rule else rule
-    full_rule = f'java:{rule_id}' if not rule.startswith('java:') else rule
-
-    suggestion = suggestions.get(full_rule, f'Review and fix: {message}')
+    suggestion = suggestions.get(rule, f'Review and fix: {message}')
     return f'{suggestion} at {file}:{line}'
 
 
@@ -151,9 +189,25 @@ def should_suppress(rule: str, file: str, issue_type: str) -> tuple:
     if rule in SUPPRESSABLE_RULES:
         return True, SUPPRESSABLE_RULES[rule]
 
-    # Test files often have acceptable exceptions
-    if '/test/' in file or 'Test.java' in file:
-        if rule in ['java:S106', 'java:S2699']:
+    # Test files often have acceptable exceptions — detect across languages
+    is_test_file = (
+        '/test/' in file
+        or '/tests/' in file
+        or '/__tests__/' in file
+        or file.endswith('Test.java')
+        or file.startswith('test_')
+        or file.endswith(('.test.js', '.test.ts', '.spec.js', '.spec.ts'))
+    )
+    if is_test_file:
+        # Console/stdout usage and missing assertions are acceptable in tests
+        test_acceptable_rules = {
+            'java:S106',
+            'java:S2699',
+            'javascript:S106',
+            'typescript:S106',
+            'python:S106',
+        }
+        if rule in test_acceptable_rules:
             return True, 'Test code - acceptable pattern'
 
     return False, None

@@ -62,21 +62,25 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
    ```
 
 2. **Fetch Issues**
-   Use MCP tool:
+
+   The fetch script generates MCP tool call parameters — it does NOT fetch
+   issues directly. Use it to construct the call, then execute via MCP:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch \
+     --project {key} [--pr {id}] [--severities BLOCKER,CRITICAL] [--types BUG,VULNERABILITY]
+   ```
+
+   The script outputs an `mcp_instruction` with the tool name and parameters.
+   Execute the returned instruction via the SonarQube MCP tool:
+
    ```
    mcp__sonarqube__search_sonar_issues_in_projects(
      projects: ["{project_key}"],
      pullRequestId: "{pr_number}",
-     severities: "{filter}"
+     severities: "{filter}",
+     types: "{types}"
    )
-   ```
-
-   Or use script for structure:
-
-   Script: `plan-marshall:workflow-integration-sonar`
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch --project {key} [--pr {id}]
    ```
 
 3. **Return Structured List**
@@ -199,19 +203,22 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 
 ### Always Fix
 - BLOCKER severity
-- VULNERABILITY type
-- Security rules (java:S3649, java:S5131)
+- VULNERABILITY or SECURITY_HOTSPOT type
+- Security rules (e.g., `java:S3649`, `java:S5131`, `javascript:S3649`, `python:S5131`)
 
 ### Fix Preferred
 - CRITICAL severity
 - BUG type
-- Resource leaks (java:S2095)
+- Resource leaks (e.g., `java:S2095`)
 
 ### May Suppress
 - INFO severity
-- TODO comments (java:S1135) - if tracked
-- Unused fields for reflection (java:S1068)
-- Test code patterns (java:S106, java:S2699)
+- TODO comments (`*:S1135`) - if tracked in issue management
+- Unused fields for reflection (`java:S1068`)
+- Console/stdout in test code (`java:S106`, `javascript:S106`, `python:S106`)
+- Missing assertions in tests (`java:S2699`)
+
+**Supported languages:** Java, JavaScript, TypeScript, Python. Unrecognized rules fall back to the Sonar issue message for triage guidance.
 
 ## Suppression Format
 
@@ -220,10 +227,25 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 // NOSONAR java:S1234 - reason for suppression
 ```
 
-**JavaScript:**
+**JavaScript/TypeScript:**
 ```javascript
-// NOSONAR
+// NOSONAR javascript:S1234 - reason for suppression
 ```
+
+**Python:**
+```python
+# NOSONAR python:S1234 - reason for suppression
+```
+
+## Error Handling
+
+When a script or step returns failure:
+- **fetch script failure**: Report error. Verify SonarQube MCP server is connected and project key is correct.
+- **MCP tool returns empty**: No issues found — report success with zero counts.
+- **triage failure** (invalid JSON): Log warning, skip the issue, continue processing remaining.
+- **Fix implementation failure**: Report which file/line failed. Do not suppress as fallback — ask the caller.
+- **MCP status change failure**: Log warning, continue — marking resolved is best-effort.
+- **Build verification failure after fixes**: Report failing tests/compilation. Do not commit broken fixes.
 
 ## Integration
 

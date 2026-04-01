@@ -63,7 +63,7 @@ PATTERNS: dict[str, Any] = {
         ],
         'low': [r'rename', r'variable name', r'naming', r'typo', r'spelling', r'formatting', r'style'],
     },
-    'explain': [r'why', r'explain', r'reasoning', r'rationale', r'how does', r'what is', r'can you clarify', r'\?'],
+    'explain': [r'why', r'explain', r'reasoning', r'rationale', r'how does', r'what is', r'can you clarify'],
     'ignore': [r'^lgtm', r'^approved', r'looks good', r'^nice', r'^thanks', r'\[bot\]', r'^nit:', r'^nitpick:'],
 }
 
@@ -84,7 +84,7 @@ def run_command(cmd: str, extra_args: list[str] | None = None) -> tuple[str, str
         full_cmd = f'{cmd} {" ".join(extra_args)}'
 
     try:
-        result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=60)
+        result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=120)
         return result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired:
         return '', 'Command timed out', 124
@@ -250,18 +250,25 @@ def classify_comment(body: str) -> tuple[str, str, str]:
         if re.search(pattern, body_lower):
             return 'ignore', 'none', 'Automated or acknowledgment comment'
 
-    # Check for explanation patterns before code_change — questions
-    # often contain action words ("fix", "change") that would otherwise
-    # match code_change patterns and cause misclassification.
-    for pattern in PATTERNS['explain']:
-        if re.search(pattern, body_lower):
-            return 'explain', 'low', 'Question or clarification request'
-
-    # Check for code change patterns with priority
+    # Check for code change patterns first — actionable requests take
+    # priority over questions. "Can you fix X?" is a code_change, not explain.
     for priority in ['high', 'medium', 'low']:
         for pattern in PATTERNS['code_change'][priority]:
             if re.search(pattern, body_lower):
                 return 'code_change', priority, f'Matches {priority} priority pattern: {pattern}'
+
+    # Check for explanation patterns — only after ruling out code_change,
+    # so "Why did you fix it this way?" is correctly classified as explain
+    # rather than matching "fix" as code_change first (handled above) or
+    # matching "?" and missing code_change intent.
+    for pattern in PATTERNS['explain']:
+        if re.search(pattern, body_lower):
+            return 'explain', 'low', 'Question or clarification request'
+
+    # Standalone question mark — comment is a question but doesn't match
+    # explicit explain keywords. Check after code_change and explain patterns.
+    if '?' in body_lower:
+        return 'explain', 'low', 'Question or clarification request'
 
     # Default: review comment without clear action signal
     if len(body) > 100:

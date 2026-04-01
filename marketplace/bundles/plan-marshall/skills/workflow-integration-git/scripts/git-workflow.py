@@ -55,11 +55,20 @@ def validate_subject(subject: str) -> dict:
         valid = False
         warnings.append('Subject must not exceed 72 chars')
 
-    # Check imperative mood (basic check)
-    past_tense_endings = ['ed', 'ing']
+    # Check imperative mood (basic check with false-positive allow-list)
     first_word = subject.split()[0].lower() if subject.split() else ''
-    if any(first_word.endswith(e) for e in past_tense_endings):
-        warnings.append("Subject should use imperative mood (e.g., 'add' not 'added')")
+    # Words ending in -ed/-ing that are NOT past tense/gerund forms
+    imperative_allowlist = {
+        'red', 'bed', 'shed', 'led', 'fed', 'sled', 'med', 'wed',
+        'string', 'ring', 'bring', 'king', 'swing', 'thing', 'spring', 'ping',
+        'caching', 'hashing', 'nothing', 'everything', 'something',
+        'mixed', 'embed', 'spread', 'thread', 'overhead',
+    }
+    if first_word not in imperative_allowlist:
+        if first_word.endswith('ed') and len(first_word) > 2:
+            warnings.append("Subject should use imperative mood (e.g., 'add' not 'added')")
+        elif first_word.endswith('ing') and len(first_word) > 3:
+            warnings.append("Subject should use imperative mood (e.g., 'add' not 'adding')")
 
     # Check case
     if subject[0].isupper():
@@ -200,30 +209,59 @@ def analyze_diff(diff_content: str) -> dict:
     if not files_changed:
         return suggestions
 
-    # Analyze file paths
-    src_files = [f for f in files_changed if '/src/' in f]
-    test_files = [f for f in files_changed if '/test/' in f or 'Test' in f]
-    doc_files = [f for f in files_changed if f.endswith(('.md', '.adoc', '.txt'))]
+    # Analyze file paths — support Maven, Python, JS, and generic layouts
+    src_files = [f for f in files_changed if '/src/' in f or f.endswith(('.py', '.js', '.ts', '.jsx', '.tsx'))]
+    test_files = [
+        f
+        for f in files_changed
+        if '/test/' in f or '/tests/' in f or '/__tests__/' in f or 'Test' in f or f.startswith('test_')
+    ]
+    doc_files = [f for f in files_changed if f.endswith(('.md', '.adoc', '.txt', '.rst'))]
 
-    # Detect scope from common path
+    # Detect scope from common path — try multiple project layouts
     if src_files:
         paths = [f.split('/') for f in src_files]
-        # Find common component
+        scope_found = False
         for path in paths:
+            if scope_found:
+                break
+            # Maven/Gradle: src/main/java/<package>/...
             if 'main' in path:
                 idx = path.index('main')
                 if idx + 2 < len(path):
                     suggestions['scope'] = path[idx + 2]
-                    break
+                    scope_found = True
+            # Python: <package>/*.py or src/<package>/*.py
+            elif any(p.endswith('.py') for p in path):
+                # Use first directory component (or second if src/)
+                start = 1 if path[0] == 'src' else 0
+                if start < len(path) - 1:
+                    suggestions['scope'] = path[start]
+                    scope_found = True
+            # JS/TS: src/<component>/*.{js,ts,jsx,tsx}
+            elif path[0] == 'src' and len(path) > 2:
+                suggestions['scope'] = path[1]
+                scope_found = True
+            # Generic: use top-level directory
+            elif len(path) > 1:
+                suggestions['scope'] = path[0]
+                scope_found = True
 
     # Detect type
     additions = len(re.findall(r'^\+[^+]', diff_content, re.MULTILINE))
     deletions = len(re.findall(r'^-[^-]', diff_content, re.MULTILINE))
 
-    # Bug fix indicators
-    if re.search(r'(fix|bug|error|null|exception)', diff_content, re.IGNORECASE):
+    # Bug fix indicators — use word boundaries to avoid matching variable
+    # names like errorHandler, fixedWidth, nullableField, etc.
+    # Only match in diff metadata lines (@@, commit messages) and comments
+    # to reduce false positives from code identifiers.
+    bug_pattern = r'\b(fix(?:es|ed)?|bug|bugfix)\b'
+    diff_headers = '\n'.join(
+        line for line in diff_content.split('\n') if line.startswith(('@@', '---', '+++', 'diff '))
+    )
+    if re.search(bug_pattern, diff_headers, re.IGNORECASE):
         suggestions['type'] = 'fix'
-        detected_changes.append('Bug fix patterns detected')
+        detected_changes.append('Bug fix patterns detected in diff context')
 
     # Feature indicators
     elif additions > deletions * 2 and src_files:

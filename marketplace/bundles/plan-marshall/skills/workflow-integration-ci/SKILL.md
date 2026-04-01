@@ -163,114 +163,24 @@ status: success
 
 **Purpose:** Complete automated review cycle for a PR — wait for CI, fetch review comments, triage, respond, and resolve threads. Used by phase-6-finalize when `3_automated_review == true`.
 
-**Input:**
-- `plan_id` — for logging and Q-Gate findings
-- `pr_number` — PR number (from phase-6-finalize Step 4 or pr-view)
-- `review_bot_buffer_seconds` — seconds to wait after CI for review bots (from config)
+**Input:** `plan_id`, `pr_number`, `review_bot_buffer_seconds`
 
 **Steps:**
 
-1. **Wait for CI**
+1. Wait for CI → `ci ci wait --pr-number {pr_number}` (30-min timeout)
+2. Buffer for review bots → `sleep {review_bot_buffer_seconds}`
+3. Fetch comments → Workflow 1 with `--unresolved-only`
+4. Triage each comment → Workflow 2 triage
+5. Process by action type (code_change → Q-Gate finding + reply, explain → reply + resolve, ignore → resolve)
+6. Return summary with `loop_back_needed` flag
 
-   Use the built-in `ci wait` command which handles polling internally:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
-     --pr-number {pr_number}
-   ```
-
-   **Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
-
-   - **`final_status: success`** → proceed to step 2
-   - **`final_status: failure`** → return `{status: ci_failure, details: ...}` for loop-back
-   - **`status: timeout`** → ask user (continue/skip/abort)
-
-2. **Buffer for Review Bots**
-
-   Wait for automated review bots (Gemini Code Assist, etc.) to post comments:
-
-   ```bash
-   sleep {review_bot_buffer_seconds}
-   ```
-
-3. **Fetch Comments**
-
-   Use Workflow 1 (Fetch Comments) with `--unresolved-only`:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments --pr {pr_number} --unresolved-only
-   ```
-
-4. **Triage Each Comment**
-
-   Use Workflow 2 (Handle Review) triage for each unresolved comment:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{comment_json}'
-   ```
-
-5. **Process by Action Type**
-
-   **ID format rules** (from fetch-comments output):
-   - `thread-reply --thread-id`: Use the comment's `id` field (GraphQL node ID, format: `PRRC_kwDO...`). This is the `inReplyTo` target.
-   - `resolve-thread --thread-id`: Use the `thread_id` field (GraphQL node ID, format: `PRRT_kwDO...`).
-   - NEVER use numeric IDs — GitHub GraphQL requires global node IDs.
-
-   For each triaged comment:
-
-   **code_change** (requires implementation):
-   - Persist as Q-Gate finding:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-       qgate add --plan-id {plan_id} --phase 6-finalize --source qgate \
-       --type pr-comment --title "{comment summary}" \
-       --detail "{comment body} at {path}:{line}"
-     ```
-   - Reply acknowledging the finding:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
-         --pr-number {pr_number} --thread-id {comment_id} --body "Acknowledged — creating fix task."
-     ```
-
-   **explain** (reply with explanation):
-   - Generate explanation based on code context
-   - Reply to thread:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
-         --pr-number {pr_number} --thread-id {comment_id} --body "{explanation}"
-     ```
-   - Resolve thread:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
-         --pr-number {pr_number} --thread-id {thread_id}
-     ```
-
-   **ignore** (dismiss):
-   - Resolve thread:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
-         --pr-number {pr_number} --thread-id {thread_id}
-     ```
-
-6. **Return Summary**
+**Detailed reference:** Read `standards/automated-review-lifecycle.md` for full step-by-step commands, ID format rules, and error handling.
 
 **Output:**
 ```toon
-status: success
-pr_number: {pr_number}
-ci_status: success
-comments_total: {N}
-comments_unresolved: {N}
-processed:
-  code_changes: {N}
-  explanations: {N}
-  ignored: {N}
-threads_resolved: {N}
-loop_back_needed: {true|false}
-findings_created: {N}
+status: success|ci_failure
+loop_back_needed: true|false
 ```
-
-If `loop_back_needed == true`, phase-6-finalize creates fix tasks and loops back to phase-5-execute.
 
 ---
 
@@ -312,6 +222,19 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage 
 | rename, variable name, typo | code_change | low |
 | why, explain, reasoning, ? | explain | low |
 | lgtm, approved, looks good | ignore | none |
+
+## Error Handling
+
+When a script returns `status: failure`:
+- **fetch-comments failure**: Report error to caller with stderr details. Do not proceed to triage.
+- **triage failure**: Log warning, skip the comment, continue processing remaining comments.
+- **CI router failure** (thread-reply, resolve-thread): Log warning, continue — replies and resolutions are best-effort.
+
+## Standards (Load On-Demand)
+
+| Standard | When to Load |
+|----------|-------------|
+| `standards/automated-review-lifecycle.md` | Full Workflow 3 reference with commands, ID format rules, error handling |
 
 ## Integration
 
