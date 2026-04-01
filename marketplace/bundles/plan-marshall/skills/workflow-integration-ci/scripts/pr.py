@@ -61,10 +61,10 @@ PATTERNS: dict[str, Any] = {
             r'incorrect',
             r'wrong',
         ],
-        'low': [r'rename', r'variable name', r'naming', r'typo', r'spelling', r'formatting', r'style'],
+        'low': [r'rename', r'variable name', r'naming', r'typo', r'spelling', r'formatting', r'style', r'^nit:', r'^nitpick:'],
     },
     'explain': [r'why', r'explain', r'reasoning', r'rationale', r'how does', r'what is', r'can you clarify'],
-    'ignore': [r'^lgtm', r'^approved', r'looks good', r'^nice', r'^thanks', r'\[bot\]', r'^nit:', r'^nitpick:'],
+    'ignore': [r'^lgtm', r'^approved', r'looks good', r'^nice', r'^thanks', r'\[bot\]'],
 }
 
 
@@ -238,10 +238,9 @@ def cmd_fetch_comments(args):
 def classify_comment(body: str) -> tuple[str, str, str]:
     """Classify comment and determine action and priority.
 
-    Priority order: ignore → explain → code_change → default.
-    Explain is checked before code_change because questions containing
-    action words (e.g. "Why did you fix it this way?") should be
-    classified as questions, not code change requests.
+    Priority order: ignore → code_change → explain → default.
+    Code change is checked before explain so that actionable requests
+    like "Can you fix X?" are classified as code changes, not questions.
     """
     body_lower = body.lower()
 
@@ -347,6 +346,29 @@ def cmd_triage(args):
     return 0 if result.get('status') == 'success' else 1
 
 
+def cmd_triage_batch(args):
+    """Handle triage-batch subcommand — triage multiple comments at once."""
+    try:
+        comments = json.loads(args.comments)
+    except json.JSONDecodeError as e:
+        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
+        return 1
+
+    if not isinstance(comments, list):
+        print(serialize_toon({'error': 'Input must be a JSON array of comments', 'status': 'failure'}))
+        return 1
+
+    results = [triage_comment(c) for c in comments]
+    summary = {
+        'total': len(results),
+        'code_change': sum(1 for r in results if r['action'] == 'code_change'),
+        'explain': sum(1 for r in results if r['action'] == 'explain'),
+        'ignore': sum(1 for r in results if r['action'] == 'ignore'),
+    }
+    print(serialize_toon({'results': results, 'summary': summary, 'status': 'success'}))
+    return 0
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -376,6 +398,11 @@ Examples:
     triage_parser = subparsers.add_parser('triage', help='Triage a single PR review comment')
     triage_parser.add_argument('--comment', required=True, help='JSON string with comment data')
     triage_parser.set_defaults(func=cmd_triage)
+
+    # triage-batch subcommand
+    batch_parser = subparsers.add_parser('triage-batch', help='Triage multiple PR review comments at once')
+    batch_parser.add_argument('--comments', required=True, help='JSON array of comment objects')
+    batch_parser.set_defaults(func=cmd_triage_batch)
 
     args = parser.parse_args()
     return args.func(args)

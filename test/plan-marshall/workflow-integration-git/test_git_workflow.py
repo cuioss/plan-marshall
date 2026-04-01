@@ -131,6 +131,28 @@ class TestFormatCommit(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('Co-Authored-By: Claude <noreply@anthropic.com>', stdout)
 
+    def test_ci_commit_type(self):
+        """Test that ci is a valid commit type."""
+        stdout, _, code = run_git_script(['format-commit', '--type', 'ci', '--subject', 'update workflow'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['type'], 'ci')
+        self.assertIn('ci: update workflow', result['formatted_message'])
+
+    def test_body_wrapping_preserves_indentation(self):
+        """Test that body wrapping preserves leading indentation for bullet lists."""
+        body = '  - This is a very long bullet point that should wrap at seventy two characters while keeping indentation'
+        stdout, _, code = run_git_script(
+            ['format-commit', '--type', 'fix', '--subject', 'fix issue', '--body', body]
+        )
+        self.assertEqual(code, 0)
+        # Verify wrapped lines start with the same indentation
+        body_lines = [
+            line for line in stdout.split('\n') if line.startswith('  ') and not line.strip().startswith('Co-Authored')
+        ]
+        for line in body_lines:
+            self.assertTrue(line.startswith('  '), f'Indentation lost: {line!r}')
+
 
 class TestAnalyzeDiff(unittest.TestCase):
     """Test git-workflow.py analyze-diff subcommand."""
@@ -166,6 +188,95 @@ class TestAnalyzeDiff(unittest.TestCase):
         _, stderr, code = run_git_script(['analyze-diff'])
         self.assertNotEqual(code, 0)
         self.assertIn('--file', stderr)
+
+    def test_analyze_feat_detection(self):
+        """Test analysis detects feat when additions far exceed deletions."""
+        # Need many more additions than deletions (additions > deletions * 2)
+        # and at least one src file for feat detection
+        lines = ['diff --git a/src/main/java/New.java b/src/main/java/New.java']
+        lines.append('@@ -1 +1,20 @@')
+        lines.append('-old line')
+        for i in range(20):
+            lines.append(f'+    new line {i}')
+        diff_content = '\n'.join(lines) + '\n'
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['type'], 'feat')
+
+    def test_analyze_refactor_detection(self):
+        """Test analysis detects refactor when additions roughly equal deletions."""
+        diff_content = """diff --git a/src/main/java/Util.java b/src/main/java/Util.java
+--- a/src/main/java/Util.java
++++ b/src/main/java/Util.java
+-    public void oldMethodName() {
++    public void newMethodName() {
+-        int x = getValue();
++        int x = computeValue();
+-        String s = format(x);
++        String s = formatOutput(x);
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['type'], 'refactor')
+
+    def test_analyze_ci_detection(self):
+        """Test analysis detects ci type for CI config files."""
+        diff_content = """diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+-    runs-on: ubuntu-20.04
++    runs-on: ubuntu-22.04
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['type'], 'ci')
+
+    def test_analyze_monorepo_scope(self):
+        """Test scope detection for monorepo layouts (packages/<name>/...)."""
+        diff_content = """diff --git a/packages/auth-service/src/login.ts b/packages/auth-service/src/login.ts
+--- a/packages/auth-service/src/login.ts
++++ b/packages/auth-service/src/login.ts
++export function login() { return true; }
++export function logout() { return true; }
++export function refresh() { return true; }
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['scope'], 'auth-service')
+
+    def test_analyze_bug_in_comment_lines(self):
+        """Test bug detection from comment lines in diff content."""
+        diff_content = """diff --git a/src/main/java/Service.java b/src/main/java/Service.java
+--- a/src/main/java/Service.java
++++ b/src/main/java/Service.java
++    // Fix null pointer when user is not authenticated
++    if (user != null) {
++        return user.getName();
++    }
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['type'], 'fix')
 
 
 class TestMain(unittest.TestCase):

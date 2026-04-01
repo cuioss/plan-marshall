@@ -143,13 +143,17 @@ Based on checks parameter:
 2. Identify failing step (compile, test, lint)
 3. Read failing files from error output
 4. Apply fix using Edit tool
-5. Verify with local build: `python3 .plan/execute-script.py plan-marshall:build-*:* run --command-args "verify"`
+5. Resolve build command via architecture API, then verify:
+   ```
+   Skill: plan-marshall:manage-architecture
+   ```
+   Use `architecture resolve` to get the correct build executable, then run verify.
 
 **REVIEW_COMMENTS**: Use workflow-integration-ci (Handle Review). For each: triage → fix/explain/acknowledge.
 
 **SONAR_QUALITY**: Use workflow-integration-sonar (Fix Issues). For each: triage → fix/suppress (with approval if not auto-fix).
 
-**Iteration guard**: Track fix attempts per category. After `max-fix-attempts` (default: 3) cycles of fix → verify → still failing, stop and report remaining issues to the user rather than looping indefinitely.
+**Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`), starting at 0. Increment after each fix → verify cycle. After reaching `max-fix-attempts` (default: 3) for a category, stop that category and report remaining issues to the user rather than looping indefinitely.
 
 ### Step 6: Verify and Commit
 
@@ -204,13 +208,6 @@ Delegates to skills:
 | Fix breaks build | Revert fix, report to user. Do not commit broken state. |
 | Max fix attempts reached | Report remaining issues with details. Do not loop further. |
 | Push failure | Report error. Never force-push as fallback. |
-
-## Continuous Improvement
-
-If you discover issues or improvements during execution, record them:
-
-1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
-2. **Record lesson** with component: `{type: "skill", name: "workflow-pr-doctor", bundle: "plan-marshall"}`
 
 ## Related
 

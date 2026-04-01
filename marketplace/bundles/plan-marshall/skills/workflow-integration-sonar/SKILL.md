@@ -201,9 +201,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 
 ## Issue Classification
 
-### Always Fix
+### Always Fix (enforced by script)
+- VULNERABILITY or SECURITY_HOTSPOT type (any severity — forced to `fix` action with `high`+ priority)
 - BLOCKER severity
-- VULNERABILITY or SECURITY_HOTSPOT type
 - Security rules (e.g., `java:S3649`, `java:S5131`, `javascript:S3649`, `python:S5131`)
 
 ### Fix Preferred

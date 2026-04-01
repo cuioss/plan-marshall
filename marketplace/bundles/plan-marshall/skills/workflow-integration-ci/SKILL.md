@@ -212,6 +212,17 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage 
 
 **Output:** TOON with action decision
 
+### pr.py triage-batch
+
+**Purpose:** Triage multiple comments in a single call, reducing subprocess overhead.
+
+**Usage:**
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{"id":"C1", "body":"..."}, ...]'
+```
+
+**Output:** TOON with results array and summary counts
+
 ## Comment Classification
 
 | Pattern | Action | Priority |
@@ -220,6 +231,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage 
 | bug, error, fix, broken | code_change | high |
 | please add/remove/change | code_change | medium |
 | rename, variable name, typo | code_change | low |
+| nit:, nitpick: | code_change | low |
 | why, explain, reasoning, ? | explain | low |
 | lgtm, approved, looks good | ignore | none |
 

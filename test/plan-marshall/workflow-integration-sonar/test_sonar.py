@@ -177,6 +177,74 @@ class TestSonarTriage(unittest.TestCase):
         self.assertEqual(result['action'], 'fix')
         self.assertIsNone(result.get('command_to_use'))
 
+    def test_triage_python_suppression_uses_hash_comment(self):
+        """Test triage generates Python-style suppression comment for .py files."""
+        issue = {
+            'key': 'ISSUE-PY1',
+            'type': 'CODE_SMELL',
+            'severity': 'MINOR',
+            'file': 'src/utils/helper.py',
+            'line': 10,
+            'rule': 'python:S1135',
+            'message': 'Complete TODO',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'suppress')
+        self.assertTrue(result['suppression_string'].startswith('# NOSONAR'))
+
+    def test_triage_java_suppression_uses_slash_comment(self):
+        """Test triage generates Java-style suppression comment for .java files."""
+        issue = {
+            'key': 'ISSUE-J1',
+            'type': 'CODE_SMELL',
+            'severity': 'MINOR',
+            'file': 'src/main/java/Example.java',
+            'line': 5,
+            'rule': 'java:S1135',
+            'message': 'Complete TODO',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'suppress')
+        self.assertTrue(result['suppression_string'].startswith('// NOSONAR'))
+
+    def test_triage_vulnerability_always_fix(self):
+        """Test triage always fixes VULNERABILITY regardless of suppressable rule."""
+        issue = {
+            'key': 'ISSUE-V1',
+            'type': 'VULNERABILITY',
+            'severity': 'MINOR',
+            'file': 'src/main/java/Example.java',
+            'line': 10,
+            'rule': 'java:S1135',  # Normally suppressable
+            'message': 'Vulnerability detected',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'fix')
+        self.assertIn('VULNERABILITY', result['reason'])
+
+    def test_triage_security_hotspot_always_fix(self):
+        """Test triage always fixes SECURITY_HOTSPOT."""
+        issue = {
+            'key': 'ISSUE-SH1',
+            'type': 'SECURITY_HOTSPOT',
+            'severity': 'MAJOR',
+            'file': 'src/main/java/Config.java',
+            'line': 30,
+            'rule': 'java:S4790',
+            'message': 'Weak hash algorithm',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'fix')
+        self.assertEqual(result['priority'], 'high')
+
 
 class TestSonarMain(unittest.TestCase):
     """Test sonar.py main entry point."""

@@ -31,7 +31,7 @@ Provides git commit workflow following conventional commits specification. Inclu
 ### Commit Standards (Quick Reference)
 
 - **Format:** `<type>(<scope>): <subject>`
-- **Types:** feat, fix, docs, style, refactor, perf, test, chore
+- **Types:** feat, fix, docs, style, refactor, perf, test, chore, ci
 - **Subject:** imperative mood, lowercase, no period, max 50 chars (72 absolute max)
 - **Body:** explain "why" not "what", wrap at 72 chars
 - **Footer:** `BREAKING CHANGE:`, `Fixes #123`, `Co-Authored-By:`
@@ -85,7 +85,7 @@ If no message:
   ```
 - Generate message following standards
 
-**Multi-type priority:** fix > feat > perf > refactor > docs > style > test > chore
+**Multi-type priority:** fix > feat > perf > refactor > docs > style > test > chore > ci
 
 **Step 5: Stage and Commit**
 ```bash

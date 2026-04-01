@@ -14,7 +14,7 @@ Standardized git commit format following conventional commits.
 
 ### Required Components
 
-* **Type**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`
+* **Type**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
 * **Subject**: Imperative, present tense, no capital, no dot, max 50 chars
 
 ### Optional Components
@@ -41,6 +41,7 @@ Standardized git commit format following conventional commits.
 * **docs**: Documentation only changes
 * **test**: Adding or correcting tests
 * **chore**: Changes to build process or auxiliary tools
+* **ci**: Changes to CI configuration files and scripts
 
 ## Examples
 

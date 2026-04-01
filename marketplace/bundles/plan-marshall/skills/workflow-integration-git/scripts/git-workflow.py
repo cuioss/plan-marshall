@@ -31,7 +31,7 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 # CONFIGURATION
 # ============================================================================
 
-VALID_TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore']
+VALID_TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'ci']
 TYPE_PRIORITY = {t: i for i, t in enumerate(VALID_TYPES)}
 
 
@@ -94,25 +94,33 @@ def validate_type(commit_type: str) -> dict:
 
 
 def wrap_text(text: str, width: int) -> str:
-    """Wrap text at specified width."""
+    """Wrap text at specified width, preserving leading indentation."""
     lines = []
     for paragraph in text.split('\n'):
         if len(paragraph) <= width:
             lines.append(paragraph)
         else:
-            words = paragraph.split()
-            current_line = []
+            # Preserve leading whitespace (for bullet lists, indented blocks)
+            stripped = paragraph.lstrip()
+            indent = paragraph[: len(paragraph) - len(stripped)]
+            effective_width = width - len(indent)
+            if effective_width < 20:
+                # Indent too deep to wrap meaningfully — keep as-is
+                lines.append(paragraph)
+                continue
+            words = stripped.split()
+            current_line: list[str] = []
             current_length = 0
             for word in words:
-                if current_length + len(word) + 1 <= width:
+                if current_length + len(word) + 1 <= effective_width:
                     current_line.append(word)
                     current_length += len(word) + 1
                 else:
-                    lines.append(' '.join(current_line))
+                    lines.append(indent + ' '.join(current_line))
                     current_line = [word]
                     current_length = len(word)
             if current_line:
-                lines.append(' '.join(current_line))
+                lines.append(indent + ' '.join(current_line))
     return '\n'.join(lines)
 
 
@@ -210,23 +218,40 @@ def analyze_diff(diff_content: str) -> dict:
         return suggestions
 
     # Analyze file paths — support Maven, Python, JS, and generic layouts
-    src_files = [f for f in files_changed if '/src/' in f or f.endswith(('.py', '.js', '.ts', '.jsx', '.tsx'))]
+    src_files = [
+        f for f in files_changed
+        if '/src/' in f or f.startswith('src/') or f.endswith(('.py', '.js', '.ts', '.jsx', '.tsx'))
+    ]
     test_files = [
         f
         for f in files_changed
-        if '/test/' in f or '/tests/' in f or '/__tests__/' in f or 'Test' in f or f.startswith('test_')
+        if '/test/' in f or '/tests/' in f or '/__tests__/' in f or 'Test' in f
+        or f.startswith('test_') or f.startswith('test/') or f.startswith('tests/')
     ]
     doc_files = [f for f in files_changed if f.endswith(('.md', '.adoc', '.txt', '.rst'))]
+    ci_files = [
+        f
+        for f in files_changed
+        if f.startswith('.github/') or f.startswith('.gitlab-ci') or f.startswith('.circleci/')
+        or f in ('Jenkinsfile', '.travis.yml', 'azure-pipelines.yml')
+        or '/ci/' in f
+    ]
 
     # Detect scope from common path — try multiple project layouts
     if src_files:
         paths = [f.split('/') for f in src_files]
         scope_found = False
+        # Monorepo prefixes: packages/<name>/..., modules/<name>/..., apps/<name>/...
+        monorepo_roots = {'packages', 'modules', 'apps', 'libs', 'services'}
         for path in paths:
             if scope_found:
                 break
+            # Monorepo: packages/<name>/src/... or modules/<name>/...
+            if len(path) > 1 and path[0] in monorepo_roots:
+                suggestions['scope'] = path[1]
+                scope_found = True
             # Maven/Gradle: src/main/java/<package>/...
-            if 'main' in path:
+            elif 'main' in path:
                 idx = path.index('main')
                 if idx + 2 < len(path):
                     suggestions['scope'] = path[idx + 2]
@@ -251,17 +276,30 @@ def analyze_diff(diff_content: str) -> dict:
     additions = len(re.findall(r'^\+[^+]', diff_content, re.MULTILINE))
     deletions = len(re.findall(r'^-[^-]', diff_content, re.MULTILINE))
 
-    # Bug fix indicators — use word boundaries to avoid matching variable
-    # names like errorHandler, fixedWidth, nullableField, etc.
-    # Only match in diff metadata lines (@@, commit messages) and comments
-    # to reduce false positives from code identifiers.
+    # Bug fix indicators — check diff metadata, comments, and added/removed lines.
+    # Use word boundaries to avoid matching identifiers like errorHandler, fixedWidth.
     bug_pattern = r'\b(fix(?:es|ed)?|bug|bugfix)\b'
+    # Primary: diff metadata lines (high confidence)
     diff_headers = '\n'.join(
         line for line in diff_content.split('\n') if line.startswith(('@@', '---', '+++', 'diff '))
     )
-    if re.search(bug_pattern, diff_headers, re.IGNORECASE):
+    # Secondary: comment lines in added/removed code (medium confidence)
+    comment_lines = '\n'.join(
+        line
+        for line in diff_content.split('\n')
+        if (line.startswith('+') or line.startswith('-'))
+        and ('// ' in line or '# ' in line or '/* ' in line or '* ' in line)
+    )
+    if re.search(bug_pattern, diff_headers, re.IGNORECASE) or re.search(
+        bug_pattern, comment_lines, re.IGNORECASE
+    ):
         suggestions['type'] = 'fix'
         detected_changes.append('Bug fix patterns detected in diff context')
+
+    # CI configuration changes
+    elif ci_files and not src_files:
+        suggestions['type'] = 'ci'
+        detected_changes.append('CI configuration files modified')
 
     # Feature indicators
     elif additions > deletions * 2 and src_files:

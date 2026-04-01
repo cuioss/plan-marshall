@@ -37,7 +37,6 @@ SUPPRESSABLE_RULES = {
     'java:S1135': 'TODO comments - tracked in issue management',
     'java:S1068': 'Unused fields - may be for reflection/serialization',
     'java:S1172': 'Unused parameters - may be for API compatibility',
-    'java:S106': 'System.out - acceptable in CLI/test code',
     'java:S2139': 'Logger vs exception - design decision',
     # JavaScript / TypeScript
     'javascript:S1135': 'TODO comments - tracked in issue management',
@@ -166,8 +165,10 @@ def get_fix_suggestion(rule: str, message: str, file: str, line: int) -> str:
     return f'{suggestion} at {file}:{line}'
 
 
-def get_suppression_string(rule: str, reason: str) -> str:
-    """Generate suppression string for the issue."""
+def get_suppression_string(rule: str, reason: str, file: str = '') -> str:
+    """Generate suppression string for the issue using language-appropriate comment syntax."""
+    if file.endswith('.py') or rule.startswith('python:'):
+        return f'# NOSONAR {rule} - {reason}'
     return f'// NOSONAR {rule} - {reason}'
 
 
@@ -223,6 +224,20 @@ def triage_issue(issue: dict) -> dict:
     rule = issue.get('rule', 'unknown')
     message = issue.get('message', '')
 
+    # Security hotspots and vulnerabilities must always be fixed
+    if issue_type in ('VULNERABILITY', 'SECURITY_HOTSPOT'):
+        priority = 'critical' if severity == 'BLOCKER' else 'high'
+        return {
+            'issue_key': key,
+            'action': 'fix',
+            'reason': f'{issue_type} must always be fixed',
+            'priority': priority,
+            'suggested_implementation': get_fix_suggestion(rule, message, file, line),
+            'suppression_string': None,
+            'command_to_use': None,
+            'status': 'success',
+        }
+
     # Check if should suppress
     suppress, suppress_reason = should_suppress(rule, file, issue_type)
 
@@ -233,7 +248,7 @@ def triage_issue(issue: dict) -> dict:
             'reason': suppress_reason,
             'priority': 'low',
             'suggested_implementation': None,
-            'suppression_string': get_suppression_string(rule, suppress_reason),
+            'suppression_string': get_suppression_string(rule, suppress_reason, file),
             'status': 'success',
         }
 

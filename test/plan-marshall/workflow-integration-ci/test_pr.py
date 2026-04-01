@@ -116,8 +116,8 @@ class TestPRTriage(unittest.TestCase):
         self.assertEqual(result['action'], 'ignore')
         self.assertEqual(result['priority'], 'none')
 
-    def test_triage_nitpick_ignored(self):
-        """Test triage ignores nitpick comments."""
+    def test_triage_nitpick_is_low_priority_code_change(self):
+        """Test triage classifies nitpick as low-priority code change."""
         comment = {
             'id': 'C7',
             'body': 'nit: extra space here',
@@ -128,7 +128,8 @@ class TestPRTriage(unittest.TestCase):
         stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
-        self.assertEqual(result['action'], 'ignore')
+        self.assertEqual(result['action'], 'code_change')
+        self.assertEqual(result['priority'], 'low')
 
     def test_triage_empty_body(self):
         """Test triage handles empty comment body."""
@@ -166,6 +167,48 @@ class TestPRTriage(unittest.TestCase):
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['location'], 'src/File.java:99')
+
+
+class TestPRTriageBatch(unittest.TestCase):
+    """Test pr.py triage-batch subcommand."""
+
+    def test_triage_batch_multiple_comments(self):
+        """Test batch triage processes multiple comments at once."""
+        comments = [
+            {'id': 'B1', 'body': 'This is a bug', 'path': 'src/A.java', 'line': 1, 'author': 'r1'},
+            {'id': 'B2', 'body': 'LGTM!', 'path': None, 'line': None, 'author': 'r2'},
+            {'id': 'B3', 'body': 'Why did you do this?', 'path': 'src/B.java', 'line': 5, 'author': 'r3'},
+        ]
+        stdout, _, code = run_pr_script(['triage-batch', '--comments', json.dumps(comments)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['summary']['total'], 3)
+        self.assertEqual(result['summary']['code_change'], 1)
+        self.assertEqual(result['summary']['ignore'], 1)
+        self.assertEqual(result['summary']['explain'], 1)
+
+    def test_triage_batch_empty_list(self):
+        """Test batch triage with empty list."""
+        stdout, _, code = run_pr_script(['triage-batch', '--comments', '[]'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['summary']['total'], 0)
+
+    def test_triage_batch_invalid_json(self):
+        """Test batch triage with invalid JSON."""
+        stdout, _, code = run_pr_script(['triage-batch', '--comments', 'not-json'])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'failure')
+
+    def test_triage_batch_not_array(self):
+        """Test batch triage rejects non-array input."""
+        stdout, _, code = run_pr_script(['triage-batch', '--comments', '{"id": "C1"}'])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'failure')
+        self.assertIn('array', result['error'])
 
 
 class TestParseToonComments(unittest.TestCase):
