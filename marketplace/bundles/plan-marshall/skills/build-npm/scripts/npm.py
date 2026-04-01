@@ -5,7 +5,7 @@ Provides:
 - execute_direct(): Foundation API for npm command execution
 - cmd_run(): Run subcommand handler (execute + auto-parse on failure)
 - detect_command_type(): npm vs npx detection
-- get_bash_timeout(): Bash tool timeout calculation
+- get_bash_timeout(): Moved to _build_shared module
 
 Usage:
     from npm import execute_direct, cmd_run
@@ -68,8 +68,6 @@ NPM_COMMAND = 'npm'
 # Commands that should use npx instead of npm
 NPX_COMMANDS = ['playwright', 'eslint', 'prettier', 'stylelint', 'tsc', 'jest', 'vitest']
 
-# Bash tool outer timeout buffer (seconds) - ensures outer > inner
-OUTER_TIMEOUT_BUFFER = 30
 
 
 # =============================================================================
@@ -216,6 +214,8 @@ def execute_direct(
     except subprocess.TimeoutExpired:
         duration_seconds = int(time.time() - start_time)
         log_entry('script', 'global', 'ERROR', f'[NPM] Timeout after {timeout_seconds}s')
+        # Adaptive learning: double the timeout so next run has enough headroom
+        timeout_set(command_key, timeout_seconds * 2, project_dir)
         return {
             'status': 'timeout',
             'exit_code': -1,
@@ -252,19 +252,8 @@ def execute_direct(
         }
 
 
-def get_bash_timeout(inner_timeout_seconds: int) -> int:
-    """Calculate Bash tool timeout with buffer.
 
-    The Bash tool has a default 120-second timeout. For long-running builds,
-    we need to set the outer timeout higher than the inner (shell) timeout.
-
-    Args:
-        inner_timeout_seconds: The shell timeout in seconds.
-
-    Returns:
-        Bash tool timeout in seconds (inner + buffer).
-    """
-    return inner_timeout_seconds + OUTER_TIMEOUT_BUFFER
+# get_bash_timeout imported from _build_shared
 
 
 # =============================================================================

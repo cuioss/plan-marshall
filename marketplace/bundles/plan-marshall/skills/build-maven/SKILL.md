@@ -37,19 +37,17 @@ Maven build execution with output parsing, module discovery, and wrapper detecti
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
-    --targets "<goals>" \
-    [--module <module>] \
-    [--profile <profile>] \
+    --command-args "<goals>" \
     [--timeout <seconds>] \
-    [--mode <mode>]
+    [--mode <mode>] \
+    [--format <toon|json>]
 ```
 
 **Parameters**:
-- `--targets` - Maven goals to execute (required)
-- `--module` - Target module for multi-module projects
-- `--profile` - Maven profile to activate
-- `--timeout` - Timeout in seconds (default from run-config)
+- `--command-args` - Complete Maven command arguments, e.g. `"verify -Ppre-commit -pl my-module"` (required)
+- `--timeout` - Timeout in seconds (default: 300, adaptive — doubles on timeout failure)
 - `--mode` - Output mode: actionable (default), structured, errors
+- `--format` - Output format: toon (default), json
 
 **Output Format (TOON)**:
 

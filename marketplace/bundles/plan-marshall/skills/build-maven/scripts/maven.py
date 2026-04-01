@@ -43,11 +43,14 @@ def main():
         help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
     )
     run_parser.add_argument(
-        '--timeout', type=int, default=120000, help='Build timeout in milliseconds (default: 120000 = 2 min)'
+        '--timeout', type=int, default=300, help='Build timeout in seconds (default: 300 = 5 min)'
     )
     run_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)')
     run_parser.add_argument(
         '--mode', choices=['actionable', 'structured', 'errors'], default='actionable', help='Output mode'
+    )
+    run_parser.add_argument(
+        '--project-dir', dest='project_dir', default='.', help='Project root directory'
     )
     run_parser.set_defaults(func=cmd_run)
 

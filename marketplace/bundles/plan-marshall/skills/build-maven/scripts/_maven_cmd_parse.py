@@ -219,8 +219,22 @@ def _extract_issues_as_dataclass(content: str) -> list[Issue]:
     Returns:
         List of Issue dataclasses with severity, file, line, message, category.
     """
-    issues = []
+    issues: list[Issue] = []
+    stack_lines: list[str] = []
+
     for line in content.split('\n'):
+        stripped = line.strip()
+
+        # Collect stack trace lines and attach to previous issue
+        if stripped.startswith('at ') or stripped.startswith('Caused by:'):
+            stack_lines.append(stripped)
+            continue
+
+        # When we hit a non-stack line, flush collected stack to last issue
+        if stack_lines and issues:
+            issues[-1].stack_trace = '\n'.join(stack_lines)
+            stack_lines = []
+
         severity = None
         if '[ERROR]' in line:
             severity = SEVERITY_ERROR
@@ -228,9 +242,9 @@ def _extract_issues_as_dataclass(content: str) -> list[Issue]:
             severity = SEVERITY_WARNING
 
         if severity:
-            message = re.sub(r'^\[(INFO|ERROR|WARNING)\]\s*', '', line.strip())
-            # Skip empty messages, continuation lines, stack traces
-            if not message or message.startswith('->') or message.startswith('at '):
+            message = re.sub(r'^\[(INFO|ERROR|WARNING)\]\s*', '', stripped)
+            # Skip empty messages and continuation lines
+            if not message or message.startswith('->'):
                 continue
 
             location = parse_file_location(line)
@@ -245,6 +259,10 @@ def _extract_issues_as_dataclass(content: str) -> list[Issue]:
                     category=category,
                 )
             )
+
+    # Flush any remaining stack lines
+    if stack_lines and issues:
+        issues[-1].stack_trace = '\n'.join(stack_lines)
 
     return issues
 

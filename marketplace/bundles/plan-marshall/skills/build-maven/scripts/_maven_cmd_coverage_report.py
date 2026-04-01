@@ -63,7 +63,6 @@ def parse_jacoco_xml(report_file: Path, threshold: int = 80) -> dict:
     # Per-class analysis for low coverage detection
     low_coverage = []
     for package in root.findall('.//package'):
-        pkg_name = package.get('name', '').replace('/', '.')
         for cls in package.findall('class'):
             cls_name_raw = cls.get('name', '').replace('/', '.')
             cls_line_m, cls_line_c = _get_counter(cls, 'LINE')

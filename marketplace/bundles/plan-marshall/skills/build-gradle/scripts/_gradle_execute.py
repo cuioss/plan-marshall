@@ -5,7 +5,7 @@ Provides:
 - execute_direct(): Foundation API for Gradle command execution
 - cmd_run(): Run subcommand handler (execute + auto-parse on failure)
 - detect_wrapper(): Gradle wrapper detection
-- get_bash_timeout(): Bash tool timeout calculation
+- get_bash_timeout(): Moved to _build_shared module
 
 Usage:
     from gradle_execute import execute_direct, cmd_run
@@ -57,8 +57,6 @@ from run_config import timeout_get, timeout_set
 # Default timeout in seconds for Gradle builds
 DEFAULT_TIMEOUT_SECONDS = 300
 
-# Bash tool outer timeout buffer (seconds) - ensures outer > inner
-OUTER_TIMEOUT_BUFFER = 30
 
 
 # =============================================================================
@@ -187,6 +185,8 @@ def execute_direct(
     except subprocess.TimeoutExpired as e:
         duration_seconds = int(time.time() - start_time)
         log_entry('script', 'global', 'ERROR', f'[GRADLE-EXECUTE] Timeout after {timeout_seconds}s: {command_str}')
+        # Adaptive learning: double the timeout so next run has enough headroom
+        timeout_set(command_key, timeout_seconds * 2, project_dir)
 
         # Write timeout info to log file
         with open(log_file, 'w') as f:
@@ -234,19 +234,8 @@ def execute_direct(
         }
 
 
-def get_bash_timeout(inner_timeout_seconds: int) -> int:
-    """Calculate Bash tool timeout with buffer.
 
-    The Bash tool has a default 120-second timeout. For long-running builds,
-    we need to set the outer timeout higher than the inner (shell) timeout.
-
-    Args:
-        inner_timeout_seconds: The shell timeout in seconds.
-
-    Returns:
-        Bash tool timeout in seconds (inner + buffer).
-    """
-    return inner_timeout_seconds + OUTER_TIMEOUT_BUFFER
+# get_bash_timeout imported from _build_shared
 
 
 # =============================================================================
@@ -277,11 +266,8 @@ def cmd_run(args):
     task_name = first_task.lstrip(':').replace(':', '_')
     command_key = f'gradle:{task_name}'
 
-    # Get timeout (convert ms to seconds if needed)
-    if hasattr(args, 'timeout') and args.timeout:
-        timeout_seconds = args.timeout // 1000 if args.timeout > 1000 else args.timeout
-    else:
-        timeout_seconds = DEFAULT_TIMEOUT_SECONDS
+    # Get timeout in seconds
+    timeout_seconds = getattr(args, 'timeout', None) or DEFAULT_TIMEOUT_SECONDS
 
     # Execute via direct_command foundation layer
     # command-args is complete and self-contained (includes :module:task prefix)

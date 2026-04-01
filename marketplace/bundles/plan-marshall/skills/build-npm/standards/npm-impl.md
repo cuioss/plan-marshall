@@ -265,3 +265,17 @@ The `npm.py` script exposes these internal functions for use by `extension.py`:
 | lint_error | `/lint-config` |
 | dependency_error | Manual fix |
 | playwright_error | Fix via task executor |
+
+---
+
+## Coverage Report Paths
+
+The coverage report parser (`_npm_cmd_coverage_report.py`) searches these paths in order:
+
+| Path | Format |
+|------|--------|
+| `coverage/coverage-summary.json` | Jest/Istanbul JSON |
+| `coverage/lcov.info` | LCOV |
+| `dist/coverage/coverage-summary.json` | Alternative JSON location |
+
+Generate with: `npx jest --coverage` or `npx vitest run --coverage`

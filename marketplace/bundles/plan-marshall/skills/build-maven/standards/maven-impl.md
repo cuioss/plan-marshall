@@ -324,3 +324,17 @@ def config_defaults(self, project_root: str) -> None:
 ```
 
 **Contract**: `ext_defaults_set_default` only writes if the key doesn't exist (write-once semantics).
+
+---
+
+## Coverage Report Paths
+
+The coverage report parser (`_maven_cmd_coverage_report.py`) searches these JaCoCo XML report paths in order:
+
+| Path | Description |
+|------|-------------|
+| `target/site/jacoco/jacoco.xml` | Standard single-module report |
+| `target/jacoco/report.xml` | Alternative report location |
+| `target/site/jacoco-aggregate/jacoco.xml` | Multi-module aggregate report |
+
+For multi-module projects, pass `--module-path {module-dir}` to scope the search to a specific module's `target/` directory.

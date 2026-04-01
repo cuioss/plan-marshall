@@ -38,13 +38,23 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
-    --targets "<command>" \
-    [--workspace <name>] \
+    --command-args "<command>" \
     [--working-dir <path>] \
     [--env "NODE_ENV=production"] \
-    [--timeout <ms>] \
-    [--mode <mode>]
+    [--timeout <seconds>] \
+    [--project-dir <path>] \
+    [--mode <mode>] \
+    [--format <toon|json>]
 ```
+
+**Parameters**:
+- `--command-args` - Complete npm command arguments, e.g. `"run test"` or `"run test --workspace=pkg"` (required)
+- `--working-dir` - Working directory for command execution
+- `--env` - Environment variables (e.g. `"NODE_ENV=test CI=true"`)
+- `--timeout` - Timeout in seconds (default: 120, adaptive — doubles on timeout failure)
+- `--project-dir` - Project root directory (default: `.`)
+- `--mode` - Output mode: actionable (default), structured, errors
+- `--format` - Output format: toon (default), json
 
 ## npm vs npx Detection
 
