@@ -64,20 +64,17 @@ python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr list [--statu
 
 **Step 2: Parse Output**
 
-Parse JSON output containing ADR list with metadata.
+Parse TOON output containing ADR list with metadata.
 
 ### Output
 
-```json
-{
-  "success": true,
-  "operation": "list",
-  "count": 3,
-  "adrs": [
-    {"number": 1, "title": "Use PostgreSQL", "status": "Accepted", "path": "doc/adr/001-Use_PostgreSQL.adoc"},
-    {"number": 2, "title": "Adopt Quarkus", "status": "Proposed", "path": "doc/adr/002-Adopt_Quarkus.adoc"}
-  ]
-}
+```toon
+status: success
+operation: list
+count: 2
+adrs[2]{number,title,status,path}:
+1,Use PostgreSQL,Accepted,doc/adr/001-Use_PostgreSQL.adoc
+2,Adopt Quarkus,Proposed,doc/adr/002-Adopt_Quarkus.adoc
 ```
 
 ## Workflow: create-adr
@@ -99,7 +96,7 @@ python3 .plan/execute-script.py pm-documents:manage-adr:manage-adr create --titl
 
 **Step 2: Parse Output**
 
-Extract created file path from JSON output.
+Extract created file path from TOON output.
 
 **Step 3: Open for Editing**
 

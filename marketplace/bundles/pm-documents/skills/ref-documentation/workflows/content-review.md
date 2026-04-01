@@ -5,7 +5,7 @@
 
 == Overview
 
-This standard defines the framework for reviewing AsciiDoc content quality, with emphasis on factual accuracy, clarity, professional tone, and completeness. Uses ULTRATHINK reasoning for deep tone and style analysis.
+This standard defines the framework for reviewing AsciiDoc content quality, with emphasis on factual accuracy, clarity, professional tone, and completeness. Uses deep analysis reasoning for deep tone and style analysis.
 
 == Review Dimensions
 
@@ -174,11 +174,11 @@ Issue: {verbose | complex | unclear | unexplained}
 Suggestion: "{improved version}"
 ----
 
-== Tone and Style Analysis (ULTRATHINK)
+== Tone and Style Analysis
 
-=== ULTRATHINK Decision Framework
+=== Decision Framework
 
-**CRITICAL:** Use ULTRATHINK reasoning for comprehensive tone assessment to distinguish factual descriptions from promotional language.
+**CRITICAL:** Use careful, step-by-step reasoning for comprehensive tone assessment to distinguish factual descriptions from promotional language.
 
 === Decision Questions
 
@@ -350,7 +350,7 @@ For each descriptive phrase, ask:
 ----
 Line {N}: "{original text}"
 Issue: {marketing | self-praise | promotional | unverified | subjective}
-Reasoning: {ULTRATHINK analysis}
+Reasoning: {deep analysis analysis}
 Suggestion: "{factual alternative}"
 ----
 
@@ -456,9 +456,9 @@ The docs analyze-tone subcommand implements automated detection of:
 * Missing source citations
 * Superlatives and subjective phrases
 
-**Script output:** JSON with flagged sections requiring ULTRATHINK analysis.
+**Script output:** JSON with flagged sections requiring deep analysis analysis.
 
-**Claude's role:** Apply ULTRATHINK decision framework to script findings.
+**Claude's role:** Apply deep analysis decision framework to script findings.
 
 === review-content Workflow
 
@@ -471,7 +471,7 @@ parameters:
 
 steps:
   1. Run docs analyze-tone (automated detection)
-  2. Apply ULTRATHINK analysis (Claude)
+  2. Apply deep analysis analysis (Claude)
   3. Generate findings report
   4. If apply_fixes: Suggest improvements
   5. User confirmation for changes
@@ -497,7 +497,7 @@ steps:
 * Test for multiple interpretations
 * Check for missing context
 
-=== ULTRATHINK Application
+=== deep analysis Application
 
 **When to apply:**
 

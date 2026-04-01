@@ -64,20 +64,17 @@ python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface l
 
 **Step 2: Parse Output**
 
-Parse JSON output containing interface list with metadata.
+Parse TOON output containing interface list with metadata.
 
 ### Output
 
-```json
-{
-  "success": true,
-  "operation": "list",
-  "count": 2,
-  "interfaces": [
-    {"number": 1, "title": "User Service API", "type": "REST_API", "path": "doc/interfaces/001-User_Service_API.adoc"},
-    {"number": 2, "title": "Event Bus", "type": "Event", "path": "doc/interfaces/002-Event_Bus.adoc"}
-  ]
-}
+```toon
+status: success
+operation: list
+count: 2
+interfaces[2]{number,title,type,path}:
+1,User Service API,REST_API,doc/interfaces/001-User_Service_API.adoc
+2,Event Bus,Event,doc/interfaces/002-Event_Bus.adoc
 ```
 
 ## Workflow: create-interface
@@ -99,7 +96,7 @@ python3 .plan/execute-script.py pm-documents:manage-interface:manage-interface c
 
 **Step 2: Parse Output**
 
-Extract created file path from JSON output.
+Extract created file path from TOON output.
 
 **Step 3: Open for Editing**
 
