@@ -47,87 +47,26 @@ Use this skill when:
 
 ## Workflow
 
-### Step 1: Understand Documentation Principles
+Load standards progressively based on the current task — do not load all at once.
 
-Load core principles and directory structure:
+| Task Context | Standard | Key Content |
+|-------------|----------|-------------|
+| Directory layout and file organization | `standards/directory-structure.md` | Required layout, minimal vs. complete setup |
+| Choosing requirement prefixes | `standards/prefix-selection.md` | Recommended prefixes by domain, hierarchical patterns |
+| Creating initial documents | `standards/document-templates.md` | Templates for Requirements.adoc, Specification.adoc, LogMessages.adoc |
+| Step-by-step setup process | `standards/setup-workflow.md` | Setup sequence, common issues, cross-reference verification |
+| Validating setup completeness | `standards/quality-checklist.md` | Structure verification, content quality, traceability checks |
 
-```
-Read: standards/directory-structure.md
-```
+### Lifecycle Integration
 
-This standard provides:
-- Required directory layout and file organization
-- Minimal vs. complete setup guidance
+**Documentation-First Approach**: Establish documentation structure before implementing core functional components. Create requirements and specifications before writing business logic, APIs, or main features.
 
-#### Lifecycle Integration
-
-**Documentation-First Approach**: New projects must establish their documentation structure before implementing core functional components. Create requirements and specifications before writing business logic, APIs, or main features.
-
-**Initial setup phase**:
 1. Create documentation structure (see `directory-structure.md`)
 2. Define requirements based on project goals
 3. Create specifications with architectural overview
 4. Use specifications to guide implementation planning
 
-**During implementation**: Update specifications with design decisions, add implementation links, update status indicators.
-
-**Post-implementation**: Mark sections as IMPLEMENTED, add links to implementation and test classes, remove redundant pre-implementation examples.
-
-For the complete documentation lifecycle model (PLANNED → IN PROGRESS → IMPLEMENTED → DEPRECATED), see `pm-requirements:requirements-authoring` → `standards/documentation-lifecycle-management.md`.
-
-### Step 2: Select Requirement Prefix
-
-Load prefix selection guidance:
-
-```
-Read: standards/prefix-selection.md
-```
-
-This standard provides:
-- Recommended prefixes by domain
-- Custom prefix guidelines
-- Hierarchical prefix patterns
-- Cross-domain project guidance
-
-### Step 3: Create Initial Documents
-
-Load document templates:
-
-```
-Read: standards/document-templates.md
-```
-
-This standard provides templates for:
-- Requirements.adoc
-- Specification.adoc
-- Individual specification files
-- LogMessages.adoc
-
-### Step 4: Follow Setup Workflow
-
-Load workflow guidance:
-
-```
-Read: standards/setup-workflow.md
-```
-
-This standard provides:
-- Step-by-step setup process
-- Common setup issues and solutions
-- Cross-reference verification steps
-
-### Step 5: Verify Quality
-
-Load quality checklist:
-
-```
-Read: standards/quality-checklist.md
-```
-
-This standard provides:
-- Documentation structure verification
-- Content quality checks
-- Traceability validation
+For the complete lifecycle model (PLANNED → IN PROGRESS → IMPLEMENTED → DEPRECATED), see `pm-requirements:requirements-authoring` → `standards/documentation-lifecycle-management.md`.
 
 ## Integration with Other Skills
 

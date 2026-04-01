@@ -56,11 +56,7 @@ Each piece of information should have one authoritative location:
 
 ### Documentation Lifecycle
 
-Documentation evolves through implementation:
-
-1. **Pre-Implementation**: Specifications contain detailed design and examples
-2. **During Implementation**: Specifications updated with implementation decisions
-3. **Post-Implementation**: Specifications link to code, redundant details removed
+Documentation evolves through implementation phases (PLANNED → IN PROGRESS → IMPLEMENTED). For the complete lifecycle model, see `pm-requirements:requirements-authoring` → `standards/documentation-lifecycle-management.md`. This skill provides the traceability-focused subset in the "Documentation Update Workflow by Phase" section below.
 
 ## Workflow
 
@@ -179,5 +175,6 @@ Use cross-references instead of duplicating information across these layers. Upd
 
 ### External Standards
 
-- Language-specific API documentation standards (JavaDoc, docstrings, JSDoc)
-- Testing standards (for test documentation)
+- `pm-dev-java:javadoc` - JavaDoc specification references (Java projects)
+- `pm-dev-frontend:javascript` - JSDoc specification references (JavaScript projects)
+- `pm-documents:ref-asciidoc` - AsciiDoc formatting for specification documents
