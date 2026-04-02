@@ -155,7 +155,7 @@ dry_run: true
 
 ## Target Selection
 
-Both `add`, `remove`, and `ensure` support `--target`:
+The `add`, `remove`, and `ensure` operations support `--target`:
 
 | Target | File |
 |--------|------|

@@ -101,23 +101,23 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 
 **Metadata Functions**
 
-**8. parse_markdown_metadata(content)**
+**9. parse_markdown_metadata(content)**
 - **Purpose**: Parse key=value metadata from markdown
 - **Input**: `content` (str) - full file content
 - **Output**: `dict` - metadata key-value pairs
 - **Format**: Supports `key=value` and `key.subkey=value` (dot notation)
 
-**9. generate_markdown_metadata(data)**
+**10. generate_markdown_metadata(data)**
 - **Purpose**: Generate key=value metadata block
 - **Input**: `data` (dict) - metadata to serialize
 - **Output**: `str` - formatted metadata block
 
-**10. update_markdown_metadata(content, updates)**
+**11. update_markdown_metadata(content, updates)**
 - **Purpose**: Update specific metadata fields in markdown content
 - **Input**: `content` (str), `updates` (dict)
 - **Output**: `str` - updated content
 
-**11. get_metadata_content_split(content)**
+**12. get_metadata_content_split(content)**
 - **Purpose**: Split markdown content into metadata and body
 - **Input**: `content` (str)
 - **Output**: `tuple[str, str]` - (metadata_block, body_content)
@@ -128,8 +128,6 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 
 ```python
 #!/usr/bin/env python3
-import sys
-sys.path.insert(0, '/path/to/file-operations-base/scripts')
 from file_ops import (
     atomic_write_file,
     base_path,

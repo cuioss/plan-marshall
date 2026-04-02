@@ -30,14 +30,13 @@ Unified CI provider abstraction using **static routing** - one script per provid
 - Issue operations (create, view, close)
 - Unified TOON output format across providers
 
-## When to Activate This Skill
+## Consumers
 
-Activate when:
-- Detecting CI provider from repository configuration
-- Verifying CI tool installation and authentication
-- Creating or managing pull requests
-- Checking CI status or waiting for CI completion
-- Creating or managing issues
+This skill is a script-only library (not registered in plugin.json). It is consumed by:
+- `workflow-integration-ci` — PR review comment workflows (imports `ci.py`, `github.py`, `gitlab.py` via PYTHONPATH)
+- `workflow-integration-git` — git commit workflows
+- `workflow-pr-doctor` — PR diagnosis workflows
+- `phase-6-finalize` — plan finalization with PR creation
 
 ---
 

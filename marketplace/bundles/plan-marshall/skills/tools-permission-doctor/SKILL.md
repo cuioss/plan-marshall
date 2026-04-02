@@ -175,7 +175,7 @@ This skill is designed to run without user prompts. Required permissions:
 - Use `tools-permission-fix` skill for write operations
 
 **Anti-Pattern Detection:**
-- Uses 24 suspicious patterns from standards
+- Uses 24 suspicious patterns from `standards/permission-anti-patterns.md`
 - Severity scoring: high, medium, low
 - User-approved permissions are excluded from reports
 

@@ -88,6 +88,10 @@ Import `input_validation` module in Python scripts that:
 - **Input**: `file_path` string
 - **Output**: `True` if valid, `False` otherwise
 
+## Adoption
+
+Scripts that accept `plan_id` arguments should import validators from this module rather than doing inline validation. Currently adopted by: `manage-files`, `manage-references`, `manage-metrics`, `manage-lifecycle`, `manage-status`, `manage-plan-documents`, `manage-solution-outline`, `manage-findings`, `manage-logging`. Not yet adopted: `manage-tasks` (validates via shared module), `manage-assessments` (no plan-id validation).
+
 ## Usage Examples
 
 ```python

@@ -354,22 +354,3 @@ def safe_main(main_fn: Any) -> Any:
     return wrapper
 
 
-if __name__ == '__main__':
-    # Quick self-test when run directly
-    print('file_ops.py - File Operations Base Module')
-    print('=' * 50)
-    print(f'\nWorkflow Base Directory: {get_base_dir()}')
-    print('\nAvailable functions:')
-    print('- get_base_dir() -> Path')
-    print('- set_base_dir(path)')
-    print('- base_path(*parts) -> Path')
-    print('- get_temp_dir(subdir?) -> Path')
-    print('- atomic_write_file(path, content)')
-    print('- ensure_directory(path)')
-    print('- output_success(operation, **kwargs)')
-    print('- output_error(operation, error)')
-    print('- parse_markdown_metadata(content)')
-    print('- generate_markdown_metadata(data)')
-    print('- update_markdown_metadata(content, updates)')
-    print('- get_metadata_content_split(content)')
-    print('\nRun test-file-ops.py for full test suite.')

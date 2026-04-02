@@ -32,12 +32,13 @@ python3 .plan/execute-script.py {notation} {subcommand} {args...}
 
 ## Notation Format
 
-Simplified notation: `{bundle}:{skill}`
+Script execution notation: `{bundle}:{skill}:{script}`
 
 | Example |
 |---------|
-| `plan-marshall:manage-files` |
-| `pm-dev-java:plan-marshall-plugin` |
+| `plan-marshall:manage-files:manage-files` |
+| `plan-marshall:build-maven:maven` |
+| `plan-marshall:tools-integration-ci:ci` |
 
 ## Examples
 
