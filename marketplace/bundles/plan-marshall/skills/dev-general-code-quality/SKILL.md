@@ -45,6 +45,29 @@ Use when: Writing or reviewing public API documentation, updating docs during co
 - `pm-dev-java:javadoc` — JavaDoc tag syntax and Java-specific patterns
 - `pm-dev-frontend:javascript` — JavaScript-specific patterns including JSDoc
 
+## Code Examples
+
+### Single Responsibility — Before
+```python
+class UserService:
+    def create_user(self, data):
+        # validates, saves to DB, sends email, logs audit
+        ...
+```
+
+### Single Responsibility — After
+```python
+class UserService:
+    def __init__(self, repo, notifier):
+        self._repo = repo
+        self._notifier = notifier
+
+    def create_user(self, data):
+        user = self._repo.save(data)
+        self._notifier.welcome(user)
+        return user
+```
+
 ## Standards Reference
 
 | Standard | Purpose |

@@ -26,7 +26,7 @@ import re
 import sys
 from pathlib import Path
 
-# Add extension-api scripts to path for base library imports
+# Allow direct invocation and testing — executor sets PYTHONPATH for production
 EXTENSION_API_DIR = (
     Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
 )

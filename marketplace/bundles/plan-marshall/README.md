@@ -42,6 +42,10 @@ This bundle provides **core infrastructure** organized into functional areas:
 |-------|-------------|
 | `research-best-practices-agent` | Web research for best practices and recommendations |
 
+## Entry Points and Discoverability
+
+The primary workflow entry points are **skills**, not commands. The `plan-marshall` skill orchestrates the full plan lifecycle (create, outline, execute, finalize), and `marshall-steward` handles project configuration. Both are invoked via `Skill:` directives or by phase-agent delegation. The commands in `commands/` serve narrower, tool-specific purposes (IDE diagnostics, agent file sync). To start a planning workflow, load the `plan-marshall:plan-marshall` skill.
+
 ## Key Concepts
 
 ### Extension API

@@ -30,6 +30,9 @@ import argparse
 import sys
 from pathlib import Path
 
+# Direct imports - PYTHONPATH set by executor
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 # Lines to add to .gitignore
 # Use .plan/* (not .plan/) to allow exceptions - .plan/ ignores entire directory
 GITIGNORE_COMMENT = '# Planning system (managed by /marshall-steward)'
@@ -156,19 +159,12 @@ def main() -> int:
     project_root = Path(args.project_root)
 
     if not project_root.exists():
-        print('status\terror', file=sys.stderr)
-        print('error\tproject_root_not_found', file=sys.stderr)
-        print(f'path\t{project_root}', file=sys.stderr)
+        print(serialize_toon({'status': 'error', 'error': 'project_root_not_found', 'path': str(project_root)}), file=sys.stderr)
         return 1
 
     result = setup_gitignore(project_root, args.dry_run)
 
-    # Output in TOON format
-    print(f'status\t{result["status"]}')
-    print(f'gitignore_path\t{result["gitignore_path"]}')
-    print(f'entries_added\t{result["entries_added"]}')
-    if result['dry_run']:
-        print('dry_run\ttrue')
+    print(serialize_toon(result))
 
     return 0
 

@@ -168,8 +168,27 @@ if __name__ == '__main__':
 | Script | Purpose |
 |--------|---------|
 | `file_ops.py` | Core file operations module (importable) |
+| `constants.py` | Shared constants: status values, phase names, filenames, certainty values, directory names |
 
 ---
+
+## Python Usage
+
+```python
+from file_ops import base_path, atomic_write_file, output_success, output_error
+from constants import STATUS_SUCCESS, FILE_STATUS, PHASES, DIR_PLANS
+
+# Resolve plan directory paths
+plan_dir = base_path('plans', plan_id)  # Returns Path to .plan/plans/{plan_id}
+artifacts = base_path('plans', plan_id, 'artifacts')
+
+# Atomic file writes (temp file + rename for crash safety)
+atomic_write_file(plan_dir / 'status.json', json.dumps(data, indent=2))
+
+# Structured TOON output
+output_success({'plan_id': plan_id, 'action': 'created'})
+output_error('file_not_found', f'Plan {plan_id} not found')
+```
 
 ## Integration
 

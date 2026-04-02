@@ -88,9 +88,65 @@ Import `input_validation` module in Python scripts that:
 - **Input**: `file_path` string
 - **Output**: `True` if valid, `False` otherwise
 
+## Error Responses
+
+```toon
+status: error
+error: validation_failed
+message: Plan ID contains invalid characters: bad!!id
+```
+
 ## Adoption
 
 Scripts that accept `plan_id` arguments should import validators from this module rather than doing inline validation. Currently adopted by: `manage-files`, `manage-references`, `manage-metrics`, `manage-lifecycle`, `manage-status`, `manage-plan-documents`, `manage-solution-outline`, `manage-findings`, `manage-logging`. Not yet adopted: `manage-tasks` (validates via shared module), `manage-assessments` (no plan-id validation).
+
+## Python Usage
+
+```python
+from input_validation import is_valid_plan_id, validate_enum
+
+# Plan ID validation (alphanumeric + hyphens, 1-64 chars)
+if not is_valid_plan_id(args.plan_id):
+    output_error('invalid_plan_id', f'Invalid plan_id format: {args.plan_id}')
+    sys.exit(1)
+
+# Enum validation
+validate_enum(args.certainty, ['CERTAIN_INCLUDE', 'CERTAIN_EXCLUDE', 'UNCERTAIN'], 'certainty')
+```
+
+## Module: schema_validation.py
+
+**Location**: `scripts/schema_validation.py`
+
+Lightweight schema validation for plan-marshall JSON storage files. Returns a list of error strings (empty list = valid). No external dependencies.
+
+### Functions
+
+**1. validate_status(data: Any) -> list[str]**
+- **Purpose**: Validate `status.json` — requires `plan_id` (str), `current_phase` (str), `phases` (list of dicts with `name` and `status`)
+
+**2. validate_references(data: Any) -> list[str]**
+- **Purpose**: Validate `references.json` — requires `plan_id` (str)
+
+**3. validate_task(data: Any) -> list[str]**
+- **Purpose**: Validate `TASK-*.json` — requires `task_id` (str), `title` (str), `status` (str), `steps` (list of dicts with `id` and `title`)
+
+**4. validate_assessment(data: Any) -> list[str]**
+- **Purpose**: Validate assessment records — requires `hash_id` (str), `file_path` (str), `certainty` (str, one of CERTAIN_INCLUDE/CERTAIN_EXCLUDE/UNCERTAIN), `confidence` (int or float)
+
+**5. validate_finding(data: Any) -> list[str]**
+- **Purpose**: Validate finding records — requires `hash_id` (str), `type` (str), `severity` (str), `message` (str)
+
+### Schema Validation Usage
+
+```python
+from schema_validation import validate_status, validate_task
+
+errors = validate_status(data)
+if errors:
+    output_error('schema_violation', '; '.join(errors))
+    sys.exit(1)
+```
 
 ## Usage Examples
 

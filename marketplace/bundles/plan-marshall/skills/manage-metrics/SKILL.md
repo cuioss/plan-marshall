@@ -2,6 +2,7 @@
 name: manage-metrics
 description: Plan metrics collection and reporting for duration and token usage per phase
 user-invocable: false
+scope: hybrid
 ---
 
 # Manage Metrics
@@ -112,6 +113,22 @@ message_count: 127
   metrics.md           # Human-readable metrics report
 ```
 
+## Error Responses
+
+```toon
+status: error
+plan_id: my-plan
+error: invalid_plan_id
+message: Invalid plan_id format: bad!!id
+```
+
+```toon
+status: error
+plan_id: my-plan
+error: write_failed
+message: Failed to write metrics: Permission denied
+```
+
 ## Integration
 
 **Called by**: `plan-marshall:plan-marshall` workflows (planning.md, execution.md) at phase boundaries.
@@ -120,3 +137,9 @@ message_count: 127
 - Wall-clock timing: bash timestamps via start-phase/end-phase
 - Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses)
 - JSONL enrichment: `~/.claude/projects/` session transcripts
+
+## Related Skills
+
+- `manage-status` — Phase tracking that metrics augment
+- `manage-logging` — Work logs that complement metric data
+- `phase-5-execute` — Primary phase where metrics are collected

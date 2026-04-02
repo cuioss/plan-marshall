@@ -509,7 +509,12 @@ def format_list_value(val) -> str:
 
 
 def output_toon(data: dict) -> None:
-    """Print TOON formatted output."""
+    """Print TOON formatted output.
+
+    Note: This is a domain-specific TOON formatter for task structures, not a
+    generic serialize_toon wrapper. Cannot be replaced by file_ops.output_success
+    because it hand-formats nested task/step/verification blocks.
+    """
     lines = []
 
     # Top-level simple fields
@@ -729,7 +734,11 @@ def output_toon(data: dict) -> None:
 
 
 def output_error(message: str) -> None:
-    """Print TOON error output to stderr."""
+    """Print TOON error output to stderr.
+
+    Note: Incompatible with file_ops.output_error — different signature
+    (1 arg vs 2) and hand-rolled format instead of serialize_toon.
+    """
     print(f'status: error\nmessage: {message}', file=sys.stderr)
 
 

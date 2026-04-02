@@ -4,12 +4,15 @@
 Consolidated from:
 - test_init_run_config.py → init subcommand tests
 - test_validate_run_config.py → validate subcommand tests
+- cleanup subcommands (cleanup, cleanup-status)
 
-Tests run-configuration.json initialization and validation.
+Tests run-configuration.json initialization, validation, and cleanup.
 """
 
 import json
+import os
 import shutil
+import time
 
 from conftest import PLAN_DIR_NAME, PlanContext, get_script_path, run_script
 
@@ -704,5 +707,124 @@ def test_warning_list_empty_config():
 
 
 # =============================================================================
-# Main
+# Cleanup Subcommand Tests (via unified entry point)
 # =============================================================================
+
+# Default retention config for cleanup tests
+DEFAULT_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
+
+
+def setup_marshal_json(fixture_dir, retention=None):
+    """Create marshal.json with retention settings."""
+    config = {'system': {'retention': retention or DEFAULT_RETENTION}}
+    marshal_path = fixture_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps(config, indent=2))
+
+
+def test_cleanup_temp_via_unified():
+    """Cleanup subcommand cleans temp directory."""
+    with PlanContext(plan_id='test-cleanup-unified-temp') as ctx:
+        setup_marshal_json(ctx.fixture_dir)
+
+        temp_dir = ctx.fixture_dir / 'temp'
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        (temp_dir / 'file1.txt').write_text('content1')
+        (temp_dir / 'file2.json').write_text('{"key": "value"}')
+
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'temp')
+        assert result.success, f'Script failed: {result.stderr}'
+        assert 'status: success' in result.stdout
+        assert 'temp_files: 2' in result.stdout
+
+        # Verify files were deleted
+        remaining = list(temp_dir.iterdir())
+        assert len(remaining) == 0, f'Files remain: {remaining}'
+
+
+def test_cleanup_dry_run_via_unified():
+    """Cleanup subcommand dry-run shows what would be deleted."""
+    with PlanContext(plan_id='test-cleanup-unified-dryrun') as ctx:
+        setup_marshal_json(ctx.fixture_dir)
+
+        temp_dir = ctx.fixture_dir / 'temp'
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        test_file = temp_dir / 'keep-me.txt'
+        test_file.write_text('should not be deleted')
+
+        result = run_script(SCRIPT_PATH, 'cleanup', '--dry-run', '--target', 'temp')
+        assert result.success, f'Script failed: {result.stderr}'
+        assert 'status: dry_run' in result.stdout
+
+        # File should NOT be deleted
+        assert test_file.exists(), 'File should not be deleted in dry-run mode'
+
+
+def test_cleanup_logs_via_unified():
+    """Cleanup subcommand cleans old log files."""
+    with PlanContext(plan_id='test-cleanup-unified-logs') as ctx:
+        setup_marshal_json(ctx.fixture_dir)
+
+        logs_dir = ctx.fixture_dir / 'logs'
+        logs_dir.mkdir(parents=True, exist_ok=True)
+
+        old_log = logs_dir / 'old.log'
+        old_log.write_text('old log content')
+        old_time = time.time() - (2 * 86400)
+        os.utime(old_log, (old_time, old_time))
+
+        recent_log = logs_dir / 'recent.log'
+        recent_log.write_text('recent log content')
+
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'logs')
+        assert result.success, f'Script failed: {result.stderr}'
+        assert 'logs_deleted: 1' in result.stdout
+
+        assert not old_log.exists(), 'Old log should be deleted'
+        assert recent_log.exists(), 'Recent log should be kept'
+
+
+def test_cleanup_status_via_unified():
+    """Cleanup-status subcommand shows directory statistics."""
+    with PlanContext(plan_id='test-cleanup-unified-status') as ctx:
+        # Clean any leftover dirs
+        for subdir in ['temp', 'logs', 'archived-plans', 'memory']:
+            path = ctx.fixture_dir / subdir
+            if path.exists():
+                shutil.rmtree(path)
+
+        setup_marshal_json(ctx.fixture_dir)
+
+        temp_dir = ctx.fixture_dir / 'temp'
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        (temp_dir / 'file1.txt').write_text('12345')
+
+        result = run_script(SCRIPT_PATH, 'cleanup-status')
+        assert result.success, f'Script failed: {result.stderr}'
+        assert 'status: ok' in result.stdout
+        assert 'temp_files: 1' in result.stdout
+
+
+def test_cleanup_missing_marshal_json_via_unified():
+    """Cleanup subcommand fails when marshal.json is missing."""
+    with PlanContext(plan_id='test-cleanup-unified-nomarshal') as ctx:
+        marshal_path = ctx.fixture_dir / 'marshal.json'
+        if marshal_path.exists():
+            marshal_path.unlink()
+
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
+        assert not result.success, 'Should fail without marshal.json'
+        assert 'marshal.json not found' in result.stdout
+
+
+def test_cleanup_help():
+    """Cleanup subcommand shows help."""
+    result = run_script(SCRIPT_PATH, 'cleanup', '--help')
+    assert result.success
+    assert '--dry-run' in result.stdout
+    assert '--target' in result.stdout
+
+
+def test_cleanup_status_help():
+    """Cleanup-status subcommand shows help."""
+    result = run_script(SCRIPT_PATH, 'cleanup-status', '--help')
+    assert result.success

@@ -2,6 +2,7 @@
 name: manage-findings
 description: Unified finding and Q-Gate storage with JSONL persistence for plan-scoped and phase-scoped findings
 user-invocable: false
+scope: plan
 ---
 
 # Manage Findings
@@ -67,6 +68,8 @@ Plan findings are working data during plan execution. Notable findings are promo
 **Severity values**: `error`, `warning`, `info`
 
 ## CLI Commands
+
+**Parser architecture**: This script uses a two-level subparser pattern unique in this bundle. Top-level subcommands (`add`, `query`, `get`, `resolve`, `promote`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate query`, `qgate resolve`, `qgate clear`). This mirrors the two storage scopes (plan vs. phase) in the CLI surface.
 
 ### Plan-Scoped Finding Commands
 

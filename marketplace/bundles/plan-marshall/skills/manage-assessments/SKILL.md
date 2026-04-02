@@ -2,6 +2,7 @@
 name: manage-assessments
 description: Component evaluation storage with certainty/confidence assessments in JSONL persistence
 user-invocable: false
+scope: plan
 ---
 
 # Manage Assessments
@@ -100,6 +101,28 @@ assessments[15]{hash_id,file_path,certainty,confidence}:
 a3f2c1,src/File.java,CERTAIN_INCLUDE,95
 b4e3d2,src/Other.java,CERTAIN_EXCLUDE,80
 ```
+
+## Error Responses
+
+```toon
+status: error
+plan_id: my-plan
+error: invalid_certainty
+message: Invalid certainty value: MAYBE (valid: CERTAIN_INCLUDE, CERTAIN_EXCLUDE, UNCERTAIN)
+```
+
+```toon
+status: error
+plan_id: my-plan
+error: invalid_plan_id
+message: Invalid plan_id format: bad!!id
+```
+
+## Related Skills
+
+- `manage-findings` — Complementary finding storage (assessments feed into Q-Gate findings)
+- `phase-3-outline` — Primary consumer: outline agents produce assessments
+- `manage-status` — Plan status tracking
 
 ## Integration
 

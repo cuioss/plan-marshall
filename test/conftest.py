@@ -36,17 +36,12 @@ TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 # Pytest Collection Configuration
 # =============================================================================
 
-# Pre-existing issues: duplicate test file basenames cause pytest collection errors
-# These need to be renamed to unique names in a separate cleanup
+# Integration tests with unresolvable import dependencies (integration_common, extension)
 collect_ignore = [
-    # Duplicate: test_discover_modules.py exists in build-maven and build-npm
-    'plan-marshall/build-npm/test_discover_modules.py',
-    # Duplicate: test_extension.py exists in extension-api and plugin-doctor
-    'pm-plugin-development/plugin-doctor/test_extension.py',
-    # Module structure issue: integration directories without proper __init__.py
+    # Imports integration_common and pm-dev-java extension module not on PYTHONPATH
     'plan-marshall/integration/discover_modules/test_gradle_discover_modules.py',
     'plan-marshall/integration/discover_modules/test_maven_discover_modules.py',
-    # Import issue: imports from non-existent 'extension' module
+    # Imports integration_common and extension.discover_project_modules (ambiguous)
     'plan-marshall/integration/module_aggregation/test_hybrid_merge.py',
 ]
 
@@ -95,6 +90,13 @@ def _setup_marketplace_pythonpath() -> list[str]:
 
 # Set up PYTHONPATH immediately on import
 _MARKETPLACE_SCRIPT_DIRS = _setup_marketplace_pythonpath()
+
+# Add test subdirectories with shared helpers to sys.path so tests can
+# import them without manual sys.path manipulation
+_TEST_HELPER_DIRS = [str(TEST_ROOT / 'plan-marshall')]
+for _helper_dir in _TEST_HELPER_DIRS:
+    if _helper_dir not in sys.path:
+        sys.path.insert(0, _helper_dir)
 
 
 # =============================================================================

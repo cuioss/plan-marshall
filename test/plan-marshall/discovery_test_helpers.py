@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""Shared test helpers for build-* module discovery tests.
+"""Shared test helpers for plan-marshall build module discovery tests.
 
 Provides common assertion functions for validating module discovery output
 across all build systems (Maven, Gradle, npm, Python). Ensures consistent
 contract compliance checking without duplicating assertions in each test file.
 
-Usage:
-    from discovery_test_helpers import (
-        assert_valid_module,
-        assert_module_paths,
-        assert_module_commands,
-        assert_command_uses_executor,
-    )
+Usage (add test/plan-marshall/ to sys.path first):
+    from discovery_test_helpers import assert_valid_module, assert_module_paths
 """
 
 

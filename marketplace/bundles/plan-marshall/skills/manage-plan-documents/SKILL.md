@@ -2,6 +2,7 @@
 name: manage-plan-documents
 description: Manage request documents within plan directories with schema validation and template-based creation
 user-invocable: false
+scope: plan
 ---
 
 # Manage Plan Documents Skill
@@ -364,6 +365,22 @@ See [standards/architecture.md](standards/architecture.md) for:
 
 See [standards/adding-document-types.md](standards/adding-document-types.md) for:
 - Step-by-step guide to add new types
+
+## Error Responses
+
+```toon
+status: error
+plan_id: my-plan
+error: file_not_found
+message: Document request.md not found
+```
+
+```toon
+status: error
+plan_id: my-plan
+error: invalid_plan_id
+message: Invalid plan_id format: bad!!id
+```
 
 ## Related Skills
 

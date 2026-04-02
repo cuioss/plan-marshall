@@ -2,6 +2,7 @@
 name: manage-architecture
 description: LLM-based architectural analysis that transforms raw project data into meaningful structure
 user-invocable: false
+scope: hybrid
 ---
 
 # Analyze Project Architecture Skill

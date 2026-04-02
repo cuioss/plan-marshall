@@ -2,6 +2,7 @@
 name: manage-solution-outline
 description: Manage solution outline documents - standards, examples, validation, and deliverable extraction
 user-invocable: false
+scope: plan
 ---
 
 # Manage Solution Outline Skill
@@ -225,6 +226,22 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 ```
 
 ---
+
+## Error Responses
+
+```toon
+status: error
+plan_id: my-plan
+error: file_not_found
+message: solution_outline.md not found
+```
+
+```toon
+status: error
+plan_id: my-plan
+error: parse_error
+message: Failed to parse solution outline structure
+```
 
 ## Integration
 

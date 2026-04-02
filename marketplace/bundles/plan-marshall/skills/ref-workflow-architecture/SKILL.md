@@ -4,14 +4,14 @@ description: Centralized architecture documentation for the plan-marshall bundle
 user-invocable: false
 ---
 
-# PM-Workflow Architecture
+# Plan-Marshall Architecture
 
 **Role**: Central architecture reference for the plan-marshall bundle. Provides visual documentation of the 6-phase execution model, thin agent pattern, and data layer.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│                         PM-WORKFLOW ARCHITECTURE                            │
+│                         PLAN-MARSHALL ARCHITECTURE                            │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                      6-PHASE EXECUTION MODEL                          │  │

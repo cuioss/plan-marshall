@@ -25,7 +25,7 @@ from typing import Any
 
 from input_validation import validate_plan_id  # type: ignore[import-not-found]
 
-# Add toon_parser to path
+# Allow direct invocation and testing — executor sets PYTHONPATH for production
 _toon_parser_path = (
     Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
 )

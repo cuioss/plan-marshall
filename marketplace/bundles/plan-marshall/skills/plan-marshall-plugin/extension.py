@@ -16,7 +16,7 @@ from extension_base import ExtensionBase, build_module_base, discover_descriptor
 # Build systems that indicate code content (vs documentation or plugin metadata)
 _CODE_BUILD_SYSTEMS = {'maven', 'gradle', 'npm', 'python'}
 
-# Add sibling skill script directories to path
+# Allow direct invocation and testing — executor sets PYTHONPATH for production
 SKILLS_DIR = Path(__file__).parent.parent  # plan-marshall/skills/
 for skill_name in ['build-maven', 'build-gradle', 'build-npm', 'build-python']:
     scripts_dir = SKILLS_DIR / skill_name / 'scripts'

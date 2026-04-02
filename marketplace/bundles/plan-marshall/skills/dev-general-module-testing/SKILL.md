@@ -36,6 +36,22 @@ Use when: Analyzing test coverage, defining corner cases, improving coverage met
 - `pm-dev-frontend:jest-testing` — Jest testing patterns
 - `pm-dev-java-cui:cui-testing` — CUI test generator framework
 
+## Code Examples
+
+### AAA Pattern
+```python
+def test_discount_applied_for_premium_user():
+    # Arrange
+    user = User(tier="premium")
+    cart = Cart(items=[Item(price=100)])
+
+    # Act
+    total = cart.checkout(user)
+
+    # Assert
+    assert total == 90  # 10% premium discount
+```
+
 ## Standards Reference
 
 | Standard | Purpose |

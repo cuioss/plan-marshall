@@ -25,7 +25,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-# Add toon_parser to path
+# Allow direct invocation and testing — executor sets PYTHONPATH for production
 _toon_parser_path = (
     Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
 )
@@ -334,4 +334,10 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
+        sys.exit(1)

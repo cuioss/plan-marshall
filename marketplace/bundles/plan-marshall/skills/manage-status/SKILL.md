@@ -2,6 +2,7 @@
 name: manage-status
 description: Manage status.json files with phase tracking and metadata
 user-invocable: false
+scope: plan
 ---
 
 # Manage Status Skill
@@ -298,6 +299,24 @@ Common errors:
 - `invalid_phase`: Phase not in phases list
 - `phase_not_found`: Phase doesn't exist
 - `not_found` (exit 0): Metadata field doesn't exist (valid query result, not an error)
+
+---
+
+## Error Responses
+
+```toon
+status: error
+plan_id: my-feature
+error: file_not_found
+message: status.json not found
+```
+
+```toon
+status: error
+plan_id: bad!!id
+error: invalid_plan_id
+message: Invalid plan_id format: bad!!id
+```
 
 ---
 

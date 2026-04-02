@@ -2,6 +2,7 @@
 name: manage-config
 description: Project-level infrastructure configuration for marshal.json
 user-invocable: false
+scope: hybrid
 ---
 
 # Plan-Marshall Config Skill
@@ -417,6 +418,28 @@ Script characteristics:
 - `system retention get` provides retention settings
 
 ---
+
+## Error Responses
+
+```toon
+status: error
+error: not_initialized
+message: Project configuration not initialized. Run init first.
+```
+
+```toon
+status: error
+error: invalid_domain
+message: Unknown skill domain: nonexistent
+```
+
+---
+
+## Related Skills
+
+- `manage-architecture` — Consumes configuration for project analysis
+- `marshall-steward` — Interactive configuration wizard
+- `extension-api` — Build system detection uses config
 
 ## Error Handling
 

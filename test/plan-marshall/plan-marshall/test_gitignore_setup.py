@@ -28,8 +28,8 @@ class TestGitignoreSetupCreate(ScriptTestCase):
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
         self.assert_success(result)
-        self.assertIn('status\tcreated', result.stdout)
-        self.assertIn('entries_added\t3', result.stdout)  # .plan/*, !marshal.json, !project-structure.json
+        self.assertIn('status: created', result.stdout)
+        self.assertIn('entries_added: 3', result.stdout)  # .plan/*, !marshal.json, !project-structure.json
 
         # Verify file was created
         gitignore_path = self.temp_dir / '.gitignore'
@@ -57,8 +57,8 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
         self.assert_success(result)
-        self.assertIn('status\tupdated', result.stdout)
-        self.assertIn('entries_added\t3', result.stdout)  # .plan/*, !marshal.json, !project-structure.json
+        self.assertIn('status: updated', result.stdout)
+        self.assertIn('entries_added: 3', result.stdout)  # .plan/*, !marshal.json, !project-structure.json
 
         # Verify existing content preserved and new content added
         content = gitignore_path.read_text()
@@ -76,8 +76,8 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
         self.assert_success(result)
-        self.assertIn('status\tupdated', result.stdout)
-        self.assertIn('entries_added\t2', result.stdout)  # !marshal.json + !project-structure.json
+        self.assertIn('status: updated', result.stdout)
+        self.assertIn('entries_added: 2', result.stdout)  # !marshal.json + !project-structure.json
 
         content = gitignore_path.read_text()
         self.assertIn('!.plan/marshal.json', content)
@@ -99,8 +99,8 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
 
         self.assert_success(result)
-        self.assertIn('status\tunchanged', result.stdout)
-        self.assertIn('entries_added\t0', result.stdout)
+        self.assertIn('status: unchanged', result.stdout)
+        self.assertIn('entries_added: 0', result.stdout)
 
     def test_recognizes_alternate_plan_format(self):
         """Should recognize .plan without trailing slash."""
@@ -111,7 +111,7 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
 
         self.assert_success(result)
         # .plan (without slash) should be recognized as .plan/
-        self.assertIn('entries_added\t0', result.stdout)
+        self.assertIn('entries_added: 0', result.stdout)
 
 
 class TestGitignoreSetupDryRun(ScriptTestCase):
@@ -126,8 +126,8 @@ class TestGitignoreSetupDryRun(ScriptTestCase):
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir), '--dry-run')
 
         self.assert_success(result)
-        self.assertIn('status\tcreated', result.stdout)
-        self.assertIn('dry_run\ttrue', result.stdout)
+        self.assertIn('status: created', result.stdout)
+        self.assertIn('dry_run: true', result.stdout)
 
         # Verify file was NOT created
         gitignore_path = self.temp_dir / '.gitignore'
@@ -142,8 +142,8 @@ class TestGitignoreSetupDryRun(ScriptTestCase):
         result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir), '--dry-run')
 
         self.assert_success(result)
-        self.assertIn('status\tupdated', result.stdout)
-        self.assertIn('dry_run\ttrue', result.stdout)
+        self.assertIn('status: updated', result.stdout)
+        self.assertIn('dry_run: true', result.stdout)
 
         # Verify file was NOT modified
         self.assertEqual(gitignore_path.read_text(), original_content)
@@ -187,10 +187,9 @@ class TestGitignoreSetupEdgeCases(ScriptTestCase):
         lines = result.stdout.strip().split('\n')
         self.assertGreaterEqual(len(lines), 3)
 
-        # Each line should be tab-separated key-value
+        # Each line should be colon-space separated key-value (TOON format)
         for line in lines:
-            parts = line.split('\t')
-            self.assertEqual(len(parts), 2, f'Line should have exactly 2 parts: {line}')
+            self.assertIn(': ', line, f'Line should contain colon-space separator: {line}')
 
 
 if __name__ == '__main__':

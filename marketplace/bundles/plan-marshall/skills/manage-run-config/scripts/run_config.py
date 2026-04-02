@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Manage run-configuration.json - initialization and validation.
+Manage run-configuration.json - unified entry point.
 
 Consolidated from:
 - init-run-config.py → init subcommand
 - validate-run-config.py → validate subcommand
+- cleanup.py → cleanup / cleanup-status subcommands
 
 Provides operations for managing .plan/run-configuration.json files
-including creation, validation, and structure verification.
+including creation, validation, structure verification, and directory cleanup.
 
-Output: JSON to stdout with operation results.
+Output: JSON to stdout with operation results (init/validate/warning),
+        TOON to stdout (timeout/cleanup).
 """
 
 import argparse
@@ -56,14 +58,22 @@ def write_json_file(file_path: Path, data: dict) -> None:
 
 
 def output_success(action: str, **kwargs) -> None:
-    """Output success result as JSON."""
+    """Output success result as JSON.
+
+    Note: Outputs JSON (json.dumps), not TOON. Uses 'action' field name
+    instead of 'operation'. Incompatible with file_ops.output_success.
+    """
     result = {'success': True, 'action': action}
     result.update(kwargs)
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 def output_error(error: str) -> None:
-    """Output error result as JSON to stderr."""
+    """Output error result as JSON to stderr.
+
+    Note: Outputs JSON (json.dumps), single-arg signature, no 'operation' field.
+    Incompatible with file_ops.output_error (2-arg, TOON format).
+    """
     result = {'success': False, 'error': error}
     print(json.dumps(result, indent=2), file=sys.stderr)
 
@@ -235,7 +245,11 @@ def read_run_config(config_path: Path) -> dict[str, Any]:
 
 
 def output_toon(status: str, **fields) -> None:
-    """Output result in TOON format."""
+    """Output result in TOON format.
+
+    Note: Uses TAB-separated key-value pairs, unique to timeout subcommands.
+    Incompatible with file_ops output helpers which use serialize_toon.
+    """
     print(f'status\t{status}')
     for key, value in fields.items():
         print(f'{key}\t{value}')
@@ -470,6 +484,25 @@ def cmd_timeout_set(args) -> int:
 
 
 # =============================================================================
+# Cleanup Subcommands (delegates to cleanup.py functions)
+# =============================================================================
+
+
+def cmd_cleanup(args) -> int:
+    """Execute cleanup based on retention settings (delegates to cleanup module)."""
+    from cleanup import cmd_clean
+
+    return cmd_clean(args)
+
+
+def cmd_cleanup_status(args) -> int:
+    """Show cleanup status (delegates to cleanup module)."""
+    from cleanup import cmd_status
+
+    return cmd_status(args)
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -506,6 +539,15 @@ Examples:
 
   # Remove warning pattern
   %(prog)s warning remove --category transitive_dependency --pattern "uses transitive dependency"
+
+  # Clean .plan directories based on retention settings
+  %(prog)s cleanup
+
+  # Dry-run cleanup for a specific target
+  %(prog)s cleanup --dry-run --target logs
+
+  # Show cleanup status
+  %(prog)s cleanup-status
 """,
     )
 
@@ -565,6 +607,21 @@ Examples:
     p_warning_remove.add_argument('--build-system', default='maven', help='Build system (default: maven)')
     p_warning_remove.set_defaults(func=cmd_warning_remove)
 
+    # cleanup command
+    p_cleanup = subparsers.add_parser('cleanup', help='Clean .plan directories based on retention settings')
+    p_cleanup.add_argument('--dry-run', action='store_true', help='Show what would be deleted without deleting')
+    p_cleanup.add_argument(
+        '--target',
+        choices=['all', 'temp', 'logs', 'archived-plans', 'memory'],
+        default='all',
+        help='Clean specific target only (default: all)',
+    )
+    p_cleanup.set_defaults(func=cmd_cleanup)
+
+    # cleanup-status command
+    p_cleanup_status = subparsers.add_parser('cleanup-status', help='Show cleanup status and what would be cleaned')
+    p_cleanup_status.set_defaults(func=cmd_cleanup_status)
+
     args = parser.parse_args()
 
     if not args.command:
@@ -587,4 +644,11 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:
+        from toon_parser import serialize_toon
+        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
+        sys.exit(1)

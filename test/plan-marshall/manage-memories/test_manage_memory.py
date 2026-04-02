@@ -48,11 +48,11 @@ def run_memory_script(*args):
     return run_script(SCRIPT_PATH, *args)
 
 
-def parse_json(output):
-    """Parse JSON from output."""
-    import json
+def parse_output(output):
+    """Parse TOON from output."""
+    from toon_parser import parse_toon
 
-    return json.loads(output)
+    return parse_toon(output)
 
 
 # =============================================================================
@@ -66,7 +66,7 @@ def test_save_creates_dirs():
         result = run_memory_script(
             'save', '--category', 'context', '--identifier', 'test-feature', '--content', '{"notes": "Testing"}'
         )
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         assert 'context' in data.get('path', ''), 'Path should contain context'
@@ -81,7 +81,7 @@ def test_save_context():
         result = run_memory_script(
             'save', '--category', 'context', '--identifier', 'test-feature', '--content', '{"decisions": ["Use JWT"]}'
         )
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         assert 'context' in data.get('path', ''), 'Path should contain context'
@@ -103,7 +103,7 @@ def test_load():
 }""")
 
         result = run_memory_script('load', '--category', 'context', '--identifier', 'load-test')
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         assert data.get('content', {}).get('value') == 123, 'Content value should be 123'
@@ -125,7 +125,7 @@ def test_load_has_meta():
 }""")
 
         result = run_memory_script('load', '--category', 'context', '--identifier', 'meta-test')
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         meta = data.get('meta', {})
@@ -149,7 +149,7 @@ def test_list_category():
 }""")
 
         result = run_memory_script('list', '--category', 'context')
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         assert data.get('count', 0) >= 2, 'Should find at least 2 files'
@@ -162,7 +162,7 @@ def test_list_all():
         run_memory_script('save', '--category', 'context', '--identifier', 'list-all-test', '--content', '{}')
 
         result = run_memory_script('list')
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
 
@@ -183,7 +183,7 @@ def test_query_pattern():
 }""")
 
         result = run_memory_script('query', '--pattern', 'query-auth*', '--category', 'context')
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         assert data.get('count', 0) >= 1, 'Should find at least 1 match'
@@ -206,7 +206,7 @@ def test_cleanup():
 }""")
 
         result = run_memory_script('cleanup', '--category', 'context', '--older-than', '1d')
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         assert data.get('removed_count', 0) >= 1, 'Should remove at least 1 file'
@@ -218,7 +218,7 @@ def test_load_not_found():
         result = run_memory_script('load', '--category', 'context', '--identifier', 'nonexistent')
         # Script may output to stderr for errors
         output = result.stdout if result.stdout.strip() else result.stderr
-        data = parse_json(output)
+        data = parse_output(output)
 
         assert data.get('success') is False, 'Should fail for non-existent file'
 
@@ -240,7 +240,7 @@ def test_context_date_prefix():
         result = run_memory_script(
             'save', '--category', 'context', '--identifier', 'date-prefix-test', '--content', '{}'
         )
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         identifier = data.get('identifier', '')
@@ -269,7 +269,7 @@ def test_validate_valid_memory():
 }""")
 
         result = run_memory_script('validate', '--file', str(memory_dir / 'valid-test.json'))
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         assert data.get('valid') is True, 'Valid memory file should be valid'
@@ -285,7 +285,7 @@ def test_validate_missing_meta():
 }""")
 
         result = run_memory_script('validate', '--file', str(temp_dir / 'invalid-memory.json'))
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed (validation ran)'
         assert data.get('valid') is False, 'Missing meta should be invalid'
@@ -303,7 +303,7 @@ def test_validate_missing_content():
 }""")
 
         result = run_memory_script('validate', '--file', str(temp_dir / 'missing-content.json'))
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed (validation ran)'
         assert data.get('valid') is False, 'Missing content should be invalid'
@@ -322,7 +322,7 @@ def test_validate_invalid_category():
 }""")
 
         result = run_memory_script('validate', '--file', str(temp_dir / 'invalid-category.json'))
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed (validation ran)'
         assert data.get('valid') is False, 'Invalid category should be invalid'
@@ -337,7 +337,7 @@ def test_validate_invalid_json():
 }""")
 
         result = run_memory_script('validate', '--file', str(temp_dir / 'invalid-json.json'))
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed (validation ran)'
         assert data.get('valid') is False, 'Invalid JSON should be invalid'
@@ -358,7 +358,7 @@ def test_validate_checks_array():
 }""")
 
         result = run_memory_script('validate', '--file', str(memory_dir / 'checks-test.json'))
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('success') is True, 'Should succeed'
         checks = data.get('checks', [])
@@ -370,7 +370,7 @@ def test_validate_file_not_found():
     with memory_test_context() as temp_dir:
         result = run_memory_script('validate', '--file', str(temp_dir / 'nonexistent.json'))
         output = result.stdout if result.stdout.strip() else result.stderr
-        data = parse_json(output)
+        data = parse_output(output)
 
         assert data.get('success') is False, 'Should fail for non-existent file'
 
@@ -390,7 +390,7 @@ def test_validate_format_is_memory():
 }""")
 
         result = run_memory_script('validate', '--file', str(memory_dir / 'format-test.json'))
-        data = parse_json(result.stdout)
+        data = parse_output(result.stdout)
 
         assert data.get('format') == 'memory', "Format should be 'memory'"
 

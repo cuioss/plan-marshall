@@ -2,6 +2,7 @@
 name: manage-references
 description: Manage references.json files with field-level access and list management
 user-invocable: false
+scope: plan
 ---
 
 # Manage References Skill
@@ -348,6 +349,24 @@ status: error
 plan_id: my-feature
 error: file_not_found
 message: references.json not found
+```
+
+---
+
+## Error Responses
+
+```toon
+status: error
+plan_id: my-feature
+error: file_not_found
+message: references.json not found
+```
+
+```toon
+status: error
+plan_id: my-feature
+error: field_not_found
+message: Field 'nonexistent' not found in references
 ```
 
 ---

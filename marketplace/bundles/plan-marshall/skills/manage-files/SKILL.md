@@ -2,6 +2,7 @@
 name: manage-files
 description: Generic file I/O operations for plan directories
 user-invocable: false
+scope: plan
 ---
 
 # Manage Files Skill
@@ -282,6 +283,24 @@ message: File does not exist
 suggestions[2]:
 - Check file name spelling
 - Use list subcommand to see available files
+```
+
+---
+
+## Error Responses
+
+```toon
+status: error
+plan_id: my-plan
+error: file_not_found
+message: File does not exist: config.json
+```
+
+```toon
+status: error
+plan_id: my-plan
+error: invalid_plan_id
+message: Invalid plan_id format: bad!!id
 ```
 
 ---

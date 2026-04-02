@@ -21,7 +21,7 @@ import argparse
 import sys
 from pathlib import Path
 
-# Add current directory to path for imports
+# Allow direct invocation and testing — executor sets PYTHONPATH for production
 sys.path.insert(0, str(Path(__file__).parent))
 
 from findings_store import (
@@ -271,4 +271,11 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:
+        from toon_parser import serialize_toon
+        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
+        sys.exit(1)

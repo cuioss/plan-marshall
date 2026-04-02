@@ -51,8 +51,8 @@ Execute ONLY the commands documented in the loaded skill's workflow. Never add d
 
 ## Related Skills
 
-- `plan-marshall:dev-general-code-quality` — Code quality, refactoring, and documentation principles
-- `plan-marshall:dev-general-module-testing` — Testing methodology
+- `dev-general-code-quality` — Complementary quality standards (SRP, CQS, complexity)
+- `dev-general-module-testing` — Testing methodology standards (AAA pattern, coverage)
 
 ## Standards Reference
 

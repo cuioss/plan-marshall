@@ -64,7 +64,12 @@ addopts = ["-v", "--tb=short"]
 [tool.coverage.run]
 source = ["marketplace/bundles"]
 branch = true
-omit = ["*/scripts/__pycache__/*"]
+omit = [
+    "*/scripts/__pycache__/*",
+    "test/*",
+    "*/test_*.py",
+    "**/conftest.py",
+]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -97,12 +102,9 @@ explicit_package_bases = true
 # Exclude extension.py files in plan-marshall-plugin directories - they are dynamically loaded
 # and mypy can't distinguish them by path (all named "extension")
 # Also exclude test/*/plan-marshall-plugin/ directories - invalid Python package name (contains dashes)
-# Also exclude duplicate test files/directories (same basenames cause mypy module conflicts)
 exclude = [
     "plan-marshall-plugin/extension\\.py$",
     "test/.*/plan-marshall-plugin/",
     "test/plan-marshall/tools-permission-fix/test_permission\\.py$",
-    "test/pm-dev-java/plan-marshall-plugin/test_discover_modules\\.py$",
-    "test/pm-plugin-development/plugin-doctor/test_extension\\.py$",
     "test/.*/integration/",
 ]

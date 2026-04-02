@@ -2,6 +2,7 @@
 name: manage-memories
 description: Memory layer operations for persistent session storage
 user-invocable: false
+scope: global
 ---
 
 # Claude Memory Skill
@@ -10,7 +11,7 @@ Memory layer operations for persistent session storage (via `file-operations-bas
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse JSON/TOON output for status and route accordingly.
+**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
 
 **Prohibited actions:**
 - Do not modify memory files directly; all mutations go through the script API
@@ -67,7 +68,7 @@ python3 .plan/execute-script.py plan-marshall:manage-memories:{operation} [--cat
 
 ### Step 2: Process Result
 
-Parse JSON output and handle accordingly.
+Parse TOON output and handle accordingly.
 
 ### Operations Reference
 
@@ -118,15 +119,15 @@ python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory vali
 
 ### Step 2: Process Result
 
-```json
-{
-  "success": true,
-  "valid": true,
-  "checks": [
-    {"check": "json_syntax", "passed": true},
-    {"check": "required_fields", "passed": true}
-  ]
-}
+```
+status: success
+success: true
+valid: true
+file: /path/to/file.json
+format: memory
+checks[2]{check,passed}:
+  json_syntax,true
+  required_fields,true
 ```
 
 ---
@@ -167,8 +168,8 @@ All memory files use a metadata envelope:
 | validate-memory | `plan-marshall:manage-memories` |
 
 All scripts:
-- Use Python stdlib only (json, argparse, pathlib, datetime)
-- Output JSON to stdout
+- Use Python stdlib only (json, argparse, pathlib, datetime) plus toon_parser
+- Output TOON to stdout
 - Exit code 0 for success, 1 for errors
 - Support `--help` flag
 
@@ -189,3 +190,8 @@ All scripts:
 ## References
 
 - `references/memory-layer-format.md` - Complete memory file format documentation
+
+## Related Skills
+
+- `manage-lessons` — Global lessons learned (complementary persistence)
+- `manage-run-config` — Runtime configuration (complementary persistence)

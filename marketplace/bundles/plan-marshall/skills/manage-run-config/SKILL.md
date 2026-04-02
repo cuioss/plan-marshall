@@ -2,6 +2,7 @@
 name: manage-run-config
 description: Run configuration handling for persistent command configuration storage
 user-invocable: false
+scope: global
 ---
 
 # Run Config Skill
@@ -18,9 +19,9 @@ Run configuration handling for persistent command configuration storage.
 - Do not bypass initialization (run-config.json must exist before queries)
 
 **Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config {command} {args}` or `plan-marshall:manage-run-config:cleanup {args}`
+- All commands use `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config {command} {args}`
 - Timeout and warning operations use the noun-verb pattern (e.g., `timeout get`, `warning add`)
-- Cleanup uses a separate script notation
+- Cleanup operations use `cleanup` and `cleanup-status` subcommands
 
 ## What This Skill Provides
 
@@ -81,13 +82,15 @@ See [references/run-config-format.md](references/run-config-format.md) for compl
 | warning add | `plan-marshall:manage-run-config:run_config warning add` |
 | warning list | `plan-marshall:manage-run-config:run_config warning list` |
 | warning remove | `plan-marshall:manage-run-config:run_config warning remove` |
-| cleanup | `plan-marshall:manage-run-config:cleanup` |
+| cleanup | `plan-marshall:manage-run-config:run_config cleanup` |
+| cleanup-status | `plan-marshall:manage-run-config:run_config cleanup-status` |
 
 Script characteristics:
 - Uses Python stdlib only (json, argparse, pathlib)
-- Outputs JSON (init/validate) or TOON (timeout/cleanup) to stdout
+- Outputs JSON (init/validate/warning) or TOON (timeout/cleanup) to stdout
 - Exit code 0 for success, 1 for errors
 - Supports `--help` flag
+- Legacy notation `plan-marshall:manage-run-config:cleanup` still works for backward compatibility
 
 ---
 
@@ -125,6 +128,22 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 ### With lessons-learned Skill
 - Lessons learned are stored separately via `plan-marshall:manage-lessons` skill
 - Run configuration tracks execution state only
+
+---
+
+## Error Responses
+
+```toon
+status: error
+error: key_not_found
+message: Configuration key 'nonexistent' not found
+```
+
+```toon
+status: error
+error: invalid_value
+message: Invalid value for timeout: not-a-number
+```
 
 ---
 

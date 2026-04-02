@@ -42,6 +42,7 @@
     "./skills/task-module-testing",
     "./skills/task-standalone",
     "./skills/task-verification",
+    "./skills/tools-integration-ci",
     "./skills/tools-permission-doctor",
     "./skills/tools-permission-fix",
     "./skills/workflow-permission-web",

@@ -51,7 +51,12 @@ VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
 
 
 def format_toon_output(result: dict) -> str:
-    """Format result dict as TOON output."""
+    """Format result dict as TOON output.
+
+    Note: Domain-specific formatter for log entries (entries, raw_content blocks).
+    Cannot be replaced by file_ops.output_success or serialize_toon because it
+    hand-formats log-specific nested structures and returns a string (not prints).
+    """
     lines = []
 
     # Status line first
@@ -227,4 +232,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        from toon_parser import serialize_toon
+        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
+        sys.exit(1)

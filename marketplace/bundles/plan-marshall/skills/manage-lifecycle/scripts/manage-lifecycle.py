@@ -290,6 +290,60 @@ def cmd_get_routing_context(args) -> None:
 
 
 # =============================================================================
+# Command: Self-Test
+# =============================================================================
+
+
+def cmd_self_test(_args) -> None:
+    """Verify manage-lifecycle health: imports, routing, and directory access."""
+    checks: list[tuple[str, bool]] = []
+
+    # Check imports
+    try:
+        from file_ops import base_path as _bp  # noqa: F401
+        checks.append(('import_file_ops', True))
+    except ImportError:
+        checks.append(('import_file_ops', False))
+
+    try:
+        from toon_parser import serialize_toon as _st  # noqa: F401
+        checks.append(('import_toon_parser', True))
+    except ImportError:
+        checks.append(('import_toon_parser', False))
+
+    try:
+        from manage_status import read_status as _rs  # noqa: F401
+        checks.append(('import_manage_status', True))
+    except ImportError:
+        checks.append(('import_manage_status', False))
+
+    # Check phase routing completeness
+    expected = {'1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'}
+    checks.append(('phase_routing_complete', expected.issubset(PHASE_ROUTING.keys())))
+
+    # Check plans directory is writable
+    plans_dir = get_plans_dir()
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    checks.append(('plans_dir_writable', plans_dir.exists()))
+
+    passed = sum(1 for _, ok in checks if ok)
+    failed = sum(1 for _, ok in checks if not ok)
+    failures = [name for name, ok in checks if not ok]
+
+    result: dict[str, Any] = {
+        'status': 'success' if failed == 0 else 'error',
+        'passed': passed,
+        'failed': failed,
+    }
+    if failures:
+        result['failures'] = ','.join(failures)
+
+    output_toon(result)
+    if failed > 0:
+        sys.exit(1)
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -327,9 +381,19 @@ def main() -> None:
     routing_context_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     routing_context_parser.set_defaults(func=cmd_get_routing_context)
 
+    # self-test
+    self_test_parser = subparsers.add_parser('self-test', help='Verify manage-lifecycle health')
+    self_test_parser.set_defaults(func=cmd_self_test)
+
     args = parser.parse_args()
     args.func(args)
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
+        sys.exit(1)

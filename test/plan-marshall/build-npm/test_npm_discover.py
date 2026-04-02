@@ -9,9 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-# Make discovery_test_helpers importable
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
+# Shared test helpers (test/plan-marshall/conftest.py adds parent to sys.path)
 from conftest import BuildContext
 from discovery_test_helpers import (
     assert_command_uses_executor,

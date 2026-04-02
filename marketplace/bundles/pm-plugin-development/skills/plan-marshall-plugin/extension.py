@@ -8,7 +8,7 @@ Discovers marketplace bundles as modules for derived-data.json generation.
 import sys
 from pathlib import Path
 
-# Add scripts directory to path for plugin_discover import
+# Allow direct invocation and testing — executor sets PYTHONPATH for production
 SCRIPTS_DIR = Path(__file__).parent / 'scripts'
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))

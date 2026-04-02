@@ -5,7 +5,7 @@ Manage the .plan/memory/ layer for session persistence.
 Provides CRUD operations for memory files organized by category:
 context, decisions, interfaces.
 
-Output: JSON to stdout with operation results.
+Output: TOON to stdout with operation results.
 """
 
 import argparse
@@ -19,6 +19,7 @@ from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from file_ops import base_path  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -112,16 +113,16 @@ def get_file_info(file_path: Path) -> dict:
 
 
 def output_success(operation: str, **kwargs) -> None:
-    """Output success result as JSON."""
-    result = {'success': True, 'operation': operation}
+    """Output success result as TOON to stdout."""
+    result = {'status': 'success', 'success': True, 'operation': operation}
     result.update(kwargs)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(serialize_toon(result))
 
 
 def output_error(operation: str, error: str) -> None:
-    """Output error result as JSON to stderr."""
-    result = {'success': False, 'operation': operation, 'error': error}
-    print(json.dumps(result, indent=2), file=sys.stderr)
+    """Output error result as TOON to stderr."""
+    result = {'status': 'error', 'success': False, 'operation': operation, 'error': error}
+    print(serialize_toon(result), file=sys.stderr)
 
 
 def cmd_save(args) -> int:
@@ -361,13 +362,14 @@ def cmd_validate(args) -> int:
             data = read_memory_file(file_path)
         except json.JSONDecodeError as e:
             result = {
+                'status': 'success',
                 'success': True,
                 'valid': False,
                 'file': str(file_path),
                 'format': 'memory',
                 'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
             }
-            print(json.dumps(result, indent=2, ensure_ascii=False))
+            print(serialize_toon(result))
             return 0
 
         # Add JSON syntax check
@@ -379,8 +381,15 @@ def cmd_validate(args) -> int:
         # Determine overall validity
         valid = all(c.get('passed', True) for c in checks)
 
-        result = {'success': True, 'valid': valid, 'file': str(file_path), 'format': 'memory', 'checks': checks}
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        result = {
+            'status': 'success',
+            'success': True,
+            'valid': valid,
+            'file': str(file_path),
+            'format': 'memory',
+            'checks': checks,
+        }
+        print(serialize_toon(result))
         return 0
     except Exception as e:
         output_error('validate', str(e))
@@ -464,4 +473,11 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as e:
+        from toon_parser import serialize_toon
+        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
+        sys.exit(1)
