@@ -79,9 +79,9 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
   "depends_on": [],
   "description": "Migrate miscellaneous agents from JSON to TOON output format.",
   "steps": [
-    {"number": 1, "title": "pm-plugin-development/agents/tool-coverage-agent.md", "status": "pending"},
-    {"number": 2, "title": "pm-dev-builder/agents/gradle-builder.md", "status": "pending"},
-    {"number": 3, "title": "pm-dev-frontend/skills/javascript/SKILL.md", "status": "pending"}
+    {"number": 1, "target": "pm-plugin-development/agents/tool-coverage-agent.md", "status": "pending"},
+    {"number": 2, "target": "pm-dev-builder/agents/gradle-builder.md", "status": "pending"},
+    {"number": 3, "target": "pm-dev-frontend/skills/javascript/SKILL.md", "status": "pending"}
   ],
   "verification": {
     "commands": ["grep -L '```json' {files} | wc -l"],

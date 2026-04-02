@@ -96,8 +96,8 @@ def get_retention_settings() -> dict:
     return retention
 
 
-def get_dir_age_days(path: Path) -> float:
-    """Get age of directory in days based on modification time."""
+def get_path_age_days(path: Path) -> float:
+    """Get age of a file or directory in days based on modification time."""
     try:
         mtime = path.stat().st_mtime
         return (time.time() - mtime) / 86400
@@ -105,13 +105,9 @@ def get_dir_age_days(path: Path) -> float:
         return 0
 
 
-def get_file_age_days(path: Path) -> float:
-    """Get age of file in days based on modification time."""
-    try:
-        mtime = path.stat().st_mtime
-        return (time.time() - mtime) / 86400
-    except OSError:
-        return 0
+# Aliases for backward compatibility
+get_dir_age_days = get_path_age_days
+get_file_age_days = get_path_age_days
 
 
 def clean_temp(dry_run: bool = False) -> tuple[int, int]:

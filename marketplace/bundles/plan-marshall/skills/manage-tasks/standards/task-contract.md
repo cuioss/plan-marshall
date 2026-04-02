@@ -115,7 +115,7 @@ For `verification` profile tasks, steps contain verification commands instead of
 | `profile` | string | Yes | Workflow profile (implementation, module_testing, integration_testing) |
 | `skills` | list | Yes | Domain skills pre-resolved during task creation |
 | `deliverable` | int | Yes | Referenced deliverable number (1:1 constraint) |
-| `depends_on` | string | Yes | Task dependencies for ordering |
+| `depends_on` | string[] | Yes | Task dependencies for ordering (e.g., `["TASK-1"]`) |
 | `origin` | string | Yes | Task origin (see Origin Field) |
 | `description` | string | Yes | Detailed task description |
 | `steps` | table | Yes | File paths to process |
@@ -190,7 +190,7 @@ The `profile` field determines the workflow type:
 | Profile | Description |
 |---------|-------------|
 | `implementation` | Create/modify production code |
-| `testing` | Create/modify test code |
+| `module_testing` | Create/modify test code |
 | `quality` | Documentation, verification |
 | `verification` | Verification-only (no files to modify, runs commands only) |
 
@@ -222,7 +222,7 @@ solution-outline phase               task-plan phase                     execute
                                      │ skills:                     │
                                      │   - pm-dev-java:java-core   │
                                      │   - pm-dev-java:junit-core  │
-                                     │ depends: TASK-1             │
+                                     │ depends_on: ["TASK-1"]      │
                                      └─────────────────────────────┘
 ```
 

@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from constants import PHASES  # type: ignore[import-not-found]
 from file_ops import base_path  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 
@@ -318,7 +319,7 @@ def cmd_self_test(_args) -> None:
         checks.append(('import_manage_status', False))
 
     # Check phase routing completeness
-    expected = {'1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'}
+    expected = set(PHASES)
     checks.append(('phase_routing_complete', expected.issubset(PHASE_ROUTING.keys())))
 
     # Check plans directory is writable

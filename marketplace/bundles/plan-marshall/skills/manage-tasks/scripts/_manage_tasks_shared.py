@@ -222,6 +222,7 @@ def normalize_step_path(path: str) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=5,
         )
         repo_root = result.stdout.strip()
         if path.startswith(repo_root + '/'):

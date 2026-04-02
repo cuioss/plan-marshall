@@ -192,10 +192,11 @@ def cmd_list(args) -> int:
                 if args.since:
                     try:
                         duration = parse_duration(args.since)
-                        cutoff = datetime.now(UTC).replace(tzinfo=None) - duration
+                        cutoff = datetime.now(UTC) - duration
                         created_str = info.get('created', '')
                         if created_str:
-                            created = datetime.fromisoformat(created_str.rstrip('Z'))
+                            # Parse ISO timestamp; append UTC if naive (Z-suffix stripped)
+                            created = datetime.fromisoformat(created_str.rstrip('Z')).replace(tzinfo=UTC)
                             if created < cutoff:
                                 continue
                     except (ValueError, TypeError):
@@ -247,7 +248,7 @@ def cmd_cleanup(args) -> int:
     """Remove old memory files based on age."""
     try:
         duration = parse_duration(args.older_than)
-        cutoff = datetime.now(UTC).replace(tzinfo=None) - duration
+        cutoff = datetime.now(UTC) - duration
 
         removed = []
         categories = [args.category] if args.category else CATEGORIES
@@ -262,7 +263,7 @@ def cmd_cleanup(args) -> int:
                     data = read_memory_file(file_path)
                     created_str = data.get('meta', {}).get('created', '')
                     if created_str:
-                        created = datetime.fromisoformat(created_str.rstrip('Z'))
+                        created = datetime.fromisoformat(created_str.rstrip('Z')).replace(tzinfo=UTC)
                         if created < cutoff:
                             file_path.unlink()
                             removed.append(str(file_path))

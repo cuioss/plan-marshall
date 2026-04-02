@@ -13,7 +13,8 @@ from _ref_core import (
 
 def cmd_get_context(args):
     """Get all references context in one call."""
-    validate_plan_id(args.plan_id)
+    if not validate_plan_id(args.plan_id):
+        return
 
     refs = require_references(args.plan_id)
 

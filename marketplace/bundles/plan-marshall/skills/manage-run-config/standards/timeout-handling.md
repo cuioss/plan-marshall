@@ -45,65 +45,7 @@ The timeout handling system provides:
 
 **Primary use case**: Synchronous builds where shell `timeout` is the single timeout mechanism.
 
-```
-                    BUILD EXECUTION FLOW
-
-    ┌─────────────────────────────────────────────────────┐
-    │                                                     │
-    │   1. GET TIMEOUT                                    │
-    │   ┌───────────────────────────────────────────┐     │
-    │   │  timeout get                              │     │
-    │   │    --command "build:maven_verify"         │     │
-    │   │    --default 300                          │     │
-    │   └───────────────────────────────────────────┘     │
-    │                       │                             │
-    │           ┌───────────┴───────────┐                 │
-    │           │                       │                 │
-    │           ▼                       ▼                 │
-    │     No persisted            Has persisted          │
-    │     value                   value (240s)           │
-    │           │                       │                 │
-    │           ▼                       ▼                 │
-    │     Return default          Apply safety margin    │
-    │     (300s)                  (240 * 1.25 = 300s)    │
-    │                                                     │
-    └─────────────────────────────────────────────────────┘
-                            │
-                            ▼
-    ┌─────────────────────────────────────────────────────┐
-    │   2. EXECUTE WITH SHELL TIMEOUT                     │
-    │   ┌───────────────────────────────────────────┐     │
-    │   │  timeout ${TIMEOUT}s mvn verify           │     │
-    │   └───────────────────────────────────────────┘     │
-    │                       │                             │
-    │                       ▼                             │
-    │                 Record duration                     │
-    └─────────────────────────────────────────────────────┘
-                            │
-                            ▼
-    ┌─────────────────────────────────────────────────────┐
-    │   3. SET TIMEOUT (adaptive learning)                │
-    │   ┌───────────────────────────────────────────┐     │
-    │   │  timeout set                              │     │
-    │   │    --command "build:maven_verify"         │     │
-    │   │    --duration 180                         │     │
-    │   └───────────────────────────────────────────┘     │
-    │                       │                             │
-    │           ┌───────────┴───────────┐                 │
-    │           │                       │                 │
-    │           ▼                       ▼                 │
-    │     No existing             Has existing           │
-    │     value                   value (240s)           │
-    │           │                       │                 │
-    │           ▼                       ▼                 │
-    │     Write directly          Weighted update        │
-    │     (180s)                  80% towards higher     │
-    │                             max(180,240)=240       │
-    │                             0.2*180 + 0.8*240      │
-    │                             = 228s                 │
-    │                                                     │
-    └─────────────────────────────────────────────────────┘
-```
+**Flow**: `timeout get` → execute with shell timeout → record duration → `timeout set` (adaptive learning)
 
 ---
 

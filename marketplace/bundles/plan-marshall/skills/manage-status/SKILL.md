@@ -312,17 +312,13 @@ message: status.json not found
 
 ### With manage-lifecycle
 
-manage-lifecycle handles phase transitions and routing; manage-status handles status storage and metadata.
+manage-lifecycle handles phase transitions and routing; manage-status handles status storage and metadata. The `transition` command in manage-lifecycle calls `update-phase` and `set-phase` in manage-status.
 
 ### With phase skills
 
 Phase skills read/update status through manage-status:
 - phase-1-init: Creates status with `create`
 - phase-2-refine onwards: Uses `set-phase`, `metadata`, `get-context`
-
-### With manage-lifecycle
-
-manage-lifecycle delegates to manage-status for storage operations. The `transition` command in manage-lifecycle calls `update-phase` and `set-phase` in manage-status.
 
 ### With agents
 

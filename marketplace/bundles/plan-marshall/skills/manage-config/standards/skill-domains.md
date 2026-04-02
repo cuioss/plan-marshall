@@ -9,7 +9,7 @@ Skill domains configure which implementation skills are loaded when working on c
 - **System Domain**: Contains workflow skills for the 6-phase execution model
 - **Technical Domains**: Language-specific with profiles and workflow skill extensions (java, javascript)
 
-## 7-Phase Workflow Model
+## 6-Phase Workflow Model
 
 The system domain contains workflow skills for the 6 execution phases:
 

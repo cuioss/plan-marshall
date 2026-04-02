@@ -12,6 +12,7 @@ from typing import Any, TypedDict, cast
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 # =============================================================================
@@ -65,29 +66,7 @@ def write_references(plan_id: str, refs: dict) -> None:
 
 def output_toon(data: dict) -> None:
     """Print TOON formatted output to stdout."""
-    lines = []
-    for key, value in data.items():
-        if isinstance(value, bool):
-            lines.append(f'{key}: {"true" if value else "false"}')
-        elif isinstance(value, list):
-            if value:
-                lines.append(f'{key}[{len(value)}]:')
-                for item in value:
-                    lines.append(f'  - {item}')
-            else:
-                lines.append(f'{key}: []')
-        elif isinstance(value, dict):
-            lines.append(f'{key}:')
-            for k, v in value.items():
-                if isinstance(v, list):
-                    lines.append(f'  {k}: {len(v)} items')
-                else:
-                    lines.append(f'  {k}: {v}')
-        elif value is None:
-            lines.append(f'{key}: null')
-        else:
-            lines.append(f'{key}: {value}')
-    print('\n'.join(lines))
+    print(serialize_toon(data))
 
 
 # =============================================================================
@@ -110,18 +89,21 @@ def validate_plan_id(plan_id: str) -> bool:
                 'message': f'Invalid plan_id format: {plan_id}',
             }
         )
-        sys.exit(1)
+        return False
     return True
 
 
 def require_references(plan_id: str) -> dict[Any, Any]:
-    """Read references, exiting with error if not found.
+    """Read references, raising SystemExit with error if not found.
 
     Args:
         plan_id: Plan identifier (must already be validated).
 
     Returns:
         References dict.
+
+    Raises:
+        SystemExit: If references.json not found (error already printed).
     """
     refs = read_references(plan_id)
     if not refs:

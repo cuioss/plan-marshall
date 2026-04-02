@@ -17,7 +17,8 @@ from _ref_core import (
 
 def cmd_add_file(args):
     """Add a file to modified_files list."""
-    validate_plan_id(args.plan_id)
+    if not validate_plan_id(args.plan_id):
+        return
 
     refs = read_references(args.plan_id)
     if 'modified_files' not in refs:
@@ -40,7 +41,8 @@ def cmd_add_file(args):
 
 def cmd_remove_file(args):
     """Remove a file from modified_files list."""
-    validate_plan_id(args.plan_id)
+    if not validate_plan_id(args.plan_id):
+        return
 
     refs = read_references(args.plan_id)
     if 'modified_files' not in refs or args.file not in refs['modified_files']:
@@ -70,7 +72,8 @@ def cmd_remove_file(args):
 
 def cmd_add_list(args):
     """Add multiple values to a list field."""
-    validate_plan_id(args.plan_id)
+    if not validate_plan_id(args.plan_id):
+        return
 
     refs = read_references(args.plan_id)
 
@@ -112,7 +115,8 @@ def cmd_add_list(args):
 
 def cmd_set_list(args):
     """Set a list field to new values (replaces existing list)."""
-    validate_plan_id(args.plan_id)
+    if not validate_plan_id(args.plan_id):
+        return
 
     refs = require_references(args.plan_id)
 

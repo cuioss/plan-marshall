@@ -20,6 +20,7 @@ import sys
 from fnmatch import fnmatch
 from typing import Any
 
+from constants import QGATE_PHASES, VALID_RESOLUTIONS  # type: ignore[import-not-found]
 from input_validation import validate_plan_id  # type: ignore[import-not-found]
 from jsonl_store import (  # type: ignore[import-not-found]
     append_jsonl,
@@ -53,12 +54,9 @@ FINDING_TYPES = [
     'pr-comment',
 ]
 
-RESOLUTIONS = ['pending', 'fixed', 'suppressed', 'accepted', 'taken_into_account']
+RESOLUTIONS = list(VALID_RESOLUTIONS)
 
 SEVERITIES = ['error', 'warning', 'info']
-
-# Q-Gate phases (per-phase findings files)
-QGATE_PHASES = ['2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
 
 # Valid Q-Gate finding sources
 QGATE_SOURCES = ['qgate', 'user_review']

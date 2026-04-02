@@ -47,7 +47,10 @@ def require_initialized() -> None:
 
 def load_config() -> dict:
     """Load marshal.json."""
-    config: dict = json.loads(MARSHAL_PATH.read_text(encoding='utf-8'))
+    try:
+        config: dict = json.loads(MARSHAL_PATH.read_text(encoding='utf-8'))
+    except json.JSONDecodeError as e:
+        raise ValueError(f'Invalid JSON in {MARSHAL_PATH}: {e}') from e
     return config
 
 

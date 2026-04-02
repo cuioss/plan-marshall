@@ -22,13 +22,14 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from constants import PHASES  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 METRICS_FILE = 'work/metrics.toon'
 METRICS_MD = 'metrics.md'
-PHASE_NAMES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
+PHASE_NAMES = list(PHASES)
 
 
 def get_plan_dir(plan_id: str) -> Path:
