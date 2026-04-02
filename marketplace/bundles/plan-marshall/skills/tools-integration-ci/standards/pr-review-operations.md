@@ -116,4 +116,18 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comment
 
 ### Step 2: Process Result
 
-See `standards/api-contract.md` for the full TOON output format.
+```toon
+status: success
+operation: pr_comments
+provider: github
+pr_number: 123
+total: 3
+unresolved: 2
+
+comments[3]{id,thread_id,author,body,path,line,resolved,created_at}:
+IC_abc123	PRRT_thread1	alice	Fix this null check	src/Main.java	42	false	2025-01-15T10:30:00Z
+IC_abc124	PRRT_thread1	bob	Done	src/Main.java	42	false	2025-01-15T11:00:00Z
+IC_abc125	PRRT_thread2	alice	Typo here	README.md	10	true	2025-01-15T09:00:00Z
+```
+
+See [api-contract.md](api-contract.md) for provider-specific field mappings.

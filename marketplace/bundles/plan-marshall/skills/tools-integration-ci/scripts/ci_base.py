@@ -2,20 +2,29 @@
 """Shared base module for CI provider scripts (GitHub, GitLab).
 
 Provides unified CLI runner, auth checker, error output, parser builder,
-and command dispatch. Each provider imports from here and supplies
-provider-specific handler functions and CLI details.
+command dispatch, polling framework, and CI check formatting.
+Each provider imports from here and supplies provider-specific handler
+functions and CLI details.
 
-This module uses only stdlib imports -- no serialize_toon dependency.
+This module uses only stdlib imports -- no serialize_toon dependency
+(except in helpers that explicitly opt in via lazy import).
 """
 
 import argparse
 import subprocess
 import sys
+import time
+from datetime import UTC, datetime
 from typing import Any
 
 # Exit codes
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
+
+# Shared defaults for CI polling operations
+DEFAULT_CI_TIMEOUT = 300   # seconds
+DEFAULT_CI_INTERVAL = 30   # seconds
+CI_LOG_TRUNCATE_LINES = 200
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +291,7 @@ def make_simple_handler(
     run_fn: Any,
     auth_fn: Any,
     *,
-    result_extras: dict | None = None,
+    result_extras: Any = None,
 ) -> Any:
     """Create a handler for simple CLI operations that follow the auth-build-run-output pattern.
 
@@ -332,6 +341,143 @@ def make_pr_number_handler(
         auth_fn,
         result_extras=lambda args: {'pr_number': args.pr_number},
     )
+
+
+# ---------------------------------------------------------------------------
+# CI check formatting (shared between GitHub and GitLab)
+# ---------------------------------------------------------------------------
+
+def compute_elapsed(started_at: str | None, completed_at: str | None, now: datetime) -> int:
+    """Compute elapsed seconds from ISO timestamps.
+
+    Returns 0 on parse failure.
+    """
+    if not started_at:
+        return 0
+    try:
+        start_dt = datetime.fromisoformat(started_at)
+        if completed_at:
+            end_dt = datetime.fromisoformat(completed_at)
+            return int((end_dt - start_dt).total_seconds())
+        return int((now - start_dt).total_seconds())
+    except (ValueError, TypeError):
+        return 0
+
+
+def compute_total_elapsed(started_at_values: list[str | None], now: datetime) -> int:
+    """Compute total elapsed from earliest start to now."""
+    earliest = None
+    for val in started_at_values:
+        if not val:
+            continue
+        try:
+            dt = datetime.fromisoformat(val)
+            if earliest is None or dt < earliest:
+                earliest = dt
+        except (ValueError, TypeError):
+            continue
+    return int((now - earliest).total_seconds()) if earliest else 0
+
+
+def determine_overall_ci_status(checks: list[dict], pass_key: str, fail_key: str, pending_key: str, skip_key: str) -> str:
+    """Determine overall CI status from a list of check dicts.
+
+    Args:
+        checks: Raw check/job dicts from the provider.
+        pass_key: Value indicating a passed check (e.g. 'pass' for GitHub, 'success' for GitLab).
+        fail_key: Value indicating a failed check.
+        pending_key: Value indicating a pending check.
+        skip_key: Value indicating a skipped check.
+
+    Returns:
+        One of: 'success', 'failure', 'pending', 'none'.
+    """
+    if not checks:
+        return 'none'
+
+    statuses = [c.get('_resolved_status', '') for c in checks]
+    if all(s in (pass_key, skip_key) for s in statuses):
+        return 'success'
+    if any(s == fail_key for s in statuses):
+        return 'failure'
+    return 'pending'
+
+
+# ---------------------------------------------------------------------------
+# Polling framework (shared between ci wait and await-until patterns)
+# ---------------------------------------------------------------------------
+
+def poll_until(
+    check_fn: Any,
+    is_complete_fn: Any,
+    *,
+    timeout: int = DEFAULT_CI_TIMEOUT,
+    interval: int = DEFAULT_CI_INTERVAL,
+) -> dict:
+    """Generic polling loop that calls check_fn until is_complete_fn returns True.
+
+    Args:
+        check_fn: Callable() -> (ok: bool, data: dict). Called each poll iteration.
+                  If ok is False, the error is propagated immediately.
+        is_complete_fn: Callable(data: dict) -> bool. Returns True when polling should stop.
+        timeout: Max wait time in seconds.
+        interval: Sleep duration between polls in seconds.
+
+    Returns:
+        Dict with keys: 'timed_out' (bool), 'duration_sec' (int), 'polls' (int),
+        'last_data' (dict from last successful check_fn call).
+    """
+    start_time = time.time()
+    polls = 0
+    last_data: dict = {}
+
+    while True:
+        polls += 1
+        elapsed = time.time() - start_time
+
+        if elapsed >= timeout:
+            return {
+                'timed_out': True,
+                'duration_sec': int(elapsed),
+                'polls': polls,
+                'last_data': last_data,
+            }
+
+        ok, data = check_fn()
+        if not ok:
+            return {
+                'timed_out': False,
+                'duration_sec': int(time.time() - start_time),
+                'polls': polls,
+                'last_data': data,
+                'error': data.get('error', 'Check failed'),
+            }
+
+        last_data = data
+        if is_complete_fn(data):
+            return {
+                'timed_out': False,
+                'duration_sec': int(time.time() - start_time),
+                'polls': polls,
+                'last_data': data,
+            }
+
+        time.sleep(interval)
+
+
+# ---------------------------------------------------------------------------
+# CI log truncation (shared between GitHub and GitLab)
+# ---------------------------------------------------------------------------
+
+def truncate_log_content(stdout: str, max_lines: int = CI_LOG_TRUNCATE_LINES) -> tuple[str, int]:
+    """Truncate log output and escape for TOON.
+
+    Returns (escaped_content, line_count).
+    """
+    lines = stdout.splitlines()
+    truncated = lines[:max_lines]
+    content = '\n'.join(truncated)
+    return content.replace(chr(10), '\\n'), len(truncated)
 
 
 # ---------------------------------------------------------------------------

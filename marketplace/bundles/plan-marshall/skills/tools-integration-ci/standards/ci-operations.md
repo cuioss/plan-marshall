@@ -38,7 +38,7 @@ lint	completed	failure	30	https://github.com/org/repo/actions/runs/113	Lint
 
 **Pattern**: Polling with Timeout
 
-Wait for CI checks to complete with two-layer timeout pattern.
+Wait for CI checks to complete with two-layer timeout pattern. See [wait-pattern.md](../../tools-script-executor/standards/wait-pattern.md) for the full adaptive timeout architecture.
 
 ### Step 1: Execute with Timeout
 

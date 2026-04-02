@@ -24,6 +24,7 @@ from file_ops import (
     generate_markdown_metadata,
     get_base_dir,
     get_metadata_content_split,
+    get_temp_dir,
     output_error,
     output_success,
     parse_markdown_metadata,
@@ -31,6 +32,32 @@ from file_ops import (
     update_markdown_metadata,
 )
 from toon_parser import parse_toon
+
+
+# =============================================================================
+# get_temp_dir tests
+# =============================================================================
+
+
+def test_get_temp_dir_default(tmp_path, monkeypatch):
+    """Test get_temp_dir returns .plan/temp by default."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    result = get_temp_dir()
+    assert result == tmp_path / 'temp'
+
+
+def test_get_temp_dir_with_subdir(tmp_path, monkeypatch):
+    """Test get_temp_dir with subdirectory appends correctly."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    result = get_temp_dir('tools-marketplace-inventory')
+    assert result == tmp_path / 'temp' / 'tools-marketplace-inventory'
+
+
+def test_get_temp_dir_without_subdir_is_none(tmp_path, monkeypatch):
+    """Test get_temp_dir with None subdir returns temp root."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    result = get_temp_dir(None)
+    assert result == tmp_path / 'temp'
 
 
 # =============================================================================

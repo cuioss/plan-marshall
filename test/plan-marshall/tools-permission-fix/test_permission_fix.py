@@ -436,6 +436,78 @@ class TestRemove(ScriptTestCase):
 
 
 # =============================================================================
+# Tests for ensure subcommand
+# =============================================================================
+
+
+class TestEnsure(ScriptTestCase):
+    """Test permission-fix.py ensure subcommand."""
+
+    bundle = 'plan-marshall'
+    skill = 'tools-permission-fix'
+    script = 'permission-fix.py'
+
+    def test_ensure_adds_missing(self):
+        """Should add permissions that are missing."""
+        claude_dir = self.temp_dir / '.claude'
+        claude_dir.mkdir()
+        settings_file = claude_dir / 'settings.json'
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
+
+        result = run_script(
+            SCRIPT_PATH, 'ensure',
+            '--permissions', 'Bash(git:*),Bash(npm:*),Bash(docker:*)',
+            '--target', 'project',
+            cwd=self.temp_dir,
+        )
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertIn('added', data)
+        self.assertIn('Bash(npm:*)', data['added'])
+        self.assertIn('Bash(docker:*)', data['added'])
+        self.assertIn('already_exists', data)
+        self.assertIn('Bash(git:*)', data['already_exists'])
+
+    def test_ensure_all_exist(self):
+        """Should report all as existing when none are missing."""
+        claude_dir = self.temp_dir / '.claude'
+        claude_dir.mkdir()
+        settings_file = claude_dir / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Bash(npm:*)'], 'deny': [], 'ask': []}})
+        )
+
+        result = run_script(
+            SCRIPT_PATH, 'ensure',
+            '--permissions', 'Bash(git:*),Bash(npm:*)',
+            '--target', 'project',
+            cwd=self.temp_dir,
+        )
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertEqual(data.get('added_count', 0), 0)
+
+    def test_ensure_writes_to_file(self):
+        """Ensure should actually modify the settings file."""
+        claude_dir = self.temp_dir / '.claude'
+        claude_dir.mkdir()
+        settings_file = claude_dir / 'settings.json'
+        settings_file.write_text(json.dumps({'permissions': {'allow': [], 'deny': [], 'ask': []}}))
+
+        run_script(
+            SCRIPT_PATH, 'ensure',
+            '--permissions', 'Bash(npm:*)',
+            '--target', 'project',
+            cwd=self.temp_dir,
+        )
+
+        settings = json.loads(settings_file.read_text())
+        self.assertIn('Bash(npm:*)', settings['permissions']['allow'])
+
+
+# =============================================================================
 # Tests for --scope option
 # =============================================================================
 
@@ -771,6 +843,7 @@ if __name__ == '__main__':
     suite.addTests(loader.loadTestsFromTestCase(TestApplyFixes))
     suite.addTests(loader.loadTestsFromTestCase(TestAdd))
     suite.addTests(loader.loadTestsFromTestCase(TestRemove))
+    suite.addTests(loader.loadTestsFromTestCase(TestEnsure))
     suite.addTests(loader.loadTestsFromTestCase(TestScopeOption))
     suite.addTests(loader.loadTestsFromTestCase(TestGenerateWildcards))
     suite.addTests(loader.loadTestsFromTestCase(TestExecutorPattern))

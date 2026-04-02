@@ -55,21 +55,26 @@ import argparse
 import json
 import subprocess
 import sys
-import time
-from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
 
 from ci_base import (  # type: ignore[import-not-found]
+    CI_LOG_TRUNCATE_LINES,
+    DEFAULT_CI_INTERVAL,
+    DEFAULT_CI_TIMEOUT,
     add_pr_create_args,
     add_pr_resolve_thread_pr_number,
     build_parser,
     check_auth_cli,
+    compute_elapsed,
+    compute_total_elapsed,
     dispatch,
     make_pr_number_handler,
     make_simple_handler,
     output_error,
+    poll_until,
     run_cli,
+    truncate_log_content,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -487,15 +492,13 @@ def format_checks_toon(jobs: list[dict]) -> tuple[list[dict], int]:
 
     Returns (list_of_job_dicts, elapsed_sec_total).
     """
+    from datetime import UTC, datetime
     now = datetime.now(UTC)
-    earliest_start = None
     rows: list[dict] = []
+    started_at_values: list[str | None] = []
 
     for job in jobs:
-        name = job.get('name', 'unknown')
         job_status = job.get('status', 'unknown')
-        stage = job.get('stage') or '-'
-        web_url = job.get('web_url') or '-'
 
         # Map job status to state/result
         if job_status in ('running', 'pending', 'created'):
@@ -512,38 +515,19 @@ def format_checks_toon(jobs: list[dict]) -> tuple[list[dict], int]:
             else:
                 result = job_status
 
-        # Compute elapsed_sec for this job
         started_at = job.get('started_at') or job.get('created_at')
-        finished_at = job.get('finished_at')
-        elapsed_sec = 0
-
-        if started_at:
-            try:
-                start_dt = datetime.fromisoformat(started_at)
-                if earliest_start is None or start_dt < earliest_start:
-                    earliest_start = start_dt
-                if finished_at:
-                    end_dt = datetime.fromisoformat(finished_at)
-                    elapsed_sec = int((end_dt - start_dt).total_seconds())
-                else:
-                    elapsed_sec = int((now - start_dt).total_seconds())
-            except (ValueError, TypeError):
-                elapsed_sec = 0
+        started_at_values.append(started_at)
 
         rows.append({
-            'name': name,
+            'name': job.get('name', 'unknown'),
             'status': state,
             'result': result,
-            'elapsed_sec': elapsed_sec,
-            'url': web_url,
-            'stage': stage,
+            'elapsed_sec': compute_elapsed(started_at, job.get('finished_at'), now),
+            'url': job.get('web_url') or '-',
+            'stage': job.get('stage') or '-',
         })
 
-    # Compute total elapsed from earliest start to now
-    total_elapsed = 0
-    if earliest_start:
-        total_elapsed = int((now - earliest_start).total_seconds())
-
+    total_elapsed = compute_total_elapsed(started_at_values, now)
     return rows, total_elapsed
 
 
@@ -609,90 +593,78 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
 
 def cmd_ci_wait(args: argparse.Namespace) -> int:
     """Handle 'ci wait' subcommand (waits for pipeline in GitLab)."""
-    # Check auth
     is_auth, err = check_auth()
     if not is_auth:
         return output_error('ci_wait', err)
 
-    start_time = time.time()
-    polls = 0
-    timeout = args.timeout
-    interval = args.interval
-    last_jobs: list[dict] = []
+    completed_statuses = {'success', 'failed', 'canceled', 'skipped'}
 
-    while True:
-        polls += 1
-        elapsed = time.time() - start_time
-
-        # Check timeout
-        if elapsed >= timeout:
-            check_dicts, total_elapsed = format_checks_toon(last_jobs) if last_jobs else ([], 0)
-
-            error_data: dict[str, Any] = {
-                'status': 'error',
-                'operation': 'ci_wait',
-                'error': 'Timeout waiting for CI',
-                'pr_number': args.pr_number,
-                'duration_sec': int(elapsed),
-                'last_status': 'pending',
-            }
-            if check_dicts:
-                error_data['elapsed_sec'] = total_elapsed
-                error_data['checks'] = check_dicts
-            print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
-            return 1
-
-        # Get MR pipeline status
+    def check_fn() -> tuple[bool, dict]:
         returncode, stdout, stderr = run_glab(['mr', 'view', str(args.pr_number), '--output', 'json'])
         if returncode != 0:
-            return output_error('ci_wait', f'Failed to get MR {args.pr_number}', stderr.strip())
-
-        # Parse and check status
+            return False, {'error': f'Failed to get MR {args.pr_number}', 'context': stderr.strip()}
         try:
             data = json.loads(stdout)
             pipeline = data.get('pipeline', {})
             pipeline_status = pipeline.get('status', 'unknown')
             pipeline_id = pipeline.get('id', 'unknown')
         except json.JSONDecodeError:
-            return output_error('ci_wait', 'Failed to parse glab output', stdout[:100])
+            return False, {'error': 'Failed to parse glab output', 'context': stdout[:100]}
 
         # Fetch pipeline jobs for enriched output
+        jobs: list[dict] = []
         if pipeline_id and pipeline_id != 'unknown':
             rc, out, _ = run_glab(['ci', 'view', str(pipeline_id), '--output', 'json'])
             if rc == 0:
                 try:
                     ci_data = json.loads(out)
-                    last_jobs = ci_data.get('jobs', [])
+                    jobs = ci_data.get('jobs', [])
                 except json.JSONDecodeError:
                     pass
 
-        # Check if completed
-        completed_statuses = {'success', 'failed', 'canceled', 'skipped'}
-        if pipeline_status in completed_statuses:
-            # Determine final status
-            if pipeline_status == 'success':
-                final_status = 'success'
-            else:
-                final_status = 'failure'
+        return True, {'pipeline_status': pipeline_status, 'jobs': jobs}
 
-            # Format checks table
-            checks, total_elapsed = format_checks_toon(last_jobs)
+    def is_complete_fn(data: dict) -> bool:
+        return data.get('pipeline_status', 'unknown') in completed_statuses
 
-            # Output TOON
-            print(serialize_toon({
-                'status': 'success',
-                'operation': 'ci_wait',
-                'pr_number': args.pr_number,
-                'final_status': final_status,
-                'duration_sec': int(elapsed),
-                'polls': polls,
-                'elapsed_sec': total_elapsed,
-                'checks': checks,
-            }, table_separator='\t'))
-            return 0
+    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
-        # Wait before next poll
-        time.sleep(interval)
+    if 'error' in result:
+        return output_error('ci_wait', result['error'], result['last_data'].get('context', ''))
+
+    last_data = result['last_data']
+    jobs = last_data.get('jobs', [])
+    check_dicts, total_elapsed = format_checks_toon(jobs)
+
+    if result['timed_out']:
+        error_data: dict[str, Any] = {
+            'status': 'error',
+            'operation': 'ci_wait',
+            'error': 'Timeout waiting for CI',
+            'pr_number': args.pr_number,
+            'duration_sec': result['duration_sec'],
+            'last_status': 'pending',
+        }
+        if check_dicts:
+            error_data['elapsed_sec'] = total_elapsed
+            error_data['checks'] = check_dicts
+        print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
+        return 1
+
+    pipeline_status = last_data.get('pipeline_status', 'unknown')
+    final_status = 'success' if pipeline_status == 'success' else 'failure'
+
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'ci_wait',
+        'pr_number': args.pr_number,
+        'final_status': final_status,
+        'duration_sec': result['duration_sec'],
+        'polls': result['polls'],
+        'elapsed_sec': total_elapsed,
+        'checks': check_dicts,
+    }, table_separator='\t'))
+    return 0
 
 
 cmd_ci_rerun = make_simple_handler(
@@ -732,17 +704,14 @@ def cmd_ci_logs(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('ci_logs', f'Failed to get logs for job {args.run_id}', stderr.strip())
 
-    # Truncate to first 200 lines
-    lines = stdout.splitlines()
-    truncated = lines[:200]
-    content = '\n'.join(truncated)
+    content, line_count = truncate_log_content(stdout)
 
     print(serialize_toon({
         'status': 'success',
         'operation': 'ci_logs',
         'run_id': args.run_id,
-        'log_lines': len(truncated),
-        'content': content.replace(chr(10), '\\n'),
+        'log_lines': line_count,
+        'content': content,
     }, table_separator='\t'))
     return 0
 

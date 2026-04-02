@@ -516,4 +516,4 @@ final_result.conclusion	success
 ## References
 
 - [Awaitility](http://www.awaitility.org/) - Java DSL for synchronous testing
-- [run-config SKILL.md](../../run-config/SKILL.md) - Execution history storage
+- [manage-run-config SKILL.md](../../manage-run-config/SKILL.md) - Execution history storage

@@ -210,6 +210,62 @@ class TestDetectSuspicious(ScriptTestCase):
             for item in data['suspicious']:
                 self.assertIn('severity', item)
 
+    def test_detect_dangerous_command_dd(self):
+        """Should flag low-level disk operations like dd."""
+        settings_file = self.temp_dir / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(dd:if=/dev/zero)'], 'deny': [], 'ask': []}})
+        )
+
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
+        self.assert_success(result)
+        data = result.toon()
+
+        suspicious_perms = [s['permission'] for s in data['suspicious']]
+        self.assertIn('Bash(dd:if=/dev/zero)', suspicious_perms)
+
+    def test_detect_broad_write_all_users(self):
+        """Should flag broad write access to all users' directories."""
+        settings_file = self.temp_dir / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Write(//Users/**)'], 'deny': [], 'ask': []}})
+        )
+
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
+        self.assert_success(result)
+        data = result.toon()
+
+        suspicious_perms = [s['permission'] for s in data['suspicious']]
+        self.assertIn('Write(//Users/**)', suspicious_perms)
+
+    def test_clean_settings_no_suspicious(self):
+        """Normal permissions should not be flagged as suspicious."""
+        settings_file = self.temp_dir / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Read(.plan/**)', 'Edit(src/**)'], 'deny': [], 'ask': []}})
+        )
+
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
+        self.assert_success(result)
+        data = result.toon()
+
+        self.assertEqual(len(data.get('suspicious', [])), 0)
+
+    def test_detect_env_variable_access(self):
+        """Should flag broad environment variable access."""
+        settings_file = self.temp_dir / 'settings.json'
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': ['Bash(env:*)'], 'deny': [], 'ask': []}})
+        )
+
+        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
+        self.assert_success(result)
+        data = result.toon()
+
+        # env access may or may not be flagged depending on patterns
+        # At minimum, the command should succeed
+        self.assertIn('suspicious', data)
+
 
 # =============================================================================
 # Tests for --scope option

@@ -20,12 +20,13 @@ Usage:
     )
 """
 
-import json
 import os
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Default base directory for workflow files
 # Can be overridden via PLAN_BASE_DIR environment variable for testing
@@ -161,7 +162,6 @@ def output_success(operation: str, **kwargs: Any) -> None:
         operation: Name of the operation
         **kwargs: Additional fields to include in output
     """
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
     result = {'status': 'success', 'success': True, 'operation': operation}
     result.update(kwargs)
     print(serialize_toon(result))
@@ -174,7 +174,6 @@ def output_error(operation: str, error: str) -> None:
         operation: Name of the operation
         error: Error message
     """
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
     result = {'status': 'error', 'success': False, 'operation': operation, 'error': error}
     print(serialize_toon(result), file=sys.stderr)
 

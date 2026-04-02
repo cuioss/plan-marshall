@@ -51,19 +51,24 @@ Output: TOON format
 import argparse
 import json
 import sys
-import time
-from datetime import UTC, datetime
 from typing import Any
 
 from ci_base import (  # type: ignore[import-not-found]
+    CI_LOG_TRUNCATE_LINES,
+    DEFAULT_CI_INTERVAL,
+    DEFAULT_CI_TIMEOUT,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
+    compute_elapsed,
+    compute_total_elapsed,
     dispatch,
     make_pr_number_handler,
     make_simple_handler,
     output_error,
+    poll_until,
     run_cli,
+    truncate_log_content,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -592,49 +597,25 @@ def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
 
     Returns (check_dicts, elapsed_sec_total).
     """
+    from datetime import UTC, datetime
     now = datetime.now(UTC)
-    earliest_start = None
     check_dicts: list[dict] = []
+    started_at_values: list[str | None] = []
 
     for check in checks:
-        name = check.get('name', 'unknown')
-        state = check.get('state', 'unknown')
-        bucket = check.get('bucket') or '-'
-        link = check.get('link') or '-'
-        workflow = check.get('workflow') or '-'
-
-        # Compute elapsed_sec for this check
         started_at = check.get('startedAt')
-        completed_at = check.get('completedAt')
-        elapsed_sec = 0
-
-        if started_at:
-            try:
-                start_dt = datetime.fromisoformat(started_at)
-                if earliest_start is None or start_dt < earliest_start:
-                    earliest_start = start_dt
-                if completed_at:
-                    end_dt = datetime.fromisoformat(completed_at)
-                    elapsed_sec = int((end_dt - start_dt).total_seconds())
-                else:
-                    elapsed_sec = int((now - start_dt).total_seconds())
-            except (ValueError, TypeError):
-                elapsed_sec = 0
+        started_at_values.append(started_at)
 
         check_dicts.append({
-            'name': name,
-            'status': state,
-            'result': bucket,
-            'elapsed_sec': elapsed_sec,
-            'url': link,
-            'workflow': workflow,
+            'name': check.get('name', 'unknown'),
+            'status': check.get('state', 'unknown'),
+            'result': check.get('bucket') or '-',
+            'elapsed_sec': compute_elapsed(started_at, check.get('completedAt'), now),
+            'url': check.get('link') or '-',
+            'workflow': check.get('workflow') or '-',
         })
 
-    # Compute total elapsed from earliest start to now
-    total_elapsed = 0
-    if earliest_start:
-        total_elapsed = int((now - earliest_start).total_seconds())
-
+    total_elapsed = compute_total_elapsed(started_at_values, now)
     return check_dicts, total_elapsed
 
 
@@ -688,83 +669,68 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
 
 def cmd_ci_wait(args: argparse.Namespace) -> int:
     """Handle 'ci wait' subcommand."""
-    # Check auth
     is_auth, err = check_auth()
     if not is_auth:
         return output_error('ci_wait', err)
 
-    start_time = time.time()
-    polls = 0
-    timeout = args.timeout
-    interval = args.interval
-    last_checks: list[dict] = []
-
-    while True:
-        polls += 1
-        elapsed = time.time() - start_time
-
-        # Check timeout
-        if elapsed >= timeout:
-            # Format checks table for timeout output
-            check_dicts, total_elapsed = format_checks_toon(last_checks) if last_checks else ([], 0)
-
-            error_data: dict[str, Any] = {
-                'status': 'error',
-                'operation': 'ci_wait',
-                'error': 'Timeout waiting for CI',
-                'pr_number': args.pr_number,
-                'duration_sec': int(elapsed),
-                'last_status': 'pending',
-            }
-            if check_dicts:
-                error_data['elapsed_sec'] = total_elapsed
-                error_data['checks'] = check_dicts
-            print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
-            return 1
-
-        # Get checks (bucket field contains pass/fail result)
+    def check_fn() -> tuple[bool, dict]:
         returncode, stdout, stderr = run_gh(
             ['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
         )
         if returncode != 0:
-            return output_error('ci_wait', f'Failed to get CI status for PR {args.pr_number}', stderr.strip())
-
-        # Parse and check status
+            return False, {'error': f'Failed to get CI status for PR {args.pr_number}', 'context': stderr.strip()}
         try:
             checks = json.loads(stdout)
         except json.JSONDecodeError:
-            return output_error('ci_wait', 'Failed to parse gh output', stdout[:100])
+            return False, {'error': 'Failed to parse gh output', 'context': stdout[:100]}
+        return True, {'checks': checks}
 
-        last_checks = checks
+    def is_complete_fn(data: dict) -> bool:
+        checks = data.get('checks', [])
+        return bool(checks) and all(c.get('bucket') != 'pending' for c in checks)
 
-        # Check if all completed (bucket != pending means completed)
-        if checks and all(c.get('bucket') != 'pending' for c in checks):
-            # Determine final status (bucket: pass, fail, skipped)
-            if all(c.get('bucket') in ('pass', 'skipped') for c in checks):
-                final_status = 'success'
-            elif any(c.get('bucket') == 'fail' for c in checks):
-                final_status = 'failure'
-            else:
-                final_status = 'mixed'
+    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
-            # Format checks table
-            check_dicts, total_elapsed = format_checks_toon(checks)
+    if 'error' in result:
+        return output_error('ci_wait', result['error'], result['last_data'].get('context', ''))
 
-            # Output TOON
-            print(serialize_toon({
-                'status': 'success',
-                'operation': 'ci_wait',
-                'pr_number': args.pr_number,
-                'final_status': final_status,
-                'duration_sec': int(elapsed),
-                'polls': polls,
-                'elapsed_sec': total_elapsed,
-                'checks': check_dicts,
-            }, table_separator='\t'))
-            return 0
+    checks = result['last_data'].get('checks', [])
+    check_dicts, total_elapsed = format_checks_toon(checks)
 
-        # Wait before next poll
-        time.sleep(interval)
+    if result['timed_out']:
+        error_data: dict[str, Any] = {
+            'status': 'error',
+            'operation': 'ci_wait',
+            'error': 'Timeout waiting for CI',
+            'pr_number': args.pr_number,
+            'duration_sec': result['duration_sec'],
+            'last_status': 'pending',
+        }
+        if check_dicts:
+            error_data['elapsed_sec'] = total_elapsed
+            error_data['checks'] = check_dicts
+        print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
+        return 1
+
+    # Determine final status
+    if all(c.get('bucket') in ('pass', 'skipped') for c in checks):
+        final_status = 'success'
+    elif any(c.get('bucket') == 'fail' for c in checks):
+        final_status = 'failure'
+    else:
+        final_status = 'mixed'
+
+    print(serialize_toon({
+        'status': 'success',
+        'operation': 'ci_wait',
+        'pr_number': args.pr_number,
+        'final_status': final_status,
+        'duration_sec': result['duration_sec'],
+        'polls': result['polls'],
+        'elapsed_sec': total_elapsed,
+        'checks': check_dicts,
+    }, table_separator='\t'))
+    return 0
 
 
 cmd_ci_rerun = make_simple_handler(
@@ -788,17 +754,14 @@ def cmd_ci_logs(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
 
-    # Truncate to first 200 lines
-    lines = stdout.splitlines()
-    truncated = lines[:200]
-    content = '\n'.join(truncated)
+    content, line_count = truncate_log_content(stdout)
 
     print(serialize_toon({
         'status': 'success',
         'operation': 'ci_logs',
         'run_id': args.run_id,
-        'log_lines': len(truncated),
-        'content': content.replace(chr(10), '\\n'),
+        'log_lines': line_count,
+        'content': content,
     }, table_separator='\t'))
     return 0
 
