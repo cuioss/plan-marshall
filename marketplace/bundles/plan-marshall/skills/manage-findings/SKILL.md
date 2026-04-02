@@ -239,6 +239,25 @@ message: Finding already promoted to architecture
 | `invalid_resolution` | Resolution not in the valid values |
 | `invalid_phase` | Phase not in 2-refine through 6-finalize |
 
+```toon
+status: error
+error: invalid_type
+message: Invalid finding type: unknown (valid: bug, improvement, anti-pattern, ...)
+```
+
+```toon
+status: error
+error: invalid_resolution
+hash_id: a3f2c1
+message: Invalid resolution: ignored (valid: pending, fixed, suppressed, accepted, taken_into_account)
+```
+
+```toon
+status: error
+error: invalid_phase
+message: Invalid phase: 1-init (valid: 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize)
+```
+
 ## Related Skills
 
 - `manage-lessons` — Promotion target for bug, improvement, anti-pattern, triage findings

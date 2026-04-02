@@ -320,6 +320,16 @@ Phase skills read/update status through manage-status:
 - phase-1-init: Creates status with `create`
 - phase-2-refine onwards: Uses `set-phase`, `metadata`, `get-context`
 
+### With manage-lifecycle
+
+manage-lifecycle delegates to manage-status for storage operations. The `transition` command in manage-lifecycle calls `update-phase` and `set-phase` in manage-status.
+
 ### With agents
 
 Agents use `metadata` to store change_type and other classification data.
+
+## Related Skills
+
+- `manage-lifecycle` — Delegates to manage-status for phase transitions and storage
+- `manage-metrics` — Augments phase tracking with timing and token data
+- `manage-config` — System configuration consumed by status operations

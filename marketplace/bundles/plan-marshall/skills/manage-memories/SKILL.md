@@ -9,6 +9,8 @@ scope: global
 
 Memory layer operations for persistent session storage (via `tools-file-ops` skill).
 
+**Scope: global** means memory files persist across plans in `.plan/memories/`. They are not tied to any specific plan_id. Cleanup is governed by `system.retention.memory_days` in marshal.json.
+
 ## Enforcement
 
 **Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
@@ -72,14 +74,59 @@ Parse TOON output and handle accordingly.
 
 ### Operations Reference
 
-| Operation | Description | Required Params |
-|-----------|-------------|-----------------|
-| `save` | Save memory file (creates directories on-the-fly) | category, identifier, content |
-| `load` | Load memory file | category, identifier |
-| `list` | List files in category | category (optional) |
-| `query` | Find files by glob pattern | pattern (glob syntax, e.g., `auth*`) |
-| `cleanup` | Remove old files by age | --older-than (e.g., `7d`) |
-| `validate` | Validate memory file format | file_path (positional) |
+#### save
+
+Save a memory file (creates directories on-the-fly).
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--category` | Yes | Category: `context` |
+| `--identifier` | Yes | Human-readable name (date prefix auto-added for context) |
+| `--content` | Yes | JSON content string |
+
+#### load
+
+Load a memory file by category and identifier.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--category` | Yes | Category: `context` |
+| `--identifier` | Yes | Full filename without extension (including date prefix, e.g., `2025-12-02-feature-auth`) |
+
+#### list
+
+List files in a category.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--category` | No | Category to list (omit for all categories) |
+| `--since` | No | Time filter (e.g., `7d` for last 7 days) |
+
+#### query
+
+Find files matching a glob pattern.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--pattern` | Yes | Glob pattern (e.g., `auth*`) |
+| `--category` | No | Limit search to category |
+
+#### cleanup
+
+Remove old files by age.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--category` | No | Category to clean (omit for all) |
+| `--older-than` | Yes | Age threshold (e.g., `7d`, `30d`) |
+
+#### validate
+
+Validate memory file format and structure.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `file_path` | Yes | Positional: path to memory file |
 
 ### Example Usage
 
@@ -178,15 +225,25 @@ All scripts:
 
 ---
 
-## Integration Points
+## Integration
 
-### With Scripts Library
-- Memory scripts are discovered via scripts-library.toon
-- Use portable notation from Scripts table above
+### Producers
 
-### With planning Bundle
-- Memory operations enable task state persistence
-- Cleanup operations maintain memory hygiene
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `plan-marshall:plan-marshall` orchestrator | save | Persist session context snapshots at phase boundaries |
+| Phase agents (any) | save | Store intermediate working state |
+
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `plan-marshall:plan-marshall` orchestrator | load, query | Restore context from prior sessions |
+| `manage-run-config` cleanup | cleanup | Remove stale memory files based on `system.retention.memory_days` |
+
+### Data Flow
+
+Memory files are created during plan execution to persist session context. The `manage-run-config` cleanup process uses `system.retention.memory_days` from marshal.json to determine when to purge old memory files.
 
 ---
 
@@ -207,6 +264,27 @@ error: file_not_found
 category: context
 identifier: missing-file
 message: Memory file not found
+```
+
+```toon
+status: error
+error: invalid_category
+message: Invalid category: workflow (valid: context)
+```
+
+```toon
+status: error
+error: invalid_content
+category: context
+identifier: feature-auth
+message: Content is not valid JSON
+```
+
+```toon
+status: error
+error: validation_failed
+file: .plan/memories/context/2025-12-02-feature-auth.json
+message: Missing required meta field: category
 ```
 
 ## References

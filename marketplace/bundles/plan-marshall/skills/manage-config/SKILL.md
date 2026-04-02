@@ -139,6 +139,46 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value per_plan
 ```
 
+### Manage Verification Steps
+
+```bash
+# Add a step to the verification pipeline
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute add-step --step sonar_check --position 2
+
+# Replace all verification steps
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set-steps --steps "quality_check,build_verify,sonar_check"
+
+# Remove a step
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute remove-step --step sonar_check
+```
+
+### Resolve Skills for a Domain and Profile
+
+```bash
+# Get aggregated skills for java implementation profile
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-domain-skills --domain java --profile implementation
+
+# Resolve task executor for a profile
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-task-executor --profile module_testing
+```
+
+### Extension Defaults
+
+```bash
+# Set a write-once default (only if key doesn't exist)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ext-defaults set-default --key preferred_build_profile --value fast
+
+# Get an extension default
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ext-defaults get --key preferred_build_profile
+```
+
 ---
 
 ## Workflow: CI Operations

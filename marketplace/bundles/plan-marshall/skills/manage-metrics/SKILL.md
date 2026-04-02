@@ -151,11 +151,38 @@ error: invalid_phase
 message: Unknown phase: 7-deploy
 ```
 
+```toon
+status: error
+plan_id: my-plan
+error: no_data
+message: No metrics collected yet
+```
+
+```toon
+status: error
+plan_id: my-plan
+error: session_not_found
+message: JSONL file not found for session abc123
+```
+
 ## Integration
 
-**Called by**: `plan-marshall:plan-marshall` workflows at phase boundaries (start-phase/end-phase bracket each phase).
+### Producers
 
-**Data sources**:
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `plan-marshall:plan-marshall` orchestrator | start-phase, end-phase | Record phase timing at boundaries |
+| Phase agents (via Task tool) | end-phase (with token args) | Pass `<usage>` tag data after agent completion |
+
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-6-finalize` | generate | Produce final metrics report |
+| User | generate, enrich | Review plan execution statistics |
+
+### Data Sources
+
 - Wall-clock timing: bash timestamps via start-phase/end-phase
 - Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses)
 - JSONL enrichment: `~/.claude/projects/` session transcripts

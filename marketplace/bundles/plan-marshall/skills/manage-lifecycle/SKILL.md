@@ -9,6 +9,8 @@ scope: plan
 
 Plan lifecycle operations including discovery, phase transitions, archiving, and routing context.
 
+**Scope: plan** means all operations require a `--plan-id` and operate on plan-level status files. The `list` command scans all plans but still reads per-plan status.json files. The `route` command is stateless (maps phase names to skills without touching plan data).
+
 ## Enforcement
 
 **Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
