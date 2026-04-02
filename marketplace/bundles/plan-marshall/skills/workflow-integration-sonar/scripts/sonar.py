@@ -26,7 +26,13 @@ from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import cmd_triage_batch_handler, cmd_triage_single, safe_main  # type: ignore[import-not-found]
+from triage_helpers import (  # type: ignore[import-not-found]
+    calculate_priority,
+    cmd_triage_batch_handler,
+    cmd_triage_single,
+    safe_main,
+)
+
 
 # ============================================================================
 # TRIAGE CONFIGURATION (loaded from sonar-rules.json)
@@ -89,16 +95,15 @@ def get_suppression_string(rule: str, reason: str, file: str = '') -> str:
     return f'// NOSONAR {rule} - {reason}'
 
 
-def calculate_priority(severity: str, issue_type: str) -> str:
-    """Calculate priority based on severity and type."""
+def calculate_sonar_priority(severity: str, issue_type: str) -> str:
+    """Calculate priority based on Sonar severity and issue type.
+
+    Delegates to shared ``calculate_priority`` from triage_helpers with
+    a severity-to-base mapping and type-based boost.
+    """
     base_priority = SEVERITY_PRIORITY.get(severity, 'low')
     boost = TYPE_BOOST.get(issue_type, 0)
-
-    priority_levels = ['low', 'medium', 'high', 'critical']
-    current_idx = priority_levels.index(base_priority)
-    new_idx = max(0, min(len(priority_levels) - 1, current_idx + boost))
-
-    return priority_levels[new_idx]
+    return calculate_priority(base_priority, boost)
 
 
 def should_suppress(rule: str, file: str, issue_type: str) -> tuple:
@@ -162,7 +167,7 @@ def triage_issue(issue: dict) -> dict:
         }
 
     # Calculate priority and suggest fix
-    priority = calculate_priority(severity, issue_type)
+    priority = calculate_sonar_priority(severity, issue_type)
     fix_suggestion = get_fix_suggestion(rule, message, file, line)
 
     return {

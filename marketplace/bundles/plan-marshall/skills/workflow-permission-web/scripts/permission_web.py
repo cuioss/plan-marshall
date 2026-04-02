@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import make_error, safe_main  # type: ignore[import-not-found]
+from triage_helpers import ErrorCode, make_error, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # DOMAIN KNOWLEDGE (loaded from domain-lists.json)
@@ -274,7 +274,7 @@ def cmd_analyze(args):
                 denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                print(serialize_toon(make_error(f'Invalid JSON in global settings: {e}', file=str(global_path))))
+                print(serialize_toon(make_error(f'Invalid JSON in global settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(global_path))))
                 return 1
         else:
             stats['global_missing'] = True
@@ -290,7 +290,7 @@ def cmd_analyze(args):
                 denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                print(serialize_toon(make_error(f'Invalid JSON in local settings: {e}', file=str(local_path))))
+                print(serialize_toon(make_error(f'Invalid JSON in local settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(local_path))))
                 return 1
         else:
             stats['local_missing'] = True
@@ -365,6 +365,109 @@ def cmd_categorize(args):
 
 
 # ============================================================================
+# APPLY SUBCOMMAND
+# ============================================================================
+
+
+def apply_recommendations(
+    settings_path: Path,
+    add_domains: list[str],
+    remove_domains: list[str],
+) -> dict[str, Any]:
+    """Apply domain changes to a settings file deterministically.
+
+    Reads the settings file, modifies the WebFetch permissions in
+    ``permissions.allow``, and writes back. Does not touch other
+    permission entries (Bash, Read, etc.) or other settings keys.
+
+    Args:
+        settings_path: Path to settings.json file.
+        add_domains: Domains to add as WebFetch permissions.
+        remove_domains: Domains to remove from WebFetch permissions.
+
+    Returns:
+        Dict with counts of added/removed and the final domain list.
+    """
+    if not settings_path.exists():
+        return make_error(f'Settings file not found: {settings_path}', code=ErrorCode.NOT_FOUND)
+
+    try:
+        settings = json.loads(settings_path.read_text())
+    except json.JSONDecodeError as e:
+        return make_error(f'Invalid JSON: {e}', code=ErrorCode.PARSE_ERROR)
+
+    permissions = settings.setdefault('permissions', {})
+    allow_list: list[str] = permissions.get('allow', [])
+
+    # Track existing WebFetch domains
+    existing_wf = {
+        entry for entry in allow_list
+        if isinstance(entry, str) and entry.startswith('WebFetch(')
+    }
+    remove_entries = {f'WebFetch({d})' for d in remove_domains}
+    add_entries = {f'WebFetch({d})' for d in add_domains}
+
+    # Remove
+    removed = 0
+    new_allow = []
+    for entry in allow_list:
+        if entry in remove_entries:
+            removed += 1
+        else:
+            new_allow.append(entry)
+
+    # Add (only if not already present)
+    added = 0
+    for entry in sorted(add_entries):
+        if entry not in existing_wf and entry not in remove_entries:
+            new_allow.append(entry)
+            added += 1
+
+    permissions['allow'] = new_allow
+    settings_path.write_text(json.dumps(settings, indent=2) + '\n')
+
+    # Extract final WebFetch domains for reporting
+    final_domains = extract_webfetch_domains(settings)
+
+    return {
+        'file': str(settings_path),
+        'added': added,
+        'removed': removed,
+        'final_domains': sorted(final_domains),
+        'status': 'success',
+    }
+
+
+def cmd_apply(args):
+    """Handle apply subcommand."""
+    add_domains: list[str] = []
+    remove_domains: list[str] = []
+
+    if args.add:
+        try:
+            add_domains = json.loads(args.add)
+        except json.JSONDecodeError as e:
+            print(serialize_toon(make_error(f'Invalid --add JSON: {e}', code=ErrorCode.INVALID_INPUT)))
+            return 1
+
+    if args.remove:
+        try:
+            remove_domains = json.loads(args.remove)
+        except json.JSONDecodeError as e:
+            print(serialize_toon(make_error(f'Invalid --remove JSON: {e}', code=ErrorCode.INVALID_INPUT)))
+            return 1
+
+    if not add_domains and not remove_domains:
+        print(serialize_toon(make_error('At least one of --add or --remove is required', code=ErrorCode.INVALID_INPUT)))
+        return 1
+
+    settings_path = Path(args.file).expanduser()
+    result = apply_recommendations(settings_path, add_domains, remove_domains)
+    print(serialize_toon(result))
+    return 0 if result.get('status') == 'success' else 1
+
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
@@ -378,6 +481,7 @@ def main():
 Examples:
   permission_web.py analyze --global-file ~/.claude/settings.json --local-file .claude/settings.local.json
   permission_web.py categorize --domains '["docs.oracle.com", "unknown-site.xyz"]'
+  permission_web.py apply --file ~/.claude/settings.json --add '["docs.oracle.com"]' --remove '["old.domain.com"]'
 """,
     )
 
@@ -393,6 +497,13 @@ Examples:
     cat_parser = subparsers.add_parser('categorize', help='Categorize domains')
     cat_parser.add_argument('--domains', required=True, help='JSON array of domain strings')
     cat_parser.set_defaults(func=cmd_categorize)
+
+    # apply subcommand
+    apply_parser = subparsers.add_parser('apply', help='Apply domain changes to a settings file')
+    apply_parser.add_argument('--file', required=True, help='Path to settings.json file')
+    apply_parser.add_argument('--add', help='JSON array of domains to add')
+    apply_parser.add_argument('--remove', help='JSON array of domains to remove')
+    apply_parser.set_defaults(func=cmd_apply)
 
     args = parser.parse_args()
     return args.func(args)

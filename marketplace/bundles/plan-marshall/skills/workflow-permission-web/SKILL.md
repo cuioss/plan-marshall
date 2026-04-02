@@ -139,13 +139,18 @@ Recommendations:
 
 Ask the user via `AskUserQuestion` how to proceed: "Apply all", "Review each change", or "Skip".
 
-If applying:
-- Update global settings (track in permissions_added and permissions_removed counters)
-- Update local settings (track in permissions_added and permissions_removed counters)
-- Remove duplicates and redundant permissions
-- Consolidate domains per recommendations
+If applying, use the `apply` subcommand for deterministic modification:
 
-**Error handling:** If Write/Edit fails, ask the user (retry, skip file, abort). Track all successful updates in files_modified counter.
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web apply \
+    --file ~/.claude/settings.json \
+    --add '["docs.oracle.com"]' \
+    --remove '["redundant-domain.com"]'
+```
+
+Repeat for local settings file if needed. Track counts from script output in permissions_added and permissions_removed counters.
+
+**Error handling:** If apply returns failure, ask the user (retry, skip file, abort). Track all successful updates in files_modified counter.
 
 ### Step 8: Report Results
 
@@ -187,6 +192,7 @@ Script: `plan-marshall:workflow-permission-web` → `permission_web.py`
 |---------|------------|-------------|
 | `analyze` | `--global-file <path> --local-file <path>` | Analyze WebFetch permissions from settings files |
 | `categorize` | `--domains <json-array>` | Categorize domains against trusted/known lists |
+| `apply` | `--file <path> [--add <json-array>] [--remove <json-array>]` | Apply domain changes to a settings file |
 
 ### permission_web.py analyze
 
@@ -195,6 +201,30 @@ Reads global and local settings, extracts WebFetch domains, categorizes them, de
 ### permission_web.py categorize
 
 Categorizes a list of domains into: universal, major, high_reach, suspicious, unknown. Also checks for red flag patterns in domain names.
+
+### permission_web.py apply
+
+Applies domain changes to a settings file deterministically. Adds and/or removes WebFetch domain permissions without touching other permission entries.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web apply \
+    --file ~/.claude/settings.json \
+    [--add '["docs.oracle.com", "github.com"]'] \
+    [--remove '["old-domain.com"]']
+```
+
+At least one of `--add` or `--remove` is required. The script reads the file, modifies only `permissions.allow` WebFetch entries, and writes back with `indent=2` formatting.
+
+**Output** (TOON):
+```toon
+file: /path/to/settings.json
+added: 2
+removed: 1
+final_domains[N]:
+  - docs.oracle.com
+  - github.com
+status: success
+```
 
 ## Rule Configuration
 

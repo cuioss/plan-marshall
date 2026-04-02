@@ -73,11 +73,14 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 2. **Fetch Issues via MCP**
 
    Call the SonarQube MCP tool directly with the assembled parameters.
-   The tool name below is illustrative — verify the actual MCP tool name
-   from the connected SonarQube MCP server, as it may vary by version:
+   The tool name is configured in `marshal.json` under `sonar.mcp_tool_name`
+   (default: `mcp__sonarqube__search_sonar_issues_in_projects`). If the
+   connected MCP server uses a different tool name, update `marshal.json`
+   rather than editing this skill. Discover available tools via MCP tool
+   listing if the configured name fails.
 
    ```
-   mcp__sonarqube__search_sonar_issues_in_projects(
+   {sonar_mcp_tool_name}(
      projects: ["{project_key}"],
      pullRequestId: "{pr_number}",       # omit if no PR filter
      severities: "{BLOCKER,CRITICAL}",   # omit if no severity filter
@@ -164,9 +167,10 @@ statistics:
 
 5. **Mark Issues Resolved (Optional)**
 
-   Verify the actual MCP tool name from the connected server:
+   The status-change tool name is configured in `marshal.json` under
+   `sonar.mcp_status_tool_name` (default: `mcp__sonarqube__change_sonar_issue_status`):
    ```
-   mcp__sonarqube__change_sonar_issue_status(
+   {sonar_mcp_status_tool_name}(
      key: "{issue_key}",
      status: ["accept"]  # or ["falsepositive"]
    )

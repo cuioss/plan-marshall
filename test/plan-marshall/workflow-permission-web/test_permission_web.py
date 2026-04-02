@@ -339,6 +339,126 @@ class TestAnalyzeDenyTracking(unittest.TestCase):
             self.assertIn('blocked-local.com', denied)
 
 
+class TestApply(unittest.TestCase):
+    """Test permission_web.py apply subcommand."""
+
+    def _write_settings(self, domains: list[str], path: str) -> str:
+        """Write a settings.json with WebFetch permissions."""
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        settings = {
+            'permissions': {
+                'allow': [f'WebFetch({d})' for d in domains] + ['Bash(ls)'],
+            },
+        }
+        p.write_text(json.dumps(settings))
+        return str(p)
+
+    def test_add_domains(self):
+        """Test adding domains to a settings file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_settings(['existing.com'], f'{tmpdir}/settings.json')
+            stdout, _, code = run_pw_script([
+                'apply', '--file', path,
+                '--add', json.dumps(['new-domain.com', 'another.org']),
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['added'], 2)
+            self.assertEqual(result['removed'], 0)
+            self.assertIn('new-domain.com', result['final_domains'])
+            self.assertIn('existing.com', result['final_domains'])
+
+    def test_remove_domains(self):
+        """Test removing domains from a settings file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_settings(['keep.com', 'remove-me.com'], f'{tmpdir}/settings.json')
+            stdout, _, code = run_pw_script([
+                'apply', '--file', path,
+                '--remove', json.dumps(['remove-me.com']),
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['removed'], 1)
+            self.assertIn('keep.com', result['final_domains'])
+            self.assertNotIn('remove-me.com', result['final_domains'])
+
+    def test_add_and_remove(self):
+        """Test adding and removing in one call."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_settings(['old.com', 'keep.com'], f'{tmpdir}/settings.json')
+            stdout, _, code = run_pw_script([
+                'apply', '--file', path,
+                '--add', json.dumps(['new.com']),
+                '--remove', json.dumps(['old.com']),
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['added'], 1)
+            self.assertEqual(result['removed'], 1)
+            self.assertIn('new.com', result['final_domains'])
+            self.assertNotIn('old.com', result['final_domains'])
+
+    def test_preserves_non_webfetch_entries(self):
+        """Test that apply does not touch non-WebFetch permissions."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_settings(['example.com'], f'{tmpdir}/settings.json')
+            run_pw_script([
+                'apply', '--file', path,
+                '--add', json.dumps(['new.com']),
+            ])
+            # Re-read and verify Bash(ls) is still there
+            settings = json.loads(Path(path).read_text())
+            self.assertIn('Bash(ls)', settings['permissions']['allow'])
+
+    def test_no_duplicate_add(self):
+        """Test that adding an already-existing domain doesn't duplicate."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_settings(['exists.com'], f'{tmpdir}/settings.json')
+            stdout, _, code = run_pw_script([
+                'apply', '--file', path,
+                '--add', json.dumps(['exists.com']),
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['added'], 0)
+
+    def test_missing_file(self):
+        """Test error when file does not exist."""
+        stdout, _, code = run_pw_script([
+            'apply', '--file', '/nonexistent/settings.json',
+            '--add', json.dumps(['example.com']),
+        ])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['error_code'], 'NOT_FOUND')
+
+    def test_no_add_or_remove(self):
+        """Test error when neither --add nor --remove provided."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_settings([], f'{tmpdir}/settings.json')
+            stdout, _, code = run_pw_script([
+                'apply', '--file', path,
+            ])
+            self.assertEqual(code, 1)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'failure')
+            self.assertEqual(result['error_code'], 'INVALID_INPUT')
+
+    def test_invalid_json_add(self):
+        """Test error on invalid JSON for --add."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_settings([], f'{tmpdir}/settings.json')
+            stdout, _, code = run_pw_script([
+                'apply', '--file', path, '--add', 'not-json',
+            ])
+            self.assertEqual(code, 1)
+            result = parse_toon(stdout)
+            self.assertEqual(result['error_code'], 'INVALID_INPUT')
+
+
 class TestMain(unittest.TestCase):
     """Test permission_web.py main entry point."""
 
@@ -353,6 +473,7 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('analyze', stdout)
         self.assertIn('categorize', stdout)
+        self.assertIn('apply', stdout)
 
 
 if __name__ == '__main__':

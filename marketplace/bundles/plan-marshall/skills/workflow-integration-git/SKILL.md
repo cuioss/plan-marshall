@@ -241,7 +241,7 @@ When a script or step returns failure:
 
 ## Critical Rules
 
-**Artifacts:** NEVER commit `*.class`, `*.temp`, `*.backup*`
+**Artifacts:** NEVER commit `*.class`, `*.pyc`, `*.tsbuildinfo`, `*.temp`, `*.backup*`, `*.egg-info`
 **Permissions:** NEVER push without `push` param
 **Standards:** Follow conventional commits format, add Co-Authored-By footer
 **Safety:** Ask user if uncertain about file deletion

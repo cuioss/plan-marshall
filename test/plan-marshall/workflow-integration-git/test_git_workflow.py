@@ -391,6 +391,57 @@ class TestDetectArtifacts(unittest.TestCase):
         self.assertTrue(len(result['uncertain']) >= 1 or len(result['safe']) >= 1)
         self.assertGreater(result['total'], 0)
 
+    def test_detects_python_egg_artifacts(self):
+        """Test detection of Python .egg-info and .eggs artifacts."""
+        self._create_file('mypackage.egg-info/PKG-INFO')
+        self._create_file('.eggs/some-egg.egg')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertGreaterEqual(len(result['safe']), 2)
+        safe_str = '\n'.join(result['safe'])
+        self.assertIn('egg-info', safe_str)
+        self.assertIn('.eggs', safe_str)
+
+    def test_detects_typescript_buildinfo(self):
+        """Test detection of TypeScript .tsbuildinfo files."""
+        self._create_file('tsconfig.tsbuildinfo')
+        self._create_file('packages/lib/tsconfig.tsbuildinfo')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        safe_str = '\n'.join(result['safe'])
+        self.assertIn('tsbuildinfo', safe_str)
+        self.assertGreaterEqual(len(result['safe']), 2)
+
+    def test_detects_plan_temp_as_safe(self):
+        """Test that .plan/temp/ files are safe (not uncertain)."""
+        self._create_file('.plan/temp/scratch.txt')
+        self._create_file('.plan/temp/debug.log')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        safe_str = '\n'.join(result['safe'])
+        self.assertIn('.plan/temp', safe_str)
+        # Should NOT be in uncertain
+        uncertain_str = '\n'.join(result['uncertain'])
+        self.assertNotIn('.plan/temp', uncertain_str)
+
+    def test_detects_dist_next_as_uncertain(self):
+        """Test that dist/ and .next/ directories are uncertain."""
+        self._create_file('dist/bundle.js')
+        self._create_file('.next/cache/data.json')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        uncertain_str = '\n'.join(result['uncertain'])
+        self.assertIn('dist/', uncertain_str)
+        self.assertIn('.next/', uncertain_str)
+
     def test_clean_directory_returns_empty(self):
         """Test scanning a directory with no artifacts."""
         self._create_file('src/main/java/App.java')

@@ -271,6 +271,120 @@ class TestTrackAttempt(unittest.TestCase):
         self.assertIn('invalid', stderr)
 
 
+class TestDiagnose(unittest.TestCase):
+    """Test pr_doctor.py diagnose subcommand."""
+
+    def test_all_pass(self):
+        """Test diagnosis with no issues."""
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-status', 'success',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['overall'], 'pass')
+        self.assertEqual(result['build_status'], 'PASS')
+        self.assertEqual(result['review_comments'], 0)
+        self.assertEqual(result['sonar_issues'], 0)
+        self.assertEqual(len(result['issues']), 0)
+
+    def test_build_failure(self):
+        """Test diagnosis with build failure."""
+        failures = json.dumps([{'step': 'test', 'message': '3 tests failed'}])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-status', 'failure',
+            '--build-failures', failures,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['overall'], 'fail')
+        self.assertEqual(result['build_status'], 'FAIL')
+        self.assertTrue(any(i['category'] == 'build' for i in result['issues']))
+        self.assertTrue(any('build' in a.lower() for a in result['recommended_actions']))
+
+    def test_review_comments(self):
+        """Test diagnosis with unresolved review comments."""
+        comments = json.dumps([
+            {'priority': 'high', 'body': 'Fix this'},
+            {'priority': 'low', 'body': 'Nit'},
+        ])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--review-comments', comments,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['overall'], 'fail')
+        self.assertEqual(result['review_comments'], 2)
+        review_issue = next(i for i in result['issues'] if i['category'] == 'reviews')
+        self.assertEqual(review_issue['severity'], 'high')
+
+    def test_sonar_issues(self):
+        """Test diagnosis with Sonar issues."""
+        issues = json.dumps([
+            {'severity': 'BLOCKER', 'rule': 'java:S1234'},
+            {'severity': 'MAJOR', 'rule': 'java:S5678'},
+            {'severity': 'MINOR', 'rule': 'java:S9012'},
+        ])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--sonar-issues', issues,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['sonar_issues'], 3)
+        sonar_issue = next(i for i in result['issues'] if i['category'] == 'sonar')
+        self.assertEqual(sonar_issue['severity'], 'high')  # Has blocker
+
+    def test_combined_diagnosis(self):
+        """Test diagnosis with all three categories."""
+        stdout, _, code = run_doctor_script([
+            'diagnose',
+            '--build-status', 'failure',
+            '--build-failures', json.dumps([{'step': 'compile', 'message': 'error'}]),
+            '--review-comments', json.dumps([{'priority': 'medium'}]),
+            '--sonar-issues', json.dumps([{'severity': 'MAJOR'}]),
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['overall'], 'fail')
+        categories = {i['category'] for i in result['issues']}
+        self.assertEqual(categories, {'build', 'reviews', 'sonar'})
+        self.assertEqual(len(result['recommended_actions']), 3)
+
+    def test_no_inputs_is_pass(self):
+        """Test that diagnose with no inputs reports pass."""
+        stdout, _, code = run_doctor_script(['diagnose'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['overall'], 'pass')
+        self.assertEqual(result['build_status'], 'UNKNOWN')
+
+    def test_invalid_json_build_failures(self):
+        """Test error on invalid JSON for --build-failures."""
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-failures', 'not-json',
+        ])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['error_code'], 'INVALID_INPUT')
+
+    def test_sonar_severity_breakdown(self):
+        """Test that Sonar diagnosis includes severity breakdown."""
+        issues = json.dumps([
+            {'severity': 'CRITICAL'},
+            {'severity': 'CRITICAL'},
+            {'severity': 'MAJOR'},
+        ])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--sonar-issues', issues,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        sonar_issue = next(i for i in result['issues'] if i['category'] == 'sonar')
+        self.assertEqual(sonar_issue['breakdown']['CRITICAL'], 2)
+        self.assertEqual(sonar_issue['breakdown']['MAJOR'], 1)
+
+
 class TestMain(unittest.TestCase):
     """Test pr_doctor.py main entry point."""
 
@@ -285,6 +399,7 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('parse-handoff', stdout)
         self.assertIn('track-attempt', stdout)
+        self.assertIn('diagnose', stdout)
 
     def test_unknown_subcommand(self):
         """Test error when unknown subcommand provided."""

@@ -461,6 +461,45 @@ class TestToonContract(unittest.TestCase):
             self.assertIn(field, summary, f'Missing summary.{field}')
 
 
+class TestProviderContract(unittest.TestCase):
+    """Verify the provider module contract that pr.py depends on.
+
+    pr.py imports ci.get_provider() and then the provider module's
+    view_pr_data() and fetch_pr_comments_data(). These tests validate
+    that the contract is documented and the import mechanism works,
+    catching drift if tools-integration-ci refactors its API.
+    """
+
+    def test_provider_module_resolver_exists(self):
+        """Test that _get_provider_module function exists and is callable."""
+        from pr import _get_provider_module  # type: ignore[import-not-found]
+        self.assertTrue(callable(_get_provider_module))
+
+    def test_provider_contract_functions_documented(self):
+        """Test that required contract functions are listed in source."""
+        from pr import _get_provider_module  # type: ignore[import-not-found]
+        doc = _get_provider_module.__doc__ or ''
+        self.assertIn('view_pr_data', doc)
+        self.assertIn('fetch_pr_comments_data', doc)
+
+    def test_get_current_pr_number_handles_no_provider(self):
+        """Test that get_current_pr_number returns None when provider unavailable."""
+        from pr import get_current_pr_number  # type: ignore[import-not-found]
+        # In test environment, CI provider is typically not configured
+        result = get_current_pr_number()
+        # Should return None gracefully, not raise
+        self.assertIsNone(result)
+
+    def test_fetch_comments_returns_structured_error_on_failure(self):
+        """Test that fetch_comments returns structured error dict, not exception."""
+        from pr import fetch_comments  # type: ignore[import-not-found]
+        # Use an impossible PR number to trigger an error from any provider
+        result = fetch_comments(999999999)
+        # Should return error dict, not raise
+        self.assertEqual(result['status'], 'failure')
+        self.assertIn('error', result)
+
+
 class TestPRFetchComments(unittest.TestCase):
     """Test pr.py fetch-comments subcommand.
 

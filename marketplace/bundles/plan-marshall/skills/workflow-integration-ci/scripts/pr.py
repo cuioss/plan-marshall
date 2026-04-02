@@ -31,7 +31,13 @@ import sys
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import cmd_triage_batch_handler, cmd_triage_single, make_error, safe_main  # type: ignore[import-not-found]
+from triage_helpers import (  # type: ignore[import-not-found]
+    ErrorCode,
+    cmd_triage_batch_handler,
+    cmd_triage_single,
+    make_error,
+    safe_main,
+)
 
 # ============================================================================
 # TRIAGE CONFIGURATION
@@ -138,7 +144,7 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
     """Fetch review comments for a PR via provider's fetch_pr_comments_data()."""
     mod = _get_provider_module()
     if not mod:
-        return make_error('CI provider not configured. Run /marshall-steward first.')
+        return make_error('CI provider not configured. Run /marshall-steward first.', code=ErrorCode.PROVIDER_NOT_CONFIGURED)
 
     result = mod.fetch_pr_comments_data(pr_number, unresolved_only)
 
@@ -163,7 +169,7 @@ def cmd_fetch_comments(args):
     if not pr_number:
         pr_number = get_current_pr_number()
         if not pr_number:
-            print(serialize_toon(make_error('No PR found for current branch. Use --pr to specify.')))
+            print(serialize_toon(make_error('No PR found for current branch. Use --pr to specify.', code=ErrorCode.NOT_FOUND)))
             return 1
 
     result = fetch_comments(pr_number, getattr(args, 'unresolved_only', False))

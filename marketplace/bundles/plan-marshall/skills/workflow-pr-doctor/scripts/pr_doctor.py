@@ -23,7 +23,7 @@ import sys
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import make_error, safe_main  # type: ignore[import-not-found]
+from triage_helpers import ErrorCode, calculate_priority, make_error, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # HANDOFF SCHEMA
@@ -152,6 +152,134 @@ def cmd_track_attempt(args):
 
 
 # ============================================================================
+# DIAGNOSE SUBCOMMAND
+# ============================================================================
+
+
+def diagnose_pr(
+    build_status: str | None = None,
+    build_failures: list[dict] | None = None,
+    review_comments: list[dict] | None = None,
+    sonar_issues: list[dict] | None = None,
+) -> dict[str, Any]:
+    """Aggregate PR diagnostic data into a deterministic report.
+
+    Takes structured inputs from CI status, review comments, and Sonar
+    issues and produces a consistent diagnostic report with categorized
+    issues and recommended actions.
+
+    Args:
+        build_status: Overall build status ('success', 'failure', None for unknown).
+        build_failures: List of build failure dicts with 'step', 'message' keys.
+        review_comments: List of unresolved review comment dicts.
+        sonar_issues: List of Sonar issue dicts with 'severity' key.
+    """
+    build_failures = build_failures or []
+    review_comments = review_comments or []
+    sonar_issues = sonar_issues or []
+
+    issues: list[dict[str, Any]] = []
+    actions: list[str] = []
+
+    # Build diagnosis
+    build_pass = build_status == 'success'
+    if not build_pass and build_status is not None:
+        for failure in build_failures:
+            issues.append({
+                'category': 'build',
+                'severity': 'high',
+                'detail': failure.get('message', 'Build failure'),
+                'step': failure.get('step', 'unknown'),
+            })
+        actions.append('Fix build failures before other issues')
+
+    # Review diagnosis
+    unresolved_count = len(review_comments)
+    if unresolved_count > 0:
+        # Determine highest priority from comments
+        priority_map = {'high': 0, 'medium': 0, 'low': 0}
+        for comment in review_comments:
+            p = comment.get('priority', 'low')
+            if p in priority_map:
+                priority_map[p] += 1
+        issues.append({
+            'category': 'reviews',
+            'severity': 'high' if priority_map['high'] > 0 else 'medium',
+            'detail': f'{unresolved_count} unresolved review comments',
+            'breakdown': priority_map,
+        })
+        actions.append('Address review comments by priority')
+
+    # Sonar diagnosis
+    sonar_count = len(sonar_issues)
+    if sonar_count > 0:
+        severity_counts: dict[str, int] = {}
+        for issue in sonar_issues:
+            sev = issue.get('severity', 'MAJOR')
+            severity_counts[sev] = severity_counts.get(sev, 0) + 1
+        has_blockers = severity_counts.get('BLOCKER', 0) > 0
+        has_critical = severity_counts.get('CRITICAL', 0) > 0
+        issues.append({
+            'category': 'sonar',
+            'severity': 'high' if has_blockers or has_critical else 'medium',
+            'detail': f'{sonar_count} Sonar issues',
+            'breakdown': severity_counts,
+        })
+        actions.append('Fix Sonar issues (blockers and criticals first)')
+
+    # Overall assessment
+    overall = 'pass' if not issues else 'fail'
+
+    return {
+        'overall': overall,
+        'build_status': 'PASS' if build_pass else ('FAIL' if build_status else 'UNKNOWN'),
+        'review_comments': unresolved_count,
+        'sonar_issues': sonar_count,
+        'issues': issues,
+        'recommended_actions': actions,
+        'status': 'success',
+    }
+
+
+def cmd_diagnose(args):
+    """Handle diagnose subcommand."""
+    # Parse optional JSON inputs
+    build_failures = None
+    review_comments = None
+    sonar_issues = None
+
+    if args.build_failures:
+        try:
+            build_failures = json.loads(args.build_failures)
+        except json.JSONDecodeError as e:
+            print(serialize_toon(make_error(f'Invalid --build-failures JSON: {e}', code=ErrorCode.INVALID_INPUT)))
+            return 1
+
+    if args.review_comments:
+        try:
+            review_comments = json.loads(args.review_comments)
+        except json.JSONDecodeError as e:
+            print(serialize_toon(make_error(f'Invalid --review-comments JSON: {e}', code=ErrorCode.INVALID_INPUT)))
+            return 1
+
+    if args.sonar_issues:
+        try:
+            sonar_issues = json.loads(args.sonar_issues)
+        except json.JSONDecodeError as e:
+            print(serialize_toon(make_error(f'Invalid --sonar-issues JSON: {e}', code=ErrorCode.INVALID_INPUT)))
+            return 1
+
+    result = diagnose_pr(
+        build_status=args.build_status,
+        build_failures=build_failures,
+        review_comments=review_comments,
+        sonar_issues=sonar_issues,
+    )
+    print(serialize_toon(result))
+    return 0
+
+
+# ============================================================================
 # PARSE-HANDOFF SUBCOMMAND
 # ============================================================================
 
@@ -205,8 +333,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  pr_doctor.py diagnose --build-status failure --build-failures '[{"step":"test","message":"3 tests failed"}]'
+  pr_doctor.py diagnose --review-comments '[{"priority":"high"}]' --sonar-issues '[{"severity":"BLOCKER"}]'
   pr_doctor.py parse-handoff --handoff '{"artifacts":{"pr_number":123}}'
-  pr_doctor.py parse-handoff --handoff '{"artifacts":{"pr_number":123}}' --pr 456
+  pr_doctor.py track-attempt --category build --current 0
 """,
     )
 
@@ -218,6 +348,14 @@ Examples:
     attempt_parser.add_argument('--current', type=int, required=True, help='Current attempt count (0-based)')
     attempt_parser.add_argument('--max-attempts', type=int, default=DEFAULT_MAX_FIX_ATTEMPTS, help='Maximum attempts')
     attempt_parser.set_defaults(func=cmd_track_attempt)
+
+    # diagnose subcommand
+    diag_parser = subparsers.add_parser('diagnose', help='Generate deterministic PR diagnostic report')
+    diag_parser.add_argument('--build-status', choices=['success', 'failure'], help='Overall build status')
+    diag_parser.add_argument('--build-failures', help='JSON array of build failure objects')
+    diag_parser.add_argument('--review-comments', help='JSON array of unresolved review comments')
+    diag_parser.add_argument('--sonar-issues', help='JSON array of Sonar issues')
+    diag_parser.set_defaults(func=cmd_diagnose)
 
     # parse-handoff subcommand
     handoff_parser = subparsers.add_parser('parse-handoff', help='Parse and validate handoff JSON')

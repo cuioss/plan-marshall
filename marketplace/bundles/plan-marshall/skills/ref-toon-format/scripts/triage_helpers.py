@@ -5,9 +5,12 @@ Shared helpers for workflow scripts (pr.py, sonar.py, git-workflow.py).
 Provides:
 - Triage command handlers (single-item and batch) for JSON→TOON workflows
 - safe_main wrapper for consistent error handling across all workflow scripts
+- Error code taxonomy for cross-skill error propagation
+- Priority calculation utility for severity/boost workflows
 
 Usage:
     from triage_helpers import cmd_triage_single, cmd_triage_batch_handler, safe_main
+    from triage_helpers import ErrorCode, make_error, calculate_priority
 """
 
 import json
@@ -17,7 +20,30 @@ from typing import Any
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
-def make_error(message: str, **extra: Any) -> dict[str, Any]:
+# ============================================================================
+# ERROR CODE TAXONOMY
+# ============================================================================
+
+
+class ErrorCode:
+    """Standardized error codes for cross-skill error propagation.
+
+    Used by workflow skills (pr-doctor, integration-ci, integration-sonar,
+    integration-git) to enable consistent error routing across orchestration
+    layers without string matching on error messages.
+    """
+
+    PROVIDER_NOT_CONFIGURED = 'PROVIDER_NOT_CONFIGURED'
+    MCP_UNAVAILABLE = 'MCP_UNAVAILABLE'
+    TIMEOUT = 'TIMEOUT'
+    INVALID_INPUT = 'INVALID_INPUT'
+    NOT_FOUND = 'NOT_FOUND'
+    AUTH_FAILURE = 'AUTH_FAILURE'
+    BUILD_FAILURE = 'BUILD_FAILURE'
+    PARSE_ERROR = 'PARSE_ERROR'
+
+
+def make_error(message: str, *, code: str | None = None, **extra: Any) -> dict[str, Any]:
     """Create a standardized error payload for TOON output.
 
     All workflow scripts should use this for error responses to ensure
@@ -25,12 +51,15 @@ def make_error(message: str, **extra: Any) -> dict[str, Any]:
 
     Args:
         message: Human-readable error description.
+        code: Optional error code from ``ErrorCode`` for programmatic routing.
         **extra: Additional context fields (e.g., file, category).
 
     Returns:
         Dict ready for ``serialize_toon()``.
     """
     result: dict[str, Any] = {'error': message, 'status': 'failure'}
+    if code:
+        result['error_code'] = code
     result.update(extra)
     return result
 
@@ -54,6 +83,38 @@ def safe_main(main_fn: Callable[[], int]) -> int:
     except Exception as e:
         print(serialize_toon(make_error(f'Unexpected error: {e}')))
         return 1
+
+
+# ============================================================================
+# PRIORITY CALCULATION
+# ============================================================================
+
+# Canonical priority levels used across all workflow scripts.
+PRIORITY_LEVELS = ('low', 'medium', 'high', 'critical')
+_PRIORITY_INDEX = {level: i for i, level in enumerate(PRIORITY_LEVELS)}
+
+
+def calculate_priority(base_priority: str, boost: int = 0) -> str:
+    """Calculate final priority by applying a boost to a base level.
+
+    Shared by sonar.py (severity + type boost) and pr_doctor.py (category
+    aggregation). Clamps the result to the valid priority range.
+
+    Args:
+        base_priority: Starting priority ('low', 'medium', 'high', 'critical').
+        boost: Integer offset (+1 = escalate, -1 = de-escalate).
+
+    Returns:
+        Adjusted priority string, clamped to valid range.
+    """
+    current_idx = _PRIORITY_INDEX.get(base_priority, 0)
+    new_idx = max(0, min(len(PRIORITY_LEVELS) - 1, current_idx + boost))
+    return PRIORITY_LEVELS[new_idx]
+
+
+# ============================================================================
+# TRIAGE COMMAND HANDLERS
+# ============================================================================
 
 
 def cmd_triage_single(json_str: str, triage_fn: Callable[[dict], dict]) -> int:

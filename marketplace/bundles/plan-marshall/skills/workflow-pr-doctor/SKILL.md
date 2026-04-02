@@ -186,6 +186,40 @@ loop_back_needed: true|false
 
 Script: `plan-marshall:workflow-pr-doctor` → `pr_doctor.py`
 
+### pr_doctor.py diagnose
+
+**Purpose:** Aggregate CI, review, and Sonar data into a deterministic diagnostic report with categorized issues and recommended actions.
+
+**Usage:**
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor diagnose \
+    [--build-status success|failure] \
+    [--build-failures '[{"step":"test","message":"3 tests failed"}]'] \
+    [--review-comments '[{"priority":"high"}]'] \
+    [--sonar-issues '[{"severity":"BLOCKER"}]']
+```
+
+**Parameters:**
+- `--build-status`: Overall build status (`success` or `failure`)
+- `--build-failures`: JSON array of build failure objects with `step` and `message` keys
+- `--review-comments`: JSON array of unresolved review comments with `priority` key
+- `--sonar-issues`: JSON array of Sonar issues with `severity` key
+
+**Output** (TOON):
+```toon
+overall: pass|fail
+build_status: PASS|FAIL|UNKNOWN
+review_comments: 3
+sonar_issues: 5
+issues[N]{category,severity,detail}:
+  - category: build|reviews|sonar
+    severity: high|medium
+    detail: ...
+recommended_actions[N]:
+  - Fix build failures before other issues
+status: success
+```
+
 ### pr_doctor.py track-attempt
 
 **Purpose:** Check whether a fix attempt should proceed or stop, enforcing the `max-fix-attempts` iteration guard programmatically.

@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import make_error, safe_main  # type: ignore[import-not-found]
+from triage_helpers import ErrorCode, make_error, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # CONFIGURATION
@@ -348,7 +348,7 @@ def cmd_analyze_diff(args):
     """Handle analyze-diff subcommand."""
     path = Path(args.file)
     if not path.exists():
-        print(serialize_toon(make_error(f'File not found: {args.file}')))
+        print(serialize_toon(make_error(f'File not found: {args.file}', code=ErrorCode.NOT_FOUND)))
         return 1
 
     diff_content = path.read_text()
@@ -364,22 +364,33 @@ def cmd_analyze_diff(args):
 
 # Patterns that are always safe to delete (never belong in a commit)
 SAFE_ARTIFACT_PATTERNS = [
+    # Java
     '**/*.class',
+    # Python
+    '**/*.pyc',
+    '**/__pycache__/**',
+    '**/*.egg-info/**',
+    '**/.eggs/**',
+    # Node.js / TypeScript
+    '**/*.tsbuildinfo',
+    # General temp/backup
     '**/*.temp',
     '**/*.backup',
     '**/*.backup*',
     '**/*.orig',
-    '**/*.pyc',
-    '**/__pycache__/**',
+    # OS artifacts
     '**/.DS_Store',
+    # Plan temp (explicitly temporary)
+    '.plan/temp/**',
 ]
 
 # Patterns that require user confirmation before deletion
 UNCERTAIN_ARTIFACT_PATTERNS = [
     'target/**',
     'build/**',
+    'dist/**',
+    '.next/**',
     'node_modules/**',
-    '.plan/temp/**',
 ]
 
 
@@ -406,10 +417,12 @@ def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
     compiled = []
     for pattern in patterns:
         # Convert glob to regex: ** → .*, * → [^/]*, . → \.
+        # Use placeholder to prevent ** → .* → .[^/]* double-replacement
         regex = pattern.replace('.', r'\.')
         regex = regex.replace('**/', '(.+/)?')
-        regex = regex.replace('**', '.*')
+        regex = regex.replace('**', '\x00STAR\x00')
         regex = regex.replace('*', '[^/]*')
+        regex = regex.replace('\x00STAR\x00', '.*')
         compiled.append(re.compile(f'^{regex}$'))
     return compiled
 
@@ -460,7 +473,7 @@ def cmd_detect_artifacts(args):
     root = Path(args.root) if args.root else Path.cwd()
 
     if not root.is_dir():
-        print(serialize_toon(make_error(f'Directory not found: {root}')))
+        print(serialize_toon(make_error(f'Directory not found: {root}', code=ErrorCode.NOT_FOUND)))
         return 1
 
     result = scan_artifacts(root, respect_gitignore=not args.no_gitignore)
