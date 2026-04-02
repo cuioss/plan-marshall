@@ -1,5 +1,5 @@
 ---
-name: tools-permission-web
+name: workflow-permission-web
 description: Analyze and consolidate WebFetch domain permissions across projects with security research and validation
 user-invocable: true
 ---
@@ -32,9 +32,9 @@ Analyzes WebFetch domains across global and project settings, researches domains
 ## Usage Examples
 
 ```
-/tools-permission-web           # Analyze all settings
-/tools-permission-web scope=global
-/tools-permission-web scope=local
+/workflow-permission-web           # Analyze all settings
+/workflow-permission-web scope=global
+/workflow-permission-web scope=local
 ```
 
 ## Workflow

@@ -66,6 +66,8 @@ from ci_base import (  # type: ignore[import-not-found]
     build_parser,
     check_auth_cli,
     dispatch,
+    make_pr_number_handler,
+    make_simple_handler,
     output_error,
     run_cli,
 )
@@ -283,24 +285,12 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pr_reply(args: argparse.Namespace) -> int:
-    """Handle 'pr reply' subcommand - post a comment on an MR."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_reply', err)
-
-    returncode, stdout, stderr = run_glab(
-        ['mr', 'note', str(args.pr_number), '--message', args.body]
-    )
-    if returncode != 0:
-        return output_error('pr_reply', f'Failed to comment on MR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_reply',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+cmd_pr_reply = make_pr_number_handler(
+    'pr_reply',
+    lambda args: ['mr', 'note', str(args.pr_number), '--message', args.body],
+    run_glab,
+    check_auth,
+)
 
 
 def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
@@ -705,22 +695,13 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
         time.sleep(interval)
 
 
-def cmd_ci_rerun(args: argparse.Namespace) -> int:
-    """Handle 'ci rerun' subcommand - retry a pipeline."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('ci_rerun', err)
-
-    returncode, stdout, stderr = run_glab(['ci', 'retry', str(args.run_id)])
-    if returncode != 0:
-        return output_error('ci_rerun', f'Failed to retry pipeline {args.run_id}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_rerun',
-        'run_id': args.run_id,
-    }, table_separator='\t'))
-    return 0
+cmd_ci_rerun = make_simple_handler(
+    'ci_rerun',
+    lambda args: ['ci', 'retry', str(args.run_id)],
+    run_glab,
+    check_auth,
+    result_extras=lambda args: {'run_id': args.run_id},
+)
 
 
 def cmd_ci_logs(args: argparse.Namespace) -> int:
@@ -911,48 +892,24 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pr_close(args: argparse.Namespace) -> int:
-    """Handle 'pr close' subcommand - close a merge request."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_close', err)
-
-    returncode, stdout, stderr = run_glab(['mr', 'close', str(args.pr_number)])
-    if returncode != 0:
-        return output_error('pr_close', f'Failed to close MR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_close',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+cmd_pr_close = make_pr_number_handler(
+    'pr_close',
+    lambda args: ['mr', 'close', str(args.pr_number)],
+    run_glab,
+    check_auth,
+)
 
 
-def cmd_pr_ready(args: argparse.Namespace) -> int:
-    """Handle 'pr ready' subcommand - mark a draft MR as ready for review."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_ready', err)
-
-    returncode, stdout, stderr = run_glab(['mr', 'update', str(args.pr_number), '--ready'])
-    if returncode != 0:
-        return output_error('pr_ready', f'Failed to mark MR {args.pr_number} as ready', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_ready',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+cmd_pr_ready = make_pr_number_handler(
+    'pr_ready',
+    lambda args: ['mr', 'update', str(args.pr_number), '--ready'],
+    run_glab,
+    check_auth,
+)
 
 
 def cmd_pr_edit(args: argparse.Namespace) -> int:
     """Handle 'pr edit' subcommand - edit MR title and/or description."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_edit', err)
-
     if not args.title and not args.body:
         return output_error('pr_edit', 'At least one of --title or --body must be provided')
 
@@ -962,34 +919,16 @@ def cmd_pr_edit(args: argparse.Namespace) -> int:
     if args.body:
         glab_args.extend(['--description', args.body])
 
-    returncode, stdout, stderr = run_glab(glab_args)
-    if returncode != 0:
-        return output_error('pr_edit', f'Failed to edit MR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_edit',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+    return make_pr_number_handler('pr_edit', lambda a: glab_args, run_glab, check_auth)(args)
 
 
-def cmd_issue_close(args: argparse.Namespace) -> int:
-    """Handle 'issue close' subcommand - close an issue."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('issue_close', err)
-
-    returncode, stdout, stderr = run_glab(['issue', 'close', str(args.issue)])
-    if returncode != 0:
-        return output_error('issue_close', f'Failed to close issue {args.issue}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'issue_close',
-        'issue_number': args.issue,
-    }, table_separator='\t'))
-    return 0
+cmd_issue_close = make_simple_handler(
+    'issue_close',
+    lambda args: ['issue', 'close', str(args.issue)],
+    run_glab,
+    check_auth,
+    result_extras=lambda args: {'issue_number': args.issue},
+)
 
 
 # ---------------------------------------------------------------------------

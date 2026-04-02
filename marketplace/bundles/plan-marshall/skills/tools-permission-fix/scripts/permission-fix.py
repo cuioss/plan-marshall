@@ -22,11 +22,17 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from permission_common import (  # type: ignore[import-not-found]
+    EXIT_ERROR,
+    EXIT_SUCCESS,
+    get_global_settings_path,
+    get_project_settings_path_for_write,
+    get_settings_path,
+    load_settings,
+    load_settings_path,
+    save_settings,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_ERROR = 1
 
 # Executor-only permission pattern
 EXECUTOR_PERMISSION = 'Bash(python3 .plan/execute-script.py *)'
@@ -42,86 +48,6 @@ DEFAULT_PERMISSIONS = [
 # Timestamp patterns for consolidation
 TIMESTAMP_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2}-\d{6})\.(\w+)\)$')
 DATE_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2})\.(\w+)\)$')
-
-
-# =============================================================================
-# Shared Utilities
-# =============================================================================
-
-
-def load_settings(path: str) -> tuple[dict, str | None]:
-    """Load settings from a JSON file."""
-    settings_path = Path(path)
-
-    if not settings_path.exists():
-        return {}, f'Settings file not found: {path}'
-
-    try:
-        with open(settings_path) as f:
-            data = json.load(f)
-
-        if 'permissions' not in data:
-            data['permissions'] = {}
-        for key in ['allow', 'deny', 'ask']:
-            if key not in data['permissions']:
-                data['permissions'][key] = []
-
-        return data, None
-    except json.JSONDecodeError as e:
-        return {}, f'Invalid JSON in {path}: {e}'
-
-
-def save_settings(path: str, settings: dict) -> bool:
-    """Save settings to a JSON file."""
-    try:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'w') as f:
-            json.dump(settings, f, indent=2)
-        return True
-    except Exception:
-        return False
-
-
-def get_global_settings_path() -> Path:
-    """Get path to global settings file."""
-    return Path.home() / '.claude' / 'settings.json'
-
-
-def get_project_settings_path_for_write(project_dir: Path | None = None) -> Path:
-    """Get path for writing project settings."""
-    if project_dir is None:
-        project_dir = Path.cwd()
-
-    settings_json = project_dir / '.claude' / 'settings.json'
-    if settings_json.exists():
-        return settings_json
-
-    return project_dir / '.claude' / 'settings.local.json'
-
-
-def load_settings_path(path: Path) -> dict[str, Any]:
-    """Load settings from a Path."""
-    if not path.exists():
-        return {'permissions': {'allow': [], 'deny': [], 'ask': []}}
-
-    try:
-        with open(path) as f:
-            data: dict[str, Any] = json.load(f)
-        if 'permissions' not in data:
-            data['permissions'] = {}
-        for key in ['allow', 'deny', 'ask']:
-            if key not in data['permissions']:
-                data['permissions'][key] = []
-        return data
-    except json.JSONDecodeError as e:
-        return {'error': f'Invalid JSON: {e}', 'permissions': {'allow': [], 'deny': [], 'ask': []}}
-
-
-def get_settings_path(target: str) -> Path:
-    """Get settings path based on target."""
-    if target == 'global':
-        return get_global_settings_path()
-    return get_project_settings_path_for_write()
 
 
 # =============================================================================

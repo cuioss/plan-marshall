@@ -12,76 +12,15 @@ import re
 import sys
 from pathlib import Path
 
+from permission_common import (  # type: ignore[import-not-found]
+    EXIT_ERROR,
+    EXIT_SUCCESS,
+    get_global_settings_path,
+    get_project_settings_path,
+    load_settings,
+    resolve_scope_to_paths,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_ERROR = 1
-
-
-# =============================================================================
-# Shared Utilities
-# =============================================================================
-
-
-def load_settings(path: str | None) -> tuple[dict, str | None]:
-    """Load settings from a JSON file."""
-    if path is None:
-        return {}, 'No settings path provided'
-    settings_path = Path(path)
-
-    if not settings_path.exists():
-        return {}, f'Settings file not found: {path}'
-
-    try:
-        with open(settings_path) as f:
-            data = json.load(f)
-
-        if 'permissions' not in data:
-            data['permissions'] = {}
-        for key in ['allow', 'deny', 'ask']:
-            if key not in data['permissions']:
-                data['permissions'][key] = []
-
-        return data, None
-    except json.JSONDecodeError as e:
-        return {}, f'Invalid JSON in {path}: {e}'
-
-
-def output_result(result: dict, format_type: str = 'json') -> None:
-    """Output result in specified format."""
-    if format_type == 'json':
-        print(serialize_toon(result))
-
-
-def get_global_settings_path() -> Path:
-    """Get path to global settings file."""
-    return Path.home() / '.claude' / 'settings.json'
-
-
-def get_project_settings_path() -> Path:
-    """Get path to project settings file (prefers settings.local.json if exists)."""
-    project_dir = Path.cwd()
-    settings_local = project_dir / '.claude' / 'settings.local.json'
-    if settings_local.exists():
-        return settings_local
-    return project_dir / '.claude' / 'settings.json'
-
-
-def resolve_scope_to_paths(scope: str) -> tuple[str | None, str | None]:
-    """Resolve scope to global and local settings paths.
-
-    Returns:
-        Tuple of (global_path, local_path). For 'global' or 'project' scope,
-        one will be None. For 'both', both paths are returned.
-    """
-    if scope == 'global':
-        return str(get_global_settings_path()), None
-    elif scope == 'project':
-        return None, str(get_project_settings_path())
-    elif scope == 'both':
-        return str(get_global_settings_path()), str(get_project_settings_path())
-    return None, None
 
 
 # =============================================================================

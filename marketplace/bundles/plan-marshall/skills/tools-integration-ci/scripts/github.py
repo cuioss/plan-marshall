@@ -60,6 +60,8 @@ from ci_base import (  # type: ignore[import-not-found]
     build_parser,
     check_auth_cli,
     dispatch,
+    make_pr_number_handler,
+    make_simple_handler,
     output_error,
     run_cli,
 )
@@ -275,24 +277,12 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pr_reply(args: argparse.Namespace) -> int:
-    """Handle 'pr reply' subcommand - post a comment on a PR."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_reply', err)
-
-    returncode, stdout, stderr = run_gh(
-        ['pr', 'comment', str(args.pr_number), '--body', args.body]
-    )
-    if returncode != 0:
-        return output_error('pr_reply', f'Failed to comment on PR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_reply',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+cmd_pr_reply = make_pr_number_handler(
+    'pr_reply',
+    lambda args: ['pr', 'comment', str(args.pr_number), '--body', args.body],
+    run_gh,
+    check_auth,
+)
 
 
 RESOLVE_THREAD_MUTATION = """
@@ -567,48 +557,24 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_pr_close(args: argparse.Namespace) -> int:
-    """Handle 'pr close' subcommand - close a pull request."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_close', err)
-
-    returncode, stdout, stderr = run_gh(['pr', 'close', str(args.pr_number)])
-    if returncode != 0:
-        return output_error('pr_close', f'Failed to close PR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_close',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+cmd_pr_close = make_pr_number_handler(
+    'pr_close',
+    lambda args: ['pr', 'close', str(args.pr_number)],
+    run_gh,
+    check_auth,
+)
 
 
-def cmd_pr_ready(args: argparse.Namespace) -> int:
-    """Handle 'pr ready' subcommand - mark a draft PR as ready for review."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_ready', err)
-
-    returncode, stdout, stderr = run_gh(['pr', 'ready', str(args.pr_number)])
-    if returncode != 0:
-        return output_error('pr_ready', f'Failed to mark PR {args.pr_number} as ready', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_ready',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+cmd_pr_ready = make_pr_number_handler(
+    'pr_ready',
+    lambda args: ['pr', 'ready', str(args.pr_number)],
+    run_gh,
+    check_auth,
+)
 
 
 def cmd_pr_edit(args: argparse.Namespace) -> int:
     """Handle 'pr edit' subcommand - edit PR title and/or body."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_edit', err)
-
     if not args.title and not args.body:
         return output_error('pr_edit', 'At least one of --title or --body must be provided')
 
@@ -618,16 +584,7 @@ def cmd_pr_edit(args: argparse.Namespace) -> int:
     if args.body:
         gh_args.extend(['--body', args.body])
 
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return output_error('pr_edit', f'Failed to edit PR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_edit',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+    return make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
 
 
 def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
@@ -810,22 +767,13 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
         time.sleep(interval)
 
 
-def cmd_ci_rerun(args: argparse.Namespace) -> int:
-    """Handle 'ci rerun' subcommand - rerun a workflow run."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('ci_rerun', err)
-
-    returncode, stdout, stderr = run_gh(['run', 'rerun', str(args.run_id)])
-    if returncode != 0:
-        return output_error('ci_rerun', f'Failed to rerun workflow {args.run_id}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_rerun',
-        'run_id': args.run_id,
-    }, table_separator='\t'))
-    return 0
+cmd_ci_rerun = make_simple_handler(
+    'ci_rerun',
+    lambda args: ['run', 'rerun', str(args.run_id)],
+    run_gh,
+    check_auth,
+    result_extras=lambda args: {'run_id': args.run_id},
+)
 
 
 def cmd_ci_logs(args: argparse.Namespace) -> int:
@@ -952,22 +900,13 @@ def cmd_issue_view(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_issue_close(args: argparse.Namespace) -> int:
-    """Handle 'issue close' subcommand - close an issue."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('issue_close', err)
-
-    returncode, stdout, stderr = run_gh(['issue', 'close', str(args.issue)])
-    if returncode != 0:
-        return output_error('issue_close', f'Failed to close issue {args.issue}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'issue_close',
-        'issue_number': args.issue,
-    }, table_separator='\t'))
-    return 0
+cmd_issue_close = make_simple_handler(
+    'issue_close',
+    lambda args: ['issue', 'close', str(args.issue)],
+    run_gh,
+    check_auth,
+    result_extras=lambda args: {'issue_number': args.issue},
+)
 
 
 # ---------------------------------------------------------------------------

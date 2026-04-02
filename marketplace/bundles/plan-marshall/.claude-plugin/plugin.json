@@ -44,7 +44,7 @@
     "./skills/task-verification",
     "./skills/tools-permission-doctor",
     "./skills/tools-permission-fix",
-    "./skills/tools-permission-web",
+    "./skills/workflow-permission-web",
     "./skills/workflow-integration-ci",
     "./skills/workflow-integration-git",
     "./skills/workflow-integration-sonar",

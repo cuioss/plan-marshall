@@ -13,6 +13,10 @@ import subprocess
 import sys
 from typing import Any
 
+# Exit codes
+EXIT_SUCCESS = 0
+EXIT_ERROR = 1
+
 
 # ---------------------------------------------------------------------------
 # CLI execution
@@ -91,13 +95,13 @@ def check_auth_cli(
 # ---------------------------------------------------------------------------
 
 def output_error(operation: str, error: str, context: str = '') -> int:
-    """Output error in TOON format to stderr and return exit code 1."""
+    """Output error in TOON format to stderr and return EXIT_ERROR."""
     print('status: error', file=sys.stderr)
     print(f'operation: {operation}', file=sys.stderr)
     print(f'error: {error}', file=sys.stderr)
     if context:
         print(f'context: {context}', file=sys.stderr)
-    return 1
+    return EXIT_ERROR
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +273,68 @@ def add_pr_resolve_thread_pr_number(
 
 
 # ---------------------------------------------------------------------------
+# Generic handler factories for simple operations
+# ---------------------------------------------------------------------------
+
+def make_simple_handler(
+    operation: str,
+    build_args_fn: Any,
+    run_fn: Any,
+    auth_fn: Any,
+    *,
+    result_extras: dict | None = None,
+) -> Any:
+    """Create a handler for simple CLI operations that follow the auth-build-run-output pattern.
+
+    Args:
+        operation: Operation name for TOON output (e.g. 'pr_close').
+        build_args_fn: Callable(args) -> list[str] that builds CLI arguments.
+        run_fn: The provider's run_<cli> wrapper.
+        auth_fn: Callable() -> (bool, str) to check authentication.
+        result_extras: Optional callable(args) -> dict of extra fields for output.
+
+    Returns:
+        A handler function suitable for the dispatch table.
+    """
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    def handler(args: argparse.Namespace) -> int:
+        is_auth, err = auth_fn()
+        if not is_auth:
+            return output_error(operation, err)
+
+        cli_args = build_args_fn(args)
+        returncode, stdout, stderr = run_fn(cli_args)
+        if returncode != 0:
+            return output_error(operation, f'Operation failed', stderr.strip())
+
+        result = {'status': 'success', 'operation': operation}
+        if result_extras:
+            result.update(result_extras(args))
+
+        print(serialize_toon(result, table_separator='\t'))
+        return 0
+
+    return handler
+
+
+def make_pr_number_handler(
+    operation: str,
+    cli_args_fn: Any,
+    run_fn: Any,
+    auth_fn: Any,
+) -> Any:
+    """Shortcut for handlers that only need --pr-number and produce a simple success output."""
+    return make_simple_handler(
+        operation,
+        cli_args_fn,
+        run_fn,
+        auth_fn,
+        result_extras=lambda args: {'pr_number': args.pr_number},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Command dispatch
 # ---------------------------------------------------------------------------
 
@@ -305,4 +371,4 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
         return result
 
     parser.print_help()
-    return 1
+    return EXIT_ERROR

@@ -51,7 +51,13 @@ def main():
 
     while time.time() - start < timeout:
         polls += 1
-        result = subprocess.run(args.check_cmd, shell=True, capture_output=True, text=True, timeout=60)
+        try:
+            result = subprocess.run(args.check_cmd, shell=True, capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            time.sleep(args.interval)
+            continue
+        except OSError as e:
+            finish('failure', start, polls, args.command_key, f'Check command failed: {e}')
 
         if result.returncode == 0:
             parsed = parse_toon(result.stdout)
