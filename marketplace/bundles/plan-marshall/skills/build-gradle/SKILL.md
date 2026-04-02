@@ -180,6 +180,8 @@ Gradle: ./gradlew > gradle (on PATH)
 
 ## Error Categories
 
+Categories use **regex patterns** for Gradle's task-specific markers (e.g., `Execution failed for task ':.*:compileJava'`). The shared `categorize_issue()` function auto-detects regex metacharacters and switches matching mode accordingly.
+
 | Category | Description |
 |----------|-------------|
 | `compilation_error` | Compile-time Java/Kotlin errors |

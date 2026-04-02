@@ -69,10 +69,15 @@ def test_command_key_fn_empty():
 # =============================================================================
 
 
-def test_scope_fn_always_default():
-    """Python scope is always 'default' (no module scoping)."""
+def test_scope_fn_default_for_single_arg():
+    """Python scope is 'default' for single-arg commands."""
     assert _CONFIG.scope_fn('verify') == 'default'
-    assert _CONFIG.scope_fn('module-tests core') == 'default'
+
+
+def test_scope_fn_extracts_module():
+    """Python scope extracts module name from second arg."""
+    assert _CONFIG.scope_fn('module-tests core') == 'core'
+    assert _CONFIG.scope_fn('verify plan-marshall') == 'plan-marshall'
 
 
 # =============================================================================

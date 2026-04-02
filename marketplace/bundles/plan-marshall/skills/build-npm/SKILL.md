@@ -31,6 +31,7 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 | `js_coverage.py` | CLI | JavaScript coverage analysis |
 | `_npm_execute.py` | Library | Execution config via factory pattern |
 | `_npm_cmd_parse.py` | Library | Multi-parser dispatcher |
+| `_npm_cmd_discover.py` | Library | Module discovery via package.json workspaces |
 | `_npm_parse_typescript.py` | Library | TypeScript error parsing |
 | `_npm_parse_jest.py` | Library | Jest/Vitest test output parsing |
 | `_npm_parse_eslint.py` | Library | ESLint output parsing |
@@ -144,6 +145,9 @@ overall:
   branch	78.3
   function	81.5
   statement	87.1
+
+low_coverage[1]{file,line_pct,branch_pct}:
+  src/utils/helper.js,62.5,50.0
 ```
 
 ### check-warnings

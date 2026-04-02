@@ -164,6 +164,8 @@ Maven:  ./mvnw > mvn (on PATH)
 
 ## Error Categories
 
+Categories use **substring matching** (case-insensitive). The shared `categorize_issue()` function auto-detects regex metacharacters, but Maven patterns are plain substrings for simplicity.
+
 | Category | Description |
 |----------|-------------|
 | `compilation_error` | Compile-time Java errors |

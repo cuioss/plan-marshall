@@ -29,17 +29,10 @@ Output:
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 
-# Add extension-api scripts to path for base library imports
-EXTENSION_API_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
-)
-if str(EXTENSION_API_DIR) not in sys.path:
-    sys.path.insert(0, str(EXTENSION_API_DIR))
-
-from extension_base import (  # noqa: E402
+# Direct imports - executor sets up PYTHONPATH for cross-skill imports
+from extension_base import (
     build_module_base,
     count_source_files,
     discover_descriptors,

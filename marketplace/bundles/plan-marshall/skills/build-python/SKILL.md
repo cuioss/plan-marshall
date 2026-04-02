@@ -128,6 +128,9 @@ message	"Coverage meets threshold: 85.2% line, 78.3% branch"
 overall:
   line	85.2
   branch	78.3
+
+low_coverage[1]{class,line_pct,missed_methods}:
+  src.core.utils,65.0,process_data
 ```
 
 ### check-warnings

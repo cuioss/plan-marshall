@@ -126,18 +126,20 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
 
 
 def _extract_issues(content: str) -> list[Issue]:
-    """Extract all issues from Maven output as Issue dataclasses."""
-    issues: list[Issue] = []
-    non_stack_lines: list[str] = []
+    """Extract all issues from Maven output as Issue dataclasses.
 
-    # First pass: separate stack trace lines from issue lines
+    Deduplicates issues by key (category:file:line:message_prefix) to avoid
+    duplicates from reactor summary and per-module output in multi-module builds.
+    """
+    issues: list[Issue] = []
+    seen: set[str] = set()
+
     for line in content.split('\n'):
         stripped = line.strip()
+
+        # Skip stack trace lines (handled by collect_stack_traces)
         if stripped.startswith('at ') or stripped.startswith('Caused by:'):
-            # Will be handled by collect_stack_traces
-            non_stack_lines.append(line)
             continue
-        non_stack_lines.append(line)
 
         severity = None
         if '[ERROR]' in line:
@@ -153,6 +155,12 @@ def _extract_issues(content: str) -> list[Issue]:
 
             location = parse_file_location(line)
             category = categorize_issue(message, MAVEN_PATTERNS)
+
+            # Deduplication
+            dedup_key = f'{category}:{location.get("file")}:{location.get("line")}:{message[:100]}'
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
 
             issues.append(
                 Issue(

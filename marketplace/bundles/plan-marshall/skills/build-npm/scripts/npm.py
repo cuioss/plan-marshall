@@ -15,7 +15,6 @@ Subcommands:
     coverage-report Parse JavaScript coverage report
 """
 
-import argparse
 import sys
 
 from _build_check_warnings import create_check_warnings_handler
@@ -25,6 +24,8 @@ from _build_shared import (
     add_coverage_subparser,
     add_parse_subparser,
     add_run_subparser,
+    build_main,
+    safe_main,
 )
 from _npm_cmd_parse import parse_log
 from _npm_execute import cmd_run
@@ -46,18 +47,12 @@ cmd_check_warnings = create_check_warnings_handler(
 )
 
 
-def main() -> int:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description='npm/npx build operations', formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    subparsers = parser.add_subparsers(dest='command', required=True)
+def _npm_extra_args(run_parser):
+    run_parser.add_argument('--working-dir', dest='working_dir', help='Working directory for command execution')
+    run_parser.add_argument('--env', help="Environment variables (e.g., 'NODE_ENV=test CI=true')")
 
-    def _npm_extra_args(run_parser):
-        run_parser.add_argument('--working-dir', dest='working_dir', help='Working directory for command execution')
-        run_parser.add_argument('--env', help="Environment variables (e.g., 'NODE_ENV=test CI=true')")
 
-    # run subcommand (primary API)
+def _register_run(subparsers):
     run_parser = add_run_subparser(
         subparsers,
         command_args_help="Complete npm command arguments (e.g., 'run test' or 'run test --workspace=pkg')",
@@ -65,24 +60,33 @@ def main() -> int:
     )
     run_parser.set_defaults(func=cmd_run)
 
-    # parse subcommand
+
+def _register_parse(subparsers):
     add_parse_subparser(
         subparsers, parse_log,
         help_text='Parse npm/npx build output and categorize issues',
         parser_needs_command=True,
     )
 
-    # coverage-report subcommand
+
+def _register_coverage(subparsers):
     cov_parser = add_coverage_subparser(subparsers, help_text='Parse JavaScript coverage report')
     cov_parser.set_defaults(func=cmd_coverage_report)
 
-    # check-warnings subcommand
+
+def _register_check_warnings(subparsers):
     add_check_warnings_subparser(subparsers, cmd_check_warnings)
 
-    args = parser.parse_args()
-    result: int = args.func(args)
-    return result
+
+def main() -> int:
+    """Main entry point."""
+    return build_main('npm/npx build operations', [
+        _register_run,
+        _register_parse,
+        _register_coverage,
+        _register_check_warnings,
+    ])
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

@@ -252,6 +252,60 @@ def add_check_warnings_subparser(subparsers, check_warnings_fn, *, help_text: st
     return warn_parser
 
 
+def safe_main(main_fn: Callable[[], int]) -> int:
+    """Wrap a build script's main() to catch unhandled exceptions and emit TOON failure.
+
+    Ensures all build scripts produce structured TOON output even on
+    unexpected errors, instead of raw tracebacks that corrupt output.
+
+    Usage::
+
+        if __name__ == '__main__':
+            sys.exit(safe_main(main))
+    """
+    try:
+        return main_fn()
+    except SystemExit as e:
+        # Let argparse --help / missing-arg exits pass through
+        raise e
+    except Exception as e:
+        print(format_toon({'status': 'error', 'error': f'unexpected_error: {e}'}))
+        return 1
+
+
+def build_main(
+    description: str,
+    subparser_fns: list[Callable],
+) -> int:
+    """Common main() entry point for all build skills.
+
+    Creates the argparse parser, adds all subparsers via the provided
+    registration functions, parses args, and dispatches to the handler.
+
+    Each subparser_fn receives (subparsers) and registers one subcommand.
+
+    Args:
+        description: Parser description (e.g., 'Maven build operations').
+        subparser_fns: List of callables that each add one subparser.
+
+    Returns:
+        Exit code from the dispatched handler.
+    """
+    import argparse as _argparse
+
+    parser = _argparse.ArgumentParser(
+        description=description, formatter_class=_argparse.RawDescriptionHelpFormatter
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    for register_fn in subparser_fns:
+        register_fn(subparsers)
+
+    args = parser.parse_args()
+    result: int = args.func(args)
+    return result
+
+
 def cmd_run_common(
     result: DirectCommandResult,
     parser_fn: ParserFn,

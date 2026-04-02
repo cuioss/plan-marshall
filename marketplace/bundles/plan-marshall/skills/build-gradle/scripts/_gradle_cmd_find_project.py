@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 
 def find_settings_file(root: Path) -> Path | None:
     """Find settings.gradle or settings.gradle.kts."""
@@ -57,16 +59,18 @@ def project_path_to_gradle_notation(root: Path, project_dir: Path) -> str:
         return ':'
 
 
+def _format_output(data: dict) -> str:
+    """Format output as TOON for consistency with other build subcommands."""
+    return serialize_toon(data)
+
+
 def cmd_find_project(args):
     """Handle find-project subcommand."""
     root = Path(args.root).resolve()
     if not root.exists():
-        print(
-            json.dumps(
-                {'status': 'error', 'error': 'root_not_found', 'message': f'Root directory not found: {args.root}'},
-                indent=2,
-            )
-        )
+        print(_format_output(
+            {'status': 'error', 'error': 'root_not_found', 'message': f'Root directory not found: {args.root}'}
+        ))
         return 1
 
     if args.project_path:
@@ -75,16 +79,11 @@ def cmd_find_project(args):
         )
         full_path = root / dir_path
         if not full_path.exists():
-            print(
-                json.dumps(
-                    {
-                        'status': 'error',
-                        'error': 'path_not_found',
-                        'message': f'Project path does not exist: {args.project_path}',
-                    },
-                    indent=2,
-                )
-            )
+            print(_format_output({
+                'status': 'error',
+                'error': 'path_not_found',
+                'message': f'Project path does not exist: {args.project_path}',
+            }))
             return 1
         build_file = None
         for ext in ['.kts', '']:
@@ -93,35 +92,23 @@ def cmd_find_project(args):
                 build_file = str(candidate.resolve().relative_to(root))
                 break
         if not build_file:
-            print(
-                json.dumps(
-                    {
-                        'status': 'error',
-                        'error': 'no_build_file',
-                        'message': f'No build.gradle(.kts) found in: {args.project_path}',
-                    },
-                    indent=2,
-                )
-            )
+            print(_format_output({
+                'status': 'error',
+                'error': 'no_build_file',
+                'message': f'No build.gradle(.kts) found in: {args.project_path}',
+            }))
             return 1
         gradle_path = ':' + dir_path.replace('/', ':')
         parts = dir_path.split('/')
         parent_projects = [':' + ':'.join(parts[:i]) for i in range(1, len(parts))]
-        print(
-            json.dumps(
-                {
-                    'status': 'success',
-                    'data': {
-                        'project_name': full_path.name,
-                        'project_path': gradle_path,
-                        'build_file': build_file,
-                        'parent_projects': parent_projects,
-                        'gradle_p_argument': f'-p {dir_path}',
-                    },
-                },
-                indent=2,
-            )
-        )
+        print(_format_output({
+            'status': 'success',
+            'project_name': full_path.name,
+            'project_path': gradle_path,
+            'build_file': build_file,
+            'parent_projects': ','.join(parent_projects) if parent_projects else '',
+            'gradle_p_argument': f'-p {dir_path}',
+        }))
         return 0
 
     settings_file = find_settings_file(root)
@@ -132,21 +119,14 @@ def cmd_find_project(args):
         for ext in ['.kts', '']:
             candidate = root / f'build.gradle{ext}'
             if candidate.exists():
-                print(
-                    json.dumps(
-                        {
-                            'status': 'success',
-                            'data': {
-                                'project_name': args.project_name,
-                                'project_path': ':',
-                                'build_file': f'build.gradle{ext}',
-                                'parent_projects': [],
-                                'gradle_p_argument': '',
-                            },
-                        },
-                        indent=2,
-                    )
-                )
+                print(_format_output({
+                    'status': 'success',
+                    'project_name': args.project_name,
+                    'project_path': ':',
+                    'build_file': f'build.gradle{ext}',
+                    'parent_projects': '',
+                    'gradle_p_argument': '',
+                }))
                 return 0
 
     matches = []
@@ -162,29 +142,19 @@ def cmd_find_project(args):
                 matches.append(project_path)
 
     if not matches:
-        print(
-            json.dumps(
-                {
-                    'status': 'error',
-                    'error': 'project_not_found',
-                    'message': f"No project found with name '{args.project_name}'",
-                },
-                indent=2,
-            )
-        )
+        print(_format_output({
+            'status': 'error',
+            'error': 'project_not_found',
+            'message': f"No project found with name '{args.project_name}'",
+        }))
         return 1
     if len(matches) > 1:
-        print(
-            json.dumps(
-                {
-                    'status': 'error',
-                    'error': 'ambiguous_project_name',
-                    'message': f"Multiple projects found for name '{args.project_name}'. Select one.",
-                    'choices': matches,
-                },
-                indent=2,
-            )
-        )
+        print(_format_output({
+            'status': 'error',
+            'error': 'ambiguous_project_name',
+            'message': f"Multiple projects found for name '{args.project_name}'. Select one.",
+            'choices': ','.join(matches),
+        }))
         return 1
 
     project_path = matches[0]
@@ -198,19 +168,12 @@ def cmd_find_project(args):
 
     parts = project_path.lstrip(':').split(':')
     parent_projects = [':' + ':'.join(parts[:i]) for i in range(1, len(parts))]
-    print(
-        json.dumps(
-            {
-                'status': 'success',
-                'data': {
-                    'project_name': args.project_name,
-                    'project_path': project_path,
-                    'build_file': build_file,
-                    'parent_projects': parent_projects,
-                    'gradle_p_argument': f'-p {dir_path}' if dir_path else '',
-                },
-            },
-            indent=2,
-        )
-    )
+    print(_format_output({
+        'status': 'success',
+        'project_name': args.project_name,
+        'project_path': project_path,
+        'build_file': build_file,
+        'parent_projects': ','.join(parent_projects) if parent_projects else '',
+        'gradle_p_argument': f'-p {dir_path}' if dir_path else '',
+    }))
     return 0

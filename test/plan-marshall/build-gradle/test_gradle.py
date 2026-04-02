@@ -67,7 +67,7 @@ def test_parse_missing_file():
 
 
 def test_find_project_by_name():
-    """Test finding project by name."""
+    """Test finding project by name (TOON output)."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         project_dir = temp_dir / 'modules' / 'auth-service'
@@ -76,17 +76,17 @@ def test_find_project_by_name():
         build_file.write_text('// Gradle build file')
 
         result = run_script(SCRIPT_PATH, 'find-project', '--project-name', 'auth-service', '--root', str(temp_dir))
-        data = result.json()
+        data = result.toon()
 
         assert data['status'] == 'success', f'Should find project: {data}'
 
 
 def test_find_project_not_found():
-    """Test finding non-existent project."""
+    """Test finding non-existent project (TOON output)."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         result = run_script(SCRIPT_PATH, 'find-project', '--project-name', 'nonexistent', '--root', str(temp_dir))
-        data = result.json()
+        data = result.toon()
 
         assert data['status'] == 'error', 'Should return error for non-existent project'
 

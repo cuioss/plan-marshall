@@ -18,7 +18,6 @@ Subcommands:
     coverage-report Parse JaCoCo coverage report
 """
 
-import argparse
 import sys
 
 from _build_check_warnings import create_check_warnings_handler
@@ -28,6 +27,8 @@ from _build_shared import (
     add_coverage_subparser,
     add_parse_subparser,
     add_run_subparser,
+    build_main,
+    safe_main,
 )
 from _markers_search import cmd_search_markers
 from _maven_cmd_parse import parse_log
@@ -51,21 +52,15 @@ cmd_check_warnings = create_check_warnings_handler(
 )
 
 
-def main() -> int:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description='Maven build operations', formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # run subcommand (primary API)
+def _register_run(subparsers):
     run_parser = add_run_subparser(
         subparsers,
         command_args_help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
     )
     run_parser.set_defaults(func=cmd_run)
 
-    # parse subcommand
+
+def _register_parse(subparsers):
     add_parse_subparser(
         subparsers, parse_log,
         help_text='Parse Maven build output and categorize issues',
@@ -73,23 +68,33 @@ def main() -> int:
         extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
     )
 
-    # search-markers subcommand
+
+def _register_search_markers(subparsers):
     markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
     markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
     markers_parser.add_argument('--extensions', default='.java', help='Comma-separated extensions')
     markers_parser.set_defaults(func=cmd_search_markers)
 
-    # coverage-report subcommand
+
+def _register_coverage(subparsers):
     cov_parser = add_coverage_subparser(subparsers, help_text='Parse JaCoCo coverage report')
     cov_parser.set_defaults(func=cmd_coverage_report)
 
-    # check-warnings subcommand
+
+def _register_check_warnings(subparsers):
     add_check_warnings_subparser(subparsers, cmd_check_warnings)
 
-    args = parser.parse_args()
-    result: int = args.func(args)
-    return result
+
+def main() -> int:
+    """Main entry point."""
+    return build_main('Maven build operations', [
+        _register_run,
+        _register_parse,
+        _register_search_markers,
+        _register_coverage,
+        _register_check_warnings,
+    ])
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

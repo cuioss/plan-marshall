@@ -15,7 +15,6 @@ Subcommands:
     coverage-report Parse coverage.py XML report
 """
 
-import argparse
 import sys
 
 from _build_check_warnings import create_check_warnings_handler
@@ -25,6 +24,8 @@ from _build_shared import (
     add_coverage_subparser,
     add_parse_subparser,
     add_run_subparser,
+    build_main,
+    safe_main,
 )
 from _python_cmd_parse import parse_log
 from _python_execute import cmd_run
@@ -45,35 +46,36 @@ cmd_check_warnings = create_check_warnings_handler(
 )
 
 
-def main() -> int:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description='Python/pyprojectx build operations',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # run subcommand (primary API)
+def _register_run(subparsers):
     run_parser = add_run_subparser(
         subparsers,
         command_args_help="Canonical command to execute (e.g., 'verify', 'module-tests', 'quality-gate')",
     )
     run_parser.set_defaults(func=cmd_run)
 
-    # parse subcommand
+
+def _register_parse(subparsers):
     add_parse_subparser(subparsers, parse_log, help_text='Parse pyprojectx build output and categorize issues')
 
-    # coverage-report subcommand
+
+def _register_coverage(subparsers):
     cov_parser = add_coverage_subparser(subparsers, help_text='Parse coverage.py XML report')
     cov_parser.set_defaults(func=cmd_coverage_report)
 
-    # check-warnings subcommand
+
+def _register_check_warnings(subparsers):
     add_check_warnings_subparser(subparsers, cmd_check_warnings)
 
-    args = parser.parse_args()
-    result: int = args.func(args)
-    return result
+
+def main() -> int:
+    """Main entry point."""
+    return build_main('Python/pyprojectx build operations', [
+        _register_run,
+        _register_parse,
+        _register_coverage,
+        _register_check_warnings,
+    ])
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))
