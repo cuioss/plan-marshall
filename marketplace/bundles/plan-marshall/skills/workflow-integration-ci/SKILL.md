@@ -31,16 +31,11 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
 ## What This Skill Provides
 
-### Workflows (Absorbs 2 Agents)
+### Workflows
 
-1. **Fetch Comments Workflow** - Retrieves PR review comments
-   - Uses `tools-integration-ci` abstraction (GitHub or GitLab)
-   - Replaces: review-comment-fetcher agent
+1. **Fetch Comments Workflow** - Retrieves PR review comments via `tools-integration-ci` abstraction (GitHub or GitLab)
 
-2. **Handle Review Workflow** - Processes and responds to comments
-   - Triages each comment for appropriate action
-   - Implements code changes or generates explanations
-   - Replaces: review-comment-triager agent
+2. **Handle Review Workflow** - Processes and responds to comments, triages each for appropriate action, implements code changes or generates explanations
 
 ### Internal Dependencies
 
@@ -251,10 +246,11 @@ Note: The classification priority is code_change > ignore > explain. This means 
 
 ## Error Handling
 
-When a script returns `status: failure`:
-- **fetch-comments failure**: Report error to caller with stderr details. Do not proceed to triage.
-- **triage failure**: Log warning, skip the comment, continue processing remaining comments.
-- **CI router failure** (thread-reply, resolve-thread): Log warning, continue — replies and resolutions are best-effort.
+| Failure | Action |
+|---------|--------|
+| fetch-comments failure | Report error to caller with stderr details. Do not proceed to triage. |
+| triage failure | Log warning, skip the comment, continue processing remaining comments. |
+| CI router failure (thread-reply, resolve-thread) | Log warning, continue — replies and resolutions are best-effort. |
 
 ## Integration
 

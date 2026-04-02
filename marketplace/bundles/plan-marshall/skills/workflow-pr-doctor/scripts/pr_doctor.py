@@ -23,7 +23,7 @@ import sys
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import ErrorCode, calculate_priority, make_error, safe_main  # type: ignore[import-not-found]
+from triage_helpers import ErrorCode, calculate_priority, make_error, parse_json_arg, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # HANDOFF SCHEMA
@@ -185,6 +185,8 @@ def diagnose_pr(
     build_pass = build_status == 'success'
     if not build_pass and build_status is not None:
         for failure in build_failures:
+            if not isinstance(failure, dict):
+                failure = {}
             issues.append({
                 'category': 'build',
                 'severity': 'high',
@@ -199,6 +201,8 @@ def diagnose_pr(
         # Determine highest priority from comments
         priority_map = {'high': 0, 'medium': 0, 'low': 0}
         for comment in review_comments:
+            if not isinstance(comment, dict):
+                continue
             p = comment.get('priority', 'low')
             if p in priority_map:
                 priority_map[p] += 1
@@ -215,6 +219,8 @@ def diagnose_pr(
     if sonar_count > 0:
         severity_counts: dict[str, int] = {}
         for issue in sonar_issues:
+            if not isinstance(issue, dict):
+                continue
             sev = issue.get('severity', 'MAJOR')
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
         has_blockers = severity_counts.get('BLOCKER', 0) > 0
@@ -249,25 +255,19 @@ def cmd_diagnose(args):
     sonar_issues = None
 
     if args.build_failures:
-        try:
-            build_failures = json.loads(args.build_failures)
-        except json.JSONDecodeError as e:
-            print(serialize_toon(make_error(f'Invalid --build-failures JSON: {e}', code=ErrorCode.INVALID_INPUT)))
-            return 1
+        build_failures, rc = parse_json_arg(args.build_failures, '--build-failures')
+        if rc:
+            return rc
 
     if args.review_comments:
-        try:
-            review_comments = json.loads(args.review_comments)
-        except json.JSONDecodeError as e:
-            print(serialize_toon(make_error(f'Invalid --review-comments JSON: {e}', code=ErrorCode.INVALID_INPUT)))
-            return 1
+        review_comments, rc = parse_json_arg(args.review_comments, '--review-comments')
+        if rc:
+            return rc
 
     if args.sonar_issues:
-        try:
-            sonar_issues = json.loads(args.sonar_issues)
-        except json.JSONDecodeError as e:
-            print(serialize_toon(make_error(f'Invalid --sonar-issues JSON: {e}', code=ErrorCode.INVALID_INPUT)))
-            return 1
+        sonar_issues, rc = parse_json_arg(args.sonar_issues, '--sonar-issues')
+        if rc:
+            return rc
 
     result = diagnose_pr(
         build_status=args.build_status,
@@ -286,11 +286,9 @@ def cmd_diagnose(args):
 
 def cmd_parse_handoff(args):
     """Handle parse-handoff subcommand."""
-    try:
-        handoff = json.loads(args.handoff)
-    except json.JSONDecodeError as e:
-        print(serialize_toon(make_error(f'Invalid JSON input: {e}')))
-        return 1
+    handoff, rc = parse_json_arg(args.handoff, '--handoff')
+    if rc:
+        return rc
 
     if not isinstance(handoff, dict):
         print(serialize_toon(make_error('Handoff must be a JSON object')))
@@ -362,7 +360,7 @@ Examples:
     handoff_parser.add_argument('--handoff', required=True, help='Handoff JSON string')
     handoff_parser.add_argument('--pr', type=int, help='Override PR number')
     handoff_parser.add_argument('--checks', choices=['build', 'reviews', 'sonar', 'all'], help='Override checks')
-    handoff_parser.add_argument('--auto-fix', nargs='?', const=True, default=None, type=lambda v: v.lower() in ('true', '1', 'yes') if isinstance(v, str) else bool(v), help='Override auto-fix (flag or true/false)')
+    handoff_parser.add_argument('--auto-fix', action='store_true', default=None, help='Override auto-fix')
     handoff_parser.add_argument('--max-fix-attempts', type=int, help='Override max fix attempts')
     handoff_parser.set_defaults(func=cmd_parse_handoff)
 

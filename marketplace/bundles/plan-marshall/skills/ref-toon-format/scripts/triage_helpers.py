@@ -14,7 +14,9 @@ Usage:
 """
 
 import json
+import sys
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -83,6 +85,62 @@ def safe_main(main_fn: Callable[[], int]) -> int:
     except Exception as e:
         print(serialize_toon(make_error(f'Unexpected error: {e}')))
         return 1
+
+
+# ============================================================================
+# JSON ARGUMENT PARSING
+# ============================================================================
+
+
+def parse_json_arg(raw: str, field_name: str) -> tuple[Any, int]:
+    """Parse a JSON string from a CLI argument.
+
+    Eliminates the duplicated try/except json.loads pattern across workflow
+    scripts (pr_doctor.py, permission_web.py, etc.).
+
+    Args:
+        raw: Raw JSON string from argparse.
+        field_name: Argument name for error messages (e.g., '--issues').
+
+    Returns:
+        Tuple of (parsed_value, return_code). On success, return_code is 0.
+        On failure, the error TOON is already printed and return_code is 1;
+        the caller should ``return 1`` immediately.
+    """
+    try:
+        return json.loads(raw), 0
+    except json.JSONDecodeError as e:
+        print(serialize_toon(make_error(
+            f'Invalid {field_name} JSON: {e}', code=ErrorCode.INVALID_INPUT,
+        )))
+        return None, 1
+
+
+# ============================================================================
+# CONFIG FILE LOADING
+# ============================================================================
+
+
+def load_config_file(path: Path, description: str = 'config') -> dict[str, Any]:
+    """Load a JSON config file with standardized error handling.
+
+    Returns the parsed dict on success, or an empty dict on failure.
+    Warnings are printed to stderr so callers can proceed with defaults.
+
+    Args:
+        path: Path to the JSON config file.
+        description: Human-readable description for error messages.
+
+    Returns:
+        Parsed dict, or empty dict if loading failed.
+    """
+    try:
+        with open(path) as f:
+            result: dict[str, Any] = json.load(f)
+            return result
+    except (OSError, json.JSONDecodeError) as e:
+        print(f'WARNING: Failed to load {description} ({path}): {e}', file=sys.stderr)
+        return {}
 
 
 # ============================================================================

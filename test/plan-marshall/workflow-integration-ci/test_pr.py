@@ -514,6 +514,14 @@ class TestPRFetchComments(unittest.TestCase):
         self.assertIn('--pr', stdout)
         self.assertIn('--unresolved-only', stdout)
 
+    def test_fetch_comments_no_provider_returns_error(self):
+        """Test fetch-comments returns structured error when no provider configured."""
+        stdout, _, code = run_pr_script(['fetch-comments', '--pr', '999'])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'failure')
+        self.assertIn('error', result)
+
 
 class TestPRMain(unittest.TestCase):
     """Test pr.py main entry point."""

@@ -408,7 +408,7 @@ def get_gitignored_files(root: Path) -> set[str]:
         if result.returncode != 0:
             return set()
         return {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError):
         return set()
 
 

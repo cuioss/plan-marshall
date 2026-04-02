@@ -166,9 +166,11 @@ Display: `PASS {fixed} fixed, ⚠ {remaining} remaining, → {next_action}`
 
 ---
 
-### Workflow: Automated Review Lifecycle
+### Mode: Automated Review Lifecycle
 
-Used by phase-6-finalize when `3_automated_review == true`. This workflow handles the full CI → review → respond → resolve cycle.
+This is a distinct operating mode invoked by phase-6-finalize (when `3_automated_review == true`), not the interactive PR doctor workflow above. It handles the full CI → review → respond → resolve cycle autonomously.
+
+**Activation:** Only via phase-6-finalize handoff with `decisions.automated_review: true`. Not invoked via `/workflow-pr-doctor` directly.
 
 **Reference:** Read `standards/automated-review-lifecycle.md` for the complete step-by-step procedure, including CI wait, comment fetching, triage, thread resolution, GitHub GraphQL ID format rules, and error handling.
 

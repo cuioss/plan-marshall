@@ -523,6 +523,33 @@ class TestDetectArtifacts(unittest.TestCase):
         self.assertTrue(any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}')
 
 
+class TestAnalyzeDiffEdgeCases(unittest.TestCase):
+    """Test git-workflow.py analyze-diff edge cases."""
+
+    def test_analyze_empty_diff_file(self):
+        """Test analysis of an empty diff file returns default suggestions."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write('')
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['suggestions']['type'], 'chore')
+            self.assertIsNone(result['suggestions']['scope'])
+
+    def test_analyze_diff_only_whitespace(self):
+        """Test analysis of a diff with only whitespace."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write('   \n\n  \n')
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['suggestions']['type'], 'chore')
+
+
 class TestToonContract(unittest.TestCase):
     """Verify TOON output matches the contract documented in SKILL.md."""
 

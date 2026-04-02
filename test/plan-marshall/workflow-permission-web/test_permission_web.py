@@ -459,6 +459,36 @@ class TestApply(unittest.TestCase):
             self.assertEqual(result['error_code'], 'INVALID_INPUT')
 
 
+class TestApplyEdgeCases(unittest.TestCase):
+    """Test permission_web.py apply edge cases."""
+
+    def test_apply_invalid_json_in_file(self):
+        """Test apply with a settings file containing invalid JSON."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write('not valid json{{{')
+            f.flush()
+            stdout, _, code = run_pw_script([
+                'apply', '--file', f.name,
+                '--add', json.dumps(['example.com']),
+            ])
+            self.assertEqual(code, 1)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'failure')
+            self.assertEqual(result['error_code'], 'PARSE_ERROR')
+
+    def test_apply_invalid_json_remove(self):
+        """Test error on invalid JSON for --remove."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'settings.json'
+            path.write_text(json.dumps({'permissions': {'allow': []}}))
+            stdout, _, code = run_pw_script([
+                'apply', '--file', str(path), '--remove', 'not-json',
+            ])
+            self.assertEqual(code, 1)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'failure')
+
+
 class TestMain(unittest.TestCase):
     """Test permission_web.py main entry point."""
 

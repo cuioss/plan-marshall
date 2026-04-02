@@ -224,13 +224,14 @@ status: success
 
 ## Error Handling
 
-When a script or step returns failure:
-- **No changes to commit**: Report "No changes to commit" and return success (not an error).
-- **format-commit validation failure**: Report warnings to caller. Do not commit with invalid message.
-- **analyze-diff on missing file**: Return failure with path. Caller should generate diff first.
-- **Artifact cleanup uncertain**: Ask user via `AskUserQuestion` before deleting. Never auto-delete uncertain files.
-- **git commit failure** (hook rejection, conflict): Report error with full output. Do not retry automatically.
-- **git push failure**: Report error. Never force-push as fallback.
+| Failure | Action |
+|---------|--------|
+| No changes to commit | Report "No changes to commit" and return success (not an error). |
+| format-commit validation failure | Report warnings to caller. Do not commit with invalid message. |
+| analyze-diff on missing file | Return failure with path. Caller should generate diff first. |
+| Artifact cleanup uncertain | Ask user via `AskUserQuestion` before deleting. Never auto-delete uncertain files. |
+| git commit failure (hook rejection, conflict) | Report error with full output. Do not retry automatically. |
+| git push failure | Report error. Never force-push as fallback. |
 
 ## Standards (Load On-Demand)
 

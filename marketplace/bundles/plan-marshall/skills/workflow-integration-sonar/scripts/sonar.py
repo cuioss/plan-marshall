@@ -30,6 +30,7 @@ from triage_helpers import (  # type: ignore[import-not-found]
     calculate_priority,
     cmd_triage_batch_handler,
     cmd_triage_single,
+    load_config_file,
     safe_main,
 )
 
@@ -41,18 +42,7 @@ from triage_helpers import (  # type: ignore[import-not-found]
 _RULES_FILE = Path(__file__).parent.parent / 'standards' / 'sonar-rules.json'
 
 
-def _load_rules() -> dict[str, Any]:
-    """Load rule configuration from sonar-rules.json."""
-    try:
-        with open(_RULES_FILE) as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        # Fallback to empty config — triage will default to fix action
-        print(f'WARNING: Failed to load {_RULES_FILE}: {e}', file=sys.stderr)
-        return {}
-
-
-_RULES_CONFIG = _load_rules()
+_RULES_CONFIG = load_config_file(_RULES_FILE, 'sonar-rules.json')
 
 SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
 

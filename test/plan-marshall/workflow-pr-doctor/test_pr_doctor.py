@@ -101,7 +101,8 @@ class TestParseHandoff(unittest.TestCase):
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'failure')
-        self.assertIn('Invalid JSON', result['error'])
+        self.assertIn('Invalid', result['error'])
+        self.assertIn('JSON', result['error'])
 
     def test_handoff_not_dict(self):
         """Test error when handoff is not a dict."""
@@ -383,6 +384,69 @@ class TestDiagnose(unittest.TestCase):
         sonar_issue = next(i for i in result['issues'] if i['category'] == 'sonar')
         self.assertEqual(sonar_issue['breakdown']['CRITICAL'], 2)
         self.assertEqual(sonar_issue['breakdown']['MAJOR'], 1)
+
+
+class TestDiagnoseInputValidation(unittest.TestCase):
+    """Test pr_doctor.py diagnose input validation for malformed data."""
+
+    def test_diagnose_build_failures_missing_keys(self):
+        """Test diagnose handles build failures without expected keys."""
+        failures = json.dumps([{'unexpected_key': 'value'}])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-status', 'failure',
+            '--build-failures', failures,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        # Should use defaults for missing keys
+        build_issue = next(i for i in result['issues'] if i['category'] == 'build')
+        self.assertEqual(build_issue['step'], 'unknown')
+        self.assertEqual(build_issue['detail'], 'Build failure')
+
+    def test_diagnose_review_comments_non_dict_entries(self):
+        """Test diagnose handles non-dict entries in review comments array."""
+        comments = json.dumps([
+            {'priority': 'high'},
+            'not-a-dict',
+            42,
+        ])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--review-comments', comments,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['review_comments'], 3)
+
+    def test_diagnose_sonar_issues_non_dict_entries(self):
+        """Test diagnose handles non-dict entries in sonar issues array."""
+        issues = json.dumps([
+            {'severity': 'MAJOR'},
+            'invalid-entry',
+        ])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--sonar-issues', issues,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['sonar_issues'], 2)
+
+    def test_diagnose_build_failures_non_dict_entries(self):
+        """Test diagnose handles non-dict entries in build failures array."""
+        failures = json.dumps(['not-a-dict', 42])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-status', 'failure',
+            '--build-failures', failures,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        # Both non-dict entries should get default values
+        for issue in result['issues']:
+            if issue['category'] == 'build':
+                self.assertEqual(issue['step'], 'unknown')
 
 
 class TestMain(unittest.TestCase):

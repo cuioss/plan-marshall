@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import ErrorCode, make_error, safe_main  # type: ignore[import-not-found]
+from triage_helpers import ErrorCode, load_config_file, make_error, parse_json_arg, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # DOMAIN KNOWLEDGE (loaded from domain-lists.json)
@@ -36,17 +36,7 @@ from triage_helpers import ErrorCode, make_error, safe_main  # type: ignore[impo
 _DOMAIN_LISTS_FILE = Path(__file__).parent.parent / 'standards' / 'domain-lists.json'
 
 
-def _load_domain_lists() -> dict[str, Any]:
-    """Load domain lists from domain-lists.json config file."""
-    try:
-        with open(_DOMAIN_LISTS_FILE) as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        print(f'WARNING: Failed to load {_DOMAIN_LISTS_FILE}: {e}', file=sys.stderr)
-        return {}
-
-
-_DOMAIN_CONFIG = _load_domain_lists()
+_DOMAIN_CONFIG = load_config_file(_DOMAIN_LISTS_FILE, 'domain-lists.json')
 
 # Domains from trusted-domains.md — fully trusted, safe to recommend for global
 MAJOR_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('major_domains', []))
@@ -54,8 +44,9 @@ MAJOR_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('major_domains', []))
 # High-reach developer platforms — commonly needed across projects
 HIGH_REACH_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('high_reach_domains', []))
 
-# Red flags in domain names
-RED_FLAG_PATTERNS: list[str] = _DOMAIN_CONFIG.get('red_flag_patterns', [])
+# Red flags in domain names — pre-compiled for performance
+_RED_FLAG_RAW: list[str] = _DOMAIN_CONFIG.get('red_flag_patterns', [])
+_RED_FLAG_COMPILED: list[re.Pattern] = [re.compile(p) for p in _RED_FLAG_RAW]
 
 
 # ============================================================================
@@ -121,12 +112,12 @@ def categorize_domain(domain: str) -> str:
 
 
 def check_red_flags(domain: str) -> list[str]:
-    """Check domain for red flag patterns. Returns list of matched flags."""
+    """Check domain for red flag patterns. Returns list of matched pattern strings."""
     flags = []
     clean = domain.lower()
-    for pattern in RED_FLAG_PATTERNS:
-        if re.search(pattern, clean):
-            flags.append(pattern)
+    for raw, compiled in zip(_RED_FLAG_RAW, _RED_FLAG_COMPILED):
+        if compiled.search(clean):
+            flags.append(raw)
     return flags
 
 
@@ -335,11 +326,9 @@ def cmd_analyze(args):
 
 def cmd_categorize(args):
     """Handle categorize subcommand."""
-    try:
-        domains = json.loads(args.domains)
-    except json.JSONDecodeError as e:
-        print(serialize_toon(make_error(f'Invalid JSON: {e}')))
-        return 1
+    domains, rc = parse_json_arg(args.domains, '--domains')
+    if rc:
+        return rc
 
     if not isinstance(domains, list):
         print(serialize_toon(make_error('Input must be a JSON array')))
@@ -444,18 +433,14 @@ def cmd_apply(args):
     remove_domains: list[str] = []
 
     if args.add:
-        try:
-            add_domains = json.loads(args.add)
-        except json.JSONDecodeError as e:
-            print(serialize_toon(make_error(f'Invalid --add JSON: {e}', code=ErrorCode.INVALID_INPUT)))
-            return 1
+        add_domains, rc = parse_json_arg(args.add, '--add')
+        if rc:
+            return rc
 
     if args.remove:
-        try:
-            remove_domains = json.loads(args.remove)
-        except json.JSONDecodeError as e:
-            print(serialize_toon(make_error(f'Invalid --remove JSON: {e}', code=ErrorCode.INVALID_INPUT)))
-            return 1
+        remove_domains, rc = parse_json_arg(args.remove, '--remove')
+        if rc:
+            return rc
 
     if not add_domains and not remove_domains:
         print(serialize_toon(make_error('At least one of --add or --remove is required', code=ErrorCode.INVALID_INPUT)))

@@ -321,6 +321,28 @@ class TestToonContract(unittest.TestCase):
             self.assertIn(field, summary, f'Missing summary.{field}')
 
 
+class TestSonarConfigLoading(unittest.TestCase):
+    """Test sonar.py config file loading edge cases."""
+
+    def test_triage_works_with_minimal_issue_fields(self):
+        """Test triage handles issue with only partial fields (defaults applied)."""
+        issue = {'key': 'MINIMAL-1'}
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['action'], 'fix')
+        self.assertEqual(result['issue_key'], 'MINIMAL-1')
+
+    def test_triage_empty_issue_object(self):
+        """Test triage handles completely empty issue dict."""
+        stdout, _, code = run_sonar_script(['triage', '--issue', '{}'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['issue_key'], 'unknown')
+
+
 class TestSonarMain(unittest.TestCase):
     """Test sonar.py main entry point."""
 

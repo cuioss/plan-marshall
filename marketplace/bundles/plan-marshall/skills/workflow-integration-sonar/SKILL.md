@@ -33,16 +33,11 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 ## What This Skill Provides
 
-### Workflows (Absorbs 2 Agents)
+### Workflows
 
-1. **Fetch Issues (MCP Delegation)** - Constructs and executes MCP tool call for Sonar issue retrieval
-   - Assembles parameters inline (no script needed) and calls the SonarQube MCP tool
-   - Replaces: sonar-issue-fetcher agent
+1. **Fetch Issues (MCP Delegation)** - Constructs and executes MCP tool call for Sonar issue retrieval. Assembles parameters inline (no script needed) and calls the SonarQube MCP tool.
 
-2. **Fix Issues Workflow** - Processes and resolves issues
-   - Triages each issue for fix vs suppress
-   - Implements fixes or adds suppressions
-   - Replaces: sonar-issue-triager agent
+2. **Fix Issues Workflow** - Processes and resolves issues. Triages each issue for fix vs suppress, implements fixes or adds suppressions.
 
 ## When to Activate This Skill
 
@@ -272,13 +267,14 @@ The script triage is rule-based and handles common Sonar rules well, but novel o
 
 ## Error Handling
 
-When a script or step returns failure:
-- **MCP tool failure**: Report error. Verify SonarQube MCP server is connected and project key is correct.
-- **MCP tool returns empty**: No issues found — report success with zero counts.
-- **triage failure** (invalid JSON): Log warning, skip the issue, continue processing remaining.
-- **Fix implementation failure**: Report which file/line failed. Do not suppress as fallback — ask the caller.
-- **MCP status change failure**: Log warning, continue — marking resolved is best-effort.
-- **Build verification failure after fixes**: Report failing tests/compilation. Do not commit broken fixes.
+| Failure | Action |
+|---------|--------|
+| MCP tool failure | Report error. Verify SonarQube MCP server is connected and project key is correct. |
+| MCP tool returns empty | No issues found — report success with zero counts. |
+| triage failure (invalid JSON) | Log warning, skip the issue, continue processing remaining. |
+| Fix implementation failure | Report which file/line failed. Do not suppress as fallback — ask the caller. |
+| MCP status change failure | Log warning, continue — marking resolved is best-effort. |
+| Build verification failure after fixes | Report failing tests/compilation. Do not commit broken fixes. |
 
 ## Integration
 
