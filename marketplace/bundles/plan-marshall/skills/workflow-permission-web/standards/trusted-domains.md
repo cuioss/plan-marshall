@@ -233,6 +233,8 @@ When reviewing WebFetch permission requests:
 
 ## Maintenance Procedures
 
+> **Note:** This list is manually maintained. Domain status can change (compromises, shutdowns, ownership transfers). The `permission_web.py categorize` command uses `domain-lists.json` as its source of truth — edits to this document are informational only. Update `domain-lists.json` to change categorization behavior.
+
 ### Adding New Domains
 
 To add a domain to this trusted list:

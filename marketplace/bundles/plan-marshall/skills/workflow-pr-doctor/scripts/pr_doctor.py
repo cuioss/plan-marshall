@@ -88,6 +88,7 @@ def merge_handoff_with_params(
     checks: str | None = None,
     auto_fix: bool | None = None,
     max_fix_attempts: int | None = None,
+    wait: bool | None = None,
 ) -> dict[str, Any]:
     """Merge handoff structure with explicit parameters. Explicit params take precedence."""
     artifacts = handoff.get('artifacts', {})
@@ -101,7 +102,7 @@ def merge_handoff_with_params(
         'plan_id': artifacts.get('plan_id'),
         'checks': checks if checks is not None else decisions.get('checks', 'all'),
         'auto_fix': auto_fix if auto_fix is not None else decisions.get('auto_fix', False),
-        'wait': decisions.get('wait', True),
+        'wait': wait if wait is not None else decisions.get('wait', True),
         'skip_sonar': decisions.get('skip_sonar', False),
         'max_fix_attempts': (
             max_fix_attempts if max_fix_attempts is not None
@@ -186,6 +187,7 @@ def diagnose_pr(
     if not build_pass and build_status is not None:
         for failure in build_failures:
             if not isinstance(failure, dict):
+                print(f'WARNING: non-dict entry in build_failures: {type(failure).__name__}', file=sys.stderr)
                 failure = {}
             issues.append({
                 'category': 'build',
@@ -297,6 +299,13 @@ def cmd_parse_handoff(args):
     # Validate
     warnings = validate_handoff(handoff)
 
+    # Resolve wait flag: --no-wait takes precedence, then --wait, then handoff
+    wait_override = None
+    if getattr(args, 'no_wait', False):
+        wait_override = False
+    elif getattr(args, 'wait', None) is not None:
+        wait_override = args.wait
+
     # Merge with explicit params
     merged = merge_handoff_with_params(
         handoff,
@@ -304,6 +313,7 @@ def cmd_parse_handoff(args):
         checks=args.checks,
         auto_fix=args.auto_fix,
         max_fix_attempts=args.max_fix_attempts,
+        wait=wait_override,
     )
 
     result: dict[str, Any] = {
@@ -361,6 +371,8 @@ Examples:
     handoff_parser.add_argument('--pr', type=int, help='Override PR number')
     handoff_parser.add_argument('--checks', choices=['build', 'reviews', 'sonar', 'all'], help='Override checks')
     handoff_parser.add_argument('--auto-fix', action='store_true', default=None, help='Override auto-fix')
+    handoff_parser.add_argument('--wait', action='store_true', default=None, help='Override wait for CI checks')
+    handoff_parser.add_argument('--no-wait', action='store_true', default=False, help='Skip waiting for CI checks')
     handoff_parser.add_argument('--max-fix-attempts', type=int, help='Override max fix attempts')
     handoff_parser.set_defaults(func=cmd_parse_handoff)
 

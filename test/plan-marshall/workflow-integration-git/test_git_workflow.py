@@ -502,6 +502,22 @@ class TestDetectArtifacts(unittest.TestCase):
         self.assertFalse(any('.class' in f for f in safe_files), f'.class should be excluded: {safe_files}')
         self.assertTrue(any('.temp' in f for f in safe_files), f'.temp should be present: {safe_files}')
 
+    def test_skips_git_directory(self):
+        """Test that .git/ directory contents are excluded from results."""
+        # Create a fake .git directory with artifact-like files
+        self._create_file('.git/objects/pack/pack-abc.class')
+        self._create_file('.git/hooks/pre-commit.pyc')
+        self._create_file('src/real.temp')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        # .git files should be excluded, only src/real.temp in results
+        all_files = result['safe'] + result['uncertain']
+        for f in all_files:
+            self.assertFalse(f.startswith('.git/'), f'.git file should be excluded: {f}')
+        self.assertTrue(any('real.temp' in f for f in result['safe']))
+
     def test_no_gitignore_flag_includes_all(self):
         """Test that --no-gitignore includes gitignored files."""
         import subprocess as sp
@@ -521,6 +537,50 @@ class TestDetectArtifacts(unittest.TestCase):
         result = parse_toon(stdout)
         safe_files = result['safe']
         self.assertTrue(any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}')
+
+
+class TestWrapText(unittest.TestCase):
+    """Test wrap_text function directly."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Import wrap_text for direct testing."""
+        from importlib import import_module
+        mod = import_module('git-workflow')
+        cls.wrap_text = staticmethod(mod.wrap_text)
+
+    def test_short_line_unchanged(self):
+        """Lines within width are not wrapped."""
+        self.assertEqual(self.wrap_text('short line', 72), 'short line')
+
+    def test_long_line_wrapped(self):
+        """Lines exceeding width are wrapped at word boundaries."""
+        text = 'a ' * 40  # 80 chars
+        result = self.wrap_text(text.strip(), 72)
+        for line in result.split('\n'):
+            self.assertLessEqual(len(line), 72)
+
+    def test_preserves_bullet_indentation(self):
+        """Wrapped lines preserve leading indentation."""
+        text = '  - ' + 'word ' * 20
+        result = self.wrap_text(text.strip(), 72)
+        # First line has no indent since we stripped, but indented input does
+        text_indented = '  - ' + 'word ' * 20
+        result_indented = self.wrap_text(text_indented, 72)
+        for line in result_indented.split('\n'):
+            self.assertTrue(line.startswith('  '), f'Lost indent: {line!r}')
+
+    def test_deep_indent_not_wrapped(self):
+        """Lines with >52 chars indent are kept as-is (effective_width < 20)."""
+        text = ' ' * 55 + 'deeply indented content that should not be wrapped'
+        result = self.wrap_text(text, 72)
+        self.assertEqual(result, text)
+
+    def test_multiline_preserves_paragraphs(self):
+        """Multiple paragraphs separated by newlines are handled independently."""
+        text = 'First paragraph.\nSecond paragraph.'
+        result = self.wrap_text(text, 72)
+        self.assertEqual(result, text)
 
 
 class TestAnalyzeDiffEdgeCases(unittest.TestCase):

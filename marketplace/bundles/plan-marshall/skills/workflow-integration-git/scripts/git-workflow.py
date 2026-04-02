@@ -39,7 +39,6 @@ from triage_helpers import ErrorCode, make_error, safe_main  # type: ignore[impo
 # ============================================================================
 
 VALID_TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'ci']
-TYPE_PRIORITY = {t: i for i, t in enumerate(VALID_TYPES)}
 
 
 # ============================================================================
@@ -279,7 +278,7 @@ def analyze_diff(diff_content: str) -> dict:
                 suggestions['scope'] = path[0]
                 scope_found = True
 
-    # Detect type
+    # Detect type — count content lines only (exclude diff headers like +++ and ---)
     additions = len(re.findall(r'^\+[^+]', diff_content, re.MULTILINE))
     deletions = len(re.findall(r'^-[^-]', diff_content, re.MULTILINE))
 
@@ -413,11 +412,14 @@ def get_gitignored_files(root: Path) -> set[str]:
 
 
 def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
-    """Compile glob-style patterns into regex for single-pass matching."""
+    """Compile glob-style patterns into regex for single-pass matching.
+
+    Uses a NUL-byte placeholder to prevent double-replacement when converting
+    ** to .* and then * to [^/]* (which would corrupt the .* from **).
+    """
     compiled = []
     for pattern in patterns:
         # Convert glob to regex: ** → .*, * → [^/]*, . → \.
-        # Use placeholder to prevent ** → .* → .[^/]* double-replacement
         regex = pattern.replace('.', r'\.')
         regex = regex.replace('**/', '(.+/)?')
         regex = regex.replace('**', '\x00STAR\x00')
@@ -451,6 +453,9 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
         if not path.is_file():
             continue
         rel = str(path.relative_to(root))
+        # Skip .git internals — large and never committable
+        if rel.startswith('.git/') or rel.startswith('.git\\'):
+            continue
         if rel in ignored:
             continue
 

@@ -18,6 +18,7 @@ Analyzes WebFetch domains across global and project settings, researches domains
 - Do not skip security research for unknown domains
 
 **Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Always research unknown domains before categorizing them
 - Prefer project-local permissions over global when appropriate
 - All user interactions use `AskUserQuestion` tool with proper YAML structure
@@ -67,6 +68,8 @@ The script categorizes domains into: universal (`*`), major (from `standards/dom
 The analysis script output includes `duplicates` (domains in both global and local) and `redundant` (wildcard-covered or subdomain-covered domains). Review these in the script output.
 
 ### Step 4: Research Unknown Domains
+
+> **Prerequisite:** This step requires `WebSearch` tool access. If unavailable, skip research and present unknown domains to the user for manual assessment.
 
 For each domain in the script's `unknown` category:
 
@@ -137,7 +140,22 @@ Recommendations:
 
 ### Step 7: Apply Recommendations (Optional)
 
-Ask the user via `AskUserQuestion` how to proceed: "Apply all", "Review each change", or "Skip".
+Ask the user via `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "How would you like to apply the recommendations?"
+      header: "Apply Changes"
+      options:
+        - label: "Apply all"
+          description: "Apply all recommended changes automatically"
+        - label: "Review each change"
+          description: "Review and confirm each change individually"
+        - label: "Skip"
+          description: "Do not apply changes"
+      multiSelect: false
+```
 
 If applying, use the `apply` subcommand for deterministic modification:
 
@@ -176,13 +194,14 @@ Final State:
 
 ## Statistics Tracking
 
-Track throughout workflow:
-- `domains_analyzed`: Total unique domains discovered and analyzed
-- `permissions_added`: Count of new permissions added to settings
-- `permissions_removed`: Count of redundant/duplicate permissions removed
-- `security_checks_performed`: Count of unknown domains researched
-- `files_read`: Count of settings files successfully read
-- `files_modified`: Count of settings files successfully updated
+The following counters must be maintained by the LLM during workflow execution (the scripts report per-step counts but do not aggregate across steps):
+
+- `domains_analyzed`: Total unique domains discovered and analyzed (from `analyze` output)
+- `permissions_added`: Sum of `added` counts from `apply` calls
+- `permissions_removed`: Sum of `removed` counts from `apply` calls
+- `security_checks_performed`: Count of unknown domains researched via WebSearch
+- `files_read`: Count of settings files successfully read (from `analyze` output)
+- `files_modified`: Count of settings files successfully updated (from `apply` calls)
 
 ## Scripts
 
@@ -225,6 +244,16 @@ final_domains[N]:
   - github.com
 status: success
 ```
+
+## Error Handling
+
+| Failure | Action |
+|---------|--------|
+| Settings file not found | Report as missing in statistics. Ask user via `AskUserQuestion` (create defaults, skip, abort). |
+| Settings file invalid JSON | Return failure with parse error. Do not proceed with that file. |
+| WebSearch unavailable | Skip domain research. Present unknowns to user for manual assessment. |
+| Apply returns failure | Ask user (retry, skip file, abort). Track in files_modified counter. |
+| Red flag domain detected | Flag for review. Never auto-approve suspicious domains. |
 
 ## Rule Configuration
 

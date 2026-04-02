@@ -36,6 +36,8 @@ Security evaluation criteria and risk indicators for assessing domain trustworth
 
 ## Domain Research Methodology
 
+> **Automation note:** In the `workflow-permission-web` skill, unknown domain research is performed via `WebSearch` tool, not by manually visiting each URL listed below. The steps below describe the assessment criteria and information sources — the LLM should use `WebSearch` queries to gather equivalent information (e.g., `WebSearch: "example.com reputation security"`).
+
 ### Step 1: Basic Verification
 
 ```

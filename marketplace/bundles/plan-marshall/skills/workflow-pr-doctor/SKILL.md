@@ -18,6 +18,7 @@ Diagnose and fix pull request issues with parameterized checks.
 - Do not resolve review comments without addressing the reviewer's concern
 
 **Constraints:**
+- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Fixes require build verification before committing
 - Review comment responses must explain the fix or provide rationale for disagreement
 - All user interactions use `AskUserQuestion` tool with proper YAML structure
@@ -41,7 +42,10 @@ Load required skills:
 Skill: plan-marshall:workflow-integration-ci
 Skill: plan-marshall:workflow-integration-sonar
 Skill: plan-marshall:workflow-integration-git
+Skill: plan-marshall:manage-architecture
 ```
+
+The `manage-architecture` skill is needed for Step 5 (BUILD_FAILURE) to resolve build commands via the architecture API.
 
 ## Workflow
 
@@ -150,25 +154,37 @@ Based on checks parameter:
    ```
    Use `architecture resolve` to get the correct build executable, then run verify.
 
-**REVIEW_COMMENTS**: Use workflow-integration-ci (Handle Review). For each: triage → fix/explain/acknowledge.
+**REVIEW_COMMENTS**: Delegate to workflow-integration-ci Workflow 2 (Handle Review). The CI skill handles: fetching comments, batch triage, and classifying actions. The pr-doctor then processes each action (code_change → Edit files, explain → reply, ignore → resolve thread) and commits via the git skill.
 
-**SONAR_QUALITY**: Use workflow-integration-sonar (Fix Issues). For each: triage → fix/suppress (with approval if not auto-fix).
+**SONAR_QUALITY**: Delegate to workflow-integration-sonar Workflow 2 (Fix Issues). The Sonar skill handles: batch triage and fix-vs-suppress classification. The pr-doctor then executes each action (fix → Edit files, suppress → add NOSONAR comment) and commits via the git skill.
 
 **Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`), starting at 0. Increment after each fix → verify cycle. After reaching `max-fix-attempts` (default: 3) for a category, stop that category and report remaining issues to the user rather than looping indefinitely.
 
 ### Step 6: Verify and Commit
 
-After fixes: Verify build, commit via git workflow, push to PR branch.
+After fixes:
+1. Verify build passes (via architecture API)
+2. Commit via workflow-integration-git skill (which includes artifact cleanup in Step 3)
+3. Push to PR branch
 
 ### Step 7: Generate Summary
 
-Display: `PASS {fixed} fixed, ⚠ {remaining} remaining, → {next_action}`
+Display a final diagnostic summary:
+
+```
+PR #{pr} Summary
+  Fixed: {count}
+  Remaining: {count}
+  Next action: {description}
+```
 
 ---
 
 ### Mode: Automated Review Lifecycle
 
-This is a distinct operating mode invoked by phase-6-finalize (when `3_automated_review == true`), not the interactive PR doctor workflow above. It handles the full CI → review → respond → resolve cycle autonomously.
+> **Note:** This is a distinct operating mode with its own I/O contract, separate from the interactive PR doctor workflow above. It exists in this skill because it shares the same CI/Sonar/Git dependencies, but could be extracted to a standalone skill if complexity grows.
+
+This mode is invoked by phase-6-finalize (when `3_automated_review == true`), not the interactive PR doctor workflow above. It handles the full CI → review → respond → resolve cycle autonomously.
 
 **Activation:** Only via phase-6-finalize handoff with `decisions.automated_review: true`. Not invoked via `/workflow-pr-doctor` directly.
 
@@ -277,7 +293,7 @@ Explicit CLI parameters always take precedence over handoff values.
 
 **Auto-fix without prompts:**
 ```
-/workflow-pr-doctor checks=all auto-fix
+/workflow-pr-doctor checks=all auto-fix=true
 ```
 
 **Skip CI wait, fix current PR:**
@@ -291,9 +307,15 @@ Delegates to skills:
 ```
 /workflow-pr-doctor (orchestrator)
   ├─> workflow-integration-ci skill (Fetch Comments, Handle Review)
+  │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
   ├─> workflow-integration-sonar skill (Fetch Issues, Fix Issues)
-  └─> workflow-integration-git skill (Commit workflow)
+  │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
+  ├─> workflow-integration-git skill (Commit workflow)
+  │     └─> triage_helpers (ref-toon-format) — shared error handling
+  └─> manage-architecture skill (Build command resolution)
 ```
+
+All workflow scripts share `triage_helpers` from `ref-toon-format` for JSON parsing, TOON serialization, error codes, and batch triage processing.
 
 ## Error Handling
 

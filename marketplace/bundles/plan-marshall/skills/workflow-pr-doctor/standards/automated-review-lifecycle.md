@@ -60,6 +60,10 @@ For single-comment edge cases, `triage --comment '{comment_json}'` is also avail
 
 ### Step 5: Process by Action Type
 
+**ID field mapping** (critical — using the wrong ID causes silent failures):
+- `{comment_id}` → the comment's `id` field (e.g., `PRRC_kwDO...`) — used for `thread-reply --thread-id`
+- `{thread_id}` → the comment's `thread_id` field (e.g., `PRRT_kwDO...`) — used for `resolve-thread --thread-id`
+
 **code_change** (requires implementation):
 - Persist as Q-Gate finding:
   ```bash
@@ -68,7 +72,7 @@ For single-comment edge cases, `triage --comment '{comment_json}'` is also avail
     --type pr-comment --title "{comment summary}" \
     --detail "{comment body} at {path}:{line}"
   ```
-- Reply acknowledging:
+- Reply acknowledging (use comment's `id` field):
   ```bash
   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
       --pr-number {pr_number} --thread-id {comment_id} --body "Acknowledged — creating fix task."
@@ -76,19 +80,19 @@ For single-comment edge cases, `triage --comment '{comment_json}'` is also avail
 
 **explain** (reply with explanation):
 - Generate explanation based on code context
-- Reply to thread:
+- Reply to thread (use comment's `id` field):
   ```bash
   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
       --pr-number {pr_number} --thread-id {comment_id} --body "{explanation}"
   ```
-- Resolve thread:
+- Resolve thread (use comment's `thread_id` field):
   ```bash
   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
       --pr-number {pr_number} --thread-id {thread_id}
   ```
 
 **ignore** (dismiss):
-- Resolve thread:
+- Resolve thread (use comment's `thread_id` field):
   ```bash
   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
       --pr-number {pr_number} --thread-id {thread_id}

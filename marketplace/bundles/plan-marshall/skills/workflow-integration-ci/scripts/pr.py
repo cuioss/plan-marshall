@@ -247,9 +247,12 @@ def classify_comment(body: str, context: str | None = None) -> tuple[str, str, s
         if any(ref.lower().rstrip('.,;:)') in context_lower for ref in code_refs):
             return 'code_change', 'medium', 'Comment references code identifiers visible in context'
 
-    # Default: review comment without clear action signal
+    # Default: review comment without clear action signal.
+    # Longer comments (>100 chars) likely contain substantive feedback that
+    # warrants attention even without keyword matches. Short comments without
+    # recognizable patterns are typically drive-by acknowledgments.
     if len(body) > 100:
-        return 'code_change', 'low', 'Substantial review comment requires attention'
+        return 'code_change', 'low', 'Substantial review comment (>100 chars) requires attention'
 
     return 'ignore', 'none', 'Brief comment with no actionable content'
 
@@ -259,22 +262,24 @@ def suggest_implementation(action: str, body: str, path: str | None, line: int |
     if action == 'ignore':
         return None
 
+    location = f'{path}:{line}' if path and line else (path or 'unspecified location')
+
     if action == 'explain':
-        return f'Reply to comment at {path}:{line} with explanation of design decision'
+        return f'Reply to comment at {location} with explanation of design decision'
 
     # For code_change, try to extract specific action
     body_lower = body.lower()
 
     if 'add' in body_lower:
-        return f'Add requested code/functionality at {path}:{line}'
+        return f'Add requested code/functionality at {location}'
     elif 'remove' in body_lower or 'delete' in body_lower:
-        return f'Remove indicated code at {path}:{line}'
+        return f'Remove indicated code at {location}'
     elif 'rename' in body_lower:
-        return f'Rename as suggested at {path}:{line}'
+        return f'Rename as suggested at {location}'
     elif 'fix' in body_lower:
-        return f'Fix the issue indicated at {path}:{line}'
+        return f'Fix the issue indicated at {location}'
     else:
-        return f'Review and address comment at {path}:{line}'
+        return f'Review and address comment at {location}'
 
 
 def triage_comment(comment: dict) -> dict:

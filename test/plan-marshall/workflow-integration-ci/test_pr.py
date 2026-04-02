@@ -425,6 +425,75 @@ class TestPRTriageContext(unittest.TestCase):
         self.assertEqual(result['action'], 'code_change')
 
 
+class TestClassifyCommentDefaults(unittest.TestCase):
+    """Test the 100-char threshold default behavior in classify_comment."""
+
+    def test_long_comment_without_keywords_is_code_change(self):
+        """Comments >100 chars without keyword matches default to code_change/low."""
+        comment = {
+            'id': 'DEF1',
+            'body': 'I think this entire approach needs to be reconsidered because the current implementation '
+                    'does not align well with the overall architecture of the project',
+            'path': 'src/Design.java',
+            'line': 50,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'code_change')
+        self.assertEqual(result['priority'], 'low')
+        self.assertIn('>100 chars', result['reason'])
+
+    def test_short_comment_without_keywords_is_ignore(self):
+        """Comments <=100 chars without keyword matches default to ignore/none."""
+        comment = {
+            'id': 'DEF2',
+            'body': 'Interesting approach here',
+            'path': 'src/Design.java',
+            'line': 50,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'ignore')
+        self.assertEqual(result['priority'], 'none')
+
+
+class TestSuggestImplementationLocation(unittest.TestCase):
+    """Test suggest_implementation handles None path/line gracefully."""
+
+    def test_no_path_no_line(self):
+        """Suggestion should not contain None:None when path/line are absent."""
+        comment = {
+            'id': 'LOC1',
+            'body': 'Please fix this bug in the codebase',
+            'path': None,
+            'line': None,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertNotIn('None', result.get('suggested_implementation', ''))
+
+    def test_path_without_line(self):
+        """Suggestion should use path alone when line is absent."""
+        comment = {
+            'id': 'LOC2',
+            'body': 'Please add error handling',
+            'path': 'src/Service.java',
+            'line': None,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertIn('src/Service.java', result.get('suggested_implementation', ''))
+        self.assertNotIn('None', result.get('suggested_implementation', ''))
+
+
 class TestToonContract(unittest.TestCase):
     """Verify TOON output matches the contract documented in SKILL.md."""
 

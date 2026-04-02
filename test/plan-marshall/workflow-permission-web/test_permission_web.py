@@ -214,6 +214,55 @@ class TestAnalyze(unittest.TestCase):
             self.assertIn('research', actions)
 
 
+class TestFindRedundant(unittest.TestCase):
+    """Test find_redundant for subdomain and www. detection."""
+
+    def test_subdomain_redundancy(self):
+        """Test that api.github.com is redundant when github.com is present."""
+        from permission_web import find_redundant  # type: ignore[import-not-found]
+
+        result = find_redundant(['github.com', 'api.github.com', 'docs.oracle.com'])
+        self.assertIn('api.github.com', result['subdomain_redundant'])
+        self.assertNotIn('github.com', result['subdomain_redundant'])
+        self.assertNotIn('docs.oracle.com', result['subdomain_redundant'])
+
+    def test_www_prefix_redundancy(self):
+        """Test that www.github.com is redundant when github.com is present."""
+        from permission_web import find_redundant  # type: ignore[import-not-found]
+
+        result = find_redundant(['github.com', 'www.github.com'])
+        self.assertIn('www.github.com', result['subdomain_redundant'])
+        self.assertNotIn('github.com', result['subdomain_redundant'])
+
+    def test_no_redundancy_for_different_domains(self):
+        """Test that unrelated domains are not flagged as redundant."""
+        from permission_web import find_redundant  # type: ignore[import-not-found]
+
+        result = find_redundant(['github.com', 'gitlab.com'])
+        self.assertEqual(result['subdomain_redundant'], [])
+
+    def test_universal_wildcard_makes_all_redundant(self):
+        """Test that wildcard makes all specific domains redundant."""
+        from permission_web import find_redundant  # type: ignore[import-not-found]
+
+        result = find_redundant(['*', 'github.com', 'docs.oracle.com'])
+        self.assertEqual(sorted(result['universal_redundant']), ['docs.oracle.com', 'github.com'])
+
+
+class TestAnalyzeMissingLocalFile(unittest.TestCase):
+    """Test analyze with missing local file specifically."""
+
+    def test_analyze_missing_local_file(self):
+        """Test analysis handles missing local file gracefully."""
+        stdout, _, code = run_pw_script([
+            'analyze', '--local-file', '/nonexistent/local-settings.json',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(result['statistics'].get('local_missing'))
+
+
 class TestAnalyzeExtractDomains(unittest.TestCase):
     """Test domain extraction from settings structures."""
 

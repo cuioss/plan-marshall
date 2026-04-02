@@ -4,7 +4,7 @@ description: PR review response workflow - fetch comments, triage, and respond t
 user-invocable: false
 ---
 
-# PR Workflow Skill (Provider-Agnostic)
+# CI Integration Workflow Skill (Provider-Agnostic)
 
 Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
 
@@ -29,24 +29,15 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 | `pr` | optional | PR number (auto-detects current branch's PR if omitted) |
 | `unresolved-only` | optional | Only return unresolved comments (fetch-comments) |
 
-## What This Skill Provides
-
-### Workflows
-
-1. **Fetch Comments Workflow** - Retrieves PR review comments via `tools-integration-ci` abstraction (GitHub or GitLab)
-
-2. **Handle Review Workflow** - Processes and responds to comments, triages each for appropriate action, implements code changes or generates explanations
-
 ### Internal Dependencies
 
-The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `tools-integration-ci` (via PYTHONPATH). This avoids subprocess overhead but creates a compile-time dependency on those modules' internal API (`get_provider()`, `view_pr_data()`, `fetch_pr_comments_data()`). If `tools-integration-ci` refactors these functions, `pr.py` must be updated in lockstep.
+The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `tools-integration-ci` (via PYTHONPATH). This avoids subprocess overhead but creates a compile-time dependency on those modules' internal API (`get_provider()`, `view_pr_data()`, `fetch_pr_comments_data()`). If `tools-integration-ci` refactors these functions, `pr.py` must be updated in lockstep. The provider contract is validated at import time — `_get_provider_module()` checks for required functions and returns `None` on mismatch.
 
-## When to Activate This Skill
+> **Design note:** This skill uses direct Python imports for provider abstraction (code-level coupling), unlike `workflow-integration-sonar` and `workflow-permission-web` which use data-driven JSON config files. The import approach was chosen because CI provider logic requires function-level abstraction (GitHub vs GitLab APIs), not just data-driven classification.
 
-- Responding to PR review comments
-- Processing review feedback
-- Implementing reviewer-requested changes
-- Generating explanations for reviewers
+### Shared Infrastructure
+
+Triage subcommands (`triage`, `triage-batch`) delegate to `triage_helpers` from `ref-toon-format` for JSON parsing, error handling, and batch processing. See `ref-toon-format/scripts/triage_helpers.py` for the shared API.
 
 ## Workflows
 
@@ -75,15 +66,20 @@ The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `
 
    Output (TOON format):
    ```toon
-   status: success
-   operation: pr_comments
-   provider: github|gitlab
    pr_number: 123
-   total: N
-   unresolved: N
-
-   comments[N]{id,thread_id,author,body,path,line,resolved,created_at}:
-   c1	PRRT_abc	alice	Fix security issue	src/Auth.java	42	false	2025-01-15T10:30:00Z
+   provider: github|gitlab
+   total_comments: N
+   unresolved_count: N
+   comments:
+     - id: PRRC_abc
+       thread_id: PRRT_abc
+       author: alice
+       body: Fix security issue
+       path: src/Auth.java
+       line: 42
+       resolved: false
+       created_at: 2025-01-15T10:30:00Z
+   status: success
    ```
 
 2. **Return Comment List**

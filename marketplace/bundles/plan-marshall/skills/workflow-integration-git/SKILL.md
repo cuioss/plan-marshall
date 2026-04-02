@@ -22,18 +22,9 @@ Provides git commit workflow following conventional commits specification. Inclu
 - Commit messages must follow conventional commits format
 - Push only when explicitly requested via parameters
 
-## What This Skill Provides
+### Shared Infrastructure
 
-### Workflows
-
-1. **Commit Changes Workflow** - Full commit lifecycle
-   - Artifact cleanup, staging, message generation, commit, optional push
-
-### Capabilities
-
-- Artifact detection and cleanup
-- Commit message generation following conventional commits
-- Optional push to remote
+Error handling and TOON serialization delegate to `triage_helpers` from `ref-toon-format`. See `ref-toon-format/scripts/triage_helpers.py` for the shared API.
 
 ## Parameters
 
@@ -45,12 +36,6 @@ Provides git commit workflow following conventional commits specification. Inclu
 ### Commit Standards
 
 Format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples.
-
-## When to Activate This Skill
-
-- Committing changes to repository
-- Generating commit messages from diffs
-- Cleaning build artifacts before commit
 
 ## Workflow: Commit Changes
 
@@ -91,16 +76,19 @@ If custom message provided:
 - Use provided message
 
 If no message:
-- Analyze diff using script:
+- Generate diff: `git diff --cached > /tmp/changes.diff` (or `git diff` for unstaged)
+- Analyze diff using script to get type/scope hints:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --file <diff-file>
   ```
-- Generate message following standards
-
-**Multi-type priority:** fix > feat > perf > refactor > docs > style > test > chore > ci
+- The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
+- If multiple change types are present, use the highest priority: fix > feat > perf > refactor > docs > style > test > chore > ci
+- Note: for changes spanning multiple modules, the script detects only the first module as scope. For cross-cutting changes, omit scope.
 
 **Step 5: Stage and Commit**
+
+Stage specific files relevant to the logical change (use `git status --porcelain` to review):
 ```bash
 git add <specific-files>
 git commit -m "$(cat <<'EOF'

@@ -167,12 +167,20 @@ def find_redundant(domains: list[str]) -> dict[str, list[str]]:
         result['universal_redundant'] = specific
         return result
 
-    # Check subdomain redundancy
+    # Check subdomain redundancy (including www. prefix equivalence)
+    redundant_set: set[str] = set()
     for domain in specific:
         for other in specific:
-            if domain != other and domain.endswith('.' + other):
-                result['subdomain_redundant'].append(domain)
+            if domain == other:
+                continue
+            # Standard subdomain: api.github.com is redundant if github.com is present
+            if domain.endswith('.' + other):
+                redundant_set.add(domain)
+            # www. equivalence: www.github.com is redundant if github.com is present
+            elif domain == 'www.' + other:
+                redundant_set.add(domain)
 
+    result['subdomain_redundant'] = sorted(redundant_set)
     return result
 
 
@@ -413,7 +421,9 @@ def apply_recommendations(
             added += 1
 
     permissions['allow'] = new_allow
-    settings_path.write_text(json.dumps(settings, indent=2) + '\n')
+    # Write back preserving key order (Python 3.7+ dicts are insertion-ordered,
+    # json.dumps preserves that order). sort_keys is False by default.
+    settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + '\n')
 
     # Extract final WebFetch domains for reporting
     final_domains = extract_webfetch_domains(settings)

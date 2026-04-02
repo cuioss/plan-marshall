@@ -203,6 +203,36 @@ class TestParseHandoff(unittest.TestCase):
         result = parse_toon(stdout)
         self.assertFalse(result['merged']['auto_fix'])
 
+    def test_no_wait_flag_overrides_handoff(self):
+        """Test that --no-wait overrides handoff wait=true."""
+        handoff = {'decisions': {'wait': True}}
+        stdout, _, code = run_doctor_script([
+            'parse-handoff', '--handoff', json.dumps(handoff), '--no-wait',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertFalse(result['merged']['wait'])
+
+    def test_wait_defaults_true(self):
+        """Test that wait defaults to True without flags."""
+        handoff = {'artifacts': {'pr_number': 1}}
+        stdout, _, code = run_doctor_script([
+            'parse-handoff', '--handoff', json.dumps(handoff),
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertTrue(result['merged']['wait'])
+
+    def test_wait_flag_overrides_handoff_false(self):
+        """Test that --wait overrides handoff wait=false."""
+        handoff = {'decisions': {'wait': False}}
+        stdout, _, code = run_doctor_script([
+            'parse-handoff', '--handoff', json.dumps(handoff), '--wait',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertTrue(result['merged']['wait'])
+
 
 class TestTrackAttempt(unittest.TestCase):
     """Test pr_doctor.py track-attempt subcommand."""
@@ -384,6 +414,23 @@ class TestDiagnose(unittest.TestCase):
         sonar_issue = next(i for i in result['issues'] if i['category'] == 'sonar')
         self.assertEqual(sonar_issue['breakdown']['CRITICAL'], 2)
         self.assertEqual(sonar_issue['breakdown']['MAJOR'], 1)
+
+
+class TestDiagnoseEdgeCases(unittest.TestCase):
+    """Test pr_doctor.py diagnose edge cases."""
+
+    def test_build_status_none_with_failures_skips_build(self):
+        """When build_status is None, build failures are ignored."""
+        failures = json.dumps([{'step': 'test', 'message': 'fails'}])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-failures', failures,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['build_status'], 'UNKNOWN')
+        # No build issues should be present since build_status is None
+        build_issues = [i for i in result['issues'] if i['category'] == 'build']
+        self.assertEqual(len(build_issues), 0)
 
 
 class TestDiagnoseInputValidation(unittest.TestCase):
