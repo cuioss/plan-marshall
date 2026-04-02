@@ -82,16 +82,37 @@ def _get_provider_module():
     """Resolve the CI provider and return the provider module.
 
     Returns the provider module (github or gitlab), or None if not configured.
+
+    Contract: The returned module must expose these functions:
+    - view_pr_data() -> dict with 'status', 'pr_number' keys
+    - fetch_pr_comments_data(pr_number: int, unresolved_only: bool) -> dict with 'status', 'comments', 'total', 'unresolved' keys
+    If tools-integration-ci refactors these, pr.py must be updated in lockstep.
     """
-    from ci import get_provider  # type: ignore[import-not-found]
+    try:
+        from ci import get_provider  # type: ignore[import-not-found]
+    except ImportError as e:
+        print(f'WARNING: Cannot import ci module from tools-integration-ci: {e}', file=sys.stderr)
+        return None
+
     provider = get_provider()
-    if provider == 'github':
-        import github as mod  # type: ignore[import-not-found]
-        return mod
-    elif provider == 'gitlab':
-        import gitlab as mod  # type: ignore[import-not-found]
-        return mod
-    return None
+    try:
+        if provider == 'github':
+            import github as mod  # type: ignore[import-not-found]
+        elif provider == 'gitlab':
+            import gitlab as mod  # type: ignore[import-not-found]
+        else:
+            return None
+    except ImportError as e:
+        print(f'WARNING: Cannot import {provider} module from tools-integration-ci: {e}', file=sys.stderr)
+        return None
+
+    # Validate contract: ensure required functions exist
+    for fn_name in ('view_pr_data', 'fetch_pr_comments_data'):
+        if not hasattr(mod, fn_name):
+            print(f'WARNING: {provider} module missing required function {fn_name}', file=sys.stderr)
+            return None
+
+    return mod
 
 
 def get_current_pr_number() -> int | None:

@@ -40,8 +40,9 @@ def _load_rules() -> dict[str, Any]:
     try:
         with open(_RULES_FILE) as f:
             return json.load(f)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as e:
         # Fallback to empty config — triage will default to fix action
+        print(f'WARNING: Failed to load {_RULES_FILE}: {e}', file=sys.stderr)
         return {}
 
 

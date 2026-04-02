@@ -172,6 +172,36 @@ class TestParseHandoff(unittest.TestCase):
         result = parse_toon(stdout)
         self.assertEqual(result['merged']['max_fix_attempts'], 10)
 
+    def test_auto_fix_flag_without_value(self):
+        """Test --auto-fix as bare flag sets True."""
+        handoff = {'artifacts': {'pr_number': 1}}
+        stdout, _, code = run_doctor_script([
+            'parse-handoff', '--handoff', json.dumps(handoff), '--auto-fix',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertTrue(result['merged']['auto_fix'])
+
+    def test_auto_fix_not_provided_uses_handoff(self):
+        """Test that omitting --auto-fix defers to handoff value."""
+        handoff = {'decisions': {'auto_fix': False}}
+        stdout, _, code = run_doctor_script([
+            'parse-handoff', '--handoff', json.dumps(handoff),
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertFalse(result['merged']['auto_fix'])
+
+    def test_auto_fix_not_provided_defaults_false(self):
+        """Test that omitting --auto-fix without handoff defaults to False."""
+        handoff = {'artifacts': {'pr_number': 1}}
+        stdout, _, code = run_doctor_script([
+            'parse-handoff', '--handoff', json.dumps(handoff),
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertFalse(result['merged']['auto_fix'])
+
 
 class TestMain(unittest.TestCase):
     """Test pr_doctor.py main entry point."""
@@ -186,6 +216,11 @@ class TestMain(unittest.TestCase):
         stdout, _, code = run_doctor_script(['--help'])
         self.assertEqual(code, 0)
         self.assertIn('parse-handoff', stdout)
+
+    def test_unknown_subcommand(self):
+        """Test error when unknown subcommand provided."""
+        _, stderr, code = run_doctor_script(['unknown-command'])
+        self.assertNotEqual(code, 0)
 
 
 if __name__ == '__main__':

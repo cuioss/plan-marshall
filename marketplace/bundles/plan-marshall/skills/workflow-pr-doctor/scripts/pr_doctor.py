@@ -179,7 +179,7 @@ Examples:
     handoff_parser.add_argument('--handoff', required=True, help='Handoff JSON string')
     handoff_parser.add_argument('--pr', type=int, help='Override PR number')
     handoff_parser.add_argument('--checks', choices=['build', 'reviews', 'sonar', 'all'], help='Override checks')
-    handoff_parser.add_argument('--auto-fix', action='store_true', default=None, help='Override auto-fix')
+    handoff_parser.add_argument('--auto-fix', nargs='?', const=True, default=None, type=lambda v: v.lower() in ('true', '1', 'yes') if isinstance(v, str) else bool(v), help='Override auto-fix (flag or true/false)')
     handoff_parser.add_argument('--max-fix-attempts', type=int, help='Override max fix attempts')
     handoff_parser.set_defaults(func=cmd_parse_handoff)
 

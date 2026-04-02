@@ -60,7 +60,7 @@ The script handles missing files gracefully (reports them in output). On invalid
 
 **Error handling for missing/invalid files**: Ask the user via `AskUserQuestion` with options to create defaults, skip the file, or abort.
 
-The script categorizes domains into: universal (`*`), major (from trusted-domains standards), high_reach (github.com, stackoverflow.com, etc.), suspicious (red flag patterns), and unknown (need research).
+The script categorizes domains into: universal (`*`), major (from `standards/domain-lists.json`), high_reach (github.com, stackoverflow.com, etc.), suspicious (red flag patterns), and unknown (need research).
 
 ### Step 3: Detect Duplicate and Redundant Permissions
 
@@ -195,6 +195,16 @@ Reads global and local settings, extracts WebFetch domains, categorizes them, de
 ### permission_web.py categorize
 
 Categorizes a list of domains into: universal, major, high_reach, suspicious, unknown. Also checks for red flag patterns in domain names.
+
+## Rule Configuration
+
+Domain categorization is data-driven — loaded from `standards/domain-lists.json`:
+
+- **major_domains**: Fully trusted documentation and tool domains
+- **high_reach_domains**: Developer platforms commonly needed across projects
+- **red_flag_patterns**: Regex patterns that flag suspicious domains
+
+To add or update domain categorization, edit `standards/domain-lists.json` instead of the script.
 
 ## Critical Rules
 

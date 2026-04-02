@@ -30,35 +30,32 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 from triage_helpers import safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
-# DOMAIN KNOWLEDGE
+# DOMAIN KNOWLEDGE (loaded from domain-lists.json)
 # ============================================================================
 
+_DOMAIN_LISTS_FILE = Path(__file__).parent.parent / 'standards' / 'domain-lists.json'
+
+
+def _load_domain_lists() -> dict[str, Any]:
+    """Load domain lists from domain-lists.json config file."""
+    try:
+        with open(_DOMAIN_LISTS_FILE) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f'WARNING: Failed to load {_DOMAIN_LISTS_FILE}: {e}', file=sys.stderr)
+        return {}
+
+
+_DOMAIN_CONFIG = _load_domain_lists()
+
 # Domains from trusted-domains.md — fully trusted, safe to recommend for global
-MAJOR_DOMAINS = {
-    'docs.anthropic.com', 'code.claude.com', 'www.anthropic.com',
-    'docs.oracle.com', 'jakarta.ee', 'docs.redhat.com',
-    'docs.spring.io', 'quarkus.io', 'maven.apache.org', 'projectlombok.org',
-    'junit.org', 'sonarcloud.io', 'docs.docker.com',
-    'cheatsheetseries.owasp.org', 'www.keycloak.org',
-    'www.llamaindex.ai', 'www.tabnine.com',
-    'docs.openrewrite.org', 'www.graalvm.org',
-    'docs.github.com', 'gist.github.com', 'raw.githubusercontent.com',
-}
+MAJOR_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('major_domains', []))
 
 # High-reach developer platforms — commonly needed across projects
-HIGH_REACH_DOMAINS = {
-    'github.com', 'stackoverflow.com', 'ux.stackexchange.com',
-    'medium.com', 'gitingest.com', 'www.usertesting.com',
-    'registry.npmjs.org', 'pypi.org', 'crates.io',
-    'developer.mozilla.org', 'www.w3.org',
-}
+HIGH_REACH_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('high_reach_domains', []))
 
 # Red flags in domain names
-RED_FLAG_PATTERNS = [
-    r'free.*download', r'crack', r'keygen', r'torrent',
-    r'phish', r'malware', r'\.tk$', r'\.ml$', r'\.ga$', r'\.cf$',
-    r'\d{5,}',  # Many consecutive digits
-]
+RED_FLAG_PATTERNS: list[str] = _DOMAIN_CONFIG.get('red_flag_patterns', [])
 
 
 # ============================================================================
