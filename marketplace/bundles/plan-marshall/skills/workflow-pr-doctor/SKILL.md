@@ -30,7 +30,7 @@ Diagnose and fix pull request issues with parameterized checks.
 |-----------|------|-------------|
 | `pr` | optional | Pull request number/URL (auto-detects current if not provided) |
 | `checks` | optional | build\|reviews\|sonar\|all (default: all) |
-| `auto-fix` | optional | Auto-apply fixes without prompting (default: false) |
+| `auto-fix` | optional | Auto-apply fixes without prompting (default: false). CLI flag is boolean — pass `auto-fix=true` to enable, omit to use default or handoff value |
 | `wait` | optional | Wait for CI/Sonar to complete (default: true) |
 | `handoff` | optional | Handoff structure from previous phase (JSON, see schema below) |
 | `max-fix-attempts` | optional | Maximum fix-verify-commit cycles before giving up (default: 3) |
@@ -43,9 +43,10 @@ Skill: plan-marshall:workflow-integration-ci
 Skill: plan-marshall:workflow-integration-sonar
 Skill: plan-marshall:workflow-integration-git
 Skill: plan-marshall:manage-architecture
+Skill: plan-marshall:manage-findings
 ```
 
-The `manage-architecture` skill is needed for Step 5 (BUILD_FAILURE) to resolve build commands via the architecture API.
+The `manage-architecture` skill is needed for Step 5 (BUILD_FAILURE) to resolve build commands via the architecture API. The `manage-findings` skill is needed by the Automated Review Lifecycle mode (Step 5 `code_change` actions persist as Q-Gate findings).
 
 ## Workflow
 
@@ -64,7 +65,8 @@ If `handoff` parameter provided: Parse JSON with this schema:
   "decisions": {
     "auto_fix": true,
     "checks": "all",
-    "skip_sonar": false
+    "skip_sonar": false,
+    "automated_review": false
   },
   "constraints": {
     "max_fix_attempts": 3,
@@ -72,6 +74,10 @@ If `handoff` parameter provided: Parse JSON with this schema:
   }
 }
 ```
+
+Field notes:
+- `skip_sonar`: When `true`, skip Sonar diagnosis entirely (equivalent to `checks` excluding `sonar`). Parsed and passed through by `parse-handoff` — the caller must check this value and skip the Sonar workflow accordingly.
+- `automated_review`: When `true`, activates the Automated Review Lifecycle mode instead of the interactive workflow.
 
 Extract and merge with explicit parameters (explicit parameters take precedence).
 
@@ -115,11 +121,11 @@ AskUserQuestion:
 
 Based on `checks` parameter:
 
-**Build**: `ci ci status --pr-number {pr}` → BUILD_FAILURE if `overall_status: failure`
+**Build**: `ci ci status --pr-number {pr}` → BUILD_FAILURE if `overall_status: failure`. If CI status check fails, report error and skip build diagnosis.
 
-**Reviews**: workflow-integration-ci (Fetch Comments) → REVIEW_COMMENTS ({count})
+**Reviews**: workflow-integration-ci (Fetch Comments) → REVIEW_COMMENTS ({count}). If fetch fails, report error and skip review diagnosis.
 
-**Sonar**: workflow-integration-sonar (Fetch Issues) → SONAR_QUALITY ({count}/{severity})
+**Sonar**: workflow-integration-sonar (Fetch Issues) → SONAR_QUALITY ({count}/{severity}). If Sonar MCP is unavailable, skip Sonar checks and report as "skipped — MCP not connected".
 
 ### Step 4: Generate Diagnostic Report
 
@@ -144,9 +150,9 @@ Recommended Actions:
 Based on checks parameter:
 
 **BUILD_FAILURE**: Resolve using the build system:
-1. Fetch build logs via `ci ci status --pr-number {pr}`
-2. Identify failing step (compile, test, lint)
-3. Read failing files from error output
+1. Fetch build logs via `ci ci status --pr-number {pr}` — the `checks` array in the output contains per-check `name`, `status`, and `conclusion` fields; failed checks include a `details_url` for full logs
+2. Identify failing step (compile, test, lint) from the check `name` field
+3. Read failing files from the build log output (fetch via `details_url` or re-run locally)
 4. Apply fix using Edit tool
 5. Resolve build command via architecture API, then verify:
    ```
@@ -158,7 +164,7 @@ Based on checks parameter:
 
 **SONAR_QUALITY**: Delegate to workflow-integration-sonar Workflow 2 (Fix Issues). The Sonar skill handles: batch triage and fix-vs-suppress classification. The pr-doctor then executes each action (fix → Edit files, suppress → add NOSONAR comment) and commits via the git skill.
 
-**Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`), starting at 0. Increment after each fix → verify cycle. After reaching `max-fix-attempts` (default: 3) for a category, stop that category and report remaining issues to the user rather than looping indefinitely.
+**Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`) in the LLM's working memory, starting at 0. Before each fix cycle, call `track-attempt --category {cat} --current {count}` to check whether to proceed (the script is stateless — the caller owns the counter). Increment after each fix → verify cycle. After reaching `max-fix-attempts` (default: 3) for a category, stop that category and report remaining issues to the user rather than looping indefinitely.
 
 ### Step 6: Verify and Commit
 
@@ -186,7 +192,7 @@ PR #{pr} Summary
 
 This mode is invoked by phase-6-finalize (when `3_automated_review == true`), not the interactive PR doctor workflow above. It handles the full CI → review → respond → resolve cycle autonomously.
 
-**Activation:** Only via phase-6-finalize handoff with `decisions.automated_review: true`. Not invoked via `/workflow-pr-doctor` directly.
+**Activation:** Only via phase-6-finalize handoff with `decisions.automated_review: true`. Not invoked via `/workflow-pr-doctor` directly. If the handoff does not contain `decisions.automated_review: true`, skip this mode entirely and use the interactive workflow above.
 
 **Reference:** Read `standards/automated-review-lifecycle.md` for the complete step-by-step procedure, including CI wait, comment fetching, triage, thread resolution, GitHub GraphQL ID format rules, and error handling.
 

@@ -33,6 +33,8 @@ Delete using `rm <file>` (or `rm -rf <dir>` for directories).
 ### Uncertain Cases (ask user)
 
 The script classifies these as uncertain — use `AskUserQuestion` before deleting:
-- Files in `target/`, `build/`, `node_modules/`, `.plan/temp/`
+- Files in `target/`, `build/`, `dist/`, `.next/`, `node_modules/`
 - Files >1MB
 - Files outside the safe pattern list
+
+Note: `.plan/temp/` files are classified as **safe** (auto-deletable), not uncertain, since they are explicitly temporary.

@@ -39,6 +39,38 @@ The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `
 
 Triage subcommands (`triage`, `triage-batch`) delegate to `triage_helpers` from `ref-toon-format` for JSON parsing, error handling, and batch processing. See `ref-toon-format/scripts/triage_helpers.py` for the shared API.
 
+## Prerequisites
+
+```
+Skill: plan-marshall:tools-integration-ci
+```
+
+The `tools-integration-ci` skill provides the CI router (`ci.py`, `github.py`, `gitlab.py`) for provider abstraction.
+
+## Usage Examples
+
+```bash
+# Fetch comments for current branch's PR
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments
+
+# Fetch comments for specific PR
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments --pr 123
+
+# Triage a single comment
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{"id":"C1","body":"Fix this","path":"src/Main.java","line":42}'
+
+# Batch triage multiple comments
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{"id":"C1","body":"Bug here"},{"id":"C2","body":"LGTM"}]'
+```
+
+## Architecture
+
+```
+workflow-integration-ci (PR comment workflow)
+  ├─> tools-integration-ci (provider abstraction: GitHub/GitLab)
+  └─> triage_helpers (ref-toon-format) — shared triage, error handling
+```
+
 ## Workflows
 
 ### Workflow 1: Fetch Comments
@@ -51,17 +83,17 @@ Triage subcommands (`triage`, `triage-batch`) delegate to `triage_helpers` from 
 
 1. **Get PR Comments via CI Integration**
 
-   Use the `pr-comments` command from marshal.json (provider-agnostic):
+   Use the workflow script (recommended — handles provider detection and output structuring):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments [--pr {number}]
+   ```
+
+   Alternatively, use the low-level CI router directly (when you only need raw comments without structuring):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments \
        --pr-number {number} [--unresolved-only]
-   ```
-
-   Or use the workflow script for additional processing:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments [--pr {number}]
    ```
 
    Output (TOON format):
@@ -105,7 +137,7 @@ Triage subcommands (`triage`, `triage-batch`) delegate to `triage_helpers` from 
    Script: `plan-marshall:workflow-integration-ci`
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{comment1}, {comment2}, ...]'
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{"id":"PRRC_abc","body":"Fix this bug","path":"src/Main.java","line":42,"author":"alice"},{"id":"PRRC_def","body":"LGTM","path":null,"line":null,"author":"bob"}]'
    ```
 
    Script outputs all decisions at once:
@@ -207,7 +239,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage 
     --context "public String getValue() { return this.value; }"
 ```
 
-The context is injected into the comment object's `context` field. Comments that reference identifiers found in the context are boosted from `ignore` to `code_change`.
+The context is injected into the comment object's `context` field. Comments longer than 20 characters that reference identifiers found in the context are boosted from `ignore` to `code_change`. Short comments (<20 chars) skip context matching since they rarely contain meaningful code references.
 
 **Output:** TOON with action decision
 
@@ -248,9 +280,10 @@ Note: The classification priority is code_change > ignore > explain. This means 
 | triage failure | Log warning, skip the comment, continue processing remaining comments. |
 | CI router failure (thread-reply, resolve-thread) | Log warning, continue — replies and resolutions are best-effort. |
 
-## Integration
+## Related
 
-### Related Skills
-- **workflow-integration-sonar** - Often used together in PR workflows
-- **workflow-integration-git** - Commits changes after responses
-- **workflow-pr-doctor** - Orchestrates this skill with Sonar and git workflows
+| Skill | Purpose |
+|-------|---------|
+| `plan-marshall:workflow-integration-sonar` | Often used together in PR workflows |
+| `plan-marshall:workflow-integration-git` | Commits changes after responses |
+| `plan-marshall:workflow-pr-doctor` | Orchestrates this skill with Sonar and git workflows |

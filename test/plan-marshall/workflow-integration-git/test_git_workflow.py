@@ -342,6 +342,98 @@ class TestAnalyzeDiff(unittest.TestCase):
             self.assertEqual(result['suggestions']['type'], 'fix')
 
 
+class TestAnalyzeDiffTypeDetection(unittest.TestCase):
+    """Test analyze-diff type detection for test-only and docs-only changes (#28, #29)."""
+
+    def test_analyze_test_only_changes(self):
+        """Test analysis detects 'test' type when only test files change."""
+        diff_content = """diff --git a/test/java/ServiceTest.java b/test/java/ServiceTest.java
+--- a/test/java/ServiceTest.java
++++ b/test/java/ServiceTest.java
++    @Test
++    public void testNewFeature() {
++        assertEquals(1, service.compute());
++    }
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['type'], 'test')
+
+    def test_analyze_docs_only_changes(self):
+        """Test analysis detects 'docs' type when only documentation files change."""
+        diff_content = """diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
++## Installation
++Run `npm install` to get started.
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['type'], 'docs')
+
+    def test_analyze_asciidoc_docs(self):
+        """Test docs detection for .adoc files."""
+        diff_content = """diff --git a/doc/architecture.adoc b/doc/architecture.adoc
+--- a/doc/architecture.adoc
++++ b/doc/architecture.adoc
++= Architecture Guide
++This document describes the system architecture.
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['suggestions']['type'], 'docs')
+
+
+class TestFormatCommitCombined(unittest.TestCase):
+    """Test format-commit with all optional params at once (#30)."""
+
+    def test_all_params_combined(self):
+        """Test commit message with body + breaking + footer + scope."""
+        stdout, _, code = run_git_script([
+            'format-commit',
+            '--type', 'feat',
+            '--scope', 'api',
+            '--subject', 'change auth endpoint',
+            '--body', 'Migrated to OAuth 2.0 flow',
+            '--breaking', 'Old /auth endpoint removed',
+            '--footer', 'Fixes #123',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertIn('feat(api)!:', result['formatted_message'])
+        self.assertIn('BREAKING CHANGE:', stdout)
+        self.assertIn('Fixes #123', stdout)
+        self.assertIn('Migrated to OAuth 2.0 flow', stdout)
+
+
+class TestFormatCommitHeaderLength(unittest.TestCase):
+    """Test format-commit validates total header length (#27)."""
+
+    def test_long_scope_plus_subject_exceeds_72(self):
+        """Header exceeding 72 chars should fail validation."""
+        long_scope = 'very-long-module-name'
+        long_subject = 'a' * 50  # type(scope): subject → 5 + 23 + 4 + 50 = 82 chars
+        stdout, _, code = run_git_script([
+            'format-commit', '--type', 'feat', '--scope', long_scope, '--subject', long_subject,
+        ])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertFalse(result['validation']['valid'])
+        self.assertTrue(any('Header' in w for w in result['validation']['warnings']))
+
+
 class TestDetectArtifacts(unittest.TestCase):
     """Test git-workflow.py detect-artifacts subcommand."""
 
@@ -441,6 +533,21 @@ class TestDetectArtifacts(unittest.TestCase):
         uncertain_str = '\n'.join(result['uncertain'])
         self.assertIn('dist/', uncertain_str)
         self.assertIn('.next/', uncertain_str)
+
+    def test_detects_root_level_artifacts(self):
+        """Test detection of artifacts at repo root, not just in subdirectories (#23)."""
+        self._create_file('Example.class')
+        self._create_file('.DS_Store')
+        self._create_file('scratch.temp')
+
+        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertGreaterEqual(len(result['safe']), 3)
+        safe_str = '\n'.join(result['safe'])
+        self.assertIn('Example.class', safe_str)
+        self.assertIn('.DS_Store', safe_str)
+        self.assertIn('scratch.temp', safe_str)
 
     def test_clean_directory_returns_empty(self):
         """Test scanning a directory with no artifacts."""
@@ -575,6 +682,13 @@ class TestWrapText(unittest.TestCase):
         text = ' ' * 55 + 'deeply indented content that should not be wrapped'
         result = self.wrap_text(text, 72)
         self.assertEqual(result, text)
+
+    def test_very_long_word_not_broken(self):
+        """A single word longer than width should not be split (#20)."""
+        url = 'https://example.com/very/long/path/that/exceeds/seventy/two/characters/easily'
+        result = self.wrap_text(url, 72)
+        # The URL should remain intact on a single line
+        self.assertEqual(result, url)
 
     def test_multiline_preserves_paragraphs(self):
         """Multiple paragraphs separated by newlines are handled independently."""

@@ -530,6 +530,59 @@ class TestToonContract(unittest.TestCase):
             self.assertIn(field, summary, f'Missing summary.{field}')
 
 
+class TestTriageBatchMixedValidity(unittest.TestCase):
+    """Test triage-batch with a mix of valid and invalid comment objects (#18)."""
+
+    def test_batch_with_mixed_valid_and_invalid_entries(self):
+        """Test batch triage handles a mix of well-formed and malformed entries."""
+        comments = [
+            {'id': 'MIX1', 'body': 'Please fix this bug', 'path': 'src/A.java', 'line': 1, 'author': 'r1'},
+            {'id': 'MIX2'},  # Missing body — should still process (empty body → ignore)
+            {'id': 'MIX3', 'body': 'Why is this here?', 'path': 'src/B.java', 'line': 5, 'author': 'r3'},
+        ]
+        stdout, _, code = run_pr_script(['triage-batch', '--comments', json.dumps(comments)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['summary']['total'], 3)
+
+
+class TestSuggestImplementationVerbs(unittest.TestCase):
+    """Test that suggest_implementation generates targeted suggestions for various verbs."""
+
+    def test_rename_suggestion(self):
+        """Rename request gets rename-specific suggestion."""
+        comment = {
+            'id': 'SI1', 'body': 'Please rename this variable', 'path': 'src/A.java', 'line': 1, 'author': 'r',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertIn('Rename', result['suggested_implementation'])
+
+    def test_remove_suggestion(self):
+        """Remove request gets remove-specific suggestion."""
+        comment = {
+            'id': 'SI2', 'body': 'Please remove this unused import, it is wrong', 'path': 'src/A.java', 'line': 1, 'author': 'r',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        # Classified as code_change (matches 'wrong' pattern), suggestion should mention remove
+        self.assertIn('Remove', result['suggested_implementation'])
+
+    def test_move_suggestion(self):
+        """Extract/move request gets restructure suggestion."""
+        comment = {
+            'id': 'SI3', 'body': 'Please move this method into a helper class, it is missing from there', 'path': 'src/A.java', 'line': 1, 'author': 'r',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        # Classified as code_change (matches 'missing' pattern), suggestion should mention restructure
+        self.assertIn('Restructure', result['suggested_implementation'])
+
+
 class TestProviderContract(unittest.TestCase):
     """Verify the provider module contract that pr.py depends on.
 

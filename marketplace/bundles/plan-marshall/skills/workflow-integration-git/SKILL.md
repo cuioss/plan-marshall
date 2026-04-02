@@ -37,6 +37,31 @@ Error handling and TOON serialization delegate to `triage_helpers` from `ref-too
 
 Format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples.
 
+## Prerequisites
+
+No external skill dependencies. Uses `triage_helpers` from `ref-toon-format` for error handling and TOON serialization.
+
+## Usage Examples
+
+```bash
+# Format a commit message
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
+  --type feat --scope auth --subject "add login flow"
+
+# Analyze a diff for commit suggestions
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --file changes.diff
+
+# Detect artifacts before committing
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts
+```
+
+## Architecture
+
+```
+workflow-integration-git (git commit workflow)
+  └─> triage_helpers (ref-toon-format) — error handling, TOON serialization
+```
+
 ## Workflow: Commit Changes
 
 **Purpose:** Commit all uncommitted changes following Git Commit Standards.
@@ -84,7 +109,7 @@ If no message:
   ```
 - The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
 - If multiple change types are present, use the highest priority: fix > feat > perf > refactor > docs > style > test > chore > ci
-- Note: for changes spanning multiple modules, the script detects only the first module as scope. For cross-cutting changes, omit scope.
+- Note: The script infers scope from the first source file's path structure. For changes spanning multiple modules, the detected scope may not be representative — omit scope for cross-cutting changes.
 
 **Step 5: Stage and Commit**
 
@@ -234,6 +259,14 @@ status: success
 **Permissions:** NEVER push without `push` param
 **Standards:** Follow conventional commits format, add Co-Authored-By footer
 **Safety:** Ask user if uncertain about file deletion
+
+## Related
+
+| Skill | Purpose |
+|-------|---------|
+| `plan-marshall:workflow-integration-ci` | PR review comment handling |
+| `plan-marshall:workflow-integration-sonar` | Sonar quality issue handling |
+| `plan-marshall:workflow-pr-doctor` | Orchestrates this skill with CI and Sonar workflows |
 
 ## References
 

@@ -122,7 +122,8 @@ def wrap_text(text: str, width: int) -> str:
                     current_line.append(word)
                     current_length += len(word) + 1
                 else:
-                    lines.append(indent + ' '.join(current_line))
+                    if current_line:
+                        lines.append(indent + ' '.join(current_line))
                     current_line = [word]
                     current_length = len(word)
             if current_line:
@@ -174,14 +175,28 @@ def format_message(
 # ============================================================================
 
 
+def validate_header_length(commit_type: str, scope: str | None, subject: str, breaking: str | None) -> dict:
+    """Validate total header length (type + scope + subject)."""
+    warnings = []
+    breaking_indicator = '!' if breaking else ''
+    if scope:
+        header = f'{commit_type}({scope}){breaking_indicator}: {subject}'
+    else:
+        header = f'{commit_type}{breaking_indicator}: {subject}'
+    if len(header) > 72:
+        warnings.append(f'Header exceeds 72 chars ({len(header)} chars) — consider shorter scope or subject')
+    return {'valid': len(header) <= 72, 'warnings': warnings}
+
+
 def cmd_format_commit(args):
     """Handle format-commit subcommand."""
     # Validate inputs
     type_validation = validate_type(args.commit_type)
     subject_validation = validate_subject(args.subject)
+    header_validation = validate_header_length(args.commit_type, args.scope, args.subject, args.breaking)
 
-    all_warnings = type_validation['warnings'] + subject_validation['warnings']
-    is_valid = type_validation['valid'] and subject_validation['valid']
+    all_warnings = type_validation['warnings'] + subject_validation['warnings'] + header_validation['warnings']
+    is_valid = type_validation['valid'] and subject_validation['valid'] and header_validation['valid']
 
     # Format message
     formatted = format_message(args.commit_type, args.scope, args.subject, args.body, args.breaking, args.footer)
@@ -263,7 +278,9 @@ def analyze_diff(diff_content: str) -> dict:
                     suggestions['scope'] = path[idx + 2]
                     scope_found = True
             # Python: <package>/*.py or src/<package>/*.py
-            elif any(p.endswith('.py') for p in path):
+            # Only check the last component (file name) to avoid matching
+            # directory names like something.py/
+            elif path[-1].endswith('.py'):
                 # Use first directory component (or second if src/)
                 start = 1 if path[0] == 'src' else 0
                 if start < len(path) - 1:
@@ -374,7 +391,6 @@ SAFE_ARTIFACT_PATTERNS = [
     '**/*.tsbuildinfo',
     # General temp/backup
     '**/*.temp',
-    '**/*.backup',
     '**/*.backup*',
     '**/*.orig',
     # OS artifacts
@@ -420,10 +436,13 @@ def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
     compiled = []
     for pattern in patterns:
         # Convert glob to regex: ** → .*, * → [^/]*, . → \.
+        # Use NUL-byte placeholders to prevent double-replacement:
+        # 1. Protect **/ and ** first, then convert remaining * globs.
         regex = pattern.replace('.', r'\.')
-        regex = regex.replace('**/', '(.+/)?')
+        regex = regex.replace('**/', '\x00DIR\x00')
         regex = regex.replace('**', '\x00STAR\x00')
         regex = regex.replace('*', '[^/]*')
+        regex = regex.replace('\x00DIR\x00', '(.*/)?')
         regex = regex.replace('\x00STAR\x00', '.*')
         compiled.append(re.compile(f'^{regex}$'))
     return compiled

@@ -23,7 +23,7 @@ import sys
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import ErrorCode, calculate_priority, make_error, parse_json_arg, safe_main  # type: ignore[import-not-found]
+from triage_helpers import ErrorCode, make_error, parse_json_arg, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # HANDOFF SCHEMA
@@ -182,18 +182,22 @@ def diagnose_pr(
     issues: list[dict[str, Any]] = []
     actions: list[str] = []
 
-    # Build diagnosis
+    # Build diagnosis — severity depends on the failing step:
+    # compile/build failures block everything (high), test failures need
+    # attention (high), lint/style failures are less urgent (medium).
+    _BUILD_STEP_SEVERITY = {'compile': 'high', 'build': 'high', 'test': 'high', 'lint': 'medium', 'style': 'medium', 'format': 'medium'}
     build_pass = build_status == 'success'
     if not build_pass and build_status is not None:
         for failure in build_failures:
             if not isinstance(failure, dict):
                 print(f'WARNING: non-dict entry in build_failures: {type(failure).__name__}', file=sys.stderr)
                 failure = {}
+            step = failure.get('step', 'unknown')
             issues.append({
                 'category': 'build',
-                'severity': 'high',
+                'severity': _BUILD_STEP_SEVERITY.get(step, 'high'),
                 'detail': failure.get('message', 'Build failure'),
-                'step': failure.get('step', 'unknown'),
+                'step': step,
             })
         actions.append('Fix build failures before other issues')
 

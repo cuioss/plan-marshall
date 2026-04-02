@@ -276,9 +276,10 @@ The script triage is rule-based and handles common Sonar rules well, but novel o
 | MCP status change failure | Log warning, continue — marking resolved is best-effort. |
 | Build verification failure after fixes | Report failing tests/compilation. Do not commit broken fixes. |
 
-## Integration
+## Related
 
-### Related Skills
-- **workflow-integration-ci** - Often used together in PR workflows
-- **workflow-integration-git** - Commits fixes
-- **workflow-pr-doctor** - Orchestrates this skill with CI and git workflows
+| Skill | Purpose |
+|-------|---------|
+| `plan-marshall:workflow-integration-ci` | Often used together in PR workflows |
+| `plan-marshall:workflow-integration-git` | Commits fixes |
+| `plan-marshall:workflow-pr-doctor` | Orchestrates this skill with CI and git workflows |

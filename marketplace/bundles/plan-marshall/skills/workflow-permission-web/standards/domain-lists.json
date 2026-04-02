@@ -21,7 +21,9 @@
     "www.graalvm.org",
     "docs.github.com",
     "gist.github.com",
-    "raw.githubusercontent.com"
+    "raw.githubusercontent.com",
+    "developer.mozilla.org",
+    "www.w3.org"
   ],
   "high_reach_domains": [
     "github.com",
@@ -32,21 +34,26 @@
     "www.usertesting.com",
     "registry.npmjs.org",
     "pypi.org",
-    "crates.io",
-    "developer.mozilla.org",
-    "www.w3.org"
+    "crates.io"
   ],
   "red_flag_patterns": [
     "free.*download",
-    "crack",
-    "keygen",
-    "torrent",
-    "phish",
-    "malware",
+    "\\bcrack\\b",
+    "\\bkeygen\\b",
+    "\\btorrent\\b",
+    "\\bphish",
+    "\\bmalware\\b",
     "\\.tk$",
     "\\.ml$",
     "\\.ga$",
     "\\.cf$",
-    "\\d{5,}"
+    "\\.gq$",
+    "\\d{5,}",
+    "^login-",
+    "^signin-",
+    "^account-",
+    "-verify\\.",
+    "^secure-.*\\.",
+    "^update-.*\\."
   ]
 }

@@ -15,7 +15,7 @@ Standardized git commit format following conventional commits.
 ### Required Components
 
 * **Type**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
-* **Subject**: Imperative, present tense, no capital, no dot, max 50 chars
+* **Subject**: Imperative, present tense, no capital, no dot, ideal ≤50 chars (hard limit: 72 chars)
 
 ### Optional Components
 
@@ -99,7 +99,7 @@ Fixes #456, #457, #458
 
 * **Clear and descriptive subjects** - Reader should understand the change without reading code
 * **Imperative mood** - Use "add feature" not "added feature" or "adds feature"
-* **Concise but complete** - 50 char subject is ideal, 72 char absolute max
+* **Concise but complete** - 50 char subject is ideal; 72 char is the absolute max (including type and scope prefix)
 * **Explain why, not what** - Body should explain motivation and context
 
 ### Reference Issues
@@ -243,4 +243,4 @@ Before committing, verify:
 
 * Conventional Commits: https://www.conventionalcommits.org/
 * Git Commit Best Practices: https://cbea.ms/git-commit/
-* Angular Commit Guidelines: https://github.com/angular/angular/blob/main/CONTRIBUTING.md#commit
+* Angular Commit Guidelines: https://github.com/angular/angular/blob/main/contributing-docs/commit-message-format.md

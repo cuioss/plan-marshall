@@ -117,6 +117,50 @@ class TestCategorizeDomains(unittest.TestCase):
         self.assertIn('array', result['error'])
 
 
+class TestCategorizeEdgeCases(unittest.TestCase):
+    """Test edge cases for categorize (#42)."""
+
+    def test_categorize_domain_star_prefix(self):
+        """Test that 'domain:*' is NOT treated as universal (vestigial format)."""
+        domains = ['domain:*']
+        stdout, _, code = run_pw_script(['categorize', '--domains', json.dumps(domains)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        # domain:* is not a valid format — should be classified as unknown, not universal
+        self.assertEqual(result['categories']['unknown'], 1)
+        self.assertEqual(result['categories']['universal'], 0)
+
+
+class TestApplyEdgeCasesExtended(unittest.TestCase):
+    """Extended edge case tests for apply (#43)."""
+
+    def _write_settings(self, domains: list[str], path: str) -> str:
+        """Write a settings.json with WebFetch permissions."""
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        settings = {
+            'permissions': {
+                'allow': [f'WebFetch({d})' for d in domains],
+            },
+        }
+        p.write_text(json.dumps(settings))
+        return str(p)
+
+    def test_remove_nonexistent_domain_is_noop(self):
+        """Removing a domain that doesn't exist should be a graceful no-op."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = self._write_settings(['keep.com'], f'{tmpdir}/settings.json')
+            stdout, _, code = run_pw_script([
+                'apply', '--file', path,
+                '--remove', json.dumps(['does-not-exist.com']),
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['removed'], 0)
+            self.assertIn('keep.com', result['final_domains'])
+
+
 class TestAnalyze(unittest.TestCase):
     """Test permission_web.py analyze subcommand."""
 

@@ -96,7 +96,7 @@ def categorize_domain(domain: str) -> str:
     Returns one of: universal, major, high_reach, unknown.
     Red flag detection is separate (check_red_flags).
     """
-    if domain == '*' or domain == 'domain:*':
+    if domain == '*':
         return 'universal'
     # Normalize: strip protocol, trailing slash
     clean = domain.lower().strip().rstrip('/')
@@ -154,14 +154,20 @@ def find_redundant(domains: list[str]) -> dict[str, list[str]]:
     Returns dict with:
     - 'universal_redundant': domains made redundant by wildcard
     - 'subdomain_redundant': subdomains redundant when parent is approved
+
+    Note: Subdomain detection is conservative — it flags subdomains as redundant
+    when the parent domain is present (e.g., api.github.com when github.com exists).
+    WebFetch permissions are domain-scoped (not subdomain-specific), so this is
+    correct for permission consolidation. The caller should present these as
+    recommendations, not auto-remove.
     """
     result: dict[str, list[str]] = {
         'universal_redundant': [],
         'subdomain_redundant': [],
     }
 
-    has_universal = any(d in ('*', 'domain:*') for d in domains)
-    specific = [d for d in domains if d not in ('*', 'domain:*')]
+    has_universal = '*' in domains
+    specific = [d for d in domains if d != '*']
 
     if has_universal:
         result['universal_redundant'] = specific
@@ -420,7 +426,11 @@ def apply_recommendations(
             new_allow.append(entry)
             added += 1
 
-    permissions['allow'] = new_allow
+    # Sort WebFetch entries for consistent output while preserving non-WebFetch
+    # entry order. Separate, sort WebFetch entries, then merge back.
+    non_wf = [e for e in new_allow if not (isinstance(e, str) and e.startswith('WebFetch('))]
+    wf_sorted = sorted(e for e in new_allow if isinstance(e, str) and e.startswith('WebFetch('))
+    permissions['allow'] = non_wf + wf_sorted
     # Write back preserving key order (Python 3.7+ dicts are insertion-ordered,
     # json.dumps preserves that order). sort_keys is False by default.
     settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + '\n')

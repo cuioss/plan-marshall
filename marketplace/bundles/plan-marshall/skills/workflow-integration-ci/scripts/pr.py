@@ -69,8 +69,12 @@ PATTERNS: dict[str, Any] = {
         ],
         'low': [r'\brenam(?:e|ing)\b', r'\bvariable name\b', r'\bnaming\b', r'\btypo\b', r'\bspelling\b', r'\bformatting\b', r'\bstyle\b', r'^nit:', r'^nitpick:'],
     },
-    'explain': [r'\bwhy\b', r'\bexplain\b', r'\breasoning\b', r'\brationale\b', r'\bhow does\b', r'\bwhat is\b', r'\bcan you clarify\b'],
-    'ignore': [r'^lgtm', r'^approved', r'\blooks good\b', r'^nice\b', r'^thanks\b', r'\[bot\]'],
+    'explain': {
+        'low': [r'\bwhy\b', r'\bexplain\b', r'\breasoning\b', r'\brationale\b', r'\bhow does\b', r'\bwhat is\b', r'\bcan you clarify\b'],
+    },
+    'ignore': {
+        'none': [r'^lgtm', r'^approved', r'\blooks good\b', r'^nice\b', r'^thanks\b', r'\[bot\]'],
+    },
 }
 
 
@@ -149,7 +153,7 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
     result = mod.fetch_pr_comments_data(pr_number, unresolved_only)
 
     if result.get('status') != 'success':
-        return make_error(result.get('error', 'Failed to fetch PR comments'))
+        return make_error(result.get('error', 'Failed to fetch PR comments'), code=ErrorCode.PROVIDER_NOT_CONFIGURED)
 
     # Transform provider result into pr.py's expected format
     return {
@@ -183,6 +187,21 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
+def _looks_like_identifier(w: str) -> bool:
+    """Check if a word looks like a code identifier.
+
+    Matches words with underscores, dots, parens, or camelCase
+    (mixed upper/lower within a word, at least 4 chars).
+    """
+    clean = w.rstrip('.,;:)')
+    if '_' in clean or '.' in clean or '(' in clean:
+        return True
+    # camelCase: has both upper and lower, at least 4 chars
+    if len(clean) >= 4 and any(c.isupper() for c in clean[1:]) and any(c.islower() for c in clean):
+        return True
+    return False
+
+
 def classify_comment(body: str, context: str | None = None) -> tuple[str, str, str]:
     """Classify comment and determine action and priority.
 
@@ -209,17 +228,19 @@ def classify_comment(body: str, context: str | None = None) -> tuple[str, str, s
 
     # Check for ignore patterns AFTER code_change — pure acknowledgments
     # with no actionable content.
-    for pattern in PATTERNS['ignore']:
-        if re.search(pattern, body_lower):
-            return 'ignore', 'none', 'Automated or acknowledgment comment'
+    for priority, patterns in PATTERNS['ignore'].items():
+        for pattern in patterns:
+            if re.search(pattern, body_lower):
+                return 'ignore', priority, 'Automated or acknowledgment comment'
 
     # Check for explanation patterns — only after ruling out code_change,
     # so "Why did you fix it this way?" is correctly classified as explain
     # rather than matching "fix" as code_change first (handled above) or
     # matching "?" and missing code_change intent.
-    for pattern in PATTERNS['explain']:
-        if re.search(pattern, body_lower):
-            return 'explain', 'low', 'Question or clarification request'
+    for priority, patterns in PATTERNS['explain'].items():
+        for pattern in patterns:
+            if re.search(pattern, body_lower):
+                return 'explain', priority, 'Question or clarification request'
 
     # Standalone question mark — comment is a question but doesn't match
     # explicit explain keywords. Check after code_change and explain patterns.
@@ -232,17 +253,6 @@ def classify_comment(body: str, context: str | None = None) -> tuple[str, str, s
         # Comment mentions something visible in the code context —
         # likely a targeted review comment that needs action
         context_lower = context.lower()
-        # Extract potential identifiers: words with underscores, dots, parens,
-        # or camelCase (mixed upper/lower within a word)
-        def _looks_like_identifier(w: str) -> bool:
-            clean = w.rstrip('.,;:)')
-            if '_' in clean or '.' in clean or '(' in clean:
-                return True
-            # camelCase: has both upper and lower, at least 4 chars
-            if len(clean) >= 4 and any(c.isupper() for c in clean[1:]) and any(c.islower() for c in clean):
-                return True
-            return False
-
         code_refs = [w for w in body.split() if _looks_like_identifier(w)]
         if any(ref.lower().rstrip('.,;:)') in context_lower for ref in code_refs):
             return 'code_change', 'medium', 'Comment references code identifiers visible in context'
@@ -258,7 +268,12 @@ def classify_comment(body: str, context: str | None = None) -> tuple[str, str, s
 
 
 def suggest_implementation(action: str, body: str, path: str | None, line: int | None) -> str | None:
-    """Generate implementation suggestion based on action type."""
+    """Generate implementation suggestion based on action type.
+
+    For code_change actions, extracts the most specific verb from the comment
+    body to produce a targeted suggestion. Falls back to a generic review
+    prompt when no verb is detected.
+    """
     if action == 'ignore':
         return None
 
@@ -267,19 +282,22 @@ def suggest_implementation(action: str, body: str, path: str | None, line: int |
     if action == 'explain':
         return f'Reply to comment at {location} with explanation of design decision'
 
-    # For code_change, try to extract specific action
+    # For code_change, extract the most specific action verb from the body.
+    # Checked in specificity order: more targeted verbs first.
     body_lower = body.lower()
+    verb_map = [
+        (['rename', 'refactor'], 'Rename/refactor as suggested'),
+        (['remove', 'delete', 'drop'], 'Remove indicated code'),
+        (['add', 'include', 'create'], 'Add requested code/functionality'),
+        (['replace', 'swap', 'change', 'update'], 'Update code as requested'),
+        (['fix', 'resolve', 'correct'], 'Fix the issue indicated'),
+        (['move', 'extract', 'split'], 'Restructure code as suggested'),
+    ]
+    for verbs, suggestion in verb_map:
+        if any(v in body_lower for v in verbs):
+            return f'{suggestion} at {location}'
 
-    if 'add' in body_lower:
-        return f'Add requested code/functionality at {location}'
-    elif 'remove' in body_lower or 'delete' in body_lower:
-        return f'Remove indicated code at {location}'
-    elif 'rename' in body_lower:
-        return f'Rename as suggested at {location}'
-    elif 'fix' in body_lower:
-        return f'Fix the issue indicated at {location}'
-    else:
-        return f'Review and address comment at {location}'
+    return f'Review and address comment at {location}'
 
 
 def triage_comment(comment: dict) -> dict:

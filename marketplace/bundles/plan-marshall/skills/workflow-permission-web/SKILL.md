@@ -77,10 +77,11 @@ For each domain in the script's `unknown` category:
 2. **Assess security** — check against red flags from `standards/domain-security-assessment.md`
 3. **Categorize** — classify as project-specific, suspicious, or suitable for global
 
-Or batch-categorize domains directly:
+> **Note:** The `categorize` subcommand below only checks domains against the static known-domain lists — it does **not** perform web research. Use it for quick classification of domains you've already researched, not as a substitute for the research step above.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web categorize \
-    --domains '["unknown-domain.com", "another-domain.io"]'
+    --domains '["already-researched.com", "another-known.io"]'
 ```
 
 ### Step 5: Generate Consolidation Recommendations

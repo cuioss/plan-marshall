@@ -381,6 +381,24 @@ class TestDiagnose(unittest.TestCase):
         self.assertEqual(categories, {'build', 'reviews', 'sonar'})
         self.assertEqual(len(result['recommended_actions']), 3)
 
+    def test_build_pass_with_review_issues(self):
+        """Test diagnosis with passing build but unresolved review comments (#52)."""
+        comments = json.dumps([{'priority': 'high', 'body': 'Fix this'}])
+        stdout, _, code = run_doctor_script([
+            'diagnose',
+            '--build-status', 'success',
+            '--review-comments', comments,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['overall'], 'fail')  # Still fail due to reviews
+        self.assertEqual(result['build_status'], 'PASS')
+        self.assertEqual(result['review_comments'], 1)
+        # Only review issues, no build issues
+        categories = {i['category'] for i in result['issues']}
+        self.assertIn('reviews', categories)
+        self.assertNotIn('build', categories)
+
     def test_no_inputs_is_pass(self):
         """Test that diagnose with no inputs reports pass."""
         stdout, _, code = run_doctor_script(['diagnose'])
@@ -414,6 +432,46 @@ class TestDiagnose(unittest.TestCase):
         sonar_issue = next(i for i in result['issues'] if i['category'] == 'sonar')
         self.assertEqual(sonar_issue['breakdown']['CRITICAL'], 2)
         self.assertEqual(sonar_issue['breakdown']['MAJOR'], 1)
+
+
+class TestDiagnoseBuildSeverity(unittest.TestCase):
+    """Test that build failure severity varies by step type (#46)."""
+
+    def test_lint_failure_is_medium(self):
+        """Lint failure should be medium severity, not high."""
+        failures = json.dumps([{'step': 'lint', 'message': 'ESLint errors'}])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-status', 'failure',
+            '--build-failures', failures,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        build_issue = next(i for i in result['issues'] if i['category'] == 'build')
+        self.assertEqual(build_issue['severity'], 'medium')
+
+    def test_compile_failure_is_high(self):
+        """Compile failure should be high severity."""
+        failures = json.dumps([{'step': 'compile', 'message': 'Compilation error'}])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-status', 'failure',
+            '--build-failures', failures,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        build_issue = next(i for i in result['issues'] if i['category'] == 'build')
+        self.assertEqual(build_issue['severity'], 'high')
+
+    def test_unknown_step_defaults_to_high(self):
+        """Unknown step type should default to high severity."""
+        failures = json.dumps([{'step': 'unknown', 'message': 'Something failed'}])
+        stdout, _, code = run_doctor_script([
+            'diagnose', '--build-status', 'failure',
+            '--build-failures', failures,
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        build_issue = next(i for i in result['issues'] if i['category'] == 'build')
+        self.assertEqual(build_issue['severity'], 'high')
 
 
 class TestDiagnoseEdgeCases(unittest.TestCase):
