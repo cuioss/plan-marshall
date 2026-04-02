@@ -59,6 +59,7 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
 - `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
 - `--mode` - Output mode: actionable (default), structured, errors
 - `--format` - Output format: toon (default), json
+- `--project-dir` - Project root directory (default: `.`)
 
 **Output Format (TOON)**:
 

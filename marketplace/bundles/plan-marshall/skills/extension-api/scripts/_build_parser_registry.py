@@ -112,3 +112,37 @@ class ParserRegistry:
                 continue
 
         return [], None, 'FAILURE'
+
+    def parse_multi(self, log_file: str | Path) -> ParserResult:
+        """Parse log file by running all matching parsers and combining results.
+
+        Unlike parse() which routes to a single parser, this runs every parser
+        whose content_check matches and merges their results. Useful when build
+        output contains output from multiple tools (e.g., mypy + ruff + pytest
+        in a single pyprojectx verify run).
+
+        Args:
+            log_file: Path to the log file.
+
+        Returns:
+            Tuple of (issues, test_summary, build_status).
+        """
+        try:
+            content = Path(log_file).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return [], None, 'FAILURE'
+
+        all_issues: list[Issue] = []
+        test_summary: UnitTestSummary | None = None
+
+        for rule in self._rules:
+            if rule.content_check is not None and rule.content_check(content):
+                issues, summary, _ = rule.parser(str(log_file))
+                all_issues.extend(issues)
+                if summary is not None:
+                    test_summary = summary
+
+        error_issues = [i for i in all_issues if i.severity == 'error']
+        build_status = 'FAILURE' if error_issues else 'SUCCESS'
+
+        return all_issues, test_summary, build_status

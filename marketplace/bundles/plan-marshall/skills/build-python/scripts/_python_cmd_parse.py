@@ -11,7 +11,7 @@ Usage (internal):
 import re
 from pathlib import Path
 
-from _build_parse import Issue, UnitTestSummary, extract_test_summary
+from _build_parse import Issue, UnitTestSummary, extract_test_summary  # noqa: F401 - used by parsers below
 from _build_parser_registry import DetectionRule, ParserRegistry
 
 
@@ -140,23 +140,4 @@ def parse_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
     # Python build output often contains output from multiple tools
     # (mypy + ruff + pytest in a single verify run), so we run all parsers
     # and combine results instead of using registry's single-match routing.
-    try:
-        content = Path(log_file).read_text(encoding='utf-8', errors='replace')
-    except OSError:
-        return [], None, 'FAILURE'
-
-    all_issues: list[Issue] = []
-    test_summary: UnitTestSummary | None = None
-
-    for rule in _REGISTRY._rules:
-        if rule.content_check is not None and rule.content_check(content):
-            issues, summary, _ = rule.parser(log_file)
-            all_issues.extend(issues)
-            if summary is not None:
-                test_summary = summary
-
-    # Determine build status: SUCCESS only when no errors found
-    error_issues = [i for i in all_issues if i.severity == 'error']
-    build_status = 'FAILURE' if error_issues else 'SUCCESS'
-
-    return all_issues, test_summary, build_status
+    return _REGISTRY.parse_multi(log_file)

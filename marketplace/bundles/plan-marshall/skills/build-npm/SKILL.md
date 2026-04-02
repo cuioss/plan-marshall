@@ -57,22 +57,22 @@ All build skills share the same subcommand structure. npm supports the common su
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
     --command-args "<command>" \
-    [--working-dir <path>] \
-    [--env "NODE_ENV=production"] \
     [--timeout <seconds>] \
-    [--project-dir <path>] \
     [--mode <mode>] \
-    [--format <toon|json>]
+    [--format <toon|json>] \
+    [--project-dir <path>] \
+    [--working-dir <path>] \
+    [--env "NODE_ENV=production"]
 ```
 
 **Parameters**:
 - `--command-args` - Complete npm command arguments, e.g. `"run test"` or `"run test --workspace=pkg"` (required)
-- `--working-dir` - Working directory for command execution
-- `--env` - Environment variables (e.g. `"NODE_ENV=test CI=true"`)
 - `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
-- `--project-dir` - Project root directory (default: `.`)
 - `--mode` - Output mode: actionable (default), structured, errors
 - `--format` - Output format: toon (default), json
+- `--project-dir` - Project root directory (default: `.`)
+- `--working-dir` - Working directory for command execution
+- `--env` - Environment variables (e.g. `"NODE_ENV=test CI=true"`)
 
 **Output Format (TOON)**:
 

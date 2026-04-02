@@ -48,17 +48,18 @@ All build skills share the same subcommand structure. Python supports the common
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
-    --command-args "<canonical-command>" \
-    [--format <toon|json>] \
+    --command-args "<command>" \
+    [--timeout <seconds>] \
     [--mode <mode>] \
-    [--timeout <seconds>]
+    [--format <toon|json>]
 ```
 
 **Parameters**:
-- `--command-args` - Canonical pyprojectx command (e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`) (required)
-- `--format` - Output format: toon (default) or json
-- `--mode` - Output mode: actionable (default), structured, errors
+- `--command-args` - Complete pyprojectx command arguments (e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`) (required)
 - `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
+- `--mode` - Output mode: actionable (default), structured, errors
+- `--format` - Output format: toon (default), json
+- `--project-dir` - Project root directory (default: `.`)
 
 **Output Format (TOON)**:
 
@@ -166,11 +167,11 @@ python3 .plan/execute-script.py plan-marshall:build-python:python_build discover
 status	success
 count	2
 
-modules[2]{name,build_systems,paths,metadata,stats,commands}:
-  core	["python"]	{module: "core", descriptor: "core/pyproject.toml", ...}	{...}	{source_files: 15, test_files: 8}	{verify: "verify core", compile: "compile core", module-tests: "module-tests core", ...}
+modules[2]{name,build_systems,paths,metadata,packages,stats,commands}:
+  core	["python"]	{module: "core", descriptor: "core/pyproject.toml", ...}	{...}	{...}	{source_files: 15, test_files: 8}	{verify: "verify core", compile: "compile core", module-tests: "module-tests core", ...}
 ```
 
-Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata`, `stats` (source_files/test_files), `commands` (canonical pyprojectx commands).
+Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata`, `packages`, `test_packages`, `dependencies`, `stats` (source_files/test_files), `commands` (canonical pyprojectx commands).
 
 ## Wrapper Detection
 

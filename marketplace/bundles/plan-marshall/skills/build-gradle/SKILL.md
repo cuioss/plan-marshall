@@ -51,16 +51,17 @@ All build skills share the same subcommand structure. Gradle supports all subcom
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
     --command-args "<tasks>" \
-    [--format <toon|json>] \
     [--timeout <seconds>] \
-    [--mode <mode>]
+    [--mode <mode>] \
+    [--format <toon|json>]
 ```
 
 **Parameters**:
 - `--command-args` - Complete Gradle command arguments, e.g. `":module:build"` or `"build"` (required)
-- `--format` - Output format: toon (default), json
 - `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
 - `--mode` - Output mode: actionable (default), structured, errors
+- `--format` - Output format: toon (default), json
+- `--project-dir` - Project root directory (default: `.`)
 
 **Output Format (TOON)**:
 
@@ -233,6 +234,7 @@ Discovery generates canonical commands per subproject:
 | `quality-gate` | `:module:check` |
 | `compile` | `:module:compileJava` |
 | `module-tests` | `:module:test` |
+| `coverage` | `:module:test :module:jacocoTestReport` |
 | `clean` | `clean` |
 
 ## References

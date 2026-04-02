@@ -19,12 +19,10 @@ Output:
     JSON array of module objects conforming to module-discovery.md contract.
 """
 
-import argparse
 import json
 from pathlib import Path
 
 from _build_commands import build_canonical_commands, build_chained_commands
-from _build_format import format_toon
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from extension_base import (
@@ -288,29 +286,3 @@ def _load_package_json(path: Path) -> dict | None:
         return None
 
 
-# =============================================================================
-# CLI
-# =============================================================================
-
-
-def main():
-    parser = argparse.ArgumentParser(description='npm module discovery')
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    discover_parser = subparsers.add_parser('discover', help='Discover npm modules')
-    discover_parser.add_argument('--root', required=True, help='Project root directory')
-    discover_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format')
-
-    args = parser.parse_args()
-
-    if args.command == 'discover':
-        modules = discover_npm_modules(args.root)
-        result = {'status': 'success', 'modules': modules, 'count': len(modules)}
-        if args.format == 'json':
-            print(json.dumps(result, indent=2))
-        else:
-            print(format_toon(result))
-
-
-if __name__ == '__main__':
-    main()

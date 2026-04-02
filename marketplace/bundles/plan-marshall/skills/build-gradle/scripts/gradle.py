@@ -25,6 +25,7 @@ import sys
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
 from _build_shared import (
+    add_search_markers_subparser,
     build_main,
     register_standard_subparsers,
     safe_main,
@@ -60,13 +61,6 @@ def _register_find_project(subparsers):
     find_parser.set_defaults(func=cmd_find_project)
 
 
-def _register_search_markers(subparsers):
-    markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
-    markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
-    markers_parser.add_argument('--extensions', default='.java,.kt', help='Comma-separated extensions')
-    markers_parser.set_defaults(func=cmd_search_markers)
-
-
 def main() -> int:
     """Main entry point."""
     return build_main('Gradle build operations', register_standard_subparsers(
@@ -79,7 +73,10 @@ def main() -> int:
         check_warnings_handler=cmd_check_warnings,
         discover_handler=discover_gradle_modules,
         discover_help='Discover Gradle modules',
-        extra_register_fns=[_register_find_project, _register_search_markers],
+        extra_register_fns=[
+            _register_find_project,
+            lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java,.kt'),
+        ],
     ))
 
 

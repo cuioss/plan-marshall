@@ -18,17 +18,11 @@ Output:
     JSON array of module objects conforming to module-discovery.md contract.
 """
 
-import argparse
-import json
 from pathlib import Path
 
 from _build_commands import build_canonical_commands
 from _build_discover import EXCLUDE_DIRS
-from _build_format import format_toon
 from extension_base import find_readme
-
-# Python source extensions
-PYTHON_EXTENSIONS = ['*.py']
 
 # Directories that indicate a test module
 TEST_DIR_NAMES = {'test', 'tests'}
@@ -146,9 +140,16 @@ def _build_module(module_path: Path, project_root: Path, relative_path: str) -> 
     source_files = _count_python_files(module_path, source_dirs)
     test_files = _count_python_files(module_path, test_dirs)
 
+    # Packages (Python dotted notation from source dirs)
+    packages = _discover_python_packages(module_path, source_dirs, prefix)
+    test_packages = _discover_python_packages(module_path, test_dirs, prefix)
+
     # README
     readme = find_readme(str(module_path))
     readme_path = f'{prefix}/{readme}' if readme and prefix else readme
+
+    # Descriptor (pyproject.toml or setup.cfg)
+    descriptor = _find_descriptor(module_path, prefix)
 
     # Commands
     commands = _build_commands(name, relative_path, test_files > 0)
@@ -158,10 +159,15 @@ def _build_module(module_path: Path, project_root: Path, relative_path: str) -> 
         'build_systems': ['python'],
         'paths': {
             'module': relative_path,
+            'descriptor': descriptor,
             'sources': source_paths if source_paths else None,
             'tests': test_paths if test_paths else None,
             'readme': readme_path,
         },
+        'metadata': {},
+        'packages': packages,
+        'test_packages': test_packages,
+        'dependencies': [],
         'stats': {'source_files': source_files, 'test_files': test_files},
         'commands': commands,
     }
@@ -217,6 +223,65 @@ def _count_python_files(module_path: Path, dirs: list[str]) -> int:
     return count
 
 
+def _discover_python_packages(module_path: Path, source_dirs: list[str], prefix: str) -> dict:
+    """Discover Python packages from source directories.
+
+    Scans for directories containing __init__.py or .py files and
+    converts directory structure to dotted package notation.
+
+    Args:
+        module_path: Absolute path to module directory.
+        source_dirs: List of relative source directory paths.
+        prefix: Module path relative to project root.
+
+    Returns:
+        Dict keyed by dotted package name with path and file list.
+    """
+    packages: dict[str, dict] = {}
+
+    for source_dir in source_dirs:
+        source_path = module_path / source_dir
+        if not source_path.exists():
+            continue
+
+        for py_file in source_path.rglob('*.py'):
+            pkg_dir = py_file.parent
+            try:
+                rel = pkg_dir.relative_to(source_path)
+            except ValueError:
+                continue
+            pkg_name = str(rel).replace('/', '.').replace('\\', '.')
+            if pkg_name == '.':
+                pkg_name = '(root)'
+
+            if pkg_name not in packages:
+                rel_path = f'{prefix}/{source_dir}/{rel}' if prefix else f'{source_dir}/{rel}'
+                packages[pkg_name] = {'path': rel_path.rstrip('/.'), 'files': []}
+            packages[pkg_name]['files'].append(py_file.name)
+
+    # Sort file lists for deterministic output
+    for pkg in packages.values():
+        pkg['files'] = sorted(set(pkg['files']))
+
+    return packages
+
+
+def _find_descriptor(module_path: Path, prefix: str) -> str | None:
+    """Find Python project descriptor file (pyproject.toml or setup.cfg).
+
+    Args:
+        module_path: Absolute path to module directory.
+        prefix: Module path relative to project root.
+
+    Returns:
+        Relative path to descriptor, or None.
+    """
+    for name in ('pyproject.toml', 'setup.cfg', 'setup.py'):
+        if (module_path / name).exists():
+            return f'{prefix}/{name}' if prefix else name
+    return None
+
+
 # =============================================================================
 # Commands
 # =============================================================================
@@ -248,29 +313,3 @@ def _build_commands(module_name: str, relative_path: str, has_tests: bool) -> di
     return build_canonical_commands(skill, cmd_map)
 
 
-# =============================================================================
-# CLI
-# =============================================================================
-
-
-def main():
-    parser = argparse.ArgumentParser(description='Python module discovery')
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    discover_parser = subparsers.add_parser('discover', help='Discover Python modules')
-    discover_parser.add_argument('--root', required=True, help='Project root directory')
-    discover_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format')
-
-    args = parser.parse_args()
-
-    if args.command == 'discover':
-        modules = discover_python_modules(args.root)
-        result = {'status': 'success', 'modules': modules, 'count': len(modules)}
-        if args.format == 'json':
-            print(json.dumps(result, indent=2))
-        else:
-            print(format_toon(result))
-
-
-if __name__ == '__main__':
-    main()

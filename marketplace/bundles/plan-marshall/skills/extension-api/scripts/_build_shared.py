@@ -334,6 +334,26 @@ def safe_main(main_fn: Callable[[], int]) -> int:
         return 1
 
 
+def add_search_markers_subparser(subparsers, search_markers_fn, *, default_extensions: str = '.java'):
+    """Add standard 'search-markers' subparser for OpenRewrite TODO markers.
+
+    Used by Maven and Gradle build skills that support OpenRewrite integration.
+
+    Args:
+        subparsers: argparse subparsers object.
+        search_markers_fn: Handler function for search-markers command.
+        default_extensions: Default file extensions to search (e.g., '.java', '.java,.kt').
+
+    Returns:
+        The created search-markers subparser.
+    """
+    markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
+    markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
+    markers_parser.add_argument('--extensions', default=default_extensions, help='Comma-separated extensions')
+    markers_parser.set_defaults(func=search_markers_fn)
+    return markers_parser
+
+
 def register_standard_subparsers(
     *,
     run_handler: Callable | None = None,
