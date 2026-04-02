@@ -25,12 +25,8 @@ import sys
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
 from _build_shared import (
-    add_check_warnings_subparser,
-    add_coverage_subparser,
-    add_discover_subparser,
-    add_parse_subparser,
-    add_run_subparser,
     build_main,
+    register_standard_subparsers,
     safe_main,
 )
 from _gradle_cmd_discover import discover_gradle_modules
@@ -55,18 +51,6 @@ cmd_check_warnings = create_check_warnings_handler(
 )
 
 
-def _register_run(subparsers):
-    run_parser = add_run_subparser(
-        subparsers,
-        command_args_help="Complete Gradle command arguments (e.g., ':module:build' or 'build')",
-    )
-    run_parser.set_defaults(func=cmd_run)
-
-
-def _register_parse(subparsers):
-    add_parse_subparser(subparsers, parse_log, help_text='Parse Gradle build output and categorize issues')
-
-
 def _register_find_project(subparsers):
     find_parser = subparsers.add_parser('find-project', help='Find Gradle project path from project name')
     find_group = find_parser.add_mutually_exclusive_group(required=True)
@@ -76,11 +60,6 @@ def _register_find_project(subparsers):
     find_parser.set_defaults(func=cmd_find_project)
 
 
-def _register_coverage(subparsers):
-    cov_parser = add_coverage_subparser(subparsers, help_text='Parse JaCoCo coverage report')
-    cov_parser.set_defaults(func=cmd_coverage_report)
-
-
 def _register_search_markers(subparsers):
     markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
     markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
@@ -88,25 +67,20 @@ def _register_search_markers(subparsers):
     markers_parser.set_defaults(func=cmd_search_markers)
 
 
-def _register_check_warnings(subparsers):
-    add_check_warnings_subparser(subparsers, cmd_check_warnings)
-
-
-def _register_discover(subparsers):
-    add_discover_subparser(subparsers, discover_gradle_modules, help_text='Discover Gradle modules')
-
-
 def main() -> int:
     """Main entry point."""
-    return build_main('Gradle build operations', [
-        _register_run,
-        _register_parse,
-        _register_find_project,
-        _register_coverage,
-        _register_search_markers,
-        _register_check_warnings,
-        _register_discover,
-    ])
+    return build_main('Gradle build operations', register_standard_subparsers(
+        run_handler=cmd_run,
+        run_args_help="Complete Gradle command arguments (e.g., ':module:build' or 'build')",
+        parse_handler=parse_log,
+        parse_help='Parse Gradle build output and categorize issues',
+        coverage_handler=cmd_coverage_report,
+        coverage_help='Parse JaCoCo coverage report',
+        check_warnings_handler=cmd_check_warnings,
+        discover_handler=discover_gradle_modules,
+        discover_help='Discover Gradle modules',
+        extra_register_fns=[_register_find_project, _register_search_markers],
+    ))
 
 
 if __name__ == '__main__':

@@ -20,12 +20,8 @@ import sys
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
 from _build_shared import (
-    add_check_warnings_subparser,
-    add_coverage_subparser,
-    add_discover_subparser,
-    add_parse_subparser,
-    add_run_subparser,
     build_main,
+    register_standard_subparsers,
     safe_main,
 )
 from _npm_cmd_discover import discover_npm_modules
@@ -54,45 +50,21 @@ def _npm_extra_args(run_parser):
     run_parser.add_argument('--env', help="Environment variables (e.g., 'NODE_ENV=test CI=true')")
 
 
-def _register_run(subparsers):
-    run_parser = add_run_subparser(
-        subparsers,
-        command_args_help="Complete npm command arguments (e.g., 'run test' or 'run test --workspace=pkg')",
-        extra_args_fn=_npm_extra_args,
-    )
-    run_parser.set_defaults(func=cmd_run)
-
-
-def _register_parse(subparsers):
-    add_parse_subparser(
-        subparsers, parse_log,
-        help_text='Parse npm/npx build output and categorize issues',
-        parser_needs_command=True,
-    )
-
-
-def _register_coverage(subparsers):
-    cov_parser = add_coverage_subparser(subparsers, help_text='Parse JavaScript coverage report')
-    cov_parser.set_defaults(func=cmd_coverage_report)
-
-
-def _register_check_warnings(subparsers):
-    add_check_warnings_subparser(subparsers, cmd_check_warnings)
-
-
-def _register_discover(subparsers):
-    add_discover_subparser(subparsers, discover_npm_modules, help_text='Discover npm modules')
-
-
 def main() -> int:
     """Main entry point."""
-    return build_main('npm/npx build operations', [
-        _register_run,
-        _register_parse,
-        _register_coverage,
-        _register_check_warnings,
-        _register_discover,
-    ])
+    return build_main('npm/npx build operations', register_standard_subparsers(
+        run_handler=cmd_run,
+        run_args_help="Complete npm command arguments (e.g., 'run test' or 'run test --workspace=pkg')",
+        run_extra_args_fn=_npm_extra_args,
+        parse_handler=parse_log,
+        parse_help='Parse npm/npx build output and categorize issues',
+        parse_needs_command=True,
+        coverage_handler=cmd_coverage_report,
+        coverage_help='Parse JavaScript coverage report',
+        check_warnings_handler=cmd_check_warnings,
+        discover_handler=discover_npm_modules,
+        discover_help='Discover npm modules',
+    ))
 
 
 if __name__ == '__main__':

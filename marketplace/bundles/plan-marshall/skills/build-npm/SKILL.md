@@ -115,7 +115,10 @@ python3 .plan/execute-script.py plan-marshall:build-npm:npm parse \
 
 **Parameters**:
 - `--log` - Path to npm build log file (required)
-- `--mode` - Output mode: default, errors, structured (default)
+- `--mode` - Output mode (default: `structured`):
+  - `default` - All issues, unfiltered
+  - `errors` - Only error-severity issues
+  - `structured` - All issues with structured summary
 
 ### coverage-report
 
@@ -161,6 +164,29 @@ python3 .plan/execute-script.py plan-marshall:build-npm:npm check-warnings \
 **Parameters**:
 - `--warnings` - JSON array of warnings
 - `--acceptable-warnings` - JSON object with acceptable patterns
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-npm:npm discover \
+    [--root <path>] [--format <toon|json>]
+```
+
+**Parameters**:
+- `--root` - Project root directory (default: `.`)
+- `--format` - Output format: toon (default), json
+
+**Output Format (TOON)**:
+
+```
+status	success
+count	2
+
+modules[2]{name,build_systems,paths,metadata,packages,stats,commands}:
+  my-workspace	["npm"]	{module: "packages/my-workspace", descriptor: "packages/my-workspace/package.json", ...}	{version: "1.0.0", scripts: [...], ...}	{...}	{source_files: 20, test_files: 10}	{compile: "run build", module-tests: "run test", quality-gate: "run lint", ...}
+```
+
+Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata` (version/scripts/dependencies), `packages`, `stats` (source_files/test_files), `commands` (canonical build commands based on available package.json scripts).
 
 ## npm vs npx Detection
 

@@ -334,6 +334,84 @@ def safe_main(main_fn: Callable[[], int]) -> int:
         return 1
 
 
+def register_standard_subparsers(
+    *,
+    run_handler: Callable | None = None,
+    run_args_help: str = 'Complete command arguments',
+    run_extra_args_fn: Callable | None = None,
+    parse_handler: ParserFn | None = None,
+    parse_help: str = 'Parse build output and categorize issues',
+    parse_extra_modes: list[str] | None = None,
+    parse_extra_filters: dict[str, Callable[[Issue], bool]] | None = None,
+    parse_needs_command: bool = False,
+    discover_handler: Callable | None = None,
+    discover_help: str = 'Discover project modules',
+    coverage_handler: Callable | None = None,
+    coverage_help: str = 'Parse coverage report',
+    check_warnings_handler: Callable | None = None,
+    extra_register_fns: list[Callable] | None = None,
+) -> list[Callable]:
+    """Build a list of subparser registration functions from declarative config.
+
+    Reduces boilerplate in build skill main scripts by replacing individual
+    _register_* wrapper functions with a single declarative call.
+
+    Args:
+        run_handler: Handler for 'run' subcommand (cmd_run function).
+        run_args_help: Help text for --command-args.
+        run_extra_args_fn: Extra args callback for run subparser (e.g., npm's --env).
+        parse_handler: Log parser function for 'parse' subcommand.
+        parse_help: Help text for parse subparser.
+        parse_extra_modes: Additional parse mode choices.
+        parse_extra_filters: Extra mode filters for parse.
+        parse_needs_command: If True, passes command to parser.
+        discover_handler: Discovery function for 'discover' subcommand.
+        discover_help: Help text for discover subparser.
+        coverage_handler: Handler for 'coverage-report' subcommand.
+        coverage_help: Help text for coverage subparser.
+        check_warnings_handler: Handler for 'check-warnings' subcommand.
+        extra_register_fns: Additional registration functions for tool-specific subcommands.
+
+    Returns:
+        List of registration functions suitable for build_main().
+    """
+    fns: list[Callable] = []
+
+    if run_handler is not None:
+        def _reg_run(subparsers, _h=run_handler, _help=run_args_help, _extra=run_extra_args_fn):
+            p = add_run_subparser(subparsers, command_args_help=_help, extra_args_fn=_extra)
+            p.set_defaults(func=_h)
+        fns.append(_reg_run)
+
+    if parse_handler is not None:
+        def _reg_parse(subparsers, _h=parse_handler, _ht=parse_help, _em=parse_extra_modes,
+                       _ef=parse_extra_filters, _nc=parse_needs_command):
+            add_parse_subparser(subparsers, _h, help_text=_ht, extra_modes=_em,
+                                extra_filters=_ef, parser_needs_command=_nc)
+        fns.append(_reg_parse)
+
+    if extra_register_fns:
+        fns.extend(extra_register_fns)
+
+    if coverage_handler is not None:
+        def _reg_cov(subparsers, _h=coverage_handler, _ht=coverage_help):
+            p = add_coverage_subparser(subparsers, help_text=_ht)
+            p.set_defaults(func=_h)
+        fns.append(_reg_cov)
+
+    if check_warnings_handler is not None:
+        def _reg_warn(subparsers, _h=check_warnings_handler):
+            add_check_warnings_subparser(subparsers, _h)
+        fns.append(_reg_warn)
+
+    if discover_handler is not None:
+        def _reg_disc(subparsers, _h=discover_handler, _ht=discover_help):
+            add_discover_subparser(subparsers, _h, help_text=_ht)
+        fns.append(_reg_disc)
+
+    return fns
+
+
 def build_main(
     description: str,
     subparser_fns: list[Callable],

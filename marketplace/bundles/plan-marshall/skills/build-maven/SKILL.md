@@ -99,7 +99,11 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven parse \
 
 **Parameters**:
 - `--log` - Path to Maven build log file (required)
-- `--mode` - Output mode: default, errors, structured (default), no-openrewrite
+- `--mode` - Output mode (default: `structured`):
+  - `default` - All issues, unfiltered
+  - `errors` - Only error-severity issues
+  - `structured` - All issues with structured summary
+  - `no-openrewrite` - Exclude OpenRewrite informational messages
 
 ### coverage-report
 
@@ -156,6 +160,29 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven search-markers \
 - `--extensions` - Comma-separated file extensions (default: .java)
 
 **Note**: This subcommand is specific to Maven and Gradle (OpenRewrite integration). Not available in npm or Python builds.
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-maven:maven discover \
+    [--root <path>] [--format <toon|json>]
+```
+
+**Parameters**:
+- `--root` - Project root directory (default: `.`)
+- `--format` - Output format: toon (default), json
+
+**Output Format (TOON)**:
+
+```
+status	success
+count	3
+
+modules[3]{name,build_systems,paths,metadata,packages,stats,commands}:
+  my-module	["maven"]	{module: "my-module", descriptor: "my-module/pom.xml", ...}	{artifact_id: "my-module", group_id: "com.example", ...}	{...}	{source_files: 12, test_files: 5}	{verify: "verify -pl my-module", compile: "compile -pl my-module", ...}
+```
+
+Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata` (artifact_id/group_id/packaging/profiles/parent/dependencies), `packages`, `test_packages`, `stats` (source_files/test_files), `commands` (canonical build commands).
 
 ## Wrapper Detection
 

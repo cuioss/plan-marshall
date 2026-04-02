@@ -23,12 +23,8 @@ import sys
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
 from _build_shared import (
-    add_check_warnings_subparser,
-    add_coverage_subparser,
-    add_discover_subparser,
-    add_parse_subparser,
-    add_run_subparser,
     build_main,
+    register_standard_subparsers,
     safe_main,
 )
 from _markers_search import cmd_search_markers
@@ -54,23 +50,6 @@ cmd_check_warnings = create_check_warnings_handler(
 )
 
 
-def _register_run(subparsers):
-    run_parser = add_run_subparser(
-        subparsers,
-        command_args_help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
-    )
-    run_parser.set_defaults(func=cmd_run)
-
-
-def _register_parse(subparsers):
-    add_parse_subparser(
-        subparsers, parse_log,
-        help_text='Parse Maven build output and categorize issues',
-        extra_modes=['no-openrewrite'],
-        extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
-    )
-
-
 def _register_search_markers(subparsers):
     markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
     markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
@@ -78,29 +57,22 @@ def _register_search_markers(subparsers):
     markers_parser.set_defaults(func=cmd_search_markers)
 
 
-def _register_coverage(subparsers):
-    cov_parser = add_coverage_subparser(subparsers, help_text='Parse JaCoCo coverage report')
-    cov_parser.set_defaults(func=cmd_coverage_report)
-
-
-def _register_check_warnings(subparsers):
-    add_check_warnings_subparser(subparsers, cmd_check_warnings)
-
-
-def _register_discover(subparsers):
-    add_discover_subparser(subparsers, discover_maven_modules, help_text='Discover Maven modules')
-
-
 def main() -> int:
     """Main entry point."""
-    return build_main('Maven build operations', [
-        _register_run,
-        _register_parse,
-        _register_search_markers,
-        _register_coverage,
-        _register_check_warnings,
-        _register_discover,
-    ])
+    return build_main('Maven build operations', register_standard_subparsers(
+        run_handler=cmd_run,
+        run_args_help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
+        parse_handler=parse_log,
+        parse_help='Parse Maven build output and categorize issues',
+        parse_extra_modes=['no-openrewrite'],
+        parse_extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
+        coverage_handler=cmd_coverage_report,
+        coverage_help='Parse JaCoCo coverage report',
+        check_warnings_handler=cmd_check_warnings,
+        discover_handler=discover_maven_modules,
+        discover_help='Discover Maven modules',
+        extra_register_fns=[_register_search_markers],
+    ))
 
 
 if __name__ == '__main__':

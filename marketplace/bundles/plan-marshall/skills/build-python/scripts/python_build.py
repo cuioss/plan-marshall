@@ -20,12 +20,8 @@ import sys
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
 from _build_shared import (
-    add_check_warnings_subparser,
-    add_coverage_subparser,
-    add_discover_subparser,
-    add_parse_subparser,
-    add_run_subparser,
     build_main,
+    register_standard_subparsers,
     safe_main,
 )
 from _python_cmd_discover import discover_python_modules
@@ -48,40 +44,19 @@ cmd_check_warnings = create_check_warnings_handler(
 )
 
 
-def _register_run(subparsers):
-    run_parser = add_run_subparser(
-        subparsers,
-        command_args_help="Canonical command to execute (e.g., 'verify', 'module-tests', 'quality-gate')",
-    )
-    run_parser.set_defaults(func=cmd_run)
-
-
-def _register_parse(subparsers):
-    add_parse_subparser(subparsers, parse_log, help_text='Parse pyprojectx build output and categorize issues')
-
-
-def _register_coverage(subparsers):
-    cov_parser = add_coverage_subparser(subparsers, help_text='Parse coverage.py XML report')
-    cov_parser.set_defaults(func=cmd_coverage_report)
-
-
-def _register_check_warnings(subparsers):
-    add_check_warnings_subparser(subparsers, cmd_check_warnings)
-
-
-def _register_discover(subparsers):
-    add_discover_subparser(subparsers, discover_python_modules, help_text='Discover Python modules')
-
-
 def main() -> int:
     """Main entry point."""
-    return build_main('Python/pyprojectx build operations', [
-        _register_run,
-        _register_parse,
-        _register_coverage,
-        _register_check_warnings,
-        _register_discover,
-    ])
+    return build_main('Python/pyprojectx build operations', register_standard_subparsers(
+        run_handler=cmd_run,
+        run_args_help="Canonical command to execute (e.g., 'verify', 'module-tests', 'quality-gate')",
+        parse_handler=parse_log,
+        parse_help='Parse pyprojectx build output and categorize issues',
+        coverage_handler=cmd_coverage_report,
+        coverage_help='Parse coverage.py XML report',
+        check_warnings_handler=cmd_check_warnings,
+        discover_handler=discover_python_modules,
+        discover_help='Discover Python modules',
+    ))
 
 
 if __name__ == '__main__':

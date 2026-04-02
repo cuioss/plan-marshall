@@ -99,6 +99,92 @@ Field: python.acceptable_warnings
 
 ---
 
+## Best Practices
+
+### Build Command Selection
+
+**Quality checks:**
+- Use `quality-gate` for mypy + ruff without running tests
+- Use `compile` for type-checking only
+- Use `verify` for full verification (quality-gate + tests)
+
+**Testing:**
+- Use `module-tests {module}` for a specific module
+- Use `module-tests` (no module) for all modules
+- Use `coverage {module}` for tests with coverage collection
+
+**Maintenance:**
+- Use `clean` to remove build artifacts before fresh builds
+
+### Environment Configuration
+
+**CI environment:**
+```bash
+CI=true ./pw verify
+```
+
+**Specific module testing:**
+```bash
+./pw module-tests core
+```
+
+**Coverage generation:**
+```bash
+./pw coverage core
+# or directly: pytest --cov --cov-report=xml
+```
+
+---
+
+## CI/CD Standards
+
+### Environment Variables
+
+```bash
+export CI=true
+export PYTHONDONTWRITEBYTECODE=1
+```
+
+### Non-Interactive Mode
+
+pyprojectx runs non-interactively by default. No special flags needed.
+
+### Caching
+
+Cache the `.pyprojectx/` directory between CI runs to avoid re-downloading tools.
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `FileNotFoundError` for wrapper | Ensure `./pw` or `pwx` exists; Python does not fall back to system commands |
+| mypy import errors | Check `mypy.ini` or `pyproject.toml` for missing `mypy_path` entries |
+| ruff configuration | Verify `[tool.ruff]` section in `pyproject.toml` |
+| pytest collection errors | Check for `__init__.py` in test directories if using package layout |
+| Timeout on first run | pyprojectx downloads tools on first invocation; increase timeout |
+
+### Diagnostic Commands
+
+```bash
+# Show pyprojectx version and installed tools
+./pw --version
+
+# Run mypy directly for detailed type errors
+./pw mypy src/
+
+# Run ruff with verbose output
+./pw ruff check --verbose src/
+
+# Run pytest with verbose output
+./pw pytest -v
+```
+
+---
+
 ## Coverage Report Paths
 
 The coverage report parser searches these paths in order:

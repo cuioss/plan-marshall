@@ -101,7 +101,10 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle parse \
 
 **Parameters**:
 - `--log` - Path to Gradle build log file (required)
-- `--mode` - Output mode: default, errors, structured (default)
+- `--mode` - Output mode (default: `structured`):
+  - `default` - All issues, unfiltered
+  - `errors` - Only error-severity issues
+  - `structured` - All issues with structured summary
 
 ### coverage-report
 
@@ -172,6 +175,29 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle find-project \
 - `--root` - Project root directory (default: .)
 
 **Note**: This subcommand is Gradle-specific. Maven uses `-pl {module}` directly.
+
+### discover
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-gradle:gradle discover \
+    [--root <path>] [--format <toon|json>]
+```
+
+**Parameters**:
+- `--root` - Project root directory (default: `.`)
+- `--format` - Output format: toon (default), json
+
+**Output Format (TOON)**:
+
+```
+status	success
+count	3
+
+modules[3]{name,build_systems,paths,metadata,packages,stats,commands}:
+  auth-service	["gradle"]	{module: "auth-service", descriptor: "services/auth-service/build.gradle", ...}	{group: "com.example", name: "auth-service", ...}	{...}	{source_files: 15, test_files: 8}	{verify: ":auth-service:build", compile: ":auth-service:compileJava", ...}
+```
+
+Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata` (group/name/version/description/dependencies), `packages`, `test_packages`, `stats` (source_files/test_files), `commands` (canonical build commands).
 
 ## Wrapper Detection
 
