@@ -72,7 +72,9 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 2. **Fetch Issues via MCP**
 
-   Call the SonarQube MCP tool directly with the assembled parameters:
+   Call the SonarQube MCP tool directly with the assembled parameters.
+   The tool name below is illustrative — verify the actual MCP tool name
+   from the connected SonarQube MCP server, as it may vary by version:
 
    ```
    mcp__sonarqube__search_sonar_issues_in_projects(
@@ -161,6 +163,8 @@ statistics:
    - Include rule key and reason
 
 5. **Mark Issues Resolved (Optional)**
+
+   Verify the actual MCP tool name from the connected server:
    ```
    mcp__sonarqube__change_sonar_issue_status(
      key: "{issue_key}",
@@ -257,6 +261,10 @@ Triage rules are data-driven — loaded from `standards/sonar-rules.json`:
 - **test_acceptable_rules**: Rules acceptable in test files
 
 To add or update Sonar rule handling, edit `standards/sonar-rules.json` instead of the script.
+
+## Triage Override Guidance
+
+The script triage is rule-based and handles common Sonar rules well, but novel or project-specific rules may get a default "fix" action when suppression is more appropriate (or vice versa). When you have context about the codebase that the script lacks — such as knowing a field is used via reflection, or that a pattern is intentional — override the script's decision and document your reasoning in the suppression comment or commit message.
 
 ## Error Handling
 

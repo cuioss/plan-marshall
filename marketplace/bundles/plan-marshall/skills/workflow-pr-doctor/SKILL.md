@@ -40,6 +40,7 @@ Load required skills:
 ```
 Skill: plan-marshall:workflow-integration-ci
 Skill: plan-marshall:workflow-integration-sonar
+Skill: plan-marshall:workflow-integration-git
 ```
 
 ## Workflow
@@ -162,6 +163,31 @@ After fixes: Verify build, commit via git workflow, push to PR branch.
 ### Step 7: Generate Summary
 
 Display: `PASS {fixed} fixed, ⚠ {remaining} remaining, → {next_action}`
+
+---
+
+### Workflow: Automated Review Lifecycle
+
+**Purpose:** Complete automated review cycle — wait for CI, fetch review comments, triage, respond, and resolve threads. Used by phase-6-finalize when `3_automated_review == true`.
+
+**Input:** `plan_id`, `pr_number`, `review_bot_buffer_seconds`
+
+**Steps:**
+
+1. Wait for CI → `ci ci wait --pr-number {pr_number}` (30-min timeout)
+2. Buffer for review bots → `sleep {review_bot_buffer_seconds}`
+3. Fetch comments → workflow-integration-ci Fetch Comments with `--unresolved-only`
+4. Triage each comment → workflow-integration-ci Handle Review triage
+5. Process by action type (code_change → Q-Gate finding + reply, explain → reply + resolve, ignore → resolve)
+6. Return summary with `loop_back_needed` flag
+
+**Detailed reference:** Read `standards/automated-review-lifecycle.md` for full step-by-step commands, ID format rules, and error handling.
+
+**Output:**
+```toon
+status: success|ci_failure
+loop_back_needed: true|false
+```
 
 ---
 

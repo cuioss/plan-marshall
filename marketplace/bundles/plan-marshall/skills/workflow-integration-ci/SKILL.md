@@ -42,9 +42,9 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
    - Implements code changes or generates explanations
    - Replaces: review-comment-triager agent
 
-3. **Automated Review Lifecycle** - Complete CI-wait → fetch → triage → respond → resolve cycle
-   - Used by phase-6-finalize when `3_automated_review == true`
-   - Orchestrates Workflows 1 and 2 with CI wait and thread resolution
+### Internal Dependencies
+
+The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `tools-integration-ci` (via PYTHONPATH). This avoids subprocess overhead but creates a compile-time dependency on those modules' internal API (`get_provider()`, `view_pr_data()`, `fetch_pr_comments_data()`). If `tools-integration-ci` refactors these functions, `pr.py` must be updated in lockstep.
 
 ## When to Activate This Skill
 
@@ -52,7 +52,6 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 - Processing review feedback
 - Implementing reviewer-requested changes
 - Generating explanations for reviewers
-- Running automated review lifecycle during finalize phase
 
 ## Workflows
 
@@ -175,31 +174,6 @@ status: success
 
 ---
 
-### Workflow 3: Automated Review Lifecycle
-
-**Purpose:** Complete automated review cycle for a PR — wait for CI, fetch review comments, triage, respond, and resolve threads. Used by phase-6-finalize when `3_automated_review == true`.
-
-**Input:** `plan_id`, `pr_number`, `review_bot_buffer_seconds`
-
-**Steps:**
-
-1. Wait for CI → `ci ci wait --pr-number {pr_number}` (30-min timeout)
-2. Buffer for review bots → `sleep {review_bot_buffer_seconds}`
-3. Fetch comments → Workflow 1 with `--unresolved-only`
-4. Triage each comment → Workflow 2 triage
-5. Process by action type (code_change → Q-Gate finding + reply, explain → reply + resolve, ignore → resolve)
-6. Return summary with `loop_back_needed` flag
-
-**Detailed reference:** Read `standards/automated-review-lifecycle.md` for full step-by-step commands, ID format rules, and error handling.
-
-**Output:**
-```toon
-status: success|ci_failure
-loop_back_needed: true|false
-```
-
----
-
 ## Scripts
 
 Script: `plan-marshall:workflow-integration-ci` → `pr.py`
@@ -251,18 +225,16 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
 | why, explain, reasoning, ? | explain | low |
 | lgtm, approved, looks good | ignore | none |
 
+## Triage Override Guidance
+
+The script triage uses regex pattern matching and will sometimes misclassify nuanced comments. When the script's `action` or `priority` doesn't match the semantic intent of the comment, override it. For example, "Why did you fix it this way?" semantically asks for an explanation even though it contains the word "fix". Use the script result as a starting point, not a final answer.
+
 ## Error Handling
 
 When a script returns `status: failure`:
 - **fetch-comments failure**: Report error to caller with stderr details. Do not proceed to triage.
 - **triage failure**: Log warning, skip the comment, continue processing remaining comments.
 - **CI router failure** (thread-reply, resolve-thread): Log warning, continue — replies and resolutions are best-effort.
-
-## Standards (Load On-Demand)
-
-| Standard | When to Load |
-|----------|-------------|
-| `standards/automated-review-lifecycle.md` | Full Workflow 3 reference with commands, ID format rules, error handling |
 
 ## Integration
 

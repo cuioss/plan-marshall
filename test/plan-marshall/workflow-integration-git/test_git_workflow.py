@@ -118,11 +118,11 @@ class TestFormatCommit(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn('--type', stderr)
 
-    def test_co_authored_by_footer_present(self):
-        """Test that Co-Authored-By footer is present."""
+    def test_co_authored_by_not_appended_by_script(self):
+        """Test that format-commit does NOT append Co-Authored-By (caller adds it at commit time)."""
         stdout, _, code = run_git_script(['format-commit', '--type', 'feat', '--subject', 'add feature'])
         self.assertEqual(code, 0)
-        self.assertIn('Co-Authored-By: Claude <noreply@anthropic.com>', stdout)
+        self.assertNotIn('Co-Authored-By', stdout)
 
     def test_ci_commit_type(self):
         """Test that ci is a valid commit type."""

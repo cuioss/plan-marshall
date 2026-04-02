@@ -135,7 +135,7 @@ pushed: true
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message |
+| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (without Co-Authored-By) |
 | `analyze-diff` | `--file` | Analyze diff for commit suggestions |
 | `detect-artifacts` | `[--root]` | Scan for committable artifacts |
 

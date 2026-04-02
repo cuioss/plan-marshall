@@ -4,7 +4,9 @@ Pre-commit artifact detection and cleanup. Run before staging to prevent build a
 
 ## Artifact Detection
 
-The `detect-artifacts` command in `git-workflow.py` is the **source of truth** for artifact patterns. Use it instead of manual Glob calls:
+The `detect-artifacts` command in `git-workflow.py` is the **source of truth** for artifact patterns. Use it instead of manual Glob calls.
+
+**Note:** On repos with a well-configured `.gitignore`, most artifact patterns (`*.class`, `target/`, `build/`, `node_modules/`) are already excluded and the command will return empty results. The command is most valuable for repos with incomplete `.gitignore` coverage or when running with `--no-gitignore` to audit what patterns are present.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts [--root <repo-root>]

@@ -30,7 +30,7 @@ import sys
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import cmd_triage_batch_handler, cmd_triage_single  # type: ignore[import-not-found]
+from triage_helpers import cmd_triage_batch_handler, cmd_triage_single, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # TRIAGE CONFIGURATION
@@ -306,4 +306,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

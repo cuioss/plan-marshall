@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from triage_helpers import safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # CONFIGURATION
@@ -162,9 +163,9 @@ def format_message(
         if footer:
             parts.append(footer)
 
-    # Add Co-Authored-By footer
-    parts.append('')
-    parts.append('Co-Authored-By: Claude <noreply@anthropic.com>')
+    # Co-Authored-By is NOT appended here — the caller (workflow Step 5
+    # or git commit command) adds it so the footer matches the project's
+    # configured format (see CLAUDE.md) and isn't duplicated.
 
     return '\n'.join(parts)
 
@@ -495,4 +496,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))
