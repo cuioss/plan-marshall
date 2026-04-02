@@ -25,12 +25,14 @@ from _build_coverage_report import create_coverage_report_handler
 from _build_shared import (
     add_check_warnings_subparser,
     add_coverage_subparser,
+    add_discover_subparser,
     add_parse_subparser,
     add_run_subparser,
     build_main,
     safe_main,
 )
 from _markers_search import cmd_search_markers
+from _maven_cmd_discover import discover_maven_modules
 from _maven_cmd_parse import parse_log
 from _maven_execute import cmd_run
 
@@ -85,6 +87,10 @@ def _register_check_warnings(subparsers):
     add_check_warnings_subparser(subparsers, cmd_check_warnings)
 
 
+def _register_discover(subparsers):
+    add_discover_subparser(subparsers, discover_maven_modules, help_text='Discover Maven modules')
+
+
 def main() -> int:
     """Main entry point."""
     return build_main('Maven build operations', [
@@ -93,6 +99,7 @@ def main() -> int:
         _register_search_markers,
         _register_coverage,
         _register_check_warnings,
+        _register_discover,
     ])
 
 

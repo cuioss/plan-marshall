@@ -252,6 +252,67 @@ def add_check_warnings_subparser(subparsers, check_warnings_fn, *, help_text: st
     return warn_parser
 
 
+def add_discover_subparser(subparsers, discover_fn, *, help_text: str = 'Discover project modules'):
+    """Add standard 'discover' subparser with common arguments.
+
+    All build skills share the same discover subparser pattern:
+    --root, --format.
+
+    Args:
+        subparsers: argparse subparsers object.
+        discover_fn: Tool-specific discover_modules function.
+            Must accept (project_root: str) and return list of module dicts.
+        help_text: Help text for the subparser.
+
+    Returns:
+        The created discover subparser.
+    """
+    discover_parser = subparsers.add_parser('discover', help=help_text)
+    discover_parser.add_argument('--root', default='.', help='Project root directory')
+    discover_parser.add_argument(
+        '--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)',
+    )
+
+    def _cmd_discover(args):
+        return cmd_discover_common(args, discover_fn)
+
+    discover_parser.set_defaults(func=_cmd_discover)
+    return discover_parser
+
+
+def cmd_discover_common(args, discover_fn: Callable) -> int:
+    """Common discover subcommand logic shared across all build skills.
+
+    Args:
+        args: Parsed argparse namespace with 'root' and 'format'.
+        discover_fn: Tool-specific discover function.
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
+    """
+    try:
+        modules = discover_fn(args.root)
+        result = {
+            'status': 'success',
+            'modules': modules,
+            'count': len(modules),
+        }
+        fmt = getattr(args, 'format', 'toon')
+        if fmt == 'json':
+            print(json.dumps(result, indent=2))
+        else:
+            print(format_toon(result))
+        return 0
+    except Exception as e:
+        error_output = {'status': 'error', 'error': f'discovery_failed: {e}'}
+        fmt = getattr(args, 'format', 'toon')
+        if fmt == 'json':
+            print(json.dumps(error_output, indent=2))
+        else:
+            print(format_toon(error_output))
+        return 1
+
+
 def safe_main(main_fn: Callable[[], int]) -> int:
     """Wrap a build script's main() to catch unhandled exceptions and emit TOON failure.
 

@@ -31,6 +31,8 @@ import json
 import re
 from pathlib import Path
 
+from _build_format import format_toon
+
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from extension_base import (
     build_module_base,
@@ -593,13 +595,17 @@ def main():
     # discover subcommand
     discover_parser = subparsers.add_parser('discover', help='Discover Maven modules')
     discover_parser.add_argument('--root', required=True, help='Project root directory')
-    discover_parser.add_argument('--format', choices=['json'], default='json', help='Output format')
+    discover_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format')
 
     args = parser.parse_args()
 
     if args.command == 'discover':
         modules = discover_maven_modules(args.root)
-        print(json.dumps(modules, indent=2))
+        result = {'status': 'success', 'modules': modules, 'count': len(modules)}
+        if args.format == 'json':
+            print(json.dumps(result, indent=2))
+        else:
+            print(format_toon(result))
 
 
 if __name__ == '__main__':

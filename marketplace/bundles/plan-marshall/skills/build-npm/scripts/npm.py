@@ -22,11 +22,13 @@ from _build_coverage_report import create_coverage_report_handler
 from _build_shared import (
     add_check_warnings_subparser,
     add_coverage_subparser,
+    add_discover_subparser,
     add_parse_subparser,
     add_run_subparser,
     build_main,
     safe_main,
 )
+from _npm_cmd_discover import discover_npm_modules
 from _npm_cmd_parse import parse_log
 from _npm_execute import cmd_run
 
@@ -78,6 +80,10 @@ def _register_check_warnings(subparsers):
     add_check_warnings_subparser(subparsers, cmd_check_warnings)
 
 
+def _register_discover(subparsers):
+    add_discover_subparser(subparsers, discover_npm_modules, help_text='Discover npm modules')
+
+
 def main() -> int:
     """Main entry point."""
     return build_main('npm/npx build operations', [
@@ -85,6 +91,7 @@ def main() -> int:
         _register_parse,
         _register_coverage,
         _register_check_warnings,
+        _register_discover,
     ])
 
 

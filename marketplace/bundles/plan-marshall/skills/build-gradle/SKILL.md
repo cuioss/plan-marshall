@@ -43,6 +43,7 @@ All build skills share the same subcommand structure. Gradle supports all subcom
 | `coverage-report` | Parse JaCoCo coverage report |
 | `check-warnings` | Categorize build warnings against acceptable patterns |
 | `search-markers` | Search OpenRewrite TODO markers in source files |
+| `discover` | Discover Gradle modules with metadata |
 | `find-project` | Find Gradle subproject path from name |
 
 ### run (Primary API)

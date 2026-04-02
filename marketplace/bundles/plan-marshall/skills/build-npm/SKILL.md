@@ -48,6 +48,7 @@ All build skills share the same subcommand structure. npm supports the common su
 | `parse` | Parse npm/npx build output from log file |
 | `coverage-report` | Parse JavaScript coverage report |
 | `check-warnings` | Categorize build warnings against acceptable patterns |
+| `discover` | Discover npm modules and workspaces |
 
 **Not available**: `search-markers` (OpenRewrite is Java-specific, not applicable to npm projects).
 

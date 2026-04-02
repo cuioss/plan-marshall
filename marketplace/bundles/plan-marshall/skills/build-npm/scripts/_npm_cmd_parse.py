@@ -69,33 +69,23 @@ def parse_log(log_file: str, command: str = '') -> tuple[list[Issue], UnitTestSu
     content = Path(log_file).read_text(encoding='utf-8', errors='replace')
     tool_type = detect_tool_type(content, command)
 
-    try:
-        if tool_type == 'typescript':
-            return parse_typescript(log_file)
-        elif tool_type == 'jest':
-            return parse_jest(log_file)
-        elif tool_type == 'tap':
-            return parse_tap(log_file)
-        elif tool_type == 'eslint':
-            return parse_eslint(log_file)
-        elif tool_type == 'npm_error':
-            return parse_npm_errors(log_file)
-        else:
-            # Generic fallback - try each parser and use first with results
-            parsers: list[Callable[[str], tuple[list[Issue], UnitTestSummary | None, str]]] = [
-                parse_npm_errors,
-                parse_typescript,
-                parse_eslint,
-                parse_jest,
-                parse_tap,
-            ]
-            for parser in parsers:
-                try:
-                    issues, test_summary, build_status = parser(log_file)
-                    if issues:
-                        return issues, test_summary, build_status
-                except Exception:
-                    continue
-            return [], None, 'FAILURE'
-    except Exception:
-        return [], None, 'FAILURE'
+    parsers_map: dict[str, Callable[[str], tuple[list[Issue], UnitTestSummary | None, str]]] = {
+        'typescript': parse_typescript,
+        'jest': parse_jest,
+        'tap': parse_tap,
+        'eslint': parse_eslint,
+        'npm_error': parse_npm_errors,
+    }
+
+    if tool_type in parsers_map:
+        return parsers_map[tool_type](log_file)
+
+    # Generic fallback - try each parser and use first with results
+    for parser in parsers_map.values():
+        try:
+            issues, test_summary, build_status = parser(log_file)
+            if issues:
+                return issues, test_summary, build_status
+        except (ValueError, KeyError, IndexError, AttributeError, OSError):
+            continue
+    return [], None, 'FAILURE'

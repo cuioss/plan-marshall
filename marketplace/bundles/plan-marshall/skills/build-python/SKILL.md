@@ -28,6 +28,7 @@ Python build execution via pyprojectx (`./pw` wrapper) with output parsing for m
 | `python_build.py` | CLI | pyprojectx operations dispatcher (includes coverage + warning config) |
 | `_python_execute.py` | Library | Execution config via factory pattern |
 | `_python_cmd_parse.py` | Library | Log parsing for mypy, ruff, pytest |
+| `_python_cmd_discover.py` | Library | Module discovery via test directory detection |
 
 ## Unified API
 
@@ -39,6 +40,7 @@ All build skills share the same subcommand structure. Python supports the common
 | `parse` | Parse pyprojectx build output from log file |
 | `coverage-report` | Parse coverage.py XML report |
 | `check-warnings` | Categorize build warnings against acceptable patterns |
+| `discover` | Discover Python modules |
 
 **Not available**: `search-markers` (OpenRewrite is Java-specific, not applicable to Python projects).
 

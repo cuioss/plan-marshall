@@ -31,12 +31,14 @@ import json
 import re
 from pathlib import Path
 
+from _build_format import format_toon
+
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from extension_base import (
+    build_module_base,
     count_source_files,
     discover_packages,
     discover_sources,
-    find_readme,
 )
 from plan_logging import log_entry
 
@@ -314,9 +316,9 @@ def _extract_gradle_module(
 ) -> dict | None:
     """Extract Gradle module with contract-compliant structure.
 
-    Uses shared discovery utilities from extension-api for source directories,
-    file counting, and package discovery. Gradle command data provides
-    coordinates and dependencies.
+    Uses build_module_base() from extension-api for base module info (name,
+    paths, README), then enriches with Gradle-specific metadata. Source
+    directories, file counting, and package discovery use shared utilities.
 
     Args:
         module_path: Path to module directory
@@ -337,22 +339,22 @@ def _extract_gradle_module(
     if not build_file:
         return None
 
-    # Determine if root module
+    # Use shared build_module_base for consistent name/path/README resolution
+    base = build_module_base(str(project_root), str(build_file))
     is_root_module = relative_path == '.' or not relative_path
-    rel_path_str = relative_path if not is_root_module else '.'
+    rel_path_str = base.paths.module
 
-    # Get name — use build_module_base for root module naming convention
-    if is_root_module:
-        name = 'default'
-    elif gradle_data and gradle_data.get('name'):
-        name = gradle_data['name']
-    else:
-        name = module_path.name
-        # Check for archivesBaseName override in build file
-        content = build_file.read_text()
-        match = re.search(r'archivesBaseName\s*=\s*[\'"]([^\'"]+)[\'"]', content)
-        if match:
-            name = match.group(1)
+    # Override name from Gradle data if available (non-root only)
+    name = base.name
+    if not is_root_module:
+        if gradle_data and gradle_data.get('name'):
+            name = gradle_data['name']
+        else:
+            # Check for archivesBaseName override in build file
+            content = build_file.read_text()
+            match = re.search(r'archivesBaseName\s*=\s*[\'"]([^\'"]+)[\'"]', content)
+            if match:
+                name = match.group(1)
 
     # If Gradle commands failed, return error-only structure
     if not gradle_data:
@@ -372,10 +374,6 @@ def _extract_gradle_module(
     prefix = relative_path if not is_root_module else ''
     source_paths = [f'{prefix}/{s}' if prefix else s for s in sources['main']]
     test_paths = [f'{prefix}/{t}' if prefix else t for t in sources['test']]
-
-    # README via shared utility
-    readme = find_readme(str(module_path))
-    readme_path = f'{prefix}/{readme}' if readme and prefix else readme
 
     # Packages via shared discovery (parity with Maven discovery)
     rel = prefix if prefix else ''
@@ -402,10 +400,10 @@ def _extract_gradle_module(
             k: v
             for k, v in {
                 'module': rel_path_str,
-                'descriptor': f'{prefix}/{build_file.name}' if prefix else build_file.name,
+                'descriptor': base.paths.descriptor,
                 'sources': source_paths if source_paths else None,
                 'tests': test_paths if test_paths else None,
-                'readme': readme_path,
+                'readme': base.paths.readme,
             }.items()
             if v is not None
         },
@@ -512,13 +510,17 @@ def main():
     # discover subcommand
     discover_parser = subparsers.add_parser('discover', help='Discover Gradle modules')
     discover_parser.add_argument('--root', required=True, help='Project root directory')
-    discover_parser.add_argument('--format', choices=['json'], default='json', help='Output format')
+    discover_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format')
 
     args = parser.parse_args()
 
     if args.command == 'discover':
         modules = discover_gradle_modules(args.root)
-        print(json.dumps(modules, indent=2))
+        result = {'status': 'success', 'modules': modules, 'count': len(modules)}
+        if args.format == 'json':
+            print(json.dumps(result, indent=2))
+        else:
+            print(format_toon(result))
 
 
 if __name__ == '__main__':

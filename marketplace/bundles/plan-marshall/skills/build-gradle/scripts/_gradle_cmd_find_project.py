@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
-"""Find-project subcommand for Gradle project discovery."""
+"""Find-project subcommand for Gradle project discovery.
 
-import json
+Delegates constants to _gradle_cmd_discover to avoid duplication.
+"""
+
 import re
 from pathlib import Path
 
+from _gradle_cmd_discover import (
+    BUILD_GRADLE,
+    BUILD_GRADLE_KTS,
+    SETTINGS_GRADLE,
+    SETTINGS_GRADLE_KTS,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def find_settings_file(root: Path) -> Path | None:
     """Find settings.gradle or settings.gradle.kts."""
-    for name in ['settings.gradle.kts', 'settings.gradle']:
+    for name in [SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]:
         settings_path = root / name
         if settings_path.exists():
             return settings_path
@@ -40,7 +48,7 @@ def get_root_project_name(settings_path: Path) -> str | None:
 def find_build_files(root: Path) -> list[Path]:
     """Find all build.gradle and build.gradle.kts files."""
     build_files = []
-    for pattern in ['**/build.gradle', '**/build.gradle.kts']:
+    for pattern in [f'**/{BUILD_GRADLE}', f'**/{BUILD_GRADLE_KTS}']:
         for path in root.glob(pattern):
             if not any(part.startswith('.') or part in ('build', 'target', '.gradle') for part in path.parts):
                 build_files.append(path)

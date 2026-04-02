@@ -27,11 +27,13 @@ from _build_coverage_report import create_coverage_report_handler
 from _build_shared import (
     add_check_warnings_subparser,
     add_coverage_subparser,
+    add_discover_subparser,
     add_parse_subparser,
     add_run_subparser,
     build_main,
     safe_main,
 )
+from _gradle_cmd_discover import discover_gradle_modules
 from _gradle_cmd_find_project import cmd_find_project
 from _gradle_cmd_parse import parse_log
 from _gradle_execute import cmd_run
@@ -90,6 +92,10 @@ def _register_check_warnings(subparsers):
     add_check_warnings_subparser(subparsers, cmd_check_warnings)
 
 
+def _register_discover(subparsers):
+    add_discover_subparser(subparsers, discover_gradle_modules, help_text='Discover Gradle modules')
+
+
 def main() -> int:
     """Main entry point."""
     return build_main('Gradle build operations', [
@@ -99,6 +105,7 @@ def main() -> int:
         _register_coverage,
         _register_search_markers,
         _register_check_warnings,
+        _register_discover,
     ])
 
 
