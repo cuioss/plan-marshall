@@ -284,6 +284,103 @@ class TestParseToonTable(unittest.TestCase):
         self.assertEqual(comments, [])
 
 
+class TestPRTriageContext(unittest.TestCase):
+    """Test pr.py triage with --context for improved classification."""
+
+    def test_context_boosts_ambiguous_comment(self):
+        """Test that providing code context upgrades ambiguous comments."""
+        comment = {
+            'id': 'CTX1',
+            'body': 'This getValue call seems unnecessary here',
+            'path': 'src/Service.java',
+            'line': 10,
+            'author': 'reviewer',
+        }
+        # Without context — short comment, no keyword match → would be ignore
+        stdout_no_ctx, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result_no_ctx = parse_toon(stdout_no_ctx)
+
+        # With context that contains the referenced identifier
+        stdout_ctx, _, code = run_pr_script([
+            'triage', '--comment', json.dumps(comment),
+            '--context', 'public String getValue() { return this.value; }',
+        ])
+        self.assertEqual(code, 0)
+        result_ctx = parse_toon(stdout_ctx)
+        # With context, should be classified as code_change
+        self.assertEqual(result_ctx['action'], 'code_change')
+
+    def test_context_does_not_affect_clear_classification(self):
+        """Test that context doesn't change already-clear classifications."""
+        comment = {
+            'id': 'CTX2',
+            'body': 'LGTM!',
+            'path': None,
+            'line': None,
+            'author': 'approver',
+        }
+        stdout, _, code = run_pr_script([
+            'triage', '--comment', json.dumps(comment),
+            '--context', 'public void someMethod() {}',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        # LGTM should still be ignore regardless of context
+        self.assertEqual(result['action'], 'ignore')
+
+    def test_context_in_comment_json(self):
+        """Test that context can be passed directly in the comment JSON."""
+        comment = {
+            'id': 'CTX3',
+            'body': 'The processData method could be simplified',
+            'path': 'src/Processor.java',
+            'line': 25,
+            'author': 'reviewer',
+            'context': 'public void processData(List<Item> items) { for (Item i : items) { validate(i); } }',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'code_change')
+
+
+class TestToonContract(unittest.TestCase):
+    """Verify TOON output matches the contract documented in SKILL.md."""
+
+    def test_triage_output_contract(self):
+        """Verify triage output has all documented fields."""
+        comment = {
+            'id': 'CONTRACT1',
+            'body': 'Please fix this bug',
+            'path': 'src/File.java',
+            'line': 10,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        required_fields = {'comment_id', 'action', 'reason', 'priority', 'suggested_implementation', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+
+    def test_triage_batch_output_contract(self):
+        """Verify triage-batch output has all documented fields."""
+        comments = [
+            {'id': 'B1', 'body': 'Bug here', 'path': 'src/A.java', 'line': 1, 'author': 'r1'},
+        ]
+        stdout, _, code = run_pr_script(['triage-batch', '--comments', json.dumps(comments)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        required_fields = {'results', 'summary', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+        # Summary sub-structure
+        summary = result['summary']
+        for field in ('total', 'code_change', 'explain', 'ignore'):
+            self.assertIn(field, summary, f'Missing summary.{field}')
+
+
 class TestPRFetchComments(unittest.TestCase):
     """Test pr.py fetch-comments subcommand.
 

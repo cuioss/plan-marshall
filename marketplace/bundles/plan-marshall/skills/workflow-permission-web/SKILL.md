@@ -46,105 +46,39 @@ Read: standards/domain-security-assessment.md
 
 Loads trusted domains, security assessment patterns, and research methodology.
 
-### Step 2: Collect All WebFetch Permissions
+### Step 2: Collect and Analyze WebFetch Permissions
 
-**A. Read global settings** (`~/.claude/settings.json`)
-   - **Error handling**: If Read fails (file not found):
-     - Display: "Global settings not found: ~/.claude/settings.json"
-     - Present using `AskUserQuestion`:
-       ```
-       AskUserQuestion:
-         questions:
-           - question: "Global settings file not found. How would you like to proceed?"
-             header: "Global"
-             options:
-               - label: "Create default settings"
-                 description: "Create a new ~/.claude/settings.json with defaults"
-               - label: "Skip global analysis"
-                 description: "Continue with local settings only"
-               - label: "Abort"
-                 description: "Cancel permission analysis"
-             multiSelect: false
-       ```
-     - Track in files_read counter
+Run the analysis script to collect domains from both settings files, categorize them, detect duplicates, and generate recommendations:
 
-**B. Read local settings** (`./.claude/settings.local.json`)
-   - **Error handling**: If Read fails (file not found):
-     - Display: "Local settings not found: ./.claude/settings.local.json"
-     - Present using `AskUserQuestion`:
-       ```
-       AskUserQuestion:
-         questions:
-           - question: "Local settings file not found. How would you like to proceed?"
-             header: "Local"
-             options:
-               - label: "Create default settings"
-                 description: "Create a new .claude/settings.local.json with defaults"
-               - label: "Skip local analysis"
-                 description: "Continue with global settings only"
-               - label: "Abort"
-                 description: "Cancel permission analysis"
-             multiSelect: false
-       ```
-     - Track in files_read counter
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web analyze \
+    --global-file ~/.claude/settings.json \
+    --local-file ./.claude/settings.local.json
+```
 
-**C. Extract all WebFetch permissions** from both sources
-   - **Error handling**: If JSON parsing fails:
-     - Display: "Invalid JSON in {file}: {error}"
-     - Present using `AskUserQuestion`:
-       ```
-       AskUserQuestion:
-         questions:
-           - question: "Settings file has invalid JSON. How would you like to proceed?"
-             header: "JSON"
-             options:
-               - label: "Fix manually"
-                 description: "Open the file and fix JSON syntax"
-               - label: "Skip this file"
-                 description: "Continue without this settings file"
-               - label: "Abort"
-                 description: "Cancel permission analysis"
-             multiSelect: false
-       ```
+The script handles missing files gracefully (reports them in output). On invalid JSON, it returns a failure status with the parse error.
 
-**D. Categorize domains**:
-- Universal (domain:*)
-- Major domains (from trusted-domains standards)
-- High-reach domains (github.com, stackoverflow.com, etc.)
-- Project-specific domains
-- Unknown domains (need research)
+**Error handling for missing/invalid files**: Ask the user via `AskUserQuestion` with options to create defaults, skip the file, or abort.
+
+The script categorizes domains into: universal (`*`), major (from trusted-domains standards), high_reach (github.com, stackoverflow.com, etc.), suspicious (red flag patterns), and unknown (need research).
 
 ### Step 3: Detect Duplicate and Redundant Permissions
 
-**A. Check for domain:*** - If present globally, all specific domains are redundant
-
-**B. Find exact duplicates** across global and local
-
-**C. Identify redundant patterns**:
-- Subdomain when parent domain approved
-- Multiple entries for same domain
+The analysis script output includes `duplicates` (domains in both global and local) and `redundant` (wildcard-covered or subdomain-covered domains). Review these in the script output.
 
 ### Step 4: Research Unknown Domains
 
-For each unknown domain:
+For each domain in the script's `unknown` category:
 
-**A. Web research** using WebSearch or WebFetch:
+1. **Web research** — `WebSearch: "domain-name.com reputation security"`
+2. **Assess security** — check against red flags from `standards/domain-security-assessment.md`
+3. **Categorize** — classify as project-specific, suspicious, or suitable for global
+
+Or batch-categorize domains directly:
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web categorize \
+    --domains '["unknown-domain.com", "another-domain.io"]'
 ```
-WebSearch: "domain-name.com reputation security"
-WebFetch: https://domain-name.com (check if accessible)
-```
-
-**B. Assess security** using standards from web-permissions skill:
-- Check against red flags
-- Evaluate purpose and trustworthiness
-- Categorize risk level (LOW/MEDIUM/HIGH)
-
-**C. Determine categorization**:
-- MAJOR_DOMAINS - Documentation, official sites
-- HIGH_REACH - Popular developer resources
-- PROJECT_SPECIFIC - Project dependencies
-- SUSPICIOUS - Security concerns
-- UNKNOWN - Unable to assess
 
 ### Step 5: Generate Consolidation Recommendations
 
@@ -203,61 +137,15 @@ Recommendations:
 
 ### Step 7: Apply Recommendations (Optional)
 
-Present options using `AskUserQuestion`:
+Ask the user via `AskUserQuestion` how to proceed: "Apply all", "Review each change", or "Skip".
 
-```
-AskUserQuestion:
-  questions:
-    - question: "How would you like to apply the recommendations?"
-      header: "Apply"
-      options:
-        - label: "Apply all"
-          description: "Apply all recommended permission changes"
-        - label: "Review each change"
-          description: "Review and approve each change individually"
-        - label: "Skip"
-          description: "Display recommendations only, make no changes"
-      multiSelect: false
-```
-
-If "Apply all" or "Review each change":
+If applying:
 - Update global settings (track in permissions_added and permissions_removed counters)
 - Update local settings (track in permissions_added and permissions_removed counters)
 - Remove duplicates and redundant permissions
 - Consolidate domains per recommendations
 
-**Error handling:**
-- **If Write fails**: Display "Failed to update {file}: {error}" and present using `AskUserQuestion`:
-  ```
-  AskUserQuestion:
-    questions:
-      - question: "Failed to write settings file. How would you like to proceed?"
-        header: "Write"
-        options:
-          - label: "Retry"
-            description: "Attempt the write again"
-          - label: "Skip file"
-            description: "Skip this file, continue with others"
-          - label: "Abort"
-            description: "Stop applying changes"
-        multiSelect: false
-  ```
-- **If Edit fails**: Display "Failed to edit {file}: {error}" and present using `AskUserQuestion`:
-  ```
-  AskUserQuestion:
-    questions:
-      - question: "Failed to edit settings file. How would you like to proceed?"
-        header: "Edit"
-        options:
-          - label: "Retry"
-            description: "Attempt the edit again"
-          - label: "Skip change"
-            description: "Skip this change, continue with others"
-          - label: "Abort"
-            description: "Stop applying changes"
-        multiSelect: false
-  ```
-- Track all successful updates in files_modified counter
+**Error handling:** If Write/Edit fails, ask the user (retry, skip file, abort). Track all successful updates in files_modified counter.
 
 ### Step 8: Report Results
 
@@ -290,6 +178,23 @@ Track throughout workflow:
 - `security_checks_performed`: Count of unknown domains researched
 - `files_read`: Count of settings files successfully read
 - `files_modified`: Count of settings files successfully updated
+
+## Scripts
+
+Script: `plan-marshall:workflow-permission-web` → `permission_web.py`
+
+| Command | Parameters | Description |
+|---------|------------|-------------|
+| `analyze` | `--global-file <path> --local-file <path>` | Analyze WebFetch permissions from settings files |
+| `categorize` | `--domains <json-array>` | Categorize domains against trusted/known lists |
+
+### permission_web.py analyze
+
+Reads global and local settings, extracts WebFetch domains, categorizes them, detects duplicates and redundancy, and generates consolidation recommendations. Missing files are reported but do not cause failure.
+
+### permission_web.py categorize
+
+Categorizes a list of domains into: universal, major, high_reach, suspicious, unknown. Also checks for red flag patterns in domain names.
 
 ## Critical Rules
 

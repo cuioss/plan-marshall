@@ -149,9 +149,18 @@ The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `
      python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply \
          --pr-number {pr} --body "..."
      ```
+   - Resolve the thread after replying:
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
+         --pr-number {pr} --thread-id {thread_id}
+     ```
 
    **For ignore:**
-   - No action required
+   - Resolve the thread (no reply needed):
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
+         --pr-number {pr} --thread-id {thread_id}
+     ```
    - Log as skipped
 
 4. **Group by Priority**
@@ -199,6 +208,15 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-c
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{"id":"...", "body":"...", ...}'
 ```
+
+**Optional:** Pass `--context` with surrounding code to improve classification accuracy for ambiguous comments:
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage \
+    --comment '{"id":"C1", "body":"This getValue call..."}' \
+    --context "public String getValue() { return this.value; }"
+```
+
+The context is injected into the comment object's `context` field. Comments that reference identifiers found in the context are boosted from `ignore` to `code_change`.
 
 **Output:** TOON with action decision
 

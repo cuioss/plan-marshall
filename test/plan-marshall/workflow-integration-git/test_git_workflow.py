@@ -472,6 +472,54 @@ class TestDetectArtifacts(unittest.TestCase):
         self.assertTrue(any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}')
 
 
+class TestToonContract(unittest.TestCase):
+    """Verify TOON output matches the contract documented in SKILL.md."""
+
+    def test_format_commit_output_contract(self):
+        """Verify format-commit output has all documented fields."""
+        stdout, _, code = run_git_script([
+            'format-commit', '--type', 'feat', '--scope', 'auth', '--subject', 'add login',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        # Documented fields in SKILL.md output section
+        required_fields = {'type', 'scope', 'subject', 'formatted_message', 'validation', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+        # Validation sub-structure
+        self.assertIn('valid', result['validation'])
+        self.assertIn('warnings', result['validation'])
+
+    def test_analyze_diff_output_contract(self):
+        """Verify analyze-diff output has all documented fields."""
+        diff_content = """diff --git a/src/main/java/New.java b/src/main/java/New.java
++new line
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
+            f.write(diff_content)
+            f.flush()
+            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        required_fields = {'mode', 'suggestions', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+        # Suggestions sub-structure
+        sug = result['suggestions']
+        for field in ('type', 'scope', 'detected_changes', 'files_changed'):
+            self.assertIn(field, sug, f'Missing suggestions.{field}')
+
+    def test_detect_artifacts_output_contract(self):
+        """Verify detect-artifacts output has all documented fields."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stdout, _, code = run_git_script(['detect-artifacts', '--root', tmpdir])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        required_fields = {'root', 'safe', 'uncertain', 'total', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+
+
 class TestMain(unittest.TestCase):
     """Test git-workflow.py main entry point."""
 

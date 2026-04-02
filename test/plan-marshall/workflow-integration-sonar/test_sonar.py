@@ -265,6 +265,62 @@ class TestSonarRulesConfig(unittest.TestCase):
         self.assertIn('python:S106', self.test_acceptable)
 
 
+class TestToonContract(unittest.TestCase):
+    """Verify TOON output matches the contract documented in SKILL.md."""
+
+    def test_triage_output_contract(self):
+        """Verify triage output has all documented fields."""
+        issue = {
+            'key': 'CONTRACT-1',
+            'type': 'BUG',
+            'severity': 'MAJOR',
+            'file': 'src/Example.java',
+            'line': 42,
+            'rule': 'java:S1234',
+            'message': 'Test message',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        required_fields = {'issue_key', 'action', 'reason', 'priority', 'suggested_implementation', 'suppression_string', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+
+    def test_triage_suppress_output_contract(self):
+        """Verify suppression output includes suppression_string."""
+        issue = {
+            'key': 'CONTRACT-2',
+            'type': 'CODE_SMELL',
+            'severity': 'MINOR',
+            'file': 'src/Example.java',
+            'line': 5,
+            'rule': 'java:S1135',
+            'message': 'Complete TODO',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'suppress')
+        self.assertIsNotNone(result['suppression_string'])
+        self.assertIn('NOSONAR', result['suppression_string'])
+
+    def test_triage_batch_output_contract(self):
+        """Verify triage-batch output has all documented fields."""
+        issues = [
+            {'key': 'B1', 'type': 'BUG', 'severity': 'MAJOR', 'file': 'src/A.java', 'line': 1, 'rule': 'java:S1234', 'message': 'Bug'},
+        ]
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', json.dumps(issues)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        required_fields = {'results', 'summary', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+        # Summary sub-structure
+        summary = result['summary']
+        for field in ('total', 'fix', 'suppress'):
+            self.assertIn(field, summary, f'Missing summary.{field}')
+
+
 class TestSonarMain(unittest.TestCase):
     """Test sonar.py main entry point."""
 

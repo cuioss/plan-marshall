@@ -25,6 +25,7 @@ Examples:
 """
 
 import argparse
+import json
 import re
 import sys
 from typing import Any
@@ -159,12 +160,17 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
-def classify_comment(body: str) -> tuple[str, str, str]:
+def classify_comment(body: str, context: str | None = None) -> tuple[str, str, str]:
     """Classify comment and determine action and priority.
 
     Priority order: ignore → code_change → explain → default.
     Code change is checked before explain so that actionable requests
     like "Can you fix X?" are classified as code changes, not questions.
+
+    Args:
+        body: Comment body text.
+        context: Optional surrounding code context for better classification.
+            When provided, helps disambiguate comments that reference code patterns.
     """
     body_lower = body.lower()
 
@@ -192,6 +198,27 @@ def classify_comment(body: str) -> tuple[str, str, str]:
     # explicit explain keywords. Check after code_change and explain patterns.
     if '?' in body_lower:
         return 'explain', 'low', 'Question or clarification request'
+
+    # Context-aware classification: if code context is provided and the
+    # comment references specific code patterns, boost to code_change
+    if context and len(body) > 20:
+        # Comment mentions something visible in the code context —
+        # likely a targeted review comment that needs action
+        context_lower = context.lower()
+        # Extract potential identifiers: words with underscores, dots, parens,
+        # or camelCase (mixed upper/lower within a word)
+        def _looks_like_identifier(w: str) -> bool:
+            clean = w.rstrip('.,;:)')
+            if '_' in clean or '.' in clean or '(' in clean:
+                return True
+            # camelCase: has both upper and lower, at least 4 chars
+            if len(clean) >= 4 and any(c.isupper() for c in clean[1:]) and any(c.islower() for c in clean):
+                return True
+            return False
+
+        code_refs = [w for w in body.split() if _looks_like_identifier(w)]
+        if any(ref.lower().rstrip('.,;:)') in context_lower for ref in code_refs):
+            return 'code_change', 'medium', 'Comment references code identifiers visible in context'
 
     # Default: review comment without clear action signal
     if len(body) > 100:
@@ -230,6 +257,7 @@ def triage_comment(comment: dict) -> dict:
     path = comment.get('path')
     line = comment.get('line')
     author = comment.get('author', 'unknown')
+    context = comment.get('context')
 
     if not body:
         return {
@@ -241,7 +269,7 @@ def triage_comment(comment: dict) -> dict:
             'status': 'success',
         }
 
-    action, priority, reason = classify_comment(body)
+    action, priority, reason = classify_comment(body, context=context)
     suggestion = suggest_implementation(action, body, path, line)
 
     return {
@@ -258,6 +286,14 @@ def triage_comment(comment: dict) -> dict:
 
 def cmd_triage(args):
     """Handle triage subcommand."""
+    # Inject CLI --context into the comment JSON if provided
+    if getattr(args, 'context', None):
+        try:
+            comment = json.loads(args.comment)
+            comment['context'] = args.context
+            return cmd_triage_single(json.dumps(comment), triage_comment)
+        except json.JSONDecodeError:
+            pass  # Let cmd_triage_single handle the error
     return cmd_triage_single(args.comment, triage_comment)
 
 
@@ -294,6 +330,7 @@ Examples:
     # triage subcommand
     triage_parser = subparsers.add_parser('triage', help='Triage a single PR review comment')
     triage_parser.add_argument('--comment', required=True, help='JSON string with comment data')
+    triage_parser.add_argument('--context', help='Surrounding code context for better classification')
     triage_parser.set_defaults(func=cmd_triage)
 
     # triage-batch subcommand
