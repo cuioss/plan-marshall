@@ -10,6 +10,8 @@ Usage (internal):
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from _build_parser_registry import DetectionRule, ParserRegistry
 from _npm_parse_errors import parse_log as parse_npm_errors
 from _npm_parse_eslint import parse_log as parse_eslint
@@ -55,6 +57,6 @@ def detect_tool_type(content: str, command: str) -> str:
     return _REGISTRY.detect_tool_type(content, command)
 
 
-def parse_log(log_file: str, command: str = '') -> tuple:
+def parse_log(log_file: str | Path, command: str = '') -> tuple:
     """Parse log file using appropriate tool-specific parser."""
     return _REGISTRY.parse(log_file, command)

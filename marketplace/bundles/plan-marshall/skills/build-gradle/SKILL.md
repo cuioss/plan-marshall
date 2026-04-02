@@ -106,6 +106,7 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle parse \
   - `default` - All issues, unfiltered
   - `errors` - Only error-severity issues
   - `structured` - All issues with structured summary
+  - `no-openrewrite` - Exclude OpenRewrite informational messages
 
 ### coverage-report
 
@@ -208,11 +209,11 @@ Gradle: ./gradlew > gradle (on PATH)
 
 ## Error Categories
 
-Categories use **regex patterns** for Gradle's task-specific markers (e.g., `Execution failed for task ':.*:compileJava'`). The shared `categorize_issue()` function auto-detects regex metacharacters and switches matching mode accordingly.
+Categories use **regex patterns** for Gradle's task-specific markers (e.g., `Execution failed for task ':.*:compileJava'`). The shared `categorize_issue()` function auto-detects regex metacharacters and switches matching mode accordingly. Deduplication uses the shared `make_dedup_key()` format: `{category}:{file}:{line}:{message[:100]}`.
 
 | Category | Description |
 |----------|-------------|
-| `compilation_error` | Compile-time Java/Kotlin errors |
+| `compilation_error` | Compile-time Java/Kotlin errors (includes Kotlin-specific: `Unresolved reference`, `Type mismatch`, `Smart cast` failures) |
 | `test_failure` | Test assertion failures |
 | `dependency_error` | Dependency resolution issues |
 | `javadoc_warning` | JavaDoc documentation issues |

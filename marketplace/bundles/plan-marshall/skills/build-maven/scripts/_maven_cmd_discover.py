@@ -136,8 +136,9 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
     profiles = maven_data.get('profiles', [])
     dependencies = maven_data.get('dependencies', [])
 
-    # Description from pom.xml (per spec: "description is optional - parse from pom.xml if present")
-    description = _get_description(pom_path)
+    # Description and parent from pom.xml (single read, per spec: not in dependency:tree)
+    pom_local = _parse_pom_local_metadata(pom_path)
+    description = pom_local['description']
 
     # Source directories (shared multi-language discovery)
     sources = discover_sources(module_path)
@@ -169,7 +170,7 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
         'group_id': group_id,
         'packaging': packaging,
         'description': description,
-        'parent': maven_data.get('parent'),
+        'parent': pom_local['parent'],
     }
     if profiles:
         metadata['profiles'] = profiles
@@ -193,34 +194,38 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
     }
 
 
-def _get_description(pom_path: Path) -> str | None:
-    """Get description from pom.xml (per spec: parse from pom.xml if present)."""
-    content = pom_path.read_text()
-    # Skip description inside <parent> block
-    content_no_parent = re.sub(r'<parent>.*?</parent>', '', content, flags=re.DOTALL)
-    match = re.search(r'<description>([^<]+)</description>', content_no_parent)
-    return match.group(1).strip() if match else None
+def _parse_pom_local_metadata(pom_path: Path) -> dict:
+    """Extract description and parent from pom.xml in a single read.
 
+    These fields are not available from Maven commands (dependency:tree, etc.)
+    so they must be parsed from the POM file directly.
 
-def _get_parent(pom_path: Path) -> str | None:
-    """Get parent GAV from pom.xml (not available in dependency:tree).
+    Args:
+        pom_path: Path to pom.xml file.
 
     Returns:
-        Parent reference as 'groupId:artifactId' or None
+        Dict with 'description' (str|None) and 'parent' (str|None).
     """
     content = pom_path.read_text()
-    # Extract <parent> block
+
+    # Description: skip <parent> block to avoid matching parent's description
+    description = None
+    content_no_parent = re.sub(r'<parent>.*?</parent>', '', content, flags=re.DOTALL)
+    desc_match = re.search(r'<description>([^<]+)</description>', content_no_parent)
+    if desc_match:
+        description = desc_match.group(1).strip()
+
+    # Parent GAV
+    parent = None
     parent_match = re.search(r'<parent>(.*?)</parent>', content, flags=re.DOTALL)
-    if not parent_match:
-        return None
+    if parent_match:
+        parent_block = parent_match.group(1)
+        group_match = re.search(r'<groupId>([^<]+)</groupId>', parent_block)
+        artifact_match = re.search(r'<artifactId>([^<]+)</artifactId>', parent_block)
+        if group_match and artifact_match:
+            parent = f'{group_match.group(1).strip()}:{artifact_match.group(1).strip()}'
 
-    parent_block = parent_match.group(1)
-    group_match = re.search(r'<groupId>([^<]+)</groupId>', parent_block)
-    artifact_match = re.search(r'<artifactId>([^<]+)</artifactId>', parent_block)
-
-    if group_match and artifact_match:
-        return f'{group_match.group(1).strip()}:{artifact_match.group(1).strip()}'
-    return None
+    return {'description': description, 'parent': parent}
 
 
 # =============================================================================
@@ -294,7 +299,6 @@ def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
             "artifact_id": str,
             "group_id": str,
             "packaging": str,
-            "parent": str | None,  # from pom.xml (per spec)
             "profiles": list,
             "dependencies": list
         }
@@ -336,14 +340,10 @@ def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
     # Apply profile pipeline: parse -> filter command-line -> skip -> map
     profiles = _apply_profile_pipeline(raw_profiles, str(project_root))
 
-    # Parent and description from pom.xml (per spec: not available in dependency:tree)
-    parent = _get_parent(pom_path)
-
     return {
         'artifact_id': coordinates.get('artifact_id'),
         'group_id': coordinates.get('group_id'),
         'packaging': coordinates.get('packaging'),
-        'parent': parent,
         'profiles': profiles,
         'dependencies': dependencies,
     }
@@ -443,8 +443,6 @@ def _parse_profiles_from_maven_output(log_content: str) -> list:
     return profiles
 
 
-
-
 def _parse_dependencies_from_maven_output(log_content: str) -> list:
     """Parse dependencies from Maven dependency:tree output.
 
@@ -481,7 +479,6 @@ def _parse_dependencies_from_maven_output(log_content: str) -> list:
         dependencies.append(f'{group_id}:{artifact_id}:{scope}')
 
     return dependencies
-
 
 
 

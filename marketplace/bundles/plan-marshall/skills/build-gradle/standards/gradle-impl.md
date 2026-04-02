@@ -118,6 +118,19 @@ export CI=true
 
 ---
 
+## Kotlin Support
+
+Error parsing includes Kotlin-specific patterns:
+- `Unresolved reference` — missing imports/symbols
+- `Type mismatch` — type assignment errors
+- `Smart cast to ... is impossible` — unsafe cast patterns
+- `None of the following candidates is applicable` — overload resolution
+- `Val cannot be reassigned` — immutability violations
+
+These are categorized as `compilation_error` alongside Java errors.
+
+---
+
 ## Troubleshooting
 
 | Issue | Solution |

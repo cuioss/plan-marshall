@@ -23,11 +23,12 @@ from _build_parse import (
     UnitTestSummary,
     categorize_issue,
     collect_stack_traces,
+    make_dedup_key,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
-from _build_parser_registry import DetectionRule, ParserRegistry
+from _build_parser_registry import DetectionRule, ParserRegistry  # noqa: F401 - re-exported for test access
 
 # Maven-specific categorization patterns (substring matching by default,
 # regex when metacharacters are present).
@@ -112,17 +113,6 @@ def _parse_maven_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None
     return issues, test_summary, build_status
 
 
-def _has_maven_output(content: str) -> bool:
-    """Detect Maven output from content."""
-    return '[INFO] BUILD' in content or '[ERROR]' in content or '[WARNING]' in content
-
-
-# Registry with single Maven parser
-_REGISTRY = ParserRegistry([
-    DetectionRule('maven', ('mvn', 'mvnw'), _has_maven_output, _parse_maven_log),
-])
-
-
 # =============================================================================
 # BuildParser Protocol Implementation
 # =============================================================================
@@ -179,8 +169,8 @@ def _extract_issues(content: str) -> list[Issue]:
             location = parse_file_location(line)
             category = categorize_issue(message, MAVEN_PATTERNS)
 
-            # Deduplication
-            dedup_key = f'{category}:{location.get("file")}:{location.get("line")}:{message[:100]}'
+            # Deduplication using shared key format
+            dedup_key = make_dedup_key(category, location.get('file'), location.get('line'), message)
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)

@@ -15,11 +15,21 @@ from _gradle_cmd_parse import parse_log
 
 
 def _gradle_scope_fn(args: str) -> str:
-    """Extract scope from Gradle :module:task prefix."""
+    """Extract scope from Gradle task arguments.
+
+    Handles both ':module:task' prefix and '-p path' syntax.
+    """
+    import re as _re
+
+    # Check :module:task format
     if args.startswith(':'):
         parts = args.split(':')
-        if len(parts) >= 2:
+        if len(parts) >= 2 and parts[1]:
             return parts[1]
+    # Check -p path format
+    match = _re.search(r'-p\s+(\S+)', args)
+    if match:
+        return match.group(1).rstrip('/').split('/')[-1]
     return 'default'
 
 

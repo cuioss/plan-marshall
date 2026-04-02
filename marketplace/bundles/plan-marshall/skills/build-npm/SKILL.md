@@ -190,10 +190,16 @@ Each module includes: `name`, `build_systems`, `paths` (module/descriptor/source
 
 ## npm vs npx Detection
 
-Commands are automatically routed to npm or npx:
+Commands are automatically routed to npm or npx. The result TOON includes a `command_type` field (`npm` or `npx`) indicating which was used.
 
 ```python
-NPX_COMMANDS = ['playwright', 'eslint', 'prettier', 'stylelint', 'tsc', 'jest', 'vitest']
+NPX_COMMANDS = [
+    'playwright', 'eslint', 'prettier', 'stylelint',  # linters/formatters
+    'tsc', 'tsx', 'ts-node',  # TypeScript tools
+    'jest', 'vitest', 'mocha',  # test runners
+    'webpack', 'rollup', 'esbuild', 'vite',  # bundlers
+    'babel',  # transpiler
+]
 ```
 
 ## Multi-Parser Architecture
@@ -224,7 +230,11 @@ npm module discovery reads `package.json` to detect workspaces and available scr
 
 ### Workspace Detection
 
-For monorepo projects, the discovery scans `package.json` for a `workspaces` field. Each workspace gets its own module entry with scoped commands.
+For monorepo projects, the discovery scans for workspace definitions in this order:
+1. `package.json` `workspaces` field (npm/yarn)
+2. `pnpm-workspace.yaml` `packages` field (pnpm)
+
+Each workspace gets its own module entry with scoped commands.
 
 ### Command Generation
 

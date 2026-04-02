@@ -93,11 +93,12 @@ def discover_npm_modules(project_root: str) -> list:
 
 
 def _resolve_workspaces(root: Path, root_data: dict) -> list[Path]:
-    """Resolve workspace directories from package.json workspaces field.
+    """Resolve workspace directories from package.json or pnpm-workspace.yaml.
 
     Supports:
-    - Array of glob patterns: ["packages/*", "apps/*"]
-    - Object with packages field: {"packages": ["packages/*"]}
+    - npm/yarn: Array of glob patterns: ["packages/*", "apps/*"]
+    - npm/yarn: Object with packages field: {"packages": ["packages/*"]}
+    - pnpm: pnpm-workspace.yaml with packages field
 
     Args:
         root: Project root directory.
@@ -112,6 +113,10 @@ def _resolve_workspaces(root: Path, root_data: dict) -> list[Path]:
     if isinstance(workspaces, dict):
         workspaces = workspaces.get('packages', [])
 
+    # If no workspaces in package.json, check pnpm-workspace.yaml
+    if not workspaces:
+        workspaces = _resolve_pnpm_workspaces(root)
+
     if not isinstance(workspaces, list):
         return []
 
@@ -125,6 +130,45 @@ def _resolve_workspaces(root: Path, root_data: dict) -> list[Path]:
                 dirs.append(match)
 
     return dirs
+
+
+def _resolve_pnpm_workspaces(root: Path) -> list[str]:
+    """Resolve workspace patterns from pnpm-workspace.yaml.
+
+    Args:
+        root: Project root directory.
+
+    Returns:
+        List of workspace glob patterns, or empty list.
+    """
+    pnpm_ws = root / 'pnpm-workspace.yaml'
+    if not pnpm_ws.exists():
+        return []
+
+    try:
+        content = pnpm_ws.read_text(encoding='utf-8')
+        # Simple YAML parsing for packages list (avoids PyYAML dependency)
+        # Format:
+        #   packages:
+        #     - 'packages/*'
+        #     - 'apps/*'
+        import re
+        packages: list[str] = []
+        in_packages = False
+        for line in content.split('\n'):
+            stripped = line.strip()
+            if stripped.startswith('packages:'):
+                in_packages = True
+                continue
+            if in_packages:
+                match = re.match(r"^\s*-\s*['\"]?([^'\"]+)['\"]?\s*$", line)
+                if match:
+                    packages.append(match.group(1).strip())
+                elif stripped and not stripped.startswith('#') and not stripped.startswith('-'):
+                    break  # New top-level key
+        return packages
+    except OSError:
+        return []
 
 
 # =============================================================================

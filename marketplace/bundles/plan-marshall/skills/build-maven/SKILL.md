@@ -193,17 +193,21 @@ Maven:  ./mvnw > mvn (on PATH)
 
 ## Error Categories
 
-Categories use **substring matching** (case-insensitive). The shared `categorize_issue()` function auto-detects regex metacharacters, but Maven patterns are plain substrings for simplicity.
+Categories use **substring matching** (case-insensitive). The shared `categorize_issue()` function auto-detects regex metacharacters, but Maven patterns are plain substrings for simplicity. Deduplication uses the shared `make_dedup_key()` format: `{category}:{file}:{line}:{message[:100]}`.
 
-| Category | Description |
-|----------|-------------|
-| `compilation_error` | Compile-time Java errors |
-| `test_failure` | Test assertion failures |
-| `dependency_error` | Dependency resolution issues |
-| `javadoc_warning` | JavaDoc documentation issues |
-| `deprecation_warning` | Deprecated API usage |
-| `unchecked_warning` | Unchecked type conversions |
-| `openrewrite_info` | OpenRewrite plugin output |
+| Category | Description | Shared across |
+|----------|-------------|---------------|
+| `compilation_error` | Compile-time Java errors | Maven, Gradle |
+| `test_failure` | Test assertion failures | Maven, Gradle, npm, Python |
+| `dependency_error` | Dependency resolution issues | Maven, Gradle, npm |
+| `javadoc_warning` | JavaDoc documentation issues | Maven, Gradle |
+| `deprecation_warning` | Deprecated API usage | Maven, Gradle |
+| `unchecked_warning` | Unchecked type conversions | Maven, Gradle |
+| `openrewrite_info` | OpenRewrite plugin output | Maven, Gradle |
+| `lint_error` | Linter violations | npm (ESLint), Python (ruff) |
+| `type_error` | Type-checking errors | Python (mypy) |
+| `import_error` | Module import errors | Python |
+| `playwright_error` | Browser automation failures | npm |
 
 ## Module Discovery
 

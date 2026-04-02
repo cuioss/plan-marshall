@@ -20,6 +20,14 @@ Output:
 
 from pathlib import Path
 
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]  # Fallback for Python < 3.11
+    except ModuleNotFoundError:
+        tomllib = None  # type: ignore[assignment]
+
 from _build_commands import build_canonical_commands
 from _build_discover import EXCLUDE_DIRS
 from extension_base import find_readme
@@ -151,6 +159,11 @@ def _build_module(module_path: Path, project_root: Path, relative_path: str) -> 
     # Descriptor (pyproject.toml or setup.cfg)
     descriptor = _find_descriptor(module_path, prefix)
 
+    # Metadata and dependencies from pyproject.toml
+    pyproject_data = _parse_pyproject_metadata(module_path)
+    metadata = pyproject_data['metadata']
+    dependencies = pyproject_data['dependencies']
+
     # Commands
     commands = _build_commands(name, relative_path, test_files > 0)
 
@@ -164,10 +177,10 @@ def _build_module(module_path: Path, project_root: Path, relative_path: str) -> 
             'tests': test_paths if test_paths else None,
             'readme': readme_path,
         },
-        'metadata': {},
+        'metadata': metadata,
         'packages': packages,
         'test_packages': test_packages,
-        'dependencies': [],
+        'dependencies': dependencies,
         'stats': {'source_files': source_files, 'test_files': test_files},
         'commands': commands,
     }
@@ -193,7 +206,7 @@ def _find_python_source_dirs(module_path: Path) -> list[str]:
                     continue
                 if entry.name in PYTHON_EXCLUDE_DIRS or entry.name in TEST_DIR_NAMES:
                     continue
-                if entry.name.startswith('.') or entry.name.startswith('_'):
+                if entry.name.startswith('.') or entry.name.startswith('__'):
                     continue
                 if (entry / '__init__.py').exists() or any(entry.glob('*.py')):
                     source_dirs.append(entry.name)
@@ -264,6 +277,56 @@ def _discover_python_packages(module_path: Path, source_dirs: list[str], prefix:
         pkg['files'] = sorted(set(pkg['files']))
 
     return packages
+
+
+def _parse_pyproject_metadata(module_path: Path) -> dict:
+    """Extract metadata and dependencies from pyproject.toml.
+
+    Reads the [project] section for name, version, description, and dependencies.
+
+    Args:
+        module_path: Path to module directory.
+
+    Returns:
+        Dict with 'metadata' and 'dependencies' keys.
+    """
+    pyproject = module_path / 'pyproject.toml'
+    metadata: dict = {}
+    dependencies: list[str] = []
+
+    if not pyproject.exists() or tomllib is None:
+        return {'metadata': metadata, 'dependencies': dependencies}
+
+    try:
+        with open(pyproject, 'rb') as f:
+            data = tomllib.load(f)
+    except Exception:
+        return {'metadata': metadata, 'dependencies': dependencies}
+
+    project = data.get('project', {})
+    if project.get('name'):
+        metadata['name'] = project['name']
+    if project.get('version'):
+        metadata['version'] = project['version']
+    if project.get('description'):
+        metadata['description'] = project['description']
+    if project.get('requires-python'):
+        metadata['requires_python'] = project['requires-python']
+
+    # Dependencies
+    for dep in project.get('dependencies', []):
+        # Extract package name (before version specifier)
+        dep_name = dep.split('[')[0].split('<')[0].split('>')[0].split('=')[0].split('!')[0].split('~')[0].strip()
+        if dep_name:
+            dependencies.append(f'{dep_name}:runtime')
+
+    # Dev dependencies from optional-dependencies
+    for dep in project.get('optional-dependencies', {}).get('dev', []):
+        dep_name = dep.split('[')[0].split('<')[0].split('>')[0].split('=')[0].split('!')[0].split('~')[0].strip()
+        if dep_name:
+            dependencies.append(f'{dep_name}:dev')
+
+    return {'metadata': metadata, 'dependencies': dependencies}
 
 
 def _find_descriptor(module_path: Path, prefix: str) -> str | None:

@@ -15,8 +15,14 @@ from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers
 from _npm_cmd_parse import parse_log
 
-# Commands that should use npx instead of npm
-NPX_COMMANDS = ['playwright', 'eslint', 'prettier', 'stylelint', 'tsc', 'jest', 'vitest']
+# Commands that should use npx instead of npm (direct tool invocations)
+NPX_COMMANDS = [
+    'playwright', 'eslint', 'prettier', 'stylelint',  # linters/formatters
+    'tsc', 'tsx', 'ts-node',  # TypeScript tools
+    'jest', 'vitest', 'mocha',  # test runners
+    'webpack', 'rollup', 'esbuild', 'vite',  # bundlers
+    'babel',  # transpiler
+]
 
 
 def detect_command_type(args: str) -> str:

@@ -89,6 +89,21 @@ pyprojectx runs non-interactively by default. Cache `.pyprojectx/` between CI ru
 
 ---
 
+## Metadata Extraction
+
+Discovery extracts metadata from `pyproject.toml` when available:
+
+| Field | Source |
+|-------|--------|
+| `name` | `[project].name` |
+| `version` | `[project].version` |
+| `description` | `[project].description` |
+| `requires_python` | `[project].requires-python` |
+
+Dependencies are extracted from `[project].dependencies` (runtime) and `[project].optional-dependencies.dev` (dev).
+
+---
+
 ## Troubleshooting
 
 | Issue | Solution |

@@ -354,8 +354,12 @@ def _extract_gradle_module(
             if match:
                 name = match.group(1)
 
-    # If Gradle commands failed, return error-only structure
+    # If Gradle commands failed, return error-only structure.
+    # This is part of the discovery contract: modules without metadata
+    # get a minimal error object so callers know the module exists.
     if not gradle_data:
+        log_entry('script', 'global', 'WARNING',
+                  f'[GRADLE-DISCOVER] Module {name} - Gradle commands failed, returning error structure')
         return {
             'name': name,
             'build_systems': ['gradle'],

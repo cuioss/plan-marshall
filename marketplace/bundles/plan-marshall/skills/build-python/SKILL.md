@@ -63,7 +63,7 @@ python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
 
 **Output Format (TOON)**:
 
-Success (includes `wrapper` field showing resolved pyprojectx executable):
+Success (includes `wrapper` field showing resolved pyprojectx executable — Python-specific):
 ```
 status	success
 exit_code	0
@@ -171,7 +171,7 @@ modules[2]{name,build_systems,paths,metadata,packages,stats,commands}:
   core	["python"]	{module: "core", descriptor: "core/pyproject.toml", ...}	{...}	{...}	{source_files: 15, test_files: 8}	{verify: "verify core", compile: "compile core", module-tests: "module-tests core", ...}
 ```
 
-Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata`, `packages`, `test_packages`, `dependencies`, `stats` (source_files/test_files), `commands` (canonical pyprojectx commands).
+Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata` (name/version/description/requires_python from pyproject.toml), `packages`, `test_packages`, `dependencies` (from pyproject.toml [project].dependencies), `stats` (source_files/test_files), `commands` (canonical pyprojectx commands).
 
 ## Wrapper Detection
 
@@ -183,11 +183,13 @@ Unlike Maven/Gradle which fall back to system commands, Python raises `FileNotFo
 
 ## Error Categories
 
+Uses the shared `categorize_issue()` infrastructure with Python-specific patterns. Deduplication uses the shared `make_dedup_key()` format.
+
 | Category | Description |
 |----------|-------------|
 | `type_error` | mypy type errors |
 | `lint_error` | ruff violations |
-| `test_failure` | pytest test failures |
+| `test_failure` | pytest test failures (with line numbers extracted from tracebacks) |
 | `import_error` | Module import errors |
 
 ## Module Discovery

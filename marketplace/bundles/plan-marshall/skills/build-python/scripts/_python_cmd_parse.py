@@ -11,8 +11,46 @@ Usage (internal):
 import re
 from pathlib import Path
 
-from _build_parse import Issue, UnitTestSummary, extract_test_summary  # noqa: F401 - used by parsers below
+from _build_parse import (
+    SEVERITY_ERROR,
+    CategoryPatterns,
+    Issue,
+    UnitTestSummary,
+    categorize_issue,
+    collect_stack_traces,
+    extract_test_summary,
+)
+from _build_parse import (
+    detect_build_status as _detect_build_status_base,
+)
 from _build_parser_registry import DetectionRule, ParserRegistry
+
+
+# Python-specific categorization patterns for use with shared categorize_issue().
+# Patterns are checked case-insensitively; regex metacharacters trigger regex mode.
+PYTHON_PATTERNS: CategoryPatterns = {
+    'type_error': [
+        r'\.py:\d+: error:',
+        'incompatible type',
+        'incompatible return value',
+        'has no attribute',
+        'missing positional argument',
+    ],
+    'lint_error': [
+        r'\.py:\d+:\d+: [A-Z]+\d+',
+        'ruff',
+    ],
+    'test_failure': [
+        r'^FAILED ',
+        'AssertionError',
+        'assert ',
+    ],
+    'import_error': [
+        'ModuleNotFoundError',
+        'ImportError',
+        'No module named',
+    ],
+}
 
 
 # =============================================================================
@@ -24,20 +62,39 @@ def _parse_mypy(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
     """Parse mypy type-check output."""
     content = Path(log_file).read_text(encoding='utf-8', errors='replace')
     issues: list[Issue] = []
+    seen: set[str] = set()
 
     pattern = re.compile(r'^(.+\.py):(\d+): error: (.+)$', re.MULTILINE)
     for match in pattern.finditer(content):
+        file_path = match.group(1)
+        line = int(match.group(2))
+        message = match.group(3)
+        category = categorize_issue(message, PYTHON_PATTERNS) or 'type_error'
+        if category == 'other':
+            category = 'type_error'
+
+        # Deduplication
+        dedup_key = f'{category}:{file_path}:{line}:{message[:100]}'
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
         issues.append(
             Issue(
-                file=match.group(1),
-                line=int(match.group(2)),
-                message=match.group(3),
-                category='type_error',
-                severity='error',
+                file=file_path,
+                line=line,
+                message=message,
+                category=category,
+                severity=SEVERITY_ERROR,
             )
         )
 
-    status = 'FAILURE' if issues else 'SUCCESS'
+    status = _detect_build_status_base(
+        content,
+        success_markers=['Success: no issues found'],
+        failure_markers=['error:'],
+        default='FAILURE' if issues else 'SUCCESS',
+    )
     return issues, None, status
 
 
@@ -45,16 +102,27 @@ def _parse_ruff(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
     """Parse ruff lint output."""
     content = Path(log_file).read_text(encoding='utf-8', errors='replace')
     issues: list[Issue] = []
+    seen: set[str] = set()
 
     pattern = re.compile(r'^(.+\.py):(\d+):\d+: ([A-Z]+\d+) (.+)$', re.MULTILINE)
     for match in pattern.finditer(content):
+        file_path = match.group(1)
+        line = int(match.group(2))
+        message = f'{match.group(3)} {match.group(4)}'
+
+        # Deduplication
+        dedup_key = f'lint_error:{file_path}:{line}:{message[:100]}'
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
         issues.append(
             Issue(
-                file=match.group(1),
-                line=int(match.group(2)),
-                message=f'{match.group(3)} {match.group(4)}',
+                file=file_path,
+                line=line,
+                message=message,
                 category='lint_error',
-                severity='error',
+                severity=SEVERITY_ERROR,
             )
         )
 
@@ -63,22 +131,43 @@ def _parse_ruff(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
 
 
 def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
-    """Parse pytest test output."""
+    """Parse pytest test output.
+
+    Extracts file locations from FAILED lines and attempts to find line numbers
+    from traceback context in the output.
+    """
     content = Path(log_file).read_text(encoding='utf-8', errors='replace')
+    lines = content.split('\n')
     issues: list[Issue] = []
+    seen: set[str] = set()
 
     pattern = re.compile(r'^FAILED (.+\.py)::(\S+)(?: - (.+))?$', re.MULTILINE)
     for match in pattern.finditer(content):
-        message = match.group(3) if match.group(3) else f'Test {match.group(2)} failed'
+        file_path = match.group(1)
+        test_name = match.group(2)
+        message = match.group(3) if match.group(3) else f'Test {test_name} failed'
+
+        # Try to extract line number from traceback (file.py:NN: message)
+        line_num = _find_pytest_line_number(content, file_path, test_name)
+
+        # Deduplication
+        dedup_key = f'test_failure:{file_path}:{line_num}:{message[:100]}'
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
         issues.append(
             Issue(
-                file=match.group(1),
-                line=-1,  # pytest doesn't give line numbers in summary
+                file=file_path,
+                line=line_num,
                 message=message,
                 category='test_failure',
-                severity='error',
+                severity=SEVERITY_ERROR,
             )
         )
+
+    # Attach stack traces to issues
+    collect_stack_traces(lines, issues)
 
     test_summary = extract_test_summary(
         content,
@@ -86,8 +175,28 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
         group_map={'passed': 1, 'failed': 2, 'skipped': 3},
     )
 
-    status = 'FAILURE' if issues else 'SUCCESS'
+    status = _detect_build_status_base(
+        content,
+        success_markers=['passed'],
+        failure_markers=['FAILED', 'error'],
+        default='FAILURE' if issues else 'SUCCESS',
+    )
     return issues, test_summary, status
+
+
+def _find_pytest_line_number(content: str, file_path: str, test_name: str) -> int | None:
+    """Try to extract line number for a pytest failure from traceback output.
+
+    Looks for patterns like 'file.py:42: AssertionError' in the output.
+    """
+    # Pattern: file.py:NN: in test_name or file.py:NN: AssertionError
+    escaped_file = re.escape(file_path)
+    pattern = re.compile(rf'{escaped_file}:(\d+):')
+    matches = list(pattern.finditer(content))
+    if matches:
+        # Return last match (closest to the actual failure point)
+        return int(matches[-1].group(1))
+    return None
 
 
 # =============================================================================
@@ -104,7 +213,8 @@ def _has_ruff_output(content: str) -> bool:
 
 
 def _has_pytest_output(content: str) -> bool:
-    return 'FAILED ' in content or ' passed' in content
+    """Detect pytest output. Uses specific markers to avoid false positives."""
+    return 'FAILED ' in content or ('passed' in content and ('failed' in content or 'warning' in content or 'error' in content or '==' in content))
 
 
 # =============================================================================
@@ -123,7 +233,7 @@ _REGISTRY = ParserRegistry([
 # =============================================================================
 
 
-def parse_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
+def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse Python build log for errors.
 
     Handles output from mypy, ruff, and pytest using the shared

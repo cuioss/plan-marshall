@@ -11,7 +11,11 @@ npm-specific standards for build execution and output parsing. For shared standa
 Commands are automatically routed to either `npm` or `npx` based on the command:
 
 **npx commands** (tools that should use npx):
-- `playwright`, `eslint`, `prettier`, `stylelint`, `tsc`, `jest`, `vitest`
+- Linters/formatters: `playwright`, `eslint`, `prettier`, `stylelint`
+- TypeScript tools: `tsc`, `tsx`, `ts-node`
+- Test runners: `jest`, `vitest`, `mocha`
+- Bundlers: `webpack`, `rollup`, `esbuild`, `vite`
+- Transpiler: `babel`
 
 **npm commands** (npm scripts):
 - `run <script>`, `test`, `install`, `build`

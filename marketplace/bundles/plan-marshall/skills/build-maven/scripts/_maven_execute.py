@@ -15,13 +15,15 @@ from _maven_cmd_parse import parse_log
 
 
 def _maven_scope_fn(args: str) -> str:
-    """Extract scope from Maven -pl argument."""
-    if '-pl ' in args:
-        try:
-            pl_idx = args.index('-pl ') + 4
-            return args[pl_idx:].split()[0]
-        except (ValueError, IndexError):
-            pass
+    """Extract scope from Maven -pl argument.
+
+    Handles both '-pl module' and '-pl=module' forms.
+    """
+    import re as _re
+
+    match = _re.search(r'-pl[=\s]+(\S+)', args)
+    if match:
+        return match.group(1)
     return 'default'
 
 

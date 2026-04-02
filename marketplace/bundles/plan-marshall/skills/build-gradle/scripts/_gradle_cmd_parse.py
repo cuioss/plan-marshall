@@ -24,16 +24,18 @@ from _build_parse import (
     categorize_issue,
     collect_stack_traces,
     extract_test_summary,
+    make_dedup_key,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
-from _build_parser_registry import DetectionRule, ParserRegistry
+from _build_parser_registry import DetectionRule, ParserRegistry  # noqa: F401 - re-exported for test access
 
 # Gradle-specific categorization patterns. Uses regex patterns for
 # Gradle task-specific markers alongside shared JVM patterns.
 GRADLE_PATTERNS: CategoryPatterns = {
     'compilation_error': [
+        # Java errors
         r'error:\s+cannot find symbol',
         r'error:\s+incompatible types',
         r'error:\s+illegal start',
@@ -44,6 +46,14 @@ GRADLE_PATTERNS: CategoryPatterns = {
         r'error:\s+unreported exception',
         r'error:\s+variable .* might not have been initialized',
         r'error:\s+cannot access',
+        # Kotlin errors
+        r'Unresolved reference',
+        r'Type mismatch',
+        r'Smart cast to .* is impossible',
+        r'None of the following candidates is applicable',
+        r'Overload resolution ambiguity',
+        r"Val cannot be reassigned",
+        # Task failure markers
         r"Execution failed for task ':.*:compileJava'",
         r"Execution failed for task ':.*:compileKotlin'",
     ],
@@ -86,12 +96,19 @@ GRADLE_PATTERNS: CategoryPatterns = {
 }
 
 
-def extract_file_location(line: str) -> tuple[str, int, int]:
-    """Extract file path, line, and column from error message."""
+def parse_file_location(line: str) -> dict[str, str | int | None]:
+    """Extract file, line, and column from a Gradle error/warning line.
+
+    Supports Java, Kotlin, and Groovy source file patterns.
+    Returns dict with consistent keys matching Maven's parse_file_location().
+    """
+    result: dict[str, str | int | None] = {'file': None, 'line': None, 'column': None}
     match = re.search(r'([^\s:]+\.(java|kt|groovy)):(\d+):?(\d+)?', line)
     if match:
-        return match.group(1), int(match.group(3)), int(match.group(4)) if match.group(4) else 0
-    return '', 0, 0
+        result['file'] = match.group(1)
+        result['line'] = int(match.group(3))
+        result['column'] = int(match.group(4)) if match.group(4) else None
+    return result
 
 
 # =============================================================================
@@ -110,17 +127,6 @@ def _parse_gradle_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | Non
     build_status = _detect_build_status(content)
 
     return issues, test_summary, build_status
-
-
-def _has_gradle_output(content: str) -> bool:
-    """Detect Gradle output from content."""
-    return 'BUILD SUCCESSFUL' in content or 'BUILD FAILED' in content or 'Execution failed for task' in content
-
-
-# Registry with single Gradle parser
-_REGISTRY = ParserRegistry([
-    DetectionRule('gradle', ('gradle', 'gradlew'), _has_gradle_output, _parse_gradle_log),
-])
 
 
 # =============================================================================
@@ -174,15 +180,19 @@ def _extract_issues(lines: list[str]) -> list[Issue]:
         if stripped.startswith('at ') or stripped.startswith('Caused by:'):
             continue
 
+        # Skip continuation lines (multi-line error messages)
+        if stripped.startswith('->') or stripped.startswith('>'):
+            continue
+
         issue_type = categorize_issue(line, GRADLE_PATTERNS)
         if issue_type == 'other':
             continue
 
-        file_path, file_line, _ = extract_file_location(line)
+        location = parse_file_location(line)
         message = stripped
 
-        # Deduplication
-        dedup_key = f'{issue_type}:{file_path}:{file_line}:{message[:100]}'
+        # Deduplication using shared key format
+        dedup_key = make_dedup_key(issue_type, location.get('file'), location.get('line'), message)
         if dedup_key in seen:
             continue
         seen.add(dedup_key)
@@ -192,8 +202,8 @@ def _extract_issues(lines: list[str]) -> list[Issue]:
 
         issues.append(
             Issue(
-                file=file_path if file_path else None,
-                line=file_line if file_line else None,
+                file=location.get('file'),
+                line=location.get('line'),
                 message=message[:500],
                 severity=severity,
                 category=issue_type,
