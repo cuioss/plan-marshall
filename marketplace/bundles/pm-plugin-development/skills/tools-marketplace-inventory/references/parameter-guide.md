@@ -72,7 +72,7 @@ plan-marshall:
         - permission-syntax.md
         - security-patterns.md
       scripts[1]:
-        - permission-doctor.py
+        - permission_doctor.py
 ```
 
 **Full mode includes:**

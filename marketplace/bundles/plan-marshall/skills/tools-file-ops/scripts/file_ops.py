@@ -322,6 +322,38 @@ def get_metadata_content_split(content: str) -> tuple[str, str]:
     return metadata_block, body
 
 
+def safe_main(main_fn: Any) -> Any:
+    """Decorator for script entry points that catches unhandled exceptions.
+
+    Wraps the main function so that unhandled exceptions produce a TOON error
+    on stderr and exit with code 1, instead of printing a raw traceback.
+
+    Usage:
+        @safe_main
+        def main() -> int:
+            ...
+            return 0
+
+        if __name__ == '__main__':
+            main()  # calls sys.exit internally
+    """
+    import functools
+
+    @functools.wraps(main_fn)
+    def wrapper() -> None:
+        try:
+            sys.exit(main_fn())
+        except KeyboardInterrupt:
+            sys.exit(130)
+        except SystemExit:
+            raise
+        except Exception as e:
+            output_error('main', str(e))
+            sys.exit(1)
+
+    return wrapper
+
+
 if __name__ == '__main__':
     # Quick self-test when run directly
     print('file_ops.py - File Operations Base Module')

@@ -91,6 +91,14 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 - **Input**: `operation` (str), `error` (str)
 - **Output**: Prints TOON to stderr
 
+**Script Entry Point**
+
+**8. safe_main(main_fn)**
+- **Purpose**: Decorator for script entry points; catches unhandled exceptions and outputs TOON error
+- **Input**: `main_fn` - the main function (must return int or None)
+- **Output**: Wrapped function that calls `sys.exit()` internally
+- **Usage**: `safe_main(main)()` or `@safe_main` decorator
+
 **Metadata Functions**
 
 **8. parse_markdown_metadata(content)**

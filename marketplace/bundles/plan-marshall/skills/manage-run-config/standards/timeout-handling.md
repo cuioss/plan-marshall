@@ -236,17 +236,17 @@ def compute_weighted_timeout(existing: int, new_duration: int) -> int:
 
 ---
 
-## Integration with await-until
+## Integration with await_until
 
-The timeout subcommand complements `await-until.py` from `script-executor`:
+The timeout subcommand complements `await_until.py` from `script-executor`:
 
 ```bash
 # Get learned timeout (or default) - outputs plain number
 TIMEOUT=$(python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
   --command "ci:pr_checks" --default 300)
 
-# Use in await-until with outer shell timeout as safety net
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
+# Use in await_until with outer shell timeout as safety net
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until poll \
   --check-cmd "gh pr checks 123 --json state" \
   --success-field "status=success" \
   --timeout "$TIMEOUT" \
@@ -257,18 +257,18 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeo
   --command "ci:pr_checks" --duration 180
 ```
 
-> **Note**: `await-until.py` has built-in adaptive timeout support via `--command-key`. This API provides an alternative for scripts that need explicit timeout control. When using Bash tool, set `timeout` parameter to `600` seconds.
+> **Note**: `await_until.py` has built-in adaptive timeout support via `--command-key`. This API provides an alternative for scripts that need explicit timeout control. When using Bash tool, set `timeout` parameter to `600` seconds.
 
 ---
 
 ## Polling Operations (Corner Case)
 
-For **async polling** (CI checks, Sonar analysis), use `await-until --command-key` instead. It handles timeout internally with a generous external timeout as circuit breaker:
+For **async polling** (CI checks, Sonar analysis), use `await_until --command-key` instead. It handles timeout internally with a generous external timeout as circuit breaker:
 
 ```bash
-# await-until manages timeout internally via run-config
+# await_until manages timeout internally via run-config
 # External timeout (600s) is just a safety net
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until poll \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until poll \
   --check-cmd "gh pr checks 123 --json state" \
   --success-field "state=completed" \
   --command-key "ci:pr_checks"

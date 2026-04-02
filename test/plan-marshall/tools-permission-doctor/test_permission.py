@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for the permission-doctor.py script.
+Tests for the permission_doctor.py script.
 
 Tests subcommands:
 - detect-redundant: Detect redundant permissions between global/local
@@ -13,8 +13,8 @@ import sys
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
-# Script path to permission-doctor.py
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-doctor' / 'scripts' / 'permission-doctor.py'
+# Script path to permission_doctor.py
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-doctor' / 'scripts' / 'permission_doctor.py'
 
 
 # =============================================================================
@@ -23,11 +23,11 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-
 
 
 class TestDetectRedundant(ScriptTestCase):
-    """Test permission-doctor.py detect-redundant subcommand."""
+    """Test permission_doctor.py detect-redundant subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-doctor'
-    script = 'permission-doctor.py'
+    script = 'permission_doctor.py'
 
     def test_detect_exact_duplicate(self):
         """Should detect when same permission exists in both global and local."""
@@ -166,11 +166,11 @@ This is a project-local command.
 
 
 class TestDetectSuspicious(ScriptTestCase):
-    """Test permission-doctor.py detect-suspicious subcommand."""
+    """Test permission_doctor.py detect-suspicious subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-doctor'
-    script = 'permission-doctor.py'
+    script = 'permission_doctor.py'
 
     def test_detect_sudo_permission(self):
         """Should flag sudo permissions as suspicious."""
@@ -273,11 +273,11 @@ class TestDetectSuspicious(ScriptTestCase):
 
 
 class TestScopeOption(ScriptTestCase):
-    """Test permission-doctor.py --scope option."""
+    """Test permission_doctor.py --scope option."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-doctor'
-    script = 'permission-doctor.py'
+    script = 'permission_doctor.py'
 
     def test_detect_redundant_with_scope_both(self):
         """detect-redundant should work with --scope both."""

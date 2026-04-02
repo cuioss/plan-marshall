@@ -80,7 +80,7 @@ Add the executor permission to project-local settings so script execution doesn'
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission-fix.py ensure \
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
 ```
@@ -107,7 +107,7 @@ This ensures script execution works without prompting, independent of global set
 **BOOTSTRAP**: Use DIRECT Python call with glob (executor doesn't exist yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate-executor.py generate
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py generate
 ```
 
 **Output (TOON)**:
@@ -125,7 +125,7 @@ python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
 
 **Ensure executor permission** (prevents permission prompts when using executor):
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission-fix.py ensure \
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
 ```
@@ -887,7 +887,7 @@ AskUserQuestion:
 
 If yes:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix apply-fixes --scope project
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-fixes --scope project
 ```
 
 ---

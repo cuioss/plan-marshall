@@ -51,7 +51,7 @@ Execute ALL operations in sequence:
 ## Operation: Regenerate Executor
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate-executor.py generate
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py generate
 ```
 
 The script uses subcommands (`generate`, `verify`, `drift`, `paths`, `cleanup`), not positional arguments.

@@ -18,7 +18,7 @@ Read-only permission analysis for Claude Code settings. Detects redundant permis
 - Do not skip anti-pattern detection when analyzing settings
 
 **Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission-doctor {command} {args}`
+- All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor {command} {args}`
 - Use `tools-permission-fix` for any write operations
 - User-approved permissions must be excluded from suspicious reports
 
@@ -56,11 +56,11 @@ Activate when:
 
 Detect permissions in local settings that duplicate global settings.
 
-**Script**: `permission-doctor.py detect-redundant`
+**Script**: `permission_doctor.py detect-redundant`
 
 **Input**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission-doctor detect-redundant \
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-redundant \
   --global-settings {global_path} \
   --local-settings {local_path}
 ```
@@ -84,11 +84,11 @@ summary:
 
 Detect permissions matching anti-patterns (security risks).
 
-**Script**: `permission-doctor.py detect-suspicious`
+**Script**: `permission_doctor.py detect-suspicious`
 
 **Input**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission-doctor detect-suspicious \
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-suspicious \
   --settings {settings_path} \
   [--approved-file {run_config_path}]
 ```
@@ -141,8 +141,8 @@ recommendations[2]:
 
 | Script | Subcommand | Purpose |
 |--------|------------|---------|
-| `permission-doctor.py` | `detect-redundant` | Detects redundant permissions between global/local |
-| `permission-doctor.py` | `detect-suspicious` | Detects security anti-patterns in permissions |
+| `permission_doctor.py` | `detect-redundant` | Detects redundant permissions between global/local |
+| `permission_doctor.py` | `detect-suspicious` | Detects security anti-patterns in permissions |
 | `permission_common.py` | (library) | Shared utilities for settings loading and path resolution (also used by `tools-permission-fix`) |
 
 ## Standards Organization

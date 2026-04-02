@@ -120,7 +120,7 @@ All CI operations share:
 | **Output format** | TOON for all script outputs |
 | **Two-layer execution** | Outer Bash timeout + inner shell timeout |
 
-See [wait-pattern.md](../../tools-script-executor/standards/wait-pattern.md) for the await-until polling utility.
+See [wait-pattern.md](../../tools-script-executor/standards/wait-pattern.md) for the await_until polling utility.
 
 ---
 

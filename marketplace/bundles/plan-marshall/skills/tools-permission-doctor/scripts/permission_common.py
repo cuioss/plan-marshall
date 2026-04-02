@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared utilities for permission-doctor and permission-fix scripts.
+"""Shared utilities for permission_doctor and permission_fix scripts.
 
 Provides settings loading, path resolution, and exit code constants
 used by both read-only analysis and write operations.

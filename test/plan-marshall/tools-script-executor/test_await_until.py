@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for await-until.py synchronous polling utility."""
+"""Unit tests for await_until.py synchronous polling utility."""
 
 import json
 import os
@@ -12,7 +12,7 @@ from pathlib import Path
 from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path, run_script
 
 # Path to the script
-SCRIPT_PATH = get_script_path('plan-marshall', 'tools-script-executor', 'await-until.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'tools-script-executor', 'await_until.py')
 
 
 # =============================================================================

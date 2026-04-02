@@ -959,4 +959,6 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    from file_ops import safe_main  # type: ignore[import-not-found]
+
+    safe_main(main)()

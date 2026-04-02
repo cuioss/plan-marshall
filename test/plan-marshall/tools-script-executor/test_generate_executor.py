@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for generate-executor.py script."""
+"""Unit tests for generate_executor.py script."""
 
 import os
 import subprocess
@@ -15,11 +15,11 @@ SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts'
 )
-GENERATE_SCRIPT = SCRIPTS_DIR / 'generate-executor.py'
+GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
 
 
 def load_module():
-    """Load the generate-executor module."""
+    """Load the generate_executor module."""
     with open(GENERATE_SCRIPT) as f:
         code = f.read()
 

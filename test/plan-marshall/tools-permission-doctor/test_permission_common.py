@@ -2,7 +2,7 @@
 """Tests for permission_common.py shared module.
 
 Tests settings loading, path resolution, and scope resolution used by
-both permission-doctor and permission-fix scripts.
+both permission_doctor and permission_fix scripts.
 """
 
 import json

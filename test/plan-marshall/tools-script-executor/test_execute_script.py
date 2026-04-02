@@ -223,13 +223,13 @@ def test_log_normal_scripts_failure():
 
 
 # =============================================================================
-# TESTS: generate-executor.py script
+# TESTS: generate_executor.py script
 # =============================================================================
 
 
 def test_generate_script_help():
     """Generate script shows help."""
-    script_path = SCRIPTS_DIR / 'generate-executor.py'
+    script_path = SCRIPTS_DIR / 'generate_executor.py'
 
     if script_path.exists():
         result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True)

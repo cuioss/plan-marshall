@@ -84,7 +84,7 @@ Command keys support namespaced naming for organized storage:
 | `build:<type>` | Build operations | `build:maven_verify`, `build:npm_test` |
 | `deploy:<env>` | Deployment waits | `deploy:staging`, `deploy:production` |
 
-The `duration_ms` field enables adaptive timeout learning. The `await-until` script uses previous execution durations to calculate appropriate timeouts for polling operations.
+The `duration_ms` field enables adaptive timeout learning. The `await_until` script uses previous execution durations to calculate appropriate timeouts for polling operations.
 
 ---
 

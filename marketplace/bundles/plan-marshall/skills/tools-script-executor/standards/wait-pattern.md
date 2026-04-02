@@ -57,7 +57,7 @@ The wait pattern provides a **synchronous blocking** mechanism that:
 **Key Insight**: Claude's Bash tool has a **default 120-second timeout**. Long-running polling operations need two timeout layers:
 
 1. **Outer timeout**: Bash tool's `timeout` parameter (prevents Claude from canceling the operation)
-2. **Inner timeout**: await-until's adaptive timeout (controls actual polling duration)
+2. **Inner timeout**: await_until's adaptive timeout (controls actual polling duration)
 
 ```
                 TWO-LAYER TIMEOUT ARCHITECTURE
@@ -69,7 +69,7 @@ The wait pattern provides a **synchronous blocking** mechanism that:
     │  │  Shell timeout wrapper (generous safety net)          │  │
     │  │  timeout 600s python3 .plan/execute-script.py ...     │  │
     │  │  ┌─────────────────────────────────────────────────┐  │  │
-    │  │  │  await-until (adaptive internal timeout)        │  │  │
+    │  │  │  await_until (adaptive internal timeout)        │  │  │
     │  │  │  --command-key ci:pr_checks                     │  │  │
     │  │  │                                                 │  │  │
     │  │  │  Polls every 30s until success or timeout       │  │  │
@@ -240,21 +240,21 @@ The CLI provides two modes: **explicit** (manual timeout/interval) and **adaptiv
 ```bash
 # ADAPTIVE MODE (recommended): timeout/interval managed internally via run-config
 # Outer shell timeout (600s) is safety net; inner adaptive timeout controls polling
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
     --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
     --success-field "status=success" \
     --failure-field "status=failure" \
     --command-key "ci:pr_checks"
 
 # EXPLICIT MODE: manual timeout/interval (useful for one-off operations)
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
     --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
     --success-field "status=success" \
     --timeout 300 \
     --interval 30
 
 # Wait for Sonar analysis completion
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
     --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci sonar get-status --pr-number 123" \
     --success-field "qualityGate=OK" \
     --failure-field "qualityGate=ERROR" \
@@ -359,7 +359,7 @@ The wait utility delegates all timeout management to `run-config timeout get/set
 
 ### Delegation to run-config
 
-await-until uses subprocess calls to delegate timeout management:
+await_until uses subprocess calls to delegate timeout management:
 
 ```python
 def get_adaptive_timeout(command_key: str) -> Optional[int]:
@@ -388,7 +388,7 @@ All margin and weighting logic is encapsulated in `run-config timeout`.
 
 ## Integration with run-config
 
-When `--command-key` is provided, await-until delegates timeout management to `run-config timeout`:
+When `--command-key` is provided, await_until delegates timeout management to `run-config timeout`:
 
 1. **Before polling**: Calls `run-config timeout get` (returns timeout with safety margin)
 2. **After completion**: Calls `run-config timeout set` (applies weighted update)
@@ -398,7 +398,7 @@ When `--command-key` is provided, await-until delegates timeout management to `r
 
     ┌─────────────────────────────────────────────────────────┐
     │                                                         │
-    │  await-until.py --command-key "ci:pr_checks"            │
+    │  await_until.py --command-key "ci:pr_checks"            │
     │                                                         │
     │  ┌───────────────────────────────────────────────────┐  │
     │  │ 1. run-config timeout get --command-key ci:...    │  │

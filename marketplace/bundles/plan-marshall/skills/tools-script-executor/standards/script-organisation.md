@@ -141,7 +141,7 @@ skills/<skill-name>/scripts/
 Only CLI entry points are registered in the executor. Internal modules are never exposed.
 
 ```python
-# generate-executor.py mapping (simplified)
+# generate_executor.py mapping (simplified)
 SCRIPT_MAPPING = {
     "plan-marshall:build-maven:maven": ".../scripts/maven.py",
     "plan-marshall:build-gradle:gradle": ".../scripts/gradle.py",

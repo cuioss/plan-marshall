@@ -3,11 +3,11 @@
 Generate and manage execute-script.py with embedded script mappings.
 
 Usage:
-    python3 generate-executor.py generate [--force] [--dry-run] [--marketplace]
-    python3 generate-executor.py verify
-    python3 generate-executor.py drift [--marketplace]
-    python3 generate-executor.py paths
-    python3 generate-executor.py cleanup [--max-age-days N]
+    python3 generate_executor.py generate [--force] [--dry-run] [--marketplace]
+    python3 generate_executor.py verify
+    python3 generate_executor.py drift [--marketplace]
+    python3 generate_executor.py paths
+    python3 generate_executor.py cleanup [--max-age-days N]
 
 Subcommands:
     generate    Generate executor with script mappings
@@ -863,4 +863,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    from file_ops import safe_main  # type: ignore[import-not-found]
+
+    safe_main(main)()

@@ -100,16 +100,17 @@ def check_auth_cli(
 
 
 # ---------------------------------------------------------------------------
-# Error output (manual TOON to stderr -- no serialize_toon dependency)
+# Error output (unified TOON via serialize_toon)
 # ---------------------------------------------------------------------------
 
 def output_error(operation: str, error: str, context: str = '') -> int:
     """Output error in TOON format to stderr and return EXIT_ERROR."""
-    print('status: error', file=sys.stderr)
-    print(f'operation: {operation}', file=sys.stderr)
-    print(f'error: {error}', file=sys.stderr)
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    data: dict[str, str] = {'status': 'error', 'operation': operation, 'error': error}
     if context:
-        print(f'context: {context}', file=sys.stderr)
+        data['context'] = context
+    print(serialize_toon(data), file=sys.stderr)
     return EXIT_ERROR
 
 
@@ -404,7 +405,7 @@ def determine_overall_ci_status(checks: list[dict], pass_key: str, fail_key: str
 
 
 # ---------------------------------------------------------------------------
-# Polling framework (shared between ci wait and await-until patterns)
+# Polling framework (shared between ci wait and await_until patterns)
 # ---------------------------------------------------------------------------
 
 def poll_until(

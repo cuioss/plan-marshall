@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for the permission-fix.py script.
+Tests for the permission_fix.py script.
 
 Tests subcommands:
 - apply-fixes: Apply safe permission fixes (dedup, sort, defaults)
@@ -21,8 +21,8 @@ import sys
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
-# Script path to permission-fix.py
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-fix' / 'scripts' / 'permission-fix.py'
+# Script path to permission_fix.py
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-fix' / 'scripts' / 'permission_fix.py'
 
 
 # =============================================================================
@@ -31,11 +31,11 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-
 
 
 class TestConsolidate(ScriptTestCase):
-    """Test permission-fix.py consolidate subcommand."""
+    """Test permission_fix.py consolidate subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_detect_timestamped_build_output(self):
         """Should detect permissions with timestamp patterns."""
@@ -110,11 +110,11 @@ class TestConsolidate(ScriptTestCase):
 
 
 class TestEnsureWildcards(ScriptTestCase):
-    """Test permission-fix.py ensure-wildcards subcommand."""
+    """Test permission_fix.py ensure-wildcards subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_adds_missing_wildcards(self):
         """Should add missing marketplace wildcards."""
@@ -294,11 +294,11 @@ class TestEnsureWildcards(ScriptTestCase):
 
 
 class TestApplyFixes(ScriptTestCase):
-    """Test permission-fix.py apply-fixes subcommand."""
+    """Test permission_fix.py apply-fixes subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_removes_duplicates(self):
         """Should remove duplicate permissions."""
@@ -350,11 +350,11 @@ class TestApplyFixes(ScriptTestCase):
 
 
 class TestAdd(ScriptTestCase):
-    """Test permission-fix.py add subcommand."""
+    """Test permission_fix.py add subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_add_permission(self):
         """Should add a new permission."""
@@ -392,11 +392,11 @@ class TestAdd(ScriptTestCase):
 
 
 class TestRemove(ScriptTestCase):
-    """Test permission-fix.py remove subcommand."""
+    """Test permission_fix.py remove subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_remove_permission(self):
         """Should remove an existing permission."""
@@ -441,11 +441,11 @@ class TestRemove(ScriptTestCase):
 
 
 class TestEnsure(ScriptTestCase):
-    """Test permission-fix.py ensure subcommand."""
+    """Test permission_fix.py ensure subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_ensure_adds_missing(self):
         """Should add permissions that are missing."""
@@ -513,11 +513,11 @@ class TestEnsure(ScriptTestCase):
 
 
 class TestScopeOption(ScriptTestCase):
-    """Test permission-fix.py --scope option for apply-fixes and consolidate."""
+    """Test permission_fix.py --scope option for apply-fixes and consolidate."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_apply_fixes_with_scope_project(self):
         """apply-fixes should work with --scope project."""
@@ -578,11 +578,11 @@ class TestScopeOption(ScriptTestCase):
 
 
 class TestGenerateWildcards(ScriptTestCase):
-    """Test permission-fix.py generate-wildcards subcommand."""
+    """Test permission_fix.py generate-wildcards subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_generates_skill_wildcards(self):
         """Should generate Skill() wildcards from inventory."""
@@ -640,11 +640,11 @@ class TestGenerateWildcards(ScriptTestCase):
 
 
 class TestExecutorPattern(ScriptTestCase):
-    """Test permission-fix.py executor pattern subcommands."""
+    """Test permission_fix.py executor pattern subcommands."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-fix'
-    script = 'permission-fix.py'
+    script = 'permission_fix.py'
 
     def test_ensure_executor_adds_permission(self):
         """Should add executor permission when missing."""
