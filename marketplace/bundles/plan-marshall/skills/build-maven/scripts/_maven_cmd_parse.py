@@ -17,54 +17,65 @@ from pathlib import Path
 from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
+    CategoryPatterns,
     Issue,
     UnitTestSummary,
+    categorize_issue,
+    collect_stack_traces,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
 
-
-def categorize_issue(message: str) -> str:
-    """Categorize an issue based on its message content."""
-    lower_msg = message.lower()
-    if any(
-        p in lower_msg
-        for p in [
-            'cannot find symbol',
-            'incompatible types',
-            'illegal start',
-            'class, interface, or enum expected',
-            'unreported exception',
-            'method does not override',
-            'not a statement',
-            'package does not exist',
-            'cannot be applied',
-        ]
-    ):
-        return 'compilation_error'
-    if any(p in lower_msg for p in ['tests run:', 'failure!', 'test failure', 'assertionfailed', 'expected:']):
-        return 'test_failure'
-    if any(
-        p in lower_msg
-        for p in [
-            'could not resolve dependencies',
-            'could not find artifact',
-            'missing, no dependency',
-            'artifact not found',
-            'non-resolvable',
-        ]
-    ):
-        return 'dependency_error'
-    if any(p in lower_msg for p in ['javadoc', 'no @param', 'no @return', '@param name', 'missing @']):
-        return 'javadoc_warning'
-    if '[deprecation]' in lower_msg or 'has been deprecated' in lower_msg:
-        return 'deprecation_warning'
-    if '[unchecked]' in lower_msg or 'unchecked conversion' in lower_msg:
-        return 'unchecked_warning'
-    if any(p in lower_msg for p in ['org.openrewrite', 'rewrite-maven-plugin', 'rewrite:']):
-        return 'openrewrite_info'
-    return 'other'
+# Maven-specific categorization patterns (substring matching by default,
+# regex when metacharacters are present).
+MAVEN_PATTERNS: CategoryPatterns = {
+    'compilation_error': [
+        'cannot find symbol',
+        'incompatible types',
+        'illegal start',
+        'class, interface, or enum expected',
+        'unreported exception',
+        'method does not override',
+        'not a statement',
+        'package does not exist',
+        'cannot be applied',
+    ],
+    'test_failure': [
+        'tests run:',
+        'failure!',
+        'test failure',
+        'assertionfailed',
+        'expected:',
+    ],
+    'dependency_error': [
+        'could not resolve dependencies',
+        'could not find artifact',
+        'missing, no dependency',
+        'artifact not found',
+        'non-resolvable',
+    ],
+    'javadoc_warning': [
+        'javadoc',
+        'no @param',
+        'no @return',
+        '@param name',
+        'missing @',
+    ],
+    'deprecation_warning': [
+        '[deprecation]',
+        'has been deprecated',
+    ],
+    'unchecked_warning': [
+        '[unchecked]',
+        'unchecked conversion',
+    ],
+    'openrewrite_info': [
+        'org.openrewrite',
+        'rewrite-maven-plugin',
+        'rewrite:',
+    ],
+}
 
 
 def parse_file_location(line: str) -> dict:
@@ -80,8 +91,6 @@ def parse_file_location(line: str) -> dict:
     if match:
         return {'file': f'{match.group(1)}.java', 'line': int(match.group(3)), 'column': None, 'method': match.group(2)}
     return result
-
-
 
 
 # =============================================================================
@@ -109,37 +118,26 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     path = Path(log_file)
     content = path.read_text(encoding='utf-8', errors='replace')
 
-    issues = _extract_issues_as_dataclass(content)
+    issues = _extract_issues(content)
     test_summary = _extract_test_summary(content)
     build_status = _detect_build_status(content)
 
     return issues, test_summary, build_status
 
 
-def _extract_issues_as_dataclass(content: str) -> list[Issue]:
-    """Extract all issues from Maven output as Issue dataclasses.
-
-    Args:
-        content: Maven log file content.
-
-    Returns:
-        List of Issue dataclasses with severity, file, line, message, category.
-    """
+def _extract_issues(content: str) -> list[Issue]:
+    """Extract all issues from Maven output as Issue dataclasses."""
     issues: list[Issue] = []
-    stack_lines: list[str] = []
+    non_stack_lines: list[str] = []
 
+    # First pass: separate stack trace lines from issue lines
     for line in content.split('\n'):
         stripped = line.strip()
-
-        # Collect stack trace lines and attach to previous issue
         if stripped.startswith('at ') or stripped.startswith('Caused by:'):
-            stack_lines.append(stripped)
+            # Will be handled by collect_stack_traces
+            non_stack_lines.append(line)
             continue
-
-        # When we hit a non-stack line, flush collected stack to last issue
-        if stack_lines and issues:
-            issues[-1].stack_trace = '\n'.join(stack_lines)
-            stack_lines = []
+        non_stack_lines.append(line)
 
         severity = None
         if '[ERROR]' in line:
@@ -154,7 +152,7 @@ def _extract_issues_as_dataclass(content: str) -> list[Issue]:
                 continue
 
             location = parse_file_location(line)
-            category = categorize_issue(message)
+            category = categorize_issue(message, MAVEN_PATTERNS)
 
             issues.append(
                 Issue(
@@ -166,9 +164,8 @@ def _extract_issues_as_dataclass(content: str) -> list[Issue]:
                 )
             )
 
-    # Flush any remaining stack lines
-    if stack_lines and issues:
-        issues[-1].stack_trace = '\n'.join(stack_lines)
+    # Attach stack traces to issues
+    collect_stack_traces(content.split('\n'), issues)
 
     return issues
 
@@ -214,4 +211,3 @@ def _extract_test_summary(content: str) -> UnitTestSummary | None:
         skipped=skipped,
         total=total,
     )
-

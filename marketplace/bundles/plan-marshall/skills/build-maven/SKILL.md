@@ -29,7 +29,7 @@ Maven build execution with output parsing, module discovery, and wrapper detecti
 | `maven.py` | CLI | Maven operations dispatcher (includes coverage + warning config) |
 | `_maven_execute.py` | Library | Execution config via factory pattern |
 | `_maven_cmd_discover.py` | Library | Module discovery via pom.xml |
-| `_maven_cmd_parse.py` | Library | Log parsing, issue extraction |
+| `_maven_cmd_parse.py` | Library | Log parsing, issue extraction (uses shared categorizer) |
 
 ## Unified API
 

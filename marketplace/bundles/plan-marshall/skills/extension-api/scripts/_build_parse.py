@@ -357,6 +357,85 @@ def generate_summary_from_issues(issues: list[Issue]) -> dict:
     return summary
 
 
+# =============================================================================
+# Shared Issue Categorization
+# =============================================================================
+
+# Category definition: maps category name to list of patterns.
+# Patterns are matched case-insensitively. Regex patterns start with '^' or
+# contain regex metacharacters; plain strings use substring matching.
+CategoryPatterns = dict[str, list[str]]
+
+
+def categorize_issue(message: str, patterns: CategoryPatterns) -> str:
+    """Categorize an issue message using pattern definitions.
+
+    Each category maps to a list of patterns checked in definition order.
+    Patterns starting with '^' or containing regex metacharacters are
+    treated as regex; all others use substring matching (case-insensitive).
+
+    Args:
+        message: The issue message to categorize.
+        patterns: Dict mapping category name to list of match patterns.
+
+    Returns:
+        The first matching category name, or 'other' if none match.
+    """
+    lower_msg = message.lower()
+    for category, category_patterns in patterns.items():
+        for pattern in category_patterns:
+            if _is_regex_pattern(pattern):
+                if re.search(pattern, message, re.IGNORECASE):
+                    return category
+            else:
+                if pattern.lower() in lower_msg:
+                    return category
+    return 'other'
+
+
+def _is_regex_pattern(pattern: str) -> bool:
+    """Check if a pattern should be treated as regex rather than substring."""
+    # Patterns with regex metacharacters (beyond simple text)
+    return bool(re.search(r'[\\^$.*+?{}\[\]|()]', pattern))
+
+
+# =============================================================================
+# Shared Stack Trace Collection
+# =============================================================================
+
+
+def collect_stack_traces(lines: list[str], issues: list[Issue]) -> None:
+    """Collect stack trace lines and attach them to the preceding issue.
+
+    Scans lines for stack trace markers ('at ' and 'Caused by:') and
+    attaches collected traces to the most recent issue in the list.
+    Modifies issues in-place by setting stack_trace fields.
+
+    Args:
+        lines: Log file lines to scan.
+        issues: List of issues to attach stack traces to.
+            Issues should be added to this list between calls as
+            non-stack lines are processed.
+    """
+    stack_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith('at ') or stripped.startswith('Caused by:'):
+            stack_lines.append(stripped)
+            continue
+
+        # Flush collected stack to last issue
+        if stack_lines and issues:
+            issues[-1].stack_trace = '\n'.join(stack_lines)
+            stack_lines = []
+
+    # Flush any remaining stack lines
+    if stack_lines and issues:
+        issues[-1].stack_trace = '\n'.join(stack_lines)
+
+
 def partition_issues(issues: list[Issue]) -> tuple[list[Issue], list[Issue]]:
     """Partition issues into errors and warnings by severity.
 

@@ -23,7 +23,12 @@ import sys
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
-from _build_shared import add_coverage_subparser, add_run_subparser, cmd_parse_common
+from _build_shared import (
+    add_check_warnings_subparser,
+    add_coverage_subparser,
+    add_parse_subparser,
+    add_run_subparser,
+)
 from _markers_search import cmd_search_markers
 from _maven_cmd_parse import parse_log
 from _maven_execute import cmd_run
@@ -46,14 +51,6 @@ cmd_check_warnings = create_check_warnings_handler(
 )
 
 
-def _cmd_parse(args):
-    """Handle parse subcommand using shared parse_log."""
-    return cmd_parse_common(
-        args, parse_log,
-        extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
-    )
-
-
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -69,18 +66,12 @@ def main() -> int:
     run_parser.set_defaults(func=cmd_run)
 
     # parse subcommand
-    parse_parser = subparsers.add_parser('parse', help='Parse Maven build output and categorize issues')
-    parse_parser.add_argument('--log', required=True, help='Path to Maven build log file')
-    parse_parser.add_argument(
-        '--mode',
-        choices=['default', 'errors', 'structured', 'no-openrewrite'],
-        default='structured',
-        help='Output mode',
+    add_parse_subparser(
+        subparsers, parse_log,
+        help_text='Parse Maven build output and categorize issues',
+        extra_modes=['no-openrewrite'],
+        extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
     )
-    parse_parser.add_argument(
-        '--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)',
-    )
-    parse_parser.set_defaults(func=_cmd_parse)
 
     # search-markers subcommand
     markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
@@ -93,12 +84,7 @@ def main() -> int:
     cov_parser.set_defaults(func=cmd_coverage_report)
 
     # check-warnings subcommand
-    warn_parser = subparsers.add_parser('check-warnings', help='Categorize build warnings')
-    warn_parser.add_argument('--warnings', help='JSON array of warning objects')
-    warn_parser.add_argument(
-        '--acceptable-warnings', dest='acceptable_warnings', help='JSON object with acceptable patterns'
-    )
-    warn_parser.set_defaults(func=cmd_check_warnings)
+    add_check_warnings_subparser(subparsers, cmd_check_warnings)
 
     args = parser.parse_args()
     result: int = args.func(args)

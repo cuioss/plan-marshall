@@ -34,6 +34,7 @@ from pathlib import Path
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from extension_base import (
     count_source_files,
+    discover_packages,
     discover_sources,
     find_readme,
 )
@@ -376,6 +377,11 @@ def _extract_gradle_module(
     readme = find_readme(str(module_path))
     readme_path = f'{prefix}/{readme}' if readme and prefix else readme
 
+    # Packages via shared discovery (parity with Maven discovery)
+    rel = prefix if prefix else ''
+    packages = discover_packages(module_path, sources.get('main', []), rel)
+    test_packages = discover_packages(module_path, sources.get('test', []), rel)
+
     # Stats via shared counting
     source_files = count_source_files(module_path, sources['main'])
     test_files = count_source_files(module_path, sources['test'])
@@ -413,8 +419,8 @@ def _extract_gradle_module(
             }.items()
             if v is not None
         },
-        'packages': {},
-        'test_packages': {},
+        'packages': packages,
+        'test_packages': test_packages,
         'dependencies': dependencies,
         'stats': {'source_files': source_files, 'test_files': test_files},
         'commands': commands,

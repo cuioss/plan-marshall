@@ -29,7 +29,7 @@ Gradle build execution with output parsing, module discovery, and wrapper detect
 | `gradle.py` | CLI | Gradle operations dispatcher (includes coverage + warning config) |
 | `_gradle_execute.py` | Library | Execution config via factory pattern |
 | `_gradle_cmd_discover.py` | Library | Module discovery via build.gradle |
-| `_gradle_cmd_parse.py` | Library | Log parsing, issue extraction |
+| `_gradle_cmd_parse.py` | Library | Log parsing, issue extraction (uses shared categorizer) |
 | `_gradle_cmd_find_project.py` | Library | Gradle subproject location |
 
 ## Unified API
@@ -192,7 +192,7 @@ Gradle: ./gradlew > gradle (on PATH)
 
 ## Module Discovery
 
-Gradle module discovery reads `settings.gradle(.kts)` to detect multi-project builds. Subprojects are identified from `include()` declarations.
+Gradle module discovery reads `settings.gradle(.kts)` to detect multi-project builds. Subprojects are identified from `include()` declarations. Discovery uses shared utilities from the extension API for source directories, package scanning, and file counting (at parity with Maven discovery).
 
 ### Command Generation
 

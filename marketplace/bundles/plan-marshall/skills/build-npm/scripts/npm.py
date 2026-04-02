@@ -20,7 +20,12 @@ import sys
 
 from _build_check_warnings import create_check_warnings_handler
 from _build_coverage_report import create_coverage_report_handler
-from _build_shared import add_coverage_subparser, add_run_subparser, cmd_parse_common
+from _build_shared import (
+    add_check_warnings_subparser,
+    add_coverage_subparser,
+    add_parse_subparser,
+    add_run_subparser,
+)
 from _npm_cmd_parse import parse_log
 from _npm_execute import cmd_run
 
@@ -39,16 +44,6 @@ cmd_check_warnings = create_check_warnings_handler(
     matcher='substring',
     supports_patterns_arg=False,
 )
-
-
-def _cmd_parse(args):
-    """Handle parse subcommand using shared parse_log."""
-    return cmd_parse_common(args, parse_log, parser_needs_command=True)
-
-
-# =============================================================================
-# Main
-# =============================================================================
 
 
 def main() -> int:
@@ -71,27 +66,18 @@ def main() -> int:
     run_parser.set_defaults(func=cmd_run)
 
     # parse subcommand
-    parse_parser = subparsers.add_parser('parse', help='Parse npm/npx build output and categorize issues')
-    parse_parser.add_argument('--log', required=True, help='Path to npm build log file')
-    parse_parser.add_argument(
-        '--mode', choices=['default', 'errors', 'structured'], default='structured', help='Output mode'
+    add_parse_subparser(
+        subparsers, parse_log,
+        help_text='Parse npm/npx build output and categorize issues',
+        parser_needs_command=True,
     )
-    parse_parser.add_argument(
-        '--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)',
-    )
-    parse_parser.set_defaults(func=_cmd_parse)
 
     # coverage-report subcommand
     cov_parser = add_coverage_subparser(subparsers, help_text='Parse JavaScript coverage report')
     cov_parser.set_defaults(func=cmd_coverage_report)
 
     # check-warnings subcommand
-    warn_parser = subparsers.add_parser('check-warnings', help='Categorize build warnings')
-    warn_parser.add_argument('--warnings', help='JSON array of warnings')
-    warn_parser.add_argument(
-        '--acceptable-warnings', dest='acceptable_warnings', help='JSON object with acceptable patterns'
-    )
-    warn_parser.set_defaults(func=cmd_check_warnings)
+    add_check_warnings_subparser(subparsers, cmd_check_warnings)
 
     args = parser.parse_args()
     result: int = args.func(args)

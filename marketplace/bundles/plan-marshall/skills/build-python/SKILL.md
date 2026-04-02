@@ -60,7 +60,7 @@ python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
 
 **Output Format (TOON)**:
 
-Success:
+Success (includes `wrapper` field showing resolved pyprojectx executable):
 ```
 status	success
 exit_code	0

@@ -184,6 +184,74 @@ def add_coverage_subparser(subparsers, *, help_text: str = 'Parse coverage repor
     return cov_parser
 
 
+def add_parse_subparser(
+    subparsers,
+    parse_fn,
+    *,
+    help_text: str = 'Parse build output and categorize issues',
+    extra_modes: list[str] | None = None,
+    extra_filters: dict[str, Callable[[Issue], bool]] | None = None,
+    parser_needs_command: bool = False,
+):
+    """Add standard 'parse' subparser with common arguments.
+
+    All build skills share the same parse subparser pattern:
+    --log, --mode, --format. This helper creates the subparser, wires
+    up the func default to call cmd_parse_common with the right args.
+
+    Args:
+        subparsers: argparse subparsers object.
+        parse_fn: Tool-specific parse_log function.
+        help_text: Help text for the subparser.
+        extra_modes: Additional mode choices beyond default/errors/structured.
+        extra_filters: Mode filters to pass to cmd_parse_common.
+        parser_needs_command: If True, passes command to parser_fn.
+
+    Returns:
+        The created parse subparser.
+    """
+    modes = ['default', 'errors', 'structured']
+    if extra_modes:
+        modes.extend(extra_modes)
+
+    parse_parser = subparsers.add_parser('parse', help=help_text)
+    parse_parser.add_argument('--log', required=True, help='Path to build log file')
+    parse_parser.add_argument('--mode', choices=modes, default='structured', help='Output mode')
+    parse_parser.add_argument(
+        '--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)',
+    )
+
+    def _cmd_parse(args):
+        return cmd_parse_common(
+            args, parse_fn,
+            extra_filters=extra_filters,
+            parser_needs_command=parser_needs_command,
+        )
+
+    parse_parser.set_defaults(func=_cmd_parse)
+    return parse_parser
+
+
+def add_check_warnings_subparser(subparsers, check_warnings_fn, *, help_text: str = 'Categorize build warnings'):
+    """Add standard 'check-warnings' subparser with common arguments.
+
+    Args:
+        subparsers: argparse subparsers object.
+        check_warnings_fn: Handler function (from create_check_warnings_handler).
+        help_text: Help text for the subparser.
+
+    Returns:
+        The created check-warnings subparser.
+    """
+    warn_parser = subparsers.add_parser('check-warnings', help=help_text)
+    warn_parser.add_argument('--warnings', help='JSON array of warning objects')
+    warn_parser.add_argument(
+        '--acceptable-warnings', dest='acceptable_warnings', help='JSON object with acceptable patterns',
+    )
+    warn_parser.set_defaults(func=check_warnings_fn)
+    return warn_parser
+
+
 def cmd_run_common(
     result: DirectCommandResult,
     parser_fn: ParserFn,

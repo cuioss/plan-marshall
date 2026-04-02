@@ -17,79 +17,71 @@ from pathlib import Path
 from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
+    CategoryPatterns,
     Issue,
     UnitTestSummary,
+    categorize_issue,
+    collect_stack_traces,
     extract_test_summary,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
 
-# Pattern definitions for categorizing build output
-COMPILATION_PATTERNS = [
-    r'error:\s+cannot find symbol',
-    r'error:\s+incompatible types',
-    r'error:\s+illegal start',
-    r"error:\s+';' expected",
-    r'error:\s+class .* is public',
-    r'error:\s+package .* does not exist',
-    r'error:\s+method .* cannot be applied',
-    r'error:\s+unreported exception',
-    r'error:\s+variable .* might not have been initialized',
-    r'error:\s+cannot access',
-    r"Execution failed for task ':.*:compileJava'",
-    r"Execution failed for task ':.*:compileKotlin'",
-]
-TEST_FAILURE_PATTERNS = [
-    r'>\s+\d+ tests? completed, \d+ failed',
-    r'FAILED',
-    r'AssertionFailedError',
-    r'AssertionError',
-    r"Execution failed for task ':.*:test'",
-]
-DEPENDENCY_PATTERNS = [
-    r'Could not resolve',
-    r'Could not find',
-    r'Could not download',
-    r'Failed to resolve',
-    r'Cannot resolve external dependency',
-]
-JAVADOC_PATTERNS = [
-    r'warning:\s+no @param',
-    r'warning:\s+no @return',
-    r'warning:\s+missing @',
-    r'javadoc',
-    r"Execution failed for task ':.*:javadoc'",
-]
-DEPRECATION_PATTERNS = [r'\[deprecation\]', r'has been deprecated', r'is deprecated']
-UNCHECKED_PATTERNS = [r'\[unchecked\]', r'unchecked conversion', r'unchecked call']
-OPENREWRITE_PATTERNS = [r'org\.openrewrite', r'rewrite-gradle-plugin', r'rewrite:']
-
-
-def categorize_line(line: str) -> str | None:
-    """Categorize a log line by issue type."""
-    for pattern in COMPILATION_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'compilation_error'
-    for pattern in TEST_FAILURE_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'test_failure'
-    for pattern in DEPENDENCY_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'dependency_error'
-    for pattern in JAVADOC_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'javadoc_warning'
-    for pattern in DEPRECATION_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'deprecation_warning'
-    for pattern in UNCHECKED_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'unchecked_warning'
-    for pattern in OPENREWRITE_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'openrewrite_info'
-    return None
+# Gradle-specific categorization patterns. Uses regex patterns for
+# Gradle task-specific markers alongside shared JVM patterns.
+GRADLE_PATTERNS: CategoryPatterns = {
+    'compilation_error': [
+        r'error:\s+cannot find symbol',
+        r'error:\s+incompatible types',
+        r'error:\s+illegal start',
+        r"error:\s+';' expected",
+        r'error:\s+class .* is public',
+        r'error:\s+package .* does not exist',
+        r'error:\s+method .* cannot be applied',
+        r'error:\s+unreported exception',
+        r'error:\s+variable .* might not have been initialized',
+        r'error:\s+cannot access',
+        r"Execution failed for task ':.*:compileJava'",
+        r"Execution failed for task ':.*:compileKotlin'",
+    ],
+    'test_failure': [
+        r'>\s+\d+ tests? completed, \d+ failed',
+        r'FAILED',
+        r'AssertionFailedError',
+        r'AssertionError',
+        r"Execution failed for task ':.*:test'",
+    ],
+    'dependency_error': [
+        r'Could not resolve',
+        r'Could not find',
+        r'Could not download',
+        r'Failed to resolve',
+        r'Cannot resolve external dependency',
+    ],
+    'javadoc_warning': [
+        r'warning:\s+no @param',
+        r'warning:\s+no @return',
+        r'warning:\s+missing @',
+        'javadoc',
+        r"Execution failed for task ':.*:javadoc'",
+    ],
+    'deprecation_warning': [
+        r'\[deprecation\]',
+        'has been deprecated',
+        'is deprecated',
+    ],
+    'unchecked_warning': [
+        r'\[unchecked\]',
+        'unchecked conversion',
+        'unchecked call',
+    ],
+    'openrewrite_info': [
+        r'org\.openrewrite',
+        r'rewrite-gradle-plugin',
+        'rewrite:',
+    ],
+}
 
 
 def extract_file_location(line: str) -> tuple[str, int, int]:
@@ -126,7 +118,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     content = path.read_text(encoding='utf-8', errors='replace')
     lines = content.split('\n')
 
-    issues = _extract_issues_as_dataclass(lines)
+    issues = _extract_issues(lines)
     test_summary = _extract_test_summary(content)
     build_status = _detect_build_status(content)
 
@@ -143,35 +135,24 @@ def _detect_build_status(content: str) -> str:
     )
 
 
-def _extract_issues_as_dataclass(lines: list[str]) -> list[Issue]:
+def _extract_issues(lines: list[str]) -> list[Issue]:
     """Extract all issues from Gradle output as Issue dataclasses.
 
-    Args:
-        lines: Log file lines.
-
-    Returns:
-        List of Issue dataclasses with severity, file, line, message, category.
-        Deduplicates issues by key (type:file:line:message_prefix).
+    Uses shared categorize_issue with Gradle-specific patterns.
+    Deduplicates issues by key (type:file:line:message_prefix).
     """
     issues: list[Issue] = []
     seen: set[str] = set()
-    stack_lines: list[str] = []
 
     for line in lines:
         stripped = line.strip()
 
-        # Collect stack trace lines and attach to previous issue
+        # Skip stack trace lines (handled by collect_stack_traces)
         if stripped.startswith('at ') or stripped.startswith('Caused by:'):
-            stack_lines.append(stripped)
             continue
 
-        # When we hit a non-stack line, flush collected stack to last issue
-        if stack_lines and issues:
-            issues[-1].stack_trace = '\n'.join(stack_lines)
-            stack_lines = []
-
-        issue_type = categorize_line(line)
-        if not issue_type:
+        issue_type = categorize_issue(line, GRADLE_PATTERNS)
+        if issue_type == 'other':
             continue
 
         file_path, file_line, _ = extract_file_location(line)
@@ -196,9 +177,8 @@ def _extract_issues_as_dataclass(lines: list[str]) -> list[Issue]:
             )
         )
 
-    # Flush any remaining stack lines
-    if stack_lines and issues:
-        issues[-1].stack_trace = '\n'.join(stack_lines)
+    # Attach stack traces to issues
+    collect_stack_traces(lines, issues)
 
     return issues
 
@@ -213,5 +193,3 @@ def _extract_test_summary(content: str) -> UnitTestSummary | None:
         r'(\d+) tests? completed(?:, (\d+) failed)?(?:, (\d+) skipped)?',
         group_map={'total': 1, 'failed': 2, 'skipped': 3},
     )
-
-
