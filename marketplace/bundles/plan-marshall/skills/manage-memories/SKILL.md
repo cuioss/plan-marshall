@@ -43,7 +43,7 @@ Activate this skill when:
 
 | Category | Purpose | Typical Lifetime |
 |----------|---------|------------------|
-| `context` | Session context snapshots | Short (days) |
+| `context` | Session context snapshots | Short (days, controlled by `system.retention.memory_days` in marshal.json) |
 
 ---
 
@@ -77,16 +77,18 @@ Parse TOON output and handle accordingly.
 | `save` | Save memory file (creates directories on-the-fly) | category, identifier, content |
 | `load` | Load memory file | category, identifier |
 | `list` | List files in category | category (optional) |
-| `query` | Find files by pattern | pattern |
-| `cleanup` | Remove old files | --older-than |
+| `query` | Find files by glob pattern | pattern (glob syntax, e.g., `auth*`) |
+| `cleanup` | Remove old files by age | --older-than (e.g., `7d`) |
+| `validate` | Validate memory file format | file_path (positional) |
 
 ### Example Usage
 
 ```bash
 # Save context snapshot (directories created on-the-fly)
+# File will be stored as: .plan/memories/context/YYYY-MM-DD-feature-auth.json
 python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory save --category context --identifier "feature-auth" --content '{"notes": "Working on auth feature"}'
 
-# Load memory file
+# Load memory file (use the full filename including date prefix)
 python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory load --category context --identifier "2025-12-02-feature-auth"
 
 # List context files from last 7 days
@@ -155,8 +157,9 @@ All memory files use a metadata envelope:
 | Field | Type | Description |
 |-------|------|-------------|
 | created | string | ISO 8601 timestamp with Z suffix |
-| category | string | One of: context |
+| category | string | One of: `context` |
 | summary | string | Human-readable identifier |
+| session_id | string | (Optional) Claude session ID for provenance tracking |
 
 ---
 
@@ -186,6 +189,25 @@ All scripts:
 - Cleanup operations maintain memory hygiene
 
 ---
+
+## Error Responses
+
+All errors return TOON with `status: error` and exit code 1.
+
+| Error Code | Cause |
+|------------|-------|
+| `invalid_category` | Category not in valid set (currently only `context`) |
+| `file_not_found` | Memory file doesn't exist (load) |
+| `invalid_content` | Content is not valid JSON (save) |
+| `validation_failed` | Memory file missing required meta fields or invalid JSON structure |
+
+```toon
+status: error
+error: file_not_found
+category: context
+identifier: missing-file
+message: Memory file not found
+```
 
 ## References
 

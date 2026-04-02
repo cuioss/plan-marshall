@@ -20,6 +20,7 @@ Manage status.json files with phase tracking and metadata. Handles plan status s
 
 **Constraints:**
 - All commands use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status {command} {args}`
+- Note: Script filename uses underscore (`manage_status`) unlike other manage-* skills that use hyphens
 - Phase transitions must use `set-phase` or `update-phase` commands
 - Metadata operations require explicit `--get` or `--set` flags
 
@@ -81,7 +82,7 @@ JSON format for storage:
 | `title` | string | Plan title |
 | `current_phase` | string | Current active phase |
 | `phases` | list | Phase objects with name and status |
-| `metadata` | table | Arbitrary key-value metadata |
+| `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`) |
 | `created` | string | ISO timestamp of creation |
 | `updated` | string | ISO timestamp of last update |
 
@@ -114,7 +115,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
 **Parameters**:
 - `--plan-id` (required): Plan identifier (kebab-case)
 - `--title` (required): Plan title
-- `--phases` (required): Comma-separated phase names
+- `--phases` (required): Comma-separated phase names in execution order (e.g., `1-init,2-refine,3-outline,4-plan,5-execute,6-finalize`). Order matters — it determines progress calculation and transition sequence.
 - `--force`: Overwrite existing status.json
 
 **Output** (TOON):
@@ -205,6 +206,8 @@ progress:
   percent: 42
 ```
 
+**Progress formula**: `percent = floor(completed_phases / total_phases * 100)`. A phase counts as "completed" only when its status is `done`. Phases with status `in_progress` or `pending` are not counted.
+
 ### metadata
 
 Get or set metadata fields.
@@ -263,7 +266,7 @@ completed_phases: 1
 change_type: feature
 ```
 
-**Note**: Metadata fields are included at top level for convenience.
+**Note**: All metadata fields are promoted to top level for convenience (flattened from `metadata` object). The fields shown depend on what has been set via `metadata --set`.
 
 ---
 
@@ -283,39 +286,24 @@ change_type: feature
 
 ---
 
-## Error Handling
-
-```toon
-status: error
-plan_id: my-feature
-error: file_not_found
-message: status.json not found
-```
-
-Common errors:
-- `invalid_plan_id`: Plan ID not in kebab-case format
-- `file_not_found`: status.json doesn't exist
-- `file_exists`: status.json exists (use --force)
-- `invalid_phase`: Phase not in phases list
-- `phase_not_found`: Phase doesn't exist
-- `not_found` (exit 0): Metadata field doesn't exist (valid query result, not an error)
-
----
-
 ## Error Responses
 
+All errors return TOON with `status: error` and exit code 1, except metadata get on missing field.
+
+| Error Code | Exit Code | Cause |
+|------------|-----------|-------|
+| `invalid_plan_id` | 1 | Plan ID not in kebab-case format |
+| `file_not_found` | 1 | status.json doesn't exist |
+| `file_exists` | 1 | status.json already exists (use `--force`) |
+| `invalid_phase` | 1 | Phase name not in the phases list |
+| `phase_not_found` | 1 | Phase doesn't exist in status.json |
+| `not_found` | 0 | Metadata field doesn't exist — valid query result (returns `value: null`), not an error |
+
 ```toon
 status: error
 plan_id: my-feature
 error: file_not_found
 message: status.json not found
-```
-
-```toon
-status: error
-plan_id: bad!!id
-error: invalid_plan_id
-message: Invalid plan_id format: bad!!id
 ```
 
 ---

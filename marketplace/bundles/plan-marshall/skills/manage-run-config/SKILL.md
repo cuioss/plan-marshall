@@ -87,10 +87,11 @@ See [references/run-config-format.md](references/run-config-format.md) for compl
 
 Script characteristics:
 - Uses Python stdlib only (json, argparse, pathlib)
-- Outputs JSON (init/validate/warning) or TOON (timeout/cleanup) to stdout
+- All commands output TOON to stdout
 - Exit code 0 for success, 1 for errors
 - Supports `--help` flag
-- Legacy notation `plan-marshall:manage-run-config:cleanup` still works for backward compatibility
+
+**Calling convention**: All commands use `plan-marshall:manage-run-config:run_config {command}`. The cleanup module is integrated into `run_config` as `cleanup`/`cleanup-status` subcommands.
 
 ---
 
@@ -133,16 +134,20 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ## Error Responses
 
-```toon
-status: error
-error: key_not_found
-message: Configuration key 'nonexistent' not found
-```
+All errors return TOON with `status: error` and exit code 1.
+
+| Error Code | Cause |
+|------------|-------|
+| `key_not_found` | Configuration key doesn't exist |
+| `invalid_value` | Value fails type validation (e.g., non-numeric timeout) |
+| `not_initialized` | run-config.json missing (run `init` first) |
+| `invalid_category` | Warning category not in: transitive_dependency, plugin_compatibility, platform_specific |
+| `marshal_not_found` | marshal.json missing (cleanup needs retention settings) |
 
 ```toon
 status: error
-error: invalid_value
-message: Invalid value for timeout: not-a-number
+error: not_initialized
+message: run-config.json not found. Run init first.
 ```
 
 ---

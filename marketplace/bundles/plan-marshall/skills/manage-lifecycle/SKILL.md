@@ -23,18 +23,26 @@ Plan lifecycle operations including discovery, phase transitions, archiving, and
 - Phase transitions must use the `transition` command (never manual file edits)
 - Routing context is read-only; use `get-routing-context` for combined state
 
+## Valid Phases
+
+The standard phase set (must be used in order):
+
+`1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`
+
+Phase transitions are sequential — you cannot skip phases. The `transition` command enforces this ordering.
+
 ## Script API
 
 Script: `plan-marshall:manage-lifecycle:manage-lifecycle`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `list` | `[--filter]` | Discover all plans |
-| `transition` | `--plan-id --completed` | Transition to next phase |
-| `archive` | `--plan-id [--dry-run]` | Archive completed plan |
-| `route` | `--phase` | Get skill for phase |
-| `get-routing-context` | `--plan-id` | Get combined routing context |
-| `self-test` | _(none)_ | Verify manage-lifecycle health |
+| `list` | `[--filter PHASE]` | Discover all plans, optionally filtered by current phase name |
+| `transition` | `--plan-id --completed` | Mark `--completed` phase as done, advance to next phase. Validates phase ordering. |
+| `archive` | `--plan-id [--dry-run]` | Archive completed plan (moves to `.plan/archived-plans/YYYY-MM-DD-{plan_id}`). Plan must be in final phase with status `done`. |
+| `route` | `--phase` | Get skill name for phase (format: `N-name`, e.g., `3-outline`) |
+| `get-routing-context` | `--plan-id` | Get combined routing context (phase + skill + progress in one call, avoids multiple separate queries) |
+| `self-test` | _(none)_ | Verify manage-lifecycle health (checks phase routing table, status operations, archive paths — 5 internal checks) |
 
 ## TOON Output Examples
 
@@ -92,29 +100,39 @@ failed: 0
 
 ## Error Responses
 
-```toon
-status: error
-plan_id: my-feature
-error: invalid_plan_id
-message: Invalid plan_id format: my-feature!!
-```
+All errors return TOON with `status: error` and exit code 1.
+
+| Error Code | Cause |
+|------------|-------|
+| `invalid_plan_id` | plan_id format invalid |
+| `file_not_found` | status.json doesn't exist for plan |
+| `unknown_phase` | Phase name not in valid phases set |
+| `invalid_transition` | Attempting to skip phases or complete out of order |
+| `not_archivable` | Plan not in final phase or final phase not done |
+| `no_plans_found` | No plan directories exist in `.plan/plans/` |
 
 ```toon
 status: error
 plan_id: my-feature
-error: file_not_found
-message: status.json not found
+error: invalid_transition
+message: Cannot complete 3-outline before 2-refine is done
 ```
 
-```toon
-status: error
-phase: unknown
-error: unknown_phase
-message: Unknown phase: unknown
-```
+## Phase-to-Skill Routing
+
+The `route` command maps phases to their implementation skills:
+
+| Phase | Skill |
+|-------|-------|
+| `1-init` | `plan-marshall:phase-1-init` |
+| `2-refine` | `plan-marshall:phase-2-refine` |
+| `3-outline` | `plan-marshall:phase-3-outline` |
+| `4-plan` | `plan-marshall:phase-4-plan` |
+| `5-execute` | `plan-marshall:phase-5-execute` |
+| `6-finalize` | `plan-marshall:phase-6-finalize` |
 
 ## Related Skills
 
-- `manage-status` — Underlying status.json operations (lifecycle delegates to this)
+- `manage-status` — Underlying status.json operations (lifecycle delegates to this for storage)
 - `plan-marshall` — Orchestrator that drives phase transitions
 - `phase-1-init` through `phase-6-finalize` — Phase-specific skills routed to by lifecycle

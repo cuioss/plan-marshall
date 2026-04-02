@@ -93,7 +93,7 @@ This affects all projects using jakarta.json without explicit dependency.
 | `category` | bug, improvement, anti-pattern |
 | `applied` | Whether lesson has been applied (true/false) |
 | `created` | Creation date |
-| `bundle` | Optional bundle reference |
+| `bundle` | Optional: bundle that the lesson relates to (e.g., `pm-dev-java`). Used for filtering when applying lessons to specific bundles. |
 
 ---
 
@@ -249,6 +249,7 @@ created_from: error_context
 | `get` | `--id` | Get single lesson |
 | `list` | `[--component] [--category] [--applied]` | List with filtering |
 | `from-error` | `--context` | Create from JSON error context |
+| `archive` | `--id` | Mark lesson as applied and move to archived directory. Equivalent to `update --applied true` plus file relocation. |
 
 ---
 
@@ -262,11 +263,35 @@ created_from: error_context
 
 ---
 
+## Error Responses
+
+All errors return TOON with `status: error` and exit code 1.
+
+| Error Code | Cause |
+|------------|-------|
+| `not_found` | Lesson ID doesn't exist (get, update, archive) |
+| `invalid_category` | Category not in: bug, improvement, anti-pattern |
+| `invalid_context` | JSON context parsing failed (from-error) |
+| `missing_required` | Required parameter missing |
+
+```toon
+status: error
+error: not_found
+id: 2025-12-99-001
+message: Lesson not found
+```
+
+---
+
 ## Integration Points
 
 ### With plan-execute
 
 When errors occur during execution, create lessons to document the issue and solution.
+
+### With manage-findings
+
+Findings of type bug, improvement, anti-pattern, and triage are promoted to lessons at 6-finalize.
 
 ### With plugin-doctor
 

@@ -79,9 +79,9 @@ JSON format for storage:
 | `base_branch` | string | Base branch for PR (e.g., main) |
 | `issue_url` | string | GitHub issue URL |
 | `build_system` | string | Build system (maven, gradle, npm, none) |
-| `modified_files` | list | Files modified during implementation |
+| `modified_files` | list | Files modified during implementation (tracked by plan-execute as files are changed) |
 | `domains` | list | Plan domains (e.g., java, documentation) |
-| `affected_files` | list | Files affected during outline phase (for execution tracking) |
+| `affected_files` | list | Files identified during outline phase as potentially needing changes (scope tracking, may be superset of modified_files) |
 | `external_docs` | table | External documentation references |
 
 ---
@@ -281,12 +281,12 @@ count: 2
 - Returns `previous_count` showing how many items were replaced
 
 **When to use `set-list` vs `add-list`**:
-- Use `set-list` when you have the complete list of values to store
-- Use `add-list` when appending to an existing list without knowing its contents
+- Use `set-list` when you have the complete, authoritative list (e.g., after re-scanning affected files)
+- Use `add-list` when incrementally building a list (e.g., adding files as they are modified during execution)
 
 ### get-context
 
-Get all references context in one call. Useful for getting comprehensive plan context.
+Get all references in one call, with scalar fields at top level and list fields as counts (or full lists with `--include-files`). More efficient than multiple `get` calls when you need the full picture.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get-context \
@@ -342,32 +342,28 @@ modified_files[3]:
 
 ---
 
-## Error Handling
-
-```toon
-status: error
-plan_id: my-feature
-error: file_not_found
-message: references.json not found
-```
-
----
-
 ## Error Responses
 
-```toon
-status: error
-plan_id: my-feature
-error: file_not_found
-message: references.json not found
-```
+All errors return TOON with `status: error` and exit code 1.
+
+| Error Code | Cause |
+|------------|-------|
+| `file_not_found` | references.json doesn't exist |
+| `invalid_plan_id` | plan_id format invalid |
+| `field_not_found` | Requested field doesn't exist (get) |
+| `type_mismatch` | Attempting list operation on non-list field (add-list on a string field) |
+| `file_exists` | references.json already exists on create |
+| `field_not_set` | Field exists but has no value (returns `value: null`, exit 0) |
 
 ```toon
 status: error
 plan_id: my-feature
-error: field_not_found
-message: Field 'nonexistent' not found in references
+error: type_mismatch
+field: branch
+message: Cannot add to non-list field 'branch'
 ```
+
+**Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `modified_files` as an empty list and `base_branch` as `main`. Other fields are only present if explicitly set.
 
 ---
 
@@ -375,11 +371,11 @@ message: Field 'nonexistent' not found in references
 
 ### With plan-execute
 
-Execution phase adds modified files as work progresses.
+Execution phase adds modified files via `add-file` as implementation progresses.
 
 ### With plan-finalize
 
-Finalization reads modified files for commit/PR creation.
+Finalization reads `modified_files` via `get-context --include-files` for commit scope and PR body.
 
 ## Related Skills
 

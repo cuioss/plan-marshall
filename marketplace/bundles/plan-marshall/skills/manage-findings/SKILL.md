@@ -63,9 +63,22 @@ Plan findings are working data during plan execution. Notable findings are promo
 | `sonar-issue` | Sonar findings | (any, if pattern emerges) |
 | `pr-comment` | PR review comments | (any, if pattern emerges) |
 
-**Resolution values**: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
+**Resolution values**:
 
-**Severity values**: `error`, `warning`, `info`
+| Value | When to Use |
+|-------|------------|
+| `pending` | Default for new findings — not yet addressed |
+| `fixed` | Issue resolved by code change |
+| `suppressed` | Intentionally ignored (false positive, won't fix) |
+| `accepted` | Acknowledged as valid but no action needed (informational) |
+| `taken_into_account` | Incorporated into design/approach without a specific code fix |
+
+**Severity values**: `error`, `warning`, `info` (default: `warning` if omitted)
+
+**Finding type selection guide**:
+- `bug` vs `build-error`: Use `bug` for logic errors found during review; `build-error` for compilation failures
+- `improvement` vs `tip`: Use `improvement` for actionable code changes; `tip` for helpful knowledge to remember
+- `insight` vs `best-practice`: Use `insight` for understanding gained; `best-practice` for patterns to replicate
 
 ## CLI Commands
 
@@ -128,10 +141,14 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Sources**: `qgate` (automated verification), `user_review` (user feedback)
 
-**Deduplication**: `qgate add` deduplicates by title within each phase:
+**Deduplication**: `qgate add` deduplicates by title within each phase (case-sensitive, exact match):
 - If a finding with the same title already exists and is `pending` → returns `status: deduplicated` (no new record)
 - If a finding with the same title exists but is resolved → returns `status: reopened` (reactivated to `pending`)
 - Otherwise → creates new finding with `status: success`
+
+**Iteration**: The optional `--iteration N` parameter tracks which verification cycle produced the finding (e.g., iteration 1 = first build attempt, iteration 2 = after fixes). Useful for filtering findings from a specific cycle via `qgate query --iteration N`.
+
+**Phase 1-init**: Not included in Q-Gate phases — init creates plan infrastructure and has no verification step that would produce findings.
 
 ## Output Format
 
@@ -191,3 +208,39 @@ At `6-finalize`:
      architecture enrich {type} --module {module} --{type} "{content}" --reasoning "From plan {plan_id}"
      promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to architecture
      ```
+
+**`promoted_to` values**: Either `architecture` (for tips/insights/best-practices routed to manage-architecture), or the lesson ID returned by `manage-lessons add` (the hash_id of the created lesson).
+
+**Error cases**:
+- Promoting an already-promoted finding returns `status: error, error: already_promoted`
+- If the target skill call fails, the finding is NOT marked as promoted (promote is the last step)
+
+## Error Responses
+
+```toon
+status: error
+error: not_found
+hash_id: abc123
+message: Finding not found
+```
+
+```toon
+status: error
+error: already_promoted
+hash_id: abc123
+message: Finding already promoted to architecture
+```
+
+| Error Code | Cause |
+|------------|-------|
+| `not_found` | Finding hash_id doesn't exist |
+| `already_promoted` | Finding was previously promoted |
+| `invalid_type` | Type not in the finding types table |
+| `invalid_resolution` | Resolution not in the valid values |
+| `invalid_phase` | Phase not in 2-refine through 6-finalize |
+
+## Related Skills
+
+- `manage-lessons` — Promotion target for bug, improvement, anti-pattern, triage findings
+- `manage-architecture` — Promotion target for tip, insight, best-practice findings (via `enrich` commands)
+- `manage-assessments` — Complementary: assessments track component evaluations, findings track issues discovered

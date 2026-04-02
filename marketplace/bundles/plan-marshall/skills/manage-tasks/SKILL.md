@@ -99,7 +99,7 @@ Tasks are stored as JSON and output as TOON (LLM-optimized):
 | `domain` | string | Task domain (arbitrary string, e.g., java, javascript, my-domain) |
 | `profile` | string | Task profile (e.g., `implementation`, `module_testing`) |
 | `skills` | list | Pre-resolved skills for task execution |
-| `origin` | string | Task origin: `plan` (from task-plan phase) or `fix` (from verify) |
+| `origin` | string | Task origin: `plan`, `fix`, `sonar`, `pr`, `lint`, `security`, or `documentation` |
 
 ---
 
@@ -164,10 +164,10 @@ verification:
 **Field values**:
 - `deliverable`: Single positive integer (one deliverable per task, 1:1 constraint)
 - `domain`: Domain from references.json (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
-- `profile`: Profile key from marshal.json (e.g., `implementation`, `module_testing`)
+- `profile`: Profile key from marshal.json. Standard profiles: `implementation`, `module_testing`, `integration_testing`, `quality`, `verification`, `standalone`
 - `skills`: Array of `bundle:skill` format strings
 - `depends_on`: `none` or task references like `TASK-1, TASK-2`
-- `origin`: `plan` (from task-plan phase) or `fix` (from verify phase)
+- `origin`: `plan` (from task-plan), `fix` (from verify), `sonar`, `pr`, `lint`, `security`, or `documentation`
 
 ### List/Next Filters
 
@@ -278,14 +278,14 @@ Implement agents execute steps:
 
 Tasks reference deliverables from `solution_outline.md` using the `deliverable` field in stdin.
 
-**Constraint**: Each task maps to exactly **one** deliverable. No aggregation.
+**Constraint**: Each task maps to exactly **one** deliverable (the `deliverable` field is a single integer, not a list). However, one deliverable can produce multiple tasks.
 
 | Pattern | Description | Example |
 |---------|-------------|---------|
-| 1:1 | One task per deliverable | `deliverable: 1` - Task implements deliverable 1 |
-| 1:N | One deliverable, multiple profiles | TASK-1 and TASK-2 both have `deliverable: 1` |
+| Simple | One task per deliverable | TASK-1 has `deliverable: 1`, TASK-2 has `deliverable: 2` |
+| Multi-profile | One deliverable, multiple tasks | TASK-1 (implementation) and TASK-2 (module_testing) both have `deliverable: 1` |
 
-**1:N pattern**: When a deliverable has multiple profiles (implementation + module_testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable.
+**Multi-profile pattern**: When a deliverable needs both implementation and testing, phase-4-plan creates separate tasks per profile. Each task gets its own skill set and executor.
 
 ---
 
@@ -322,6 +322,42 @@ blocked_tasks[2]{number,title,waiting_for}:
 **Task Status**: `pending` → `in_progress` → `done` (or `blocked`)
 
 **Step Status**: `pending` → `in_progress` → `done` (or `skipped`)
+
+---
+
+## Verification
+
+The `verification` field is optional. When present:
+- `commands`: List of shell commands to run after implementation (copied verbatim from deliverable's Verification field by phase-4-plan)
+- `criteria`: Human-readable success criteria
+- `manual`: If `true`, verification requires human judgment (automated commands may still run but results need review)
+
+If a deliverable has no Verification section, the task is created without `verification`.
+
+---
+
+## Error Responses
+
+All errors return TOON with `status: error` and exit code 1.
+
+| Error Code | Cause |
+|------------|-------|
+| `invalid_plan_id` | plan_id format invalid |
+| `task_not_found` | Task number doesn't exist |
+| `step_not_found` | Step number doesn't exist in task |
+| `invalid_content` | TOON content parsing failed or missing required fields |
+| `missing_required` | Required field missing (title, deliverable, domain, profile, skills, steps) |
+| `circular_dependency` | Task dependency creates a cycle (detected during `next`) |
+| `invalid_outcome` | Step outcome not `done` or `skipped` |
+| `plan_dir_not_found` | Plan directory doesn't exist |
+
+```toon
+status: error
+plan_id: my-feature
+error: task_not_found
+number: 99
+message: Task TASK-99 not found
+```
 
 ---
 

@@ -9,6 +9,8 @@ scope: hybrid
 
 Unified logging infrastructure providing script execution logging, semantic work progress tracking, and decision logging.
 
+**Scope: hybrid** means this skill operates at both plan-scoped and global levels. When a `plan_id` is provided and the plan directory exists, logs go to `.plan/plans/{plan-id}/logs/`. Otherwise, logs fall back to global daily files at `.plan/logs/`.
+
 ## Enforcement
 
 **Execution mode**: Run scripts exactly as documented; log entries are fire-and-forget (no output parsing needed).
@@ -223,6 +225,13 @@ Scripts run via the executor have PYTHONPATH set up for cross-skill imports:
 ```python
 from plan_logging import log_entry
 
+# Function signature:
+# log_entry(log_type: str, plan_id: str, level: str, message: str) -> None
+#   log_type: 'script', 'work', or 'decision'
+#   plan_id:  plan identifier, or 'global' for global logs
+#   level:    'INFO', 'WARN', or 'ERROR'
+#   message:  log message text
+
 # Log to global script log
 log_entry('script', 'global', 'INFO', '[MY-COMPONENT] Processing started')
 
@@ -231,6 +240,8 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 ```
 
 **Note**: IDE warnings about unresolved imports are expected - PYTHONPATH is set at runtime by the executor.
+
+**Error behavior**: Logging calls are fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging should never cause a script to fail.
 
 ---
 
@@ -267,7 +278,7 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 |----------|-------------|---------|
 | `PLAN_BASE_DIR` | Base directory for .plan structure | `.plan` |
 | `LOG_MAX_OUTPUT` | Max chars to capture from stdout/stderr | `2000` |
-| `LOG_RETENTION_DAYS` | Days to keep global logs | `7` |
+| `LOG_RETENTION_DAYS` | Days to keep global logs (used by `cleanup_old_script_logs()`) | `7` |
 
 ---
 

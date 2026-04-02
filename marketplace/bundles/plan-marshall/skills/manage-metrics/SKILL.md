@@ -9,6 +9,8 @@ scope: hybrid
 
 Collects wall-clock duration and token usage data per phase, generates incremental metrics.md reports in the plan directory.
 
+**Scope: hybrid** means this skill stores data per-plan (`.plan/plans/{plan_id}/`) but can also enrich from global session transcripts (`~/.claude/projects/`).
+
 ## Enforcement
 
 **Execution mode**: Script-only skill. All access via `python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics`.
@@ -18,9 +20,9 @@ Collects wall-clock duration and token usage data per phase, generates increment
 - Never hard-code token values — only use data from Task agent `<usage>` tags
 
 **Constraints:**
-- Metrics data stored in `work/metrics.toon` (intermediate TOON format)
-- Human-readable output in `metrics.md` (plan directory root)
-- Phase names must be one of: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize
+- Metrics data stored in `.plan/plans/{plan_id}/work/metrics.toon` (intermediate key-value storage for phase timing and token data)
+- Human-readable output in `.plan/plans/{plan_id}/metrics.md` (generated markdown with tables showing per-phase duration, tokens, and totals)
+- Phase names must be one of: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` (must match `manage-lifecycle` phases exactly)
 
 ## Operations
 
@@ -45,6 +47,10 @@ start_time: 2026-03-27T10:00:00+00:00
 
 Record phase end timestamp with optional token data from Task agent notifications.
 
+**Prerequisite**: `start-phase` must have been called for this phase. If no start time exists, duration cannot be calculated (the phase is silently recorded without duration).
+
+**Idempotency**: Calling `end-phase` multiple times for the same phase replaces the previous end data (does not accumulate).
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
   --plan-id {plan_id} --phase {phase} \
@@ -52,9 +58,11 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-
 ```
 
 **Parameters:**
-- `--total-tokens` — Total tokens from Task agent `<usage>` tag (optional)
-- `--duration-ms` — Duration in milliseconds from Task agent `<usage>` tag (optional)
+- `--total-tokens` — Total tokens from Task agent `<usage>` tag (optional, non-negative integer)
+- `--duration-ms` — Agent-reported duration in milliseconds from Task agent `<usage>` tag. This is the agent's self-reported time, separate from wall-clock duration computed from start/end timestamps. (optional)
 - `--tool-uses` — Tool use count from Task agent `<usage>` tag (optional)
+
+**Token data sources**: Task agents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion. These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. For main-context phases (not delegated to agents), use the `enrich` command instead.
 
 **Output:**
 ```toon
@@ -68,7 +76,7 @@ total_tokens: 25514
 
 ### generate
 
-Generate or update metrics.md from collected phase data.
+Generate or update metrics.md from collected phase data. The generated markdown contains a table with per-phase rows showing duration (formatted as `Xm Ys`), token counts, and tool uses, plus totals.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
@@ -85,9 +93,13 @@ total_duration_seconds: 572.5
 total_tokens: 86754
 ```
 
+Returns `status: error, error: no_data` if no metrics have been collected yet (no start-phase/end-phase calls made).
+
 ### enrich
 
-Parse JSONL session transcript to extract token usage for main-context phases.
+Parse JSONL session transcript to extract token usage for main-context phases (phases run in the main conversation, not delegated to agents). Searches `~/.claude/projects/` for JSONL files matching the session_id and sums input/output tokens across all messages.
+
+Token data from enrich is attributed to the plan as a whole (not per-phase), since session transcripts span multiple phases.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
@@ -113,25 +125,35 @@ message_count: 127
   metrics.md           # Human-readable metrics report
 ```
 
+## Expected Workflow
+
+1. **Phase start**: Call `start-phase` when entering a phase (called by plan-marshall orchestrator)
+2. **Phase end**: Call `end-phase` when phase completes, passing token data from agent notifications
+3. **Enrich** (optional): Call `enrich` after execution to capture main-context token usage
+4. **Generate**: Call `generate` to produce the human-readable metrics.md report
+
 ## Error Responses
 
-```toon
-status: error
-plan_id: my-plan
-error: invalid_plan_id
-message: Invalid plan_id format: bad!!id
-```
+All errors return TOON with `status: error` and exit code 1.
+
+| Error Code | Cause |
+|------------|-------|
+| `invalid_plan_id` | plan_id format invalid |
+| `invalid_phase` | Phase name not in valid set |
+| `no_data` | No metrics collected yet (generate) |
+| `write_failed` | File system permission denied |
+| `session_not_found` | JSONL file not found for session_id (enrich) |
 
 ```toon
 status: error
 plan_id: my-plan
-error: write_failed
-message: Failed to write metrics: Permission denied
+error: invalid_phase
+message: Unknown phase: 7-deploy
 ```
 
 ## Integration
 
-**Called by**: `plan-marshall:plan-marshall` workflows (planning.md, execution.md) at phase boundaries.
+**Called by**: `plan-marshall:plan-marshall` workflows at phase boundaries (start-phase/end-phase bracket each phase).
 
 **Data sources**:
 - Wall-clock timing: bash timestamps via start-phase/end-phase

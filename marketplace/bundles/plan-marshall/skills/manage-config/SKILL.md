@@ -9,6 +9,8 @@ scope: hybrid
 
 Manages project-level infrastructure configuration in `.plan/marshal.json`.
 
+**Scope: hybrid** means this skill manages project-level settings (marshal.json persists across plans) while also providing plan-phase-specific configuration (branching, commit strategy, verification steps).
+
 ## Enforcement
 
 **Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
@@ -143,6 +145,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 CI operations use the provider-agnostic `ci` router. The router reads `ci.provider` from marshal.json and delegates to the correct provider script (github.py or gitlab.py).
 
+**Note**: CI commands use a different notation — they route through `tools-integration-ci`, not `manage-config`. The config skill only stores the CI provider/tools settings; actual CI operations are in the `workflow-integration-ci` and `workflow-integration-git` skills.
+
 ### Example: View Issue
 
 ```bash
@@ -200,6 +204,10 @@ Always returns from the `system` domain's `workflow_skills`.
 |------------|---------|
 | `--domain --type` | Resolve domain-specific workflow extension (types: outline, triage) |
 
+Extension types:
+- **outline**: Loaded during phase-3-outline to provide domain-specific component discovery and assessment logic
+- **triage**: Loaded during phase-6-finalize to provide domain-specific finding triage (e.g., Java compilation vs JS lint errors)
+
 Returns null (not error) if extension doesn't exist for the domain.
 
 ### get-workflow-skills
@@ -218,7 +226,7 @@ Returns null (not error) if extension doesn't exist for the domain.
 
 | Parameters | Purpose |
 |------------|---------|
-| (none) | Auto-discover profiles and register task executors (convention: profile X -> `plan-marshall:task-X`) |
+| (none) | Auto-discover profiles from all configured domains and register task executors. Convention: profile X maps to `plan-marshall:task-X` (e.g., `implementation` → `plan-marshall:task-implementation`). Scans extension.py for each domain's profile definitions. |
 
 ### resolve-task-executor
 
@@ -227,6 +235,8 @@ Returns null (not error) if extension doesn't exist for the domain.
 | `--profile` | Resolve task executor skill for a profile (e.g., implementation, module_testing) |
 
 ### Noun: ext-defaults
+
+Extension defaults store key-value pairs used by domain extension bundles to persist user choices across plans (e.g., preferred build profiles, selected technologies). Extensions read these to avoid re-prompting.
 
 | Verb | Parameters | Purpose |
 |------|------------|---------|
@@ -243,9 +253,32 @@ Returns null (not error) if extension doesn't exist for the domain.
 | `retention get` | (none) | Get all retention settings |
 | `retention set` | `--field --value` | Set retention field |
 
+**Retention fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `logs_days` | int | 1 | Days to keep global log files |
+| `archived_plans_days` | int | 5 | Days to keep archived plan directories |
+| `memory_days` | int | 5 | Days to keep memory files |
+| `temp_on_maintenance` | bool | true | Clean `.plan/temp/` during maintenance |
+
 ### Noun: plan
 
 Phase-specific configuration using `plan {phase} {verb}` pattern.
+
+**Phase field reference:**
+
+| Phase | Field | Valid Values | Description |
+|-------|-------|-------------|-------------|
+| `phase-1-init` | `branch_strategy` | `feature`, `hotfix`, `release` | Branch naming prefix |
+| `phase-2-refine` | `confidence_threshold` | 0-100 (int) | Confidence level required to exit refinement |
+| `phase-2-refine` | `compatibility` | `breaking`, `deprecation`, `smart_and_ask` | How to handle API compatibility |
+| `phase-5-execute` | `commit_strategy` | `per_deliverable`, `per_plan` | When to create git commits |
+| `phase-5-execute` | `steps` | list (via set-steps) | Verification steps pipeline |
+| `phase-5-execute` | `verification_max_iterations` | int | Max verify-fix iterations |
+| `phase-6-finalize` | `steps` | list (via set-steps) | Finalization steps pipeline |
+| `phase-6-finalize` | `max_iterations` | int | Max finalize iterations |
+| `phase-6-finalize` | `review_bot_buffer_seconds` | int | Wait time for review bots |
 
 | Verb | Parameters | Purpose |
 |------|------------|---------|
@@ -421,16 +454,20 @@ Script characteristics:
 
 ## Error Responses
 
+All operations validate prerequisites before proceeding. Standard error conditions:
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| `not_initialized` | marshal.json missing | Run `/marshall-steward` |
+| `invalid_domain` | Domain not in skill_domains | Check domain name or run `/marshall-steward` |
+| `skill_domains not configured` | No domains in marshal.json | Run `/marshall-steward` |
+| `invalid_field` | Unknown field for phase/noun | Check field reference table above |
+| `skill_not_found` | Skill not in domain defaults/optionals | Check with `validate --domain --skill` |
+
 ```toon
 status: error
 error: not_initialized
 message: Project configuration not initialized. Run init first.
-```
-
-```toon
-status: error
-error: invalid_domain
-message: Unknown skill domain: nonexistent
 ```
 
 ---
@@ -440,17 +477,3 @@ message: Unknown skill domain: nonexistent
 - `manage-architecture` — Consumes configuration for project analysis
 - `marshall-steward` — Interactive configuration wizard
 - `extension-api` — Build system detection uses config
-
-## Error Handling
-
-All operations validate prerequisites before proceeding:
-
-```toon
-status: error
-error: marshal.json not found. Run command /marshall-steward first
-```
-
-Standard error conditions:
-- `marshal.json not found` - Run `/marshall-steward` first
-- `skill_domains not configured` - Run `/marshall-steward` first
-- `Unknown domain: {name}` - Domain doesn't exist

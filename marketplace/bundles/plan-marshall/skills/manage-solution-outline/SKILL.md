@@ -201,7 +201,9 @@ python3 .plan/execute-script.py \
 **Parameters**:
 - `--plan-id` (required): Plan identifier
 
-**Note**: The `write` command validates the file already on disk — it does NOT read from stdin. Checks for required sections (Summary, Overview, Deliverables) and numbered deliverable format (`### N. Title`). Returns error if validation fails.
+**Note**: The `write` command validates the file already on disk — it does NOT read from stdin. Checks for required sections (Summary, Overview, Deliverables) and numbered deliverable format (`### N. Title`). Returns `validation_failed` error if validation fails.
+
+**Workflow clarification**: The Write tool creates/updates the file content. The script commands (`write`/`update`) only validate what's on disk. This separation allows the LLM to compose content freely while ensuring structural compliance.
 
 ---
 
@@ -229,19 +231,24 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ## Error Responses
 
-```toon
-status: error
-plan_id: my-plan
-error: file_not_found
-message: solution_outline.md not found
-```
+All errors return TOON with `status: error` and exit code 1.
+
+| Error Code | Cause |
+|------------|-------|
+| `file_not_found` | solution_outline.md doesn't exist |
+| `document_not_found` | Same as file_not_found (used by `update` command) |
+| `parse_error` | Failed to parse document structure |
+| `validation_failed` | Missing required sections (Summary, Overview, or Deliverables), or deliverable numbering not sequential |
+| `deliverable_not_found` | Requested deliverable number doesn't exist (read with `--deliverable-number`) |
 
 ```toon
 status: error
 plan_id: my-plan
-error: parse_error
-message: Failed to parse solution outline structure
+error: validation_failed
+message: Missing required section: Overview
 ```
+
+See also [standards/deliverable-contract.md](standards/deliverable-contract.md) for deliverable validation criteria used during task planning.
 
 ## Integration
 
@@ -260,9 +267,9 @@ message: Failed to parse solution outline structure
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `resolve-path` | `--plan-id` | Get target file path for direct Write |
-| `write` | `--plan-id` | Validate solution on disk (written via Write tool) |
-| `update` | `--plan-id` | Validate updated solution on disk (written via Write tool) |
+| `resolve-path` | `--plan-id` | Get target file path (returns `path: .plan/plans/{plan_id}/solution_outline.md`) |
+| `write` | `--plan-id` | Validate newly created solution on disk; sets `action: created`. Returns `file_exists` error if file was already validated via `write` before — use `update` instead. |
+| `update` | `--plan-id` | Validate updated solution on disk; sets `action: updated`. Returns `document_not_found` if file doesn't exist — use `write` for initial creation. |
 | `validate` | `--plan-id` | Validate structure |
 | `read` | `--plan-id [--raw] [--deliverable-number N]` | Read solution or specific deliverable |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |

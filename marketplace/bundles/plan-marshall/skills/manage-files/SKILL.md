@@ -29,7 +29,7 @@ Generic file operations for plan directories. Provides basic CRUD operations for
 - Directory listing and creation
 - File existence checking
 - Plan directory create-or-reference (atomic check/create)
-- No content validation (caller provides complete content)
+- Minimal content validation (rejects empty content on write; no structural validation)
 
 ## When to Activate This Skill
 
@@ -97,9 +97,13 @@ More content here..."
 - `--content`: Content to write (mutually exclusive with `--stdin`)
 - `--stdin`: Read content from stdin instead of `--content`
 
-**Note**: The `--content` parameter supports multiline content. Do NOT use `--stdin` with shell heredocs or cat commands.
+**Note**: The `--content` parameter supports multiline content. Do NOT use `--stdin` with shell heredocs or cat commands — the executor handles content passing; stdin is only for piped input from other scripts.
 
-**Output**: Prints "Created: {path}" to stderr, exit code 0 on success
+**Content requirement**: Content must be non-empty. Empty content produces an error (`missing_content`).
+
+**Output**: TOON with `status: success`, `action: created`/`updated`. Exit code 0 on success, 1 on error.
+
+**Side effect**: Successful writes are logged via `log_entry()` to the plan's work log.
 
 ### remove
 
@@ -123,7 +127,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files list \
   [--dir subdir]
 ```
 
-**Output**: Simple file listing, one per line
+**Output** (TOON format): File listing with `status: success` and `files` array
 
 ### exists
 
@@ -163,7 +167,7 @@ error: invalid_plan_id
 message: Invalid plan_id format: Invalid_Plan
 ```
 
-**Note**: Always exits 0 for expected outcomes. Check `status` and `exists` fields to determine result
+**Note**: Always exits 0 for both exists=true and exists=false (both are valid query results). Only exits 1 for actual errors (invalid plan_id, invalid path). Check `status` and `exists` fields to determine result.
 
 ### mkdir
 
@@ -248,6 +252,8 @@ message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 
 **Use case**: Called by plan-init when user selects "Replace" to delete existing plan before creating new one. See `plan-marshall:phase-1-init/standards/plan-overwrite.md` for the full workflow.
 
+**Warning**: This recursively deletes the entire plan directory including all subdirectories (logs, tasks, work artifacts). There is no undo.
+
 ---
 
 ## Key Design Principles
@@ -256,7 +262,7 @@ message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 2. **Relative file paths** - `--file` accepts relative paths within plan dir (e.g., `requirements/REQ-001.toon`)
 3. **Generic file operations** - Not domain-specific (no parse-plan, write-config)
 4. **Plain output** - `read` returns raw content; mutations return minimal status
-5. **No validation** - Caller provides complete content; no content validation
+5. **Minimal validation** - Rejects empty content on write; no structural validation of content
 
 ---
 
@@ -265,42 +271,30 @@ message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 | Check | Validation |
 |-------|------------|
 | plan_id format | kebab-case, no special chars |
-| file path | No `..`, no absolute paths |
+| file path | No `..`, no absolute paths, no leading `/` |
 | directory | Must exist (unless mkdir) |
 | content | Non-empty for write |
 
 ---
 
-## Error Handling
-
-```toon
-status: error
-plan_id: my-feature
-file: nonexistent.md
-error: file_not_found
-message: File does not exist
-
-suggestions[2]:
-- Check file name spelling
-- Use list subcommand to see available files
-```
-
----
-
 ## Error Responses
+
+All errors return TOON with `status: error` and exit code 1 (except `exists` which always exits 0).
+
+| Error Code | Cause |
+|------------|-------|
+| `invalid_plan_id` | plan_id contains invalid characters (must be kebab-case) |
+| `file_not_found` | File does not exist (read, remove) |
+| `plan_not_found` | Plan directory does not exist (delete-plan) |
+| `missing_content` | Write called with empty or missing content |
+| `invalid_path` | Path contains `..` or absolute path components |
+| `permission_error` | File system permission denied |
 
 ```toon
 status: error
 plan_id: my-plan
 error: file_not_found
 message: File does not exist: config.json
-```
-
-```toon
-status: error
-plan_id: my-plan
-error: invalid_plan_id
-message: Invalid plan_id format: bad!!id
 ```
 
 ---
