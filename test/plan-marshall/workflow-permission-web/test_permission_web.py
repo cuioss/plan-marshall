@@ -241,6 +241,104 @@ class TestAnalyzeExtractDomains(unittest.TestCase):
         self.assertEqual(extract_webfetch_domains({'permissions': {}}), [])
 
 
+class TestExtractBySection(unittest.TestCase):
+    """Test extract_webfetch_domains_by_section for allow/deny tracking."""
+
+    def test_separates_allow_and_deny(self):
+        """Test that allow and deny domains are tracked separately."""
+        from permission_web import extract_webfetch_domains_by_section  # type: ignore[import-not-found]
+
+        settings = {
+            'permissions': {
+                'allow': ['WebFetch(good.com)', 'WebFetch(safe.org)'],
+                'deny': ['WebFetch(blocked.com)', 'WebFetch(bad.io)'],
+            },
+        }
+        result = extract_webfetch_domains_by_section(settings)
+        self.assertEqual(sorted(result['allow']), ['good.com', 'safe.org'])
+        self.assertEqual(sorted(result['deny']), ['bad.io', 'blocked.com'])
+
+    def test_empty_settings(self):
+        """Test empty settings returns empty lists."""
+        from permission_web import extract_webfetch_domains_by_section  # type: ignore[import-not-found]
+
+        result = extract_webfetch_domains_by_section({})
+        self.assertEqual(result['allow'], [])
+        self.assertEqual(result['deny'], [])
+
+    def test_filters_non_webfetch(self):
+        """Test that non-WebFetch entries are ignored."""
+        from permission_web import extract_webfetch_domains_by_section  # type: ignore[import-not-found]
+
+        settings = {
+            'permissions': {
+                'allow': ['Bash(ls)', 'WebFetch(example.com)', 'Read(*.md)'],
+            },
+        }
+        result = extract_webfetch_domains_by_section(settings)
+        self.assertEqual(result['allow'], ['example.com'])
+        self.assertEqual(result['deny'], [])
+
+
+class TestAnalyzeDenyTracking(unittest.TestCase):
+    """Test that analyze command tracks denied domains separately."""
+
+    def _write_settings(self, allow: list[str], deny: list[str], tmpdir: str) -> str:
+        """Write settings.json with both allow and deny WebFetch permissions."""
+        parent = Path(tmpdir)
+        parent.mkdir(parents=True, exist_ok=True)
+        path = parent / 'settings.json'
+        settings = {
+            'permissions': {
+                'allow': [f'WebFetch({d})' for d in allow],
+                'deny': [f'WebFetch({d})' for d in deny],
+            },
+        }
+        path.write_text(json.dumps(settings))
+        return str(path)
+
+    def test_denied_domains_reported_separately(self):
+        """Test that denied domains appear in denied_domains, not in categories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            global_file = self._write_settings(
+                allow=['docs.oracle.com'],
+                deny=['malicious.example.com'],
+                tmpdir=tmpdir + '/global',
+            )
+            stdout, _, code = run_pw_script([
+                'analyze', '--global-file', global_file,
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'success')
+            # Denied domain should be in denied_domains
+            self.assertIn('malicious.example.com', result['denied_domains'])
+            # Only allow-list domain counts toward global_count
+            self.assertEqual(result['global_count'], 1)
+
+    def test_deny_from_both_files_combined(self):
+        """Test that denied domains from global and local are combined."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            global_file = self._write_settings(
+                allow=['github.com'],
+                deny=['blocked-global.com'],
+                tmpdir=tmpdir + '/global',
+            )
+            local_file = self._write_settings(
+                allow=['stackoverflow.com'],
+                deny=['blocked-local.com'],
+                tmpdir=tmpdir + '/local',
+            )
+            stdout, _, code = run_pw_script([
+                'analyze', '--global-file', global_file, '--local-file', local_file,
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            denied = result['denied_domains']
+            self.assertIn('blocked-global.com', denied)
+            self.assertIn('blocked-local.com', denied)
+
+
 class TestMain(unittest.TestCase):
     """Test permission_web.py main entry point."""
 

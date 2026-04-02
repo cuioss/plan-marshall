@@ -17,6 +17,24 @@ from typing import Any
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
+def make_error(message: str, **extra: Any) -> dict[str, Any]:
+    """Create a standardized error payload for TOON output.
+
+    All workflow scripts should use this for error responses to ensure
+    a consistent contract: ``{'error': message, 'status': 'failure', ...}``.
+
+    Args:
+        message: Human-readable error description.
+        **extra: Additional context fields (e.g., file, category).
+
+    Returns:
+        Dict ready for ``serialize_toon()``.
+    """
+    result: dict[str, Any] = {'error': message, 'status': 'failure'}
+    result.update(extra)
+    return result
+
+
 def safe_main(main_fn: Callable[[], int]) -> int:
     """Wrap a script's main() to catch unhandled exceptions and emit TOON failure.
 
@@ -34,7 +52,7 @@ def safe_main(main_fn: Callable[[], int]) -> int:
         # Let argparse --help / missing-arg exits pass through
         raise e
     except Exception as e:
-        print(serialize_toon({'error': f'Unexpected error: {e}', 'status': 'failure'}))
+        print(serialize_toon(make_error(f'Unexpected error: {e}')))
         return 1
 
 
@@ -53,7 +71,7 @@ def cmd_triage_single(json_str: str, triage_fn: Callable[[dict], dict]) -> int:
     try:
         item = json.loads(json_str)
     except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
+        print(serialize_toon(make_error(f'Invalid JSON input: {e}')))
         return 1
 
     result = triage_fn(item)
@@ -82,11 +100,11 @@ def cmd_triage_batch_handler(
     try:
         items = json.loads(json_str)
     except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
+        print(serialize_toon(make_error(f'Invalid JSON input: {e}')))
         return 1
 
     if not isinstance(items, list):
-        print(serialize_toon({'error': 'Input must be a JSON array', 'status': 'failure'}))
+        print(serialize_toon(make_error('Input must be a JSON array')))
         return 1
 
     results = [triage_fn(item) for item in items]

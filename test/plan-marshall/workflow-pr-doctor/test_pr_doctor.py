@@ -203,6 +203,74 @@ class TestParseHandoff(unittest.TestCase):
         self.assertFalse(result['merged']['auto_fix'])
 
 
+class TestTrackAttempt(unittest.TestCase):
+    """Test pr_doctor.py track-attempt subcommand."""
+
+    def test_first_attempt_proceeds(self):
+        """Test that the first attempt (current=0) should proceed."""
+        stdout, _, code = run_doctor_script([
+            'track-attempt', '--category', 'build', '--current', '0',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(result['proceed'])
+        self.assertEqual(result['attempt'], 1)
+        self.assertEqual(result['remaining'], 2)
+        self.assertEqual(result['category'], 'build')
+
+    def test_last_attempt_proceeds(self):
+        """Test that the last attempt (current=2 with max=3) proceeds."""
+        stdout, _, code = run_doctor_script([
+            'track-attempt', '--category', 'sonar', '--current', '2', '--max-attempts', '3',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertTrue(result['proceed'])
+        self.assertEqual(result['attempt'], 3)
+        self.assertEqual(result['remaining'], 0)
+
+    def test_exceeds_max_stops(self):
+        """Test that exceeding max attempts stops."""
+        stdout, _, code = run_doctor_script([
+            'track-attempt', '--category', 'reviews', '--current', '3', '--max-attempts', '3',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertFalse(result['proceed'])
+        self.assertEqual(result['attempt'], 4)
+        self.assertEqual(result['remaining'], 0)
+        self.assertIn('reached max', result['reason'])
+
+    def test_custom_max_attempts(self):
+        """Test with custom max-attempts value."""
+        stdout, _, code = run_doctor_script([
+            'track-attempt', '--category', 'build', '--current', '4', '--max-attempts', '5',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertTrue(result['proceed'])
+        self.assertEqual(result['attempt'], 5)
+        self.assertEqual(result['remaining'], 0)
+
+    def test_default_max_attempts(self):
+        """Test that default max-attempts is 3."""
+        stdout, _, code = run_doctor_script([
+            'track-attempt', '--category', 'build', '--current', '0',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['max_attempts'], 3)
+
+    def test_invalid_category(self):
+        """Test that invalid category is rejected by argparse."""
+        _, stderr, code = run_doctor_script([
+            'track-attempt', '--category', 'invalid', '--current', '0',
+        ])
+        self.assertNotEqual(code, 0)
+        self.assertIn('invalid', stderr)
+
+
 class TestMain(unittest.TestCase):
     """Test pr_doctor.py main entry point."""
 
@@ -216,6 +284,7 @@ class TestMain(unittest.TestCase):
         stdout, _, code = run_doctor_script(['--help'])
         self.assertEqual(code, 0)
         self.assertIn('parse-handoff', stdout)
+        self.assertIn('track-attempt', stdout)
 
     def test_unknown_subcommand(self):
         """Test error when unknown subcommand provided."""

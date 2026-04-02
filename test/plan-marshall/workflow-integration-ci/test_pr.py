@@ -284,6 +284,86 @@ class TestParseToonTable(unittest.TestCase):
         self.assertEqual(comments, [])
 
 
+class TestClassifyCommentOrdering(unittest.TestCase):
+    """Test that classify_comment checks code_change BEFORE ignore.
+
+    This verifies the fix for the ordering bug where ignore patterns
+    (e.g., 'lgtm') could swallow actionable comments like
+    'LGTM, but please fix the typo'.
+    """
+
+    def test_lgtm_with_fix_request_is_code_change(self):
+        """LGTM with actionable fix request should be code_change, not ignore."""
+        comment = {
+            'id': 'ORD1',
+            'body': 'LGTM, but please fix the typo in the variable name',
+            'path': 'src/Main.java',
+            'line': 10,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'code_change')
+
+    def test_looks_good_but_has_bug(self):
+        """'Looks good but there's a bug' should be code_change."""
+        comment = {
+            'id': 'ORD2',
+            'body': 'Looks good overall, but there is a bug in the error handling',
+            'path': 'src/Handler.java',
+            'line': 55,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'code_change')
+        self.assertEqual(result['priority'], 'high')
+
+    def test_nice_but_rename(self):
+        """'Nice, but rename X' should be code_change."""
+        comment = {
+            'id': 'ORD3',
+            'body': 'Nice work! But please rename this variable to camelCase',
+            'path': 'src/Utils.java',
+            'line': 3,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'code_change')
+
+    def test_pure_lgtm_still_ignored(self):
+        """Pure LGTM without actionable content should still be ignore."""
+        comment = {
+            'id': 'ORD4',
+            'body': 'LGTM!',
+            'path': None,
+            'line': None,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'ignore')
+
+    def test_approved_still_ignored(self):
+        """Pure 'approved' without actionable content should still be ignore."""
+        comment = {
+            'id': 'ORD5',
+            'body': 'Approved',
+            'path': None,
+            'line': None,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'ignore')
+
+
 class TestPRTriageContext(unittest.TestCase):
     """Test pr.py triage with --context for improved classification."""
 

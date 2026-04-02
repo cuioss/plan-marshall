@@ -247,6 +247,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
 
 The script triage uses regex pattern matching and will sometimes misclassify nuanced comments. When the script's `action` or `priority` doesn't match the semantic intent of the comment, override it. For example, "Why did you fix it this way?" semantically asks for an explanation even though it contains the word "fix". Use the script result as a starting point, not a final answer.
 
+Note: The classification priority is code_change > ignore > explain. This means actionable content always wins — "LGTM, but please fix the typo" is classified as `code_change`, not `ignore`.
+
 ## Error Handling
 
 When a script returns `status: failure`:

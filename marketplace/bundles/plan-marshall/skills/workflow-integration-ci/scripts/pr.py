@@ -31,7 +31,7 @@ import sys
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import cmd_triage_batch_handler, cmd_triage_single, safe_main  # type: ignore[import-not-found]
+from triage_helpers import cmd_triage_batch_handler, cmd_triage_single, make_error, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # TRIAGE CONFIGURATION
@@ -138,12 +138,12 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
     """Fetch review comments for a PR via provider's fetch_pr_comments_data()."""
     mod = _get_provider_module()
     if not mod:
-        return {'error': 'CI provider not configured. Run /marshall-steward first.', 'status': 'failure'}
+        return make_error('CI provider not configured. Run /marshall-steward first.')
 
     result = mod.fetch_pr_comments_data(pr_number, unresolved_only)
 
     if result.get('status') != 'success':
-        return {'error': result.get('error', 'Failed to fetch PR comments'), 'status': 'failure'}
+        return make_error(result.get('error', 'Failed to fetch PR comments'))
 
     # Transform provider result into pr.py's expected format
     return {
@@ -163,11 +163,7 @@ def cmd_fetch_comments(args):
     if not pr_number:
         pr_number = get_current_pr_number()
         if not pr_number:
-            print(
-                serialize_toon(
-                    {'error': 'No PR found for current branch. Use --pr to specify.', 'status': 'failure'}
-                )
-            )
+            print(serialize_toon(make_error('No PR found for current branch. Use --pr to specify.')))
             return 1
 
     result = fetch_comments(pr_number, getattr(args, 'unresolved_only', False))
@@ -184,9 +180,11 @@ def cmd_fetch_comments(args):
 def classify_comment(body: str, context: str | None = None) -> tuple[str, str, str]:
     """Classify comment and determine action and priority.
 
-    Priority order: ignore → code_change → explain → default.
-    Code change is checked before explain so that actionable requests
-    like "Can you fix X?" are classified as code changes, not questions.
+    Priority order: code_change(high) → code_change(medium/low) → ignore → explain → default.
+    High-priority code changes (security, bugs) always win. Then actionable
+    requests. Ignore patterns are checked after code_change so that comments
+    like "LGTM, but please fix the typo" are classified as code_change, not
+    swallowed by the ignore match on "lgtm".
 
     Args:
         body: Comment body text.
@@ -195,17 +193,19 @@ def classify_comment(body: str, context: str | None = None) -> tuple[str, str, s
     """
     body_lower = body.lower()
 
-    # Check for ignore patterns first
-    for pattern in PATTERNS['ignore']:
-        if re.search(pattern, body_lower):
-            return 'ignore', 'none', 'Automated or acknowledgment comment'
-
-    # Check for code change patterns first — actionable requests take
-    # priority over questions. "Can you fix X?" is a code_change, not explain.
+    # Check for code change patterns FIRST — actionable requests take
+    # priority over ignore/explain. This ensures "LGTM, but please fix
+    # the typo" is classified as code_change, not swallowed by ignore.
     for priority in ['high', 'medium', 'low']:
         for pattern in PATTERNS['code_change'][priority]:
             if re.search(pattern, body_lower):
                 return 'code_change', priority, f'Matches {priority} priority pattern: {pattern}'
+
+    # Check for ignore patterns AFTER code_change — pure acknowledgments
+    # with no actionable content.
+    for pattern in PATTERNS['ignore']:
+        if re.search(pattern, body_lower):
+            return 'ignore', 'none', 'Automated or acknowledgment comment'
 
     # Check for explanation patterns — only after ruling out code_change,
     # so "Why did you fix it this way?" is correctly classified as explain

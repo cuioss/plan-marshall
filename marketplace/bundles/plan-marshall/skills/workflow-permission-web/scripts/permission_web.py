@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import safe_main  # type: ignore[import-not-found]
+from triage_helpers import make_error, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # DOMAIN KNOWLEDGE (loaded from domain-lists.json)
@@ -79,6 +79,24 @@ def extract_webfetch_domains(settings: dict) -> list[str]:
                 if match:
                     domains.append(match.group(1))
     return domains
+
+
+def extract_webfetch_domains_by_section(settings: dict) -> dict[str, list[str]]:
+    """Extract WebFetch domain permissions grouped by allow/deny section.
+
+    Returns dict with 'allow' and 'deny' keys, each containing a list of domains.
+    This preserves the semantic distinction so that deny-list domains are not
+    mistakenly recommended for global allow-list promotion.
+    """
+    result: dict[str, list[str]] = {'allow': [], 'deny': []}
+    permissions = settings.get('permissions', {})
+    for section in ('allow', 'deny'):
+        for entry in permissions.get(section, []):
+            if isinstance(entry, str) and entry.startswith('WebFetch('):
+                match = re.match(r'WebFetch\((.+)\)', entry)
+                if match:
+                    result[section].append(match.group(1))
+    return result
 
 
 def categorize_domain(domain: str) -> str:
@@ -243,6 +261,7 @@ def cmd_analyze(args):
 
     global_domains: list[str] = []
     local_domains: list[str] = []
+    denied_domains: set[str] = set()
 
     # Read global settings
     if args.global_file:
@@ -250,14 +269,12 @@ def cmd_analyze(args):
         if global_path.exists():
             try:
                 settings = json.loads(global_path.read_text())
-                global_domains = extract_webfetch_domains(settings)
+                by_section = extract_webfetch_domains_by_section(settings)
+                global_domains = by_section['allow']
+                denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                print(serialize_toon({
-                    'error': f'Invalid JSON in global settings: {e}',
-                    'file': str(global_path),
-                    'status': 'failure',
-                }))
+                print(serialize_toon(make_error(f'Invalid JSON in global settings: {e}', file=str(global_path))))
                 return 1
         else:
             stats['global_missing'] = True
@@ -268,19 +285,18 @@ def cmd_analyze(args):
         if local_path.exists():
             try:
                 settings = json.loads(local_path.read_text())
-                local_domains = extract_webfetch_domains(settings)
+                by_section = extract_webfetch_domains_by_section(settings)
+                local_domains = by_section['allow']
+                denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                print(serialize_toon({
-                    'error': f'Invalid JSON in local settings: {e}',
-                    'file': str(local_path),
-                    'status': 'failure',
-                }))
+                print(serialize_toon(make_error(f'Invalid JSON in local settings: {e}', file=str(local_path))))
                 return 1
         else:
             stats['local_missing'] = True
 
-    # Analyze
+    # Analyze — only allow-list domains get categorization and recommendations.
+    # Denied domains are reported separately so they aren't mistakenly promoted.
     all_domains = sorted(set(global_domains + local_domains))
     stats['domains_analyzed'] = len(all_domains)
 
@@ -298,6 +314,7 @@ def cmd_analyze(args):
         'global_count': len(global_domains),
         'local_count': len(local_domains),
         'total_unique': len(all_domains),
+        'denied_domains': sorted(denied_domains),
         'categories': {k: len(v) for k, v in categories.items()},
         'categories_detail': categories,
         'duplicates': duplicates,
@@ -321,11 +338,11 @@ def cmd_categorize(args):
     try:
         domains = json.loads(args.domains)
     except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON: {e}', 'status': 'failure'}))
+        print(serialize_toon(make_error(f'Invalid JSON: {e}')))
         return 1
 
     if not isinstance(domains, list):
-        print(serialize_toon({'error': 'Input must be a JSON array', 'status': 'failure'}))
+        print(serialize_toon(make_error('Input must be a JSON array')))
         return 1
 
     categories = categorize_domains(domains)

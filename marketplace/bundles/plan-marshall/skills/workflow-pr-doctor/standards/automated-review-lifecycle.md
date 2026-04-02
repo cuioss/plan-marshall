@@ -48,11 +48,15 @@ sleep {review_bot_buffer_seconds}
 python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments --pr {pr_number} --unresolved-only
 ```
 
-### Step 4: Triage Each Comment
+### Step 4: Triage All Comments (Batch)
+
+Collect all unresolved comments into a JSON array and triage in a single call:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{comment_json}'
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{comment1}, {comment2}, ...]'
 ```
+
+For single-comment edge cases, `triage --comment '{comment_json}'` is also available.
 
 ### Step 5: Process by Action Type
 

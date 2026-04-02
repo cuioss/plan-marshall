@@ -23,7 +23,7 @@ import sys
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import safe_main  # type: ignore[import-not-found]
+from triage_helpers import make_error, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # HANDOFF SCHEMA
@@ -114,6 +114,44 @@ def merge_handoff_with_params(
 
 
 # ============================================================================
+# TRACK-ATTEMPT SUBCOMMAND
+# ============================================================================
+
+
+# In-memory attempt counters per category (reset per script invocation).
+# The caller passes the current count; the script returns whether to continue.
+def check_attempt(category: str, current: int, max_attempts: int) -> dict[str, Any]:
+    """Check whether a fix attempt should proceed or stop.
+
+    Args:
+        category: Fix category (build, reviews, sonar).
+        current: Current attempt number (0-based, pre-increment).
+        max_attempts: Maximum allowed attempts.
+
+    Returns:
+        Dict with 'proceed' bool, 'attempt' (1-based), and 'remaining'.
+    """
+    attempt = current + 1
+    proceed = attempt <= max_attempts
+    return {
+        'category': category,
+        'attempt': attempt,
+        'max_attempts': max_attempts,
+        'remaining': max(0, max_attempts - attempt),
+        'proceed': proceed,
+        'reason': 'within limit' if proceed else f'reached max {max_attempts} attempts for {category}',
+        'status': 'success',
+    }
+
+
+def cmd_track_attempt(args):
+    """Handle track-attempt subcommand."""
+    result = check_attempt(args.category, args.current, args.max_attempts)
+    print(serialize_toon(result))
+    return 0
+
+
+# ============================================================================
 # PARSE-HANDOFF SUBCOMMAND
 # ============================================================================
 
@@ -123,11 +161,11 @@ def cmd_parse_handoff(args):
     try:
         handoff = json.loads(args.handoff)
     except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
+        print(serialize_toon(make_error(f'Invalid JSON input: {e}')))
         return 1
 
     if not isinstance(handoff, dict):
-        print(serialize_toon({'error': 'Handoff must be a JSON object', 'status': 'failure'}))
+        print(serialize_toon(make_error('Handoff must be a JSON object')))
         return 1
 
     # Validate
@@ -173,6 +211,13 @@ Examples:
     )
 
     subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # track-attempt subcommand
+    attempt_parser = subparsers.add_parser('track-attempt', help='Check if a fix attempt should proceed')
+    attempt_parser.add_argument('--category', required=True, choices=['build', 'reviews', 'sonar'], help='Fix category')
+    attempt_parser.add_argument('--current', type=int, required=True, help='Current attempt count (0-based)')
+    attempt_parser.add_argument('--max-attempts', type=int, default=DEFAULT_MAX_FIX_ATTEMPTS, help='Maximum attempts')
+    attempt_parser.set_defaults(func=cmd_track_attempt)
 
     # parse-handoff subcommand
     handoff_parser = subparsers.add_parser('parse-handoff', help='Parse and validate handoff JSON')

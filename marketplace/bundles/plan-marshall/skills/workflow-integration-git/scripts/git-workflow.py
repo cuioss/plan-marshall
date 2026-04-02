@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import safe_main  # type: ignore[import-not-found]
+from triage_helpers import make_error, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # CONFIGURATION
@@ -348,7 +348,7 @@ def cmd_analyze_diff(args):
     """Handle analyze-diff subcommand."""
     path = Path(args.file)
     if not path.exists():
-        print(serialize_toon({'error': f'File not found: {args.file}', 'status': 'failure'}))
+        print(serialize_toon(make_error(f'File not found: {args.file}')))
         return 1
 
     diff_content = path.read_text()
@@ -401,32 +401,52 @@ def get_gitignored_files(root: Path) -> set[str]:
         return set()
 
 
+def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
+    """Compile glob-style patterns into regex for single-pass matching."""
+    compiled = []
+    for pattern in patterns:
+        # Convert glob to regex: ** → .*, * → [^/]*, . → \.
+        regex = pattern.replace('.', r'\.')
+        regex = regex.replace('**/', '(.+/)?')
+        regex = regex.replace('**', '.*')
+        regex = regex.replace('*', '[^/]*')
+        compiled.append(re.compile(f'^{regex}$'))
+    return compiled
+
+
+_SAFE_REGEXES = _compile_patterns(SAFE_ARTIFACT_PATTERNS)
+_UNCERTAIN_REGEXES = _compile_patterns(UNCERTAIN_ARTIFACT_PATTERNS)
+
+
 def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     """Scan directory for committable artifacts.
 
     Returns dict with 'safe' (auto-deletable) and 'uncertain' (needs confirmation) lists.
     Files already covered by .gitignore are excluded by default since they
     cannot be accidentally committed.
+
+    Uses a single directory traversal with compiled regex patterns instead
+    of multiple Path.glob() calls, improving performance on large repos.
     """
     ignored = get_gitignored_files(root) if respect_gitignore else set()
 
     safe: list[str] = []
     uncertain: list[str] = []
+    safe_set: set[str] = set()
 
-    for pattern in SAFE_ARTIFACT_PATTERNS:
-        for match in root.glob(pattern):
-            if match.is_file():
-                rel = str(match.relative_to(root))
-                if rel not in ignored:
-                    safe.append(rel)
+    for path in root.rglob('*'):
+        if not path.is_file():
+            continue
+        rel = str(path.relative_to(root))
+        if rel in ignored:
+            continue
 
-    for pattern in UNCERTAIN_ARTIFACT_PATTERNS:
-        for match in root.glob(pattern):
-            if match.is_file():
-                rel = str(match.relative_to(root))
-                # Skip if already captured by safe patterns or gitignored
-                if rel not in safe and rel not in ignored:
-                    uncertain.append(rel)
+        # Check safe patterns first
+        if any(rx.match(rel) for rx in _SAFE_REGEXES):
+            safe.append(rel)
+            safe_set.add(rel)
+        elif any(rx.match(rel) for rx in _UNCERTAIN_REGEXES):
+            uncertain.append(rel)
 
     return {
         'safe': sorted(safe),
@@ -440,7 +460,7 @@ def cmd_detect_artifacts(args):
     root = Path(args.root) if args.root else Path.cwd()
 
     if not root.is_dir():
-        print(serialize_toon({'error': f'Directory not found: {root}', 'status': 'failure'}))
+        print(serialize_toon(make_error(f'Directory not found: {root}')))
         return 1
 
     result = scan_artifacts(root, respect_gitignore=not args.no_gitignore)

@@ -186,6 +186,32 @@ loop_back_needed: true|false
 
 Script: `plan-marshall:workflow-pr-doctor` → `pr_doctor.py`
 
+### pr_doctor.py track-attempt
+
+**Purpose:** Check whether a fix attempt should proceed or stop, enforcing the `max-fix-attempts` iteration guard programmatically.
+
+**Usage:**
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor track-attempt \
+    --category build --current 0 [--max-attempts 3]
+```
+
+**Parameters:**
+- `--category` (required): Fix category (`build`, `reviews`, `sonar`)
+- `--current` (required): Current attempt count (0-based, pre-increment)
+- `--max-attempts`: Maximum allowed attempts (default: 3)
+
+**Output** (TOON):
+```toon
+category: build
+attempt: 1
+max_attempts: 3
+remaining: 2
+proceed: true
+reason: within limit
+status: success
+```
+
 ### pr_doctor.py parse-handoff
 
 **Purpose:** Parse and validate handoff JSON from phase-6-finalize, merge with explicit parameters.
