@@ -2,6 +2,7 @@
 """Poll until condition is satisfied. Uses run-config for adaptive timeouts."""
 
 import argparse
+import shlex
 import subprocess
 import sys
 import time
@@ -52,7 +53,7 @@ def main():
     while time.time() - start < timeout:
         polls += 1
         try:
-            result = subprocess.run(args.check_cmd, shell=True, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(shlex.split(args.check_cmd), capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:
             time.sleep(args.interval)
             continue

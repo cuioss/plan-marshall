@@ -167,17 +167,9 @@ if __name__ == '__main__':
 
 ## Integration
 
-### With manage-lessons
+The executor manages PYTHONPATH automatically, so scripts can import `file_ops` directly:
 
 ```python
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'file-operations-base' / 'scripts'))
-from file_ops import atomic_write_file, base_path, output_success, output_error
-```
-
-### With plan-files
-
-```python
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'plan-marshall' / 'skills' / 'file-operations-base' / 'scripts'))
 from file_ops import atomic_write_file, base_path, output_success, output_error
 ```
 

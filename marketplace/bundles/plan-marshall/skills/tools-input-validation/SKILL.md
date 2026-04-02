@@ -70,14 +70,20 @@ Import `input_validation` module in Python scripts that:
 - **Output**: The validated skill string
 - **Raises**: `ValueError` if not in `bundle:skill` format
 
+**5. validate_script_notation(notation: str) -> str**
+- **Purpose**: Validate `bundle:skill:script` format (3-part executor notation)
+- **Input**: `notation` string
+- **Output**: The validated notation string
+- **Raises**: `ValueError` if not in `bundle:skill:script` format
+
 **Bool Companions** (drop-in replacements for existing patterns)
 
-**5. is_valid_plan_id(plan_id: str) -> bool**
+**6. is_valid_plan_id(plan_id: str) -> bool**
 - **Purpose**: Check if plan_id is valid (no exception)
 - **Input**: `plan_id` string
 - **Output**: `True` if valid, `False` otherwise
 
-**6. is_valid_relative_path(file_path: str) -> bool**
+**7. is_valid_relative_path(file_path: str) -> bool**
 - **Purpose**: Check if file path is valid relative path (no exception)
 - **Input**: `file_path` string
 - **Output**: `True` if valid, `False` otherwise

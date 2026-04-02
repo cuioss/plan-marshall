@@ -143,6 +143,7 @@ recommendations[2]:
 |--------|------------|---------|
 | `permission-doctor.py` | `detect-redundant` | Detects redundant permissions between global/local |
 | `permission-doctor.py` | `detect-suspicious` | Detects security anti-patterns in permissions |
+| `permission_common.py` | (library) | Shared utilities for settings loading and path resolution (also used by `tools-permission-fix`) |
 
 ## Standards Organization
 

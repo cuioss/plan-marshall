@@ -75,7 +75,7 @@ def base_path(*parts: str) -> Path:
         >>> base_path('plans', 'my-task', 'plan.md')
         PosixPath('.plan/plans/my-task/plan.md')
     """
-    return _BASE_DIR.joinpath(*parts)
+    return get_base_dir().joinpath(*parts)
 
 
 def get_temp_dir(subdir: str | None = None) -> Path:
@@ -162,7 +162,7 @@ def output_success(operation: str, **kwargs: Any) -> None:
         **kwargs: Additional fields to include in output
     """
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
-    result = {'success': True, 'operation': operation}
+    result = {'status': 'success', 'success': True, 'operation': operation}
     result.update(kwargs)
     print(serialize_toon(result))
 
@@ -175,7 +175,7 @@ def output_error(operation: str, error: str) -> None:
         error: Error message
     """
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
-    result = {'success': False, 'operation': operation, 'error': error}
+    result = {'status': 'error', 'success': False, 'operation': operation, 'error': error}
     print(serialize_toon(result), file=sys.stderr)
 
 

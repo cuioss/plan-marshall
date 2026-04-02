@@ -80,6 +80,20 @@ def validate_skill_notation(skill: str) -> str:
     return skill
 
 
+def validate_script_notation(notation: str) -> str:
+    """Validate script notation is in bundle:skill:script format.
+
+    Returns the validated value for chaining.
+    Raises ValueError if invalid.
+    """
+    if not notation or ':' not in notation:
+        raise ValueError(f'Invalid script notation: {notation!r}. Must be in bundle:skill:script format')
+    parts = notation.split(':')
+    if len(parts) != 3 or not all(parts):
+        raise ValueError(f'Invalid script notation: {notation!r}. Must be in bundle:skill:script format')
+    return notation
+
+
 # --- Bool companions (drop-in replacements for existing call sites) ---
 
 def is_valid_plan_id(plan_id: str) -> bool:

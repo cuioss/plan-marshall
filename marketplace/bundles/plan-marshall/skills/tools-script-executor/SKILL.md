@@ -242,12 +242,13 @@ timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor
   --failure-field "status=failure" \
   --command-key "ci:pr_checks"
 
-# Explicit mode (manual timeout)
+# Explicit mode (custom interval)
 timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
-  --check-cmd "gh pr checks 123 --json state" \
+  --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
   --success-field "status=success" \
-  --timeout 300 \
-  --interval 30
+  --failure-field "status=failure" \
+  --command-key "ci:custom_check" \
+  --interval 15
 ```
 
 **Note**: When using Bash tool, set `timeout` parameter to `600000` (ms) to match shell timeout.

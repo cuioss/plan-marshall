@@ -361,7 +361,7 @@ def cmd_consolidate(args) -> int:
     permissions_to_remove = []
 
     for _key, group in timestamped_groups.items():
-        if len(group) >= 1:
+        if len(group) >= 2:
             wildcard = generate_wildcard(group)
             wildcards_to_add.append(wildcard)
             permissions_to_remove.extend([p['permission'] for p in group])

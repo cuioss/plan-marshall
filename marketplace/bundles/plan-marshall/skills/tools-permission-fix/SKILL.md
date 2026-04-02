@@ -29,6 +29,8 @@ user-invocable: true
 |--------|----------|---------|
 | permission-fix | `plan-marshall:tools-permission-fix:permission-fix` | Write operations for permissions |
 
+**Shared dependency**: Imports `permission_common` from `tools-permission-doctor/scripts/`. The executor's PYTHONPATH ensures this is resolvable.
+
 ## Operations
 
 ### apply-fixes - Apply Safe Fixes

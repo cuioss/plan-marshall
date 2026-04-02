@@ -21,10 +21,10 @@ Output (JSON format):
 import argparse
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
+from ci_base import run_cli  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Tool definitions: {tool: requires_auth}
@@ -44,22 +44,23 @@ PROVIDER_TOOLS = {
 
 
 def run_command(cmd: list[str], cwd: str | None = None) -> tuple[int, str, str]:
-    """Run a command and return (returncode, stdout, stderr)."""
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=10,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except FileNotFoundError:
-        return 127, '', f'Command not found: {cmd[0]}'
-    except subprocess.TimeoutExpired:
-        return 124, '', f'Command timed out: {" ".join(cmd)}'
-    except Exception as e:
-        return 1, '', str(e)
+    """Run a command and return (returncode, stdout, stderr).
+
+    Delegates to ci_base.run_cli for the actual execution.
+    Falls back to subprocess for cwd support (run_cli doesn't accept cwd).
+    """
+    if cwd is not None:
+        import subprocess
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=10)
+            return result.returncode, result.stdout, result.stderr
+        except FileNotFoundError:
+            return 127, '', f'Command not found: {cmd[0]}'
+        except subprocess.TimeoutExpired:
+            return 124, '', 'Command timed out'
+        except Exception as e:
+            return 1, '', str(e)
+    return run_cli(cmd[0], cmd[1:], timeout=10, not_found_msg=f'Command not found: {cmd[0]}')
 
 
 def parse_version(output: str) -> str | None:
@@ -354,17 +355,19 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    if args.command == 'detect':
-        return cmd_detect(args)
-    elif args.command == 'verify':
-        return cmd_verify(args)
-    elif args.command == 'status':
-        return cmd_status(args)
-    elif args.command == 'persist':
-        return cmd_persist(args)
-    else:
-        parser.print_help()
-        return 1
+    handlers = {
+        'detect': cmd_detect,
+        'verify': cmd_verify,
+        'status': cmd_status,
+        'persist': cmd_persist,
+    }
+
+    handler = handlers.get(args.command)
+    if handler:
+        return handler(args)
+
+    parser.print_help()
+    return 1
 
 
 if __name__ == '__main__':
