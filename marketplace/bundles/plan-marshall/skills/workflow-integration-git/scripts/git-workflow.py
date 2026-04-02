@@ -452,6 +452,13 @@ _SAFE_REGEXES = _compile_patterns(SAFE_ARTIFACT_PATTERNS)
 _UNCERTAIN_REGEXES = _compile_patterns(UNCERTAIN_ARTIFACT_PATTERNS)
 
 
+# Directories to skip entirely during traversal — large and never useful to scan.
+# Only directories that are NEVER artifact-matched themselves. Directories
+# like __pycache__, .eggs, .next must NOT be skipped since they match
+# safe/uncertain artifact patterns.
+_SKIP_DIRS = {'.git', 'node_modules'}
+
+
 def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     """Scan directory for committable artifacts.
 
@@ -461,29 +468,29 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
 
     Uses a single directory traversal with compiled regex patterns instead
     of multiple Path.glob() calls, improving performance on large repos.
+    Skips known large directories (node_modules, .git, etc.) early to avoid
+    unnecessary traversal.
     """
     ignored = get_gitignored_files(root) if respect_gitignore else set()
 
     safe: list[str] = []
     uncertain: list[str] = []
-    safe_set: set[str] = set()
 
-    for path in root.rglob('*'):
-        if not path.is_file():
-            continue
-        rel = str(path.relative_to(root))
-        # Skip .git internals — large and never committable
-        if rel.startswith('.git/') or rel.startswith('.git\\'):
-            continue
-        if rel in ignored:
-            continue
+    for dirpath, dirnames, filenames in root.walk():
+        # Prune directories we never need to descend into
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
 
-        # Check safe patterns first
-        if any(rx.match(rel) for rx in _SAFE_REGEXES):
-            safe.append(rel)
-            safe_set.add(rel)
-        elif any(rx.match(rel) for rx in _UNCERTAIN_REGEXES):
-            uncertain.append(rel)
+        for filename in filenames:
+            path = dirpath / filename
+            rel = str(path.relative_to(root))
+            if rel in ignored:
+                continue
+
+            # Check safe patterns first
+            if any(rx.match(rel) for rx in _SAFE_REGEXES):
+                safe.append(rel)
+            elif any(rx.match(rel) for rx in _UNCERTAIN_REGEXES):
+                uncertain.append(rel)
 
     return {
         'safe': sorted(safe),

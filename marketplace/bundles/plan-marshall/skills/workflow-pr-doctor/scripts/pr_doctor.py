@@ -32,6 +32,13 @@ from triage_helpers import ErrorCode, make_error, parse_json_arg, safe_main  # t
 VALID_CHECKS = {'build', 'reviews', 'sonar', 'all'}
 DEFAULT_MAX_FIX_ATTEMPTS = 3
 
+# Build step to severity mapping — compile/test failures block everything (high),
+# lint/style failures are less urgent (medium). Unknown steps default to high.
+BUILD_STEP_SEVERITY = {
+    'compile': 'high', 'build': 'high', 'test': 'high',
+    'lint': 'medium', 'style': 'medium', 'format': 'medium',
+}
+
 
 def validate_handoff(handoff: dict) -> list[str]:
     """Validate handoff JSON structure. Returns list of warnings (empty = valid)."""
@@ -64,6 +71,11 @@ def validate_handoff(handoff: dict) -> list[str]:
                 warnings.append(f'decisions.checks must be one of {VALID_CHECKS}, got: {checks}')
         if 'auto_fix' in decisions and not isinstance(decisions['auto_fix'], bool):
             warnings.append(f'decisions.auto_fix must be bool, got: {type(decisions["auto_fix"]).__name__}')
+
+    # Semantic consistency checks
+    if isinstance(decisions, dict):
+        if decisions.get('skip_sonar') and decisions.get('checks') == 'sonar':
+            warnings.append("Contradiction: checks='sonar' with skip_sonar=true — Sonar will be skipped despite being the only requested check")
 
     # Validate constraints
     constraints = handoff.get('constraints', {})
@@ -104,6 +116,7 @@ def merge_handoff_with_params(
         'auto_fix': auto_fix if auto_fix is not None else decisions.get('auto_fix', False),
         'wait': wait if wait is not None else decisions.get('wait', True),
         'skip_sonar': decisions.get('skip_sonar', False),
+        'automated_review': decisions.get('automated_review', False),
         'max_fix_attempts': (
             max_fix_attempts if max_fix_attempts is not None
             else constraints.get('max_fix_attempts', DEFAULT_MAX_FIX_ATTEMPTS)
@@ -182,10 +195,6 @@ def diagnose_pr(
     issues: list[dict[str, Any]] = []
     actions: list[str] = []
 
-    # Build diagnosis — severity depends on the failing step:
-    # compile/build failures block everything (high), test failures need
-    # attention (high), lint/style failures are less urgent (medium).
-    _BUILD_STEP_SEVERITY = {'compile': 'high', 'build': 'high', 'test': 'high', 'lint': 'medium', 'style': 'medium', 'format': 'medium'}
     build_pass = build_status == 'success'
     if not build_pass and build_status is not None:
         for failure in build_failures:
@@ -195,7 +204,7 @@ def diagnose_pr(
             step = failure.get('step', 'unknown')
             issues.append({
                 'category': 'build',
-                'severity': _BUILD_STEP_SEVERITY.get(step, 'high'),
+                'severity': BUILD_STEP_SEVERITY.get(step, 'high'),
                 'detail': failure.get('message', 'Build failure'),
                 'step': step,
             })

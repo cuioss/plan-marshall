@@ -186,6 +186,22 @@ GraalVM native image and JIT compilation:
   - Purpose: GraalVM, native image compilation
   - Trust Level: Fully Trusted (Oracle/Open source)
 
+### Package Registries
+
+Package management and distribution platforms:
+
+- **registry.npmjs.org** - npm package registry
+  - Purpose: Node.js package metadata and downloads
+  - Trust Level: Fully Trusted (GitHub/npm Inc.)
+
+- **pypi.org** - Python Package Index
+  - Purpose: Python package metadata and downloads
+  - Trust Level: Fully Trusted (Python Software Foundation)
+
+- **crates.io** - Rust package registry
+  - Purpose: Rust crate metadata and downloads
+  - Trust Level: Fully Trusted (Rust Foundation)
+
 ### Developer Communities
 
 Platforms for developer knowledge sharing:

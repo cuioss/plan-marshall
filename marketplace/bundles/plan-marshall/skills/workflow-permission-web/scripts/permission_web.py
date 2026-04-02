@@ -54,24 +54,6 @@ _RED_FLAG_COMPILED: list[re.Pattern] = [re.compile(p) for p in _RED_FLAG_RAW]
 # ============================================================================
 
 
-def extract_webfetch_domains(settings: dict) -> list[str]:
-    """Extract WebFetch domain permissions from a settings dict.
-
-    Looks for WebFetch entries in both 'permissions.allow' and 'permissions.deny'.
-    Returns domain strings (e.g., 'docs.oracle.com' from 'WebFetch(docs.oracle.com)').
-    """
-    domains = []
-    permissions = settings.get('permissions', {})
-    for section in ('allow', 'deny'):
-        for entry in permissions.get(section, []):
-            if isinstance(entry, str) and entry.startswith('WebFetch('):
-                # Extract domain from WebFetch(domain)
-                match = re.match(r'WebFetch\((.+)\)', entry)
-                if match:
-                    domains.append(match.group(1))
-    return domains
-
-
 def extract_webfetch_domains_by_section(settings: dict) -> dict[str, list[str]]:
     """Extract WebFetch domain permissions grouped by allow/deny section.
 
@@ -88,6 +70,16 @@ def extract_webfetch_domains_by_section(settings: dict) -> dict[str, list[str]]:
                 if match:
                     result[section].append(match.group(1))
     return result
+
+
+def extract_webfetch_domains(settings: dict) -> list[str]:
+    """Extract WebFetch domain permissions from a settings dict.
+
+    Returns all domains from both 'permissions.allow' and 'permissions.deny'.
+    Delegates to extract_webfetch_domains_by_section for the actual extraction.
+    """
+    by_section = extract_webfetch_domains_by_section(settings)
+    return by_section['allow'] + by_section['deny']
 
 
 def categorize_domain(domain: str) -> str:

@@ -397,7 +397,23 @@ class TestAnalyzeDiffTypeDetection(unittest.TestCase):
 
 
 class TestFormatCommitCombined(unittest.TestCase):
-    """Test format-commit with all optional params at once (#30)."""
+    """Test format-commit with all optional params at once (#26)."""
+
+    def test_breaking_and_footer_combined(self):
+        """Test commit message with both --breaking and --footer simultaneously."""
+        stdout, _, code = run_git_script([
+            'format-commit',
+            '--type', 'feat',
+            '--scope', 'api',
+            '--subject', 'change auth endpoint',
+            '--breaking', 'Old /auth endpoint removed',
+            '--footer', 'Fixes #123',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertIn('feat(api)!:', result['formatted_message'])
+        self.assertIn('BREAKING CHANGE:', stdout)
+        self.assertIn('Fixes #123', stdout)
 
     def test_all_params_combined(self):
         """Test commit message with body + breaking + footer + scope."""

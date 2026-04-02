@@ -554,6 +554,62 @@ class TestDiagnoseInputValidation(unittest.TestCase):
                 self.assertEqual(issue['step'], 'unknown')
 
 
+class TestHandoffSkipSonar(unittest.TestCase):
+    """Test parse-handoff with skip_sonar field (#31)."""
+
+    def test_skip_sonar_true(self):
+        """Test that skip_sonar is extracted from handoff decisions."""
+        handoff = {'decisions': {'skip_sonar': True}}
+        stdout, _, code = run_doctor_script(['parse-handoff', '--handoff', json.dumps(handoff)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertTrue(result['merged']['skip_sonar'])
+
+    def test_skip_sonar_defaults_false(self):
+        """Test that skip_sonar defaults to False when not in handoff."""
+        handoff = {'artifacts': {'pr_number': 1}}
+        stdout, _, code = run_doctor_script(['parse-handoff', '--handoff', json.dumps(handoff)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertFalse(result['merged']['skip_sonar'])
+
+
+class TestHandoffAutomatedReview(unittest.TestCase):
+    """Test parse-handoff with automated_review field (#32)."""
+
+    def test_automated_review_true(self):
+        """Test that automated_review is extracted from handoff decisions."""
+        handoff = {'decisions': {'automated_review': True}}
+        stdout, _, code = run_doctor_script(['parse-handoff', '--handoff', json.dumps(handoff)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertTrue(result['merged']['automated_review'])
+
+    def test_automated_review_defaults_false(self):
+        """Test that automated_review defaults to False when not in handoff."""
+        handoff = {'artifacts': {'pr_number': 1}}
+        stdout, _, code = run_doctor_script(['parse-handoff', '--handoff', json.dumps(handoff)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertFalse(result['merged']['automated_review'])
+
+
+class TestHandoffSemanticValidation(unittest.TestCase):
+    """Test that contradictory handoff values generate warnings (#41)."""
+
+    def test_checks_sonar_with_skip_sonar_warns(self):
+        """checks=sonar + skip_sonar=true is contradictory — should warn."""
+        handoff = {'decisions': {'checks': 'sonar', 'skip_sonar': True}}
+        stdout, _, code = run_doctor_script(['parse-handoff', '--handoff', json.dumps(handoff)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        warnings = result['validation']['warnings']
+        self.assertTrue(
+            any('sonar' in w.lower() and ('skip' in w.lower() or 'contradict' in w.lower()) for w in warnings),
+            f'Expected contradiction warning about sonar, got: {warnings}',
+        )
+
+
 class TestMain(unittest.TestCase):
     """Test pr_doctor.py main entry point."""
 

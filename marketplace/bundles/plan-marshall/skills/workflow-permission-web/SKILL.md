@@ -26,7 +26,10 @@ Analyzes WebFetch domains across global and project settings, researches domains
 
 ## Parameters
 
-**scope** - Which settings to analyze (global/local/both, default: both)
+**scope** - Which settings to analyze (global/local/both, default: both). Controls which `--global-file` and `--local-file` arguments are passed to the `analyze` script:
+   - `global` → pass only `--global-file`
+   - `local` → pass only `--local-file`
+   - `both` → pass both `--global-file` and `--local-file`
    - **Validation**: Must be one of: global, local, both
    - **Error**: If invalid: "Invalid scope '{value}'. Must be: global, local, or both" and retry
 
@@ -77,7 +80,7 @@ For each domain in the script's `unknown` category:
 2. **Assess security** — check against red flags from `standards/domain-security-assessment.md`
 3. **Categorize** — classify as project-specific, suspicious, or suitable for global
 
-> **Note:** The `categorize` subcommand below only checks domains against the static known-domain lists — it does **not** perform web research. Use it for quick classification of domains you've already researched, not as a substitute for the research step above.
+After researching, optionally use the `categorize` subcommand to verify classification against the static known-domain lists (this does NOT perform web research — it only checks against `domain-lists.json`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-permission-web:permission_web categorize \
@@ -195,7 +198,9 @@ Final State:
 
 ## Statistics Tracking
 
-The following counters must be maintained by the LLM during workflow execution (the scripts report per-step counts but do not aggregate across steps):
+> **Design note:** These counters are tracked by the LLM at workflow level because the scripts are stateless per-invocation. Each script reports its own counts in TOON output — the LLM sums them across steps.
+
+The following counters must be maintained by the LLM during workflow execution:
 
 - `domains_analyzed`: Total unique domains discovered and analyzed (from `analyze` output)
 - `permissions_added`: Sum of `added` counts from `apply` calls
@@ -258,7 +263,7 @@ status: success
 
 ## Rule Configuration
 
-Domain categorization is data-driven — loaded from `standards/domain-lists.json`:
+Domain categorization is data-driven — loaded from `standards/domain-lists.json` (the source of truth for scripts). The companion `standards/trusted-domains.md` provides human-readable documentation and must be kept in sync manually when domains are added or removed.
 
 - **major_domains**: Fully trusted documentation and tool domains
 - **high_reach_domains**: Developer platforms commonly needed across projects
@@ -286,6 +291,8 @@ To add or update domain categorization, edit `standards/domain-lists.json` inste
 
 ## Related
 
-- `/marshall-steward` - Permission management wizard
-- `plan-marshall:tools-permission-doctor` skill - Permission analysis
-- `plan-marshall:tools-permission-fix` skill - Permission fixes
+| Skill | Purpose |
+|-------|---------|
+| `plan-marshall:marshall-steward` | Permission management wizard |
+| `plan-marshall:tools-permission-doctor` | Permission analysis |
+| `plan-marshall:tools-permission-fix` | Permission fixes |

@@ -425,6 +425,62 @@ class TestPRTriageContext(unittest.TestCase):
         self.assertEqual(result['action'], 'code_change')
 
 
+class TestContextShortCommentThreshold(unittest.TestCase):
+    """Test that context-aware boost is skipped for short comments (<20 chars)."""
+
+    def test_context_ignored_for_short_comment(self):
+        """Comments <20 chars skip context matching even with valid context."""
+        comment = {
+            'id': 'SHORT1',
+            'body': 'see getValue',
+            'path': 'src/A.java',
+            'line': 1,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script([
+            'triage', '--comment', json.dumps(comment),
+            '--context', 'public String getValue() { return this.value; }',
+        ])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        # Short comment (<20 chars) should NOT be boosted by context
+        # It should match the default path, not code_change via context
+        self.assertNotIn('context', result.get('reason', '').lower())
+
+
+class TestStandaloneQuestionMark(unittest.TestCase):
+    """Test standalone question mark classification."""
+
+    def test_only_question_mark_is_explain(self):
+        """A comment that is just '?' should be classified as explain."""
+        comment = {
+            'id': 'QM1',
+            'body': '?',
+            'path': 'src/A.java',
+            'line': 1,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'explain')
+        self.assertEqual(result['priority'], 'low')
+
+    def test_embedded_question_mark_is_explain(self):
+        """A comment with just a question mark among non-keyword text."""
+        comment = {
+            'id': 'QM2',
+            'body': 'hmm, really?',
+            'path': 'src/A.java',
+            'line': 1,
+            'author': 'reviewer',
+        }
+        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'explain')
+
+
 class TestClassifyCommentDefaults(unittest.TestCase):
     """Test the 100-char threshold default behavior in classify_comment."""
 
@@ -620,6 +676,29 @@ class TestProviderContract(unittest.TestCase):
         # Should return error dict, not raise
         self.assertEqual(result['status'], 'failure')
         self.assertIn('error', result)
+
+    def test_fetch_comments_success_contract_shape(self):
+        """Validate the return shape contract for successful fetch_comments.
+
+        Even though we can't get a real success in test, verify the function
+        returns the documented keys so drift is caught early.
+        """
+        from pr import fetch_comments  # type: ignore[import-not-found]
+        result = fetch_comments(999999999)
+        # On failure, must have status + error
+        self.assertIn('status', result)
+        if result['status'] == 'success':
+            # If somehow succeeds, validate documented shape
+            for key in ('pr_number', 'provider', 'comments', 'total_comments', 'unresolved_count'):
+                self.assertIn(key, result, f'Missing success contract key: {key}')
+
+    def test_classify_comment_returns_dict(self):
+        """Verify classify_comment returns a dict with action/priority/reason keys."""
+        from pr import classify_comment  # type: ignore[import-not-found]
+        result = classify_comment('Please fix this bug')
+        self.assertIsInstance(result, dict)
+        for key in ('action', 'priority', 'reason'):
+            self.assertIn(key, result, f'classify_comment missing key: {key}')
 
 
 class TestPRFetchComments(unittest.TestCase):

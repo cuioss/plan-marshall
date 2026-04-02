@@ -28,6 +28,7 @@ import argparse
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -35,47 +36,18 @@ from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     cmd_triage_batch_handler,
     cmd_triage_single,
+    load_config_file,
     make_error,
     safe_main,
 )
 
 # ============================================================================
-# TRIAGE CONFIGURATION
+# TRIAGE CONFIGURATION (loaded from comment-patterns.json)
 # ============================================================================
 
-# Patterns for classification
-PATTERNS: dict[str, Any] = {
-    'code_change': {
-        'high': [
-            r'\bsecurity\b',
-            r'\bvulnerability\b',
-            r'\binjection\b',
-            r'\bxss\b',
-            r'\bcsrf\b',
-            r'\bbug\b',
-            r'\berror\b',
-            r'\bfix\b',
-            r'\bbroken\b',
-            r'\bcrash\b',
-            r'\bnull pointer\b',
-            r'\bmemory leak\b',
-        ],
-        'medium': [
-            r'please\s+(?:add|remove|change|fix|update)\b',
-            r'should\s+(?:be|have|use)\b',
-            r'\bmissing\b',
-            r'\bincorrect\b',
-            r'\bwrong\b',
-        ],
-        'low': [r'\brenam(?:e|ing)\b', r'\bvariable name\b', r'\bnaming\b', r'\btypo\b', r'\bspelling\b', r'\bformatting\b', r'\bstyle\b', r'^nit:', r'^nitpick:'],
-    },
-    'explain': {
-        'low': [r'\bwhy\b', r'\bexplain\b', r'\breasoning\b', r'\brationale\b', r'\bhow does\b', r'\bwhat is\b', r'\bcan you clarify\b'],
-    },
-    'ignore': {
-        'none': [r'^lgtm', r'^approved', r'\blooks good\b', r'^nice\b', r'^thanks\b', r'\[bot\]'],
-    },
-}
+_PATTERNS_FILE = Path(__file__).parent.parent / 'standards' / 'comment-patterns.json'
+
+PATTERNS: dict[str, Any] = load_config_file(_PATTERNS_FILE, 'comment-patterns.json')
 
 
 # ============================================================================
@@ -202,8 +174,10 @@ def _looks_like_identifier(w: str) -> bool:
     return False
 
 
-def classify_comment(body: str, context: str | None = None) -> tuple[str, str, str]:
+def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
     """Classify comment and determine action and priority.
+
+    Returns dict with 'action', 'priority', and 'reason' keys.
 
     Priority order: code_change(high) → code_change(medium/low) → ignore → explain → default.
     High-priority code changes (security, bugs) always win. Then actionable
@@ -224,14 +198,14 @@ def classify_comment(body: str, context: str | None = None) -> tuple[str, str, s
     for priority in ['high', 'medium', 'low']:
         for pattern in PATTERNS['code_change'][priority]:
             if re.search(pattern, body_lower):
-                return 'code_change', priority, f'Matches {priority} priority pattern: {pattern}'
+                return {'action': 'code_change', 'priority': priority, 'reason': f'Matches {priority} priority pattern: {pattern}'}
 
     # Check for ignore patterns AFTER code_change — pure acknowledgments
     # with no actionable content.
     for priority, patterns in PATTERNS['ignore'].items():
         for pattern in patterns:
             if re.search(pattern, body_lower):
-                return 'ignore', priority, 'Automated or acknowledgment comment'
+                return {'action': 'ignore', 'priority': priority, 'reason': 'Automated or acknowledgment comment'}
 
     # Check for explanation patterns — only after ruling out code_change,
     # so "Why did you fix it this way?" is correctly classified as explain
@@ -240,12 +214,12 @@ def classify_comment(body: str, context: str | None = None) -> tuple[str, str, s
     for priority, patterns in PATTERNS['explain'].items():
         for pattern in patterns:
             if re.search(pattern, body_lower):
-                return 'explain', priority, 'Question or clarification request'
+                return {'action': 'explain', 'priority': priority, 'reason': 'Question or clarification request'}
 
     # Standalone question mark — comment is a question but doesn't match
     # explicit explain keywords. Check after code_change and explain patterns.
     if '?' in body_lower:
-        return 'explain', 'low', 'Question or clarification request'
+        return {'action': 'explain', 'priority': 'low', 'reason': 'Question or clarification request'}
 
     # Context-aware classification: if code context is provided and the
     # comment references specific code patterns, boost to code_change
@@ -255,16 +229,16 @@ def classify_comment(body: str, context: str | None = None) -> tuple[str, str, s
         context_lower = context.lower()
         code_refs = [w for w in body.split() if _looks_like_identifier(w)]
         if any(ref.lower().rstrip('.,;:)') in context_lower for ref in code_refs):
-            return 'code_change', 'medium', 'Comment references code identifiers visible in context'
+            return {'action': 'code_change', 'priority': 'medium', 'reason': 'Comment references code identifiers visible in context'}
 
     # Default: review comment without clear action signal.
     # Longer comments (>100 chars) likely contain substantive feedback that
     # warrants attention even without keyword matches. Short comments without
     # recognizable patterns are typically drive-by acknowledgments.
     if len(body) > 100:
-        return 'code_change', 'low', 'Substantial review comment (>100 chars) requires attention'
+        return {'action': 'code_change', 'priority': 'low', 'reason': 'Substantial review comment (>100 chars) requires attention'}
 
-    return 'ignore', 'none', 'Brief comment with no actionable content'
+    return {'action': 'ignore', 'priority': 'none', 'reason': 'Brief comment with no actionable content'}
 
 
 def suggest_implementation(action: str, body: str, path: str | None, line: int | None) -> str | None:
@@ -285,12 +259,14 @@ def suggest_implementation(action: str, body: str, path: str | None, line: int |
     # For code_change, extract the most specific action verb from the body.
     # Checked in specificity order: more targeted verbs first.
     body_lower = body.lower()
+    # Checked in specificity order: targeted verbs first, then generic ones.
+    # "fix" before "replace/change" so "fix this by replacing" maps to fix.
     verb_map = [
         (['rename', 'refactor'], 'Rename/refactor as suggested'),
         (['remove', 'delete', 'drop'], 'Remove indicated code'),
+        (['fix', 'resolve', 'correct'], 'Fix the issue indicated'),
         (['add', 'include', 'create'], 'Add requested code/functionality'),
         (['replace', 'swap', 'change', 'update'], 'Update code as requested'),
-        (['fix', 'resolve', 'correct'], 'Fix the issue indicated'),
         (['move', 'extract', 'split'], 'Restructure code as suggested'),
     ]
     for verbs, suggestion in verb_map:
@@ -319,7 +295,10 @@ def triage_comment(comment: dict) -> dict:
             'status': 'success',
         }
 
-    action, priority, reason = classify_comment(body, context=context)
+    classification = classify_comment(body, context=context)
+    action = classification['action']
+    priority = classification['priority']
+    reason = classification['reason']
     suggestion = suggest_implementation(action, body, path, line)
 
     return {

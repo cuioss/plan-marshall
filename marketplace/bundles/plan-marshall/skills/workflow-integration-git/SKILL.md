@@ -15,7 +15,7 @@ Provides git commit workflow following conventional commits specification. Inclu
 **Prohibited actions:**
 - Never force-push or amend published commits without explicit user approval
 - Never commit secrets, credentials, or `.env` files
-- Never skip artifact cleanup step before committing
+- Never skip artifact cleanup step before committing (LLM must call detect-artifacts and act on results — the script detects but does not delete)
 
 **Constraints:**
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
@@ -148,7 +148,7 @@ pushed: true
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (without Co-Authored-By) |
+| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By is NOT appended — the caller adds it at `git commit` time to match the project's configured format and avoid duplication) |
 | `analyze-diff` | `--file` | Analyze diff for commit suggestions |
 | `detect-artifacts` | `[--root]` | Scan for committable artifacts |
 
@@ -252,13 +252,6 @@ status: success
 |----------|-------------|
 | `standards/git-commit-standards.md` | Edge cases: breaking changes, multi-footer, scope guidelines, anti-patterns |
 | `standards/artifact-cleanup.md` | Artifact detection patterns and cleanup rules |
-
-## Critical Rules
-
-**Artifacts:** NEVER commit `*.class`, `*.pyc`, `*.tsbuildinfo`, `*.temp`, `*.backup*`, `*.egg-info`
-**Permissions:** NEVER push without `push` param
-**Standards:** Follow conventional commits format, add Co-Authored-By footer
-**Safety:** Ask user if uncertain about file deletion
 
 ## Related
 

@@ -1,12 +1,12 @@
 ---
 name: workflow-integration-ci
-description: PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)
+description: PR review comment workflow - fetch comments and triage for action classification (GitHub and GitLab via tools-integration-ci)
 user-invocable: false
 ---
 
 # CI Integration Workflow Skill (Provider-Agnostic)
 
-Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
+Handles PR review comment workflows - fetching comments and triaging them into action categories (code_change, explain, ignore). The script provides fetch and triage operations; the calling LLM implements responses and thread resolution. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
 
 ## Enforcement
 
@@ -256,6 +256,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
 
 ## Comment Classification
 
+Classification patterns are data-driven — loaded from `standards/comment-patterns.json`:
+
 | Pattern | Action | Priority |
 |---------|--------|----------|
 | security, vulnerability, injection | code_change | high |
@@ -266,6 +268,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
 | why, explain, reasoning, ? | explain | low |
 | lgtm, approved, looks good | ignore | none |
 
+To add or update comment classification patterns, edit `standards/comment-patterns.json` instead of the script.
+
 ## Triage Override Guidance
 
 The script triage uses regex pattern matching and will sometimes misclassify nuanced comments. When the script's `action` or `priority` doesn't match the semantic intent of the comment, override it. For example, "Why did you fix it this way?" semantically asks for an explanation even though it contains the word "fix". Use the script result as a starting point, not a final answer.
@@ -273,6 +277,8 @@ The script triage uses regex pattern matching and will sometimes misclassify nua
 Note: The classification priority is code_change > ignore > explain. This means actionable content always wins — "LGTM, but please fix the typo" is classified as `code_change`, not `ignore`.
 
 ## Error Handling
+
+Error codes follow the shared `ErrorCode` enum from `triage_helpers` (`NOT_FOUND`, `INVALID_INPUT`, `PARSE_ERROR`, `PROVIDER_NOT_CONFIGURED`).
 
 | Failure | Action |
 |---------|--------|

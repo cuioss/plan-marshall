@@ -15,7 +15,7 @@ Standardized git commit format following conventional commits.
 ### Required Components
 
 * **Type**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
-* **Subject**: Imperative, present tense, no capital, no dot, ideal ≤50 chars (hard limit: 72 chars)
+* **Subject**: Imperative, present tense, no capital, no dot, ideal ≤50 chars (warning), absolute max 72 chars (reject)
 
 ### Optional Components
 

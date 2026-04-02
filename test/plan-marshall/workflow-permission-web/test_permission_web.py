@@ -552,6 +552,63 @@ class TestApply(unittest.TestCase):
             self.assertEqual(result['error_code'], 'INVALID_INPUT')
 
 
+class TestApplyAddAndRemoveSameDomain(unittest.TestCase):
+    """Test apply when a domain is in both --add and --remove (#33)."""
+
+    def test_add_and_remove_same_domain(self):
+        """Adding and removing the same domain — remove should win."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'settings.json'
+            path.write_text(json.dumps({'permissions': {'allow': ['WebFetch(target.com)']}}))
+            stdout, _, code = run_pw_script([
+                'apply', '--file', str(path),
+                '--add', json.dumps(['target.com']),
+                '--remove', json.dumps(['target.com']),
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'success')
+            # Domain was removed, add should not re-add it (add skips entries in remove set)
+            self.assertNotIn('target.com', result['final_domains'])
+
+
+class TestAnalyzeEmptyPermissions(unittest.TestCase):
+    """Test analyze when settings have no permissions key (#34)."""
+
+    def test_analyze_files_with_no_permissions_key(self):
+        """Settings files with just {} should not error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            global_path = Path(tmpdir) / 'global' / 'settings.json'
+            global_path.parent.mkdir(parents=True, exist_ok=True)
+            global_path.write_text('{}')
+            local_path = Path(tmpdir) / 'local' / 'settings.json'
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_text('{}')
+
+            stdout, _, code = run_pw_script([
+                'analyze', '--global-file', str(global_path), '--local-file', str(local_path),
+            ])
+            self.assertEqual(code, 0)
+            result = parse_toon(stdout)
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['global_count'], 0)
+            self.assertEqual(result['local_count'], 0)
+            self.assertEqual(result['total_unique'], 0)
+
+
+class TestCategorizeProtocolPrefix(unittest.TestCase):
+    """Test categorize with protocol-prefixed domains (#35)."""
+
+    def test_protocol_prefix_not_stripped(self):
+        """Domains with https:// prefix are classified as unknown since protocol is not stripped."""
+        domains = ['https://github.com']
+        stdout, _, code = run_pw_script(['categorize', '--domains', json.dumps(domains)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        # https://github.com is NOT recognized as github.com — classified as unknown
+        self.assertEqual(result['categories']['unknown'], 1)
+
+
 class TestApplyEdgeCases(unittest.TestCase):
     """Test permission_web.py apply edge cases."""
 

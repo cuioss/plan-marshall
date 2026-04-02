@@ -158,11 +158,16 @@ Based on checks parameter:
    ```
    Skill: plan-marshall:manage-architecture
    ```
-   Use `architecture resolve` to get the correct build executable, then run verify.
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve
+   ```
+   Use the returned `executable` to run verify.
 
 **REVIEW_COMMENTS**: Delegate to workflow-integration-ci Workflow 2 (Handle Review). The CI skill handles: fetching comments, batch triage, and classifying actions. The pr-doctor then processes each action (code_change → Edit files, explain → reply, ignore → resolve thread) and commits via the git skill.
 
 **SONAR_QUALITY**: Delegate to workflow-integration-sonar Workflow 2 (Fix Issues). The Sonar skill handles: batch triage and fix-vs-suppress classification. The pr-doctor then executes each action (fix → Edit files, suppress → add NOSONAR comment) and commits via the git skill.
+
+**Protected files check**: Before applying any fix, check the file path against `protected_files` from the handoff constraints. If a fix would modify a protected file, skip that fix and report it as "skipped — protected file" in the summary. Do not prompt the user for each protected file — just skip and log.
 
 **Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`) in the LLM's working memory, starting at 0. Before each fix cycle, call `track-attempt --category {cat} --current {count}` to check whether to proceed (the script is stateless — the caller owns the counter). Increment after each fix → verify cycle. After reaching `max-fix-attempts` (default: 3) for a category, stop that category and report remaining issues to the user rather than looping indefinitely.
 
@@ -188,13 +193,7 @@ PR #{pr} Summary
 
 ### Mode: Automated Review Lifecycle
 
-> **Note:** This is a distinct operating mode with its own I/O contract, separate from the interactive PR doctor workflow above. It exists in this skill because it shares the same CI/Sonar/Git dependencies, but could be extracted to a standalone skill if complexity grows.
-
-This mode is invoked by phase-6-finalize (when `3_automated_review == true`), not the interactive PR doctor workflow above. It handles the full CI → review → respond → resolve cycle autonomously.
-
-**Activation:** Only via phase-6-finalize handoff with `decisions.automated_review: true`. Not invoked via `/workflow-pr-doctor` directly. If the handoff does not contain `decisions.automated_review: true`, skip this mode entirely and use the interactive workflow above.
-
-**Reference:** Read `standards/automated-review-lifecycle.md` for the complete step-by-step procedure, including CI wait, comment fetching, triage, thread resolution, GitHub GraphQL ID format rules, and error handling.
+Autonomous CI → review → respond → resolve cycle, activated only via phase-6-finalize handoff with `decisions.automated_review: true`. Not invoked via `/workflow-pr-doctor` directly. See `standards/automated-review-lifecycle.md` for the full procedure.
 
 **Input:** `plan_id`, `pr_number`, `review_bot_buffer_seconds`
 

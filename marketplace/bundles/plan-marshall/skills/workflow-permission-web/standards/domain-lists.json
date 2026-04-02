@@ -36,6 +36,19 @@
     "pypi.org",
     "crates.io"
   ],
+  "red_flag_pattern_descriptions": {
+    "free.*download": "Free download sites — common malware distribution vector",
+    "\\bcrack\\b": "Software cracking — piracy and malware",
+    "\\bkeygen\\b": "Key generators — piracy and malware",
+    "\\btorrent\\b": "Torrent sites — piracy risk",
+    "\\bphish": "Phishing indicators",
+    "\\bmalware\\b": "Explicit malware reference",
+    "\\.tk$|\\.ml$|\\.ga$|\\.cf$|\\.gq$": "High-risk free TLDs — frequently used for spam/phishing",
+    "\\d{5,}": "5+ consecutive digits — auto-generated or disposable domains",
+    "^login-|^signin-|^account-": "Credential-harvesting prefix patterns",
+    "-verify\\.": "Verification scam pattern (e.g., paypal-verify.com)",
+    "^secure-.*\\.|^update-.*\\.": "Fake security/update prefix patterns"
+  },
   "red_flag_patterns": [
     "free.*download",
     "\\bcrack\\b",

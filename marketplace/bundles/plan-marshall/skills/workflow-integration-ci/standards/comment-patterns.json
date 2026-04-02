@@ -1,0 +1,57 @@
+{
+  "code_change": {
+    "high": [
+      "\\bsecurity\\b",
+      "\\bvulnerability\\b",
+      "\\binjection\\b",
+      "\\bxss\\b",
+      "\\bcsrf\\b",
+      "\\bbug\\b",
+      "\\berror\\b",
+      "\\bfix\\b",
+      "\\bbroken\\b",
+      "\\bcrash\\b",
+      "\\bnull pointer\\b",
+      "\\bmemory leak\\b"
+    ],
+    "medium": [
+      "please\\s+(?:add|remove|change|fix|update)\\b",
+      "should\\s+(?:be|have|use)\\b",
+      "\\bmissing\\b",
+      "\\bincorrect\\b",
+      "\\bwrong\\b"
+    ],
+    "low": [
+      "\\brenam(?:e|ing)\\b",
+      "\\bvariable name\\b",
+      "\\bnaming\\b",
+      "\\btypo\\b",
+      "\\bspelling\\b",
+      "\\bformatting\\b",
+      "\\bstyle\\b",
+      "^nit:",
+      "^nitpick:"
+    ]
+  },
+  "explain": {
+    "low": [
+      "\\bwhy\\b",
+      "\\bexplain\\b",
+      "\\breasoning\\b",
+      "\\brationale\\b",
+      "\\bhow does\\b",
+      "\\bwhat is\\b",
+      "\\bcan you clarify\\b"
+    ]
+  },
+  "ignore": {
+    "none": [
+      "^lgtm",
+      "^approved",
+      "\\blooks good\\b",
+      "^nice\\b",
+      "^thanks\\b",
+      "\\[bot\\]"
+    ]
+  }
+}
