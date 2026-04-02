@@ -94,7 +94,7 @@ def output_toon(data: dict) -> None:
 # =============================================================================
 
 
-def cmd_create(args) -> None:
+def cmd_create(args: argparse.Namespace) -> None:
     """Create status.json for a new plan."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(
@@ -162,7 +162,7 @@ def cmd_create(args) -> None:
 # =============================================================================
 
 
-def cmd_read(args) -> None:
+def cmd_read(args: argparse.Namespace) -> None:
     """Read plan status."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(
@@ -190,7 +190,7 @@ def cmd_read(args) -> None:
 # =============================================================================
 
 
-def cmd_set_phase(args) -> None:
+def cmd_set_phase(args: argparse.Namespace) -> None:
     """Set current phase."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(
@@ -242,7 +242,7 @@ def cmd_set_phase(args) -> None:
 # =============================================================================
 
 
-def cmd_update_phase(args) -> None:
+def cmd_update_phase(args: argparse.Namespace) -> None:
     """Update a specific phase status."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(
@@ -290,7 +290,7 @@ def cmd_update_phase(args) -> None:
 # =============================================================================
 
 
-def cmd_progress(args) -> None:
+def cmd_progress(args: argparse.Namespace) -> None:
     """Calculate plan progress."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(
@@ -334,7 +334,7 @@ def cmd_progress(args) -> None:
 # =============================================================================
 
 
-def cmd_metadata(args) -> None:
+def cmd_metadata(args: argparse.Namespace) -> None:
     """Get or set a metadata field in status.json."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(
@@ -418,7 +418,7 @@ def cmd_metadata(args) -> None:
 # =============================================================================
 
 
-def cmd_get_context(args) -> None:
+def cmd_get_context(args: argparse.Namespace) -> None:
     """Get combined status context (phase, progress, metadata)."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(

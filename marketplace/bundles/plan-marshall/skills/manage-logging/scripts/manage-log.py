@@ -51,65 +51,9 @@ VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
 
 
 def format_toon_output(result: dict) -> str:
-    """Format result dict as TOON output.
-
-    Note: Domain-specific formatter for log entries (entries, raw_content blocks).
-    Cannot be replaced by file_ops.output_success or serialize_toon because it
-    hand-formats log-specific nested structures and returns a string (not prints).
-    """
-    lines = []
-
-    # Status line first
-    lines.append(f'status: {result.get("status", "success")}')
-
-    # Plan ID
-    if 'plan_id' in result:
-        lines.append(f'plan_id: {result["plan_id"]}')
-
-    # Error info
-    if result.get('status') == 'error':
-        if 'error' in result:
-            lines.append(f'error: {result["error"]}')
-        if 'message' in result:
-            lines.append(f'message: {result["message"]}')
-        return '\n'.join(lines)
-
-    # Success fields
-    if 'log_type' in result:
-        lines.append(f'log_type: {result["log_type"]}')
-
-    if 'total_entries' in result:
-        lines.append(f'total_entries: {result["total_entries"]}')
-
-    if 'showing' in result:
-        lines.append(f'showing: {result["showing"]}')
-
-    # Entries (structured work log)
-    entries = result.get('entries', [])
-    if entries:
-        lines.append('')
-        lines.append('entries:')
-        for entry in entries:
-            lines.append(f'  - timestamp: {entry.get("timestamp", "")}')
-            lines.append(f'    level: {entry.get("level", "")}')
-            if entry.get('hash_id'):
-                lines.append(f'    hash_id: {entry.get("hash_id", "")}')
-            lines.append(f'    message: {entry.get("message", "")}')
-            if entry.get('phase'):
-                lines.append(f'    phase: {entry.get("phase", "")}')
-            if entry.get('detail'):
-                lines.append(f'    detail: {entry.get("detail", "")}')
-
-    # Raw content (script execution logs)
-    raw_content = result.get('raw_content')
-    if raw_content:
-        lines.append('')
-        lines.append('content:')
-        for line in raw_content.split('\n'):
-            if line.strip():
-                lines.append(f'  {line}')
-
-    return '\n'.join(lines)
+    """Format result dict as TOON output using serialize_toon."""
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+    return serialize_toon(result)
 
 
 def handle_read(args: argparse.Namespace) -> None:

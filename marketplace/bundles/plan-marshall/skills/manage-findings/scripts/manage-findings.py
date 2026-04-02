@@ -33,8 +33,8 @@ from findings_store import (
     add_finding,
     add_qgate_finding,
     clear_qgate_findings,
-    format_output,
     get_finding,
+    output_toon,
     promote_finding,
     query_findings,
     query_qgate_findings,
@@ -57,7 +57,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         rule=args.rule,
         severity=args.severity,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -74,7 +74,7 @@ def cmd_query(args: argparse.Namespace) -> int:
         promoted=promoted,
         file_pattern=args.file_pattern,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -82,9 +82,9 @@ def cmd_get(args: argparse.Namespace) -> int:
     """Handle: get"""
     result = get_finding(args.plan_id, args.hash_id)
     if result:
-        print(format_output(result))
+        print(output_toon(result))
         return 0 if result.get('status') == 'success' else 1
-    print(format_output({'status': 'error', 'message': f'Finding not found: {args.hash_id}'}))
+    print(output_toon({'status': 'error', 'message': f'Finding not found: {args.hash_id}'}))
     return 1
 
 
@@ -96,7 +96,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         resolution=args.resolution,
         detail=args.detail,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -107,7 +107,7 @@ def cmd_promote(args: argparse.Namespace) -> int:
         hash_id=args.hash_id,
         promoted_to=args.promoted_to,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -125,7 +125,7 @@ def cmd_qgate_add(args: argparse.Namespace) -> int:
         severity=args.severity,
         iteration=args.iteration,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') in ('success', 'deduplicated', 'reopened') else 1
 
 
@@ -138,7 +138,7 @@ def cmd_qgate_query(args: argparse.Namespace) -> int:
         source=args.source,
         iteration=args.iteration,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -151,7 +151,7 @@ def cmd_qgate_resolve(args: argparse.Namespace) -> int:
         resolution=args.resolution,
         detail=args.detail,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -161,7 +161,7 @@ def cmd_qgate_clear(args: argparse.Namespace) -> int:
         plan_id=args.plan_id,
         phase=args.phase,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 

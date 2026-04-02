@@ -5,9 +5,9 @@ user-invocable: false
 scope: global
 ---
 
-# Claude Memory Skill
+# Manage Memories Skill
 
-Memory layer operations for persistent session storage (via `file-operations-base` skill).
+Memory layer operations for persistent session storage (via `tools-file-ops` skill).
 
 ## Enforcement
 
@@ -51,7 +51,7 @@ Activate this skill when:
 
 **Pattern**: Command Chain Execution
 
-Manage the memory layer for session persistence (via `file-operations-base` skill).
+Manage the memory layer for session persistence (via `tools-file-ops` skill).
 
 ### Parameters
 
@@ -63,7 +63,7 @@ Manage the memory layer for session persistence (via `file-operations-base` skil
 ### Step 1: Execute Operation
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-memories:{operation} [--category {category}] [--identifier {identifier}] [--content '{content}']
+python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory {operation} [--category {category}] [--identifier {identifier}] [--content '{content}']
 ```
 
 ### Step 2: Process Result

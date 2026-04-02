@@ -41,8 +41,8 @@ def test_warning_add_creates_entry():
         )
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
-        assert data['success'] is True, 'Should return success'
+        data = result.toon()
+        assert data['status'] == 'success', 'Should return success'
         assert data['action'] == 'added', "Action should be 'added'"
 
         # Verify in config file
@@ -66,7 +66,7 @@ def test_warning_add_skips_duplicate():
         )
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['action'] == 'skipped', 'Should skip duplicate'
 
 
@@ -100,7 +100,7 @@ def test_warning_list_all_categories():
         result = run_script(SCRIPT_PATH, 'warning', 'list')
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert 'categories' in data, 'Should return categories'
         assert 'transitive_dependency' in data['categories'], 'Should have transitive_dependency'
         assert 'plugin_compatibility' in data['categories'], 'Should have plugin_compatibility'
@@ -118,7 +118,7 @@ def test_warning_list_single_category():
         result = run_script(SCRIPT_PATH, 'warning', 'list', '--category', 'transitive_dependency')
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert 'patterns' in data, 'Should return patterns'
         assert 'filtered pattern' in data['patterns'], f'Should contain the pattern: {data["patterns"]}'
 
@@ -131,8 +131,8 @@ def test_warning_list_empty():
         result = run_script(SCRIPT_PATH, 'warning', 'list')
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
-        assert data['success'] is True, 'Should succeed with empty list'
+        data = result.toon()
+        assert data['status'] == 'success', 'Should succeed with empty list'
 
 
 # =============================================================================
@@ -152,7 +152,7 @@ def test_warning_remove_existing():
         )
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['action'] == 'removed', "Action should be 'removed'"
 
         # Verify removed from config
@@ -172,7 +172,7 @@ def test_warning_remove_nonexistent():
         )
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['action'] == 'skipped', 'Should skip nonexistent'
 
 

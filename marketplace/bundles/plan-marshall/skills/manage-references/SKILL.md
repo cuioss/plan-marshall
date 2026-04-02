@@ -380,3 +380,8 @@ Execution phase adds modified files as work progresses.
 ### With plan-finalize
 
 Finalization reads modified files for commit/PR creation.
+
+## Related Skills
+
+- `manage-files` — Generic file operations for plan directories
+- `manage-plan-documents` — Typed plan document operations (request.md, solution_outline.md)

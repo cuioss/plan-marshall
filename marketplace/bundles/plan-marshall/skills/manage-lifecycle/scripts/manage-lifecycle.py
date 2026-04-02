@@ -73,7 +73,7 @@ def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
 # =============================================================================
 
 
-def cmd_list(args) -> None:
+def cmd_list(args: argparse.Namespace) -> None:
     """Discover all plans."""
     plans_dir = get_plans_dir()
     if not plans_dir.exists():
@@ -112,7 +112,7 @@ def cmd_list(args) -> None:
 # =============================================================================
 
 
-def cmd_transition(args) -> None:
+def cmd_transition(args: argparse.Namespace) -> None:
     """Transition to next phase."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(
@@ -175,7 +175,7 @@ def cmd_transition(args) -> None:
 # =============================================================================
 
 
-def cmd_archive(args) -> None:
+def cmd_archive(args: argparse.Namespace) -> None:
     """Archive a completed plan."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(
@@ -217,7 +217,7 @@ def cmd_archive(args) -> None:
 # =============================================================================
 
 
-def cmd_route(args) -> None:
+def cmd_route(args: argparse.Namespace) -> None:
     """Get skill for a phase."""
     if args.phase not in PHASE_ROUTING:
         output_toon(
@@ -241,7 +241,7 @@ def cmd_route(args) -> None:
 # =============================================================================
 
 
-def cmd_get_routing_context(args) -> None:
+def cmd_get_routing_context(args: argparse.Namespace) -> None:
     """Get combined routing context: phase, skill, and progress in one call."""
     if not is_valid_plan_id(args.plan_id):
         output_toon(

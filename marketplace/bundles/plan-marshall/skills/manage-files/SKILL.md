@@ -327,3 +327,8 @@ Plan orchestration skills (plan-init, solution-outline, task-plan, plan-execute)
 | manage-solution-outline | solution_outline.md | N/A (use manage-solution-outline) |
 | manage-tasks | tasks/*.toon | N/A (use manage-tasks) |
 | manage-files | any other file | Generic read/write/list |
+
+## Related Skills
+
+- `manage-plan-documents` — Typed plan document operations (request.md, solution_outline.md)
+- `manage-references` — Reference tracking for plans (references.json)

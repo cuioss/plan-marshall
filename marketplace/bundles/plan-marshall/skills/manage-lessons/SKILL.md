@@ -5,7 +5,7 @@ user-invocable: false
 scope: global
 ---
 
-# Lessons Learned Skill
+# Manage Lessons Skill
 
 Manage lessons learned with global scope. Stores lessons as markdown files with key=value metadata headers.
 

@@ -148,8 +148,8 @@ def test_read_work_log():
         assert 'total_entries: 2' in result.stdout
         assert 'Test entry one' in result.stdout
         assert 'Test entry two' in result.stdout
-        # Verify hash_id is present in output
-        assert 'hash_id:' in result.stdout, 'hash_id should be in parsed output'
+        # Verify hash_id is present in output (in TOON table header or as field)
+        assert 'hash_id' in result.stdout, 'hash_id should be in parsed output'
 
 
 def test_read_work_log_with_limit():

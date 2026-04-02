@@ -82,14 +82,17 @@ def read_lesson(lesson_id: str) -> tuple[dict, str, str]:
     return metadata, title, body
 
 
-def write_lesson(lesson_id: str, metadata: dict, title: str, body: str):
-    """Write a lesson file."""
+def write_lesson(lesson_id: str, metadata: dict, title: str, body: str) -> None:
+    """Write a lesson file to the lessons directory."""
     lessons_dir = get_lessons_dir()
     lessons_dir.mkdir(parents=True, exist_ok=True)
+    write_lesson_to(lessons_dir / f'{lesson_id}.md', metadata, title, body)
 
-    path = lessons_dir / f'{lesson_id}.md'
 
-    # Build content
+def write_lesson_to(path: Path, metadata: dict, title: str, body: str) -> None:
+    """Write a lesson file to a specific path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
     lines = []
     for key, value in metadata.items():
         lines.append(f'{key}={value}')
@@ -102,12 +105,12 @@ def write_lesson(lesson_id: str, metadata: dict, title: str, body: str):
     atomic_write_file(path, '\n'.join(lines))
 
 
-def output_toon(data: dict):
+def output_toon(data: dict) -> None:
     """Output TOON format to stdout."""
     print(serialize_toon(data))
 
 
-def cmd_add(args):
+def cmd_add(args: argparse.Namespace) -> None:
     """Create a new lesson."""
     if args.category not in VALID_CATEGORIES:
         output_toon(
@@ -147,7 +150,7 @@ def cmd_add(args):
     )
 
 
-def cmd_update(args):
+def cmd_update(args: argparse.Namespace) -> None:
     """Update lesson metadata."""
     metadata, title, body = read_lesson(args.id)
 
@@ -195,7 +198,7 @@ def cmd_update(args):
     output_toon({'status': 'success', 'id': args.id, 'field': field, 'value': value, 'previous': previous})
 
 
-def cmd_get(args):
+def cmd_get(args: argparse.Namespace) -> None:
     """Get a single lesson."""
     metadata, title, body = read_lesson(args.id)
 
@@ -219,7 +222,7 @@ def cmd_get(args):
     output_toon(result)
 
 
-def cmd_list(args):
+def cmd_list(args: argparse.Namespace) -> None:
     """List lessons with filtering."""
     lessons_dir = get_lessons_dir()
 
@@ -270,7 +273,7 @@ def get_archived_dir() -> Path:
     return base_path('archived-lessons')
 
 
-def cmd_archive(args):
+def cmd_archive(args: argparse.Namespace) -> None:
     """Archive a lesson: set applied=true and move to archived-lessons."""
     metadata, title, body = read_lesson(args.id)
 
@@ -297,23 +300,7 @@ def cmd_archive(args):
     output_toon({'status': 'success', 'id': args.id, 'archived_to': str(dst)})
 
 
-def write_lesson_to(path: Path, metadata: dict, title: str, body: str):
-    """Write a lesson file to a specific path."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    lines = []
-    for key, value in metadata.items():
-        lines.append(f'{key}={value}')
-
-    lines.append('')
-    lines.append(f'# {title}')
-    lines.append('')
-    lines.append(body)
-
-    atomic_write_file(path, '\n'.join(lines))
-
-
-def cmd_from_error(args):
+def cmd_from_error(args: argparse.Namespace) -> None:
     """Create lesson from error context."""
     try:
         context = json.loads(args.context)

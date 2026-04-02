@@ -29,9 +29,9 @@ def test_init_create_new_config():
     """Test init creates new run-configuration.json."""
     with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'init')
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         assert data.get('action') == 'created', "Action should be 'created'"
 
         # Verify file exists (uses .plan)
@@ -48,9 +48,9 @@ def test_init_skip_existing():
         (plan_dir / 'run-configuration.json').write_text('{"version": 1, "commands": {}}')
 
         result = run_script(SCRIPT_PATH, 'init')
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         assert data.get('action') == 'skipped', "Action should be 'skipped'"
 
 
@@ -63,9 +63,9 @@ def test_init_force_overwrite():
         (plan_dir / 'run-configuration.json').write_text('{"version": 1, "commands": {"old": {}}}')
 
         result = run_script(SCRIPT_PATH, 'init', '--force')
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
 
         # Verify old command entry is gone
         content = json.loads((plan_dir / 'run-configuration.json').read_text())
@@ -112,7 +112,7 @@ def test_init_output_includes_path():
     """Test init output includes path."""
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'init')
-        data = result.json()
+        data = result.toon()
 
         assert 'path' in data, 'Output should include path field'
 
@@ -121,7 +121,7 @@ def test_init_output_includes_structure():
     """Test init output includes structure when created."""
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'init')
-        data = result.json()
+        data = result.toon()
 
         assert data.get('action') == 'created', 'Should be created'
         assert 'structure' in data, 'Output should include structure field'
@@ -148,9 +148,9 @@ def test_validate_valid_run_config():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'run-configuration.json'))
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         assert data.get('valid') is True, 'Valid config should be valid'
 
 
@@ -164,9 +164,9 @@ def test_validate_missing_version():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'missing-version.json'))
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         assert data.get('valid') is False, 'Missing version should be invalid'
 
 
@@ -178,9 +178,9 @@ def test_validate_missing_commands():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'missing-commands.json'))
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         assert data.get('valid') is False, 'Missing commands should be invalid'
 
 
@@ -193,9 +193,9 @@ def test_validate_wrong_version_type():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'wrong-version-type.json'))
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         assert data.get('valid') is False, 'Wrong version type should be invalid'
 
 
@@ -215,9 +215,9 @@ def test_validate_with_maven():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'with-maven.json'))
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         assert data.get('valid') is True, 'Config with maven section should be valid'
 
 
@@ -236,9 +236,9 @@ def test_validate_with_agent_decisions():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'with-agent-decisions.json'))
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         assert data.get('valid') is True, 'Config with agent_decisions should be valid'
 
 
@@ -251,9 +251,9 @@ def test_validate_invalid_json_syntax():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'invalid-json.json'))
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed (validation ran)'
+        assert data.get('status') == 'success', 'Should succeed (validation ran)'
         assert data.get('valid') is False, 'Invalid JSON should be invalid'
 
 
@@ -266,9 +266,9 @@ def test_validate_checks_array():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'run-configuration.json'))
-        data = result.json()
+        data = result.toon()
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
         checks = data.get('checks', [])
         assert len(checks) > 0, 'Should include checks array with items'
 
@@ -278,9 +278,9 @@ def test_validate_file_not_found():
     with PlanContext() as ctx:
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'nonexistent.json'))
         # Script may output to stderr for errors
-        data = result.json_or_error()
+        data = result.toon_or_error()
 
-        assert data.get('success') is False, 'Should fail for non-existent file'
+        assert data.get('status') == 'error', 'Should fail for non-existent file'
 
 
 def test_validate_format_is_run_config():
@@ -292,7 +292,7 @@ def test_validate_format_is_run_config():
 }""")
 
         result = run_script(SCRIPT_PATH, 'validate', '--file', str(ctx.fixture_dir / 'run-configuration.json'))
-        data = result.json()
+        data = result.toon()
 
         assert data.get('format') == 'manage-run-config', "Format should be 'manage-run-config'"
 
@@ -302,14 +302,10 @@ def test_validate_format_is_run_config():
 # =============================================================================
 
 
-def parse_toon(output: str) -> dict:
-    """Parse TOON output into dict."""
-    result = {}
-    for line in output.strip().split('\n'):
-        if '\t' in line:
-            key, value = line.split('\t', 1)
-            result[key.strip()] = value.strip()
-    return result
+def parse_toon_output(output: str) -> dict:
+    """Parse TOON output into dict using toon_parser."""
+    from toon_parser import parse_toon
+    return parse_toon(output)
 
 
 def test_timeout_get_default_when_no_persisted():
@@ -390,9 +386,9 @@ def test_timeout_set_initial_value():
         result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '180')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        data = parse_toon(result.stdout)
+        data = result.toon()
         assert data.get('status') == 'success'
-        assert data.get('timeout_seconds') == '180'
+        assert data.get('timeout_seconds') == 180
         assert data.get('source') == 'initial'
 
         # Verify file was written
@@ -413,11 +409,11 @@ def test_timeout_set_weighted_update():
         result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '180')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        data = parse_toon(result.stdout)
+        data = result.toon()
         assert data.get('status') == 'success'
         # 0.8 * 240 + 0.2 * 180 = 192 + 36 = 228
-        assert data.get('timeout_seconds') == '228'
-        assert data.get('previous_seconds') == '240'
+        assert data.get('timeout_seconds') == 228
+        assert data.get('previous_seconds') == 240
         assert data.get('source') == 'computed'
 
 
@@ -435,9 +431,9 @@ def test_timeout_set_weighted_favors_higher():
         result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '240')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        data = parse_toon(result.stdout)
+        data = result.toon()
         # Higher=240, Lower=180: 0.8 * 240 + 0.2 * 180 = 228
-        assert data.get('timeout_seconds') == '228'
+        assert data.get('timeout_seconds') == 228
 
 
 def test_timeout_set_same_value():
@@ -452,9 +448,9 @@ def test_timeout_set_same_value():
         result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '300')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        data = parse_toon(result.stdout)
+        data = result.toon()
         # 0.8 * 300 + 0.2 * 300 = 300
-        assert data.get('timeout_seconds') == '300'
+        assert data.get('timeout_seconds') == 300
 
 
 def test_timeout_help():
@@ -505,8 +501,8 @@ def test_warning_add_pattern():
             'uses transitive dependency',
         )
 
-        data = result.json()
-        assert data.get('success') is True
+        data = result.toon()
+        assert data.get('status') == 'success'
         assert data.get('action') == 'added'
 
         # Verify file was updated
@@ -539,8 +535,8 @@ def test_warning_add_duplicate_skips():
             SCRIPT_PATH, 'warning', 'add', '--category', 'transitive_dependency', '--pattern', 'existing pattern'
         )
 
-        data = result.json()
-        assert data.get('success') is True
+        data = result.toon()
+        assert data.get('status') == 'success'
         assert data.get('action') == 'skipped'
 
 
@@ -577,8 +573,8 @@ def test_warning_list_all_categories():
 
         result = run_script(SCRIPT_PATH, 'warning', 'list')
 
-        data = result.json()
-        assert data.get('success') is True
+        data = result.toon()
+        assert data.get('status') == 'success'
         assert 'categories' in data
         assert data['categories']['transitive_dependency'] == ['pattern1', 'pattern2']
         assert data['categories']['plugin_compatibility'] == ['pattern3']
@@ -605,8 +601,8 @@ def test_warning_list_single_category():
 
         result = run_script(SCRIPT_PATH, 'warning', 'list', '--category', 'transitive_dependency')
 
-        data = result.json()
-        assert data.get('success') is True
+        data = result.toon()
+        assert data.get('status') == 'success'
         assert data.get('category') == 'transitive_dependency'
         assert data.get('patterns') == ['pattern1', 'pattern2']
 
@@ -634,8 +630,8 @@ def test_warning_remove_pattern():
             SCRIPT_PATH, 'warning', 'remove', '--category', 'transitive_dependency', '--pattern', 'pattern1'
         )
 
-        data = result.json()
-        assert data.get('success') is True
+        data = result.toon()
+        assert data.get('status') == 'success'
         assert data.get('action') == 'removed'
 
         # Verify file was updated
@@ -668,8 +664,8 @@ def test_warning_remove_nonexistent_skips():
             SCRIPT_PATH, 'warning', 'remove', '--category', 'transitive_dependency', '--pattern', 'nonexistent'
         )
 
-        data = result.json()
-        assert data.get('success') is True
+        data = result.toon()
+        assert data.get('status') == 'success'
         assert data.get('action') == 'skipped'
 
 
@@ -698,8 +694,8 @@ def test_warning_list_empty_config():
 
         result = run_script(SCRIPT_PATH, 'warning', 'list')
 
-        data = result.json()
-        assert data.get('success') is True
+        data = result.toon()
+        assert data.get('status') == 'success'
         # All categories should be empty
         categories = data.get('categories', {})
         for cat in categories.values():

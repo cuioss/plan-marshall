@@ -13,117 +13,38 @@ Usage:
     manage-assessments.py clear --plan-id PLAN_ID [OPTIONS]
     manage-assessments.py get --plan-id PLAN_ID --hash-id HASH_ID
 
-Stdlib-only - no external dependencies (except toon_parser for output).
+Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 """
 
 import argparse
-import hashlib
 import json
 import sys
-from datetime import UTC, datetime
 from fnmatch import fnmatch
-from pathlib import Path
 from typing import Any
 
-# Allow direct invocation and testing — executor sets PYTHONPATH for production
-_toon_parser_path = (
-    Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
+from input_validation import validate_plan_id  # type: ignore[import-not-found]
+from jsonl_store import (  # type: ignore[import-not-found]
+    append_jsonl,
+    ensure_parent_dir,
+    generate_hash_id,
+    get_artifact_path,
+    output_toon,
+    read_jsonl,
+    timestamp,
 )
-if _toon_parser_path.exists():
-    sys.path.insert(0, str(_toon_parser_path))
-    from toon_parser import serialize_toon
-else:
-    # Fallback: simple dict-to-toon for basic cases
-    def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str = ',') -> str:
-        lines = []
-        prefix = '  ' * indent
-        for key, value in data.items():
-            if isinstance(value, dict):
-                lines.append(f'{prefix}{key}:')
-                lines.append(serialize_toon(value, indent + 1, table_separator))
-            elif isinstance(value, list):
-                lines.append(f'{prefix}{key}[{len(value)}]:')
-                for item in value:
-                    if isinstance(item, dict):
-                        lines.append(f'{prefix}  {",".join(str(v) for v in item.values())}')
-                    else:
-                        lines.append(f'{prefix}  - {item}')
-            elif isinstance(value, bool):
-                lines.append(f'{prefix}{key}: {"true" if value else "false"}')
-            elif value is None:
-                lines.append(f'{prefix}{key}: null')
-            else:
-                lines.append(f'{prefix}{key}: {value}')
-        return '\n'.join(lines)
-
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Constants
 CERTAINTY_VALUES = ['CERTAIN_INCLUDE', 'CERTAIN_EXCLUDE', 'UNCERTAIN']
 
 
-# --- JSONL Infrastructure ---
-
-
-def get_plan_root() -> Path:
-    """Get the .plan directory root."""
-    import os
-
-    base_dir = os.environ.get('PLAN_BASE_DIR')
-    if base_dir:
-        return Path(base_dir)
-    return Path.cwd() / '.plan'
-
-
-def get_assessments_path(plan_id: str) -> Path:
-    """Returns .plan/plans/{plan_id}/artifacts/assessments.jsonl"""
-    return get_plan_root() / 'plans' / plan_id / 'artifacts' / 'assessments.jsonl'
-
-
-def generate_hash_id() -> str:
-    """Generate a 6-char hex hash for artifact identification."""
-    import secrets
-
-    data = f'{datetime.now(UTC).isoformat()}{secrets.token_hex(8)}'
-    return hashlib.sha256(data.encode()).hexdigest()[:6]
-
-
-def _ensure_dir(path: Path) -> None:
-    """Ensure parent directory exists."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-
-def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
-    """Append a JSON record to a JSONL file."""
-    _ensure_dir(path)
-    with open(path, 'a', encoding='utf-8') as f:
-        f.write(json.dumps(record, ensure_ascii=False) + '\n')
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    """Read all records from a JSONL file."""
-    if not path.exists():
-        return []
-    records = []
-    with open(path, encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                records.append(json.loads(line))
-    return records
-
-
-def _timestamp() -> str:
-    """Get current ISO timestamp."""
-    return datetime.now(UTC).isoformat()
-
-
-def format_output(data: dict[str, Any]) -> str:
-    """Format output as TOON."""
-    result: str = serialize_toon(data)
-    return result
-
-
 # --- Assessment Operations ---
+
+
+def get_assessments_path(plan_id: str) -> 'Path':
+    """Returns .plan/plans/{plan_id}/artifacts/assessments.jsonl"""
+    validate_plan_id(plan_id)
+    return get_artifact_path(plan_id, 'assessments.jsonl')
 
 
 def clear_assessments(
@@ -135,13 +56,13 @@ def clear_assessments(
     if not path.exists():
         return {'status': 'success', 'cleared': 0}
 
-    records = _read_jsonl(path)
+    records = read_jsonl(path)
     original_count = len(records)
 
     if agent:
         remaining = [r for r in records if r.get('agent') != agent]
         cleared = original_count - len(remaining)
-        _ensure_dir(path)
+        ensure_parent_dir(path)
         with open(path, 'w', encoding='utf-8') as f:
             for record in remaining:
                 f.write(json.dumps(record, ensure_ascii=False) + '\n')
@@ -171,7 +92,7 @@ def add_assessment(
     hash_id = generate_hash_id()
     record = {
         'hash_id': hash_id,
-        'timestamp': _timestamp(),
+        'timestamp': timestamp(),
         'file_path': file_path,
         'certainty': certainty,
         'confidence': confidence,
@@ -183,7 +104,7 @@ def add_assessment(
     if evidence:
         record['evidence'] = evidence
 
-    _append_jsonl(get_assessments_path(plan_id), record)
+    append_jsonl(get_assessments_path(plan_id), record)
 
     return {'status': 'success', 'hash_id': hash_id, 'file_path': file_path}
 
@@ -197,7 +118,7 @@ def query_assessments(
 ) -> dict[str, Any]:
     """Query assessments with filters."""
     path = get_assessments_path(plan_id)
-    records = _read_jsonl(path)
+    records = read_jsonl(path)
     total_count = len(records)
 
     filtered = []
@@ -224,10 +145,10 @@ def query_assessments(
     return result
 
 
-def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any] | None:
+def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any]:
     """Get a single assessment by hash_id."""
     path = get_assessments_path(plan_id)
-    for record in _read_jsonl(path):
+    for record in read_jsonl(path):
         if record.get('hash_id') == hash_id:
             return {'status': 'success', **record}
     return {'status': 'error', 'message': f'Assessment not found: {hash_id}'}
@@ -247,7 +168,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         detail=args.detail,
         evidence=args.evidence,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -260,7 +181,7 @@ def cmd_query(args: argparse.Namespace) -> int:
         max_confidence=args.max_confidence,
         file_pattern=args.file_pattern,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -270,18 +191,15 @@ def cmd_clear(args: argparse.Namespace) -> int:
         plan_id=args.plan_id,
         agent=args.agent,
     )
-    print(format_output(result))
+    print(output_toon(result))
     return 0 if result.get('status') == 'success' else 1
 
 
 def cmd_get(args: argparse.Namespace) -> int:
     """Handle: get"""
     result = get_assessment(args.plan_id, args.hash_id)
-    if result:
-        print(format_output(result))
-        return 0 if result.get('status') == 'success' else 1
-    print(format_output({'status': 'error', 'message': f'Assessment not found: {args.hash_id}'}))
-    return 1
+    print(output_toon(result))
+    return 0 if result.get('status') == 'success' else 1
 
 
 def main() -> int:

@@ -280,13 +280,13 @@ def cmd_cleanup(args) -> int:
         return 1
 
 
-def check_required_fields(data: dict, required: list[str]) -> tuple:
+def _check_required_fields(data: dict, required: list[str]) -> tuple[bool, list[str]]:
     """Check if required fields exist."""
     missing = [f for f in required if f not in data]
     return len(missing) == 0, missing
 
 
-def check_field_type(data: dict, field: str, expected_type: type) -> tuple:
+def _check_field_type(data: dict, field: str, expected_type: type) -> tuple[bool, str]:
     """Check if field has expected type."""
     if field not in data:
         return False, f"Field '{field}' not found"
@@ -304,19 +304,19 @@ def validate_memory_format(data: dict) -> list[dict]:
 
     # Check required envelope
     required = ['meta', 'content']
-    passed, missing = check_required_fields(data, required)
+    passed, missing = _check_required_fields(data, required)
     checks.append(
         {'check': 'required_fields', 'passed': passed, 'fields': required, 'missing': missing if not passed else []}
     )
 
     # Check meta structure
     if 'meta' in data:
-        passed, msg = check_field_type(data, 'meta', dict)
+        passed, msg = _check_field_type(data, 'meta', dict)
         checks.append({'check': 'meta_object', 'passed': passed, 'message': msg})
 
         if passed:
             meta_required = ['created', 'category', 'summary']
-            meta_passed, meta_missing = check_required_fields(data['meta'], meta_required)
+            meta_passed, meta_missing = _check_required_fields(data['meta'], meta_required)
             checks.append(
                 {
                     'check': 'meta_required_fields',

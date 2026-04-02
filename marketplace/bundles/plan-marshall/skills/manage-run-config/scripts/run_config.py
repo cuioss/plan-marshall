@@ -10,20 +10,17 @@ Consolidated from:
 Provides operations for managing .plan/run-configuration.json files
 including creation, validation, structure verification, and directory cleanup.
 
-Output: JSON to stdout with operation results (init/validate/warning),
-        TOON to stdout (timeout/cleanup).
+Output: TOON to stdout with operation results.
 """
 
 import argparse
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
-# Environment variables for path configuration (set by executor or test infrastructure)
-_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 # Constants for timeout handling
@@ -41,41 +38,22 @@ DEFAULT_STRUCTURE = {
 }
 
 
-def write_json_file(file_path: Path, data: dict) -> None:
-    """Write JSON data to file atomically."""
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    fd, temp_path = tempfile.mkstemp(suffix='.json', prefix='.tmp_', dir=file_path.parent)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-            f.write('\n')
-        os.replace(temp_path, file_path)
-    except Exception:
-        if Path(temp_path).exists():
-            os.unlink(temp_path)
-        raise
+def _write_json_file(file_path: Path, data: dict) -> None:
+    """Write JSON data to file atomically via file_ops."""
+    content = json.dumps(data, indent=2, ensure_ascii=False) + '\n'
+    atomic_write_file(file_path, content)
 
 
-def output_success(action: str, **kwargs) -> None:
-    """Output success result as JSON.
-
-    Note: Outputs JSON (json.dumps), not TOON. Uses 'action' field name
-    instead of 'operation'. Incompatible with file_ops.output_success.
-    """
-    result = {'success': True, 'action': action}
+def _output_success(action: str, **kwargs: Any) -> None:
+    """Output success result as TOON."""
+    result: dict[str, Any] = {'status': 'success', 'action': action}
     result.update(kwargs)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(serialize_toon(result))
 
 
-def output_error(error: str) -> None:
-    """Output error result as JSON to stderr.
-
-    Note: Outputs JSON (json.dumps), single-arg signature, no 'operation' field.
-    Incompatible with file_ops.output_error (2-arg, TOON format).
-    """
-    result = {'success': False, 'error': error}
-    print(json.dumps(result, indent=2), file=sys.stderr)
+def _output_error(error: str) -> None:
+    """Output error result as TOON to stderr."""
+    print(serialize_toon({'status': 'error', 'error': error}), file=sys.stderr)
 
 
 # =============================================================================
@@ -83,23 +61,23 @@ def output_error(error: str) -> None:
 # =============================================================================
 
 
-def cmd_init(args) -> int:
+def cmd_init(args: argparse.Namespace) -> int:
     """Initialize run-configuration.json with base structure."""
     try:
         config_path = get_run_config_path()
 
         if config_path.exists() and not args.force:
-            output_success('skipped', path=str(config_path), reason='File already exists (use --force to overwrite)')
+            _output_success('skipped', path=str(config_path), reason='File already exists (use --force to overwrite)')
             return 0
 
-        write_json_file(config_path, DEFAULT_STRUCTURE)
+        _write_json_file(config_path, DEFAULT_STRUCTURE)
 
         action = 'recreated' if args.force and config_path.exists() else 'created'
-        output_success(action, path=str(config_path), structure=DEFAULT_STRUCTURE)
+        _output_success(action, path=str(config_path), structure=DEFAULT_STRUCTURE)
         return 0
 
     except Exception as e:
-        output_error(str(e))
+        _output_error(str(e))
         return 1
 
 
@@ -108,13 +86,13 @@ def cmd_init(args) -> int:
 # =============================================================================
 
 
-def check_required_fields(data: dict[str, Any], required: list[str]) -> tuple[bool, list[str]]:
+def _check_required_fields(data: dict[str, Any], required: list[str]) -> tuple[bool, list[str]]:
     """Check if required fields exist."""
     missing = [f for f in required if f not in data]
     return len(missing) == 0, missing
 
 
-def check_field_type(data: dict[str, Any], field: str, expected_type: type) -> tuple[bool, str]:
+def _check_field_type(data: dict[str, Any], field: str, expected_type: type) -> tuple[bool, str]:
     """Check if field has expected type."""
     if field not in data:
         return False, f"Field '{field}' not found"
@@ -132,19 +110,19 @@ def validate_run_config(data: dict[str, Any]) -> list[dict[str, Any]]:
 
     # Check required fields
     required = ['version', 'commands']
-    passed, missing = check_required_fields(data, required)
+    passed, missing = _check_required_fields(data, required)
     checks.append(
         {'check': 'required_fields', 'passed': passed, 'fields': required, 'missing': missing if not passed else []}
     )
 
     # Check version is integer
     if 'version' in data:
-        passed, msg = check_field_type(data, 'version', int)
+        passed, msg = _check_field_type(data, 'version', int)
         checks.append({'check': 'version_type', 'passed': passed, 'message': msg})
 
     # Check commands is object
     if 'commands' in data:
-        passed, msg = check_field_type(data, 'commands', dict)
+        passed, msg = _check_field_type(data, 'commands', dict)
         checks.append({'check': 'commands_object', 'passed': passed, 'message': msg})
 
         # Validate command entries
@@ -161,19 +139,19 @@ def validate_run_config(data: dict[str, Any]) -> list[dict[str, Any]]:
 
     # Check maven section if present
     if 'maven' in data:
-        passed, msg = check_field_type(data, 'maven', dict)
+        passed, msg = _check_field_type(data, 'maven', dict)
         checks.append({'check': 'maven_object', 'passed': passed, 'message': msg})
 
     return checks
 
 
-def cmd_validate(args) -> int:
+def cmd_validate(args: argparse.Namespace) -> int:
     """Validate run-configuration.json format and structure."""
     try:
         file_path = Path(args.file)
 
         if not file_path.exists():
-            output_error(f'File not found: {file_path}')
+            _output_error(f'File not found: {file_path}')
             return 1
 
         # Parse JSON
@@ -182,13 +160,13 @@ def cmd_validate(args) -> int:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             result = {
-                'success': True,
+                'status': 'success',
                 'valid': False,
                 'file': str(file_path),
                 'format': 'manage-run-config',
                 'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
             }
-            print(json.dumps(result, indent=2, ensure_ascii=False))
+            print(serialize_toon(result))
             return 0
 
         # Add JSON syntax check
@@ -201,17 +179,17 @@ def cmd_validate(args) -> int:
         valid = all(c.get('passed', True) for c in checks)
 
         result = {
-            'success': True,
+            'status': 'success',
             'valid': valid,
             'file': str(file_path),
             'format': 'manage-run-config',
             'checks': checks,
         }
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print(serialize_toon(result))
         return 0
 
     except Exception as e:
-        output_error(str(e))
+        _output_error(str(e))
         return 1
 
 
@@ -223,16 +201,20 @@ def cmd_validate(args) -> int:
 def get_run_config_path(project_dir: str | None = None) -> Path:
     """Get path to run-configuration.json.
 
-    Uses PLAN_BASE_DIR env var by default. Falls back to project_dir parameter
-    or current directory if env var is not set.
+    Uses PLAN_BASE_DIR env var as project root, appending .plan/ to locate config.
+    Note: Unlike file_ops.base_path() where PLAN_BASE_DIR IS the .plan dir,
+    run_config uses it as the project root (for compatibility with PLAN_DIR_NAME).
 
     Args:
         project_dir: Override directory. Ignored if PLAN_BASE_DIR env var is set.
     """
+    import os
+
+    plan_dir_name = os.environ.get('PLAN_DIR_NAME', '.plan')
     base = os.environ.get('PLAN_BASE_DIR')
     if base is None:
         base = project_dir if project_dir else '.'
-    return Path(base).resolve() / _PLAN_DIR_NAME / 'run-configuration.json'
+    return Path(base).resolve() / plan_dir_name / 'run-configuration.json'
 
 
 def read_run_config(config_path: Path) -> dict[str, Any]:
@@ -244,18 +226,7 @@ def read_run_config(config_path: Path) -> dict[str, Any]:
     return {'version': 1, 'commands': {}}
 
 
-def output_toon(status: str, **fields) -> None:
-    """Output result in TOON format.
-
-    Note: Uses TAB-separated key-value pairs, unique to timeout subcommands.
-    Incompatible with file_ops output helpers which use serialize_toon.
-    """
-    print(f'status\t{status}')
-    for key, value in fields.items():
-        print(f'{key}\t{value}')
-
-
-def cmd_timeout_get(args) -> int:
+def cmd_timeout_get(args: argparse.Namespace) -> int:
     """Get timeout for a command with default fallback and minimum bound."""
     try:
         config_path = get_run_config_path()
@@ -311,7 +282,7 @@ def timeout_set(command_key: str, duration: int, project_dir: str = '.') -> None
     config['commands'][command_key]['timeout_seconds'] = (
         duration if existing is None else compute_weighted_timeout(existing, duration)
     )
-    write_json_file(config_path, config)
+    _write_json_file(config_path, config)
 
 
 # =============================================================================
@@ -327,7 +298,7 @@ def get_acceptable_warnings(config: dict[str, Any], build_system: str = 'maven')
     return result
 
 
-def cmd_warning_add(args) -> int:
+def cmd_warning_add(args: argparse.Namespace) -> int:
     """Add a warning pattern to acceptable list."""
     try:
         config_path = get_run_config_path()
@@ -338,7 +309,7 @@ def cmd_warning_add(args) -> int:
         build_system = args.build_system
 
         if category not in VALID_WARNING_CATEGORIES:
-            output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
+            _output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
             return 1
 
         # Ensure structure exists
@@ -350,21 +321,21 @@ def cmd_warning_add(args) -> int:
         warnings_list = config[build_system]['acceptable_warnings'].setdefault(category, [])
 
         if pattern in warnings_list:
-            output_success('skipped', category=category, pattern=pattern, reason='Pattern already exists')
+            _output_success('skipped', category=category, pattern=pattern, reason='Pattern already exists')
             return 0
 
         warnings_list.append(pattern)
-        write_json_file(config_path, config)
+        _write_json_file(config_path, config)
 
-        output_success('added', category=category, pattern=pattern, build_system=build_system)
+        _output_success('added', category=category, pattern=pattern, build_system=build_system)
         return 0
 
     except Exception as e:
-        output_error(str(e))
+        _output_error(str(e))
         return 1
 
 
-def cmd_warning_list(args) -> int:
+def cmd_warning_list(args: argparse.Namespace) -> int:
     """List accepted warning patterns."""
     try:
         config_path = get_run_config_path()
@@ -375,30 +346,30 @@ def cmd_warning_list(args) -> int:
 
         if args.category:
             if args.category not in VALID_WARNING_CATEGORIES:
-                output_error(f"Invalid category '{args.category}'. Valid: {VALID_WARNING_CATEGORIES}")
+                _output_error(f"Invalid category '{args.category}'. Valid: {VALID_WARNING_CATEGORIES}")
                 return 1
-            result = {
-                'success': True,
+            result: dict[str, Any] = {
+                'status': 'success',
                 'build_system': build_system,
                 'category': args.category,
                 'patterns': warnings.get(args.category, []),
             }
         else:
             result = {
-                'success': True,
+                'status': 'success',
                 'build_system': build_system,
                 'categories': {cat: warnings.get(cat, []) for cat in VALID_WARNING_CATEGORIES},
             }
 
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print(serialize_toon(result))
         return 0
 
     except Exception as e:
-        output_error(str(e))
+        _output_error(str(e))
         return 1
 
 
-def cmd_warning_remove(args) -> int:
+def cmd_warning_remove(args: argparse.Namespace) -> int:
     """Remove a warning pattern from acceptable list."""
     try:
         config_path = get_run_config_path()
@@ -409,24 +380,24 @@ def cmd_warning_remove(args) -> int:
         build_system = args.build_system
 
         if category not in VALID_WARNING_CATEGORIES:
-            output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
+            _output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
             return 1
 
         warnings = get_acceptable_warnings(config, build_system)
         warnings_list = warnings.get(category, [])
 
         if pattern not in warnings_list:
-            output_success('skipped', category=category, pattern=pattern, reason='Pattern not found')
+            _output_success('skipped', category=category, pattern=pattern, reason='Pattern not found')
             return 0
 
         warnings_list.remove(pattern)
-        write_json_file(config_path, config)
+        _write_json_file(config_path, config)
 
-        output_success('removed', category=category, pattern=pattern, build_system=build_system)
+        _output_success('removed', category=category, pattern=pattern, build_system=build_system)
         return 0
 
     except Exception as e:
-        output_error(str(e))
+        _output_error(str(e))
         return 1
 
 
@@ -435,7 +406,7 @@ def cmd_warning_remove(args) -> int:
 # =============================================================================
 
 
-def cmd_timeout_set(args) -> int:
+def cmd_timeout_set(args: argparse.Namespace) -> int:
     """Set timeout for a command with adaptive weighting."""
     try:
         config_path = get_run_config_path()
@@ -458,28 +429,33 @@ def cmd_timeout_set(args) -> int:
         if existing is None:
             # No existing value - write directly
             cmd_entry['timeout_seconds'] = duration
-            write_json_file(config_path, config)
+            _write_json_file(config_path, config)
 
-            output_toon('success', command=command, timeout_seconds=duration, source='initial')
+            print(serialize_toon({
+                'status': 'success',
+                'command': command,
+                'timeout_seconds': duration,
+                'source': 'initial',
+            }))
         else:
             # Compute weighted value favoring higher
             new_timeout = compute_weighted_timeout(existing, duration)
             cmd_entry['timeout_seconds'] = new_timeout
-            write_json_file(config_path, config)
+            _write_json_file(config_path, config)
 
-            output_toon(
-                'success',
-                command=command,
-                timeout_seconds=new_timeout,
-                previous_seconds=existing,
-                observed_seconds=duration,
-                source='computed',
-            )
+            print(serialize_toon({
+                'status': 'success',
+                'command': command,
+                'timeout_seconds': new_timeout,
+                'previous_seconds': existing,
+                'observed_seconds': duration,
+                'source': 'computed',
+            }))
 
         return 0
 
     except Exception as e:
-        output_toon('error', error=str(e))
+        print(serialize_toon({'status': 'error', 'error': str(e)}), file=sys.stderr)
         return 1
 
 
@@ -488,14 +464,14 @@ def cmd_timeout_set(args) -> int:
 # =============================================================================
 
 
-def cmd_cleanup(args) -> int:
+def cmd_cleanup(args: argparse.Namespace) -> int:
     """Execute cleanup based on retention settings (delegates to cleanup module)."""
     from cleanup import cmd_clean
 
     return cmd_clean(args)
 
 
-def cmd_cleanup_status(args) -> int:
+def cmd_cleanup_status(args: argparse.Namespace) -> int:
     """Show cleanup status (delegates to cleanup module)."""
     from cleanup import cmd_status
 
@@ -507,7 +483,7 @@ def cmd_cleanup_status(args) -> int:
 # =============================================================================
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Manage run-configuration.json files',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -649,6 +625,5 @@ if __name__ == '__main__':
     except SystemExit:
         raise
     except Exception as e:
-        from toon_parser import serialize_toon
         print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
         sys.exit(1)

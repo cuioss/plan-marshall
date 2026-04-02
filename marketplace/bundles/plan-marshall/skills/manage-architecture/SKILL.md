@@ -5,7 +5,7 @@ user-invocable: false
 scope: hybrid
 ---
 
-# Analyze Project Architecture Skill
+# Manage Architecture Skill
 
 ## Enforcement
 
@@ -341,3 +341,8 @@ This skill is invoked by:
 Output is consumed by:
 - **solution-outline** Step 0 (module placement)
 - **task-plan** (command resolution)
+
+## Related Skills
+
+- `manage-solution-outline` — Consumes architecture data for placement decisions
+- `manage-config` — Project-level configuration used during analysis

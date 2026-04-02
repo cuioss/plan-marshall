@@ -5,7 +5,7 @@ user-invocable: false
 scope: global
 ---
 
-# Run Config Skill
+# Manage Run Config Skill
 
 Run configuration handling for persistent command configuration storage.
 

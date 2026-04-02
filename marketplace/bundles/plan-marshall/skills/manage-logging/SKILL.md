@@ -5,7 +5,7 @@ user-invocable: false
 scope: hybrid
 ---
 
-# Logging Skill
+# Manage Logging Skill
 
 Unified logging infrastructure providing script execution logging, semantic work progress tracking, and decision logging.
 
@@ -294,11 +294,3 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 |--------|----------|-------------|
 | `manage-log.py` | `plan-marshall:manage-logging:manage-log` | CLI for logging operations (write and read) |
 | `plan_logging.py` | - | Python module (imported, not executed) |
-
-### Script Commands
-
-| Command | Parameters | Description |
-|---------|------------|-------------|
-| (subcommand) | `{type} --plan-id {plan_id} --level {level} --message "{message}"` | Write log entry |
-| `separator` | `--plan-id {plan_id} [--type {work\|script\|decision}]` | Add blank line for visual separation |
-| `read` | `--plan-id --type [--limit] [--phase]` | Read log entries (TOON output) |

@@ -24,7 +24,7 @@ from pathlib import Path
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 METRICS_FILE = 'work/metrics.toon'
 METRICS_MD = 'metrics.md'
@@ -33,14 +33,6 @@ PHASE_NAMES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-fina
 
 def get_plan_dir(plan_id: str) -> Path:
     return base_path('plans', plan_id)
-
-
-def read_metrics(plan_id: str) -> dict:
-    metrics_path = get_plan_dir(plan_id) / METRICS_FILE
-    if not metrics_path.exists():
-        return {'phases': {}}
-    content = metrics_path.read_text(encoding='utf-8')
-    return parse_toon(content) if content.strip() else {'phases': {}}
 
 
 def write_metrics(plan_id: str, data: dict) -> None:

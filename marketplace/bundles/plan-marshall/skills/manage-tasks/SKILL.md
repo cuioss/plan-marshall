@@ -24,8 +24,6 @@ Manage implementation tasks with sequential sub-steps within a plan. Each task r
 - The `add` command reads TOON content from `--content` argument with `\n` encoding
 - Step finalization requires explicit `--outcome` (done or skipped)
 
-> **Implementation Details**: See [design-for-manage-tasks.md](/.plan/task-management/design-for-manage-tasks.md) for the complete specification including file format, all commands, parameters, and validation rules.
-
 ## What This Skill Provides
 
 - Individual JSON file storage for each task (TOON output for LLM efficiency)
@@ -327,8 +325,3 @@ blocked_tasks[2]{number,title,waiting_for}:
 
 ---
 
-## Related Documents
-
-- [design-for-manage-tasks.md](/.plan/task-management/design-for-manage-tasks.md) - Complete implementation specification
-- [design-for-task-planning.md](/.plan/task-management/design-for-task-planning.md) - Task-plan agent workflows
-- [architecture.md](/.plan/task-management/architecture.md) - Core concepts

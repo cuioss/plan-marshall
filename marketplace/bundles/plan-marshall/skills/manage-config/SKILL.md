@@ -5,7 +5,7 @@ user-invocable: false
 scope: hybrid
 ---
 
-# Plan-Marshall Config Skill
+# Manage Config Skill
 
 Manages project-level infrastructure configuration in `.plan/marshal.json`.
 
