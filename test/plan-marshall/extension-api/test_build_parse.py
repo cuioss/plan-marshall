@@ -401,12 +401,12 @@ def test_generate_summary_empty():
     """Returns zero counts for empty issues list."""
     summary = generate_summary_from_issues([])
     assert summary['total_issues'] == 0
-    assert summary['compilation_errors'] == 0
-    assert summary['test_failures'] == 0
+    assert summary['total_errors'] == 0
+    assert summary['total_warnings'] == 0
 
 
 def test_generate_summary_all_categories():
-    """Counts all known categories correctly."""
+    """Counts all categories dynamically based on what's present."""
     issues = [
         Issue(None, None, 'msg', SEVERITY_ERROR, category='compilation_error'),
         Issue(None, None, 'msg', SEVERITY_ERROR, category='test_failure'),
@@ -418,27 +418,29 @@ def test_generate_summary_all_categories():
     ]
     summary = generate_summary_from_issues(issues)
     assert summary['total_issues'] == 7
-    assert summary['compilation_errors'] == 1
-    assert summary['test_failures'] == 1
-    assert summary['javadoc_warnings'] == 1
-    assert summary['deprecation_warnings'] == 1
-    assert summary['unchecked_warnings'] == 1
-    assert summary['dependency_errors'] == 1
+    assert summary['total_errors'] == 3
+    assert summary['total_warnings'] == 4
+    assert summary['compilation_error'] == 1
+    assert summary['test_failure'] == 1
+    assert summary['javadoc_warning'] == 1
+    assert summary['deprecation_warning'] == 1
+    assert summary['unchecked_warning'] == 1
+    assert summary['dependency_error'] == 1
     assert summary['openrewrite_info'] == 1
-    assert summary['other_errors'] == 0
-    assert summary['other_warnings'] == 0
 
 
 def test_generate_summary_other_categories():
-    """Unknown error categories go to other_errors, unknown warnings to other_warnings."""
+    """Dynamic categories — any category name is tracked."""
     issues = [
         Issue(None, None, 'msg', SEVERITY_ERROR, category='unknown_error_type'),
         Issue(None, None, 'msg', SEVERITY_WARNING, category='unknown_warning_type'),
     ]
     summary = generate_summary_from_issues(issues)
-    assert summary['other_errors'] == 1
-    assert summary['other_warnings'] == 1
+    assert summary['unknown_error_type'] == 1
+    assert summary['unknown_warning_type'] == 1
     assert summary['total_issues'] == 2
+    assert summary['total_errors'] == 1
+    assert summary['total_warnings'] == 1
 
 
 if __name__ == '__main__':

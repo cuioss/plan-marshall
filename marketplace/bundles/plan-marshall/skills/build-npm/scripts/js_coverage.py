@@ -17,6 +17,8 @@ import os
 import sys
 from typing import Any
 
+from _build_shared import safe_main
+
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
 
@@ -277,4 +279,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

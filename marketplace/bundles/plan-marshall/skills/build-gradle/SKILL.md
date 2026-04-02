@@ -32,6 +32,8 @@ Gradle build execution with output parsing, module discovery, and wrapper detect
 | `_gradle_cmd_parse.py` | Library | Log parsing, issue extraction (uses shared categorizer) |
 | `_gradle_cmd_find_project.py` | Library | Gradle subproject location |
 
+Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
+
 ## Unified API
 
 All build skills share the same subcommand structure. Gradle supports all subcommands:
@@ -162,7 +164,7 @@ python3 .plan/execute-script.py plan-marshall:build-gradle:gradle search-markers
 - `--source-dir` - Directory to search (default: src)
 - `--extensions` - Comma-separated file extensions (default: .java,.kt)
 
-**Note**: This subcommand is specific to Maven and Gradle (OpenRewrite integration). Not available in npm or Python builds.
+**Note**: Available in Maven and Gradle builds only (OpenRewrite integration).
 
 ### find-project
 

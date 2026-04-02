@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, make_dedup_key  # type: ignore[import-not-found]
 
 # TypeScript error pattern: path(line,col): error TSNNNN: message
 TS_ERROR_PATTERN = re.compile(r'^(.+?)\((\d+),(\d+)\):\s*(error)\s+(TS\d+):\s*(.+)$', re.MULTILINE)
@@ -63,7 +63,7 @@ def _extract_issues(content: str) -> list[Issue]:
     # Try primary pattern: path(line,col): error TSNNNN: message
     for match in TS_ERROR_PATTERN.finditer(content):
         file_path, line, col, severity, code, message = match.groups()
-        dedup_key = f'{file_path}:{line}:{col}:{code}'
+        dedup_key = make_dedup_key('compilation_error', file_path, int(line), f'{code}: {message}')
 
         if dedup_key in seen:
             continue
@@ -75,7 +75,7 @@ def _extract_issues(content: str) -> list[Issue]:
                 line=int(line),
                 message=f'{code}: {message}',
                 severity=SEVERITY_ERROR,
-                category='typescript_error',
+                category='compilation_error',
             )
         )
 
@@ -83,7 +83,7 @@ def _extract_issues(content: str) -> list[Issue]:
     if not issues:
         for match in TS_ERROR_ALT_PATTERN.finditer(content):
             file_path, line, col, severity, code, message = match.groups()
-            dedup_key = f'{file_path}:{line}:{col}:{code}'
+            dedup_key = make_dedup_key('compilation_error', file_path, int(line), f'{code}: {message}')
 
             if dedup_key in seen:
                 continue
@@ -95,7 +95,7 @@ def _extract_issues(content: str) -> list[Issue]:
                     line=int(line),
                     message=f'{code}: {message}',
                     severity=SEVERITY_ERROR,
-                    category='typescript_error',
+                    category='compilation_error',
                 )
             )
 

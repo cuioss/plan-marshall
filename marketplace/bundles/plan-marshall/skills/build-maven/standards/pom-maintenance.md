@@ -71,21 +71,21 @@ Pure reference for POM structure, dependency management, and quality requirement
     <revision>1.0.0-SNAPSHOT</revision>
 
     <!-- CUI dependency versions: version.cui.* -->
-    <version.cui.core.ui.model>2.3.0</version.cui.core.ui.model>
-    <version.cui.java.tools>2.5.1</version.cui.java.tools>
+    <version.cui.core.ui.model>...</version.cui.core.ui.model>
+    <version.cui.java.tools>...</version.cui.java.tools>
 
     <!-- External dependency versions: version.* -->
-    <version.quarkus>3.5.0</version.quarkus>
-    <version.junit.jupiter>5.9.3</version.junit.jupiter>
-    <version.lombok>1.18.38</version.lombok>
+    <version.quarkus>...</version.quarkus>
+    <version.junit.jupiter>...</version.junit.jupiter>
+    <version.lombok>...</version.lombok>
 
     <!-- Maven plugin versions: maven.*.plugin.version -->
-    <maven.compiler.plugin.version>3.14.0</maven.compiler.plugin.version>
-    <maven.surefire.plugin.version>3.5.3</maven.surefire.plugin.version>
+    <maven.compiler.plugin.version>...</maven.compiler.plugin.version>
+    <maven.surefire.plugin.version>...</maven.surefire.plugin.version>
 
     <!-- Non-maven plugin versions: *.maven.plugin.version -->
-    <jacoco.maven.plugin.version>0.8.13</jacoco.maven.plugin.version>
-    <lombok-maven-plugin.version>1.18.20.0</lombok-maven-plugin.version>
+    <jacoco.maven.plugin.version>...</jacoco.maven.plugin.version>
+    <lombok-maven-plugin.version>...</lombok-maven-plugin.version>
 
     <!-- Configuration properties -->
     <maven.compiler.source>21</maven.compiler.source>

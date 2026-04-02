@@ -35,6 +35,17 @@ def _python_wrapper_resolve_fn(project_dir: str) -> str:
     return str(wrapper)
 
 
+def _python_scope_fn(args: str) -> str:
+    """Extract scope from pyprojectx args (second token is the module name)."""
+    parts = args.split()
+    return parts[1] if len(parts) > 1 else 'default'
+
+
+def _python_extra_result_fn(args: str, wrapper: str) -> dict:
+    """Add wrapper path to result for pyprojectx builds."""
+    return {'wrapper': wrapper}
+
+
 _CONFIG = ExecuteConfig(
     tool_name='python',
     unix_wrapper='pw',
@@ -42,11 +53,11 @@ _CONFIG = ExecuteConfig(
     system_fallback='pwx',
     capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
     build_command_fn=_python_build_command_fn,
-    scope_fn=lambda args: args.split()[1] if len(args.split()) > 1 else 'default',
+    scope_fn=_python_scope_fn,
     command_key_fn=_python_command_key_fn,
     default_timeout=300,
     wrapper_resolve_fn=_python_wrapper_resolve_fn,
-    extra_result_fn=lambda args, wrapper: {'wrapper': wrapper},
+    extra_result_fn=_python_extra_result_fn,
 )
 
 execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log)

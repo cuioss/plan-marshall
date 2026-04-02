@@ -81,9 +81,9 @@ MAVEN_PATTERNS: CategoryPatterns = {
 }
 
 
-def parse_file_location(line: str) -> dict:
+def parse_file_location(line: str) -> dict[str, str | int | None]:
     """Extract file, line, and column from a Maven error/warning line."""
-    result = {'file': None, 'line': None, 'column': None}
+    result: dict[str, str | int | None] = {'file': None, 'line': None, 'column': None}
     match = re.search(r'([^\s\[\]]+\.java):\[(\d+),(\d+)\]', line)
     if match:
         return {'file': match.group(1), 'line': int(match.group(2)), 'column': int(match.group(3))}
@@ -210,8 +210,9 @@ def _detect_build_status(content: str) -> str:
 def _extract_test_summary(content: str) -> UnitTestSummary | None:
     """Extract Maven test summary.
 
-    Maven reports Failures and Errors separately; we combine them into failed.
-    Uses shared extract_test_summary with custom post-processing.
+    Does NOT use the shared extract_test_summary() helper because Maven
+    reports Failures and Errors as separate fields that must be combined
+    into a single 'failed' count — a pattern the shared helper doesn't support.
     """
     # Maven format: Tests run: X, Failures: Y, Errors: Z, Skipped: W
     pattern = r'Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)'

@@ -9,6 +9,8 @@ Usage:
     from _gradle_execute import execute_direct, cmd_run
 """
 
+import re
+
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers
 from _gradle_cmd_parse import parse_log
@@ -19,15 +21,13 @@ def _gradle_scope_fn(args: str) -> str:
 
     Handles both ':module:task' prefix and '-p path' syntax.
     """
-    import re as _re
-
     # Check :module:task format
     if args.startswith(':'):
         parts = args.split(':')
         if len(parts) >= 2 and parts[1]:
             return parts[1]
     # Check -p path format
-    match = _re.search(r'-p\s+(\S+)', args)
+    match = re.search(r'-p\s+(\S+)', args)
     if match:
         return match.group(1).rstrip('/').split('/')[-1]
     return 'default'

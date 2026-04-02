@@ -50,7 +50,7 @@ def test_parse_compilation_errors():
     data = result.json()
 
     assert data['data']['build_status'] == 'FAILURE', 'Build status should be FAILURE'
-    assert data['data']['summary'].get('compilation_errors', 0) > 0, 'Should detect compilation errors'
+    assert data['data']['summary'].get('compilation_error', 0) > 0, 'Should detect compilation errors'
 
 
 def test_parse_missing_file():

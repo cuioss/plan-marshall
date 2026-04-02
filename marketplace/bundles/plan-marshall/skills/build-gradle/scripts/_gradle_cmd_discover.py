@@ -60,6 +60,48 @@ QUALITY_TASK_PATTERNS = {
 
 
 # =============================================================================
+# Settings File Parsing (shared with _gradle_cmd_find_project)
+# =============================================================================
+
+
+def find_settings_file(root: Path) -> Path | None:
+    """Find settings.gradle or settings.gradle.kts.
+
+    Args:
+        root: Project root directory.
+
+    Returns:
+        Path to settings file, or None.
+    """
+    for name in [SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]:
+        settings_path = root / name
+        if settings_path.exists():
+            return settings_path
+    return None
+
+
+def parse_included_projects(settings_path: Path) -> list[str]:
+    """Parse included projects from settings file.
+
+    Handles both Groovy and Kotlin DSL syntax for include() statements.
+
+    Args:
+        settings_path: Path to settings.gradle or settings.gradle.kts.
+
+    Returns:
+        List of Gradle project paths (e.g., [':core', ':services:auth']).
+    """
+    with open(settings_path, encoding='utf-8') as f:
+        content = f.read()
+    projects = []
+    for pattern in [r'include\s*\(\s*([^)]+)\s*\)', r"include\s+(['\"][^'\"]+['\"](?:\s*,\s*['\"][^'\"]+['\"])*)"]:
+        for match in re.finditer(pattern, content):
+            for quoted in re.findall(r'["\']([^"\']+)["\']', match.group(1)):
+                projects.append(quoted if quoted.startswith(':') else f':{quoted}')
+    return list(set(projects))
+
+
+# =============================================================================
 # Module Discovery
 # =============================================================================
 

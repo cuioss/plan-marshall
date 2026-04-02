@@ -1,40 +1,20 @@
 #!/usr/bin/env python3
 """Find-project subcommand for Gradle project discovery.
 
-Delegates constants to _gradle_cmd_discover to avoid duplication.
+Delegates constants and settings parsing to _gradle_cmd_discover to avoid duplication.
 """
 
 import re
 from pathlib import Path
 
+from _build_discover import EXCLUDE_DIRS
 from _gradle_cmd_discover import (
     BUILD_GRADLE,
     BUILD_GRADLE_KTS,
-    SETTINGS_GRADLE,
-    SETTINGS_GRADLE_KTS,
+    find_settings_file,
+    parse_included_projects,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-
-def find_settings_file(root: Path) -> Path | None:
-    """Find settings.gradle or settings.gradle.kts."""
-    for name in [SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]:
-        settings_path = root / name
-        if settings_path.exists():
-            return settings_path
-    return None
-
-
-def parse_included_projects(settings_path: Path) -> list[str]:
-    """Parse included projects from settings file."""
-    with open(settings_path, encoding='utf-8') as f:
-        content = f.read()
-    projects = []
-    for pattern in [r'include\s*\(\s*([^)]+)\s*\)', r"include\s+(['\"][^'\"]+['\"](?:\s*,\s*['\"][^'\"]+['\"])*)"]:
-        for match in re.finditer(pattern, content):
-            for quoted in re.findall(r'["\']([^"\']+)["\']', match.group(1)):
-                projects.append(quoted if quoted.startswith(':') else f':{quoted}')
-    return list(set(projects))
 
 
 def get_root_project_name(settings_path: Path) -> str | None:
@@ -46,11 +26,11 @@ def get_root_project_name(settings_path: Path) -> str | None:
 
 
 def find_build_files(root: Path) -> list[Path]:
-    """Find all build.gradle and build.gradle.kts files."""
+    """Find all build.gradle and build.gradle.kts files, excluding non-source dirs."""
     build_files = []
     for pattern in [f'**/{BUILD_GRADLE}', f'**/{BUILD_GRADLE_KTS}']:
         for path in root.glob(pattern):
-            if not any(part.startswith('.') or part in ('build', 'target', '.gradle') for part in path.parts):
+            if not any(part.startswith('.') or part in EXCLUDE_DIRS for part in path.relative_to(root).parts):
                 build_files.append(path)
     return build_files
 

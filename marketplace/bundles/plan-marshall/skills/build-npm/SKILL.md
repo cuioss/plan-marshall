@@ -28,7 +28,7 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 | Script | Type | Purpose |
 |--------|------|---------|
 | `npm.py` | CLI | npm/npx operations dispatcher (includes coverage + warning config) |
-| `js_coverage.py` | CLI | JavaScript coverage analysis |
+| `js_coverage.py` | CLI | Standalone deep coverage analysis (per-file detail, separate from `coverage-report` subcommand) |
 | `_npm_execute.py` | Library | Execution config via factory pattern |
 | `_npm_cmd_parse.py` | Library | Multi-parser dispatcher |
 | `_npm_cmd_discover.py` | Library | Module discovery via package.json workspaces |
@@ -37,6 +37,8 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 | `_npm_parse_eslint.py` | Library | ESLint output parsing |
 | `_npm_parse_tap.py` | Library | TAP format test output parsing |
 | `_npm_parse_errors.py` | Library | Generic npm error parsing |
+
+Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
 
 ## Unified API
 
@@ -190,17 +192,7 @@ Each module includes: `name`, `build_systems`, `paths` (module/descriptor/source
 
 ## npm vs npx Detection
 
-Commands are automatically routed to npm or npx. The result TOON includes a `command_type` field (`npm` or `npx`) indicating which was used.
-
-```python
-NPX_COMMANDS = [
-    'playwright', 'eslint', 'prettier', 'stylelint',  # linters/formatters
-    'tsc', 'tsx', 'ts-node',  # TypeScript tools
-    'jest', 'vitest', 'mocha',  # test runners
-    'webpack', 'rollup', 'esbuild', 'vite',  # bundlers
-    'babel',  # transpiler
-]
-```
+Commands are automatically routed to npm or npx based on the `NPX_COMMANDS` list in `_npm_execute.py`. Direct tool invocations (linters, TypeScript tools, test runners, bundlers) use npx; script invocations (`run test`, `run build`) use npm. The result TOON includes a `command_type` field (`npm` or `npx`) indicating which was used.
 
 ## Multi-Parser Architecture
 
@@ -216,13 +208,13 @@ npm build output → detect_tool_type(content, command)
 
 ## Error Categories
 
-| Category | Description |
-|----------|-------------|
-| `compilation_error` | SyntaxError, TypeError, ReferenceError, TypeScript errors |
-| `test_failure` | Jest/Vitest test failures, assertion errors |
-| `lint_error` | ESLint, Prettier, StyleLint violations |
-| `dependency_error` | Module not found, npm 404, ERESOLVE |
-| `playwright_error` | Browser automation failures, timeouts |
+| Category | Description | Parser |
+|----------|-------------|--------|
+| `compilation_error` | TypeScript errors (TS2xxx codes) | `_npm_parse_typescript.py` |
+| `test_failure` | Jest/Vitest/TAP test failures | `_npm_parse_jest.py`, `_npm_parse_tap.py` |
+| `lint_error` | ESLint violations | `_npm_parse_eslint.py` |
+| `npm_dependency` | ERESOLVE peer dependency conflicts | `_npm_parse_errors.py` |
+| `npm_error` | E404 and other npm command errors | `_npm_parse_errors.py` |
 
 ## Module Discovery
 
@@ -240,13 +232,15 @@ Each workspace gets its own module entry with scoped commands.
 
 Discovery generates canonical commands per module:
 
-| Canonical | npm Command |
-|-----------|-------------|
-| `verify` | `run test` (or `run build && run test`) |
-| `quality-gate` | `run lint` |
-| `compile` | `run build` |
-| `module-tests` | `run test` |
-| `clean` | `run clean` (if script exists) |
+| Canonical | npm Command | Condition |
+|-----------|-------------|-----------|
+| `install` | `install` | Always |
+| `verify` | `run build && run test` (or `run test`) | `build`/`test` scripts |
+| `quality-gate` | `run lint` (or `run check`) | `lint`/`check` script |
+| `compile` | `run build` (or `run typecheck`/`run type-check`) | `build`/`typecheck` script |
+| `module-tests` | `run test` | `test` script |
+| `coverage` | `run test:coverage` (or `run coverage`) | `test:coverage`/`coverage` script |
+| `clean` | `run clean` | `clean` script |
 
 Commands are only generated for scripts present in `package.json`.
 

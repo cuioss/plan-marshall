@@ -30,6 +30,8 @@ Python build execution via pyprojectx (`./pw` wrapper) with output parsing for m
 | `_python_cmd_parse.py` | Library | Log parsing for mypy, ruff, pytest |
 | `_python_cmd_discover.py` | Library | Module discovery via test directory detection |
 
+Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
+
 ## Unified API
 
 All build skills share the same subcommand structure. Python supports the common subcommands:
@@ -176,10 +178,14 @@ Each module includes: `name`, `build_systems`, `paths` (module/descriptor/source
 ## Wrapper Detection
 
 ```
-Python: ./pw > pwx (on PATH)
+Python: ./pw > pw.bat > pwx (on PATH)
 ```
 
-Unlike Maven/Gradle which fall back to system commands, Python raises `FileNotFoundError` if no pyprojectx wrapper is found.
+Detection order: `./pw` (Unix), `pw.bat` (Windows), `pwx` (system PATH). Unlike Maven/Gradle which fall back to system commands, Python raises `FileNotFoundError` if no pyprojectx wrapper is found.
+
+## Multi-Parser Combination
+
+Unlike Maven/Gradle/npm which route to a single parser, Python's `parse_log()` runs **all matching parsers** and combines results. This is because pyprojectx `verify` runs multiple tools (mypy + ruff + pytest) in sequence, producing mixed output in a single log file.
 
 ## Error Categories
 

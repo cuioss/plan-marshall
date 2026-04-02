@@ -31,6 +31,8 @@ Maven build execution with output parsing, module discovery, and wrapper detecti
 | `_maven_cmd_discover.py` | Library | Module discovery via pom.xml |
 | `_maven_cmd_parse.py` | Library | Log parsing, issue extraction (uses shared categorizer) |
 
+Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
+
 ## Unified API
 
 All build skills share the same subcommand structure. Maven supports all subcommands:
@@ -195,19 +197,15 @@ Maven:  ./mvnw > mvn (on PATH)
 
 Categories use **substring matching** (case-insensitive). The shared `categorize_issue()` function auto-detects regex metacharacters, but Maven patterns are plain substrings for simplicity. Deduplication uses the shared `make_dedup_key()` format: `{category}:{file}:{line}:{message[:100]}`.
 
-| Category | Description | Shared across |
-|----------|-------------|---------------|
-| `compilation_error` | Compile-time Java errors | Maven, Gradle |
-| `test_failure` | Test assertion failures | Maven, Gradle, npm, Python |
-| `dependency_error` | Dependency resolution issues | Maven, Gradle, npm |
-| `javadoc_warning` | JavaDoc documentation issues | Maven, Gradle |
-| `deprecation_warning` | Deprecated API usage | Maven, Gradle |
-| `unchecked_warning` | Unchecked type conversions | Maven, Gradle |
-| `openrewrite_info` | OpenRewrite plugin output | Maven, Gradle |
-| `lint_error` | Linter violations | npm (ESLint), Python (ruff) |
-| `type_error` | Type-checking errors | Python (mypy) |
-| `import_error` | Module import errors | Python |
-| `playwright_error` | Browser automation failures | npm |
+| Category | Description |
+|----------|-------------|
+| `compilation_error` | Compile-time Java errors |
+| `test_failure` | Test assertion failures |
+| `dependency_error` | Dependency resolution issues |
+| `javadoc_warning` | JavaDoc documentation issues |
+| `deprecation_warning` | Deprecated API usage |
+| `unchecked_warning` | Unchecked type conversions |
+| `openrewrite_info` | OpenRewrite plugin output |
 
 ## Module Discovery
 

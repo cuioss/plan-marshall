@@ -313,47 +313,34 @@ def filter_warnings(warnings: list[Issue], patterns: list[str], mode: str = MODE
 def generate_summary_from_issues(issues: list[Issue]) -> dict:
     """Generate issue summary by category from Issue dataclasses.
 
-    Provides a consistent category breakdown across all JVM build systems
-    (Maven, Gradle). Used by cmd_parse handlers for structured output.
+    Dynamically counts issues per category based on what's actually present,
+    working across all build systems (Maven, Gradle, npm, Python).
 
     Args:
         issues: List of Issue dataclasses to summarize.
 
     Returns:
-        Dict with counts per category and total_issues.
+        Dict with counts per actually-seen category, plus error/warning
+        totals and total_issues.
     """
-    summary = {
-        'compilation_errors': 0,
-        'test_failures': 0,
-        'javadoc_warnings': 0,
-        'deprecation_warnings': 0,
-        'unchecked_warnings': 0,
-        'dependency_errors': 0,
-        'openrewrite_info': 0,
-        'other_warnings': 0,
-        'other_errors': 0,
-        'total_issues': len(issues),
-    }
+    by_category: dict[str, int] = {}
+    error_count = 0
+    warning_count = 0
+
     for issue in issues:
-        cat, sev = issue.category, issue.severity
-        if cat == 'compilation_error':
-            summary['compilation_errors'] += 1
-        elif cat == 'test_failure':
-            summary['test_failures'] += 1
-        elif cat == 'javadoc_warning':
-            summary['javadoc_warnings'] += 1
-        elif cat == 'deprecation_warning':
-            summary['deprecation_warnings'] += 1
-        elif cat == 'unchecked_warning':
-            summary['unchecked_warnings'] += 1
-        elif cat == 'dependency_error':
-            summary['dependency_errors'] += 1
-        elif cat == 'openrewrite_info':
-            summary['openrewrite_info'] += 1
-        elif sev == SEVERITY_ERROR:
-            summary['other_errors'] += 1
+        cat = issue.category or 'other'
+        by_category[cat] = by_category.get(cat, 0) + 1
+        if issue.severity == SEVERITY_ERROR:
+            error_count += 1
         else:
-            summary['other_warnings'] += 1
+            warning_count += 1
+
+    summary: dict[str, int] = {
+        'total_issues': len(issues),
+        'total_errors': error_count,
+        'total_warnings': warning_count,
+    }
+    summary.update(by_category)
     return summary
 
 

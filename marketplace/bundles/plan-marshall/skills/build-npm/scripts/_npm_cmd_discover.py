@@ -20,6 +20,7 @@ Output:
 """
 
 import json
+import re
 from pathlib import Path
 
 from _build_commands import build_canonical_commands, build_chained_commands
@@ -152,7 +153,6 @@ def _resolve_pnpm_workspaces(root: Path) -> list[str]:
         #   packages:
         #     - 'packages/*'
         #     - 'apps/*'
-        import re
         packages: list[str] = []
         in_packages = False
         for line in content.split('\n'):
@@ -285,17 +285,31 @@ def _build_commands(module_name: str, scripts: dict, relative_path: str) -> dict
 
     cmd_map: dict[str, str] = {}
 
+    # install is always available for npm
+    cmd_map['install'] = f'install{ws_arg}'
+
     if 'clean' in scripts:
         cmd_map['clean'] = f'run clean{ws_arg}'
 
     if 'build' in scripts:
         cmd_map['compile'] = f'run build{ws_arg}'
+    elif 'typecheck' in scripts:
+        cmd_map['compile'] = f'run typecheck{ws_arg}'
+    elif 'type-check' in scripts:
+        cmd_map['compile'] = f'run type-check{ws_arg}'
 
     if 'lint' in scripts:
         cmd_map['quality-gate'] = f'run lint{ws_arg}'
+    elif 'check' in scripts:
+        cmd_map['quality-gate'] = f'run check{ws_arg}'
 
     if 'test' in scripts:
         cmd_map['module-tests'] = f'run test{ws_arg}'
+
+    if 'test:coverage' in scripts:
+        cmd_map['coverage'] = f'run test:coverage{ws_arg}'
+    elif 'coverage' in scripts:
+        cmd_map['coverage'] = f'run coverage{ws_arg}'
 
     commands = build_canonical_commands(skill, cmd_map)
 

@@ -67,7 +67,7 @@ def _extract_issues(content: str) -> list[Issue]:
     collecting_stack = False
     stack_lines = []
 
-    for _i, line in enumerate(lines):
+    for line in lines:
         # Check for FAIL marker
         fail_match = FAIL_PATTERN.match(line)
         if fail_match:

@@ -153,14 +153,19 @@ def test_commands_minimal():
 
 
 def test_commands_no_scripts():
-    """Test commands with no scripts."""
+    """Test commands with no scripts — install is always available."""
     with BuildContext() as ctx:
         (ctx.temp_dir / 'package.json').write_text(json.dumps({'name': 'bare'}))
 
         modules = discover_npm_modules(str(ctx.temp_dir))
         commands = modules[0]['commands']
 
-        assert commands == {}
+        # install is always generated even without scripts
+        assert 'install' in commands
+        # No script-dependent commands should be present
+        assert 'compile' not in commands
+        assert 'module-tests' not in commands
+        assert 'quality-gate' not in commands
 
 
 def test_commands_workspace_scoping():

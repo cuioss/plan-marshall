@@ -30,7 +30,7 @@ except ModuleNotFoundError:
 
 from _build_commands import build_canonical_commands
 from _build_discover import EXCLUDE_DIRS
-from extension_base import find_readme
+from extension_base import build_module_base, find_readme
 
 # Directories that indicate a test module
 TEST_DIR_NAMES = {'test', 'tests'}
@@ -125,6 +125,10 @@ def _has_test_dir(directory: Path) -> bool:
 def _build_module(module_path: Path, project_root: Path, relative_path: str) -> dict | None:
     """Build module dict from file system analysis.
 
+    Uses build_module_base() from extension-api when a descriptor file exists
+    for consistent name/path/README resolution (at parity with Maven, Gradle,
+    and npm discovery). Falls back to manual resolution when no descriptor is found.
+
     Args:
         module_path: Path to module directory.
         project_root: Project root path.
@@ -134,7 +138,20 @@ def _build_module(module_path: Path, project_root: Path, relative_path: str) -> 
         Module dict conforming to module-discovery.md, or None.
     """
     is_root = relative_path == '.'
-    name = 'default' if is_root else module_path.name
+
+    # Use build_module_base for consistent name/path/README when descriptor exists
+    descriptor_file = _find_descriptor_file(module_path)
+    if descriptor_file:
+        base = build_module_base(str(project_root), str(descriptor_file))
+        name = base.name
+        readme_path = base.paths.readme
+        descriptor = base.paths.descriptor
+    else:
+        name = 'default' if is_root else module_path.name
+        readme = find_readme(str(module_path))
+        prefix = relative_path if not is_root else ''
+        readme_path = f'{prefix}/{readme}' if readme and prefix else readme
+        descriptor = None
 
     # Find source and test directories
     source_dirs = _find_python_source_dirs(module_path)
@@ -151,13 +168,6 @@ def _build_module(module_path: Path, project_root: Path, relative_path: str) -> 
     # Packages (Python dotted notation from source dirs)
     packages = _discover_python_packages(module_path, source_dirs, prefix)
     test_packages = _discover_python_packages(module_path, test_dirs, prefix)
-
-    # README
-    readme = find_readme(str(module_path))
-    readme_path = f'{prefix}/{readme}' if readme and prefix else readme
-
-    # Descriptor (pyproject.toml or setup.cfg)
-    descriptor = _find_descriptor(module_path, prefix)
 
     # Metadata and dependencies from pyproject.toml
     pyproject_data = _parse_pyproject_metadata(module_path)
@@ -329,19 +339,19 @@ def _parse_pyproject_metadata(module_path: Path) -> dict:
     return {'metadata': metadata, 'dependencies': dependencies}
 
 
-def _find_descriptor(module_path: Path, prefix: str) -> str | None:
-    """Find Python project descriptor file (pyproject.toml or setup.cfg).
+def _find_descriptor_file(module_path: Path) -> Path | None:
+    """Find Python project descriptor file as absolute Path.
 
     Args:
         module_path: Absolute path to module directory.
-        prefix: Module path relative to project root.
 
     Returns:
-        Relative path to descriptor, or None.
+        Absolute path to descriptor file, or None.
     """
     for name in ('pyproject.toml', 'setup.cfg', 'setup.py'):
-        if (module_path / name).exists():
-            return f'{prefix}/{name}' if prefix else name
+        candidate = module_path / name
+        if candidate.exists():
+            return candidate
     return None
 
 

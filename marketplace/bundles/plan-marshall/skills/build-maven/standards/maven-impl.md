@@ -167,6 +167,8 @@ Maven has additional failure detection beyond the shared rules:
 
 ## Issue Routing
 
+Routes to skills in the `pm-dev-java` bundle:
+
 | Issue Type | Fix Command |
 |------------|-------------|
 | `compilation_error` | `/java-implement-code` |

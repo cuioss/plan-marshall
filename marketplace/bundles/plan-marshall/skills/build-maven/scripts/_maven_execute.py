@@ -9,6 +9,8 @@ Usage:
     from _maven_execute import execute_direct, cmd_run
 """
 
+import re
+
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers
 from _maven_cmd_parse import parse_log
@@ -19,9 +21,7 @@ def _maven_scope_fn(args: str) -> str:
 
     Handles both '-pl module' and '-pl=module' forms.
     """
-    import re as _re
-
-    match = _re.search(r'-pl[=\s]+(\S+)', args)
+    match = re.search(r'-pl[=\s]+(\S+)', args)
     if match:
         return match.group(1)
     return 'default'

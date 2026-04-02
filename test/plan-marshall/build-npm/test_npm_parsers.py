@@ -50,7 +50,7 @@ def test_typescript_parse_log_extracts_errors():
     assert error.file is not None
     assert error.line is not None
     assert error.severity == SEVERITY_ERROR
-    assert error.category == 'typescript_error'
+    assert error.category == 'compilation_error'
 
 
 def test_typescript_no_test_summary():
@@ -213,7 +213,7 @@ def test_eslint_issue_fields():
     assert isinstance(issue, Issue)
     assert issue.file is not None
     assert issue.line is not None
-    assert issue.category == 'eslint'
+    assert issue.category == 'lint_error'
     assert issue.message is not None
 
 

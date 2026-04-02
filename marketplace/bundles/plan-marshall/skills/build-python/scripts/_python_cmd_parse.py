@@ -19,12 +19,17 @@ from _build_parse import (
     categorize_issue,
     collect_stack_traces,
     extract_test_summary,
+    make_dedup_key,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
 from _build_parser_registry import DetectionRule, ParserRegistry
 
+# Pre-compiled patterns for tool-specific parsers
+_MYPY_ERROR_PATTERN = re.compile(r'^(.+\.py):(\d+): error: (.+)$', re.MULTILINE)
+_RUFF_ISSUE_PATTERN = re.compile(r'^(.+\.py):(\d+):\d+: ([A-Z]+\d+) (.+)$', re.MULTILINE)
+_PYTEST_FAILED_PATTERN = re.compile(r'^FAILED (.+\.py)::(\S+)(?: - (.+))?$', re.MULTILINE)
 
 # Python-specific categorization patterns for use with shared categorize_issue().
 # Patterns are checked case-insensitively; regex metacharacters trigger regex mode.
@@ -64,8 +69,7 @@ def _parse_mypy(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
     issues: list[Issue] = []
     seen: set[str] = set()
 
-    pattern = re.compile(r'^(.+\.py):(\d+): error: (.+)$', re.MULTILINE)
-    for match in pattern.finditer(content):
+    for match in _MYPY_ERROR_PATTERN.finditer(content):
         file_path = match.group(1)
         line = int(match.group(2))
         message = match.group(3)
@@ -74,7 +78,7 @@ def _parse_mypy(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
             category = 'type_error'
 
         # Deduplication
-        dedup_key = f'{category}:{file_path}:{line}:{message[:100]}'
+        dedup_key = make_dedup_key(category, file_path, line, message)
         if dedup_key in seen:
             continue
         seen.add(dedup_key)
@@ -104,14 +108,13 @@ def _parse_ruff(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
     issues: list[Issue] = []
     seen: set[str] = set()
 
-    pattern = re.compile(r'^(.+\.py):(\d+):\d+: ([A-Z]+\d+) (.+)$', re.MULTILINE)
-    for match in pattern.finditer(content):
+    for match in _RUFF_ISSUE_PATTERN.finditer(content):
         file_path = match.group(1)
         line = int(match.group(2))
         message = f'{match.group(3)} {match.group(4)}'
 
         # Deduplication
-        dedup_key = f'lint_error:{file_path}:{line}:{message[:100]}'
+        dedup_key = make_dedup_key('lint_error', file_path, line, message)
         if dedup_key in seen:
             continue
         seen.add(dedup_key)
@@ -141,8 +144,7 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
     issues: list[Issue] = []
     seen: set[str] = set()
 
-    pattern = re.compile(r'^FAILED (.+\.py)::(\S+)(?: - (.+))?$', re.MULTILINE)
-    for match in pattern.finditer(content):
+    for match in _PYTEST_FAILED_PATTERN.finditer(content):
         file_path = match.group(1)
         test_name = match.group(2)
         message = match.group(3) if match.group(3) else f'Test {test_name} failed'
@@ -214,7 +216,11 @@ def _has_ruff_output(content: str) -> bool:
 
 def _has_pytest_output(content: str) -> bool:
     """Detect pytest output. Uses specific markers to avoid false positives."""
-    return 'FAILED ' in content or ('passed' in content and ('failed' in content or 'warning' in content or 'error' in content or '==' in content))
+    # FAILED lines are definitive pytest markers
+    if 'FAILED ' in content:
+        return True
+    # pytest summary line uses '=' separators with pass/fail counts
+    return '==' in content and ('passed' in content or 'failed' in content)
 
 
 # =============================================================================
