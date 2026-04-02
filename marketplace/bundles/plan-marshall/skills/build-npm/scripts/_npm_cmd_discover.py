@@ -23,14 +23,15 @@ import argparse
 import json
 from pathlib import Path
 
+from _build_commands import build_canonical_commands, build_chained_commands
 from _build_format import format_toon
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from extension_base import (
+    build_module_base,
     count_source_files,
     discover_packages,
     discover_sources,
-    find_readme,
 )
 
 
@@ -136,6 +137,9 @@ def _resolve_workspaces(root: Path, root_data: dict) -> list[Path]:
 def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_root: bool) -> dict | None:
     """Build module dict from package.json data and file system analysis.
 
+    Uses build_module_base() from extension-api for consistent name/path/README
+    resolution, then enriches with npm-specific metadata.
+
     Args:
         module_path: Path to module directory.
         project_root: Project root path.
@@ -145,16 +149,15 @@ def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_r
     Returns:
         Module dict conforming to module-discovery.md, or None.
     """
-    try:
-        relative_path = str(module_path.relative_to(project_root))
-    except ValueError:
-        relative_path = '.'
-    if relative_path == '.':
-        relative_path = '.'
+    pkg_json_path = module_path / 'package.json'
+    base = build_module_base(str(project_root), str(pkg_json_path))
 
-    name = pkg_data.get('name', module_path.name)
+    # Override name from package.json if available
+    name = pkg_data.get('name', base.name)
     if is_root and not pkg_data.get('name'):
         name = 'default'
+
+    relative_path = base.paths.module
 
     # Source directories (shared multi-language discovery)
     sources = discover_sources(module_path)
@@ -170,10 +173,6 @@ def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_r
     source_files = count_source_files(module_path, sources['main'])
     test_files = count_source_files(module_path, sources['test'])
 
-    # README
-    readme = find_readme(str(module_path))
-    readme_path = f'{prefix}/{readme}' if readme and prefix else readme
-
     # Scripts from package.json
     scripts = pkg_data.get('scripts', {})
 
@@ -188,10 +187,10 @@ def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_r
         'build_systems': ['npm'],
         'paths': {
             'module': relative_path,
-            'descriptor': f'{prefix}/package.json' if prefix else 'package.json',
+            'descriptor': base.paths.descriptor,
             'sources': source_paths if source_paths else None,
             'tests': test_paths if test_paths else None,
-            'readme': readme_path,
+            'readme': base.paths.readme,
         },
         'metadata': {
             'description': pkg_data.get('description'),
@@ -238,34 +237,33 @@ def _build_commands(module_name: str, scripts: dict, relative_path: str) -> dict
         scripts: package.json scripts object.
         relative_path: Path relative to project root.
     """
-    base = 'python3 .plan/execute-script.py plan-marshall:build-npm:npm run'
-
+    skill = 'plan-marshall:build-npm:npm'
     is_root = not relative_path or relative_path == '.'
     ws_arg = '' if is_root else f' --workspace={module_name}'
 
-    commands: dict[str, str] = {}
+    cmd_map: dict[str, str] = {}
 
-    # clean: only if script exists
     if 'clean' in scripts:
-        commands['clean'] = f'{base} --command-args "run clean{ws_arg}"'
+        cmd_map['clean'] = f'run clean{ws_arg}'
 
-    # compile / build
     if 'build' in scripts:
-        commands['compile'] = f'{base} --command-args "run build{ws_arg}"'
+        cmd_map['compile'] = f'run build{ws_arg}'
 
-    # quality-gate / lint
     if 'lint' in scripts:
-        commands['quality-gate'] = f'{base} --command-args "run lint{ws_arg}"'
+        cmd_map['quality-gate'] = f'run lint{ws_arg}'
 
-    # module-tests / test
     if 'test' in scripts:
-        commands['module-tests'] = f'{base} --command-args "run test{ws_arg}"'
+        cmd_map['module-tests'] = f'run test{ws_arg}'
 
-    # verify: build + test if both exist, otherwise just test
+    commands = build_canonical_commands(skill, cmd_map)
+
+    # verify: chained build + test if both exist, otherwise just test
     if 'build' in scripts and 'test' in scripts:
-        commands['verify'] = f'{base} --command-args "run build{ws_arg}" && {base} --command-args "run test{ws_arg}"'
+        commands['verify'] = build_chained_commands(
+            skill, [f'run build{ws_arg}', f'run test{ws_arg}']
+        )
     elif 'test' in scripts:
-        commands['verify'] = f'{base} --command-args "run test{ws_arg}"'
+        commands['verify'] = build_canonical_commands(skill, {'verify': f'run test{ws_arg}'})['verify']
 
     return commands
 

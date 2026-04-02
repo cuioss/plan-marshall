@@ -31,6 +31,7 @@ import json
 import re
 from pathlib import Path
 
+from _build_commands import build_canonical_commands
 from _build_format import format_toon
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
@@ -515,72 +516,43 @@ def _build_commands(
         profiles: List of profile dicts with id, canonical
         relative_path: Path relative to project root ("" or "." for root module)
     """
-    base = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run'
-    commands = {}
-    # Embed -pl in command-args for submodules, empty for root
+    skill = 'plan-marshall:build-maven:maven'
     is_root_module = not relative_path or relative_path == '.'
     pl_arg = '' if is_root_module else f' -pl {module_name}'
 
     # 1. Always: clean (all modules including pom)
-    commands['clean'] = f'{base} --command-args "clean{pl_arg}"'
+    cmd_map: dict[str, str] = {
+        'clean': f'clean{pl_arg}',
+        'quality-gate': f'verify{pl_arg}',
+        'verify': f'verify{pl_arg}',
+        'install': f'install{pl_arg}',
+    }
 
-    # 2. Always: quality-gate, verify, install (all modules including pom)
-    commands['quality-gate'] = f'{base} --command-args "verify{pl_arg}"'
-    commands['verify'] = f'{base} --command-args "verify{pl_arg}"'
-    commands['install'] = f'{base} --command-args "install{pl_arg}"'
-
-    # 3. Non-pom modules get additional commands
+    # 2. Non-pom modules get additional commands
     if packaging != 'pom':
-        commands['clean-install'] = f'{base} --command-args "clean install{pl_arg}"'
-        commands['package'] = f'{base} --command-args "package{pl_arg}"'
+        cmd_map['clean-install'] = f'clean install{pl_arg}'
+        cmd_map['package'] = f'package{pl_arg}'
 
-        # 4. Source-conditional: compile
         if has_sources:
-            commands['compile'] = f'{base} --command-args "compile{pl_arg}"'
+            cmd_map['compile'] = f'compile{pl_arg}'
 
-        # 5. Test-conditional: test-compile, module-tests
         if has_tests:
-            commands['test-compile'] = f'{base} --command-args "test-compile{pl_arg}"'
-            commands['module-tests'] = f'{base} --command-args "test{pl_arg}"'
+            cmd_map['test-compile'] = f'test-compile{pl_arg}'
+            cmd_map['module-tests'] = f'test{pl_arg}'
 
-    # 6. Profile-based commands (integration-tests, coverage, benchmark)
+    # 3. Profile-based commands (integration-tests, coverage, benchmark)
     for profile in profiles or []:
         canonical = profile.get('canonical')
         profile_id = profile.get('id')
 
         if canonical and profile_id:
-            # quality-gate enhancement with profile
+            profile_args = f'verify -P{profile_id}{pl_arg}'
             if canonical == 'quality-gate':
-                cmd = _generate_profile_command(profile_id, module_name, relative_path)
-                if cmd:
-                    commands['quality-gate'] = cmd
-            # Additional profile-based commands
+                cmd_map['quality-gate'] = profile_args
             elif canonical in ['integration-tests', 'coverage', 'benchmark']:
-                cmd = _generate_profile_command(profile_id, module_name, relative_path)
-                if cmd:
-                    commands[canonical] = cmd
+                cmd_map[canonical] = profile_args
 
-    return commands
-
-
-def _generate_profile_command(profile_id: str, module_name: str, relative_path: str) -> str:
-    """Generate command for a profile.
-
-    Note: Commands do NOT include clean goal. Run clean separately if needed.
-
-    Args:
-        profile_id: Maven profile ID
-        module_name: Module artifact ID
-        relative_path: Path relative to project root ("" or "." for root module)
-    """
-    base = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run'
-
-    # Embed -pl in command-args for submodules, empty for root
-    is_root_module = not relative_path or relative_path == '.'
-    pl_arg = '' if is_root_module else f' -pl {module_name}'
-
-    # Profile activation via -P flag (no clean goal), module via -pl
-    return f'{base} --command-args "verify -P{profile_id}{pl_arg}"'
+    return build_canonical_commands(skill, cmd_map)
 
 
 # =============================================================================

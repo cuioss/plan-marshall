@@ -2,6 +2,7 @@
 """Parse subcommand for Gradle build output.
 
 Implements BuildParser protocol for unified build log parsing.
+Uses the shared ParserRegistry for consistent detection and routing.
 Internal module - use gradle.py CLI entry point instead.
 
 Usage (internal):
@@ -27,6 +28,7 @@ from _build_parse import (
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
+from _build_parser_registry import DetectionRule, ParserRegistry
 
 # Gradle-specific categorization patterns. Uses regex patterns for
 # Gradle task-specific markers alongside shared JVM patterns.
@@ -93,6 +95,35 @@ def extract_file_location(line: str) -> tuple[str, int, int]:
 
 
 # =============================================================================
+# Gradle-specific parser function
+# =============================================================================
+
+
+def _parse_gradle_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
+    """Parse Gradle build log file."""
+    path = Path(log_file)
+    content = path.read_text(encoding='utf-8', errors='replace')
+    lines = content.split('\n')
+
+    issues = _extract_issues(lines)
+    test_summary = _extract_test_summary(content)
+    build_status = _detect_build_status(content)
+
+    return issues, test_summary, build_status
+
+
+def _has_gradle_output(content: str) -> bool:
+    """Detect Gradle output from content."""
+    return 'BUILD SUCCESSFUL' in content or 'BUILD FAILED' in content or 'Execution failed for task' in content
+
+
+# Registry with single Gradle parser
+_REGISTRY = ParserRegistry([
+    DetectionRule('gradle', ('gradle', 'gradlew'), _has_gradle_output, _parse_gradle_log),
+])
+
+
+# =============================================================================
 # BuildParser Protocol Implementation
 # =============================================================================
 
@@ -114,15 +145,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    path = Path(log_file)
-    content = path.read_text(encoding='utf-8', errors='replace')
-    lines = content.split('\n')
-
-    issues = _extract_issues(lines)
-    test_summary = _extract_test_summary(content)
-    build_status = _detect_build_status(content)
-
-    return issues, test_summary, build_status
+    return _parse_gradle_log(str(log_file))
 
 
 def _detect_build_status(content: str) -> str:

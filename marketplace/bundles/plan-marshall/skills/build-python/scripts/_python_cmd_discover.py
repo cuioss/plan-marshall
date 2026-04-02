@@ -22,8 +22,10 @@ import argparse
 import json
 from pathlib import Path
 
-from _build_discover import EXCLUDE_DIRS, find_readme
+from _build_commands import build_canonical_commands
+from _build_discover import EXCLUDE_DIRS
 from _build_format import format_toon
+from extension_base import find_readme
 
 # Python source extensions
 PYTHON_EXTENSIONS = ['*.py']
@@ -228,23 +230,22 @@ def _build_commands(module_name: str, relative_path: str, has_tests: bool) -> di
         relative_path: Path relative to project root.
         has_tests: Whether module has test files.
     """
-    base = 'python3 .plan/execute-script.py plan-marshall:build-python:python_build run'
-
+    skill = 'plan-marshall:build-python:python_build'
     is_root = not relative_path or relative_path == '.'
     module_arg = '' if is_root else f' {module_name}'
 
-    commands: dict[str, str] = {
-        'clean': f'{base} --command-args "clean"',
-        'compile': f'{base} --command-args "compile{module_arg}"',
-        'quality-gate': f'{base} --command-args "quality-gate{module_arg}"',
-        'verify': f'{base} --command-args "verify{module_arg}"',
+    cmd_map: dict[str, str] = {
+        'clean': 'clean',
+        'compile': f'compile{module_arg}',
+        'quality-gate': f'quality-gate{module_arg}',
+        'verify': f'verify{module_arg}',
     }
 
     if has_tests:
-        commands['module-tests'] = f'{base} --command-args "module-tests{module_arg}"'
-        commands['coverage'] = f'{base} --command-args "coverage{module_arg}"'
+        cmd_map['module-tests'] = f'module-tests{module_arg}'
+        cmd_map['coverage'] = f'coverage{module_arg}'
 
-    return commands
+    return build_canonical_commands(skill, cmd_map)
 
 
 # =============================================================================

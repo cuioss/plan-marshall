@@ -2,6 +2,7 @@
 """Parse subcommand for Maven build output.
 
 Implements BuildParser protocol for unified build log parsing.
+Uses the shared ParserRegistry for consistent detection and routing.
 Internal module - use maven.py CLI entry point instead.
 
 Usage (internal):
@@ -26,6 +27,7 @@ from _build_parse import (
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
+from _build_parser_registry import DetectionRule, ParserRegistry
 
 # Maven-specific categorization patterns (substring matching by default,
 # regex when metacharacters are present).
@@ -94,6 +96,34 @@ def parse_file_location(line: str) -> dict:
 
 
 # =============================================================================
+# Maven-specific parser function
+# =============================================================================
+
+
+def _parse_maven_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
+    """Parse Maven build log file."""
+    path = Path(log_file)
+    content = path.read_text(encoding='utf-8', errors='replace')
+
+    issues = _extract_issues(content)
+    test_summary = _extract_test_summary(content)
+    build_status = _detect_build_status(content)
+
+    return issues, test_summary, build_status
+
+
+def _has_maven_output(content: str) -> bool:
+    """Detect Maven output from content."""
+    return '[INFO] BUILD' in content or '[ERROR]' in content or '[WARNING]' in content
+
+
+# Registry with single Maven parser
+_REGISTRY = ParserRegistry([
+    DetectionRule('maven', ('mvn', 'mvnw'), _has_maven_output, _parse_maven_log),
+])
+
+
+# =============================================================================
 # BuildParser Protocol Implementation
 # =============================================================================
 
@@ -115,14 +145,7 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    path = Path(log_file)
-    content = path.read_text(encoding='utf-8', errors='replace')
-
-    issues = _extract_issues(content)
-    test_summary = _extract_test_summary(content)
-    build_status = _detect_build_status(content)
-
-    return issues, test_summary, build_status
+    return _parse_maven_log(str(log_file))
 
 
 def _extract_issues(content: str) -> list[Issue]:

@@ -6,10 +6,20 @@ projects, workspaces, and command generation.
 """
 
 import json
-import tempfile
+import sys
 from pathlib import Path
 
+# Make discovery_test_helpers importable
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from conftest import BuildContext
+from discovery_test_helpers import (
+    assert_command_uses_executor,
+    assert_module_commands,
+    assert_module_paths,
+    assert_module_stats,
+    assert_valid_module,
+)
 
 # Import module under test (PYTHONPATH set by conftest)
 from _npm_cmd_discover import discover_npm_modules
@@ -30,10 +40,8 @@ def test_discover_single_package():
 
         assert len(modules) == 1
         module = modules[0]
-        assert module['name'] == 'my-app'
-        assert module['build_systems'] == ['npm']
-        assert module['paths']['module'] == '.'
-        assert module['paths']['descriptor'] == 'package.json'
+        assert_valid_module(module, build_system='npm', expected_name='my-app')
+        assert_module_paths(module, expected_module_path='.', expect_descriptor=True)
         assert module['metadata']['description'] == 'A sample app'
 
 
@@ -105,8 +113,8 @@ def test_discover_workspaces_object_format():
         # Root + 1 workspace
         assert len(modules) == 2
         ws_module = next(m for m in modules if m['name'] == 'my-pkg')
-        assert ws_module['paths']['module'] == 'packages/my-pkg'
-        assert ws_module['paths']['descriptor'] == 'packages/my-pkg/package.json'
+        assert_valid_module(ws_module, build_system='npm', expected_name='my-pkg')
+        assert_module_paths(ws_module, expected_module_path='packages/my-pkg')
 
 
 # =============================================================================
@@ -124,13 +132,11 @@ def test_commands_from_scripts():
         (ctx.temp_dir / 'package.json').write_text(json.dumps(pkg))
 
         modules = discover_npm_modules(str(ctx.temp_dir))
-        commands = modules[0]['commands']
-
-        assert 'compile' in commands  # from build script
-        assert 'module-tests' in commands  # from test script
-        assert 'quality-gate' in commands  # from lint script
-        assert 'verify' in commands  # combined build + test
-        assert 'clean' in commands  # from clean script
+        assert_module_commands(
+            modules[0],
+            expected_commands=['compile', 'module-tests', 'quality-gate', 'verify', 'clean'],
+        )
+        assert_command_uses_executor(modules[0], 'compile', skill_notation='plan-marshall:build-npm:npm')
 
 
 def test_commands_minimal():

@@ -31,6 +31,7 @@ import json
 import re
 from pathlib import Path
 
+from _build_commands import build_canonical_commands
 from _build_format import format_toon
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
@@ -451,7 +452,7 @@ def _build_commands(
         relative_path: Path relative to project root ("." or "" for root module)
         quality_tasks: List of detected quality task names
     """
-    base = 'python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run'
+    skill = 'plan-marshall:build-gradle:gradle'
 
     # For Gradle, embed module as :module:task prefix in command-args
     is_root_module = not relative_path or relative_path == '.'
@@ -461,41 +462,32 @@ def _build_commands(
         """Prefix each task with module path for submodules."""
         if not task_prefix:
             return tasks
-        # Handle multiple tasks: "clean build" -> ":module:clean :module:build"
         return ' '.join(f'{task_prefix}{t}' for t in tasks.split())
 
     # Determine quality-gate task
-    # Default to 'check' which is Gradle's standard verification task
-    # If quality plugins detected, use their check tasks
     quality_target = 'check'
     if 'spotlessCheck' in quality_tasks:
         quality_target = 'spotlessCheck check'
     elif 'checkstyleMain' in quality_tasks:
         quality_target = 'checkstyleMain check'
 
-    commands = {
-        # Always: clean (separate)
-        'clean': f'{base} --command-args "{_tasks("clean")}"',
-        # quality-gate: uses check (static analysis, linting) - NOT build
-        'quality-gate': f'{base} --command-args "{_tasks(quality_target)}"',
-        # verify: full build including tests
-        'verify': f'{base} --command-args "{_tasks("build")}"',
-        # install/deploy commands
-        'install': f'{base} --command-args "{_tasks("publishToMavenLocal")}"',
-        'clean-install': f'{base} --command-args "{_tasks("clean publishToMavenLocal")}"',
-        'package': f'{base} --command-args "{_tasks("jar")}"',
+    cmd_map: dict[str, str] = {
+        'clean': _tasks('clean'),
+        'quality-gate': _tasks(quality_target),
+        'verify': _tasks('build'),
+        'install': _tasks('publishToMavenLocal'),
+        'clean-install': _tasks('clean publishToMavenLocal'),
+        'package': _tasks('jar'),
     }
 
-    # Source-conditional: compile
     if has_sources:
-        commands['compile'] = f'{base} --command-args "{_tasks("classes")}"'
+        cmd_map['compile'] = _tasks('classes')
 
-    # Test-conditional: test-compile, module-tests
     if has_tests:
-        commands['test-compile'] = f'{base} --command-args "{_tasks("testClasses")}"'
-        commands['module-tests'] = f'{base} --command-args "{_tasks("test")}"'
+        cmd_map['test-compile'] = _tasks('testClasses')
+        cmd_map['module-tests'] = _tasks('test')
 
-    return commands
+    return build_canonical_commands(skill, cmd_map)
 
 
 # =============================================================================

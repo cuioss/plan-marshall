@@ -1,6 +1,6 @@
 # Maven Implementation Standards
 
-Standards for Maven build execution, output parsing, and issue handling.
+Maven-specific standards for build execution, output parsing, and issue handling. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`.
 
 ---
 
@@ -78,40 +78,6 @@ Use `-rf` (resume from) to restart a failed build:
 
 ---
 
-## Timeout Management
-
-### Timeout Calculation
-
-```
-timeout = last_successful_duration * 1.25
-```
-
-### Default Timeouts
-
-| Build Type | Default Timeout |
-|------------|-----------------|
-| Unit tests only | 60s (1 min) |
-| Full build | 120s (2 min) |
-| Integration tests | 300s (5 min) |
-| Native image | 600s (10 min) |
-
-**Note**: All timeouts use seconds. The build script API accepts `--timeout` in seconds.
-
----
-
-## Build Status Determination
-
-| Exit Code | Output Content | Status |
-|-----------|---------------|--------|
-| 0 | Contains "BUILD SUCCESS" | SUCCESS |
-| 0 | Contains "BUILD FAILURE" | FAILURE |
-| != 0 | Any | FAILURE |
-| 0 | Contains [ERROR] lines | FAILURE |
-
-**Never assume success from exit code alone.**
-
----
-
 ## Quality Profiles
 
 **Note**: Profile commands do NOT include clean goal. Run `clean` separately if needed.
@@ -139,33 +105,6 @@ Includes: All pre-commit checks, JaCoCo coverage, threshold verification.
 ```
 
 Runs integration tests (*IT.java, *ITCase.java).
-
----
-
-## Acceptable Warnings
-
-### Infrastructure Warnings (Can Be Acceptable)
-
-1. **Transitive Dependency Conflicts** - Version conflicts from dependencies of dependencies
-2. **Plugin Compatibility Warnings** - Plugin warnings for configurations locked by parent POM
-3. **Platform-Specific Warnings** - Warnings related to OS, JVM version, or hardware
-
-### Fixable Warnings (NEVER Acceptable)
-
-These warnings MUST be fixed and NEVER added to acceptable list:
-
-1. **JavaDoc Warnings** - ALWAYS FIX
-2. **Compilation Warnings** - ALWAYS FIX
-3. **Deprecation Warnings** - ALWAYS FIX (unless external)
-4. **Code Quality Warnings** - ALWAYS FIX
-
-### Configuration Access
-
-```
-Skill: plan-marshall:manage-run-config
-Workflow: Read Configuration
-Field: maven.acceptable_warnings
-```
 
 ---
 
@@ -216,17 +155,13 @@ All other marker types require user confirmation before suppression.
 
 ---
 
-## Script Reference
+## Build Status (Maven-Specific)
 
-| Subcommand | Description |
-|------------|-------------|
-| `run` | Execute build and auto-parse on failure (primary API) |
-| `parse` | Parse Maven build output and categorize issues |
-| `search-markers` | Search for OpenRewrite TODO markers |
-| `check-warnings` | Categorize build warnings against acceptable patterns |
-| `coverage-report` | Parse JaCoCo coverage report |
+Maven has additional failure detection beyond the shared rules:
 
-**Notation**: `plan-marshall:build-maven:maven`
+| Exit Code | Output Content | Status |
+|-----------|---------------|--------|
+| 0 | Contains `[ERROR]` lines | FAILURE |
 
 ---
 
@@ -257,67 +192,25 @@ Extensions can configure Maven-specific defaults via `config_defaults()` callbac
 Profiles listed in `build.maven.profiles.skip` are excluded from command generation.
 
 **Key**: `build.maven.profiles.skip`
-
 **Format**: `profile1,profile2,profile3`
-
-**Example**:
-```
-itest,native,jfr
-```
-
-**Effect**: The profiles `itest`, `native`, and `jfr` will not generate canonical commands.
-
-**Use Case**: Skip internal/infrastructure profiles that shouldn't be exposed as build commands.
+**Example**: `itest,native,jfr`
 
 ### Profile Mapping Configuration
 
 Explicit profile-to-canonical mappings override automatic classification.
 
 **Key**: `build.maven.profiles.map.canonical`
-
 **Format**: `profile1:canonical1,profile2:canonical2,...`
-
-**Example**:
-```
-pre-commit:quality-gate,coverage:coverage,javadoc:javadoc
-```
-
-**Effect**: Maps profiles to canonical commands:
-- `pre-commit` → `quality-gate`
-- `coverage` → `coverage`
-- `javadoc` → `javadoc` (extension-defined canonical command)
-
-**Standard Canonical Commands** (from extension_base.py):
-- `quality-gate` - Pre-commit quality checks
-- `integration-tests` - Integration test execution
-- `coverage` - Code coverage measurement
-- `performance` - Benchmark/performance tests
-
-**Note**: Extensions can define additional canonical commands (e.g., `javadoc`).
-
-### Python Constants
-
-Import from `maven_cmd_discover`:
-
-```python
-from _maven_cmd_discover import (
-    EXT_KEY_PROFILES_SKIP,      # "build.maven.profiles.skip"
-    EXT_KEY_PROFILES_MAP,       # "build.maven.profiles.map.canonical"
-)
-```
+**Example**: `pre-commit:quality-gate,coverage:coverage,javadoc:javadoc`
 
 ### Usage in config_defaults
 
 ```python
 def config_defaults(self, project_root: str) -> None:
-    """Configure extension-specific Maven defaults."""
     from _config_core import ext_defaults_set_default
     from _maven_cmd_discover import EXT_KEY_PROFILES_SKIP, EXT_KEY_PROFILES_MAP
 
-    # Skip internal profiles
     ext_defaults_set_default(EXT_KEY_PROFILES_SKIP, "itest,native", project_root)
-
-    # Map profiles to canonical commands
     ext_defaults_set_default(
         EXT_KEY_PROFILES_MAP,
         "pre-commit:quality-gate,coverage:coverage,javadoc:javadoc",
@@ -325,13 +218,9 @@ def config_defaults(self, project_root: str) -> None:
     )
 ```
 
-**Contract**: `ext_defaults_set_default` only writes if the key doesn't exist (write-once semantics).
-
 ---
 
 ## Coverage Report Paths
-
-The coverage report parser searches these JaCoCo XML report paths in order:
 
 | Path | Description |
 |------|-------------|
@@ -339,4 +228,4 @@ The coverage report parser searches these JaCoCo XML report paths in order:
 | `target/jacoco/report.xml` | Alternative report location |
 | `target/site/jacoco-aggregate/jacoco.xml` | Multi-module aggregate report |
 
-For multi-module projects, pass `--project-path {module-dir}` to scope the search to a specific module's `target/` directory.
+**Notation**: `plan-marshall:build-maven:maven`

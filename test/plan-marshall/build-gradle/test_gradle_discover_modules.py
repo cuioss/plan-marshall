@@ -25,7 +25,9 @@ from pathlib import Path
 
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from conftest import BuildContext
+from discovery_test_helpers import assert_valid_module
 
 # Direct imports - conftest sets up PYTHONPATH
 # Import Extension class from the extension module
@@ -47,22 +49,9 @@ GRADLE_AVAILABLE = shutil.which('gradle') is not None
 def _assert_valid_module_structure(module: dict) -> None:
     """Assert module has valid structure (either error or success).
 
-    Args:
-        module: Module dict to validate
+    Delegates to shared assert_valid_module for common checks.
     """
-    assert 'build_systems' in module
-    assert module['build_systems'] == ['gradle']
-    assert 'name' in module
-
-    if 'error' in module:
-        # Error structure: minimal fields only
-        assert 'paths' not in module or module.get('paths') is None
-        assert 'stats' not in module or module.get('stats') is None
-        assert 'commands' not in module or module.get('commands') is None
-    else:
-        # Success structure: has paths, stats, commands
-        assert 'paths' in module
-        assert 'commands' in module
+    assert_valid_module(module, build_system='gradle')
 
 
 # =============================================================================
