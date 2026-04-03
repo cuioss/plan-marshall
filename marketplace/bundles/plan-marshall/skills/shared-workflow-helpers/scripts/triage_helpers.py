@@ -57,16 +57,21 @@ __all__ = [
 # ============================================================================
 
 
-class TriageResult(TypedDict, total=False):
+class _TriageResultRequired(TypedDict):
+    """Required fields for triage results."""
+
+    action: str       # 'code_change', 'explain', 'ignore', 'fix', 'suppress'
+    status: str       # 'success' or 'error'
+
+
+class TriageResult(_TriageResultRequired, total=False):
     """Expected return shape for triage callback functions.
 
     Used by ``cmd_triage_single`` and ``cmd_triage_batch_handler`` callbacks.
-    The ``action`` and ``status`` fields are required; all others are optional
+    ``action`` and ``status`` are required; all others are optional
     and vary by domain (CI comments, Sonar issues, etc.).
     """
 
-    action: str       # Required: 'code_change', 'explain', 'ignore', 'fix', 'suppress'
-    status: str       # Required: 'success' or 'error'
     reason: str
     priority: str
     suggested_implementation: str | None
@@ -270,6 +275,8 @@ def calculate_priority(base_priority: str, boost: int = 0) -> str:
     Returns:
         Adjusted priority string, clamped to valid range.
     """
+    if base_priority not in _PRIORITY_INDEX:
+        print(f'WARNING: Unknown priority {base_priority!r}, defaulting to low', file=sys.stderr)
     current_idx = _PRIORITY_INDEX.get(base_priority, 0)
     new_idx = max(0, min(len(PRIORITY_LEVELS) - 1, current_idx + boost))
     return PRIORITY_LEVELS[new_idx]
@@ -469,10 +476,6 @@ def create_workflow_cli(
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog,
-    )
-    parser.add_argument(
-        '--verbose', '-v', action='store_true', default=False,
-        help='Enable verbose output for debugging',
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 

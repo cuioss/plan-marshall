@@ -105,8 +105,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 │                            │ delegates to                        │
 │                            ▼                                     │
 │  LAYER 2: PROFILE SKILLS (System default, domain CAN override)  │
-│  task-implementation (profile=implementation)                    │
-│  task-module-testing (profile=module_testing)                    │
+│  task-executor (profiles: implementation, module_testing, etc.)  │
 │                            │                                     │
 │                            │ loads                               │
 │                            ▼                                     │

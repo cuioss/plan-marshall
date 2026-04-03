@@ -185,6 +185,7 @@ def get_shared_module_dirs(base_path: Path) -> list[Path]:
         'skills/tools-file-ops/scripts',
         'skills/tools-input-validation/scripts',
         'skills/ref-toon-format/scripts',
+        'skills/shared-workflow-helpers/scripts',
     ]
     dirs = []
     for subpath in shared_skills:

@@ -37,8 +37,8 @@ Profile skill resolution checks for a domain-specific override first, then falls
 
 | Profile | Purpose | System Default |
 |---------|---------|----------------|
-| `implementation` | Create/modify production code | `plan-marshall:task-implementation` |
-| `module_testing` | Create/modify test code | `plan-marshall:task-module-testing` |
+| `implementation` | Create/modify production code | `plan-marshall:task-executor` |
+| `module_testing` | Create/modify test code | `plan-marshall:task-executor` |
 
 ---
 
@@ -107,7 +107,7 @@ Domain-specific profile skills CAN:
 
 ## Implementation Profile Contract
 
-**System Default**: `plan-marshall:task-implementation`
+**System Default**: `plan-marshall:task-executor`
 
 **Purpose**: Task execution skills accept standardized input (plan_id, task_number), resolve the workflow skill based on domain and profile, load domain skills via two-tier loading, iterate through steps, track progress, and return structured output.
 
@@ -224,7 +224,7 @@ next_action	requires_attention
 
 ## Module Testing Profile Contract
 
-**System Default**: `plan-marshall:task-module-testing`
+**System Default**: `plan-marshall:task-executor`
 
 **Purpose**: Testing profile skills create and modify test code following domain-specific testing patterns and frameworks.
 
@@ -251,7 +251,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 
 Domain override: `workflow_skill=pm-dev-java:java-module-testing, fallback=false`
-System fallback: `workflow_skill=plan-marshall:task-module-testing, fallback=true`
+System fallback: `workflow_skill=plan-marshall:task-executor, fallback=true`
 
 ### Input Parameters
 

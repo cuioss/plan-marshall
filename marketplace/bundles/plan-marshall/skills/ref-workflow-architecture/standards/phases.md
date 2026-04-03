@@ -259,7 +259,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  INVOCATION: Skill loaded directly in main context                             │
-│  SKILL: plan-marshall:phase-5-execute → task-implementation (or task-module-testing) │
+│  SKILL: plan-marshall:phase-5-execute → task-executor (profile-based dispatch) │
 │                                                                             │
 │  EXECUTION LOOP:                                                            │
 │  ───────────────                                                            │
@@ -348,144 +348,24 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ## Phase Transitions
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                          PHASE TRANSITIONS                                  │
-│                                                                             │
-│  ┌────────┐    ┌─────────┐    ┌───────────┐    ┌────────┐                  │
-│  │ 1-INIT │───▶│2-REFINE │───▶│ 3-OUTLINE │───▶│ 4-PLAN │───▶              │
-│  └────────┘    └─────────┘    └───────────┘    └────────┘                  │
-│       │             │               │              │                        │
-│       │             │          ┌────┴────┐         │                        │
-│       │             │          │  USER   │         │                        │
-│       │             │          │ REVIEW  │         │                        │
-│       │             │          │  GATE   │         │                        │
-│       │             │          └────┬────┘         │                        │
-│       │             │               │              │                        │
-│  auto-continue  threshold met  user-approval  auto-continue                 │
-│                                                                             │
-│       ┌───────────┐   ┌───────────┐                                        │
-│   ───▶│ 5-EXECUTE │──▶│6-FINALIZE │                                        │
-│       └───────────┘   └───────────┘                                        │
-│            │  ↑              │                                              │
-│       auto-continue    pass/fail                                            │
-│            │  │              │                                              │
-│     [verify+triage]         │                                              │
-│       findings? ────────────│──────────┐                                   │
-│        (loop)               ▼          │                                   │
-│                        ┌──────────┐    │                                   │
-│                        │ COMPLETE │    │                                   │
-│                        └──────────┘    │                                   │
-│                                   5-EXECUTE                                │
-│                                  (fix tasks)                               │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+| From | To | Trigger |
+|------|-----|---------|
+| 1-init | 2-refine | Auto-continue (config/status created) |
+| 2-refine | 3-outline | Confidence >= threshold (default 95%) |
+| 3-outline | 4-plan | USER APPROVAL of solution outline |
+| 4-plan | 5-execute | Auto-continue (tasks created) |
+| 5-execute | 6-finalize | All tasks completed + verification passed |
+| 5-execute | 5-execute | Findings detected → triage + fix tasks |
+| 6-finalize | COMPLETE | Commit/PR done (or no findings) |
+| 6-finalize | 5-execute | Findings detected → create fix tasks |
 
-TRANSITION TRIGGERS:
-═══════════════════
-
-┌───────────────┬──────────────┬───────────────────────────────────────────┐
-│ From          │ To           │ Trigger                                   │
-├───────────────┼──────────────┼───────────────────────────────────────────┤
-│ 1-init        │ 2-refine     │ Auto-continue (config/status created)     │
-│ 2-refine      │ 3-outline    │ Confidence >= threshold (default 95%)     │
-│ 3-outline     │ 4-plan       │ USER APPROVAL of solution outline         │
-│ 4-plan        │ 5-execute    │ Auto-continue (tasks created)             │
-│ 5-execute     │ 6-finalize   │ All tasks completed + verification passed │
-│ 5-execute     │ 5-execute    │ Findings detected → triage + fix tasks    │
-│ 6-finalize    │ COMPLETE     │ Commit/PR done (or no findings)           │
-│ 6-finalize    │ 5-execute    │ Findings detected → create fix tasks      │
-└───────────────┴──────────────┴───────────────────────────────────────────┘
-```
+**Iteration Limits**: 5-execute verify (max 5x) | 6-finalize (max 3x)
 
 ---
 
-## Domain Flow
+## Domain and Skill Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                           DOMAIN FLOW                                       │
-│                                                                             │
-│  marshal.json                                                               │
-│  ════════════                                                               │
-│  skill_domains: [java, javascript, plan-marshall-plugin-dev, ...]           │
-│                      │                                                      │
-│                      │ all possible domains (project-level)                 │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  REFINE                                                              │  │
-│  │  ══════                                                              │  │
-│  │  • Loads architecture context                                        │  │
-│  │  • Clarifies request until confidence >= threshold                   │  │
-│  │  • Maps requirements to modules                                      │  │
-│  │  • Updates request.md with clarifications                            │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ clarified_request                                    │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  OUTLINE                                                             │  │
-│  │  ═══════                                                             │  │
-│  │  • Analyzes clarified request + architecture context                 │  │
-│  │  • Selects modules → determines which profiles apply                 │  │
-│  │  • Writes domains + profiles list to deliverables                    │  │
-│  │                                                                      │  │
-│  │  Example: "Add JWT validation" → module: oauth-sheriff-core          │  │
-│  │           → profiles: [implementation, module_testing]               │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ references.json.domains                                  │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  PLAN                                                                │  │
-│  │  ════                                                                │  │
-│  │  • Reads deliverable.domain + profiles for each deliverable          │  │
-│  │  • Resolves skills from architecture (module.skills_by_profile)      │  │
-│  │  • Writes domain + profile + skills to TASK-*.json                   │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ task.domain, task.skills                             │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  EXECUTE                                                             │  │
-│  │  ═══════                                                             │  │
-│  │  • Loads task.skills (domain knowledge)                              │  │
-│  │  • Resolves workflow skill for task.profile                          │  │
-│  │  • Applies domain patterns during implementation                     │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ references.json.domains                                  │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  EXECUTE (Verification + Triage Sub-Loop)                            │  │
-│  │  ════════════════════════════════════════                            │  │
-│  │  • After all tasks complete, runs verification steps                 │  │
-│  │  • Reads domains from references.json                                │  │
-│  │  • Loads triage extensions for each domain                           │  │
-│  │  • On findings: creates fix tasks and loops back                     │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ verified code                                        │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  FINALIZE                                                            │  │
-│  │  ════════                                                            │  │
-│  │  • Commits verified code                                             │  │
-│  │  • Pushes to remote, creates PR                                      │  │
-│  │  • Handles automated review and Sonar feedback                       │  │
-│  │  • Captures knowledge and lessons                                    │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Q-Gate Validation Agent
-
-Q-Gate is a generic agent tool that extensions call during Phase 3 (Outline) to validate CERTAIN_INCLUDE assessments against request intent. It catches false positives, missing coverage, and scope drift. See the `q-gate-validation-agent` definition in [agents.md](agents.md) for the agent inventory entry and the agent file itself for full I/O contract.
+For the complete domain flow through phases (marshal.json → refine → outline → plan → execute → finalize), see [skill-loading.md](skill-loading.md).
 
 ---
 

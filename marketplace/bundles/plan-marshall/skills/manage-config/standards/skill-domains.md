@@ -73,18 +73,18 @@ Task executors map profile values to the workflow skill that executes tasks of t
 ```json
 {
   "task_executors": {
-    "implementation": "plan-marshall:task-implementation",
-    "module_testing": "plan-marshall:task-module-testing",
-    "integration_testing": "plan-marshall:task-integration_testing"
+    "implementation": "plan-marshall:task-executor",
+    "module_testing": "plan-marshall:task-executor",
+    "integration_testing": "plan-marshall:task-executor"
   }
 }
 ```
 
 | Profile | Purpose | Default Executor |
 |---------|---------|------------------|
-| `implementation` | Production code tasks | `plan-marshall:task-implementation` |
-| `module_testing` | Unit/module test tasks | `plan-marshall:task-module-testing` |
-| `integration_testing` | Integration test tasks | `plan-marshall:task-integration_testing` |
+| `implementation` | Production code tasks | `plan-marshall:task-executor` |
+| `module_testing` | Unit/module test tasks | `plan-marshall:task-executor` |
+| `integration_testing` | Integration test tasks | `plan-marshall:task-executor` |
 
 **Extensibility**: The profile list is open for extension. To add a new profile:
 

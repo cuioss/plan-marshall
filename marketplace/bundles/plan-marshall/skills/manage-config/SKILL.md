@@ -223,9 +223,9 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "defaults": ["plan-marshall:dev-general-practices"],
       "optionals": ["plan-marshall:dev-general-practices"],
       "task_executors": {
-        "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing",
-        "integration_testing": "plan-marshall:task-integration_testing"
+        "implementation": "plan-marshall:task-executor",
+        "module_testing": "plan-marshall:task-executor",
+        "integration_testing": "plan-marshall:task-executor"
       }
     },
     "java": {

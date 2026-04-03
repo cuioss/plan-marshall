@@ -185,8 +185,8 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │   │  Step 3: Load Workflow Skill                               │    │  │
 │  │   │                                                            │    │  │
 │  │   │  Based on task.profile:                                    │    │  │
-│  │   │    implementation → plan-marshall:task-implementation    │    │  │
-│  │   │    module_testing → plan-marshall:task-module-testing    │    │  │
+│  │   │    implementation → plan-marshall:task-executor           │    │  │
+│  │   │    module_testing → plan-marshall:task-executor           │    │  │
 │  │   │                                                            │    │  │
 │  │   │  • Determines HOW to execute                               │    │  │
 │  │   │  • Applies domain skill patterns                           │    │  │
@@ -266,6 +266,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │  ├──────────────┼─────────┼────────────────────────────────────────┤│  │
 │  │  │ outline      │ outline │ Domain detection, deliverable patterns ││  │
 │  │  │ triage       │ finalize│ Finding decision-making (fix/suppress) ││  │
+│  │  │ recipe       │ outline │ Pre-defined deliverable templates      ││  │
 │  │  └──────────────┴─────────┴────────────────────────────────────────┘│  │
 │  │                                                                      │  │
 │  │  RESOLUTION:                                                         │  │

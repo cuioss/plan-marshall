@@ -445,18 +445,6 @@ STEP Status:
                  skipped
 ```
 
-### Task Types
-
-| Type | Suffix | Description |
-|------|--------|-------------|
-| Implementation | `IMPL` | New feature or enhancement |
-| Fix | `FIX` | Bug fix or issue resolution |
-| Sonar | `SONAR` | SonarQube issue fix |
-| PR Review | `PR` | Pull request feedback |
-| Lint | `LINT` | Linting/formatting fix |
-| Security | `SEC` | Security issue fix |
-| Documentation | `DOC` | Documentation update |
-
 ### Manager
 
 ```bash
@@ -657,52 +645,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ---
 
-## Artifact Lifecycle
-
-```
-PHASE       ARTIFACTS CREATED/UPDATED
-─────       ─────────────────────────
-
-init        ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐
-            │ status.json │ │ request.md  │ │ references.json │
-            └─────────────┘ └─────────────┘ └─────────────────┘
-                  │               │               │
-                  ▼               ▼               ▼
-outline     ┌─────────────────────────────────────────────┐
-            │           solution_outline.md                │
-            └─────────────────────────────────────────────┘
-                                  │
-                                  ▼
-plan        ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-            │ TASK-001-... │ │ TASK-002-... │ │ TASK-003-... │
-            └──────────────┘ └──────────────┘ └──────────────┘
-                  │               │               │
-                  ▼               ▼               ▼
-execute     ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-            │ status:done  │ │ status:done  │ │ status:done  │
-            │ steps:done   │ │ steps:done   │ │ steps:done   │
-            └──────────────┘ └──────────────┘ └──────────────┘
-                                  │
-                                  ▼
-execute     ┌─────────────────────────────────────────────┐
-(verify)    │       Quality checks, build verification     │
-            │       (loops back within execute on findings)│
-            └─────────────────────────────────────────────┘
-                                  │
-                                  ▼
-finalize    ┌─────────────────────────────────────────────┐
-            │          status.json: finalize=done          │
-            │          (git commit, PR created)            │
-            └─────────────────────────────────────────────┘
-                                  │
-                                  ▼
-archive     .plan/archived-plans/{date}-{plan_id}/
-            └── All artifacts preserved
-```
-
----
-
 ## Related
 
-- [phases.md](phases.md) — 6-phase execution model
-- [data-layer.md](data-layer.md) — manage-* skills and command references
+- [phases.md](phases.md) — 6-phase execution model (includes artifact-to-phase mapping)
+- [data-layer.md](data-layer.md) — manage-* skills overview

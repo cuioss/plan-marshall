@@ -30,14 +30,14 @@ Task executors are workflow skills that handle the actual implementation or test
 │  marshal.json: skill_domains.system.task_executors               │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │ "task_executors": {                                         │ │
-│  │   "implementation": "plan-marshall:task-implementation",      │ │
-│  │   "module_testing": "plan-marshall:task-module-testing"       │ │
+│  │   "implementation": "plan-marshall:task-executor",             │ │
+│  │   "module_testing": "plan-marshall:task-executor"             │ │
 │  │ }                                                           │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                    │                                             │
 │                    ▼                                             │
 │                                                                  │
-│  Skill: plan-marshall:task-implementation    ←─ Task executor      │
+│  Skill: plan-marshall:task-executor          ←─ Task executor      │
 │  Skill: pm-dev-java:java-core              ←─ Domain skills      │
 │  Skill: pm-dev-java:java-cdi               ←─ from task.skills   │
 │                                                                  │
@@ -52,9 +52,9 @@ Task executors are workflow skills that handle the actual implementation or test
 
 | Profile | Purpose | Default Task Executor |
 |---------|---------|----------------------|
-| `implementation` | Production code creation/modification | `plan-marshall:task-implementation` |
-| `module_testing` | Unit/module test creation | `plan-marshall:task-module-testing` |
-| `verification` | Run commands without modifying files | `plan-marshall:task-verification` |
+| `implementation` | Production code creation/modification | `plan-marshall:task-executor` |
+| `module_testing` | Unit/module test creation | `plan-marshall:task-executor` |
+| `verification` | Run commands without modifying files | `plan-marshall:task-executor` |
 
 **Why underscores?** Profiles are used as JSON keys, TOON field values, and CLI parameters — underscores are more consistent with these conventions.
 
@@ -71,7 +71,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```toon
 status: success
 profile: implementation
-task_executor: plan-marshall:task-implementation
+task_executor: plan-marshall:task-executor
 ```
 
 **Error (unknown profile)**:
@@ -92,16 +92,16 @@ Task executors are configured in the system domain:
     "system": {
       "workflow_skills": { ... },
       "task_executors": {
-        "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing",
-        "verification": "plan-marshall:task-verification"
+        "implementation": "plan-marshall:task-executor",
+        "module_testing": "plan-marshall:task-executor",
+        "verification": "plan-marshall:task-executor"
       }
     }
   }
 }
 ```
 
-**Convention**: Profile `X` maps to skill `plan-marshall:task-X` by default.
+**Convention**: All profiles map to `plan-marshall:task-executor` by default. The skill handles profile dispatch internally.
 
 ---
 
@@ -118,16 +118,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 1. Scans all configured domains in marshal.json
 2. Extracts profile keys from each domain (excluding reserved keys like `core`, `workflow_skills`)
 3. Includes DEFAULT_PROFILES from `_config_defaults.py`
-4. Maps each profile to `plan-marshall:task-{profile}`
+4. Maps each profile to `plan-marshall:task-executor`
 5. Persists to `skill_domains.system.task_executors`
 
 ---
 
 ## Extensibility
 
-**There is NO finite or hardcoded list of profiles.**
-
-The profile system is designed for extension. New profiles can be added without modifying core workflow code.
+The profile system is open for extension. While `_config_defaults.py` defines a set of default profiles (`implementation`, `module_testing`, `integration_testing`, `verification`), new profiles can be added without modifying core workflow code.
 
 ### Steps to Add a New Profile
 
@@ -167,42 +165,9 @@ The profile system is designed for extension. New profiles can be added without 
 
 ---
 
-## Data Flow Summary
+## Data Flow
 
-```
-Architecture Analysis
-       │
-       ▼
-module.skills_by_profile = {
-  "implementation": [java-core, java-cdi],
-  "module_testing": [java-core, junit-core]
-}
-       │
-       ▼
-Phase-3-Outline
-       │
-       ▼
-deliverable.profiles = [implementation, module_testing]
-       │
-       ▼ (create task per profile, resolve skills from architecture)
-Phase-4-Plan
-       │
-       ▼
-TASK-001.json
-  profile: implementation
-  skills: [java-core, java-cdi]
-       │
-       ▼
-Phase-5-Execute
-       │
-       ▼
-resolve-task-executor --profile implementation
-       │
-       ▼
-Skill: plan-marshall:task-implementation  (executes task)
-Skill: pm-dev-java:java-core           (domain knowledge)
-Skill: pm-dev-java:java-cdi            (domain knowledge)
-```
+For the complete architecture → outline → plan → execute skill resolution flow, see [skill-loading.md](skill-loading.md).
 
 ---
 
@@ -216,15 +181,9 @@ Skill: pm-dev-java:java-cdi            (domain knowledge)
 
 ---
 
-## Component Naming Convention
-
-When recording lessons via `manage-lessons add --component`, use `{bundle}:{skill-name}` format. Each task executor uses its own skill name as the component (e.g., `plan-marshall:task-implementation`).
-
----
-
 ## Shared Executor Workflow
 
-All task executor skills (task-implementation, task-module-testing, task-verification) share a common workflow. Profile-specific skills define their unique steps and reference this section for the common steps.
+The unified `plan-marshall:task-executor` skill handles all profiles. Common workflow steps are shared, with profile-specific behavior documented per profile section in the skill.
 
 ### Common Input Contract
 
@@ -314,7 +273,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
 4. Re-run verification
 5. Iterate until pass (max `verification_max_iterations` from config, default 5)
 
-If still failing after 3 iterations:
+If still failing after max iterations:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \

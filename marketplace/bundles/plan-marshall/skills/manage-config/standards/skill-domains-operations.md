@@ -117,10 +117,10 @@ status: success
 ```bash
 # Resolves profile to task executor skill from system.task_executors
 manage-config resolve-task-executor --profile implementation
-# Returns: plan-marshall:task-implementation
+# Returns: plan-marshall:task-executor
 
 manage-config resolve-task-executor --profile module_testing
-# Returns: plan-marshall:task-module-testing
+# Returns: plan-marshall:task-executor
 ```
 
 ### Domain Skills Resolution

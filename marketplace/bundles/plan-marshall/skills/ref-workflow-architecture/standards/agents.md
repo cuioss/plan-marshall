@@ -155,25 +155,6 @@ Other bundles (e.g., `pm-plugin-development`) define their own analysis agents t
 
 ---
 
-## Outline Phase: Skill-Direct Invocation
-
-The outline phase uses skill-direct invocation (not agents) so that domain extensions can spawn parallel Task agents:
-
-```
-/plan-marshall action=outline
-  → Skill: phase-3-outline  (stays in main context)
-    → Skill: ext-outline-workflow  (stays in main context, can spawn agents)
-      → Task: inventory-agent  (parallel)
-      → Task: skill-analysis-agent  (parallel)
-      → Task: command-analysis-agent  (parallel)
-      → Task: agent-analysis-agent  (parallel)
-    → Aggregate findings → Build deliverables
-```
-
-**KEY**: Skills loaded via `Skill:` stay in main context, enabling `Task:` spawns for parallel analysis.
-
----
-
 ## Agent Structure
 
 Each agent follows the same pattern:
@@ -210,32 +191,6 @@ Each agent follows the same pattern:
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## Agent Responsibilities
-
-### Agents
-
-| Does | Does NOT |
-|------|----------|
-| Load system skills | Spawn other agents |
-| Resolve workflow skill | Cross scope boundaries |
-| Load resolved skill | Invoke commands |
-| Delegate to skill | Make high-level decisions |
-| Return structured result | Access files outside scope |
-| Provide context isolation | |
-
-### Phase Skills
-
-| Does | Does NOT |
-|------|----------|
-| Contains workflow logic | Handle phase transitions |
-| Calls manage-* scripts | Invoke commands directly |
-| Makes decisions | Access files outside scope |
-| Spawns analysis agents (when in main context) | Duplicate agent logic |
-| Returns structured result | |
-| Records lessons learned | |
 
 ---
 

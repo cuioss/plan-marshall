@@ -4,18 +4,15 @@ description: TOON format knowledge and usage patterns for agent communication an
 user-invocable: false
 ---
 
-# TOON Format Usage Skill
+# TOON Format Reference
 
-**REFERENCE MODE**: This skill provides TOON format reference material. Load specific references on-demand based on current task.
-
-Pure reference skill providing TOON (Token-Oriented Object Notation) format specification and usage patterns for agent handoffs and memory persistence.
+**REFERENCE MODE**: Pure reference skill providing TOON (Token-Oriented Object Notation) format specification, usage patterns, and the parser module.
 
 ## Enforcement
 
-**Execution mode**: Reference library with parser module; load references on-demand, import parser as documented.
+**Execution mode**: Reference library with parser module; load reference on-demand.
 
 **Prohibited actions:**
-- Do not load all references at once; load progressively based on current task
 - Do not use TOON for external APIs or configuration files
 - Do not bypass `toon_parser.py` with custom parsing logic
 
@@ -25,46 +22,24 @@ Pure reference skill providing TOON (Token-Oriented Object Notation) format spec
 - Field headers `{fields}` must match all rows
 - Import parser via `from toon_parser import parse_toon, serialize_toon`
 
-## Core Concepts
+## Reference
 
-TOON (Token-Oriented Object Notation) is a compact, human-readable encoding of the JSON data model that minimizes tokens.
-
-**Key Features**: 30-60% token reduction vs JSON for uniform arrays. Declared structure once — field headers defined upfront, not repeated. CSV-style rows for uniform arrays. Explicit `[N]` length and `{fields}` headers improve LLM parsing.
-
-**Best For**: Agent handoffs with uniform issue lists, coverage reports, build failures, memory persistence.
-
-**NOT For**: API interchange (use JSON), configuration files (use YAML/JSON), deeply nested structures (>3 levels), non-uniform object shapes.
-
-**Scope**: TOON is ONLY for internal plan-marshall marketplace operations — agent-to-agent handoffs, memory persistence, inter-agent data exchange, and test fixtures.
-
-## Available References
-
-Load the reference matching your current task:
-
-### 1. TOON Specification (Technical Reference)
 **File**: `knowledge/toon-specification.md`
 
-**Load When**: Learning TOON syntax, understanding conversion patterns, validating TOON structure, comparing with JSON/CSV/YAML.
+**Contents**: Core syntax, uniform arrays, nested structures, conversion examples, agent handoff patterns, `toon_parser.py` usage, known limitations, performance characteristics, best practices.
 
-**Contents**: Core syntax, uniform arrays, nested structures, advanced features, conversion examples, `toon_parser.py` usage, best practices, performance characteristics.
-
-### 2. Agent Patterns (Usage Patterns)
-**File**: `knowledge/agent-patterns.md`
-
-**Load When**: Creating agent handoff templates, designing memory persistence, converting JSON fixtures to TOON, understanding agent prompt patterns.
-
-**Contents**: Handoff templates, memory persistence patterns, agent prompt patterns, test fixture examples, token impact measurements, migration guidance.
-
-## Shared Infrastructure
-
-This skill also hosts shared Python modules used across workflow scripts:
+## Parser Module
 
 | Module | Purpose |
 |--------|---------|
 | `scripts/toon_parser.py` | TOON parsing and serialization (`parse_toon`, `serialize_toon`, `parse_toon_table`) |
-| `scripts/triage_helpers.py` | Shared workflow utilities: CLI boilerplate, error taxonomy, TOON output, priority calculation, triage handlers |
 
-`triage_helpers.py` lives here because all its output flows through `print_toon()` / TOON serialization, making this the natural home for the shared output layer. Other exports (`create_workflow_cli`, `ErrorCode`, `is_test_file`, `calculate_priority`, triage command handlers) are co-located to avoid fragmenting a cohesive utility module.
+### Known Limitations
+
+- Only 2-space indentation is supported (not tabs or 4-space)
+- Percentage values (`'95%'`) are parsed as int (`95`) — lossy round-trip
+- The parser does not validate `[N]` count against actual rows
 
 ### Related Skills
+- `plan-marshall:shared-workflow-helpers` — Shared workflow infrastructure (triage helpers, CLI construction, error codes)
 - `plan-marshall:ref-workflow-architecture` — Architecture documentation including workflow skill conventions

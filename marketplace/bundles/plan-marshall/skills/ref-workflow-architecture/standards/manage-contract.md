@@ -84,16 +84,7 @@ All styles include a `created` timestamp in the canonical format above.
 
 ### Phase Names
 
-Standard 6-phase model (canonical source: `constants.PHASES`):
-
-| Phase | Purpose |
-|-------|---------|
-| `1-init` | Initialize plan structure |
-| `2-refine` | Clarify request until confident |
-| `3-outline` | Create solution outline with deliverables |
-| `4-plan` | Create tasks from deliverables |
-| `5-execute` | Execute implementation tasks |
-| `6-finalize` | Finalize with commit/PR |
+Canonical source: `constants.PHASES`. See [phases.md](phases.md) for the full 6-phase model (`1-init` through `6-finalize`).
 
 The canonical phase name format is `{N}-{name}` (e.g., `1-init`). Context-specific prefixes exist:
 - `manage-config` uses `phase-{N}-{name}` as JSON keys in `marshal.json`
@@ -103,9 +94,7 @@ The canonical phase name format is `{N}-{name}` (e.g., `1-init`). Context-specif
 
 Profiles control which skills are loaded during task execution. See [task-executors.md](task-executors.md) for executor routing and profile naming conventions.
 
-**Config profiles** (defined in `manage-config` skill_domains, control skill resolution): `implementation`, `module_testing`, `integration_testing`, `quality`.
-
-**Additional task profiles** (used in `manage-tasks`, not mapped to config skill domains): `verification`, `standalone`.
+All profiles map to the unified `plan-marshall:task-executor` skill, which handles profile dispatch internally. Default profiles: `implementation`, `module_testing`, `integration_testing`, `verification`.
 
 ## Noun-Verb API Convention
 
@@ -168,6 +157,8 @@ Error codes shared across multiple manage-* skills:
 | `invalid_phase` | Phase name not in valid set | manage-findings, manage-metrics, manage-status |
 
 Per-skill error codes are documented in each skill's own SKILL.md.
+
+**Note**: manage-* skills use `snake_case` error codes (e.g., `invalid_plan_id`). Workflow scripts use `SCREAMING_SNAKE_CASE` codes from `ErrorCode` in `triage_helpers` (e.g., `FETCH_FAILURE`). These are separate registries for separate concerns.
 
 ## Plan Directory Layout
 

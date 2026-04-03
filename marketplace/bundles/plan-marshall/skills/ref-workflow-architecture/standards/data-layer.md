@@ -27,17 +27,17 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 │  │  └──────────────────────────────────────────────────────────────┘   │  │
 │  │       │           │               │            │             │       │  │
 │  │       ▼           ▼               ▼            ▼             ▼       │  │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │
-│  │  │ manage- │ │ manage- │ │ manage- │ │   manage-     │ │ manage- │ │ manage- │  │
-│  │  │referenc.│ │ status  │ │lifecycle│ │solution-      │ │  tasks  │ │  files  │  │
-│  │  │         │ │         │ │         │ │outline        │ │         │ │         │  │
-│  │  └────┬────┘ └────┬────┘ └────┬────┘ └───────┬───────┘ └────┬────┘ └────┬────┘  │
-│  │       │           │           │               │             │            │       │
-│  │       ▼           ▼           ▼               ▼             ▼            ▼       │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │
-│  │  │referenc.│ │ status  │ │ phase   │ │  solution_    │ │ TASK-*  │ │ plan    │  │
-│  │  │ .json   │ │ .json   │ │ routing │ │  outline.md   │ │ .json   │ │directory│  │
-│  │  └─────────┘ └─────────┘ └─────────┘ └───────────────┘ └─────────┘ └─────────┘  │
+│  │  ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │
+│  │  │ manage- │ │ manage- │ │   manage-     │ │ manage- │ │ manage- │  │
+│  │  │referenc.│ │ status  │ │solution-      │ │  tasks  │ │  files  │  │
+│  │  │         │ │         │ │outline        │ │         │ │         │  │
+│  │  └────┬────┘ └────┬────┘ └───────┬───────┘ └────┬────┘ └────┬────┘  │
+│  │       │           │               │             │            │       │
+│  │       ▼           ▼               ▼             ▼            ▼       │
+│  │  ┌─────────┐ ┌─────────┐ ┌───────────────┐ ┌─────────┐ ┌─────────┐  │
+│  │  │referenc.│ │ status  │ │  solution_    │ │ TASK-*  │ │ plan    │  │
+│  │  │ .json   │ │ .json   │ │  outline.md   │ │ .json   │ │directory│  │
+│  │  └─────────┘ └─────────┘ └───────────────┘ └─────────┘ └─────────┘  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -177,71 +177,7 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 
 ---
 
-## Command References
-
-For full command details, see each manage-* skill's SKILL.md. Key scripts:
-
-| Skill | Script Notation | Purpose |
-|-------|-----------------|---------|
-| `manage-status` | `plan-marshall:manage-status:manage_status` | Phase tracking, metadata, transitions, plan discovery, archiving |
-| `manage-tasks` | `plan-marshall:manage-tasks:manage-tasks` | Task CRUD, step tracking, status updates |
-| `manage-references` | `plan-marshall:manage-references:manage-references` | Plan refs (domains, branch, issue) |
-| `manage-solution-outline` | `plan-marshall:manage-solution-outline:manage-solution-outline` | Solution document write/read/validate |
-| `manage-plan-documents` | `plan-marshall:manage-plan-documents:manage-plan-documents` | Request and typed document management |
-| `manage-files` | `plan-marshall:manage-files:manage-files` | Directory operations, plan deletion |
-| `manage-findings` | `plan-marshall:manage-findings:manage-findings` | Findings, Q-Gate, assessments |
-| `manage-logging` | `plan-marshall:manage-logging:manage-logging` | Work log, decision log, script log |
-| `manage-config` | `plan-marshall:manage-config:manage-config` | Marshal.json project configuration |
-| `manage-architecture` | `plan-marshall:manage-architecture:architecture` | Module analysis, skill resolution |
-| `manage-metrics` | `plan-marshall:manage-metrics:manage-metrics` | Plan metrics collection |
-
-For file formats (status.json, TASK-*.json, references.json, etc.), see [artifacts.md](artifacts.md).
-
----
-
-## File Access Rules
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                       FILE ACCESS RULES                                     │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  .plan/ FILES                         PROJECT FILES                  │  │
-│  │  ════════════                         ═════════════                  │  │
-│  │                                                                      │  │
-│  │  PASS Access via execute-script.py       PASS Access via Read/Write/Edit  │  │
-│  │  ✗ Direct Read/Write/Edit             PASS Access via Glob/Grep        │  │
-│  │  ✗ cat/head/tail/ls                   PASS Access via Bash             │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│  WHY SCRIPT-ONLY ACCESS?                                                    │
-│  ═══════════════════════                                                    │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  1. PERMISSIONS                                                      │  │
-│  │     • Execute-script.py has pre-approved permissions                 │  │
-│  │     • Direct file access triggers permission prompts                 │  │
-│  │                                                                      │  │
-│  │  2. VALIDATION                                                       │  │
-│  │     • Scripts validate input/output                                  │  │
-│  │     • Ensures consistent file format                                 │  │
-│  │                                                                      │  │
-│  │  3. LOGGING                                                          │  │
-│  │     • Scripts log to execution log                                   │  │
-│  │     • Enables debugging and auditing                                 │  │
-│  │                                                                      │  │
-│  │  4. ABSTRACTION                                                      │  │
-│  │     • File format changes don't break consumers                      │  │
-│  │     • Single point of maintenance                                    │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+For full command details and script notations, see each manage-* skill's SKILL.md. For file formats, see [artifacts.md](artifacts.md). For file access rules and enforcement, see [manage-contract.md](manage-contract.md).
 
 ---
 

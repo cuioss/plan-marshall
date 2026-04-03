@@ -27,6 +27,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+__version__ = '3.0'
+
 __all__ = [
     'ToonParseError',
     'parse_toon',
@@ -456,6 +458,8 @@ def _serialize_value(value: Any, table_separator: str = ',') -> str:
             or ':' in value
             or '\n' in value
             or '"' in value
+            or value.startswith('#')
+            or value.startswith('- ')
             or value in ('true', 'false', 'null', '')
             or re.match(r'^-?\d+$', value)
             or re.match(r'^-?\d+\.\d+$', value)
@@ -549,38 +553,3 @@ def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str =
     return '\n'.join(lines)
 
 
-if __name__ == '__main__':
-    # Quick self-test
-    print('toon_parser.py - TOON Parser Module')
-    print('=' * 50)
-
-    test_toon = """
-# Example TOON document
-name: Alice
-age: 30
-active: true
-score: 95.5
-
-metadata:
-  created: 2025-12-02
-  version: 1.0
-
-roles[2]{id,name,level}:
-1,admin,10
-2,user,5
-
-tags[3]:
-- python
-- toon
-- parser
-"""
-
-    print('\nInput TOON:')
-    print(test_toon)
-
-    parsed = parse_toon(test_toon)
-    print('\nParsed Python dict:')
-    print(parsed)
-
-    print('\nRe-serialized TOON:')
-    print(serialize_toon(parsed))
