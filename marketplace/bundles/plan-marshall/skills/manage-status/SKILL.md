@@ -18,6 +18,8 @@ Manage status.json files with phase tracking, metadata, and lifecycle operations
 - Script uses underscore (`manage_status`) because it is imported as a Python module by other scripts
 - Phase transitions must use `set-phase`, `update-phase`, or `transition` commands
 - Metadata operations require explicit `--get` or `--set` flags
+
+**Standards:** See [status-lifecycle.md](standards/status-lifecycle.md) for the phase state machine, plan lifecycle, and metadata conventions.
 - Do not skip phase transition validation
 - Phase transitions are sequential -- you cannot skip phases
 - Routing context is read-only; use `get-routing-context` for combined state

@@ -4,8 +4,6 @@
 Handles: create, read, get, set
 """
 
-import sys
-
 from _ref_core import (
     get_references_path,
     output_toon,
@@ -30,7 +28,7 @@ def cmd_create(args):
                 'message': 'references.json already exists',
             }
         )
-        sys.exit(1)
+        return 1
 
     # Build base references
     refs = {'branch': args.branch, 'base_branch': 'main', 'modified_files': []}
@@ -90,7 +88,7 @@ def cmd_get(args):
                 'message': f"Field '{args.field}' not found",
             }
         )
-        sys.exit(1)
+        return 1
 
     output_toon({'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': value})
 

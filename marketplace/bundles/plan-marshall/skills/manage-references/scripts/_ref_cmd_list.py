@@ -4,8 +4,6 @@
 Handles: add-file, remove-file, add-list, set-list
 """
 
-import sys
-
 from _ref_core import (
     output_toon,
     read_references,
@@ -52,7 +50,7 @@ def cmd_remove_file(args):
                 'message': f"File '{args.file}' not in modified_files",
             }
         )
-        sys.exit(1)
+        return 1
 
     refs['modified_files'].remove(args.file)
     write_references(args.plan_id, refs)
@@ -87,7 +85,7 @@ def cmd_add_list(args):
                 'message': f"Field '{args.field}' is not a list",
             }
         )
-        sys.exit(1)
+        return 1
 
     # Parse comma-separated values
     values = [v.strip() for v in args.values.split(',') if v.strip()]

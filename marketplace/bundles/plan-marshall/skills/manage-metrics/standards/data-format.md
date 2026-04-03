@@ -16,13 +16,13 @@ Both files live in `.plan/plans/{plan_id}/`.
 The metrics.toon file stores raw phase timing and token data as flat key-value pairs:
 
 ```toon
-phase.1-init.start: 2026-03-27T10:00:00+00:00
-phase.1-init.end: 2026-03-27T10:03:00+00:00
+phase.1-init.start: 2026-03-27T10:00:00Z
+phase.1-init.end: 2026-03-27T10:03:00Z
 phase.1-init.total_tokens: 25514
 phase.1-init.duration_ms: 180000
 phase.1-init.tool_uses: 12
-phase.2-refine.start: 2026-03-27T10:03:15+00:00
-phase.2-refine.end: 2026-03-27T10:08:45+00:00
+phase.2-refine.start: 2026-03-27T10:03:15Z
+phase.2-refine.end: 2026-03-27T10:08:45Z
 phase.2-refine.total_tokens: 42000
 enriched.input_tokens: 450000
 enriched.output_tokens: 35000

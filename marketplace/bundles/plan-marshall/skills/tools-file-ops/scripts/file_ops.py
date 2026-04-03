@@ -21,6 +21,7 @@ Usage:
     )
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -111,6 +112,46 @@ def get_temp_dir(subdir: str | None = None) -> Path:
     return temp_path
 
 
+def get_plan_dir(plan_id: str) -> Path:
+    """Get the plan directory path for a given plan ID.
+
+    Args:
+        plan_id: Plan identifier
+
+    Returns:
+        Path to .plan/plans/{plan_id}/
+    """
+    return base_path('plans', plan_id)
+
+
+def read_json(path: str | Path, default: Any = None) -> Any:
+    """Read and parse a JSON file, returning default if not found.
+
+    Args:
+        path: Path to JSON file
+        default: Value to return if file doesn't exist (default: empty dict)
+
+    Returns:
+        Parsed JSON content, or default if file not found
+    """
+    if default is None:
+        default = {}
+    p = Path(path)
+    if not p.exists():
+        return default
+    return json.loads(p.read_text(encoding='utf-8'))
+
+
+def write_json(path: str | Path, data: Any) -> None:
+    """Write data as formatted JSON, creating parent dirs as needed.
+
+    Args:
+        path: Target file path
+        data: Data to serialize as JSON
+    """
+    atomic_write_file(path, json.dumps(data, indent=2))
+
+
 def atomic_write_file(path: str | Path, content: str) -> None:
     """Write file atomically using temp file + rename pattern.
 
@@ -175,6 +216,73 @@ def output_toon(data: dict[str, Any]) -> None:
         data: Dictionary to serialize as TOON
     """
     print(serialize_toon(data))
+
+
+def format_toon_value(value: Any) -> str:
+    """Format a value for TOON output.
+
+    Args:
+        value: Value to format
+
+    Returns:
+        Formatted string
+    """
+    if value is None:
+        return ''
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, list):
+        return '+'.join(str(v) for v in value)
+    return str(value)
+
+
+def print_toon_table(name: str, items: list, fields: list) -> None:
+    """Print a TOON table with tab-separated columns.
+
+    Args:
+        name: Table name
+        items: List of dicts
+        fields: List of field names to include
+    """
+    field_spec = ','.join(fields)
+    print(f'{name}[{len(items)}]{{{field_spec}}}:')
+    for item in items:
+        values = [format_toon_value(item.get(f, '')) for f in fields]
+        print('\t'.join(values))
+
+
+def print_toon_list(name: str, items: list) -> None:
+    """Print a TOON list.
+
+    Args:
+        name: List name
+        items: List of values
+    """
+    print(f'{name}[{len(items)}]:')
+    for item in items:
+        print(f'  - {item}')
+
+
+def print_toon_kv(key: str, value: Any, indent: int = 0) -> None:
+    """Print a key-value pair in TOON format.
+
+    Args:
+        key: Key name
+        value: Value (can be str, int, bool, list, dict)
+        indent: Indentation level
+    """
+    prefix = '  ' * indent
+    if isinstance(value, dict):
+        print(f'{prefix}{key}:')
+        for k, v in value.items():
+            print_toon_kv(k, v, indent + 1)
+    elif isinstance(value, list):
+        print(f'{prefix}{key}[{len(value)}]:')
+        for item in value:
+            print(f'{prefix}  - {item}')
+    else:
+        formatted = format_toon_value(value)
+        print(f'{prefix}{key}: {formatted}')
 
 
 def output_success(operation: str, **kwargs: Any) -> None:

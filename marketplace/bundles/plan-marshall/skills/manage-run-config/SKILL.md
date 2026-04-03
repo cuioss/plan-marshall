@@ -78,7 +78,7 @@ Script characteristics:
 |----------|---------|--------------|
 | [timeout-handling.md](standards/timeout-handling.md) | Adaptive timeout management | Managing command timeouts |
 | [warning-handling.md](standards/warning-handling.md) | Acceptable warning patterns | Filtering build warnings |
-| [cleanup-operations.md](standards/cleanup-operations.md) | Directory cleanup | Cleaning old files |
+| [run-config-format.md](standards/run-config-format.md) | Schema + cleanup operations | Full config schema and directory cleanup |
 
 ---
 
@@ -128,4 +128,4 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 - `standards/run-config-format.md` - Complete schema documentation
 - `standards/timeout-handling.md` - Adaptive timeout management
 - `standards/warning-handling.md` - Acceptable warning patterns
-- `standards/cleanup-operations.md` - Directory cleanup operations
+- `standards/run-config-format.md` also covers cleanup operations (merged from cleanup-operations.md)

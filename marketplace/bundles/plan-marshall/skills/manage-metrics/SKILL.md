@@ -163,6 +163,10 @@ message_count: 127
 - Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses)
 - JSONL enrichment: `~/.claude/projects/` session transcripts
 
+## Standards
+
+- [data-format.md](standards/data-format.md) — Storage format for metrics.toon and metrics.md
+
 ## Related Skills
 
 - `manage-status` — Phase tracking that metrics augment

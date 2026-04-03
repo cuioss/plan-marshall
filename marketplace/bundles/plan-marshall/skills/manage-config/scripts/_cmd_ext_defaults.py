@@ -20,16 +20,16 @@ from _config_core import (
 
 def cmd_ext_defaults(args: argparse.Namespace) -> int:
     """Route ext-defaults subcommands."""
-    if args.verb == 'get':
-        return cmd_ext_defaults_get(args)
-    elif args.verb == 'set':
-        return cmd_ext_defaults_set(args)
-    elif args.verb == 'set-default':
-        return cmd_ext_defaults_set_default(args)
-    elif args.verb == 'list':
-        return cmd_ext_defaults_list(args)
-    elif args.verb == 'remove':
-        return cmd_ext_defaults_remove(args)
+    handlers = {
+        'get': cmd_ext_defaults_get,
+        'set': cmd_ext_defaults_set,
+        'set-default': cmd_ext_defaults_set_default,
+        'list': cmd_ext_defaults_list,
+        'remove': cmd_ext_defaults_remove,
+    }
+    handler = handlers.get(args.verb)
+    if handler:
+        return handler(args)
     return EXIT_ERROR
 
 

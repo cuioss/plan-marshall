@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import base_path, now_utc_iso, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
@@ -68,7 +68,7 @@ def create_memory_envelope(category: str, identifier: str, content: Any, session
     """Create memory file with metadata envelope."""
     return {
         'meta': {
-            'created': datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
+            'created': now_utc_iso(),
             'category': category,
             'summary': identifier,
             'session_id': session_id,

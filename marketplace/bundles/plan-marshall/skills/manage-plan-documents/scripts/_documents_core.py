@@ -8,11 +8,10 @@ all _cmd_* modules.
 """
 
 import re
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from file_ops import atomic_write_file, base_path, output_toon  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, get_plan_dir, now_utc_iso, output_toon  # type: ignore[import-not-found]  # noqa: F401 - atomic_write_file re-exported
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -37,9 +36,7 @@ def get_available_types() -> list[str]:
     return [f.stem for f in DOCUMENTS_DIR.glob('*.toon')]
 
 
-def get_plan_dir(plan_id: str) -> Path:
-    """Get the plan directory path."""
-    return cast(Path, base_path('plans', plan_id))
+# get_plan_dir imported from file_ops
 
 
 def get_file_name(doc_def: dict, doc_type: str) -> str:
@@ -81,7 +78,7 @@ def render_template(doc_def: dict, fields: dict, plan_id: str) -> str:
         # Generate basic template if not found
         lines = [f'# {doc_def["name"].title()}: {fields.get("title", plan_id)}']
         lines.append(f'\nplan_id: {plan_id}')
-        lines.append(f'created: {datetime.now(UTC).isoformat()}')
+        lines.append(f'created: {now_utc_iso()}')
         for name, value in fields.items():
             if value and name != 'title':
                 lines.append(f'\n## {name.replace("_", " ").title()}\n\n{value}')
@@ -91,7 +88,7 @@ def render_template(doc_def: dict, fields: dict, plan_id: str) -> str:
 
     # Built-in placeholders
     template = template.replace('{plan_id}', plan_id)
-    template = template.replace('{timestamp}', datetime.now(UTC).isoformat())
+    template = template.replace('{timestamp}', now_utc_iso())
 
     # Field placeholders
     for key, value in fields.items():

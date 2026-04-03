@@ -19,17 +19,13 @@ Usage:
 
 import argparse
 import sys
-from pathlib import Path
-from typing import cast
 
-from file_ops import atomic_write_file, base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, get_plan_dir, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import is_valid_relative_path, require_valid_plan_id  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 
-def get_plan_dir(plan_id: str) -> Path:
-    """Get the plan directory path."""
-    return cast(Path, base_path('plans', plan_id))
+# get_plan_dir imported from file_ops
 
 
 def cmd_read(args: argparse.Namespace) -> None:

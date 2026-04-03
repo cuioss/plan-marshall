@@ -8,8 +8,6 @@ Storage split:
 - run-configuration.json (local): authenticated_tools, verified_at
 """
 
-from datetime import UTC, datetime
-
 from _config_core import (
     EXIT_ERROR,
     MarshalNotInitializedError,
@@ -25,7 +23,9 @@ from _config_core import (
 
 def _get_timestamp() -> str:
     """Get current UTC timestamp in ISO format."""
-    return datetime.now(UTC).isoformat(timespec='seconds').replace('+00:00', 'Z')
+    from file_ops import now_utc_iso  # type: ignore[import-not-found]
+
+    return now_utc_iso()
 
 
 def _handle_get(ci_config: dict) -> int:
@@ -112,17 +112,17 @@ def cmd_ci(args) -> int:
     config = load_config()
     ci_config = config.get('ci', {})
 
-    if args.verb == 'get':
-        return _handle_get(ci_config)
-    elif args.verb == 'get-provider':
-        return _handle_get_provider(ci_config)
-    elif args.verb == 'set-provider':
-        return _handle_set_provider(args, config, ci_config)
-    elif args.verb == 'set-tools':
-        return _handle_set_tools(args)
-    elif args.verb == 'get-tools':
-        return _handle_get_tools()
-    elif args.verb == 'persist':
-        return _handle_persist(args, config, ci_config)
+    # Handlers that need only ci_config
+    simple_handlers = {
+        'get': lambda: _handle_get(ci_config),
+        'get-provider': lambda: _handle_get_provider(ci_config),
+        'set-provider': lambda: _handle_set_provider(args, config, ci_config),
+        'set-tools': lambda: _handle_set_tools(args),
+        'get-tools': lambda: _handle_get_tools(),
+        'persist': lambda: _handle_persist(args, config, ci_config),
+    }
+    handler = simple_handlers.get(args.verb)
+    if handler:
+        return handler()
 
     return EXIT_ERROR

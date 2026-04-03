@@ -18,12 +18,11 @@ Usage:
 
 import argparse
 import json
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from constants import PHASES  # type: ignore[import-not-found]
-from file_ops import atomic_write_file, base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, get_plan_dir, now_utc_iso, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 METRICS_FILE = 'work/metrics.toon'
@@ -46,8 +45,7 @@ def _coerce_numeric(value: object) -> int | float | str:
     return value
 
 
-def get_plan_dir(plan_id: str) -> Path:
-    return base_path('plans', plan_id)
+# get_plan_dir imported from file_ops
 
 
 def write_metrics(plan_id: str, data: dict) -> None:
@@ -124,7 +122,7 @@ def cmd_start_phase(args: argparse.Namespace) -> int:
         return 1
 
     data = read_metrics_raw(plan_id)
-    now = datetime.now(UTC).isoformat()
+    now = now_utc_iso()
 
     if phase not in data['phases']:
         data['phases'][phase] = {}
@@ -152,7 +150,7 @@ def cmd_end_phase(args: argparse.Namespace) -> int:
         return 1
 
     data = read_metrics_raw(plan_id)
-    now = datetime.now(UTC).isoformat()
+    now = now_utc_iso()
 
     if phase not in data['phases']:
         data['phases'][phase] = {}
@@ -378,7 +376,7 @@ def cmd_enrich(args: argparse.Namespace) -> int:
     data['session_output_tokens'] = total_output
     data['session_total_tokens'] = total_input + total_output
     data['session_message_count'] = message_count
-    data['updated'] = datetime.now(UTC).isoformat()
+    data['updated'] = now_utc_iso()
 
     write_metrics(plan_id, data)
 

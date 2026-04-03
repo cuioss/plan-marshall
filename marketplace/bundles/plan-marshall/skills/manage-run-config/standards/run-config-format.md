@@ -190,3 +190,36 @@ Use dot notation for field access:
   }
 }
 ```
+
+---
+
+## Cleanup Operations
+
+Clean temporary files, logs, archived plans, and memory based on retention settings.
+
+### Default Retention
+
+> **Source of truth**: Retention defaults are defined in `manage-config/standards/data-model.md`.
+
+| Category | Default Retention |
+|----------|-------------------|
+| Logs | 1 day |
+| Archived plans | 5 days |
+| Memory | 5 days |
+| Temp files | Always cleaned |
+
+### Cleaned Directories
+
+| Directory | Content |
+|-----------|---------|
+| `.plan/logs/` | Execution logs |
+| `.plan/archived/` | Archived plan files |
+| `.plan/memory/` | Memory/context files |
+| `.plan/temp/` | Temporary files (always cleaned) |
+
+---
+
+## Related Standards
+
+- [timeout-handling.md](timeout-handling.md) — Adaptive timeout management for build commands
+- [warning-handling.md](warning-handling.md) — Acceptable warning pattern management

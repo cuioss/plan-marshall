@@ -38,7 +38,7 @@ Each line in `findings.jsonl` is a JSON object:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `hash_id` | string | 6-character hex hash (auto-generated from title + type) |
+| `hash_id` | string | 6-character hex hash (auto-generated, see Hash ID Generation) |
 | `timestamp` | string | ISO 8601 UTC (auto-generated on add) |
 | `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `pr-comment`. The first three (`bug`, `improvement`, `anti-pattern`) map to lesson categories — see `manage-lessons/standards/file-format.md` |
 | `title` | string | Short description of the finding |
@@ -62,6 +62,25 @@ Each line in `findings.jsonl` is a JSON object:
 |-------|------|-------------|
 | `promoted` | bool | Whether this finding has been promoted (default: `false`) |
 | `promoted_to` | string/null | Target identifier: `architecture` or lesson hash_id |
+
+### Promotion Mapping
+
+Finding types promote to specific targets:
+
+| Finding Type | Promotion Target | Lesson Category |
+|-------------|-----------------|-----------------|
+| `bug` | manage-lessons | `bug` |
+| `improvement` | manage-lessons | `improvement` |
+| `anti-pattern` | manage-lessons | `anti-pattern` |
+| `triage` | manage-lessons | `bug` (triaged) |
+| `tip` | manage-architecture (enrich) | N/A |
+| `insight` | manage-architecture (enrich) | N/A |
+| `best-practice` | manage-architecture (enrich) | N/A |
+| `build-error` | Not promotable | N/A |
+| `test-failure` | Not promotable | N/A |
+| `lint-issue` | Not promotable | N/A |
+| `sonar-issue` | Not promotable | N/A |
+| `pr-comment` | Not promotable | N/A |
 
 ## Q-Gate Finding Record
 
@@ -94,12 +113,11 @@ Q-Gate findings do NOT have `promoted`/`promoted_to` fields — they are not pro
 
 ## Hash ID Generation
 
-Hash IDs are 6-character hex strings computed deterministically:
+Hash IDs are 6-character hex strings generated using `SHA-256(timestamp + random_bytes)[:6]`.
 
-- **Plan findings**: Hash of `title + type`
-- **Q-Gate findings**: Hash of `title + type + phase`
-
-Same inputs always produce the same hash. This enables deduplication in Q-Gate operations.
+- Algorithm: `hashlib.sha256(f'{utc_iso}{secrets.token_hex(8)}'.encode()).hexdigest()[:6]`
+- IDs are unique per record, NOT deterministic from content
+- Deduplication in Q-Gate uses title matching (see below), not hash comparison
 
 ## Deduplication (Q-Gate Only)
 

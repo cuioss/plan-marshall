@@ -212,6 +212,18 @@ Dependencies are stored in the `depends_on` field as an array of task references
 - Dependencies enable parallel execution planning
 - Task references use format `TASK-N` (e.g., `TASK-1`, `TASK-2`)
 
+### Mapping from Deliverable Dependencies
+
+Deliverables use number-based `depends:` format. Task creation (phase-4-plan) converts as follows:
+
+| Deliverable Format | Task Format |
+|-------------------|-------------|
+| `depends: none` | `"depends_on": []` |
+| `depends: 1` | `"depends_on": ["TASK-1"]` |
+| `depends: 1, 2` | `"depends_on": ["TASK-1", "TASK-2"]` |
+
+The conversion parses the number prefix from each dependency reference.
+
 ## Origin Field
 
 Indicates what created the task:
@@ -382,7 +394,7 @@ For each deliverable, check:
 For each deliverable, for each profile in deliverable.profiles:
 1. Resolve skills from architecture: `module.skills_by_profile.{profile}`
 2. Set `domain` from deliverable, `profile` from current iteration
-3. Copy verification from deliverable (Command + Criteria — verbatim, no resolution)
+3. Copy verification from deliverable verbatim (already resolved during outline phase)
 4. Generate steps from file lists
 5. Compute task dependencies (testing depends on implementation)
 6. Identify parallelizable tasks

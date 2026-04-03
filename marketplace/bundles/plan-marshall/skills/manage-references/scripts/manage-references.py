@@ -98,7 +98,8 @@ def main() -> int:
 
     handler = handlers.get(args.command)
     if handler:
-        handler(args)
+        result = handler(args)
+        return result if isinstance(result, int) else 0
     else:
         parser.print_help()
     return 0

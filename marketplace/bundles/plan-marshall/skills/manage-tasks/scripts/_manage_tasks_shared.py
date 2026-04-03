@@ -14,9 +14,9 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
-from file_ops import base_path, now_utc_iso  # type: ignore[import-not-found]
+from file_ops import get_plan_dir, now_utc_iso, output_toon  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 
 # =============================================================================
@@ -261,7 +261,7 @@ def format_depends_on(deps: list[str]) -> str:
 
 def get_tasks_dir(plan_id: str) -> Path:
     """Get the tasks directory for a plan."""
-    return cast(Path, base_path('plans', plan_id, 'tasks'))
+    return get_plan_dir(plan_id) / 'tasks'
 
 
 def parse_task_file(content: str) -> dict[str, Any]:
@@ -492,16 +492,7 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     return result
 
 
-# =============================================================================
-# Output formatting
-# =============================================================================
-
-
-def output_toon(data: dict) -> None:
-    """Print TOON formatted output using standard serializer."""
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-    print(serialize_toon(data))
+# output_toon imported from file_ops and re-exported for backward compatibility
 
 
 def output_error(message: str, error_code: str = 'error') -> None:

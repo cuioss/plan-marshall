@@ -19,7 +19,6 @@ Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 """
 
 import json
-import sys
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
@@ -32,7 +31,6 @@ from jsonl_store import (  # type: ignore[import-not-found]
     find_by_title,
     generate_hash_id,
     get_artifact_path,
-    output_toon,
     read_jsonl,
     timestamp,
     update_jsonl,
@@ -87,6 +85,56 @@ def get_qgate_path(plan_id: str, phase: str) -> 'Path':
     if phase not in QGATE_PHASES:
         raise ValueError(f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}')
     return get_artifact_path(plan_id, f'qgate-{phase}.jsonl')
+
+
+# --- Shared Query Helper ---
+
+
+def _filter_records(
+    records: list[dict[str, Any]],
+    exact_filters: dict[str, Any] | None = None,
+    type_filter: set[str] | None = None,
+    file_pattern: str | None = None,
+    min_confidence: int | None = None,
+    max_confidence: int | None = None,
+    promoted: bool | None = None,
+) -> list[dict[str, Any]]:
+    """Filter records by common criteria.
+
+    Args:
+        records: List of record dicts to filter
+        exact_filters: Dict of field_name → required_value for exact match
+        type_filter: Set of allowed type values (for comma-separated type filters)
+        file_pattern: Glob pattern for file_path field
+        min_confidence: Minimum confidence value (inclusive)
+        max_confidence: Maximum confidence value (inclusive)
+        promoted: If set, filter by promoted boolean
+
+    Returns:
+        Filtered list of records
+    """
+    filtered = []
+    for r in records:
+        if type_filter and r.get('type') not in type_filter:
+            continue
+        if exact_filters:
+            skip = False
+            for field, value in exact_filters.items():
+                if value is not None and r.get(field) != value:
+                    skip = True
+                    break
+            if skip:
+                continue
+        if promoted is not None and r.get('promoted', False) != promoted:
+            continue
+        if file_pattern and not fnmatch(r.get('file_path', ''), file_pattern):
+            continue
+        if min_confidence is not None and r.get('confidence', 0) < min_confidence:
+            continue
+        if max_confidence is not None and r.get('confidence', 100) > max_confidence:
+            continue
+        filtered.append(r)
+    return filtered
 
 
 # --- Plan Findings ---
@@ -152,35 +200,24 @@ def query_findings(
     """Query findings with filters."""
     path = get_findings_path(plan_id)
     records = read_jsonl(path)
-    total_count = len(records)
 
-    # Parse type filter (supports comma-separated)
-    type_filter = None
-    if finding_type:
-        type_filter = {t.strip() for t in finding_type.split(',')}
+    type_filter = {t.strip() for t in finding_type.split(',')} if finding_type else None
+    filtered = _filter_records(
+        records,
+        exact_filters={'resolution': resolution},
+        type_filter=type_filter,
+        file_pattern=file_pattern,
+        promoted=promoted,
+    )
 
-    filtered = []
-    for r in records:
-        if type_filter and r.get('type') not in type_filter:
-            continue
-        if resolution and r.get('resolution') != resolution:
-            continue
-        if promoted is not None and r.get('promoted', False) != promoted:
-            continue
-        if file_pattern and not fnmatch(r.get('file_path', ''), file_pattern):
-            continue
-        filtered.append(r)
-
-    result = {
+    return {
         'status': 'success',
         'plan_id': plan_id,
-        'total_count': total_count,
+        'total_count': len(records),
         'filtered_count': len(filtered),
         'findings': filtered,
         'file_paths': list({r.get('file_path') for r in filtered if r.get('file_path')}),
     }
-
-    return result
 
 
 def get_finding(plan_id: str, hash_id: str) -> dict[str, Any]:
@@ -313,23 +350,17 @@ def query_qgate_findings(
 
     path = get_qgate_path(plan_id, phase)
     records = read_jsonl(path)
-    total_count = len(records)
 
-    filtered = []
-    for r in records:
-        if resolution and r.get('resolution') != resolution:
-            continue
-        if source and r.get('source') != source:
-            continue
-        if iteration is not None and r.get('iteration') != iteration:
-            continue
-        filtered.append(r)
+    filtered = _filter_records(
+        records,
+        exact_filters={'resolution': resolution, 'source': source, 'iteration': iteration},
+    )
 
     return {
         'status': 'success',
         'plan_id': plan_id,
         'phase': phase,
-        'total_count': total_count,
+        'total_count': len(records),
         'filtered_count': len(filtered),
         'findings': filtered,
     }
@@ -444,30 +475,23 @@ def query_assessments(
     """Query assessments with filters."""
     path = get_assessments_path(plan_id)
     records = read_jsonl(path)
-    total_count = len(records)
 
-    filtered = []
-    for r in records:
-        if certainty and r.get('certainty') != certainty:
-            continue
-        if min_confidence is not None and r.get('confidence', 0) < min_confidence:
-            continue
-        if max_confidence is not None and r.get('confidence', 100) > max_confidence:
-            continue
-        if file_pattern and not fnmatch(r.get('file_path', ''), file_pattern):
-            continue
-        filtered.append(r)
+    filtered = _filter_records(
+        records,
+        exact_filters={'certainty': certainty},
+        file_pattern=file_pattern,
+        min_confidence=min_confidence,
+        max_confidence=max_confidence,
+    )
 
-    result = {
+    return {
         'status': 'success',
         'plan_id': plan_id,
-        'total_count': total_count,
+        'total_count': len(records),
         'filtered_count': len(filtered),
         'assessments': filtered,
         'file_paths': list({r.get('file_path') for r in filtered}),
     }
-
-    return result
 
 
 def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any]:

@@ -11,45 +11,11 @@ Skill domains configure which implementation skills are loaded when working on c
 
 ## Schema Structure
 
-```json
-{
-  "skill_domains": {
-    "active_profiles": ["implementation", "module_testing", "quality"],
-    "system": {
-      "defaults": ["bundle:skill"],
-      "optionals": ["bundle:skill"],
-      "workflow_skills": {
-        "1-init": "plan-marshall:phase-1-init",
-        "2-refine": "plan-marshall:phase-2-refine",
-        "3-outline": "plan-marshall:phase-3-outline",
-        "4-plan": "plan-marshall:phase-4-plan",
-        "5-execute": "plan-marshall:phase-5-execute",
-        "6-finalize": "plan-marshall:phase-6-finalize"
-      },
-      "task_executors": {
-        "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing",
-        "integration_testing": "plan-marshall:task-integration_testing"
-      }
-    },
-    "{domain}": {
-      "active_profiles": ["implementation", "module_testing"],
-      "workflow_skill_extensions": {
-        "outline": "bundle:extension-skill",
-        "triage": "bundle:triage-skill"
-      },
-      "core": {
-        "defaults": ["bundle:skill"],
-        "optionals": ["bundle:skill"]
-      },
-      "implementation": { "defaults": [], "optionals": [] },
-      "module_testing": { "defaults": [], "optionals": [] },
-      "integration_testing": { "defaults": [], "optionals": [] },
-      "quality": { "defaults": [], "optionals": [] }
-    }
-  }
-}
-```
+See `data-model.md` for the complete `skill_domains` JSON schema. The key hierarchy is:
+
+- `skill_domains.active_profiles[]` — globally active profiles
+- `skill_domains.system` — workflow skills, task executors, system-level defaults/optionals
+- `skill_domains.{domain}` — per-domain skills organized by profile with extensions
 
 ## 6-Phase Workflow Model
 

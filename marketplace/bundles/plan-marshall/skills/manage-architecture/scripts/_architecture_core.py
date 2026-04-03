@@ -9,7 +9,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from file_ops import get_base_dir  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    format_toon_value,  # noqa: F401 - re-exported
+    get_base_dir,
+    print_toon_kv,  # noqa: F401 - re-exported
+    print_toon_list,  # noqa: F401 - re-exported
+    print_toon_table,  # noqa: F401 - re-exported
+)
 
 # Data sub-directory for architecture files (appended to base dir / project_dir)
 _ARCHITECTURE_SUBDIR = 'project-architecture'
@@ -257,81 +263,8 @@ def merge_module_data(derived: dict[str, Any], enriched: dict[str, Any], module_
     return merged
 
 
-# =============================================================================
-# TOON Output Formatting
-# =============================================================================
-
-
-def format_toon_value(value) -> str:
-    """Format a value for TOON output.
-
-    Args:
-        value: Value to format
-
-    Returns:
-        Formatted string
-    """
-    if value is None:
-        return ''
-    if isinstance(value, bool):
-        return 'true' if value else 'false'
-    if isinstance(value, list):
-        return '+'.join(str(v) for v in value)
-    return str(value)
-
-
-def print_toon_kv(key: str, value, indent: int = 0):
-    """Print a key-value pair in TOON format.
-
-    Args:
-        key: Key name
-        value: Value (can be str, int, bool, list, dict)
-        indent: Indentation level
-    """
-    prefix = '  ' * indent
-    if isinstance(value, dict):
-        print(f'{prefix}{key}:')
-        for k, v in value.items():
-            print_toon_kv(k, v, indent + 1)
-    elif isinstance(value, list) and value and isinstance(value[0], dict):
-        # List of dicts - use table format
-        print(f'{prefix}{key}[{len(value)}]:')
-        for item in value:
-            print(f'{prefix}  - {item}')
-    elif isinstance(value, list):
-        print(f'{prefix}{key}[{len(value)}]:')
-        for item in value:
-            print(f'{prefix}  - {item}')
-    else:
-        formatted = format_toon_value(value)
-        print(f'{prefix}{key}: {formatted}')
-
-
-def print_toon_table(name: str, items: list, fields: list):
-    """Print a TOON table.
-
-    Args:
-        name: Table name
-        items: List of dicts
-        fields: List of field names to include
-    """
-    field_spec = ','.join(fields)
-    print(f'{name}[{len(items)}]{{{field_spec}}}:')
-    for item in items:
-        values = [format_toon_value(item.get(f, '')) for f in fields]
-        print('\t'.join(values))
-
-
-def print_toon_list(name: str, items: list):
-    """Print a TOON list.
-
-    Args:
-        name: List name
-        items: List of values
-    """
-    print(f'{name}[{len(items)}]:')
-    for item in items:
-        print(f'  - {item}')
+# TOON formatting functions imported from file_ops:
+# format_toon_value, print_toon_kv, print_toon_list, print_toon_table
 
 
 # =============================================================================

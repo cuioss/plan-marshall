@@ -4,13 +4,11 @@
 Provides path resolution, read/write operations, and TOON output formatting.
 """
 
-import json
-import sys
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from file_ops import atomic_write_file, base_path, output_toon  # type: ignore[import-not-found]
-from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
+from file_ops import get_plan_dir, output_toon, read_json, write_json  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 
 # =============================================================================
 # Type Definitions
@@ -37,23 +35,17 @@ class ReferencesData(TypedDict, total=False):
 
 def get_references_path(plan_id: str) -> Path:
     """Get the references.json file path."""
-    return cast(Path, base_path('plans', plan_id, 'references.json'))
+    return get_plan_dir(plan_id) / 'references.json'
 
 
 def read_references(plan_id: str) -> dict[Any, Any]:
     """Read references.json for a plan."""
-    path = get_references_path(plan_id)
-    if not path.exists():
-        return {}
-    return cast(dict[Any, Any], json.loads(path.read_text(encoding='utf-8')))
+    return cast(dict[Any, Any], read_json(get_references_path(plan_id)))
 
 
 def write_references(plan_id: str, refs: dict) -> None:
     """Write references.json for a plan."""
-    path = get_references_path(plan_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    content = json.dumps(refs, indent=2)
-    atomic_write_file(path, content)
+    write_json(get_references_path(plan_id), refs)
 
 
 def require_references(plan_id: str) -> dict[Any, Any]:
@@ -68,6 +60,8 @@ def require_references(plan_id: str) -> dict[Any, Any]:
     Raises:
         SystemExit: If references.json not found (error already printed).
     """
+    import sys
+
     refs = read_references(plan_id)
     if not refs:
         output_toon(
