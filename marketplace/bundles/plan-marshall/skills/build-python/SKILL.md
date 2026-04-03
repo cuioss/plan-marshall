@@ -10,16 +10,12 @@ Python build execution via pyprojectx (`./pw` wrapper) with output parsing for m
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+See `plan-marshall:extension-api/standards/build-api-reference.md` § Enforcement for shared rules.
 
-**Prohibited actions:**
-- Do not invoke `./pw` or pytest/mypy/ruff directly; all builds go through the script API
-- Do not invent script arguments not listed in the operations table
-
-**Constraints:**
+**Tool-specific constraint:**
 - All commands use `python3 .plan/execute-script.py plan-marshall:build-python:python_build {command} {args}`
-- Output format defaults to TOON; use `--format json` only when explicitly required
-- Always analyze the result TOON: check `status` for success/error/timeout, review `errors` for failures
+
+**Note on script naming**: The script is named `python_build.py` (not `python.py`) to avoid shadowing Python's own module namespace. This results in the notation `plan-marshall:build-python:python_build`.
 
 ## Scripts Overview
 
@@ -32,156 +28,26 @@ Python build execution via pyprojectx (`./pw` wrapper) with output parsing for m
 
 Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
 
-## Unified API
+## Subcommands
 
-All build skills share the same subcommand structure. Python supports the common subcommands:
+Python supports the shared subcommands documented in `build-api-reference.md`:
+**run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 
-| Subcommand | Purpose |
-|------------|---------|
-| `run` | Execute build and auto-parse on failure (primary API) |
-| `parse` | Parse pyprojectx build output from log file |
-| `coverage-report` | Parse coverage.py XML report |
-| `check-warnings` | Categorize build warnings against acceptable patterns |
-| `discover` | Discover Python modules |
+Not available: `search-markers` (OpenRewrite is Java-specific).
 
-**Not available**: `search-markers` (OpenRewrite is Java-specific, not applicable to Python projects).
+### Python-Specific Notes
 
-### run (Primary API)
+**run**: The `--command-args` value contains pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. The result TOON includes a `wrapper` field showing the resolved pyprojectx executable path.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
-    --command-args "<command>" \
-    [--timeout <seconds>] \
-    [--mode <mode>] \
-    [--format <toon|json>]
-```
+**parse**: Does not support `no-openrewrite` mode (not applicable).
 
-**Parameters**:
-- `--command-args` - Complete pyprojectx command arguments (e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`) (required)
-- `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
-- `--mode` - Output mode: actionable (default), structured, errors
-- `--format` - Output format: toon (default), json
-- `--project-dir` - Project root directory (default: `.`)
+**coverage-report**: Auto-detects coverage.py Cobertura XML in these locations:
+- `coverage.xml` (project root)
+- `htmlcov/coverage.xml`
 
-**Output Format (TOON)**:
+Generate with `pytest --cov --cov-report=xml`.
 
-Success (includes `wrapper` field showing resolved pyprojectx executable — Python-specific):
-```
-status	success
-exit_code	0
-duration_seconds	45
-log_file	.plan/temp/build-output/default/python-2026-01-04-143022.log
-command	./pw verify
-wrapper	./pw
-```
-
-Build Failed:
-```
-status	error
-exit_code	1
-duration_seconds	23
-log_file	.plan/temp/build-output/default/python-2026-01-04-143022.log
-command	./pw module-tests core
-wrapper	./pw
-error	build_failed
-
-errors[2]{file,line,message,category}:
-src/core/utils.py    42    error: Incompatible return value type    type_error
-src/core/service.py  15    F401 'os' imported but unused            lint_error
-
-tests:
-  passed: 40
-  failed: 2
-  skipped: 1
-```
-
-### parse
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-python:python_build parse \
-    --log <path> [--mode <mode>]
-```
-
-**Parameters**:
-- `--log` - Path to build log file (required)
-- `--mode` - Output mode (default: `structured`):
-  - `default` - All issues, unfiltered
-  - `errors` - Only error-severity issues
-  - `structured` - All issues with structured summary
-
-### coverage-report
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-python:python_build coverage-report \
-    [--project-path <path>] \
-    [--report-path <path>] \
-    [--threshold <percent>]
-```
-
-**Parameters**:
-- `--project-path` - Project directory (for auto-detection of report files)
-- `--report-path` - Override coverage XML report path (default: auto-detect)
-- `--threshold` - Coverage threshold percent (default: 80)
-
-Parses coverage.py Cobertura XML (`coverage.xml`). Generate with `pytest --cov --cov-report=xml`.
-
-**Output Format (TOON)**:
-
-```
-status	success
-passed	true
-threshold	80
-message	"Coverage meets threshold: 85.2% line, 78.3% branch"
-
-overall:
-  line	85.2
-  branch	78.3
-
-low_coverage[1]{class,line_pct,missed_methods}:
-  src.core.utils,65.0,process_data
-```
-
-### check-warnings
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-python:python_build check-warnings \
-    --warnings <json> [--acceptable-warnings <json>]
-```
-
-**Parameters**:
-- `--warnings` - JSON array of warnings
-- `--acceptable-warnings` - JSON object with acceptable patterns
-
-### discover
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-python:python_build discover \
-    [--root <path>] [--format <toon|json>]
-```
-
-**Parameters**:
-- `--root` - Project root directory (default: `.`)
-- `--format` - Output format: toon (default), json
-
-**Output Format (TOON)**:
-
-```
-status	success
-count	2
-
-modules[2]{name,build_systems,paths,metadata,packages,stats,commands}:
-  core	["python"]	{module: "core", descriptor: "core/pyproject.toml", ...}	{...}	{...}	{source_files: 15, test_files: 8}	{verify: "verify core", compile: "compile core", module-tests: "module-tests core", ...}
-```
-
-Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata` (name/version/description/requires_python from pyproject.toml), `packages`, `test_packages`, `dependencies` (from pyproject.toml [project].dependencies), `stats` (source_files/test_files), `commands` (canonical pyprojectx commands).
-
-## Wrapper Detection
-
-```
-Python: ./pw > pw.bat > pwx (on PATH)
-```
-
-Detection order: `./pw` (Unix), `pw.bat` (Windows), `pwx` (system PATH). Unlike Maven/Gradle which fall back to system commands, Python raises `FileNotFoundError` if no pyprojectx wrapper is found.
+**discover**: Modules are directories containing `test/` or `tests/` subdirectories. Metadata extracted from `pyproject.toml` using `tomllib`. Searches one level deep from project root, plus root itself.
 
 ## Multi-Parser Combination
 
@@ -189,22 +55,33 @@ Unlike Maven/Gradle/npm which route to a single parser, Python's `parse_log()` r
 
 ## Error Categories
 
-Uses the shared `categorize_issue()` infrastructure with Python-specific patterns. Deduplication uses the shared `make_dedup_key()` format.
+See `build-api-reference.md` § Python categories for the full table.
 
-| Category | Description |
+### Issue Routing
+
+Python errors route to `pm-dev-python` bundle skills:
+
+| Category | Target Skill |
 |----------|-------------|
-| `type_error` | mypy type errors |
-| `lint_error` | ruff violations |
-| `test_failure` | pytest test failures (with line numbers extracted from tracebacks) |
-| `import_error` | Module import errors |
+| `type_error` | `pm-dev-python:python-core` |
+| `lint_error` | `pm-dev-python:python-core` |
+| `test_failure` | `pm-dev-python:pytest-testing` |
+
+## Wrapper Detection
+
+```
+Python: ./pw > pw.bat > pwx (on PATH)
+```
+
+Detection order: `./pw` (Unix), `pw.bat` (Windows), `pwx` (system PATH). Unlike Maven/Gradle which fall back to system commands, Python raises `FileNotFoundError` if no pyprojectx wrapper is found — pyprojectx is project-specific and has no system-wide equivalent.
 
 ## Module Discovery
 
-Python module discovery uses the pyprojectx project structure. Modules are directories containing test subdirectories matching the `test/` or `tests/` pattern.
+Uses the pyprojectx project structure. Modules are directories containing test subdirectories matching the `test/` or `tests/` pattern.
+
+Excludes: `.venv`, `venv`, `.tox`, `.mypy_cache`, `.ruff_cache`, `.pytest_cache`, `dist`, `egg-info`.
 
 ### Command Generation
-
-Discovery generates canonical commands per module:
 
 | Canonical | pyprojectx Command |
 |-----------|-------------------|
@@ -219,6 +96,6 @@ Omit `{module}` to run against all modules.
 
 ## References
 
-- `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle
-- `standards/python-impl.md` - Python/pyprojectx execution details
+- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation
+- `plan-marshall:extension-api/standards/build-execution.md` — Execution contract and lifecycle
+- `standards/python-impl.md` — Python/pyprojectx execution details

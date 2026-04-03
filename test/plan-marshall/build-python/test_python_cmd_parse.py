@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Tests for _python_cmd_parse.py.
+"""Tests for _python_cmd_parse.py (direct parser API).
 
 Tests the Python build log parser directly (not through python_build.py).
+
+Note: test_python_build.py also tests parse_log() but through the build script
+module loader with mocked dependencies. This file tests the parser in isolation
+for detailed coverage of mypy/ruff/pytest output patterns.
 """
 
 import tempfile

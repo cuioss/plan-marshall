@@ -315,63 +315,47 @@ def test_test_summary_to_dict():
 
 def test_parse_log_file_not_found():
     """Raises FileNotFoundError for missing log file."""
-    try:
+    import pytest
+    with pytest.raises(FileNotFoundError):
         parse_typescript('/nonexistent/path/to/log.log')
-        assert False, 'Should have raised FileNotFoundError'
-    except FileNotFoundError:
-        pass  # Expected
 
 
-if __name__ == '__main__':
-    import traceback
+def test_mixed_typescript_and_jest_output():
+    """Test parsing log with both TypeScript errors and Jest failures (H51).
 
-    tests = [
-        # TypeScript tests
-        test_typescript_parse_log_returns_tuple,
-        test_typescript_parse_log_extracts_errors,
-        test_typescript_no_test_summary,
-        test_typescript_success_on_empty,
-        # Jest tests
-        test_jest_parse_log_returns_tuple,
-        test_jest_parse_log_failure_status,
-        test_jest_extracts_test_summary,
-        test_jest_extracts_failures,
-        # TAP tests
-        test_tap_parse_log_success,
-        test_tap_parse_log_failure,
-        test_tap_extracts_test_summary_success,
-        test_tap_extracts_test_summary_failure,
-        test_tap_extracts_failures,
-        # ESLint tests
-        test_eslint_parse_log_returns_tuple,
-        test_eslint_extracts_errors,
-        test_eslint_extracts_warnings,
-        test_eslint_issue_fields,
-        test_eslint_no_test_summary,
-        # npm error tests
-        test_npm_errors_eresolve,
-        test_npm_errors_e404,
-        test_npm_errors_no_test_summary,
-        test_npm_errors_success_on_empty,
-        # Object tests
-        test_issue_to_dict,
-        test_test_summary_to_dict,
-        # Edge cases
-        test_parse_log_file_not_found,
-    ]
+    Verifies that when multiple tool outputs are in a single log,
+    at least one parser detects the issues.
+    """
+    content = """
+src/components/App.tsx(15,3): error TS2339: Property 'x' does not exist on type 'Props'.
+src/utils/helper.ts(42,10): error TS2345: Argument of type 'string' is not assignable.
 
-    passed = 0
-    failed = 0
+FAIL src/components/__tests__/App.test.tsx
+  ● App component › should render correctly
 
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
+    expect(received).toBe(expected)
 
-    print(f'\nResults: {passed} passed, {failed} failed')
-    sys.exit(0 if failed == 0 else 1)
+    Expected: true
+    Received: false
+
+      at Object.<anonymous> (src/components/__tests__/App.test.tsx:25:10)
+
+Tests:       1 failed, 5 passed, 6 total
+Test Suites: 1 failed, 2 passed, 3 total
+"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+        f.write(content)
+        f.flush()
+
+        # TypeScript parser should detect TS errors
+        ts_issues, _, ts_status = parse_typescript(f.name)
+        assert len(ts_issues) >= 2, 'TypeScript parser should find TS errors'
+        assert ts_status == 'FAILURE'
+
+        # Jest parser should detect test failures
+        jest_issues, jest_summary, jest_status = parse_jest(f.name)
+        assert jest_status == 'FAILURE'
+        assert jest_summary is not None
+        assert jest_summary.failed >= 1
+
+        Path(f.name).unlink()

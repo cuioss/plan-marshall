@@ -109,10 +109,23 @@ Dependencies are extracted from `[project].dependencies` (runtime) and `[project
 | Issue | Solution |
 |-------|----------|
 | `FileNotFoundError` for wrapper | Ensure `./pw` or `pwx` exists |
-| mypy import errors | Check `mypy.ini` or `pyproject.toml` for `mypy_path` |
+| mypy import errors | Check `[tool.mypy]` in `pyproject.toml` for `mypy_path` configuration |
 | ruff configuration | Verify `[tool.ruff]` in `pyproject.toml` |
 | pytest collection errors | Check for `__init__.py` in test directories |
 | Timeout on first run | pyprojectx downloads tools on first invocation |
+
+---
+
+## Issue Routing
+
+Routes to skills in the `pm-dev-python` bundle:
+
+| Issue Type | Target Skill |
+|------------|-------------|
+| `type_error` | `pm-dev-python:python-core` |
+| `lint_error` | `pm-dev-python:python-core` |
+| `test_failure` | `pm-dev-python:pytest-testing` |
+| `import_error` | Check `pyproject.toml` `[tool.mypy]` configuration |
 
 ---
 

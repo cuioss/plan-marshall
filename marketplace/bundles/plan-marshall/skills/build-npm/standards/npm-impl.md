@@ -111,6 +111,47 @@ PLAYWRIGHT_BASE_URL=http://localhost:3000 npm run test:e2e  # E2E tests
 
 ---
 
+## CI/CD Standards
+
+### Environment Variables
+
+```bash
+export CI=true
+export NODE_ENV=test
+```
+
+### Non-Interactive Mode
+
+npm runs non-interactively when `CI=true` is set. This disables prompts and progress bars.
+
+---
+
+## Issue Routing
+
+Routes to skills in the `pm-dev-frontend` bundle:
+
+| Issue Type | Target Skill |
+|------------|-------------|
+| `compilation_error` | `pm-dev-frontend:javascript` |
+| `test_failure` | `pm-dev-frontend:jest-testing` |
+| `lint_error` | `pm-dev-frontend:lint-config` |
+| `npm_dependency` | Manual package.json fix |
+| `npm_error` | Manual npm configuration fix |
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| ERESOLVE dependency conflicts | Check peer dependency versions in package.json |
+| E404 package not found | Verify package name and registry configuration |
+| Build timeout | Increase `--timeout` or check for hanging processes |
+| Workspace not found | Verify `workspaces` field in root package.json |
+| TypeScript compilation slow | Use `--incremental` or project references |
+
+---
+
 ## Coverage Report Paths
 
 | Path | Format |

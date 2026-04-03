@@ -153,6 +153,28 @@ These are categorized as `compilation_error` alongside Java errors.
 
 ---
 
+## Issue Routing
+
+Routes to skills in the `pm-dev-java` bundle:
+
+| Issue Type | Target Skill |
+|------------|-------------|
+| `compilation_error` | `pm-dev-java:java-core` |
+| `test_failure` | `pm-dev-java:junit-core` |
+| `javadoc_warning` | `pm-dev-java:javadoc` |
+| `dependency_error` | Manual build.gradle fix |
+
+---
+
+## Dependency Management
+
+Gradle uses `platform()` and `enforcedPlatform()` for BOM-style dependency management, analogous to Maven's `<dependencyManagement>`. For multi-project builds:
+- Define versions in a version catalog (`gradle/libs.versions.toml`) or platform project
+- Child projects should not override platform-managed versions
+- Use `dependencies { implementation platform(project(':bom')) }` for internal BOMs
+
+---
+
 ## Coverage Report Paths
 
 | Path | Description |

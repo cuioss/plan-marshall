@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Tests for _npm_cmd_discover.py module discovery.
+"""Tests for _npm_cmd_discover.py module discovery (direct API).
 
 Tests the discover_npm_modules() function directly, covering single-package
 projects, workspaces, and command generation.
+
+Note: test_npm_discover_modules.py tests the same functionality through the
+extension.py wrapper (unified Extension API). This file tests the internal
+discovery function directly for detailed coverage.
 """
 
 import json

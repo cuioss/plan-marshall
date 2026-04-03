@@ -10,17 +10,10 @@ Maven build execution with output parsing, module discovery, and wrapper detecti
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+See `plan-marshall:extension-api/standards/build-api-reference.md` § Enforcement for shared rules.
 
-**Prohibited actions:**
-- Do not invoke Maven directly; all builds go through the script API
-- Do not invent script arguments not listed in the operations table
-- Do not bypass wrapper detection logic
-
-**Constraints:**
+**Tool-specific constraint:**
 - All commands use `python3 .plan/execute-script.py plan-marshall:build-maven:maven {command} {args}`
-- Output format defaults to TOON; use `--format json` only when explicitly required
-- Always analyze the result TOON: check `status` for success/error/timeout, review `errors` for failures
 
 ## Scripts Overview
 
@@ -33,187 +26,44 @@ Maven build execution with output parsing, module discovery, and wrapper detecti
 
 Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
 
-## Unified API
+## Subcommands
 
-All build skills share the same subcommand structure. Maven supports all subcommands:
+Maven supports all shared subcommands documented in `build-api-reference.md`:
+**run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **search-markers**.
 
-| Subcommand | Purpose |
-|------------|---------|
-| `run` | Execute build and auto-parse on failure (primary API) |
-| `parse` | Parse build output from log file |
-| `coverage-report` | Parse JaCoCo coverage report |
-| `check-warnings` | Categorize build warnings against acceptable patterns |
-| `discover` | Discover Maven modules with metadata |
-| `search-markers` | Search OpenRewrite TODO markers in source files |
+### Maven-Specific Notes
 
-### run (Primary API)
+**run**: The `--command-args` value contains Maven goals and options, e.g., `"verify -Ppre-commit -pl my-module"`.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
-    --command-args "<goals>" \
-    [--timeout <seconds>] \
-    [--mode <mode>] \
-    [--format <toon|json>]
-```
+**parse**: Supports the `no-openrewrite` mode in addition to shared modes.
 
-**Parameters**:
-- `--command-args` - Complete Maven command arguments, e.g. `"verify -Ppre-commit -pl my-module"` (required)
-- `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
-- `--mode` - Output mode: actionable (default), structured, errors
-- `--format` - Output format: toon (default), json
-- `--project-dir` - Project root directory (default: `.`)
+**coverage-report**: Auto-detects JaCoCo XML reports in these locations:
+- `target/site/jacoco/jacoco.xml`
+- `target/jacoco/report.xml`
+- `target/site/jacoco-aggregate/jacoco.xml`
 
-**Output Format (TOON)**:
-
-Success:
-```
-status	success
-exit_code	0
-duration_seconds	45
-log_file	.plan/temp/build-output/default/maven-2026-01-04-143022.log
-command	./mvnw -l .plan/temp/build-output/... clean test -pl core
-```
-
-Build Failed:
-```
-status	error
-exit_code	1
-duration_seconds	23
-log_file	.plan/temp/build-output/default/maven-2026-01-04-143022.log
-command	./mvnw -l .plan/temp/build-output/... clean test
-error	build_failed
-
-errors[2]{file,line,message,category}:
-src/main/java/Foo.java    42    cannot find symbol       compile
-src/main/java/Bar.java    15    null pointer             test
-
-tests:
-  passed: 40
-  failed: 2
-  skipped: 1
-```
-
-### parse
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-maven:maven parse \
-    --log <path> [--mode <mode>]
-```
-
-**Parameters**:
-- `--log` - Path to Maven build log file (required)
-- `--mode` - Output mode (default: `structured`):
-  - `default` - All issues, unfiltered
-  - `errors` - Only error-severity issues
-  - `structured` - All issues with structured summary
-  - `no-openrewrite` - Exclude OpenRewrite informational messages
-
-### coverage-report
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-maven:maven coverage-report \
-    [--project-path <path>] \
-    [--report-path <path>] \
-    [--threshold <percent>]
-```
-
-**Parameters**:
-- `--project-path` - Module directory path (for multi-module projects)
-- `--report-path` - Override JaCoCo XML report path (default: auto-detect in target/)
-- `--threshold` - Coverage threshold percent (default: 80)
-
-**Output Format (TOON)**:
-
-```
-status	success
-passed	true
-threshold	80
-message	"Coverage meets threshold: 82.4% line, 75.0% branch"
-
-overall:
-  line	82.35
-  branch	75.0
-  instruction	79.69
-  method	83.33
-
-low_coverage[1]{class,line_pct,missed_methods}:
-  de.cuioss.portal.sample.UserService,66.67,deleteUser
-```
-
-### check-warnings
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-maven:maven check-warnings \
-    --warnings <json> [--acceptable-warnings <json>]
-```
-
-**Parameters**:
-- `--warnings` - JSON array of warning objects
-- `--acceptable-warnings` - JSON object with acceptable patterns
-
-### search-markers
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-maven:maven search-markers \
-    --source-dir <dir> [--extensions <ext>]
-```
-
-**Parameters**:
-- `--source-dir` - Directory to search (default: src)
-- `--extensions` - Comma-separated file extensions (default: .java)
-
-**Note**: This subcommand is specific to Maven and Gradle (OpenRewrite integration). Not available in npm or Python builds.
-
-### discover
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-maven:maven discover \
-    [--root <path>] [--format <toon|json>]
-```
-
-**Parameters**:
-- `--root` - Project root directory (default: `.`)
-- `--format` - Output format: toon (default), json
-
-**Output Format (TOON)**:
-
-```
-status	success
-count	3
-
-modules[3]{name,build_systems,paths,metadata,packages,stats,commands}:
-  my-module	["maven"]	{module: "my-module", descriptor: "my-module/pom.xml", ...}	{artifact_id: "my-module", group_id: "com.example", ...}	{...}	{source_files: 12, test_files: 5}	{verify: "verify -pl my-module", compile: "compile -pl my-module", ...}
-```
-
-Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata` (artifact_id/group_id/packaging/profiles/parent/dependencies), `packages`, `test_packages`, `stats` (source_files/test_files), `commands` (canonical build commands).
-
-## Wrapper Detection
-
-```
-Maven:  ./mvnw > mvn (on PATH)
-```
+**discover**: Shells out to Maven for metadata (`dependency:tree`, `help:all-profiles`) in addition to parsing `pom.xml`. This makes discovery slower than static-file-only approaches (Gradle, npm, Python) but provides richer metadata including profiles and dependency scopes.
 
 ## Error Categories
 
-Categories use **substring matching** (case-insensitive). The shared `categorize_issue()` function auto-detects regex metacharacters, but Maven patterns are plain substrings for simplicity. Deduplication uses the shared `make_dedup_key()` format: `{category}:{file}:{line}:{message[:100]}`.
+Uses the shared JVM error categories (see `build-api-reference.md` § Shared categories).
 
-| Category | Description |
-|----------|-------------|
-| `compilation_error` | Compile-time Java errors |
-| `test_failure` | Test assertion failures |
-| `dependency_error` | Dependency resolution issues |
-| `javadoc_warning` | JavaDoc documentation issues |
-| `deprecation_warning` | Deprecated API usage |
-| `unchecked_warning` | Unchecked type conversions |
-| `openrewrite_info` | OpenRewrite plugin output |
+Maven-specific: uses **substring matching** (case-insensitive) for all patterns. Key patterns:
+- `compilation_error`: "cannot find symbol", "incompatible types", "illegal start", etc.
+- `test_failure`: "tests run:", "failure!", "assertionfailed", "expected:", etc.
+- `dependency_error`: "could not resolve dependencies", "could not find artifact", etc.
 
 ## Module Discovery
 
-Maven module discovery reads `pom.xml` to detect multi-module projects. Modules are identified from `<modules>` declarations in the parent POM.
+Reads `pom.xml` `<modules>` declarations. Modules are identified from the parent POM.
+
+### Profile Processing Pipeline
+
+1. Filter to command-line activated profiles (`Active: false`)
+2. Apply skip list from configuration (`build.maven.profiles.skip`)
+3. Map to canonical command names (`build.maven.profiles.map.canonical`)
 
 ### Command Generation
-
-Discovery generates canonical commands per module:
 
 | Canonical | Maven Command |
 |-----------|---------------|
@@ -226,9 +76,19 @@ Discovery generates canonical commands per module:
 
 Profile-to-canonical mappings are configurable via extension defaults.
 
+### Issue Routing
+
+Maven errors route to `pm-dev-java` bundle skills:
+
+| Category | Target Skill |
+|----------|-------------|
+| `compilation_error` | `pm-dev-java:java-core` |
+| `test_failure` | `pm-dev-java:junit-core` |
+| `javadoc_warning` | `pm-dev-java:javadoc` |
+
 ## References
 
-- `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle
-- `standards/maven-impl.md` - Maven execution details
-- `standards/pom-maintenance.md` - POM structure and dependency management standards
+- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation
+- `plan-marshall:extension-api/standards/build-execution.md` — Execution contract and lifecycle
+- `standards/maven-impl.md` — Maven-specific execution details
+- `standards/pom-maintenance.md` — POM structure and dependency management standards

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Tests for discover_modules() in npm extension.
+"""Tests for discover_modules() in npm extension (Extension API layer).
 
 Tests the unified module discovery API for npm projects including
 metadata extraction, dependency parsing, and stats.
 
-Updated to test spec-compliant structure per build-project-structure.md:
+Note: test_npm_discover.py tests the internal discover_npm_modules()
+function directly. This file tests through the extension.py wrapper
+to verify the unified Extension API contract.
+
+Structure validated per build-project-structure.md:
 - build_systems: ["npm"] (array)
 - paths: {module, descriptor, sources, tests, readme}
 - metadata: {type, description}

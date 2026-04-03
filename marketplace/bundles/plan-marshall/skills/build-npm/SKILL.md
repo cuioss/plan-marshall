@@ -10,17 +10,10 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+See `plan-marshall:extension-api/standards/build-api-reference.md` § Enforcement for shared rules.
 
-**Prohibited actions:**
-- Do not invoke npm/npx directly; all builds go through the script API
-- Do not invent script arguments not listed in the operations table
-- Do not bypass the multi-parser detection logic
-
-**Constraints:**
+**Tool-specific constraints:**
 - All commands use `python3 .plan/execute-script.py plan-marshall:build-npm:npm {command} {args}`
-- Output format defaults to TOON; use `--format json` only when explicitly required
-- Always analyze the result TOON: check `status` for success/error/timeout, review `errors` for failures
 - npm vs npx routing is automatic; do not force one over the other
 
 ## Scripts Overview
@@ -28,7 +21,7 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 | Script | Type | Purpose |
 |--------|------|---------|
 | `npm.py` | CLI | npm/npx operations dispatcher (includes coverage + warning config) |
-| `js_coverage.py` | CLI | Standalone deep coverage analysis (per-file detail, separate from `coverage-report` subcommand) |
+| `js_coverage.py` | CLI | Deep per-file coverage analysis (see section below) |
 | `_npm_execute.py` | Library | Execution config via factory pattern |
 | `_npm_cmd_parse.py` | Library | Multi-parser dispatcher |
 | `_npm_cmd_discover.py` | Library | Module discovery via package.json workspaces |
@@ -40,159 +33,51 @@ npm/npx build execution with multi-parser output analysis and JavaScript coverag
 
 Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
 
-## Unified API
+## Subcommands
 
-All build skills share the same subcommand structure. npm supports the common subcommands:
+npm supports the shared subcommands documented in `build-api-reference.md`:
+**run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 
-| Subcommand | Purpose |
-|------------|---------|
-| `run` | Execute build and auto-parse on failure (primary API) |
-| `parse` | Parse npm/npx build output from log file |
-| `coverage-report` | Parse JavaScript coverage report |
-| `check-warnings` | Categorize build warnings against acceptable patterns |
-| `discover` | Discover npm modules and workspaces |
+Not available: `search-markers` (OpenRewrite is Java-specific).
 
-**Not available**: `search-markers` (OpenRewrite is Java-specific, not applicable to npm projects).
+### npm-Specific Notes
 
-### run (Primary API)
+**run**: Additional parameters beyond the shared API:
+- `--working-dir` — Working directory for command execution (for nested frontend projects in monorepos)
+- `--env` — Environment variables (e.g., `"NODE_ENV=test CI=true"`)
 
-```bash
-python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
-    --command-args "<command>" \
-    [--timeout <seconds>] \
-    [--mode <mode>] \
-    [--format <toon|json>] \
-    [--project-dir <path>] \
-    [--working-dir <path>] \
-    [--env "NODE_ENV=production"]
-```
+The result TOON includes a `command_type` field (`npm` or `npx`) indicating which executable was used.
 
-**Parameters**:
-- `--command-args` - Complete npm command arguments, e.g. `"run test"` or `"run test --workspace=pkg"` (required)
-- `--timeout` - Timeout in seconds (default: 300, adaptive via run-config, min floor: 60s)
-- `--mode` - Output mode: actionable (default), structured, errors
-- `--format` - Output format: toon (default), json
-- `--project-dir` - Project root directory (default: `.`)
-- `--working-dir` - Working directory for command execution
-- `--env` - Environment variables (e.g. `"NODE_ENV=test CI=true"`)
+**coverage-report**: Auto-detects reports in these locations:
+- `coverage/coverage-summary.json` (Jest/Istanbul JSON)
+- `coverage/lcov.info` (LCOV format)
+- `dist/coverage/coverage-summary.json`
 
-**Output Format (TOON)**:
+The `overall` section includes `function` and `statement` metrics (instead of JaCoCo's `instruction` and `method`).
 
-Success:
-```
-status	success
-exit_code	0
-duration_seconds	12
-log_file	.plan/temp/build-output/default/npm-2026-01-04-143022.log
-command	npm run test
-command_type	npm
-```
+**discover**: Detects workspaces from:
+1. `package.json` `workspaces` field (npm/yarn — array or object format)
+2. `pnpm-workspace.yaml` `packages` field (pnpm)
 
-Build Failed:
-```
-status	error
-exit_code	1
-duration_seconds	8
-log_file	.plan/temp/build-output/default/npm-2026-01-04-143022.log
-command	npm run test
-command_type	npm
-error	build_failed
+Commands are conditional on scripts present in `package.json` (e.g., `compile` only generated if `build` or `typecheck` script exists).
 
-errors[2]{file,line,message,category}:
-src/utils/helper.js    42    Expected true, got false    test_failure
-src/components/App.tsx  15   TS2339: Property 'x' missing    compilation_error
+### js_coverage.py — Deep Coverage Analysis
 
-tests:
-  passed: 40
-  failed: 2
-  skipped: 1
-```
+A standalone CLI tool for per-file coverage analysis, separate from the `coverage-report` subcommand:
 
-### parse
+- `coverage-report`: Summary-level threshold check (shared infrastructure, all build systems)
+- `js_coverage.py analyze`: Deep per-file breakdown with CRITICAL/WARNING/OK classification
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:build-npm:npm parse \
-    --log <path> [--mode <mode>]
+python3 .plan/execute-script.py plan-marshall:build-npm:js_coverage analyze \
+    --report <path> --format json|lcov --threshold <percent>
 ```
 
-**Parameters**:
-- `--log` - Path to npm build log file (required)
-- `--mode` - Output mode (default: `structured`):
-  - `default` - All issues, unfiltered
-  - `errors` - Only error-severity issues
-  - `structured` - All issues with structured summary
-
-### coverage-report
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-npm:npm coverage-report \
-    [--project-path <path>] \
-    [--report-path <path>] \
-    [--threshold <percent>]
-```
-
-**Parameters**:
-- `--project-path` - Project directory (for auto-detection of report files)
-- `--report-path` - Override coverage report path (default: auto-detect)
-- `--threshold` - Coverage threshold percent (default: 80)
-
-Supports Jest/Istanbul JSON (`coverage-summary.json`) and LCOV formats. Auto-detects format from file extension.
-
-**Output Format (TOON)**:
-
-```
-status	success
-passed	true
-threshold	80
-message	"Coverage meets threshold: 85.2% line, 78.3% branch"
-
-overall:
-  line	85.2
-  branch	78.3
-  function	81.5
-  statement	87.1
-
-low_coverage[1]{file,line_pct,branch_pct}:
-  src/utils/helper.js,62.5,50.0
-```
-
-### check-warnings
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-npm:npm check-warnings \
-    --warnings <json> [--acceptable-warnings <json>]
-```
-
-**Parameters**:
-- `--warnings` - JSON array of warnings
-- `--acceptable-warnings` - JSON object with acceptable patterns
-
-### discover
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-npm:npm discover \
-    [--root <path>] [--format <toon|json>]
-```
-
-**Parameters**:
-- `--root` - Project root directory (default: `.`)
-- `--format` - Output format: toon (default), json
-
-**Output Format (TOON)**:
-
-```
-status	success
-count	2
-
-modules[2]{name,build_systems,paths,metadata,packages,stats,commands}:
-  my-workspace	["npm"]	{module: "packages/my-workspace", descriptor: "packages/my-workspace/package.json", ...}	{version: "1.0.0", scripts: [...], ...}	{...}	{source_files: 20, test_files: 10}	{compile: "run build", module-tests: "run test", quality-gate: "run lint", ...}
-```
-
-Each module includes: `name`, `build_systems`, `paths` (module/descriptor/sources/tests/readme), `metadata` (version/scripts/dependencies), `packages`, `stats` (source_files/test_files), `commands` (canonical build commands based on available package.json scripts).
+Use `js_coverage.py` when you need to identify specific files with low coverage, not just an overall pass/fail.
 
 ## npm vs npx Detection
 
-Commands are automatically routed to npm or npx based on the `NPX_COMMANDS` list in `_npm_execute.py`. Direct tool invocations (linters, TypeScript tools, test runners, bundlers) use npx; script invocations (`run test`, `run build`) use npm. The result TOON includes a `command_type` field (`npm` or `npx`) indicating which was used.
+Commands are routed based on a built-in `NPX_COMMANDS` list in `_npm_execute.py`. Direct tool invocations (prettier, eslint, jest, webpack, tsc, etc.) use `npx`; script invocations (`run test`, `run build`) use `npm`. Adding new CLI tools to the list requires a code change.
 
 ## Multi-Parser Architecture
 
@@ -206,31 +91,27 @@ npm build output → detect_tool_type(content, command)
     └─→ "generic"    → Try each parser in sequence
 ```
 
+Detection uses content patterns (e.g., `error TS` for TypeScript, `FAIL` + `Tests:` for Jest). When multiple tools produce output in a single log, the single-dispatch routing may miss secondary tool output — for combined logs, `generic` mode tries all parsers in sequence.
+
 ## Error Categories
 
-| Category | Description | Parser |
-|----------|-------------|--------|
-| `compilation_error` | TypeScript errors (TS2xxx codes) | `_npm_parse_typescript.py` |
-| `test_failure` | Jest/Vitest/TAP test failures | `_npm_parse_jest.py`, `_npm_parse_tap.py` |
-| `lint_error` | ESLint violations | `_npm_parse_eslint.py` |
-| `npm_dependency` | ERESOLVE peer dependency conflicts | `_npm_parse_errors.py` |
-| `npm_error` | E404 and other npm command errors | `_npm_parse_errors.py` |
+See `build-api-reference.md` § npm categories for the full table.
+
+### Issue Routing
+
+npm errors route to `pm-dev-frontend` bundle skills:
+
+| Category | Target Skill |
+|----------|-------------|
+| `compilation_error` | `pm-dev-frontend:javascript` |
+| `test_failure` | `pm-dev-frontend:jest-testing` |
+| `lint_error` | `pm-dev-frontend:lint-config` |
 
 ## Module Discovery
 
-npm module discovery reads `package.json` to detect workspaces and available scripts.
-
-### Workspace Detection
-
-For monorepo projects, the discovery scans for workspace definitions in this order:
-1. `package.json` `workspaces` field (npm/yarn)
-2. `pnpm-workspace.yaml` `packages` field (pnpm)
-
-Each workspace gets its own module entry with scoped commands.
+Reads `package.json` to detect workspaces and available scripts.
 
 ### Command Generation
-
-Discovery generates canonical commands per module:
 
 | Canonical | npm Command | Condition |
 |-----------|-------------|-----------|
@@ -246,6 +127,6 @@ Commands are only generated for scripts present in `package.json`.
 
 ## References
 
-- `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle
-- `standards/npm-impl.md` - npm execution details
+- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation
+- `plan-marshall:extension-api/standards/build-execution.md` — Execution contract and lifecycle
+- `standards/npm-impl.md` — npm-specific execution details

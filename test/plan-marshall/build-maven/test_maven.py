@@ -99,6 +99,39 @@ def test_check_warnings_empty():
     assert data['total'] == 0, 'Total should be 0'
 
 
+def test_check_warnings_with_real_patterns():
+    """Test check-warnings with real warning data and acceptable patterns (H45).
+
+    Maven's handler uses filter_severity='WARNING', so warnings must have severity field.
+    Maven uses substring matching.
+    """
+    warnings = json.dumps([
+        {'message': '[deprecation] DeprecatedApi has been deprecated', 'severity': 'WARNING'},
+        {'message': '[unchecked] unchecked conversion', 'severity': 'WARNING'},
+        {'message': 'some random warning', 'severity': 'WARNING'},
+    ])
+    acceptable = json.dumps({
+        'patterns': ['[deprecation]', '[unchecked]'],
+    })
+
+    result = run_script(SCRIPT_PATH, 'check-warnings', '--warnings', warnings, '--acceptable-warnings', acceptable)
+    data = result.json()
+
+    assert data['success'] is True, 'Should succeed'
+    assert data['total'] == 3, f'Should count all warnings, got: {data}'
+    assert data['acceptable'] >= 2, f'Should accept deprecation and unchecked, got: {data}'
+
+
+def test_search_markers_with_content():
+    """Test searching when markers exist in source files (H49)."""
+    markers_dir = FIXTURES_DIR / 'source-with-markers'
+    result = run_script(SCRIPT_PATH, 'search-markers', '--source-dir', str(markers_dir / 'src'))
+    data = result.json()
+
+    assert data['status'] == 'success', 'Should succeed'
+    assert data['data']['total_markers'] > 0, 'Should find markers in fixture files'
+
+
 # =============================================================================
 # Help Tests
 # =============================================================================

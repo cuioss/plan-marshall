@@ -4,8 +4,12 @@
 Tests Gradle module discovery against real projects in the local git directory.
 Results are persisted to .plan/temp/test-results-gradle/ for inspection.
 
+IMPORTANT (H50): These tests depend on external git projects existing on disk.
+They will fail in CI or on machines where the test projects are not cloned.
+Consider them as local verification tests, not part of the CI gate.
+
 Run with:
-    python3 test/pm-dev-java/integration/discover_modules/test_gradle_discover_modules.py
+    python3 test/plan-marshall/integration/discover_modules/test_gradle_discover_modules.py
 """
 
 import sys
