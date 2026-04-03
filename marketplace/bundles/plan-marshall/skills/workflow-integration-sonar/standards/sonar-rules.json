@@ -65,13 +65,21 @@
     "python:S1135": "Complete TODO or track in issue management system",
     "python:S5131": "Sanitize user input to prevent injection",
     "python:S930": "Fix function call argument count",
-    "java:S2699": "Add assertions to verify test expectations"
+    "java:S2699": "Add assertions to verify test expectations",
+    "java:S2259": "Add null check before dereferencing",
+    "java:S1118": "Add private constructor to utility class",
+    "java:S1128": "Remove unused import",
+    "java:S1186": "Add implementation or throw UnsupportedOperationException"
   },
   "test_acceptable_rules": [
     "java:S106",
-    "java:S2699",
     "javascript:S106",
     "typescript:S106",
     "python:S106"
-  ]
+  ],
+  "suppression_syntax": {
+    "_note": "Language-specific suppression comment templates. {rule} and {reason} are replaced at runtime. 'default' is used for Java, JavaScript, TypeScript, and any unrecognized language.",
+    "python": "# NOSONAR {rule} - {reason}",
+    "default": "// NOSONAR {rule} - {reason}"
+  }
 }

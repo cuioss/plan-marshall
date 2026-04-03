@@ -20,7 +20,6 @@ Examples:
 """
 
 import sys
-from typing import Any
 
 from triage_helpers import (  # type: ignore[import-not-found]
     calculate_priority,
@@ -31,7 +30,6 @@ from triage_helpers import (  # type: ignore[import-not-found]
     load_skill_config,
     safe_main,
 )
-
 
 # ============================================================================
 # TRIAGE CONFIGURATION (loaded from sonar-rules.json)
@@ -73,11 +71,24 @@ def get_fix_suggestion(rule: str, message: str, file: str, line: int) -> str:
     return f'{suggestion} at {file}:{line}'
 
 
+_SUPPRESSION_SYNTAX: dict[str, str] = _RULES_CONFIG.get('suppression_syntax', {
+    'python': '# NOSONAR {rule} - {reason}',
+    'default': '// NOSONAR {rule} - {reason}',
+})
+
+
 def get_suppression_string(rule: str, reason: str, file: str = '') -> str:
-    """Generate suppression string for the issue using language-appropriate comment syntax."""
+    """Generate suppression string for the issue using language-appropriate comment syntax.
+
+    Language detection order: file extension → rule prefix → default (//).
+    Syntax templates are loaded from ``standards/sonar-rules.json`` suppression_syntax.
+    """
+    # Detect language from file extension or rule prefix
+    lang = None
     if file.endswith('.py') or rule.startswith('python:'):
-        return f'# NOSONAR {rule} - {reason}'
-    return f'// NOSONAR {rule} - {reason}'
+        lang = 'python'
+    template = _SUPPRESSION_SYNTAX.get(lang or 'default', _SUPPRESSION_SYNTAX.get('default', '// NOSONAR {rule} - {reason}'))
+    return template.format(rule=rule, reason=reason)
 
 
 def calculate_sonar_priority(severity: str, issue_type: str) -> str:

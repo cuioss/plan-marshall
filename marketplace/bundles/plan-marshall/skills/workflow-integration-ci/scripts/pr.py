@@ -289,7 +289,7 @@ def suggest_implementation(action: str, body: str, path: str | None, line: int |
     if action == 'ignore':
         return None
 
-    location = f'{path}:{line}' if path and line else (path or 'unspecified location')
+    location = f'{path}:{line}' if path and line is not None else (path or 'unspecified location')
 
     if action == 'explain':
         return f'Reply to comment at {location} with explanation of design decision'
@@ -337,7 +337,7 @@ def triage_comment(comment: dict) -> dict:
         'action': action,
         'reason': reason,
         'priority': priority,
-        'location': f'{path}:{line}' if path and line else None,
+        'location': f'{path}:{line}' if path and line is not None else None,
         'suggested_implementation': suggestion,
         'status': 'success',
     }

@@ -261,7 +261,8 @@ class TestSonarRulesConfig(unittest.TestCase):
     def test_test_acceptable_rules_loaded(self):
         """Test that test-acceptable rules are loaded from config."""
         self.assertIn('java:S106', self.test_acceptable)
-        self.assertIn('java:S2699', self.test_acceptable)
+        # java:S2699 (missing assertions) removed — tests without assertions are a real quality gap
+        self.assertNotIn('java:S2699', self.test_acceptable)
         self.assertIn('python:S106', self.test_acceptable)
 
 

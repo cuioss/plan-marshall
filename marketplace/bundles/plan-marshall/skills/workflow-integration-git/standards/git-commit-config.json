@@ -9,5 +9,6 @@
     "mixed", "embed", "spread", "thread", "overhead"
   ],
   "subject_max_length": 72,
-  "subject_warn_length": 50
+  "subject_warn_length": 50,
+  "monorepo_roots": ["packages", "modules", "apps", "libs", "services"]
 }

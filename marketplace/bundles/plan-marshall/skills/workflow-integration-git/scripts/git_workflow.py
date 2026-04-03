@@ -38,7 +38,6 @@ from triage_helpers import (  # type: ignore[import-not-found]
     create_workflow_cli,
     is_test_file,
     load_skill_config,
-    make_error,
     print_error,
     print_toon,
     safe_main,
@@ -53,6 +52,9 @@ VALID_TYPES: list[str] = _COMMIT_CONFIG['valid_types']
 _IMPERATIVE_ALLOWLIST: set[str] = set(_COMMIT_CONFIG.get('imperative_allowlist', []))
 _SUBJECT_MAX_LENGTH: int = _COMMIT_CONFIG.get('subject_max_length', 72)
 _SUBJECT_WARN_LENGTH: int = _COMMIT_CONFIG.get('subject_warn_length', 50)
+_MONOREPO_ROOTS: set[str] = set(_COMMIT_CONFIG.get('monorepo_roots', [
+    'packages', 'modules', 'apps', 'libs', 'services',
+]))
 
 _ARTIFACT_CONFIG = load_skill_config(__file__, 'artifact-patterns.json')
 
@@ -259,13 +261,12 @@ def analyze_diff(diff_content: str) -> dict:
     if src_files:
         paths = [f.split('/') for f in src_files]
         scope_found = False
-        # Monorepo prefixes: packages/<name>/..., modules/<name>/..., apps/<name>/...
-        monorepo_roots = {'packages', 'modules', 'apps', 'libs', 'services'}
+        # Monorepo prefixes loaded from git-commit-config.json
         for path in paths:
             if scope_found:
                 break
             # Monorepo: packages/<name>/src/... or modules/<name>/...
-            if len(path) > 1 and path[0] in monorepo_roots:
+            if len(path) > 1 and path[0] in _MONOREPO_ROOTS:
                 suggestions['scope'] = path[1]
                 scope_found = True
             # Maven/Gradle: src/main/java/<package>/...

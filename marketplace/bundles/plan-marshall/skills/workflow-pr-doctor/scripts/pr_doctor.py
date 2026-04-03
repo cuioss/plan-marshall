@@ -28,6 +28,7 @@ import sys
 from typing import Any
 
 from triage_helpers import (  # type: ignore[import-not-found]
+    ErrorCode,
     create_workflow_cli,
     load_skill_config,
     make_error,
@@ -319,7 +320,7 @@ def cmd_parse_handoff(args):
         return rc
 
     if not isinstance(handoff, dict):
-        return print_toon(make_error('Handoff must be a JSON object'))
+        return print_toon(make_error('Handoff must be a JSON object', code=ErrorCode.INVALID_INPUT))
 
     # Validate
     warnings = validate_handoff(handoff)

@@ -48,7 +48,9 @@
     {"domain": "cloud.google.com", "purpose": "Google Cloud documentation", "trust_level": "full"},
     {"domain": "docs.aws.amazon.com", "purpose": "AWS documentation", "trust_level": "full"},
     {"domain": "vercel.com", "purpose": "Frontend deployment platform", "trust_level": "full"},
-    {"domain": "netlify.com", "purpose": "Web deployment platform", "trust_level": "full"}
+    {"domain": "netlify.com", "purpose": "Web deployment platform", "trust_level": "full"},
+    {"domain": "mvnrepository.com", "purpose": "Maven Central search and metadata", "trust_level": "full"},
+    {"domain": "search.maven.org", "purpose": "Maven Central search API", "trust_level": "full"}
   ],
   "red_flags": [
     {"pattern": "free.*download", "description": "Free download sites — common malware distribution vector"},

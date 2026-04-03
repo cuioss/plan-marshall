@@ -319,12 +319,16 @@ class TestAnalyzeExtractDomains(unittest.TestCase):
         self.assertEqual(sorted(domains), ['api.test.com', 'example.com'])
 
     def test_extract_from_deny_section(self):
-        """Test extraction from permissions.deny."""
+        """Test extraction from permissions.deny requires explicit section='deny'."""
         from permission_web import extract_webfetch_domains  # type: ignore[import-not-found]
 
         settings = {'permissions': {'deny': ['WebFetch(blocked.com)']}}
-        domains = extract_webfetch_domains(settings)
-        self.assertEqual(domains, ['blocked.com'])
+        # Default section='allow' returns empty for deny-only settings
+        self.assertEqual(extract_webfetch_domains(settings), [])
+        # Explicit section='deny' returns deny-listed domains
+        self.assertEqual(extract_webfetch_domains(settings, section='deny'), ['blocked.com'])
+        # section='all' returns both
+        self.assertEqual(extract_webfetch_domains(settings, section='all'), ['blocked.com'])
 
     def test_extract_empty_settings(self):
         """Test extraction from empty settings."""

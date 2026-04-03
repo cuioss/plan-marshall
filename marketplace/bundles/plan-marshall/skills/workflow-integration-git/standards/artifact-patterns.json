@@ -16,6 +16,9 @@
     "**/*.swo",
     "**/*.log",
     "**/*.map",
+    "**/.pytest_cache/**",
+    "**/.mypy_cache/**",
+    "**/.ruff_cache/**",
     ".plan/temp/**"
   ],
   "uncertain_patterns": [

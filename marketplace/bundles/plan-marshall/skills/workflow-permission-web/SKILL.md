@@ -52,12 +52,11 @@ workflow-permission-web (WebFetch permission analysis)
 
 ## Workflow
 
-### Step 1: Load Web Security Standards
+### Step 1: Load Trusted Domain Reference
 
 Read: standards/trusted-domains.md
-Read: standards/domain-security-assessment.md
 
-Loads trusted domains, security assessment patterns, and research methodology.
+Loads trusted domain lists and categorization criteria. The security assessment methodology (`standards/domain-security-assessment.md`) is loaded on-demand in Step 4 only when unknown domains require research.
 
 ### Step 2: Collect and Analyze WebFetch Permissions
 
@@ -82,6 +81,8 @@ The analysis script output includes `duplicates` (domains in both global and loc
 ### Step 4: Research Unknown Domains
 
 > **Prerequisite:** This step requires `WebSearch` tool access. If unavailable, skip research and present unknown domains to the user for manual assessment.
+
+Read: standards/domain-security-assessment.md
 
 For each domain in the script's `unknown` category:
 

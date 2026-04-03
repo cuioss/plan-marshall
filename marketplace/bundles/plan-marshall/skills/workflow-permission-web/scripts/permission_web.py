@@ -25,8 +25,10 @@ Examples:
 """
 
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -80,8 +82,11 @@ _RED_FLAG_COMPILED_LIST = compile_patterns_from_config(
 )
 _RED_FLAG_COMPILED: list[tuple[str, re.Pattern]] = [
     (raw, compiled)
-    for raw, compiled in zip(_RED_FLAG_RAW_PATTERNS, _RED_FLAG_COMPILED_LIST)
+    for raw, compiled in zip(_RED_FLAG_RAW_PATTERNS, _RED_FLAG_COMPILED_LIST, strict=True)
 ]
+
+# Pre-computed union for subdomain matching — avoids recreating per call
+_ALL_KNOWN_DOMAINS: set[str] = MAJOR_DOMAINS | HIGH_REACH_DOMAINS
 
 
 # ============================================================================
@@ -107,14 +112,22 @@ def extract_webfetch_domains_by_section(settings: dict) -> dict[str, list[str]]:
     return result
 
 
-def extract_webfetch_domains(settings: dict) -> list[str]:
+def extract_webfetch_domains(settings: dict, *, section: str = 'allow') -> list[str]:
     """Extract WebFetch domain permissions from a settings dict.
 
-    Returns all domains from both 'permissions.allow' and 'permissions.deny'.
+    Args:
+        settings: Parsed settings.json dict.
+        section: Which section to extract from: 'allow', 'deny', or 'all'.
+            Default 'allow' returns only allow-listed domains (safe for
+            categorization and promotion recommendations). Use 'all' only
+            when reporting final state across both sections.
+
     Delegates to extract_webfetch_domains_by_section for the actual extraction.
     """
     by_section = extract_webfetch_domains_by_section(settings)
-    return by_section['allow'] + by_section['deny']
+    if section == 'all':
+        return by_section['allow'] + by_section['deny']
+    return by_section.get(section, [])
 
 
 def categorize_domain(domain: str) -> str:
@@ -125,14 +138,16 @@ def categorize_domain(domain: str) -> str:
     """
     if domain == '*':
         return 'universal'
-    # Normalize: strip protocol, trailing slash
+    # Normalize: strip protocol, trailing slash, www. prefix
     clean = re.sub(r'^https?://', '', domain.lower().strip()).rstrip('/')
-    if clean in MAJOR_DOMAINS:
+    # Strip www. prefix for matching — www.npmjs.com should match npmjs.com
+    bare = clean.removeprefix('www.')
+    if clean in MAJOR_DOMAINS or bare in MAJOR_DOMAINS:
         return 'major'
-    if clean in HIGH_REACH_DOMAINS:
+    if clean in HIGH_REACH_DOMAINS or bare in HIGH_REACH_DOMAINS:
         return 'high_reach'
-    # Check if subdomain of a known domain
-    for known in MAJOR_DOMAINS | HIGH_REACH_DOMAINS:
+    # Check if subdomain of a known domain (uses cached union)
+    for known in _ALL_KNOWN_DOMAINS:
         if clean.endswith('.' + known):
             return 'major' if known in MAJOR_DOMAINS else 'high_reach'
     return 'unknown'
@@ -457,12 +472,20 @@ def apply_recommendations(
     non_wf = sorted(e for e in new_allow if not (isinstance(e, str) and e.startswith('WebFetch(')))
     wf_sorted = sorted(e for e in new_allow if isinstance(e, str) and e.startswith('WebFetch('))
     permissions['allow'] = non_wf + wf_sorted
-    # Write back preserving key order (Python 3.7+ dicts are insertion-ordered,
-    # json.dumps preserves that order). sort_keys is False by default.
-    settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + '\n')
+    # Atomic write: write to temp file in same directory then rename, so an
+    # interrupted write can't corrupt the user's settings file.
+    content = json.dumps(settings, indent=2, ensure_ascii=False) + '\n'
+    fd, tmp_path = tempfile.mkstemp(dir=settings_path.parent, suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            f.write(content)
+        os.replace(tmp_path, settings_path)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
 
     # Extract final WebFetch domains for reporting
-    final_domains = extract_webfetch_domains(settings)
+    final_domains = extract_webfetch_domains(settings, section='allow')
 
     return {
         'file': str(settings_path),

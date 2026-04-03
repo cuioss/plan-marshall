@@ -46,11 +46,11 @@ This skill operates in two modes based on invocation context:
 
 ## Prerequisites
 
-Always loaded:
+Load based on `checks` parameter — only load the skills you need:
 ```
-Skill: plan-marshall:workflow-integration-ci
-Skill: plan-marshall:workflow-integration-sonar
-Skill: plan-marshall:workflow-integration-git
+Skill: plan-marshall:workflow-integration-git   # Always (commit workflow)
+Skill: plan-marshall:workflow-integration-ci     # checks=reviews or checks=all
+Skill: plan-marshall:workflow-integration-sonar  # checks=sonar or checks=all
 ```
 
 Loaded on-demand (only when the specific check requires them):
@@ -345,7 +345,7 @@ status: success
 
 ### pr_doctor.py parse-handoff
 
-**Purpose:** Parse and validate handoff JSON from phase-6-finalize, merge with explicit parameters. See Step 1 above for the handoff schema.
+**Purpose:** Parse and validate handoff JSON from phase-6-finalize, merge with explicit parameters. See "Step 1: Process Handoff Input" above for the handoff schema.
 
 **Usage:**
 ```bash
