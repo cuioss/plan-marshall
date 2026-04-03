@@ -295,18 +295,21 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 ## Integration
 
-### With Script Executor
+### Producers
 
-The executor automatically calls `log_script_execution()` after each script run.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| Script executor | `log_script_execution()` (auto) | Log every script invocation with timing/exit code |
+| Phase agents (1-6) | `work` | Log artifacts, progress, outcomes during execution |
+| Phase agents (2-6) | `decision` | Log decision-making points during planning |
+| `manage-files` | `log_entry()` (import) | Log file write operations |
 
-### With Planning Skills
+### Consumers
 
-Planning skills call the simplified API:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id my-plan --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created task: implement auth module"
-```
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-6-finalize` | `read` | Query work/decision logs for PR summary |
+| Debugging workflows | `read` | Inspect execution history |
 
 ---
 

@@ -19,7 +19,7 @@ from typing import Any
 # Direct imports - PYTHONPATH set by executor
 from constants import DIR_MEMORIES  # type: ignore[import-not-found]
 from file_ops import base_path, now_utc_iso, output_success as _output_success, output_toon, output_toon_error, read_json, safe_main, write_json  # type: ignore[import-not-found]
-from file_ops import parse_duration as _parse_duration  # type: ignore[import-not-found]
+from file_ops import parse_duration  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
@@ -29,11 +29,6 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 # Get memory base path from base_path
 MEMORY_BASE = base_path(DIR_MEMORIES)
 CATEGORIES = ('context',)
-
-
-def parse_duration(duration_str: str) -> timedelta:
-    """Parse duration string like '7d', '24h', '30m' into timedelta."""
-    return _parse_duration(duration_str)
 
 
 def get_memory_path(category: str, identifier: str | None = None) -> Path:

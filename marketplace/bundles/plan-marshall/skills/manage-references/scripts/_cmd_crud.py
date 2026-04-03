@@ -4,7 +4,7 @@
 Handles: create, read, get, set
 """
 
-from _ref_core import (
+from _references_core import (
     get_references_path,
     read_references,
     require_references,

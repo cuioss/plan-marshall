@@ -193,6 +193,22 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ## Integration
 
+### Producers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-4-plan` | `add` | Create tasks from deliverables |
+| `phase-5-execute` | `update`, `finalize-step` | Update task/step status during execution |
+| Q-Gate iteration | `add` | Create fix tasks from verification findings |
+
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-5-execute` | `next`, `next-tasks`, `get` | Retrieve tasks for execution |
+| `phase-6-finalize` | `list` | Query task completion for PR summary |
+| Task executors | `get`, `finalize-step` | Read task details and mark steps done |
+
 ### With phase-agent (phase-4-plan)
 
 Task-plan agents create tasks during plan refinement using `--content`:
@@ -302,4 +318,11 @@ If a deliverable has no Verification section, the task is created without `verif
 | `plan_dir_not_found` | Plan directory doesn't exist |
 
 ---
+
+## Related Skills
+
+- `manage-solution-outline` — Source of deliverables that tasks reference
+- `manage-status` — Plan lifecycle tracking; phase transitions gate task execution
+- `manage-config` — Skill domain resolution for task profiles
+- `manage-findings` — Q-Gate findings may trigger fix tasks during execution
 

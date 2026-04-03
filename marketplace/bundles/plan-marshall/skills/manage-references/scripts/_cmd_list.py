@@ -4,7 +4,7 @@
 Handles: add-file, remove-file, add-list, set-list
 """
 
-from _ref_core import (
+from _references_core import (
     read_references,
     require_references,
     write_references,

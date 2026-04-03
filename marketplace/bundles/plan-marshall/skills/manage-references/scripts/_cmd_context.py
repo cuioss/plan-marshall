@@ -4,7 +4,7 @@
 Handles: get-context
 """
 
-from _ref_core import (
+from _references_core import (
     require_references,
 )
 from file_ops import output_toon  # type: ignore[import-not-found]

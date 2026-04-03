@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for cleanup.py script (moved from marshall-steward)."""
+"""Tests for cleanup subcommands in run_config.py (formerly standalone cleanup.py)."""
 
 import json
 import os
@@ -10,8 +10,8 @@ from pathlib import Path
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PlanContext, get_script_path, run_script
 
-# Get script path (moved from marshall-steward to run-config)
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'cleanup.py')
+# Cleanup is now a subcommand of run_config.py (was standalone cleanup.py)
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
 
 # Default retention config for tests
 DEFAULT_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
@@ -47,7 +47,7 @@ def test_clean_temp():
         subdir.mkdir(exist_ok=True)
         (subdir / 'nested.txt').write_text('nested content')
 
-        result = run_script(SCRIPT_PATH, 'clean', '--target', 'temp')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'temp')
         assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'temp_files: 3' in result.stdout
@@ -75,7 +75,7 @@ def test_clean_logs():
         recent_log = logs_dir / 'recent.log'
         recent_log.write_text('recent log content')
 
-        result = run_script(SCRIPT_PATH, 'clean', '--target', 'logs')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'logs')
         assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'logs_deleted: 1' in result.stdout
@@ -106,7 +106,7 @@ def test_clean_archived_plans():
         recent_plan.mkdir()
         (recent_plan / 'references.json').write_text('{"branch": "main"}')
 
-        result = run_script(SCRIPT_PATH, 'clean', '--target', 'archived-plans')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'archived-plans')
         assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'archived_plans_deleted: 1' in result.stdout
@@ -134,7 +134,7 @@ def test_clean_memory():
         recent_file = memory_dir / 'recent-handoff.toon'
         recent_file.write_text('recent memory')
 
-        result = run_script(SCRIPT_PATH, 'clean', '--target', 'memory')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'memory')
         assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'memory_files_deleted: 1' in result.stdout
@@ -162,7 +162,7 @@ def test_clean_all():
         old_time = time.time() - (2 * 86400)
         os.utime(old_log, (old_time, old_time))
 
-        result = run_script(SCRIPT_PATH, 'clean', '--target', 'all')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
         assert result.success, f'Script failed: {result.stderr}'
         assert 'status: success' in result.stdout
         assert 'temp_files: 1' in result.stdout
@@ -180,7 +180,7 @@ def test_clean_dry_run():
         test_file = temp_dir / 'keep-me.txt'
         test_file.write_text('should not be deleted')
 
-        result = run_script(SCRIPT_PATH, 'clean', '--dry-run', '--target', 'temp')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--dry-run', '--target', 'temp')
         assert result.success, f'Script failed: {result.stderr}'
         assert 'status: dry_run' in result.stdout
         assert 'temp_files: 1' in result.stdout
@@ -205,7 +205,7 @@ def test_status():
         logs_dir.mkdir(parents=True, exist_ok=True)
         (logs_dir / 'test.log').write_text('log')
 
-        result = run_script(SCRIPT_PATH, 'status')
+        result = run_script(SCRIPT_PATH, 'cleanup-status')
         assert result.success, f'Script failed: {result.stderr}'
         assert 'status: ok' in result.stdout
         assert 'temp_files: 1' in result.stdout
@@ -219,7 +219,7 @@ def test_clean_nonexistent():
         setup_marshal_json(ctx.fixture_dir)
 
         # The fixture_dir exists but temp/logs/etc don't
-        result = run_script(SCRIPT_PATH, 'clean', '--target', 'all')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
         assert result.success, "Should succeed even if directories don't exist"
         assert 'status: success' in result.stdout
         assert 'temp_files: 0' in result.stdout
@@ -233,7 +233,7 @@ def test_missing_marshal_json():
         if marshal_path.exists():
             marshal_path.unlink()
 
-        result = run_script(SCRIPT_PATH, 'clean', '--target', 'all')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
         assert not result.success, 'Should fail without marshal.json'
         assert 'error' in result.stdout.lower()
         assert 'marshal.json not found' in result.stdout
@@ -246,7 +246,7 @@ def test_missing_retention_config():
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({'other': 'config'}))
 
-        result = run_script(SCRIPT_PATH, 'clean', '--target', 'all')
+        result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
         assert not result.success, 'Should fail without retention config'
         assert 'error' in result.stdout.lower()
         assert 'system.retention' in result.stdout.lower()

@@ -296,3 +296,12 @@ exists: true
 ```
 
 Returns exit code 0 if exists, 1 if not.
+
+---
+
+## Related Skills
+
+- `manage-tasks` — Consumes deliverables from solution outline for task creation
+- `manage-architecture` — Provides module placement data used during outline creation
+- `manage-references` — Tracks affected_files identified during outline phase
+- `manage-plan-documents` — Stores the request document that drives the outline

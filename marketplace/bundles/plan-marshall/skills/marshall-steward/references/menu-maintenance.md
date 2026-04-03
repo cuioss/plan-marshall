@@ -108,7 +108,7 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 Clean all directories based on retention settings from marshal.json:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup
 ```
 
 **Output (TOON)**:
@@ -145,14 +145,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system
 ### Cleanup with Custom Retention
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup \
     --logs-days 1 --archived-days 5 --memory-days 5
 ```
 
 ### Dry Run (Preview)
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean --dry-run
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup --dry-run
 ```
 
 **NOTE**: The `.plan/temp/` directory is the default temp directory for ALL temporary files. It is covered by the existing `Write(.plan/**)` permission (avoiding permission prompts for `/tmp/`) and cleaned during maintenance.

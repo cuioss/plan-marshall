@@ -78,7 +78,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 |--------|----------|---------|
 | determine-mode | `plan-marshall:marshall-steward:determine-mode` | Determine wizard vs menu mode |
 | gitignore-setup | `plan-marshall:marshall-steward:gitignore-setup` | Configure .gitignore for .plan/ |
-| cleanup | `plan-marshall:manage-run-config:cleanup` | Clean temp, logs, archived-plans, memory (delegated to run-config) |
+| run_config cleanup | `plan-marshall:manage-run-config:run_config` | Clean temp, logs, archived-plans, memory (cleanup/cleanup-status subcommands) |
 | ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection (delegated to tools-integration-ci) |
 | manage-config | `plan-marshall:manage-config:manage-config` | Project-level marshal.json CRUD |
 | scan-marketplace-inventory | `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory` | Script discovery |

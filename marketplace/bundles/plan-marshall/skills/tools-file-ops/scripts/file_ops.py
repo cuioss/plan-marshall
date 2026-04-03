@@ -91,6 +91,37 @@ def format_duration(seconds: float) -> str:
     return f'{h}h{m}m'
 
 
+def normalize_to_repo_relative(path: str) -> str:
+    """Normalize absolute file paths to repository-relative paths.
+
+    If the path is already relative, returns it unchanged.
+    If absolute, attempts to strip the git repo root prefix.
+
+    Args:
+        path: File path (absolute or relative)
+
+    Returns:
+        Repository-relative path string
+    """
+    if not path.startswith('/'):
+        return path
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        repo_root = result.stdout.strip()
+        if path.startswith(repo_root + '/'):
+            return path[len(repo_root) + 1:]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return path
+
+
 def get_base_dir() -> Path:
     """Get the base directory for workflow files.
 

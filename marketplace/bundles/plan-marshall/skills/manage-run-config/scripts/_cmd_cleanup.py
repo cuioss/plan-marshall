@@ -1,37 +1,12 @@
-#!/usr/bin/env python3
-"""
-Cleanup .plan directory based on retention settings from marshal.json.
+"""Cleanup command handlers for manage-run-config.
 
-Consolidates cleanup for temp, logs, archived-plans, and memory directories.
+Handles: cleanup, cleanup-status
 
-Usage:
-    python3 cleanup-plan-directory.py clean [--dry-run] [--target TARGET]
-    python3 cleanup-plan-directory.py status
-
-Subcommands:
-    clean     Clean directories based on retention settings
-    status    Show cleanup status and what would be cleaned
-
-Options:
-    --dry-run          Show what would be deleted without deleting
-    --target TARGET    Clean specific target only (temp|logs|archived-plans|memory|all)
-
-Retention settings (from marshal.json):
-    logs_days: 1              # Delete logs older than N days
-    archived_plans_days: 5    # Delete archived plans older than N days
-    memory_days: 5            # Delete memory files older than N days
-    temp_on_maintenance: true # Clean temp directory on maintenance
-
-Output (TOON format):
-    status	success
-    temp_files	5
-    temp_bytes	1024
-    logs_deleted	3
-    archived_plans_deleted	2
-    memory_files_deleted	10
+Reads retention settings directly from marshal.json rather than
+calling manage-config via subprocess — intentional optimization
+to avoid process overhead for a frequently-called internal module.
 """
 
-import argparse
 import json
 import shutil
 import sys
@@ -41,7 +16,7 @@ from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
 from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES, DIR_TEMP, FILE_MARSHAL  # type: ignore[import-not-found]
-from file_ops import get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
 
 # Configuration - delegate to file_ops for consistent path resolution
 PLAN_BASE_DIR = get_base_dir()
@@ -414,37 +389,3 @@ def cmd_status(args) -> int:
 
     output_toon(result)
     return 0
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description='Cleanup .plan directory based on retention settings')
-
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # clean subcommand
-    clean_parser = subparsers.add_parser('clean', help='Clean directories based on retention')
-    clean_parser.add_argument('--dry-run', action='store_true', help='Show what would be deleted without deleting')
-    clean_parser.add_argument(
-        '--target',
-        choices=['all', 'temp', 'logs', 'archived-plans', 'memory'],
-        default='all',
-        help='Clean specific target only (default: all)',
-    )
-    clean_parser.set_defaults(func=cmd_clean)
-
-    # status subcommand
-    status_parser = subparsers.add_parser('status', help='Show cleanup status')
-    status_parser.set_defaults(func=cmd_status)
-
-    args = parser.parse_args()
-    func_result: int = args.func(args)
-    return func_result
-
-
-@safe_main
-def _main() -> int:
-    return main()
-
-
-if __name__ == '__main__':
-    _main()

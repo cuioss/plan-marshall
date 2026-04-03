@@ -11,14 +11,13 @@ Contains:
 
 import json
 import re
-import subprocess
 from pathlib import Path
 from typing import Any, TypedDict
 
 from constants import (  # type: ignore[import-not-found]
     VALID_TASK_ORIGINS, VALID_SOURCE_EXTENSIONS, DIR_TASKS,
 )
-from file_ops import get_plan_dir, now_utc_iso, output_toon, output_toon_error  # type: ignore[import-not-found]  # noqa: F401 - re-exported
+from file_ops import get_plan_dir, normalize_to_repo_relative, now_utc_iso, output_toon, output_toon_error  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 
 # =============================================================================
@@ -191,23 +190,11 @@ def validate_steps_are_file_paths(steps: list[str]) -> tuple[list[str], list[str
 
 
 def normalize_step_path(path: str) -> str:
-    """Normalize absolute file paths to repo-relative paths."""
-    if not path.startswith('/'):
-        return path
-    try:
-        result = subprocess.run(
-            ['git', 'rev-parse', '--show-toplevel'],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        )
-        repo_root = result.stdout.strip()
-        if path.startswith(repo_root + '/'):
-            return path[len(repo_root) + 1 :]
-    except subprocess.CalledProcessError:
-        pass
-    return path
+    """Normalize absolute file paths to repo-relative paths.
+
+    Delegates to file_ops.normalize_to_repo_relative().
+    """
+    return normalize_to_repo_relative(path)
 
 
 # =============================================================================

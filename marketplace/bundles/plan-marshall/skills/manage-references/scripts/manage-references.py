@@ -80,9 +80,9 @@ def main() -> int:
     args = parser.parse_args()
 
     # Import command handlers
-    from _ref_cmd_context import cmd_get_context
-    from _ref_cmd_crud import cmd_create, cmd_get, cmd_read, cmd_set
-    from _ref_cmd_list import cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list
+    from _cmd_context import cmd_get_context
+    from _cmd_crud import cmd_create, cmd_get, cmd_read, cmd_set
+    from _cmd_list import cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list
 
     # Dispatch to handlers
     handlers = {

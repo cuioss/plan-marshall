@@ -41,6 +41,54 @@ Recommended patterns for manage-* script implementations:
 - `_cmd_*.py` prefix for command modules (not `_ref_cmd_*` or other prefixes)
 - `_*_core.py` for shared core module (abbreviated skill name, e.g., `_tasks_core.py`)
 
+## Module Split Guidelines
+
+Scripts with **3+ commands AND >400 lines** should use the modular pattern:
+- `_*_core.py` — Shared utilities
+- `_cmd_*.py` — Command group handlers
+- Entry-point script — Argument parsing and dispatch only
+
+Individual `_cmd_*.py` modules should stay under **500 lines**. When a module exceeds this, split by sub-domain (e.g., CRUD vs resolution, query vs lifecycle).
+
+Scripts with <400 lines or 1-2 commands may remain monolithic (e.g., manage-files, manage-lessons).
+
+## Recommended Command Patterns
+
+### `get-context`
+
+Plan-scoped skills that are frequently queried together should provide a `get-context` command that returns combined state in a single call. This reduces multiple script invocations to one.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:{skill}:{script} get-context --plan-id {plan_id}
+```
+
+Implemented by: manage-status, manage-references.
+
+## SKILL.md Structure
+
+All manage-* skills must include `scope:` in YAML frontmatter (`plan`, `global`, or `hybrid`).
+
+Two accepted SKILL.md templates exist:
+
+**CRUD pattern** (most manage-* skills):
+1. Enforcement (referencing manage-contract.md)
+2. Storage Location
+3. File Format
+4. Operations (command reference with examples)
+5. Integration (producer/consumer tables)
+6. Error Responses
+7. Related Skills
+
+**Workflow pattern** (manage-architecture, manage-config):
+1. Enforcement (referencing manage-contract.md)
+2. Scripts (command group overview)
+3. Workflow Steps (sequential numbered steps)
+4. Error Handling
+5. Integration
+6. Related Skills
+
+Both patterns require Enforcement, Integration, and Related Skills sections.
+
 ## Shared Formats
 
 Canonical format definitions used across all manage-* skills. Individual skill standards reference this section rather than redefining these formats.
@@ -62,13 +110,16 @@ YYYY-MM-DDTHH:MM:SSZ
 
 ### Hash ID Generation
 
-Hash IDs are 6-character hex strings for unique record identification.
+Hash IDs are 6-character hex strings (`HASH_ID_LENGTH = 6` in constants.py).
 
-**Algorithm**: `hashlib.sha256(f'{utc_iso}{secrets.token_hex(8)}'.encode()).hexdigest()[:6]`
+Two patterns exist depending on the domain:
 
-- IDs are unique per record, NOT deterministic from content
-- Used by: manage-findings (finding IDs), manage-logging (log entry hashes)
-- Deduplication (where applicable) uses title matching, not hash comparison
+**Non-deterministic** (unique per record): `hashlib.sha256(f'{utc_iso}{secrets.token_hex(8)}'.encode()).hexdigest()[:6]`
+- Used by: `jsonl_store.py` for manage-findings (finding IDs, assessment IDs, Q-Gate IDs)
+- Deduplication uses title matching, not hash comparison
+
+**Deterministic** (same input = same hash): `hashlib.sha256(message.encode()).hexdigest()[:6]`
+- Used by: `plan_logging.py` for log entry hashes (enables visual grouping of identical messages)
 
 ### Metadata Conventions
 

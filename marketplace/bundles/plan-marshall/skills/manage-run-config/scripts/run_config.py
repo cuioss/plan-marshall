@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from constants import VALID_WARNING_CATEGORIES  # type: ignore[import-not-found]
-from file_ops import atomic_write_file, get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import get_base_dir, output_toon, read_json, safe_main, write_json  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
 
@@ -41,8 +41,7 @@ DEFAULT_STRUCTURE = {
 
 def _write_json_file(file_path: Path, data: dict) -> None:
     """Write JSON data to file atomically via file_ops."""
-    content = json.dumps(data, indent=2, ensure_ascii=False) + '\n'
-    atomic_write_file(file_path, content)
+    write_json(file_path, data)
 
 
 def _output_success(action: str, **kwargs: Any) -> None:
@@ -139,8 +138,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
         # Parse JSON
         try:
-            with open(file_path, encoding='utf-8') as f:
-                data = json.load(f)
+            data = json.loads(file_path.read_text(encoding='utf-8'))
         except json.JSONDecodeError as e:
             result = {
                 'status': 'success',
@@ -194,11 +192,8 @@ def get_run_config_path(project_dir: str | None = None) -> Path:
 
 def read_run_config(config_path: Path) -> dict[str, Any]:
     """Read run configuration file."""
-    if config_path.exists():
-        with open(config_path, encoding='utf-8') as f:
-            data: dict[str, Any] = json.load(f)
-            return data
-    return {'version': 1, 'commands': {}}
+    result: dict[str, Any] = read_json(config_path, {'version': 1, 'commands': {}})
+    return result
 
 
 def cmd_timeout_get(args: argparse.Namespace) -> int:
@@ -441,14 +436,14 @@ def cmd_timeout_set(args: argparse.Namespace) -> int:
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
     """Execute cleanup based on retention settings (delegates to cleanup module)."""
-    from cleanup import cmd_clean
+    from _cmd_cleanup import cmd_clean
 
     return cmd_clean(args)
 
 
 def cmd_cleanup_status(args: argparse.Namespace) -> int:
     """Show cleanup status (delegates to cleanup module)."""
-    from cleanup import cmd_status
+    from _cmd_cleanup import cmd_status
 
     return cmd_status(args)
 
