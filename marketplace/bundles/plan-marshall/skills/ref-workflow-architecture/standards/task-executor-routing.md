@@ -15,7 +15,7 @@ Task executors are workflow skills that handle the actual implementation or test
 │                     TASK EXECUTION FLOW                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  TASK-001.toon                                                   │
+│  TASK-001.json                                                   │
 │  ├─ profile: implementation     ←─ Determines task executor      │
 │  ├─ domain: java                ←─ (informational only)          │
 │  └─ skills: [java-core, ...]    ←─ Domain knowledge skills       │
@@ -216,7 +216,7 @@ deliverable.profiles = [implementation, module_testing]
 Phase-4-Plan
        │
        ▼
-TASK-001.toon
+TASK-001.json
   profile: implementation
   skills: [java-core, java-cdi]
        │

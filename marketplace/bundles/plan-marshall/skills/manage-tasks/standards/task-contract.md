@@ -530,6 +530,6 @@ The verification block defines how to verify task completion:
 3. `deliverable` must be a positive integer
 4. `skills` entries must follow `{bundle}:{skill}` format
 5. `domain` must be a valid domain value
-6. `profile` must be a valid profile value (implementation, module_testing)
+6. `profile` must be a valid profile value (implementation, module_testing, verification)
 7. Task `done` status requires all steps to be `done` or `skipped`
 8. Task `done` status requires verification to have passed

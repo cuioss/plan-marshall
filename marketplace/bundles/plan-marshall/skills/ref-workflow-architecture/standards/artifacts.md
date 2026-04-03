@@ -321,7 +321,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
 
 ---
 
-## TASK-NNN-TYPE.toon
+## TASK-NNN.json
 
 Individual task files in the tasks directory.
 
@@ -550,11 +550,11 @@ Semantic work progress tracking across all phases.
 
 ```bash
 # Write entry
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level {level} --message "{message}"
 
 # Read entries
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {id} --type work [--limit N] [--phase PHASE]
 ```
 
@@ -595,11 +595,11 @@ Decision entries do NOT include a `[DECISION]` prefix since the file itself indi
 
 ```bash
 # Write decision entry
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level {level} --message "{message}"
 
 # Read decision entries
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {id} --type decision [--limit N] [--phase PHASE]
 ```
 
@@ -646,7 +646,7 @@ Technical script execution tracing (automatic).
 
 ```bash
 # Read entries (read-only, written automatically by executor)
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {id} --type script [--limit N]
 ```
 

@@ -98,7 +98,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │    2. Extract: skills_by_profile.{profile}                           │  │
 │  │    3. Create task with profile + resolved skills                     │  │
 │  │                                                                      │  │
-│  │  TASK-001.toon (profile: implementation):                            │  │
+│  │  TASK-001.json (profile: implementation):                            │  │
 │  │    deliverable: 1                                                    │  │
 │  │    module: oauth-sheriff-core                                        │  │
 │  │    domain: java                                                      │  │
@@ -107,7 +107,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │      - pm-dev-java:java-core                                         │  │
 │  │      - pm-dev-java:java-cdi                                          │  │
 │  │                                                                      │  │
-│  │  TASK-002.toon (profile: module_testing):                            │  │
+│  │  TASK-002.json (profile: module_testing):                            │  │
 │  │    deliverable: 1                                                    │  │
 │  │    module: oauth-sheriff-core                                        │  │
 │  │    domain: java                                                      │  │

@@ -12,56 +12,41 @@ user-invocable: false
 
 ## Contract Compliance
 
-**MANDATORY**: Follow the execution contract defined in:
+**MANDATORY**: Follow the contracts defined in:
 
 | Contract | Location | Purpose |
 |----------|----------|---------|
-| Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure and fields |
+| Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure, fields, status values, and JSON schema |
+| Task Executor Base | `plan-marshall:ref-workflow-architecture/standards/task-executor-base.md` | Shared workflow steps for all task executors |
 
-## Input
+## Input / Output
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan_id` | string | Yes | Plan identifier |
-| `task_number` | number | Yes | Task number to execute |
-
-## Output
+See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the common input contract and base output schema. This profile extends the base output with:
 
 ```toon
-status: success | error
-plan_id: {echo}
-task_number: {echo}
 execution_summary:
-  steps_completed: N
-  steps_total: M
   commands_run: [commands]
 verification:
-  passed: true | false
-  command: "{cmd}"
-next_action: task_complete | requires_attention
-message: {error message if status=error}
+  exit_code: {exit_code}
+  stderr: "{truncated stderr, max 2000 chars}"
+  findings:
+    - type: {compile-error|test-failure|lint-issue}
+      file: {file_path}
+      line: {line_number}
+      message: "{error message}"
 ```
 
 ## Workflow
 
-### Step 1: Load Task Context
+This skill follows the shared task executor workflow. Steps marked **[BASE]** are defined in [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md). Steps without the tag are verification-specific.
 
-Read the task file:
+### Step 1: Load Task Context [BASE]
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
-  --plan-id {plan_id} \
-  --number {task_number}
-```
-
-Extract key fields:
-- `profile`: Should be `verification`
-- `steps`: Verification commands to run
-- `verification`: Verification criteria
+Follow the base workflow. Verify `profile` is `verification`. Steps contain verification commands (not file paths).
 
 ### Step 2: Execute Verification Steps
 
-For each step (verification command):
+Steps are executed sequentially. For each step (verification command):
 
 1. Run the command:
 ```bash
@@ -69,16 +54,10 @@ For each step (verification command):
 ```
 
 2. Check exit code and output
-3. Mark step complete:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
-  --plan-id {plan_id} \
-  --task {task_number} \
-  --step {N} \
-  --outcome done
-```
 
-### Step 3: Handle Failures
+### Step 3: Mark Step Complete [BASE]
+
+### Step 4: Handle Failures
 
 **If a command fails**:
 1. Analyze error output
@@ -93,27 +72,18 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
   --status blocked
 ```
 
-### Step 4: Return Results
+### Step 5: Record Lessons [BASE]
 
-On **success**:
-```toon
-status: success
-plan_id: {plan_id}
-task_number: {task_number}
-execution_summary:
-  steps_completed: {N}
-  steps_total: {M}
-  commands_run:
-    - {cmd1}
-verification:
-  passed: true
-  command: "{verification command}"
-next_action: task_complete
-```
+Use component `"plan-marshall:task-verification"`. Record lessons on unexpected failures or environment issues.
+
+### Step 6: Return Results
+
+On **success**: Use the base output contract with `next_action: task_complete`.
 
 On **failure** (structured output for phase-5-execute triage):
+
 ```toon
-status: success
+status: error
 plan_id: {plan_id}
 task_number: {task_number}
 execution_summary:
@@ -131,7 +101,7 @@ verification:
       file: {file_path}
       line: {line_number}
       message: "{error message}"
-next_action: requires_triage
+next_action: requires_attention
 ```
 
 The `findings` array is best-effort: parse compiler errors, test failures, or lint output into structured entries. If parsing fails, include the raw `stderr` for the triage step to analyze.
@@ -142,5 +112,4 @@ The `findings` array is best-effort: parse compiler errors, test failures, or li
 
 **Skill Loading**: Agent resolves this skill via `resolve-task-executor --profile verification`
 
-**Script Notations** (use EXACTLY as shown):
-- `plan-marshall:manage-tasks:manage-tasks` - Task operations (get, update, finalize-step)
+**Script Notations**: See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the complete list.

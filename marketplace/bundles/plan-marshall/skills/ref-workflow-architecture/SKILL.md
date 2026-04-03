@@ -51,7 +51,7 @@ user-invocable: false
 │  │   manage-references  manage-lifecycle  manage-tasks  manage-solution  │  │
 │  │        │               │               │              │               │  │
 │  │        ▼               ▼               ▼              ▼               │  │
-│  │   references.json status.toon    TASK-*.toon   solution_outline.md   │  │
+│  │   references.json status.toon    TASK-*.json   solution_outline.md   │  │
 │  │                                                                       │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -68,8 +68,10 @@ user-invocable: false
 | [standards/agents.md](standards/agents.md) | Thin agent pattern | Agent structure, skill invocation |
 | [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
-| [standards/artifacts.md](standards/artifacts.md) | Plan file formats | references.json, status.toon, TASK-*.toon |
+| [standards/artifacts.md](standards/artifacts.md) | Plan file formats | references.json, status.toon, TASK-*.json |
 | [standards/task-executor-routing.md](standards/task-executor-routing.md) | Task executor routing | Profile→executor mapping, extensibility |
+| [standards/task-executor-base.md](standards/task-executor-base.md) | Shared executor steps | Common workflow for all task-* skills |
+| [standards/change-types.md](standards/change-types.md) | Change type vocabulary | analysis, feature, enhancement, bug_fix, tech_debt, verification |
 | `plan-marshall:extension-api` | Extension mechanism | Domain extensions for outline/triage |
 
 ---
@@ -139,17 +141,18 @@ user-invocable: false
 │  │  ═════════════════════════════                                       │   │
 │  │  phase-1-init   phase-2-refine   phase-3-outline   phase-4-plan      │   │
 │  │  phase-5-execute   phase-6-finalize                                  │   │
-│  │  task-implementation           task-module-testing                   │   │
-│  │  git_workflow         pr-workflow                                    │   │
+│  │  task-implementation   task-module-testing   task-verification        │   │
+│  │  workflow-integration-git     workflow-integration-ci                │   │
+│  │  workflow-integration-sonar   workflow-pr-doctor                     │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  DATA LAYER (manage-* Skills)                                        │   │
 │  │  ════════════════════════════                                        │   │
-│  │  manage-references   manage-lifecycle    manage-tasks                 │   │
-│  │  manage-solution-outline                manage-plan-documents        │   │
-│  │  manage-files       manage-references                                │   │
+│  │  manage-references    manage-lifecycle     manage-tasks                │   │
+│  │  manage-solution-outline    manage-plan-documents    manage-files     │   │
+│  │  manage-architecture        manage-findings          manage-logging   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │
@@ -157,7 +160,7 @@ user-invocable: false
 │  │  PLAN FILES (.plan/plans/{plan_id}/)                                 │   │
 │  │  ═══════════════════════════════════                                 │   │
 │  │  status.toon  request.md  references.json  solution_outline.md        │   │
-│  │  TASK-001.toon  TASK-002.toon  ...                                   │   │
+│  │  TASK-001.json  TASK-002.json  ...                                   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -179,53 +182,65 @@ user-invocable: false
 | `plan-marshall:phase-6-finalize` | Finalize phase implementation |
 | `plan-marshall:task-implementation` | Implementation profile workflow |
 | `plan-marshall:task-module-testing` | Module testing profile workflow |
+| `plan-marshall:task-verification` | Verification-only profile workflow |
 
 ---
 
-## Workflow Skill Orchestration
+## Shared Workflow Infrastructure
 
-The PR doctor orchestrates three integration workflow skills plus supporting skills:
+All workflow scripts share `triage_helpers` from `ref-toon-format` (`marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts/triage_helpers.py`). See `plan-marshall:ref-toon-format` SKILL.md for the module overview. Key exports: `print_toon`, `safe_main`, `create_workflow_cli`, `ErrorCode`, `calculate_priority`, `is_test_file`, triage command handlers.
+
+The triage scripts use pattern matching and will sometimes misclassify nuanced inputs. Use script results as a starting point — override when the `action` or `priority` doesn't match semantic intent. Document overrides in the commit message or suppression comment.
+
+---
+
+## Workflow Skill Conventions
+
+### SKILL.md Template
+
+All workflow skills follow this canonical section order:
 
 ```
-/workflow-pr-doctor (orchestrator, user-invocable)
-  ├─> workflow-integration-ci    (PR review comment fetch & triage)
-  │     └─> tools-integration-ci (provider abstraction: GitHub/GitLab)
-  ├─> workflow-integration-sonar (Sonar issue fetch & triage)
-  ├─> workflow-integration-git   (commit formatting, artifact cleanup)
-  ├─> manage-architecture        (build command resolution — on-demand for BUILD_FAILURE)
-  └─> manage-findings            (Q-Gate findings — on-demand for Automated Review mode)
+---
+name: workflow-<name>
+description: <one-line description>
+user-invocable: true|false
+---
+
+# <Title> Skill
+
+<One paragraph summary.>
+
+## Enforcement
+## Parameters
+## Prerequisites
+## Architecture
+## Usage Examples
+## Workflow(s)
+## Scripts
+## Error Handling
+## Standards (Load On-Demand)
+## Related
 ```
 
-`workflow-permission-web` is a standalone user-invocable skill (not part of the PR doctor flow).
+### Config Loading Convention
 
-### Shared Infrastructure
+All workflow scripts load JSON config from `standards/` using `load_skill_config(__file__, 'config-name.json')` from `triage_helpers`. This resolves to `<script_dir>/../standards/<config_name>`. Configuration that drives script behavior (patterns, rules, thresholds, severity mappings) should be externalized to JSON — not hardcoded in the script.
 
-All workflow scripts share `triage_helpers` from `ref-toon-format` (`marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts/triage_helpers.py`):
+### Priority Vocabulary
 
-| Helper | Purpose | Consumers |
-|--------|---------|-----------|
-| `print_toon` / `print_error` | Output serialization + exit code | All 5 scripts |
-| `safe_main` | Exception-to-TOON wrapper | All 5 scripts |
-| `create_workflow_cli` | Argparse boilerplate reduction | All 5 scripts |
-| `load_skill_config` | Standards directory config loading | All 5 scripts |
-| `ErrorCode` / `make_error` | Structured error taxonomy | All 5 scripts |
-| `cmd_triage_single` / `cmd_triage_batch_handler` | Triage command handlers | pr.py, sonar.py |
-| `calculate_priority` | Priority escalation arithmetic | sonar.py |
-| `is_test_file` | Cross-language test file detection | sonar.py, git_workflow.py |
+All workflow scripts use the shared `PRIORITY_LEVELS` tuple from `triage_helpers`: `low`, `medium`, `high`, `critical`. The additional value `none` is used only for non-actionable items (e.g., ignored comments). Scripts should map their domain-specific severity to these canonical levels.
 
-### Triage Override Guidance
+### TOON Output Conventions
 
-The triage scripts use regex pattern matching (CI comments) or rule-based classification (Sonar issues) and will sometimes misclassify nuanced inputs. When the script's `action` or `priority` doesn't match the semantic intent, override it. Use the script result as a starting point, not a final answer. Document overrides in the commit message or suppression comment.
+- All outputs include `status: success|failure` at the top level
+- Array fields use the hint notation: `field_name[N]:` for simple arrays, `field_name[N]{key1,key2}:` for arrays of objects
+- Error outputs use `make_error()` for structured error payloads with `error`, `status`, `error_code` fields
+- Use `print_error()` for direct error-and-exit; use `make_error()` + `print_toon()` only when additional processing is needed before output
 
-### Common Error Handling Patterns
+### Error Handling Tables
 
-| Pattern | When to Apply |
-|---------|--------------|
-| Report error with stderr details, do not proceed | Script returns `status: failure` for a blocking operation (CI status, fetch) |
-| Log warning, skip item, continue remaining | Non-critical per-item failure in batch processing (triage, thread-reply) |
-| Ask user via `AskUserQuestion` (continue/skip/abort) | Timeout, missing file, or ambiguous state requiring human judgment |
-| Report remaining issues, stop looping | `max-fix-attempts` reached for a category |
-| Never force-push as fallback | Push failure — report error and stop |
+All workflow skills use a consistent `| Failure | Action |` table in their Error Handling section. Keep actions specific and prescriptive.
 
 ---
 
@@ -251,4 +266,10 @@ Read standards/artifacts.md
 
 # Understanding task executor routing
 Read standards/task-executor-routing.md
+
+# Understanding shared task executor workflow
+Read standards/task-executor-base.md
+
+# Understanding change type vocabulary
+Read standards/change-types.md
 ```

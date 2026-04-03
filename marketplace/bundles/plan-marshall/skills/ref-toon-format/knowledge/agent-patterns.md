@@ -481,17 +481,5 @@ When creating TOON handoffs or memory files:
 
 ### Internal References
 - toon-specification.md - Complete TOON format technical reference
-- plan-marshall:workflow-patterns - Agent handoff workflow patterns
+- plan-marshall:ref-workflow-architecture - Architecture documentation including workflow skill conventions
 - plan-marshall:manage-memories - Memory layer operations
-
-### Template Files
-When TOON migration is complete, template files will be available at:
-- `marketplace/bundles/planning/skills/workflow-patterns/templates/handoff-minimal.toon`
-- `marketplace/bundles/planning/skills/workflow-patterns/templates/handoff-standard.toon`
-- `marketplace/bundles/planning/skills/workflow-patterns/templates/handoff-full.toon`
-
-### Test Fixtures
-When TOON migration is complete, test fixtures will be available at:
-- `test/planning/sonar-workflow/sonar-issues.toon`
-- `test/pm-dev-frontend/coverage/coverage-analysis.toon`
-- `test/builder-maven/build-failure/expected-categorization.toon`

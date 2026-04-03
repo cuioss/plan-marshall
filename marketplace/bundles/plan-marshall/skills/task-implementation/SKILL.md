@@ -8,66 +8,32 @@ user-invocable: false
 
 **Role**: Domain-agnostic workflow skill for executing implementation tasks (profile=implementation). Loaded by `plan-marshall:phase-5-execute` skill when `task.profile` is `implementation`.
 
-**Key Pattern**: Agent loads this skill via `resolve-workflow-skill --domain {domain} --phase implementation`. Skill executes a generic workflow: understand context → plan → implement → verify. Domain-specific knowledge comes from `task.skills` (loaded by agent).
+**Key Pattern**: Agent loads this skill via `resolve-task-executor --profile implementation`. Skill executes a generic workflow: understand context → plan → implement → verify. Domain-specific knowledge comes from `task.skills` (loaded by agent).
 
 ## Contract Compliance
 
-**MANDATORY**: Follow the execution contract defined in:
+**MANDATORY**: Follow the contracts defined in:
 
 | Contract | Location | Purpose |
 |----------|----------|---------|
 | Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure, fields, status values, and JSON schema |
+| Task Executor Base | `plan-marshall:ref-workflow-architecture/standards/task-executor-base.md` | Shared workflow steps for all task executors |
 
 ## Two-Tier Skill Loading
 
-See [ref-workflow-architecture:skill-loading](../ref-workflow-architecture/standards/skill-loading.md) for the complete two-tier skill loading pattern with visual diagrams.
+See [ref-workflow-architecture:skill-loading](../ref-workflow-architecture/standards/skill-loading.md) for the complete two-tier skill loading pattern. Agent loads Tier 1 (system skills) automatically, then Tier 2 (domain skills from `task.skills`). This workflow skill defines HOW the agent executes.
 
-**Summary**: Agent loads Tier 1 (system skills) automatically, then Tier 2 (domain skills from `task.skills`). This workflow skill defines HOW the agent executes.
+## Input / Output
 
-## Input
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan_id` | string | Yes | Plan identifier |
-| `task_number` | number | Yes | Task number to execute |
-
-## Output
-
-```toon
-status: success | error
-plan_id: {echo}
-task_number: {echo}
-execution_summary:
-  steps_completed: N
-  steps_total: M
-  files_modified: [paths]
-verification:
-  passed: true | false
-  command: "{cmd}"
-next_action: task_complete | requires_attention
-message: {error message if status=error}
-```
+See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the common input contract and base output schema. This profile uses the base output contract without additional fields.
 
 ## Workflow
 
-### Step 1: Load Task Context
+This skill follows the shared task executor workflow. Steps marked **[BASE]** are defined in [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) — follow them exactly. Steps without the tag are implementation-specific.
 
-Read the task file to understand what needs to be done:
+### Step 1: Load Task Context [BASE]
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
-  --plan-id {plan_id} \
-  --number {task_number}
-```
-
-Extract key fields:
-- `domain`: Domain for this task
-- `profile`: Should be `implementation`
-- `skills`: Domain skills to apply (already loaded by agent)
-- `description`: What to implement
-- `steps`: File paths to work on
-- `verification`: How to verify success
-- `depends_on`: Dependencies (should be complete)
+Follow the base workflow. Verify `profile` is `implementation`.
 
 ### Step 2: Read Compatibility Strategy
 
@@ -78,7 +44,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
 ```
 
-**No fallback** — if field not found, fail with error and abort task. This ensures project is configured correctly.
+**No fallback** — if field not found, fail with error and abort task.
 
 Extract `compatibility` from the output. Apply throughout all subsequent steps:
 
@@ -90,208 +56,42 @@ Extract `compatibility` from the output. Apply throughout all subsequent steps:
 
 Before implementing, understand the codebase context:
 
-**Read affected files** (from steps):
-```bash
-# For each step (file path)
-Read {step.target}  # If file exists
-```
+**Read affected files** (from steps): Use the `Read` tool on each `step.target` if the file exists.
 
-**Read related files**:
-```bash
-# Find related components
-Grep "{component_name}" --type {language}
-Glob {pattern}
-Read {related_file}
-```
+**Read related files**: Use `Grep` and `Glob` tools to find related components, then `Read` them.
 
-**Apply domain knowledge**:
-- Reference patterns from loaded domain skills
-- Understand project conventions
-- Identify dependencies and integration points
+**Apply domain knowledge**: Reference patterns from loaded domain skills, understand project conventions, identify dependencies and integration points.
 
 ### Step 4: Plan Implementation
 
-For each step (file path), determine:
-- What changes are needed
-- How to apply domain skill patterns
-- Order of modifications
-- Integration considerations
-
-**Note**: Steps are executed sequentially. No explicit "in_progress" marker needed - proceed directly to implementation.
+For each step (file path), determine what changes are needed, how to apply domain skill patterns, order of modifications, and integration considerations.
 
 ### Step 5: Implement Changes
 
 For each step (file path):
 
-**Create new file**:
-```bash
-Write {file_path}
-# Apply patterns from domain skills
-# Follow project conventions
-```
+- **Create new file**: Use the `Write` tool. Apply patterns from domain skills, follow project conventions.
+- **Modify existing file**: Use the `Edit` tool. Apply changes following domain skill patterns, maintain existing code style.
 
-**Modify existing file**:
-```bash
-Edit {file_path}
-# Apply changes following domain skill patterns
-# Maintain existing code style
-```
+### Step 6: Mark Step Complete [BASE]
 
-**Apply domain patterns**:
-- Use patterns from loaded skills (java-core, javascript-core, etc.)
-- Follow CDI/injection patterns if applicable
-- Add proper logging, error handling
-- Include documentation comments
+### Step 7: Run Verification [BASE]
 
-### Step 6: Mark Step Complete
+Implementation tasks verify compilability only — full test execution belongs to module_testing profile. The safety net resolve command is `compile`.
 
-After each step:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
-  --plan-id {plan_id} \
-  --task {task_number} \
-  --step {N} \
-  --outcome done
-```
+### Step 8: Handle Verification Results [BASE]
 
-### Step 7: Run Verification
+On failure: analyze error output, identify failing component, fix the issue, re-run verification.
 
-After all steps complete, run task verification:
+### Step 9: Record Lessons [BASE]
 
-```bash
-# Execute verification commands from task
-{verification.commands[0]}
-{verification.commands[1]}
-...
-```
+Use component `"plan-marshall:task-implementation"`.
 
-**Verification** (implementation tasks verify compilability only — full test execution belongs to module_testing profile):
-
-Execute the verification commands from `task.verification.commands`. Every task SHOULD have commands populated by the plan phase (copied from the deliverable).
-
-**Safety net** (should never trigger in normal operation): If verification commands are missing, log a WARN and resolve from architecture:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
-  work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:task-implementation) TASK-{N} missing verification — falling back to architecture resolve"
-
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command compile --name {module} \
-  --trace-plan-id {plan_id}
-```
-
-### Step 8: Handle Verification Results
-
-**If verification passes**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
-  --plan-id {plan_id} \
-  --number {task_number} \
-  --status done
-```
-
-**If verification fails**:
-1. Analyze error output
-2. Identify failing component
-3. Fix the issue
-4. Re-run verification
-5. Iterate until pass (max 3 iterations)
-
-If still failing after 3 iterations:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
-  --plan-id {plan_id} \
-  --number {task_number} \
-  --status blocked
-```
-Note: Record details in work.log using manage-log.
-
-### Step 9: Record Lessons
-
-On issues or unexpected patterns:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
-  --component "plan-marshall:task-implementation" \
-  --category improvement \
-  --title "{issue summary}" \
-  --detail "{context and resolution}"
-```
-
-**Valid categories**: `bug`, `improvement`, `anti-pattern`
-
-### Step 10: Return Results
-
-```toon
-status: success
-plan_id: {plan_id}
-task_number: {task_number}
-execution_summary:
-  steps_completed: {N}
-  steps_total: {M}
-  files_modified:
-    - {path1}
-    - {path2}
-verification:
-  passed: true
-  command: "{verification command}"
-next_action: task_complete
-```
-
-## Implementation Patterns
-
-### File Creation Pattern
-
-```
-1. Determine target path from step
-2. Check if parent directory exists
-3. Create file with proper structure
-4. Apply domain patterns:
-   - Package/module declaration
-   - Imports/dependencies
-   - Class/function structure
-   - Documentation
-5. Format according to project style
-```
-
-### File Modification Pattern
-
-```
-1. Read existing file
-2. Identify modification points
-3. Apply changes using Edit tool
-4. Preserve existing style
-5. Update related components if needed
-6. Update documentation if needed
-```
-
-### Verification Iteration Pattern
-
-```
-1. Run verification command
-2. If pass → complete
-3. If fail → analyze output
-4. Identify failing assertion/error
-5. Fix specific issue
-6. Re-run verification
-7. Repeat (max 3 times)
-8. If still failing → block task
-```
+### Step 10: Return Results [BASE]
 
 ## Error Handling
 
-### Missing Dependency
-
-If a file depends on code not yet implemented:
-- Check if dependency is in later step
-- If yes, reorder steps
-- If no, create minimal stub and note
-
-### Verification Timeout
-
-If verification command hangs:
-- Kill after 5 minutes
-- Record timeout in notes
-- Try with reduced scope
+See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for common error handling (missing dependencies, verification timeout).
 
 ### Conflicting Changes
 
@@ -306,12 +106,5 @@ If changes conflict with existing code:
 
 **Skill Loading**: Agent loads this skill via `resolve-task-executor --profile implementation`
 
-**Script Notations** (use EXACTLY as shown):
-- `plan-marshall:manage-tasks:manage-tasks` - Task operations (get, update, finalize-step)
-- `plan-marshall:manage-config:manage-config` - Read compatibility from project config
-- `plan-marshall:manage-lessons:manage-lesson` - Record lessons (add)
-
-**Domain Skills Applied** (loaded by agent from task.skills):
-- Java: `pm-dev-java:java-core`, `pm-dev-java:java-cdi`, etc.
-- JavaScript: `pm-dev-frontend:javascript`, etc.
-- Apply patterns from whatever domain skills are listed in task.skills
+**Script Notations**: See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the complete list. This profile additionally uses:
+- `plan-marshall:manage-config:manage-config` — Read compatibility from project config
