@@ -202,7 +202,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor diagn
     [--build-failures '<json>'] [--review-comments '<json>'] [--sonar-issues '<json>']
 ```
 
-Display format:
+Present the script's TOON output to the user in this format:
 ```
 ────────────────────────────────────────────────
 PR Diagnostic Report: #{pr}
@@ -345,7 +345,7 @@ status: success
 
 ### pr_doctor.py parse-handoff
 
-**Purpose:** Parse and validate handoff JSON from phase-6-finalize, merge with explicit parameters. See Step 0 above for the handoff schema.
+**Purpose:** Parse and validate handoff JSON from phase-6-finalize, merge with explicit parameters. See Step 1 above for the handoff schema.
 
 **Usage:**
 ```bash

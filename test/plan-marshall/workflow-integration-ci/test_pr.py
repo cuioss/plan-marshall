@@ -107,7 +107,7 @@ class TestPRTriage(unittest.TestCase):
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['action'], 'ignore')
-        self.assertEqual(result['priority'], 'none')
+        self.assertEqual(result['priority'], 'low')
 
     def test_triage_nitpick_is_low_priority_code_change(self):
         """Test triage classifies nitpick as low-priority code change."""
@@ -502,7 +502,7 @@ class TestClassifyCommentDefaults(unittest.TestCase):
         self.assertIn('>100 chars', result['reason'])
 
     def test_short_comment_without_keywords_is_ignore(self):
-        """Comments <=100 chars without keyword matches default to ignore/none."""
+        """Comments <=100 chars without keyword matches default to ignore/low."""
         comment = {
             'id': 'DEF2',
             'body': 'Interesting approach here',
@@ -514,7 +514,7 @@ class TestClassifyCommentDefaults(unittest.TestCase):
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['action'], 'ignore')
-        self.assertEqual(result['priority'], 'none')
+        self.assertEqual(result['priority'], 'low')
 
 
 class TestSuggestImplementationLocation(unittest.TestCase):

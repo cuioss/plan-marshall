@@ -29,7 +29,7 @@ Provides git commit workflow following conventional commits specification. Inclu
 
 ## Prerequisites
 
-No external skill dependencies. Uses `triage_helpers` from `ref-toon-format` (see `ref-workflow-architecture` → "Shared Infrastructure" for the full API table).
+No external `Skill:` dependencies. Script imports `triage_helpers` from `ref-toon-format` at runtime (see `ref-workflow-architecture` → "Shared Infrastructure").
 
 ## Architecture
 
@@ -238,8 +238,9 @@ status: success
 | Standard | When to Load |
 |----------|-------------|
 | `standards/git-commit-standards.md` | Edge cases: breaking changes, multi-footer, scope guidelines, anti-patterns |
+| `standards/git-commit-config.json` | Adding/updating valid commit types, imperative mood allowlist, or length thresholds |
 | `standards/artifact-patterns.json` | Adding/updating artifact detection patterns and cleanup rules |
 
 ## Related
 
-See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation.
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Called by: `plan-marshall:workflow-pr-doctor` (commit after fixes), `plan-marshall:phase-6-finalize` (final commit).

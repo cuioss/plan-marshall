@@ -1,0 +1,13 @@
+{
+  "_note": "Git commit validation configuration. valid_types: Conventional commit types. imperative_allowlist: Words ending in -ed/-ing that are NOT past tense/gerund forms — prevents false positives in imperative mood validation.",
+  "valid_types": ["feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "ci"],
+  "imperative_allowlist": [
+    "red", "bed", "shed", "led", "fed", "sled", "med", "wed",
+    "speed", "seed", "feed", "need", "proceed", "exceed",
+    "string", "ring", "bring", "king", "swing", "thing", "spring", "ping",
+    "caching", "hashing", "nothing", "everything", "something",
+    "mixed", "embed", "spread", "thread", "overhead"
+  ],
+  "subject_max_length": 72,
+  "subject_warn_length": 50
+}

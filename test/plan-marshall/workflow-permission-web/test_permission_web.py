@@ -599,14 +599,14 @@ class TestAnalyzeEmptyPermissions(unittest.TestCase):
 class TestCategorizeProtocolPrefix(unittest.TestCase):
     """Test categorize with protocol-prefixed domains (#35)."""
 
-    def test_protocol_prefix_not_stripped(self):
-        """Domains with https:// prefix are classified as unknown since protocol is not stripped."""
+    def test_protocol_prefix_stripped(self):
+        """Domains with https:// prefix are normalized — protocol is stripped before categorization."""
         domains = ['https://github.com']
         stdout, _, code = run_pw_script(['categorize', '--domains', json.dumps(domains)])
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
-        # https://github.com is NOT recognized as github.com — classified as unknown
-        self.assertEqual(result['categories']['unknown'], 1)
+        # https://github.com is recognized as github.com after protocol stripping
+        self.assertEqual(result['categories']['high_reach'], 1)
 
 
 class TestApplyEdgeCases(unittest.TestCase):

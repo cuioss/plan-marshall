@@ -31,14 +31,13 @@ Analyzes WebFetch domains across global and project settings, researches domains
 
 ## Prerequisites
 
-No external skill dependencies. Uses `triage_helpers` from `ref-toon-format` (see `ref-workflow-architecture` → "Shared Infrastructure" for the full API table). WebSearch tool access is optional (Step 4).
+No external `Skill:` dependencies. Script imports `triage_helpers` from `ref-toon-format` at runtime (see `ref-workflow-architecture` → "Shared Infrastructure"). WebSearch tool access is optional (Step 4).
 
 ## Architecture
 
 ```
 workflow-permission-web (WebFetch permission analysis)
   ├─> standards/domain-lists.json (domain categorization rules)
-  ├─> standards/trusted-domains.md (human-readable reference)
   ├─> standards/domain-security-assessment.md (research methodology)
   └─> triage_helpers (ref-toon-format) — error handling, TOON serialization
 ```
@@ -124,6 +123,8 @@ SUSPICIOUS ({count}):
 ```
 
 ### Step 6: Display Analysis Report
+
+Present the script's TOON output to the user in this format:
 
 ```
 WebFetch Permission Analysis

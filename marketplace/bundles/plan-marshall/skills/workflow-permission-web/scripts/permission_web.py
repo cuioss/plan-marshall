@@ -48,11 +48,29 @@ from triage_helpers import (  # type: ignore[import-not-found]
 
 _DOMAIN_CONFIG = load_skill_config(__file__, 'domain-lists.json')
 
-# Domains from trusted-domains.md — fully trusted, safe to recommend for global
-MAJOR_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('major_domains', []))
+def _extract_domain_names(entries: list) -> set[str]:
+    """Extract domain names from enriched objects or plain strings.
+
+    Supports both formats for backwards compatibility:
+    - Enriched: {"domain": "example.com", "purpose": "...", "trust_level": "..."}
+    - Plain: "example.com"
+    """
+    result: set[str] = set()
+    for entry in entries:
+        if isinstance(entry, dict):
+            d = entry.get('domain', '')
+            if d:
+                result.add(d)
+        elif isinstance(entry, str):
+            result.add(entry)
+    return result
+
+
+# Domains from domain-lists.json — fully trusted, safe to recommend for global
+MAJOR_DOMAINS: set[str] = _extract_domain_names(_DOMAIN_CONFIG.get('major_domains', []))
 
 # High-reach developer platforms — commonly needed across projects
-HIGH_REACH_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('high_reach_domains', []))
+HIGH_REACH_DOMAINS: set[str] = _extract_domain_names(_DOMAIN_CONFIG.get('high_reach_domains', []))
 
 # Red flags in domain names — loaded from array-of-objects, pre-compiled for performance
 _RED_FLAGS: list[dict[str, str]] = _DOMAIN_CONFIG.get('red_flags', [])
@@ -108,7 +126,7 @@ def categorize_domain(domain: str) -> str:
     if domain == '*':
         return 'universal'
     # Normalize: strip protocol, trailing slash
-    clean = domain.lower().strip().rstrip('/')
+    clean = re.sub(r'^https?://', '', domain.lower().strip()).rstrip('/')
     if clean in MAJOR_DOMAINS:
         return 'major'
     if clean in HIGH_REACH_DOMAINS:
@@ -123,7 +141,7 @@ def categorize_domain(domain: str) -> str:
 def check_red_flags(domain: str) -> list[str]:
     """Check domain for red flag patterns. Returns list of matched pattern strings."""
     flags = []
-    clean = domain.lower()
+    clean = re.sub(r'^https?://', '', domain.lower().strip()).rstrip('/')
     for raw_pattern, compiled in _RED_FLAG_COMPILED:
         if compiled.search(clean):
             flags.append(raw_pattern)

@@ -126,7 +126,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
 **Steps:**
 
 1. **Get Comments**
-   If not provided, use Fetch Comments workflow first.
+   If not provided, use Fetch Comments workflow with `--unresolved-only` (resolved comments don't need action).
 
 2. **Triage All Comments (Batch)**
    Collect all unresolved comments into a JSON array and triage in a single call:
@@ -143,7 +143,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
      - comment_id: ...
        action: code_change|explain|ignore
        reason: ...
-       priority: high|medium|low|none
+       priority: high|medium|low
        suggested_implementation: ...
    summary:
      total: N
@@ -273,4 +273,4 @@ For triage override guidance, see `ref-workflow-architecture` → "Triage Overri
 
 ## Related
 
-See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation.
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Called by: `plan-marshall:workflow-pr-doctor` (review comment handling). Related: `plan-marshall:tools-integration-ci` (provider abstraction).

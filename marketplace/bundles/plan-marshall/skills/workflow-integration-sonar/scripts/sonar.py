@@ -45,8 +45,12 @@ SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
 # with the data-driven pattern used by all workflow scripts.
 SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG['severity_priority']
 
-# Type to priority boost — includes SECURITY_HOTSPOT (Sonar's 4th issue type)
+# Type to priority boost — includes SECURITY_HOTSPOT (Sonar's 4th issue type).
+# Values are index offsets in PRIORITY_LEVELS: +1 promotes, -1 demotes.
 TYPE_BOOST: dict[str, int] = _RULES_CONFIG['type_boost']
+
+# Issue types that must always be fixed — loaded from sonar-rules.json.
+_ALWAYS_FIX_TYPES: dict[str, str] = _RULES_CONFIG.get('always_fix_types', {})
 
 
 # ============================================================================
@@ -112,13 +116,13 @@ def triage_issue(issue: dict) -> dict:
     rule = issue.get('rule', 'unknown')
     message = issue.get('message', '')
 
-    # Security hotspots and vulnerabilities must always be fixed
-    if issue_type in ('VULNERABILITY', 'SECURITY_HOTSPOT'):
+    # Issue types that must always be fixed (loaded from sonar-rules.json)
+    if issue_type in _ALWAYS_FIX_TYPES:
         priority = 'critical' if severity == 'BLOCKER' else 'high'
         return {
             'issue_key': key,
             'action': 'fix',
-            'reason': f'{issue_type} must always be fixed',
+            'reason': _ALWAYS_FIX_TYPES[issue_type],
             'priority': priority,
             'suggested_implementation': get_fix_suggestion(rule, message, file, line),
             'suppression_string': None,

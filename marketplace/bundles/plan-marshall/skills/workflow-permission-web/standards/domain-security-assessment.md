@@ -1,10 +1,10 @@
 # Domain Security Assessment
 
-Security evaluation criteria and risk indicators for assessing domain trustworthiness when managing WebFetch permissions.
+Security evaluation criteria for assessing domain trustworthiness when managing WebFetch permissions.
 
 ## Quick Assessment Checklist
 
-For routine domain categorization (most invocations), use this abbreviated checklist:
+For routine domain categorization (most invocations):
 
 1. **Check trusted lists** — Is the domain in `domain-lists.json`? If yes → approved.
 2. **Check red flags** — Does the domain match any pattern in `domain-lists.json` red_flags? If yes → flag for review.
@@ -12,201 +12,59 @@ For routine domain categorization (most invocations), use this abbreviated check
 4. **Verify HTTPS** — Does the domain support HTTPS? If no → reject.
 5. **Assess purpose** — Is the domain relevant to software development? If no → defer to user.
 
-For deep research on ambiguous domains, see the full methodology below.
-
 ## Security Red Flags
 
-### High-Risk Indicators
+### Immediately Reject
 
-**Immediately Reject:**
 - Domains known for malware, phishing, or spam distribution
 - Newly registered domains (<30 days old) without verifiable ownership
-- Domains with no HTTPS support
-- Domains with expired or invalid SSL certificates
-- Domains on known blocklists (URLhaus, PhishTank, Google Safe Browsing)
-- Domains using URL shorteners (bit.ly, tinyurl, etc.) - verify destination first
-- Domains with excessive redirects (>2 hops)
-- Free hosting services (unless verified major provider like GitHub Pages, Netlify)
+- No HTTPS support or expired/invalid SSL certificates
+- Listed on blocklists (URLhaus, PhishTank, Google Safe Browsing)
+- URL shorteners (bit.ly, tinyurl, etc.) — verify destination first
+- Excessive redirects (>2 hops)
 
-**Review Carefully:**
-- Domains registered in high-risk TLDs (.tk, .ml, .ga, .cf, .gq)
-- Domains with suspicious patterns (random characters, common typos of legitimate domains)
-- Domains with no clear ownership information in WHOIS
-- Domains with no web presence beyond the target resource
-- Domains mixing unrelated content (e.g., finance + pharmaceuticals)
+### Review Carefully
 
-### Content-Based Risk Indicators
-
-**Warning Signs:**
-- Excessive advertising or pop-ups
-- Requests for unnecessary permissions or personal information
-- Pressure tactics (limited time offers, scarcity claims)
-- Poor grammar, spelling, or unprofessional design
-- Missing privacy policy or terms of service
-- Broken links or non-functional features
-- Content that contradicts established facts without credible sources
-
-## Domain Research Methodology
-
-> **Automation note:** In the `workflow-permission-web` skill, unknown domain research is performed via `WebSearch` tool (e.g., `WebSearch: "example.com reputation security"`). The steps below describe the assessment criteria — the specific URLs are reference examples for manual review, not automation targets.
-
-### Step 1: Basic Verification
-
-```
-1. Check domain age: whois <domain> or https://whois.domaintools.com
-2. Verify SSL certificate: Click padlock in browser or use SSL Labs
-3. Check domain reputation:
-   - Google Safe Browsing: https://transparencyreport.google.com/safe-browsing/search
-   - VirusTotal: https://www.virustotal.com/gui/domain/<domain>
-4. Review WHOIS information for ownership details
-```
-
-### Step 2: Content Assessment
-
-```
-1. Visit the domain and assess:
-   - Professional appearance and functionality
-   - Clear purpose and ownership information
-   - Privacy policy and terms of service
-   - Contact information (email, physical address)
-   - About page with organizational details
-
-2. Cross-reference information:
-   - Verify company/organization exists independently
-   - Check social media presence and activity
-   - Search for reviews or discussions about the domain
-   - Validate claimed credentials or certifications
-```
-
-### Step 3: Technical Analysis
-
-```
-1. Check HTTP headers for security features:
-   - Strict-Transport-Security
-   - Content-Security-Policy
-   - X-Frame-Options
-   - X-Content-Type-Options
-
-2. Review domain history:
-   - Archive.org Wayback Machine for historical snapshots
-   - Any significant changes in content or ownership
-   - Consistency in purpose and branding
-
-3. Analyze network behavior:
-   - External resources loaded (CDNs, analytics, ads)
-   - Third-party cookies or trackers
-   - Unexpected network requests
-```
-
-### Step 4: Reputation Research
-
-```
-1. Search for mentions and discussions:
-   - "[domain] reviews"
-   - "[domain] scam" or "[domain] fraud"
-   - "[domain] security" or "[domain] malware"
-
-2. Check security databases:
-   - URLhaus: https://urlhaus.abuse.ch
-   - PhishTank: https://phishtank.org
-   - Spamhaus: https://www.spamhaus.org
-
-3. Review community feedback:
-   - Reddit, HackerNews, security forums
-   - Industry-specific communities
-   - Professional networks (LinkedIn, industry groups)
-```
+- High-risk TLDs (.tk, .ml, .ga, .cf, .gq)
+- Suspicious patterns (random characters, typosquatting)
+- No clear ownership in WHOIS
+- No web presence beyond the target resource
+- Mixing unrelated content
 
 ## Trust Levels
 
-For the complete list of pre-approved trusted domains, see [trusted-domains.md](trusted-domains.md).
+| Level | Criteria | Examples |
+|-------|----------|---------|
+| **Fully Trusted** | Major platforms, official docs, standards bodies | Oracle, Mozilla, Apache, GitHub |
+| **Generally Trusted** | Popular developer resources, verify content quality | Medium, community blogs, SaaS platforms |
+| **Review Required** | Personal blogs, smaller commercial sites, new platforms | Check author credentials, organizational backing |
+| **High Scrutiny** | Outside primary categories, aggressive monetization, unclear ownership | Require explicit user approval |
 
-### Fully Trusted
-
-Domains that have been comprehensively assessed and approved. Categories include:
-- Major tech companies and platforms
-- Established open-source foundations
-- Government and educational institutions
-- Official documentation sites for widely-used technologies
-- Industry standards bodies
-
-**See [trusted-domains.md](trusted-domains.md) for the authoritative list of approved domains with detailed justifications.**
-
-### Generally Trusted (Verify First)
-- Popular developer resources and blogs
-- Open-source project hosting (GitHub, GitLab)
-- Technical training platforms (Pluralsight, Udemy, Coursera)
-- Cloud providers and SaaS platforms
-- Security research firms
-- Academic institutions and research papers
-
-### Review Required
-- Personal blogs (check author credentials)
-- Smaller commercial sites
-- Regional or specialized services
-- New or emerging platforms
-- Community-driven content sites
-- Forums and discussion boards
-
-### High Scrutiny
-- Domains outside primary trust categories
-- Sites requesting sensitive data
-- Sites with commercial interests in recommendations
-- Sites with aggressive monetization
-- Sites lacking clear ownership
+See [trusted-domains.md](trusted-domains.md) for the complete list of pre-approved domains.
 
 ## Decision Framework
 
-### Approve When:
-1. Domain is on trusted domains list OR
-2. All of the following are true:
-   - No security red flags present
-   - Clear legitimate purpose aligns with WebFetch use case
-   - Verifiable ownership and professional presence
-   - Positive or neutral reputation research
-   - Technical security indicators are present
+### Approve When
 
-### Review/Defer When:
-1. Domain is generally trusted but specific resource is questionable
-2. Mixed signals from research (some positive, some concerning)
-3. New domain but from established organization
-4. Temporary security issues (expired cert, recent compromise)
+1. Domain is in `domain-lists.json`, OR
+2. All of: no red flags, clear legitimate purpose, verifiable ownership, positive reputation, HTTPS with valid cert
 
-### Reject When:
-1. Any high-risk indicator present
-2. Domain on blocklists or security databases
-3. Evidence of malicious activity
-4. Purpose does not justify WebFetch access
-5. Unable to verify legitimacy despite research
+### Review/Defer When
+
+- Mixed signals from research
+- New domain from established organization
+- Temporary security issues (expired cert, recent compromise)
+
+### Reject When
+
+- Any high-risk indicator present
+- Listed on blocklists or security databases
+- Evidence of malicious activity
+- Unable to verify legitimacy despite research
 
 ## Special Cases
 
-### GitHub User Content
-- Trust: `raw.githubusercontent.com`, `gist.github.com`
-- Review: User-specific repos (check repository legitimacy)
-- Pattern: Verify repository ownership and activity
-
-### Documentation Mirrors
-- Prefer official sources over mirrors
-- Verify mirror is authorized/recognized
-- Check update frequency and accuracy
-
-### API Endpoints
-- Verify API belongs to trusted service
-- Check authentication requirements
-- Review API terms of service and rate limits
-
-### CDN and Static Assets
-- Trust major CDNs (CloudFlare, Akamai, Fastly)
-- Verify assets belong to legitimate projects
-- Check for integrity hashes when available
-
-## Maintenance
-
-For comprehensive maintenance procedures including adding domains, reviewing existing domains, and reporting issues, see [trusted-domains.md](trusted-domains.md#maintenance-procedures).
-
-### Documentation
-- Document reason for approval/rejection decisions
-- Track special conditions or limitations
-- Note expiration dates for temporary approvals
-- Record review dates for periodic reassessment
+- **GitHub user content**: Trust `raw.githubusercontent.com`, `gist.github.com`; verify repository legitimacy for user repos
+- **Documentation mirrors**: Prefer official sources; verify mirror is authorized
+- **API endpoints**: Verify API belongs to trusted service; check rate limits and ToS
+- **CDN/static assets**: Trust major CDNs (CloudFlare, Akamai, Fastly); verify asset legitimacy

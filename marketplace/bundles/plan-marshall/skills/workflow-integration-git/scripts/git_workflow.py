@@ -48,7 +48,11 @@ from triage_helpers import (  # type: ignore[import-not-found]
 # CONFIGURATION
 # ============================================================================
 
-VALID_TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'ci']
+_COMMIT_CONFIG = load_skill_config(__file__, 'git-commit-config.json')
+VALID_TYPES: list[str] = _COMMIT_CONFIG['valid_types']
+_IMPERATIVE_ALLOWLIST: set[str] = set(_COMMIT_CONFIG.get('imperative_allowlist', []))
+_SUBJECT_MAX_LENGTH: int = _COMMIT_CONFIG.get('subject_max_length', 72)
+_SUBJECT_WARN_LENGTH: int = _COMMIT_CONFIG.get('subject_warn_length', 50)
 
 _ARTIFACT_CONFIG = load_skill_config(__file__, 'artifact-patterns.json')
 
@@ -66,26 +70,17 @@ def validate_subject(subject: str) -> dict:
     if not subject:
         return {'valid': False, 'warnings': ['Subject is required']}
 
-    # Check length
-    if len(subject) > 50:
-        warnings.append(f'Subject exceeds 50 chars ({len(subject)} chars)')
-    if len(subject) > 72:
+    # Check length (thresholds from git-commit-config.json)
+    if len(subject) > _SUBJECT_WARN_LENGTH:
+        warnings.append(f'Subject exceeds {_SUBJECT_WARN_LENGTH} chars ({len(subject)} chars)')
+    if len(subject) > _SUBJECT_MAX_LENGTH:
         valid = False
-        warnings.append('Subject must not exceed 72 chars')
+        warnings.append(f'Subject must not exceed {_SUBJECT_MAX_LENGTH} chars')
 
-    # Check imperative mood (basic check with false-positive allow-list)
+    # Check imperative mood (basic check with false-positive allow-list
+    # loaded from git-commit-config.json)
     first_word = subject.split()[0].lower() if subject.split() else ''
-    # Words ending in -ed/-ing that are NOT past tense/gerund forms.
-    # Includes: natural -ed words (red, embed), imperative verbs that happen
-    # to end in -ed (speed, seed), and natural -ing words (string, ring).
-    imperative_allowlist = {
-        'red', 'bed', 'shed', 'led', 'fed', 'sled', 'med', 'wed',
-        'speed', 'seed', 'feed', 'need', 'proceed', 'exceed',
-        'string', 'ring', 'bring', 'king', 'swing', 'thing', 'spring', 'ping',
-        'caching', 'hashing', 'nothing', 'everything', 'something',
-        'mixed', 'embed', 'spread', 'thread', 'overhead',
-    }
-    if first_word not in imperative_allowlist:
+    if first_word not in _IMPERATIVE_ALLOWLIST:
         if first_word.endswith('ed') and len(first_word) > 2:
             warnings.append("Subject should use imperative mood (e.g., 'add' not 'added')")
         elif first_word.endswith('ing') and len(first_word) > 3:
@@ -145,6 +140,10 @@ def format_message(
     footer: str | None = None,
 ) -> str:
     """Format complete commit message."""
+    # Validate scope doesn't contain parentheses (would break header format)
+    if scope and ('(' in scope or ')' in scope):
+        scope = scope.replace('(', '').replace(')', '')
+
     # Header
     breaking_indicator = '!' if breaking else ''
     if scope:

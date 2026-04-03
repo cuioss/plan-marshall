@@ -49,12 +49,10 @@ _CONFIG = load_skill_config(__file__, 'pr-doctor-config.json')
 VALID_CHECKS = set(_CONFIG.get('valid_checks', ['build', 'reviews', 'sonar', 'all']))
 DEFAULT_MAX_FIX_ATTEMPTS = _CONFIG.get('default_max_fix_attempts', 3)
 
-# Build step to severity mapping — compile/test failures block everything (high),
-# lint/style failures are less urgent (medium). Unknown steps default to high.
-BUILD_STEP_SEVERITY: dict[str, str] = _CONFIG.get('build_step_severity', {
-    'compile': 'high', 'build': 'high', 'test': 'high',
-    'lint': 'medium', 'style': 'medium', 'format': 'medium',
-})
+# Build step to severity mapping — loaded from pr-doctor-config.json.
+# compile/test failures block everything (high), lint/style are less urgent (medium).
+# Unknown steps default to high in diagnose_pr().
+BUILD_STEP_SEVERITY: dict[str, str] = _CONFIG['build_step_severity']
 
 
 def validate_handoff(handoff: dict) -> list[str]:

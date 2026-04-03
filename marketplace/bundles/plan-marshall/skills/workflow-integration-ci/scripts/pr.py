@@ -182,6 +182,20 @@ def cmd_fetch_comments(args):
 
 CAMEL_CASE_MIN_LENGTH: int = _THRESHOLDS.get('camel_case_min_length', 4)
 
+# Pre-compiled verb patterns for suggest_implementation() — avoids
+# re-compiling regex on every call. Checked in specificity order.
+_VERB_PATTERNS: list[tuple[list[re.Pattern], str]] = [
+    ([re.compile(rf'\b{v}\b') for v in verbs], suggestion)
+    for verbs, suggestion in [
+        (['rename', 'refactor'], 'Rename/refactor as suggested'),
+        (['remove', 'delete', 'drop'], 'Remove indicated code'),
+        (['fix', 'resolve', 'correct'], 'Fix the issue indicated'),
+        (['add', 'include', 'create'], 'Add requested code/functionality'),
+        (['replace', 'swap', 'change', 'update'], 'Update code as requested'),
+        (['move', 'extract', 'split'], 'Restructure code as suggested'),
+    ]
+]
+
 
 def _looks_like_identifier(w: str) -> bool:
     """Check if a word looks like a code identifier.
@@ -262,7 +276,7 @@ def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
     if len(body) > SUBSTANTIAL_COMMENT_LENGTH:
         return {'action': 'code_change', 'priority': 'low', 'reason': f'Substantial review comment (>{SUBSTANTIAL_COMMENT_LENGTH} chars) requires attention'}
 
-    return {'action': 'ignore', 'priority': 'none', 'reason': 'Brief comment with no actionable content'}
+    return {'action': 'ignore', 'priority': 'low', 'reason': 'Brief comment with no actionable content'}
 
 
 def suggest_implementation(action: str, body: str, path: str | None, line: int | None) -> str | None:
@@ -283,17 +297,10 @@ def suggest_implementation(action: str, body: str, path: str | None, line: int |
     # For code_change, extract the most specific action verb from the body.
     # Uses word boundary matching to avoid false positives (e.g., "prefix" matching "fix").
     # Checked in specificity order: targeted verbs first, then generic ones.
+    # Patterns are pre-compiled at module level (_VERB_PATTERNS) for performance.
     body_lower = body.lower()
-    verb_map = [
-        (['rename', 'refactor'], 'Rename/refactor as suggested'),
-        (['remove', 'delete', 'drop'], 'Remove indicated code'),
-        (['fix', 'resolve', 'correct'], 'Fix the issue indicated'),
-        (['add', 'include', 'create'], 'Add requested code/functionality'),
-        (['replace', 'swap', 'change', 'update'], 'Update code as requested'),
-        (['move', 'extract', 'split'], 'Restructure code as suggested'),
-    ]
-    for verbs, suggestion in verb_map:
-        if any(re.search(rf'\b{v}\b', body_lower) for v in verbs):
+    for compiled_patterns, suggestion in _VERB_PATTERNS:
+        if any(p.search(body_lower) for p in compiled_patterns):
             return f'{suggestion} at {location}'
 
     return f'Review and address comment at {location}'
@@ -313,7 +320,7 @@ def triage_comment(comment: dict) -> dict:
             'comment_id': comment_id,
             'action': 'ignore',
             'reason': 'Empty comment body',
-            'priority': 'none',
+            'priority': 'low',
             'suggested_implementation': None,
             'status': 'success',
         }

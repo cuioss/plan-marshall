@@ -1,5 +1,5 @@
 {
-  "_note": "Pre-commit artifact detection patterns. safe_patterns: always auto-delete. uncertain_patterns: require user confirmation. skip_dirs: skip entirely during traversal.",
+  "_note": "Pre-commit artifact detection patterns. safe_patterns: always auto-delete (compiler output, editor swap files, OS metadata). uncertain_patterns: require user confirmation (build output directories that may contain source). skip_dirs: skip entirely during traversal (large dirs that never contain committable artifacts).",
   "safe_patterns": [
     "**/*.class",
     "**/*.pyc",
@@ -15,6 +15,7 @@
     "**/*.swp",
     "**/*.swo",
     "**/*.log",
+    "**/*.map",
     ".plan/temp/**"
   ],
   "uncertain_patterns": [
@@ -22,13 +23,20 @@
     "build/**",
     "dist/**",
     "out/**",
+    "coverage/**",
+    ".nyc_output/**",
     ".next/**",
     ".turbo/**",
     ".parcel-cache/**",
-    ".vite/**"
+    ".vite/**",
+    ".sass-cache/**",
+    ".gradle/**",
+    ".cache/**"
   ],
   "skip_dirs": [
     ".git",
+    ".hg",
+    ".svn",
     ".venv",
     "venv",
     "env",
