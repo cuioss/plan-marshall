@@ -78,7 +78,7 @@ FOR each script call:
 | `manage-solution-outline` | `--plan-id` |
 | `manage-assessments` | `--plan-id` |
 | `manage-findings` | `--plan-id` |
-| `manage-lifecycle` | `--plan-id` |
+| `manage-status` | `--plan-id` |
 
 ## pm-invalid-contract-path (PM-005) / pm-contract-non-compliance (PM-006): Contract Implementation Validation
 

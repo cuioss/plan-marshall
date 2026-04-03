@@ -118,7 +118,7 @@ class ExecutorTestEnvironment:
         # Add specific scripts we want to test
         test_scripts = [
             ('plan-marshall', 'manage-references', 'manage-references.py'),
-            ('plan-marshall', 'manage-lifecycle', 'manage-lifecycle.py'),
+            ('plan-marshall', 'manage-status', 'manage_status.py'),
             ('plan-marshall', 'toon-usage', 'toon_parser.py'),
         ]
 

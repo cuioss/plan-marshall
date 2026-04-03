@@ -30,7 +30,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ```
 4. Log resolution:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
@@ -43,7 +43,7 @@ If no unresolved findings: Continue with normal Steps 4..14 (first entry).
 ## Step 2: Log Phase Start
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine) Starting refine phase"
 ```
 
@@ -84,27 +84,27 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 3. Log decision:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Recipe plan — skipping quality analysis, setting confidence=100, track=complex"
 ```
 
 4. **Skip Steps 4-14**. Transition phase and return.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} \
   --completed 2-refine
 ```
 
 Log phase completion:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine) Recipe plan — refine phase complete (skipped quality analysis)"
 ```
 
 Add visual separator:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
@@ -128,7 +128,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Log**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[REFINE:2] (plan-marshall:phase-2-refine) Using confidence threshold: {confidence_threshold}%"
 ```
 
@@ -158,7 +158,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Log** (to decision.log - config read is a decision):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Config: compatibility={compatibility}"
 ```
 
@@ -215,7 +215,7 @@ arch_context:
 
 **Log**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[REFINE:4] (plan-marshall:phase-2-refine) Loaded architecture: {project_name} ({module_count} modules)"
 ```
 
@@ -241,7 +241,7 @@ Output format: `plan-marshall:manage-plan-documents/documents/request.toon`
 
 **Log**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[REFINE:5] (plan-marshall:phase-2-refine) Loaded request: {title}"
 ```
 
@@ -513,7 +513,7 @@ TRACK_SELECTION: {simple|complex}
 
 **Log track decision** (to decision.log):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Track: {track} - {reasoning}"
 ```
 
@@ -552,7 +552,7 @@ ELSE:
 
 **Log**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[REFINE:8] (plan-marshall:phase-2-refine) Confidence: {confidence}%. Threshold: {confidence_threshold}%. Issues: {issue_summary}"
 ```
 
@@ -649,7 +649,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 **Log**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[REFINE:10] (plan-marshall:phase-2-refine) Updated request with {N} clarifications. Returning to analysis."
 ```
 
@@ -686,16 +686,16 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
 ```bash
 # Only log if not already logged (check iteration_count)
 IF iteration_count == 1:
-  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Scope: {scope_estimate} - Modules: {module_count}, Files: {file_estimate}"
 
-  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine) Domains: {domains}"
 ```
 
 **Log to work.log** (completion status):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[REFINE:11] (plan-marshall:phase-2-refine) Complete. Confidence: {confidence}%. Track: {track}. Iterations: {iteration_count}"
 ```
 
@@ -746,7 +746,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Log Q-Gate Result**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-2-refine:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
 ```
 
@@ -764,7 +764,7 @@ If `qgate_pending_count > 0`, the orchestrator (planning.md) decides whether to 
 The phase transitions from refine → outline after confidence reaches the threshold:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} \
   --completed 2-refine
 ```
@@ -772,13 +772,13 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
 **After successful transition**, log phase completion:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-2-refine) Refine phase complete - confidence: {confidence}%, track: {track}"
 ```
 
 **Add visual separator** after END log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```

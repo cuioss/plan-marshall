@@ -48,7 +48,7 @@ YYYY-MM-DDTHH:MM:SSZ
 Additional data is provided as indented key-value pairs:
 
 ```
-[2025-12-11T12:14:26Z] [ERROR] [b7e4d9] plan-marshall:manage-log add (0.16s)
+[2025-12-11T12:14:26Z] [ERROR] [b7e4d9] plan-marshall:manage-logging:manage-logging add (0.16s)
   exit_code: 2
   args: add --plan-id test --phase 3-outline
   stderr: error: invalid argument
@@ -89,7 +89,7 @@ Additional data is provided as indented key-value pairs:
 
 **Example**:
 ```
-[2025-12-11T12:17:50Z] [ERROR] [b7e4d9] plan-marshall:manage-log:manage-work-log add (0.16s)
+[2025-12-11T12:17:50Z] [ERROR] [b7e4d9] plan-marshall:manage-logging:manage-logging add (0.16s)
   exit_code: 2
   args: add --plan-id test --phase 3-outline --type milestone
   stderr: error: argument --type: invalid choice: 'milestone'

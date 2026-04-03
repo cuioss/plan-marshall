@@ -66,8 +66,8 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
-│  │ manage-lifecycle      │ (phase routing)   │ Plan lifecycle           │  │
-│  │                       │                   │ • phase transitions      │  │
+│  │ manage-status         │ (phase routing)   │ Plan lifecycle           │  │
+│  │   (lifecycle ops)     │                   │ • phase transitions      │  │
 │  │                       │                   │ • phase routing          │  │
 │  │                       │                   │ • plan discovery         │  │
 │  │                       │                   │                          │  │
@@ -172,7 +172,7 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 │  │                                                                      │  │
 │  │  # Transition phase                                                  │  │
 │  │  python3 .plan/execute-script.py \                                   │  │
-│  │    plan-marshall:manage-lifecycle:manage-lifecycle \                      │  │
+│  │    plan-marshall:manage-status:manage_status \                            │  │
 │  │    transition --plan-id my-feature --completed 1-init                │  │
 │  │                                                                      │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
@@ -213,14 +213,14 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 
 ---
 
-## manage-lifecycle Commands
+## manage-status Lifecycle Commands
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│                     MANAGE-LIFECYCLE COMMANDS                               │
+│                     MANAGE-STATUS LIFECYCLE COMMANDS                        │
 │                                                                             │
-│  Script: plan-marshall:manage-lifecycle:manage-lifecycle                         │
+│  Script: plan-marshall:manage-status:manage_status                               │
 │                                                                             │
 │  ┌────────────────────┬─────────────────────────┬────────────────────────┐ │
 │  │ COMMAND            │ PARAMETERS              │ PURPOSE                │ │

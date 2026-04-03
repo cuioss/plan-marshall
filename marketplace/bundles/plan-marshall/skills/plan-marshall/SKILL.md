@@ -22,7 +22,7 @@ Unified entry point for plan lifecycle management covering all 6 phases.
 - Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - User review gates (`plan_without_asking`, `execute_without_asking`) must be respected — never skip when config is false
 - All user interactions use `AskUserQuestion` tool with proper YAML structure
-- Phase transitions use `manage-lifecycle transition` — never set phase status directly
+- Phase transitions use `manage-status transition` — never set phase status directly
 
 **CRITICAL: DO NOT USE CLAUDE CODE'S BUILT-IN PLAN MODE**
 
@@ -82,7 +82,7 @@ Route based on action parameter. Load the appropriate workflow document and foll
 When `plan` is specified but no `action`, auto-detect from plan phase:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle get-routing-context \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-routing-context \
   --plan-id {plan_id}
 ```
 

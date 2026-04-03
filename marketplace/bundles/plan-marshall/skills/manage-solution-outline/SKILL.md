@@ -11,56 +11,19 @@ This skill provides structure guidelines, examples, and operations for `solution
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; use Write tool for document content, then validate via script.
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify solution_outline.md through the script API write path; use Write tool then validate
-- Do not invent script arguments not listed in the Scripts Used table
+**Skill-specific constraints:**
+- Use Write tool for document content, then validate via script (not the script API write path)
 - Do not skip validation after writing or updating solution content
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline {command} {args}`
 - Document creation follows the resolve-path, Write, validate pattern
 - Deliverable numbering must be sequential starting from 1
 
-## When to Activate This Skill
-
-Load this skill in Step 1 when:
-- Creating a solution outline (via `phase-3-outline` skill)
-- Reviewing or updating an existing solution outline
-- Validating solution document structure
-
-**First action**: Load `plan-marshall:manage-architecture` skill for module information and architectural context.
-
-**Not needed for**: Creating tasks from deliverables (use manage-tasks skill)
-
----
-
 ## Document Structure
 
-Solution outlines have a fixed structure with required and optional sections:
+Required sections: **Summary** (2-3 sentences), **Overview** (ASCII diagram), **Deliverables** (numbered `###` sections). Optional: Approach, Dependencies, Risks and Mitigations.
 
-```markdown
-# Solution: {title}
-
-plan_id: {plan_id}
-created: {timestamp}
-compatibility: {value} — {long description}
-
-## Summary          ← REQUIRED: 2-3 sentences describing the approach
-
-## Overview         ← REQUIRED: ASCII diagram showing architecture/flow
-
-## Deliverables     ← REQUIRED: Numbered ### sections
-
-## Approach         ← OPTIONAL: Execution strategy
-
-## Dependencies     ← OPTIONAL: External requirements
-
-## Risks and Mitigations  ← OPTIONAL: Risk analysis
-```
-
-See [standards/structure.md](standards/structure.md) for detailed requirements.
+See [standards/structure.md](standards/structure.md) for the complete section specification, content guidelines, and validation rules.
 
 ---
 
@@ -231,7 +194,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ## Error Responses
 
-All errors return TOON with `status: error` and exit code 1.
+> See `plan-marshall:ref-manage-contract` for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|
@@ -240,13 +203,6 @@ All errors return TOON with `status: error` and exit code 1.
 | `parse_error` | Failed to parse document structure |
 | `validation_failed` | Missing required sections (Summary, Overview, or Deliverables), or deliverable numbering not sequential |
 | `deliverable_not_found` | Requested deliverable number doesn't exist (read with `--deliverable-number`) |
-
-```toon
-status: error
-plan_id: my-plan
-error: validation_failed
-message: Missing required section: Overview
-```
 
 See also [standards/deliverable-contract.md](standards/deliverable-contract.md) for deliverable validation criteria used during task planning.
 

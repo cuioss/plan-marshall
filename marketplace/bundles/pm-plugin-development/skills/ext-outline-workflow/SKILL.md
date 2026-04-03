@@ -35,7 +35,7 @@ Derive `compatibility_description` from the compatibility value.
 Log context:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "({agent_name}) Context loaded: compatibility={compatibility}"
 ```
 
@@ -83,14 +83,14 @@ Path conventions:
 ### Clear stale assessments
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
   clear --plan-id {plan_id} --agent {agent_name}
 ```
 
 ### Log assessment per file
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
   add --plan-id {plan_id} --file-path {file_path} --certainty {CERTAINTY} --confidence {CONFIDENCE} \
   --agent {agent_name} --detail "{reasoning}" --evidence "{evidence}"
 ```
@@ -104,7 +104,7 @@ Where:
 **STOP** before proceeding. Verify assessments were persisted:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
   query --plan-id {plan_id}
 ```
 
@@ -116,7 +116,7 @@ Gate checks:
 Log gate result:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "({agent_name}) Assessment gate: {total_count} assessments written"
 ```
 
@@ -125,14 +125,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Query UNCERTAIN assessments and ask user:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
   query --plan-id {plan_id} --certainty UNCERTAIN
 ```
 
 Group by pattern and use AskUserQuestion. Log resolution:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "({agent_name}) Resolved {N} uncertainties: {decision}"
 ```
 
@@ -337,7 +337,7 @@ EOF
 Log completion and return TOON output:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "({agent_name}) Complete: {N} deliverables"
 ```
 

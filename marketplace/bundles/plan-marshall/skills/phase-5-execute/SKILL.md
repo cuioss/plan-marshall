@@ -39,7 +39,7 @@ Contains: Delegation patterns for builds, quality checks, PR creation
 Get current phase, skill routing, and progress in a single call:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle get-routing-context \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-routing-context \
   --plan-id {plan_id}
 ```
 
@@ -135,7 +135,7 @@ src/Bar.java,10,Missing null check,error
 At the start of execute or finalize phase:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting {phase} phase"
 ```
 
@@ -173,7 +173,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 After each task completes:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
@@ -196,7 +196,7 @@ If `commit_strategy == per_deliverable` (cached from Step 2):
 
 3. **Log commit outcome**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Per-deliverable commit: {task_id} ({commit_hash})"
    ```
 
@@ -238,14 +238,14 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ### Step 11: Log Phase Completion (When phase completes)
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Completed {phase} phase: {tasks_completed} tasks"
 ```
 
 **Add visual separator** after END log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
@@ -283,7 +283,7 @@ Execute continuously without user prompts except:
 When transitioning from execute phase to finalize:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} \
   --completed 5-execute
 ```
@@ -306,7 +306,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 On any error, **first log the error** to work-log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-5-execute) {task_id} failed - {error_type}: {error_context}"
 ```
 

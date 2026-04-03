@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for manage-log.py CLI script.
+"""Tests for manage-logging.py CLI script.
 
 Write API: manage-log {type} --plan-id {plan_id} --level {level} --message "{message}"
 - type: script, work, or decision subcommand
@@ -16,7 +16,7 @@ from pathlib import Path
 from conftest import PlanContext, get_script_path, run_script
 
 # Get script path
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-log.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-logging.py')
 
 
 def read_log_file(plan_dir: Path, log_type: str) -> str:

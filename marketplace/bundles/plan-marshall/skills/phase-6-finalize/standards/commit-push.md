@@ -14,7 +14,7 @@ Commit all changes and push to remote. Respects `commit_strategy` from phase-5-e
 **If `commit_strategy == none`**: Skip commit entirely.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Commit skipped: commit_strategy=none"
 ```
 
@@ -33,7 +33,7 @@ If output is empty → no changes to commit, done.
 ### Load git_workflow skill
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:workflow-integration-git"
 ```
 

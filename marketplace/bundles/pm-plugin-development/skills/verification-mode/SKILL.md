@@ -269,7 +269,7 @@ Only after user provides direction:
 **A. Scan Plan-Scoped Log**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type script
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type script
 ```
 
 Review the output for `[ERROR]` entries. This uses the manage-log API (the designed access pattern for `.plan` files) and avoids shell metacharacters that trigger Claude Code security prompts.
@@ -394,7 +394,7 @@ Executing plan-init for my-plan...
 ## SCRIPT FAILURE Analysis Required
 
 ### Issue Detected
-Script plan-marshall:manage-lifecycle:manage-lifecycle returned non-zero exit code (1)
+Script plan-marshall:manage-status:manage_status returned non-zero exit code (1)
 
 ### Context
 - **Operation**: Create plan status

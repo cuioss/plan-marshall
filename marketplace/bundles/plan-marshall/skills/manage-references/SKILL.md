@@ -11,33 +11,12 @@ Manage references.json files with field-level access and list management. Tracks
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify references.json directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations section
+**Skill-specific constraints:**
 - Do not mix `add-list` and `set-list` without understanding their semantics (append vs replace)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-references:manage-references {command} {args}`
 - References are plan-scoped; always provide `--plan-id`
 - File paths in modified_files and affected_files are always relative to repository root
-
-## What This Skill Provides
-
-- Read/write references.json (JSON storage, TOON output)
-- Field-level get/set operations
-- List management (add/remove items)
-- File tracking for modified files
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Setting branch or issue references
-- Adding modified files to tracking
-- Managing external documentation references
-
----
 
 ## Storage Location
 
@@ -344,7 +323,7 @@ modified_files[3]:
 
 ## Error Responses
 
-All errors return TOON with `status: error` and exit code 1.
+> See `plan-marshall:ref-manage-contract` for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|
@@ -355,15 +334,7 @@ All errors return TOON with `status: error` and exit code 1.
 | `file_exists` | references.json already exists on create |
 | `field_not_set` | Field exists but has no value (returns `value: null`, exit 0) |
 
-```toon
-status: error
-plan_id: my-feature
-error: type_mismatch
-field: branch
-message: Cannot add to non-list field 'branch'
-```
-
-**Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `modified_files` as an empty list and `base_branch` as `main`. Other fields are only present if explicitly set.
+**Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `modified_files` and `affected_files` as empty lists and `base_branch` as `main`. All other fields are optional — only present if explicitly set via `--field` arguments.
 
 ---
 

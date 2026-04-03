@@ -242,49 +242,6 @@ def test_create_or_reference_invalid_plan_id():
 # =============================================================================
 # Test: Delete Plan
 # =============================================================================
-
-
-def test_delete_plan_success():
-    """Test deleting an existing plan directory."""
-    with PlanContext(plan_id='delete-test') as ctx:
-        # Create some files in the plan
-        (ctx.plan_dir / 'request.md').write_text('# Request')
-        (ctx.plan_dir / 'references.json').write_text('{"branch": "main"}')
-        (ctx.plan_dir / 'tasks').mkdir()
-        (ctx.plan_dir / 'tasks' / 'TASK-001.toon').write_text('title: Test')
-
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'delete-test')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['action'] == 'deleted'
-        assert data['plan_id'] == 'delete-test'
-        assert data['files_removed'] == 3  # request.md, references.json, TASK-001.toon
-        # Verify directory was deleted
-        assert not ctx.plan_dir.exists()
-
-
-def test_delete_plan_not_found():
-    """Test deleting a plan that doesn't exist."""
-    with EmptyPlanContext():
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'nonexistent-plan')
-        assert not result.success, 'Expected failure for nonexistent plan'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'plan_not_found'
-
-
-def test_delete_plan_invalid_id():
-    """Test delete-plan rejects invalid plan IDs."""
-    with EmptyPlanContext():
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'Invalid_Plan')
-        assert not result.success, 'Expected failure for invalid plan ID'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'invalid_plan_id'
-
-
-# =============================================================================
 # Test: Invalid Plan IDs
 # =============================================================================
 

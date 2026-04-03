@@ -29,7 +29,7 @@ Use appropriate tools:
 Log scope:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Investigation scope: {target}, sources: {sources}, output: {output_path}"
 ```
 

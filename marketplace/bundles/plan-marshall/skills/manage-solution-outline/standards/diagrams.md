@@ -1,6 +1,6 @@
 # ASCII Diagram Patterns
 
-This document provides patterns for creating ASCII diagrams in solution outlines.
+General-purpose ASCII diagram patterns. While primarily used for solution outlines, these patterns apply to any skill that produces ASCII diagrams.
 
 ## Purpose of Diagrams
 

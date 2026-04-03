@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI for unified finding and Q-Gate storage.
+CLI for unified finding, Q-Gate, and assessment storage.
 
 Usage:
     python3 manage-findings.py add --plan-id <plan_id> --type <type> --title <title> --detail <detail> [options]
@@ -14,6 +14,11 @@ Usage:
     python3 manage-findings.py qgate resolve --plan-id <plan_id> --hash-id <hash_id> --resolution <resolution> --phase <phase> [options]
     python3 manage-findings.py qgate clear --plan-id <plan_id> --phase <phase>
 
+    python3 manage-findings.py assessment add --plan-id <plan_id> --file-path <path> --certainty <certainty> --confidence <confidence> [options]
+    python3 manage-findings.py assessment query --plan-id <plan_id> [options]
+    python3 manage-findings.py assessment get --plan-id <plan_id> --hash-id <hash_id>
+    python3 manage-findings.py assessment clear --plan-id <plan_id> [--agent AGENT]
+
 All commands output TOON format.
 """
 
@@ -26,16 +31,21 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from file_ops import output_toon, safe_main
 from findings_store import (
+    CERTAINTY_VALUES,
     FINDING_TYPES,
     QGATE_PHASES,
     QGATE_SOURCES,
     RESOLUTIONS,
     SEVERITIES,
+    add_assessment,
     add_finding,
     add_qgate_finding,
+    clear_assessments,
     clear_qgate_findings,
+    get_assessment,
     get_finding,
     promote_finding,
+    query_assessments,
     query_findings,
     query_qgate_findings,
     resolve_finding,
@@ -165,6 +175,51 @@ def cmd_qgate_clear(args: argparse.Namespace) -> int:
     return 0 if result.get('status') == 'success' else 1
 
 
+def cmd_assessment_add(args: argparse.Namespace) -> int:
+    """Handle: assessment add"""
+    result = add_assessment(
+        plan_id=args.plan_id,
+        file_path=args.file_path,
+        certainty=args.certainty,
+        confidence=args.confidence,
+        agent=args.agent,
+        detail=args.detail,
+        evidence=args.evidence,
+    )
+    output_toon(result)
+    return 0 if result.get('status') == 'success' else 1
+
+
+def cmd_assessment_query(args: argparse.Namespace) -> int:
+    """Handle: assessment query"""
+    result = query_assessments(
+        plan_id=args.plan_id,
+        certainty=args.certainty,
+        min_confidence=args.min_confidence,
+        max_confidence=args.max_confidence,
+        file_pattern=args.file_pattern,
+    )
+    output_toon(result)
+    return 0 if result.get('status') == 'success' else 1
+
+
+def cmd_assessment_get(args: argparse.Namespace) -> int:
+    """Handle: assessment get"""
+    result = get_assessment(args.plan_id, args.hash_id)
+    output_toon(result)
+    return 0 if result.get('status') == 'success' else 1
+
+
+def cmd_assessment_clear(args: argparse.Namespace) -> int:
+    """Handle: assessment clear"""
+    result = clear_assessments(
+        plan_id=args.plan_id,
+        agent=args.agent,
+    )
+    output_toon(result)
+    return 0 if result.get('status') == 'success' else 1
+
+
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -260,6 +315,42 @@ def main() -> int:
     q_clear_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
     q_clear_parser.add_argument('--phase', required=True, choices=QGATE_PHASES, help='Phase name')
     q_clear_parser.set_defaults(func=cmd_qgate_clear)
+
+    # --- Assessment commands ---
+    assessment_parser = subparsers.add_parser('assessment', help='Manage component assessments')
+    assessment_sub = assessment_parser.add_subparsers(dest='action', required=True)
+
+    # assessment add
+    a_add_parser = assessment_sub.add_parser('add', help='Add an assessment')
+    a_add_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    a_add_parser.add_argument('--file-path', required=True, dest='file_path', help='Path to assessed component')
+    a_add_parser.add_argument('--certainty', required=True, choices=CERTAINTY_VALUES, help='Certainty value')
+    a_add_parser.add_argument('--confidence', required=True, type=int, help='Confidence 0-100')
+    a_add_parser.add_argument('--agent', help='Analysis agent name')
+    a_add_parser.add_argument('--detail', help='Reasoning for assessment')
+    a_add_parser.add_argument('--evidence', help='Supporting evidence')
+    a_add_parser.set_defaults(func=cmd_assessment_add)
+
+    # assessment query
+    a_query_parser = assessment_sub.add_parser('query', help='Query assessments')
+    a_query_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    a_query_parser.add_argument('--certainty', choices=CERTAINTY_VALUES, help='Filter by certainty')
+    a_query_parser.add_argument('--min-confidence', type=int, help='Minimum confidence')
+    a_query_parser.add_argument('--max-confidence', type=int, help='Maximum confidence')
+    a_query_parser.add_argument('--file-pattern', help='Glob pattern for file_path')
+    a_query_parser.set_defaults(func=cmd_assessment_query)
+
+    # assessment get
+    a_get_parser = assessment_sub.add_parser('get', help='Get single assessment')
+    a_get_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    a_get_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Assessment hash ID')
+    a_get_parser.set_defaults(func=cmd_assessment_get)
+
+    # assessment clear
+    a_clear_parser = assessment_sub.add_parser('clear', help='Clear assessments')
+    a_clear_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    a_clear_parser.add_argument('--agent', help='Only clear assessments from this agent')
+    a_clear_parser.set_defaults(func=cmd_assessment_clear)
 
     args = parser.parse_args()
 

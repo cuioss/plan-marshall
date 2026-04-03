@@ -193,7 +193,7 @@ Note: Include `tests` section only when `include_tests` is true and tests were d
 ### Step 5: Log Completion
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (ext-outline-inventory-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)" \
   --trace-plan-id {plan_id}
 ```

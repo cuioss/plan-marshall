@@ -57,7 +57,7 @@ context:
 
 **Log skill load**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-agent) Loaded {skill}"
 ```
 

@@ -41,7 +41,7 @@ plan_id: {plan_id}
 ### Step 2: Log Start
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:q-gate-validation-agent) Starting"
 ```
 
@@ -63,7 +63,7 @@ Parse the deliverables from the solution outline. Extract:
 #### 1.2 Read Assessments
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
   query --plan-id {plan_id} --certainty CERTAIN_INCLUDE
 ```
 
@@ -86,7 +86,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 #### 1.4 Log Start
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:q-gate-validation-agent) Starting verification: {deliverable_count} deliverables, {assessment_count} assessments" \
   --trace-plan-id {plan_id}
 ```
@@ -185,7 +185,7 @@ FOR each deliverable D with profile=module_testing AND change_type != verificati
 For each deliverable:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:q-gate-validation-agent:qgate) Deliverable {N}: {pass|fail} - {reason}" \
   --trace-plan-id {plan_id}
 ```
@@ -205,7 +205,7 @@ FOR each file IN assessed_files:
 **Log missing coverage**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:q-gate-validation-agent:qgate) Missing coverage: {file} assessed but not in deliverables" \
   --trace-plan-id {plan_id}
 ```
@@ -280,7 +280,7 @@ Extract `filtered_count` from the output — this becomes `qgate_pending_count` 
 ### Step 9: Log Summary
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:q-gate-validation-agent) Summary: {passed} passed, {flagged} flagged, {missing} missing coverage" \
   --trace-plan-id {plan_id}
 ```
@@ -288,7 +288,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Step 10: Log Completion
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:q-gate-validation-agent) Complete"
 ```
 

@@ -205,7 +205,7 @@ class TestEnsureWildcards(ScriptTestCase):
                     'bundles': {
                         'plan-marshall': {
                             'path': 'marketplace/bundles/plan-marshall',
-                            'skills': ['manage-lifecycle', 'plan-manage'],
+                            'skills': ['manage-status', 'plan-manage'],
                             'commands': ['plan-manage'],
                         },
                         'pm-dev-java': {

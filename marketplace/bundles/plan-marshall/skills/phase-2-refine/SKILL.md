@@ -159,7 +159,7 @@ qgate_pending_count: {0 if no findings}
 
 ### Step 14: Transition Phase
 
-Transition from refine to outline with `manage-lifecycle transition --completed 2-refine`. Log completion and add visual separator.
+Transition from refine to outline with `manage-status transition --completed 2-refine`. Log completion and add visual separator.
 
 ---
 
@@ -190,9 +190,9 @@ Transition from refine to outline with `manage-lifecycle transition --completed 
 - `plan-marshall:manage-plan-documents:manage-plan-documents` - Request operations
 - `plan-marshall:manage-references:manage-references` - References persistence (track, scope, module_mapping, compatibility)
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
-- `plan-marshall:manage-logging:manage-log` - Work and decision logging
+- `plan-marshall:manage-logging:manage-logging` - Work and decision logging
 - `plan-marshall:manage-config:manage-config` - Project config (threshold, compatibility)
-- `plan-marshall:manage-lifecycle:manage-lifecycle` - Phase transition management
+- `plan-marshall:manage-status:manage_status` - Phase transition and lifecycle management
 
 **Persistence Locations**:
 - `work/module_mapping.toon`: Module mapping analysis state

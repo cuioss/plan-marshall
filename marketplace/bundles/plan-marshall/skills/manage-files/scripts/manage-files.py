@@ -228,60 +228,6 @@ def cmd_create_or_reference(args):
         output_toon(result)
 
 
-def cmd_delete_plan(args):
-    """Delete an entire plan directory.
-
-    Returns TOON output indicating the deletion result.
-    Used by plan-init when user selects 'Replace' for an existing plan.
-
-    See: standards/plan-overwrite.md for the full workflow.
-    """
-    import shutil
-
-    require_valid_plan_id(args)
-
-    plan_dir = get_plan_dir(args.plan_id)
-
-    if not plan_dir.exists():
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'plan_not_found',
-            'message': f'Plan directory does not exist: {plan_dir}',
-        })
-        sys.exit(1)
-
-    # Count files before deletion for audit trail
-    files_removed = sum(1 for _ in plan_dir.rglob('*') if _.is_file())
-
-    try:
-        shutil.rmtree(plan_dir)
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-FILES] Deleted plan ({files_removed} files)')
-        output_toon({
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'deleted',
-            'path': str(plan_dir),
-            'files_removed': files_removed,
-        })
-    except PermissionError as e:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'permission_denied',
-            'message': f'Permission denied: {e}',
-        })
-        sys.exit(1)
-    except Exception as e:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'delete_failed',
-            'message': f'Failed to delete plan directory: {e}',
-        })
-        sys.exit(1)
-
-
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Generic file I/O operations for plan directories')
@@ -331,11 +277,6 @@ def main() -> int:
     )
     create_ref_parser.add_argument('--plan-id', required=True, help='Plan identifier')
     create_ref_parser.set_defaults(func=cmd_create_or_reference)
-
-    # delete-plan
-    delete_plan_parser = subparsers.add_parser('delete-plan', help='Delete entire plan directory')
-    delete_plan_parser.add_argument('--plan-id', required=True, help='Plan identifier')
-    delete_plan_parser.set_defaults(func=cmd_delete_plan)
 
     args = parser.parse_args()
     args.func(args)

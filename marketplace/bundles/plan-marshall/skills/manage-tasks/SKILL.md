@@ -11,38 +11,13 @@ Manage implementation tasks with sequential sub-steps within a plan. Each task r
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify TASK-*.json files directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations table
+**Skill-specific constraints:**
 - Do not bypass dependency checking unless explicitly using `--ignore-deps`
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks {command} {args}`
 - Task numbering is sequential and immutable (TASK-001, TASK-002, etc.)
 - The `add` command reads TOON content from `--content` argument with `\n` encoding
 - Step finalization requires explicit `--outcome` (done or skipped)
-
-## What This Skill Provides
-
-- Individual JSON file storage for each task (TOON output for LLM efficiency)
-- Sequential, immutable numbering (TASK-1, TASK-2, etc.)
-- Deliverable references (M:N relationship to solution_outline.md)
-- Delegation context (skill + workflow for execution)
-- Verification commands and criteria
-- Step management with status tracking
-- Simple execution loop via `next` query
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Creating or managing implementation tasks for a plan
-- Querying next actionable task/step
-- Marking steps as started/completed/skipped
-- Tracking implementation progress
-
----
 
 ## Storage Location
 
@@ -61,45 +36,20 @@ Tasks are stored in the plan directory:
 
 ## File Format (Summary)
 
-Tasks are stored as JSON and output as TOON (LLM-optimized):
-
-```json
-{
-  "number": 1,
-  "title": "Update misc agents to TOON output",
-  "status": "pending",
-  "domain": "plan-marshall-plugin-dev",
-  "profile": "implementation",
-  "origin": "plan",
-  "skills": [
-    "pm-plugin-development:plugin-maintain",
-    "pm-plugin-development:plugin-architecture"
-  ],
-  "deliverable": 1,
-  "depends_on": [],
-  "description": "Migrate miscellaneous agents from JSON to TOON output format.",
-  "steps": [
-    {"number": 1, "target": "pm-plugin-development/agents/tool-coverage-agent.md", "status": "pending"},
-    {"number": 2, "target": "pm-dev-builder/agents/gradle-builder.md", "status": "pending"},
-    {"number": 3, "target": "pm-dev-frontend/skills/javascript/SKILL.md", "status": "pending"}
-  ],
-  "verification": {
-    "commands": ["grep -L '```json' {files} | wc -l"],
-    "criteria": "No JSON blocks remain",
-    "manual": false
-  },
-  "current_step": 1
-}
-```
-
-**New Fields**:
+Tasks are stored as `TASK-{NNN}.json`. Key fields for quick reference:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `domain` | string | Task domain (arbitrary string, e.g., java, javascript, my-domain) |
-| `profile` | string | Task profile (e.g., `implementation`, `module_testing`) |
-| `skills` | list | Pre-resolved skills for task execution |
-| `origin` | string | Task origin: `plan`, `fix`, `sonar`, `pr`, `lint`, `security`, or `documentation` |
+| `title` | string | Task title |
+| `status` | enum | `pending`, `in_progress`, `done`, `blocked` |
+| `domain` | string | Task domain (e.g., java, javascript) |
+| `profile` | string | Workflow profile (`implementation`, `module_testing`, `integration_testing`, `quality`, `verification`) |
+| `skills` | list | Pre-resolved domain skills (`{bundle}:{skill}` format) |
+| `origin` | string | Task origin: `plan`, `fix`, `sonar`, `pr`, `lint`, `security`, `documentation` |
+| `deliverable` | int | Referenced deliverable number (1:1 constraint) |
+| `steps` | array | Ordered file-path targets with status |
+
+See [standards/task-contract.md](standards/task-contract.md) for the complete field specification, status model, dependency format, skills inheritance, and optimization workflow.
 
 ---
 
@@ -338,7 +288,7 @@ If a deliverable has no Verification section, the task is created without `verif
 
 ## Error Responses
 
-All errors return TOON with `status: error` and exit code 1.
+> See `plan-marshall:ref-manage-contract` for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|
@@ -350,14 +300,6 @@ All errors return TOON with `status: error` and exit code 1.
 | `circular_dependency` | Task dependency creates a cycle (detected during `next`) |
 | `invalid_outcome` | Step outcome not `done` or `skipped` |
 | `plan_dir_not_found` | Plan directory doesn't exist |
-
-```toon
-status: error
-plan_id: my-feature
-error: task_not_found
-number: 99
-message: Task TASK-99 not found
-```
 
 ---
 

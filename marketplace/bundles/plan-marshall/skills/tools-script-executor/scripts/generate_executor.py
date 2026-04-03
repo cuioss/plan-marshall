@@ -182,7 +182,9 @@ def get_shared_module_dirs(base_path: Path) -> list[Path]:
     # IMPORTANT: This list of shared module skills must be manually updated.
     # Add new shared library skill paths here to avoid runtime ModuleNotFoundErrors.
     shared_skills = [
+        'skills/tools-file-ops/scripts',
         'skills/tools-input-validation/scripts',
+        'skills/ref-toon-format/scripts',
     ]
     dirs = []
     for subpath in shared_skills:

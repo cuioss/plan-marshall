@@ -32,7 +32,7 @@ For each pending finding:
    If the file does NOT exist: Do NOT create an assessment for the wrong path. Instead, find the correct path (check the actual directory structure) and update the deliverable's `Affected files` in solution_outline.md to use the correct path. Then create the assessment with the corrected path.
    c. Create the assessment entry (only after path is verified):
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
+   python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
      add --plan-id {plan_id} --file-path "{file_path}" --certainty CERTAIN_INCLUDE \
      --confidence 90 --agent phase-3-outline --detail "Added via Q-Gate finding resolution"
    ```
@@ -54,7 +54,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ```
 6. Log resolution:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
@@ -130,7 +130,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 
 4. Log decision:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Recipe plan — using recipe skill {recipe_skill} with change_type={default_change_type}"
 ```
 
@@ -202,7 +202,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 ```
 - Log the override:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Post-check override: analysis → {corrected_change_type} (request contains action word: {word})"
 ```
 
@@ -211,7 +211,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Log Detection
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Change type: {change_type} (confidence: {confidence})"
 ```
 
@@ -239,7 +239,7 @@ If target doesn't exist, ERROR: "Target not found: {target}"
 #### Log Validation
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Validated {N} targets in {domain}"
 ```
 
@@ -300,7 +300,7 @@ Use the returned `executable` value as the Verification Command. Both Command an
 #### Log Deliverable Creation
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Created deliverable for {target}"
 ```
 
@@ -318,7 +318,7 @@ For each deliverable:
 #### Log Q-Gate Result
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate) Simple: Deliverable {N}: pass"
 ```
 
@@ -364,7 +364,7 @@ source: generic
 1. Load the domain skill: `Skill: {resolved_skill}` (e.g., `Skill: pm-plugin-development:ext-outline-workflow`)
 2. Log the loaded skill:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-3-outline) Loaded domain skill: {resolved_skill}"
 ```
 3. Read the domain-specific change-type instructions from the skill's standards directory. The file path is: `marketplace/bundles/{bundle}/skills/{skill_name}/standards/change-{change_type}.md`
@@ -447,7 +447,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 #### Log Completion
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Change-type workflow complete: {N} deliverables ({change_type})"
 ```
 
@@ -493,7 +493,7 @@ flagged: {count}
 #### Log Q-Gate Result
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate) Full: {passed} passed, {flagged} flagged"
 ```
 

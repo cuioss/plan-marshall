@@ -1,5 +1,7 @@
 # Declarative Document Engine Architecture
 
+> **Audience**: This document describes the internal architecture for contributors modifying the engine. Skill consumers should refer to the SKILL.md operations section.
+
 ## Design Principle
 
 Document types are **data, not code**. The engine is a generic processor that:

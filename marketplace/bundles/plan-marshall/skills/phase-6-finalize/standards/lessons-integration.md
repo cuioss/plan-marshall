@@ -29,7 +29,7 @@ Step 8: Mark Plan Complete
 Review the plan's work-log for lesson candidates:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {plan_id} --type work
 ```
 
@@ -43,7 +43,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 For each notable finding:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component {component_identifier} \
   --category {bug|improvement|anti-pattern} \
   --title "{concise_summary}" \
@@ -71,7 +71,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 ## Example: Recording Bug Lesson
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "plan-marshall:manage-tasks:manage-tasks" \
   --category bug \
   --title "Shell metacharacters in verification commands need quoting" \
@@ -81,7 +81,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 ## Example: Recording Improvement
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "pm-dev-java:java-core" \
   --category improvement \
   --title "Use constructor injection over field injection for CDI beans" \
@@ -100,7 +100,7 @@ Lessons capture is **advisory only**:
 Log lesson capture:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-6-finalize) Captured {count} lessons"
 ```
 

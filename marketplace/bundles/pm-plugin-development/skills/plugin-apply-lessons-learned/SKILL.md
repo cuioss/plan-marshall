@@ -44,7 +44,7 @@ Skill: plan-marshall:manage-lessons
 Query unapplied lessons using the manage-lessons script:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson query \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons query \
   --applied false [--component-name {name}]
 ```
 

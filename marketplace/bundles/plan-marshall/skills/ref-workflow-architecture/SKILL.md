@@ -48,7 +48,7 @@ user-invocable: false
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                          DATA LAYER                                   │  │
 │  │                                                                       │  │
-│  │   manage-references  manage-lifecycle  manage-tasks  manage-solution  │  │
+│  │   manage-references  manage-status     manage-tasks  manage-solution  │  │
 │  │        │               │               │              │               │  │
 │  │        ▼               ▼               ▼              ▼               │  │
 │  │   references.json status.toon    TASK-*.json   solution_outline.md   │  │
@@ -150,7 +150,7 @@ user-invocable: false
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  DATA LAYER (manage-* Skills)                                        │   │
 │  │  ════════════════════════════                                        │   │
-│  │  manage-references    manage-lifecycle     manage-tasks                │   │
+│  │  manage-references    manage-status        manage-tasks                │   │
 │  │  manage-solution-outline    manage-plan-documents    manage-files     │   │
 │  │  manage-architecture        manage-findings          manage-logging   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │

@@ -159,7 +159,7 @@ recovery: Use resume option or provide different plan_id
 | `plan-marshall:manage-plan-documents` | Write request.md (typed document) |
 | `plan-marshall:manage-files` | Create/reference plan directory |
 | `plan-marshall:manage-references` | Initialize references |
-| `plan-marshall:manage-logging:manage-log` | Log creation |
+| `plan-marshall:manage-logging:manage-logging` | Log creation |
 | `plan-marshall:manage-lessons` | Read lesson content |
 
 ### Complete Initialization

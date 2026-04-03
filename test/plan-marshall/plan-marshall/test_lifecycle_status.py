@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Tests for manage-lifecycle.py script.
+"""Tests for lifecycle commands in manage_status.py script.
 
-manage-lifecycle handles plan discovery, transitions, archiving, and routing.
-Status operations (create, read, set-phase, etc.) are in manage-status.
+Tests plan discovery, transitions, archiving, and routing (formerly manage-lifecycle).
 """
 
 import sys
@@ -13,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 
 # Get script paths
-LIFECYCLE_SCRIPT = get_script_path('plan-marshall', 'manage-lifecycle', 'manage-lifecycle.py')
+LIFECYCLE_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
 STATUS_SCRIPT = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH

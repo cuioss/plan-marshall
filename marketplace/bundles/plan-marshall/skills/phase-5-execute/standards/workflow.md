@@ -68,10 +68,10 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 When all tasks in phase complete:
 
 1. **Automatic file collection** (execute phase):
-   - `manage-lifecycle transition` collects modified files
+   - `manage-status transition` collects modified files
    - Updates `references.json` with changed files
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition --plan-id {plan_id} --completed {phase}
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition --plan-id {plan_id} --completed {phase}
    ```
 
 2. **Auto-transition** to next phase:

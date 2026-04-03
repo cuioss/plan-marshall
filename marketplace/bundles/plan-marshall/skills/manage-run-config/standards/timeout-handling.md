@@ -49,15 +49,13 @@ The timeout handling system provides:
 
 ---
 
-## Constants
+## Behavior
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `SAFETY_MARGIN` | 1.25 | Multiplier applied to persisted values on retrieval |
-| `HIGHER_WEIGHT` | 0.80 | Weight given to higher value during update |
-| `MINIMUM_TIMEOUT_SECONDS` | 120 | Floor for timeout values - prevents unreasonably short timeouts |
+- **Safety margin on retrieval**: Persisted timeout values are multiplied by a safety buffer when read, accounting for execution variance
+- **Adaptive learning on update**: When updating with a new duration, the algorithm weights towards the higher value for reliability
+- **Minimum floor**: A minimum timeout (currently 120s) prevents unreasonably short timeouts — JVM-based tools have cold startup times (30-90s) that warm-run measurements miss
 
-**Minimum Timeout Rationale**: JVM-based tools (Maven, Gradle) have significant cold startup times (30-90s) that don't occur on warm runs. Short timeouts from warm JVM runs would cause timeouts on cold starts. The 120-second minimum ensures cold starts complete.
+Implementation constants are defined in `manage_run_config.py`. See the script source for exact values.
 
 ---
 
@@ -83,8 +81,8 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeo
 **Logic**:
 1. Look up `commands.<command>.timeout_seconds` in run-configuration.json
 2. If not found: use `--default` value
-3. If found: use `persisted_value * SAFETY_MARGIN`
-4. Return `max(calculated_value, MINIMUM_TIMEOUT_SECONDS)` (ensures at least 120s)
+3. If found: apply safety margin to persisted value
+4. Return the higher of the calculated value or the minimum floor
 
 **Output**: Plain number (e.g., `300`)
 
@@ -108,10 +106,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeo
 **Logic**:
 1. Look up existing `commands.<command>.timeout_seconds`
 2. If not found: write `--duration` directly
-3. If found: compute weighted value favoring higher number
-   - `higher = max(existing, new_duration)`
-   - `lower = min(existing, new_duration)`
-   - `result = HIGHER_WEIGHT * higher + (1 - HIGHER_WEIGHT) * lower`
+3. If found: compute weighted average favoring the higher value for reliability
 
 **Output** (TOON format):
 ```
@@ -126,7 +121,7 @@ source	computed|initial
 
 ## Storage Format
 
-> **Schema reference**: See `references/run-config-format.md` for the complete storage schema.
+> **Schema reference**: See `standards/run-config-format.md` for the complete storage schema.
 
 Timeouts are stored in `run-configuration.json` under the command entry:
 
@@ -228,5 +223,5 @@ timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor
 
 ## References
 
-- [run-config-format.md](../references/run-config-format.md) - Complete schema documentation
+- [run-config-format.md](../standards/run-config-format.md) - Complete schema documentation
 - [wait-pattern.md](../../script-executor/standards/wait-pattern.md) - Awaitility-style synchronous wait

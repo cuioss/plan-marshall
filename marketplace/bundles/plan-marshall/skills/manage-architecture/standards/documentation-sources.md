@@ -1,6 +1,6 @@
 # Documentation Sources
 
-Priority order for documentation sources when analyzing project architecture.
+Priority order for documentation sources when analyzing project architecture. Documentation sources vary by technology domain — the examples below include Java-specific patterns where noted; other domains follow similar conventions with their native documentation formats.
 
 ## Project-Level Sources
 
@@ -58,7 +58,7 @@ Look for:
 - "Overview" or "Description" section
 - Code examples (show usage patterns)
 
-### From package-info.java
+### From package-info.java (Java-specific)
 
 Look for:
 - Package-level JavaDoc comment
@@ -67,8 +67,8 @@ Look for:
 
 ### From Source Files
 
-Look for:
-- Class-level JavaDoc
+Look for (Java-specific examples, adapt for other languages):
+- Class-level JavaDoc (or equivalent doc comments)
 - Framework annotations (`@Path`, `@Processor`, etc.)
 - Import statements (show dependencies)
 - Method signatures (show capabilities)

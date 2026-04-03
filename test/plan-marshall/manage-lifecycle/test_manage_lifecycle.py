@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for manage-lifecycle.py script."""
+"""Tests for lifecycle commands in manage_status.py script."""
 
 import json
 import sys
@@ -9,8 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script
 
-# Get script path
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-lifecycle', 'manage-lifecycle.py')
+# Get script path - lifecycle commands are now in manage_status.py
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
 
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
@@ -321,7 +321,7 @@ def test_self_test_passes():
         assert result.success, f'Self-test failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
-        assert data['passed'] == 5
+        assert data['passed'] == 4
         assert data['failed'] == 0
         assert 'failures' not in data
 

@@ -148,7 +148,7 @@ updated: 2025-12-02T14:30:00Z
 ### Manager
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   {create|read|set-phase|update-phase|progress|transition} --plan-id {id}
 ```
 
@@ -707,7 +707,7 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 | [data-layer.md](data-layer.md) | manage-* skills that access these files |
 | [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
 | `plan-marshall:manage-references` | references.json operations |
-| `plan-marshall:manage-lifecycle:manage-lifecycle` | status.toon operations |
+| `plan-marshall:manage-status:manage_status` | status.json operations |
 | `plan-marshall:manage-tasks` | TASK-*.json operations |
 | `plan-marshall:manage-solution-outline` | solution_outline.md operations |
 | `plan-marshall:manage-logging` | work.log, decision.log, and script-execution.log operations |

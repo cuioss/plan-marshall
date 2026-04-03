@@ -177,7 +177,7 @@ For each selected action:
 - Activate: `Skill: plan-marshall:manage-lessons`
 - Create lesson with:
   ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
     --component "{source_component}" \
     --category "bug" \
     --title "Script failure: {short_description}" \
@@ -238,7 +238,7 @@ Recorded lessons:
 To query assessments for context during failure analysis:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment \
   query --plan-id {plan_id} --certainty {CERTAIN_INCLUDE|CERTAIN_EXCLUDE|UNCERTAIN}
 ```
 

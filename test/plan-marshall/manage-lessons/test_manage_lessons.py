@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for the manage-lesson.py script.
+Tests for the manage-lessons.py script.
 
 Tests subcommands:
 - add: Create a new lesson
@@ -16,16 +16,16 @@ from unittest.mock import patch
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
-# Script path to manage-lesson.py
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lesson.py'
+# Script path to manage-lessons.py
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lessons.py'
 
 
 class TestManageLessonAdd(ScriptTestCase):
-    """Test manage-lesson.py add subcommand."""
+    """Test manage-lessons.py add subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'manage-lessons'
-    script = 'manage-lesson.py'
+    script = 'manage-lessons.py'
 
     def test_add_creates_lesson_file(self):
         """Should create a lesson file with correct metadata."""
@@ -97,11 +97,11 @@ class TestManageLessonAdd(ScriptTestCase):
 
 
 class TestManageLessonList(ScriptTestCase):
-    """Test manage-lesson.py list subcommand."""
+    """Test manage-lessons.py list subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'manage-lessons'
-    script = 'manage-lesson.py'
+    script = 'manage-lessons.py'
 
     def test_list_empty_directory(self):
         """Should return empty list when no lessons exist."""
@@ -202,11 +202,11 @@ created=2025-01-01
 
 
 class TestManageLessonGet(ScriptTestCase):
-    """Test manage-lesson.py get subcommand."""
+    """Test manage-lessons.py get subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'manage-lessons'
-    script = 'manage-lesson.py'
+    script = 'manage-lessons.py'
 
     def test_get_existing_lesson(self):
         """Should return lesson details."""
@@ -247,11 +247,11 @@ This is the lesson body.
 
 
 class TestManageLessonUpdate(ScriptTestCase):
-    """Test manage-lesson.py update subcommand."""
+    """Test manage-lessons.py update subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'manage-lessons'
-    script = 'manage-lesson.py'
+    script = 'manage-lessons.py'
 
     def test_update_applied_status(self):
         """Should update applied status."""
@@ -294,11 +294,11 @@ Body.
 
 
 class TestManageLessonArchive(ScriptTestCase):
-    """Test manage-lesson.py archive subcommand."""
+    """Test manage-lessons.py archive subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'manage-lessons'
-    script = 'manage-lesson.py'
+    script = 'manage-lessons.py'
 
     def test_archive_moves_and_marks_applied(self):
         """Should set applied=true and move to archived-lessons."""
@@ -372,11 +372,11 @@ Body content.
 
 
 class TestManageLessonFromError(ScriptTestCase):
-    """Test manage-lesson.py from-error subcommand."""
+    """Test manage-lessons.py from-error subcommand."""
 
     bundle = 'plan-marshall'
     skill = 'manage-lessons'
-    script = 'manage-lesson.py'
+    script = 'manage-lessons.py'
 
     def test_from_error_creates_lesson(self):
         """Should create lesson from error context JSON."""

@@ -43,7 +43,7 @@ The 6 fixed change types (in priority order):
 ### Step 2: Log Start
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:detect-change-type-agent) Starting"
 ```
 
@@ -122,14 +122,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metada
 ### Step 7: Log Decision
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:detect-change-type-agent) Detected: {change_type} (confidence: {confidence})"
 ```
 
 ### Step 8: Log Completion
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:detect-change-type-agent) Complete"
 ```
 

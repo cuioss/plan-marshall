@@ -13,15 +13,11 @@ Unified logging infrastructure providing script execution logging, semantic work
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; log entries are fire-and-forget (no output parsing needed).
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not write to log files directly; all mutations go through the script API
-- Do not invent script arguments not listed in the CLI Script Usage section
-- Do not use invalid log levels (only INFO, WARN, ERROR)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log {command} {args}`
+**Skill-specific constraints:**
+- Log entries are fire-and-forget (no output parsing needed)
+- Only valid log levels: `INFO`, `WARN`, `ERROR`
 - Log type determines the output file (script, work, decision)
 - Work log messages must include `[CATEGORY] (caller)` prefix format
 
@@ -56,12 +52,12 @@ All plan-scoped logs are stored in the `logs/` subdirectory of the plan.
 
 ## CLI Script Usage
 
-Script: `plan-marshall:manage-logging:manage-log`
+Script: `plan-marshall:manage-logging:manage-logging`
 
 ### Write API
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   {type} --plan-id {plan_id} --level {level} --message "{message}"
 ```
 
@@ -79,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Separator API
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} [--type {work|script|decision}]
 ```
 
@@ -95,7 +91,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Read API
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {plan_id} --type {work|script|decision} [--limit N] [--phase PHASE]
 ```
 
@@ -133,40 +129,40 @@ entries:
 
 ```bash
 # Write: Script execution logging
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   script --plan-id my-plan --level INFO --message "plan-marshall:manage-task:manage-task add (0.15s)"
 
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   script --plan-id my-plan --level ERROR --message "plan-marshall:manage-task:manage-task add failed (exit 1)"
 
 # Write: Work logging (include [CATEGORY] (caller) prefix)
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id my-plan --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created deliverable: auth module"
 
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id my-plan --level WARN --message "[STATUS] (plan-marshall:phase-5-execute) Skipped validation step"
 
 # Write: Decision logging (NO [DECISION] prefix - file is the category)
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id my-plan --level INFO --message "(plan-marshall:phase-1-init) Detected domain: java - pom.xml found"
 
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id my-plan --level INFO --message "(pm-plugin-development:ext-outline-workflow) Scope: bundles=all"
 
 # Read: All work log entries
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id my-plan --type work
 
 # Read: All decision log entries
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id my-plan --type decision
 
 # Read: Last 5 work log entries
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id my-plan --type work --limit 5
 
 # Read: Work log entries for 1-init phase only
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id my-plan --type work --phase 1-init
 ```
 
@@ -293,7 +289,7 @@ The executor automatically calls `log_script_execution()` after each script run.
 Planning skills call the simplified API:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id my-plan --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created task: implement auth module"
 ```
 
@@ -303,5 +299,5 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 | Script | Notation | Description |
 |--------|----------|-------------|
-| `manage-log.py` | `plan-marshall:manage-logging:manage-log` | CLI for logging operations (write and read) |
+| `manage-log.py` | `plan-marshall:manage-logging:manage-logging` | CLI for logging operations (write and read) |
 | `plan_logging.py` | - | Python module (imported, not executed) |

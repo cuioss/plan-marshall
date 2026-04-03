@@ -11,36 +11,11 @@ Domain-specific document management for request documents. Provides logical docu
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify request.md directly; use the script API for create, update, and clarify operations
-- Do not invent script arguments not listed in the Operations section
-- Do not skip the noun-verb command pattern (`request {verb}`)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents {command} {args}`
-- Document operations follow the noun-verb pattern (e.g., `request create`, `request read`)
+**Skill-specific constraints:**
+- Document operations follow the noun-verb pattern (`request {verb}`)
 - For solution outlines, use `plan-marshall:manage-solution-outline` instead
-
-## What This Skill Provides
-
-- Logical document names (abstract from physical filenames)
-- Declarative document type definitions
-- Template-based document creation
-- Section-based reading and updates
-- TOON output format
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Creating request documents (via template)
-- Reading request documents with structured output
-- Updating specific sections of request documents
-
-**For solution outlines**, use the `plan-marshall:manage-solution-outline` skill instead.
-
----
 
 ## Document Types
 
@@ -328,7 +303,7 @@ types:
 
 ## Error Responses
 
-All errors return TOON with `status: error` and exit code 1.
+> See `plan-marshall:ref-manage-contract` for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|
@@ -338,14 +313,6 @@ All errors return TOON with `status: error` and exit code 1.
 | `section_not_found` | Requested section doesn't exist (except `clarified_request` which falls back) |
 | `missing_argument` | Required parameter missing (clarify without either flag) |
 | `validation_error` | Field validation failed on create |
-
-```toon
-status: error
-plan_id: my-feature
-document: request
-error: document_not_found
-message: Request document does not exist for plan my-feature
-```
 
 ---
 

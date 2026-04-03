@@ -98,7 +98,7 @@ message: Plan ID contains invalid characters: bad!!id
 
 ## Adoption
 
-Scripts that accept `plan_id` arguments should import validators from this module rather than doing inline validation. Currently adopted by: `manage-files`, `manage-references`, `manage-metrics`, `manage-lifecycle`, `manage-status`, `manage-plan-documents`, `manage-solution-outline`, `manage-findings`, `manage-logging`. Not yet adopted: `manage-tasks` (validates via shared module), `manage-assessments` (no plan-id validation).
+Scripts that accept `plan_id` arguments should import validators from this module rather than doing inline validation. Currently adopted by: `manage-files`, `manage-references`, `manage-metrics`, `manage-status`, `manage-plan-documents`, `manage-solution-outline`, `manage-findings`, `manage-logging`. Not yet adopted: `manage-tasks` (validates via shared module), `manage-assessments` (no plan-id validation).
 
 ## Python Usage
 

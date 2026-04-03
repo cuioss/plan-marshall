@@ -13,16 +13,13 @@ Collects wall-clock duration and token usage data per phase, generates increment
 
 ## Enforcement
 
-**Execution mode**: Script-only skill. All access via `python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics`.
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Never read/write metrics files directly — use the script commands
+**Skill-specific constraints:**
+- Script-only skill — all access via the script API
 - Never hard-code token values — only use data from Task agent `<usage>` tags
-
-**Constraints:**
-- Metrics data stored in `.plan/plans/{plan_id}/work/metrics.toon` (intermediate key-value storage for phase timing and token data)
-- Human-readable output in `.plan/plans/{plan_id}/metrics.md` (generated markdown with tables showing per-phase duration, tokens, and totals)
-- Phase names must be one of: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` (must match `manage-lifecycle` phases exactly)
+- Metrics data stored in `.plan/plans/{plan_id}/work/metrics.toon`; human-readable output in `.plan/plans/{plan_id}/metrics.md`
+- Phase names must be one of: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` (must match `manage-status` phases exactly)
 
 ## Operations
 
@@ -134,7 +131,7 @@ message_count: 127
 
 ## Error Responses
 
-All errors return TOON with `status: error` and exit code 1.
+> See `plan-marshall:ref-manage-contract` for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|
@@ -143,27 +140,6 @@ All errors return TOON with `status: error` and exit code 1.
 | `no_data` | No metrics collected yet (generate) |
 | `write_failed` | File system permission denied |
 | `session_not_found` | JSONL file not found for session_id (enrich) |
-
-```toon
-status: error
-plan_id: my-plan
-error: invalid_phase
-message: Unknown phase: 7-deploy
-```
-
-```toon
-status: error
-plan_id: my-plan
-error: no_data
-message: No metrics collected yet
-```
-
-```toon
-status: error
-plan_id: my-plan
-error: session_not_found
-message: JSONL file not found for session abc123
-```
 
 ## Integration
 

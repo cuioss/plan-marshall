@@ -11,7 +11,7 @@ Applies when `scope: planning` is specified. These checks supplement the base ve
 
 **CRITICAL**: Execute the **Post-Phase Verification Protocol** after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize, 6-finalize completion). This is NOT optional.
 
-**6-finalize ORDERING**: For 6-finalize, run the verification protocol **between** the phase transition (Step 9: `manage-lifecycle transition --completed 6-finalize`) and the archive (Step 10: `manage-lifecycle archive`). The archive moves plan files to `.plan/archived-plans/`, making `manage-status read` fail with `file_not_found`. Always verify before archiving.
+**6-finalize ORDERING**: For 6-finalize, run the verification protocol **between** the phase transition (Step 9: `manage-status transition --completed 6-finalize`) and the archive (Step 10: `manage-status archive`). The archive moves plan files to `.plan/archived-plans/`, making `manage-status read` fail with `file_not_found`. Always verify before archiving.
 
 Load and follow the protocol from `standards/planning-compliance.md`:
 
@@ -30,7 +30,7 @@ The protocol has **4 steps** - ALL are MANDATORY:
 
 **Step 2 Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type script
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type script
 ```
 
 **Step 4 Command**:
@@ -68,7 +68,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --p
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 
 # Verify work-log has entry for each task creation
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type work
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type work
 # Check output contains "[ARTIFACT]" entries for each TASK-N created
 ```
 
@@ -158,7 +158,7 @@ This bypasses audit trail and validation.
 | Maintainability | Poor - mixed access patterns |
 
 ### Options
-1. **Use plan-marshall:manage-lifecycle:manage-lifecycle**: Consistent abstraction layer
+1. **Use plan-marshall:manage-status:manage_status**: Consistent abstraction layer
 2. **Proceed with warning**: Log deviation but continue
 
 ### Recommendation
@@ -171,7 +171,7 @@ Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status r
 ## Example Post-Operation Audit
 
 ```
-User: (approved using plan-marshall:manage-lifecycle:manage-lifecycle)
+User: (approved using plan-marshall:manage-status:manage_status)
 
 Claude: Task TASK-001 completed successfully.
 

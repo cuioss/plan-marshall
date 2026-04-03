@@ -22,7 +22,7 @@ If request provides stack trace or error message, extract file paths and error l
 Log findings:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Bug fix: {bug_location}, root cause: {root_cause}"
 ```
 

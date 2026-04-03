@@ -11,35 +11,12 @@ Run configuration handling for persistent command configuration storage.
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse JSON/TOON output for status and route accordingly.
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify run-config.json directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Scripts table
+**Skill-specific constraints:**
 - Do not bypass initialization (run-config.json must exist before queries)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config {command} {args}`
 - Timeout and warning operations use the noun-verb pattern (e.g., `timeout get`, `warning add`)
 - Cleanup operations use `cleanup` and `cleanup-status` subcommands
-
-## What This Skill Provides
-
-- Read and update run configuration entries
-- Track command execution history
-- Manage acceptable warnings and skip lists
-- Adaptive timeout management
-- Validate run configuration format
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Recording command execution results
-- Managing acceptable warnings lists
-- Managing command timeouts
-- Validating run configuration structure
-
----
 
 ## Run Configuration Structure
 
@@ -67,7 +44,7 @@ Activate this skill when:
 }
 ```
 
-See [references/run-config-format.md](references/run-config-format.md) for complete schema.
+See [standards/run-config-format.md](standards/run-config-format.md) for complete schema.
 
 ---
 
@@ -134,7 +111,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ## Error Responses
 
-All errors return TOON with `status: error` and exit code 1.
+> See `plan-marshall:ref-manage-contract` for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|
@@ -144,17 +121,11 @@ All errors return TOON with `status: error` and exit code 1.
 | `invalid_category` | Warning category not in: transitive_dependency, plugin_compatibility, platform_specific |
 | `marshal_not_found` | marshal.json missing (cleanup needs retention settings) |
 
-```toon
-status: error
-error: not_initialized
-message: run-config.json not found. Run init first.
-```
-
 ---
 
 ## References
 
-- `references/run-config-format.md` - Complete schema documentation
+- `standards/run-config-format.md` - Complete schema documentation
 - `standards/timeout-handling.md` - Adaptive timeout management
 - `standards/warning-handling.md` - Acceptable warning patterns
 - `standards/cleanup-operations.md` - Directory cleanup operations

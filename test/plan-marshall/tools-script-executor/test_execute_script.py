@@ -197,14 +197,14 @@ print(json.dumps(sys.argv[1:]))
 def test_skip_logging_for_manage_log_success():
     """Skip logging for successful manage-log calls (avoids meta-logging noise)."""
     executor = load_executor_module()
-    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-log', exit_code=0)
+    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-logging', exit_code=0)
     assert result is True, 'Should skip logging for successful manage-log calls'
 
 
 def test_log_manage_log_on_error():
     """Log manage-log calls when they fail (errors should be logged)."""
     executor = load_executor_module()
-    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-log', exit_code=1)
+    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-logging', exit_code=1)
     assert result is False, 'Should log manage-log calls when they fail'
 
 

@@ -78,7 +78,7 @@ Defines expected output files and their validation standards.
 artifacts[N]{file,standard_ref}:
 solution_outline.md,plan-marshall:manage-solution-outline:deliverable-contract
 config.toon,plan-marshall:manage-config:config-schema
-status.toon,plan-marshall:manage-lifecycle:status-schema
+status.toon,plan-marshall:manage-status:status-schema
 references.json,plan-marshall:manage-references:references-schema
 
 # Expected counts

@@ -15,33 +15,12 @@ Memory layer operations for persistent session storage (via `tools-file-ops` ski
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify memory files directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations Reference
+**Skill-specific constraints:**
 - Do not bypass the metadata envelope format for memory files
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory {command} {args}`
 - Memory files are global-scoped (stored in `.plan/memories/`)
 - Content for save operations must be valid JSON
-
-## What This Skill Provides
-
-- CRUD operations for memory storage files
-- Category-based organization
-- Timestamp-based file naming for context files
-- Age-based cleanup
-- Memory file format validation
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Persisting session context
-- Cleaning up old memory files
-
----
 
 ## Memory Categories
 
@@ -60,7 +39,7 @@ Manage the memory layer for session persistence (via `tools-file-ops` skill).
 ### Parameters
 
 - **operation** (required): One of `save`, `load`, `list`, `query`, `cleanup`
-- **category** (optional): One of `context`
+- **category** (optional): Currently `context` (session snapshots)
 - **identifier** (optional): File identifier or summary name
 - **content** (optional): JSON content for save operations
 
@@ -251,7 +230,7 @@ Memory files are created during plan execution to persist session context. The `
 
 ## Error Responses
 
-All errors return TOON with `status: error` and exit code 1.
+> See `plan-marshall:ref-manage-contract` for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|
@@ -260,38 +239,9 @@ All errors return TOON with `status: error` and exit code 1.
 | `invalid_content` | Content is not valid JSON (save) |
 | `validation_failed` | Memory file missing required meta fields or invalid JSON structure |
 
-```toon
-status: error
-error: file_not_found
-category: context
-identifier: missing-file
-message: Memory file not found
-```
-
-```toon
-status: error
-error: invalid_category
-message: Invalid category: workflow (valid: context)
-```
-
-```toon
-status: error
-error: invalid_content
-category: context
-identifier: feature-auth
-message: Content is not valid JSON
-```
-
-```toon
-status: error
-error: validation_failed
-file: .plan/memories/context/2025-12-02-feature-auth.json
-message: Missing required meta field: category
-```
-
 ## References
 
-- `references/memory-layer-format.md` - Complete memory file format documentation
+- `standards/memory-layer-format.md` - Complete memory file format documentation
 
 ## Related Skills
 

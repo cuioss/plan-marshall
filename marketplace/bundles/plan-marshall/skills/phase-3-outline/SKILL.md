@@ -61,7 +61,7 @@ The `track` value (simple | complex) is received from the phase-2-refine return 
 
 **If track not provided in input**, extract from decision.log:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {plan_id} --type decision | grep "(plan-marshall:phase-2-refine) Track:"
 ```
 Parse the output to extract track value from: `(plan-marshall:phase-2-refine) Track: {track} - {reasoning}`
@@ -120,7 +120,7 @@ Store as `compatibility` and derive `compatibility_description` from the value:
 ### Log Context (to work.log - status, not decision)
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-3-outline) Starting outline: track={track}, domains={domains}, compatibility={compatibility}"
 ```
 
@@ -231,24 +231,24 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 ### Log Completion
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-3-outline) Created solution_outline.md"
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Complete: {N} deliverables, Q-Gate: {pass/fail}"
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-3-outline) Outline phase complete - {N} deliverables, Q-Gate: {pass/fail}"
 ```
 
 **Add visual separator** after END log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
@@ -257,7 +257,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ### Transition Phase
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} \
   --completed 3-outline
 ```
@@ -305,10 +305,10 @@ qgate_pending_count: {0 if no findings}
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Write solution document
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-status:manage_status` - Read/write change_type metadata
-- `plan-marshall:manage-logging:manage-log` - Decision and work logging
+- `plan-marshall:manage-logging:manage-logging` - Decision and work logging
 - `plan-marshall:manage-config:manage-config` - Resolve outline skill, read compatibility
 - `plan-marshall:manage-architecture:architecture` - Resolve verification commands
-- `plan-marshall:manage-assessments:manage-assessments` - Log assessments (domain skills)
+- `plan-marshall:manage-findings:manage-findings assessment` - Log assessments (domain skills)
 
 **Spawns** (Complex Track):
 - `plan-marshall:detect-change-type-agent` (Step 4 - change type detection)

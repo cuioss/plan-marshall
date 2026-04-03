@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Finding and Q-Gate storage for plan-level artifacts.
+Finding, Q-Gate, and assessment storage for plan-level artifacts.
 
 Provides JSONL-based storage for:
 - Plan-scoped findings (long-lived, promotable)
 - Phase-scoped Q-Gate findings (per-phase, not promotable)
+- Plan-scoped assessments (component evaluations with certainty/confidence)
 
-Both share the same type taxonomy, resolution model, and severity values.
+Findings and Q-Gate share the same type taxonomy, resolution model, and severity values.
+Assessments use a separate certainty/confidence model.
 
 Storage:
 - Plan findings: .plan/plans/{plan_id}/artifacts/findings.jsonl
 - Q-Gate findings: .plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl
+- Assessments: .plan/plans/{plan_id}/artifacts/assessments.jsonl
 
 Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 """
@@ -376,3 +379,127 @@ def clear_qgate_findings(
     path.unlink()
 
     return {'status': 'success', 'phase': phase, 'cleared': cleared}
+
+
+# --- Assessment Constants ---
+
+CERTAINTY_VALUES = ['CERTAIN_INCLUDE', 'CERTAIN_EXCLUDE', 'UNCERTAIN']
+
+
+# --- Assessment Path Helper ---
+
+
+def get_assessments_path(plan_id: str) -> 'Path':
+    """Returns .plan/plans/{plan_id}/artifacts/assessments.jsonl"""
+    validate_plan_id(plan_id)
+    return get_artifact_path(plan_id, 'assessments.jsonl')
+
+
+# --- Assessment Operations ---
+
+
+def add_assessment(
+    plan_id: str,
+    file_path: str,
+    certainty: str,
+    confidence: int,
+    agent: str | None = None,
+    detail: str | None = None,
+    evidence: str | None = None,
+) -> dict[str, Any]:
+    """Add an assessment record."""
+    if certainty not in CERTAINTY_VALUES:
+        return {'status': 'error', 'message': f'Invalid certainty: {certainty}. Must be one of {CERTAINTY_VALUES}'}
+
+    if not 0 <= confidence <= 100:
+        return {'status': 'error', 'message': f'Invalid confidence: {confidence}. Must be 0-100'}
+
+    hash_id = generate_hash_id()
+    record = {
+        'hash_id': hash_id,
+        'timestamp': timestamp(),
+        'file_path': file_path,
+        'certainty': certainty,
+        'confidence': confidence,
+    }
+    if agent:
+        record['agent'] = agent
+    if detail:
+        record['detail'] = detail
+    if evidence:
+        record['evidence'] = evidence
+
+    append_jsonl(get_assessments_path(plan_id), record)
+
+    return {'status': 'success', 'hash_id': hash_id, 'file_path': file_path}
+
+
+def query_assessments(
+    plan_id: str,
+    certainty: str | None = None,
+    min_confidence: int | None = None,
+    max_confidence: int | None = None,
+    file_pattern: str | None = None,
+) -> dict[str, Any]:
+    """Query assessments with filters."""
+    path = get_assessments_path(plan_id)
+    records = read_jsonl(path)
+    total_count = len(records)
+
+    filtered = []
+    for r in records:
+        if certainty and r.get('certainty') != certainty:
+            continue
+        if min_confidence is not None and r.get('confidence', 0) < min_confidence:
+            continue
+        if max_confidence is not None and r.get('confidence', 100) > max_confidence:
+            continue
+        if file_pattern and not fnmatch(r.get('file_path', ''), file_pattern):
+            continue
+        filtered.append(r)
+
+    result = {
+        'status': 'success',
+        'plan_id': plan_id,
+        'total_count': total_count,
+        'filtered_count': len(filtered),
+        'assessments': filtered,
+        'file_paths': list({r.get('file_path') for r in filtered}),
+    }
+
+    return result
+
+
+def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any]:
+    """Get a single assessment by hash_id."""
+    path = get_assessments_path(plan_id)
+    for record in read_jsonl(path):
+        if record.get('hash_id') == hash_id:
+            return {'status': 'success', **record}
+    return {'status': 'error', 'message': f'Assessment not found: {hash_id}'}
+
+
+def clear_assessments(
+    plan_id: str,
+    agent: str | None = None,
+) -> dict[str, Any]:
+    """Clear assessment records, optionally filtered by agent."""
+    path = get_assessments_path(plan_id)
+    if not path.exists():
+        return {'status': 'success', 'cleared': 0}
+
+    records = read_jsonl(path)
+    original_count = len(records)
+
+    if agent:
+        remaining = [r for r in records if r.get('agent') != agent]
+        cleared = original_count - len(remaining)
+        ensure_parent_dir(path)
+        with open(path, 'w', encoding='utf-8') as f:
+            for record in remaining:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+    else:
+        cleared = original_count
+        path.unlink()
+
+    return {'status': 'success', 'cleared': cleared}

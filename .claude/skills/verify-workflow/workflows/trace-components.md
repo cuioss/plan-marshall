@@ -62,13 +62,13 @@ The conversation history only shows top-level component invocations. Skills load
 
 **Read the work.log:**
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {plan_id} --type work
 ```
 
 **Read the decision.log:**
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {plan_id} --type decision
 ```
 
@@ -152,7 +152,7 @@ For each script invocation found:
 | ID | Script | Notation | Called By |
 |----|--------|----------|-----------|
 | S1 | manage-config | plan-marshall:manage-config:manage-config | C3 |
-| S2 | manage-log | plan-marshall:manage-logging:manage-log | C5 |
+| S2 | manage-log | plan-marshall:manage-logging:manage-logging | C5 |
 | S3 | manage-solution-outline | plan-marshall:manage-solution-outline:manage-solution-outline | C4 |
 | S4 | manage-tasks | plan-marshall:manage-tasks:manage-tasks | C7 |
 ```
@@ -214,7 +214,7 @@ Plan ID: migrate-outputs-to-toon
 | ID | Script | Notation | Called By |
 |----|--------|----------|-----------|
 | S1 | manage-config | plan-marshall:manage-config:manage-config | C3 |
-| S2 | manage-log | plan-marshall:manage-logging:manage-log | C5 |
+| S2 | manage-log | plan-marshall:manage-logging:manage-logging | C5 |
 | S3 | manage-solution-outline | plan-marshall:manage-solution-outline:manage-solution-outline | C4 |
 | S4 | manage-tasks | plan-marshall:manage-tasks:manage-tasks | C7 |
 

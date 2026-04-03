@@ -11,37 +11,12 @@ Generic file operations for plan directories. Provides basic CRUD operations for
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse output for status and route accordingly.
+> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify .plan/ files directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations section
+**Skill-specific constraints:**
 - Do not pass absolute paths or `..` traversals in `--file` arguments
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files {command} {args}`
 - File paths are always relative to the plan directory
 - plan_id must be kebab-case format
-
-## What This Skill Provides
-
-- Generic file read/write/remove operations
-- Directory listing and creation
-- File existence checking
-- Plan directory create-or-reference (atomic check/create)
-- Minimal content validation (rejects empty content on write; no structural validation)
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Reading or writing arbitrary files in a plan directory
-- Creating subdirectories within a plan
-- Listing plan contents
-- Checking if files exist
-
-**Note**: For typed plan documents (`request.md`, `solution_outline.md`), use `plan-marshall:manage-plan-documents` instead. For domain-specific files (references.json, status.toon), use the dedicated manage-* skills.
-
----
 
 ## Storage Location
 
@@ -219,38 +194,6 @@ domain: java
 
 **Use case**: Called by plan-init to atomically check/create plan directories.
 
-### delete-plan
-
-Delete an entire plan directory. Used when user selects "Replace" for an existing plan during plan-init.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files delete-plan \
-  --plan-id {plan_id}
-```
-
-**Output** (TOON format):
-
-On success:
-```toon
-status: success
-plan_id: my-feature
-action: deleted
-path: /path/to/.plan/plans/my-feature
-files_removed: 5
-```
-
-On error (plan not found):
-```toon
-status: error
-plan_id: my-feature
-error: plan_not_found
-message: Plan directory does not exist: /path/to/.plan/plans/my-feature
-```
-
-**Use case**: Called by plan-init when user selects "Replace" to delete existing plan before creating new one. See `plan-marshall:phase-1-init/standards/plan-overwrite.md` for the full workflow.
-
-**Warning**: This recursively deletes the entire plan directory including all subdirectories (logs, tasks, work artifacts). There is no undo.
-
 ---
 
 ## Key Design Principles
@@ -276,23 +219,15 @@ message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 
 ## Error Responses
 
-All errors return TOON with `status: error` and exit code 1 (except `exists` which always exits 0).
+> See `plan-marshall:ref-manage-contract` for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|
 | `invalid_plan_id` | plan_id contains invalid characters (must be kebab-case) |
 | `file_not_found` | File does not exist (read, remove) |
-| `plan_not_found` | Plan directory does not exist (delete-plan) |
 | `missing_content` | Write called with empty or missing content |
 | `invalid_path` | Path contains `..` or absolute path components |
 | `permission_error` | File system permission denied |
-
-```toon
-status: error
-plan_id: my-plan
-error: file_not_found
-message: File does not exist: config.json
-```
 
 ---
 
@@ -300,7 +235,7 @@ message: File does not exist: config.json
 
 ### With Domain Skills
 
-Domain-specific skills (manage-references, manage-lifecycle) may use this skill for basic file operations, or import shared libraries directly.
+Domain-specific skills (manage-references, manage-status) may use this skill for basic file operations, or import shared libraries directly.
 
 ### With Orchestration Skills
 
@@ -313,7 +248,7 @@ Plan orchestration skills (plan-init, solution-outline, task-plan, plan-execute)
 | Skill | Manages | Use manage-files for |
 |-------|---------|---------------------|
 | manage-references | references.json | N/A (use manage-references) |
-| manage-lifecycle | status.toon | N/A (use manage-lifecycle) |
+| manage-status | status.json | N/A (use manage-status) |
 | manage-plan-documents | request.md | N/A (use manage-plan-documents) |
 | manage-solution-outline | solution_outline.md | N/A (use manage-solution-outline) |
 | manage-tasks | tasks/*.toon | N/A (use manage-tasks) |

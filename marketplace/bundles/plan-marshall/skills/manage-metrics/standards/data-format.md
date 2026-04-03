@@ -82,7 +82,7 @@ Duration is computed as wall-clock time from start/end timestamps and formatted 
 
 ## Valid Phase Names
 
-Must match `manage-lifecycle` phases exactly: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`.
+Must match `manage-status` phases exactly: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`.
 
 ## Token Data Sources
 
