@@ -4,34 +4,43 @@ PR Doctor utilities - handoff parsing and diagnostic report generation.
 
 Usage:
     pr_doctor.py parse-handoff --handoff <json>
+    pr_doctor.py diagnose --build-status <status> [options]
+    pr_doctor.py track-attempt --category <cat> --current <n>
     pr_doctor.py --help
 
 Subcommands:
     parse-handoff    Parse and validate handoff JSON, merge with explicit params
+    diagnose         Generate deterministic PR diagnostic report
+    track-attempt    Check if a fix attempt should proceed
 
 Examples:
     # Parse a handoff structure
     pr_doctor.py parse-handoff --handoff '{"artifacts":{"pr_number":123},"decisions":{"auto_fix":true}}'
 
-    # Parse with explicit overrides
-    pr_doctor.py parse-handoff --handoff '{"artifacts":{"pr_number":123}}' --pr 456 --checks build
+    # Diagnose PR issues
+    pr_doctor.py diagnose --build-status failure --build-failures '[{"step":"test","message":"3 failed"}]'
+
+    # Check attempt limit
+    pr_doctor.py track-attempt --category build --current 0
 """
 
-import argparse
-import json
 import sys
-from pathlib import Path
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import ErrorCode, load_config_file, make_error, parse_json_arg, safe_main  # type: ignore[import-not-found]
+from triage_helpers import (  # type: ignore[import-not-found]
+    create_workflow_cli,
+    load_skill_config,
+    make_error,
+    parse_json_arg,
+    print_toon,
+    safe_main,
+)
 
 # ============================================================================
 # CONFIGURATION (loaded from pr-doctor-config.json)
 # ============================================================================
 
-_CONFIG_FILE = Path(__file__).parent.parent / 'standards' / 'pr-doctor-config.json'
-_CONFIG = load_config_file(_CONFIG_FILE, 'pr-doctor-config.json')
+_CONFIG = load_skill_config(__file__, 'pr-doctor-config.json')
 
 # ============================================================================
 # HANDOFF SCHEMA
@@ -169,8 +178,7 @@ def check_attempt(category: str, current: int, max_attempts: int) -> dict[str, A
 def cmd_track_attempt(args):
     """Handle track-attempt subcommand."""
     result = check_attempt(args.category, args.current, args.max_attempts)
-    print(serialize_toon(result))
-    return 0
+    return print_toon(result)
 
 
 # ============================================================================
@@ -298,8 +306,7 @@ def cmd_diagnose(args):
         review_comments=review_comments,
         sonar_issues=sonar_issues,
     )
-    print(serialize_toon(result))
-    return 0
+    return print_toon(result)
 
 
 # ============================================================================
@@ -314,8 +321,7 @@ def cmd_parse_handoff(args):
         return rc
 
     if not isinstance(handoff, dict):
-        print(serialize_toon(make_error('Handoff must be a JSON object')))
-        return 1
+        return print_toon(make_error('Handoff must be a JSON object'))
 
     # Validate
     warnings = validate_handoff(handoff)
@@ -346,8 +352,7 @@ def cmd_parse_handoff(args):
         'status': 'success',
     }
 
-    print(serialize_toon(result))
-    return 0
+    return print_toon(result)
 
 
 # ============================================================================
@@ -357,9 +362,8 @@ def cmd_parse_handoff(args):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
+    parser = create_workflow_cli(
         description='PR Doctor utilities',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   pr_doctor.py diagnose --build-status failure --build-failures '[{"step":"test","message":"3 tests failed"}]'
@@ -367,36 +371,44 @@ Examples:
   pr_doctor.py parse-handoff --handoff '{"artifacts":{"pr_number":123}}'
   pr_doctor.py track-attempt --category build --current 0
 """,
+        subcommands=[
+            {
+                'name': 'track-attempt',
+                'help': 'Check if a fix attempt should proceed',
+                'handler': cmd_track_attempt,
+                'args': [
+                    {'flags': ['--category'], 'required': True, 'choices': ['build', 'reviews', 'sonar'], 'help': 'Fix category'},
+                    {'flags': ['--current'], 'type': int, 'required': True, 'help': 'Current attempt count (0-based)'},
+                    {'flags': ['--max-attempts'], 'type': int, 'default': DEFAULT_MAX_FIX_ATTEMPTS, 'help': 'Maximum attempts'},
+                ],
+            },
+            {
+                'name': 'diagnose',
+                'help': 'Generate deterministic PR diagnostic report',
+                'handler': cmd_diagnose,
+                'args': [
+                    {'flags': ['--build-status'], 'choices': ['success', 'failure'], 'help': 'Overall build status'},
+                    {'flags': ['--build-failures'], 'help': 'JSON array of build failure objects'},
+                    {'flags': ['--review-comments'], 'help': 'JSON array of unresolved review comments'},
+                    {'flags': ['--sonar-issues'], 'help': 'JSON array of Sonar issues'},
+                ],
+            },
+            {
+                'name': 'parse-handoff',
+                'help': 'Parse and validate handoff JSON',
+                'handler': cmd_parse_handoff,
+                'args': [
+                    {'flags': ['--handoff'], 'required': True, 'help': 'Handoff JSON string'},
+                    {'flags': ['--pr'], 'type': int, 'help': 'Override PR number'},
+                    {'flags': ['--checks'], 'choices': ['build', 'reviews', 'sonar', 'all'], 'help': 'Override checks'},
+                    {'flags': ['--auto-fix'], 'action': 'store_true', 'default': None, 'help': 'Override auto-fix'},
+                    {'flags': ['--wait'], 'action': 'store_true', 'default': None, 'help': 'Override wait for CI checks'},
+                    {'flags': ['--no-wait'], 'action': 'store_true', 'default': False, 'help': 'Skip waiting for CI checks'},
+                    {'flags': ['--max-fix-attempts'], 'type': int, 'help': 'Override max fix attempts'},
+                ],
+            },
+        ],
     )
-
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # track-attempt subcommand
-    attempt_parser = subparsers.add_parser('track-attempt', help='Check if a fix attempt should proceed')
-    attempt_parser.add_argument('--category', required=True, choices=['build', 'reviews', 'sonar'], help='Fix category')
-    attempt_parser.add_argument('--current', type=int, required=True, help='Current attempt count (0-based)')
-    attempt_parser.add_argument('--max-attempts', type=int, default=DEFAULT_MAX_FIX_ATTEMPTS, help='Maximum attempts')
-    attempt_parser.set_defaults(func=cmd_track_attempt)
-
-    # diagnose subcommand
-    diag_parser = subparsers.add_parser('diagnose', help='Generate deterministic PR diagnostic report')
-    diag_parser.add_argument('--build-status', choices=['success', 'failure'], help='Overall build status')
-    diag_parser.add_argument('--build-failures', help='JSON array of build failure objects')
-    diag_parser.add_argument('--review-comments', help='JSON array of unresolved review comments')
-    diag_parser.add_argument('--sonar-issues', help='JSON array of Sonar issues')
-    diag_parser.set_defaults(func=cmd_diagnose)
-
-    # parse-handoff subcommand
-    handoff_parser = subparsers.add_parser('parse-handoff', help='Parse and validate handoff JSON')
-    handoff_parser.add_argument('--handoff', required=True, help='Handoff JSON string')
-    handoff_parser.add_argument('--pr', type=int, help='Override PR number')
-    handoff_parser.add_argument('--checks', choices=['build', 'reviews', 'sonar', 'all'], help='Override checks')
-    handoff_parser.add_argument('--auto-fix', action='store_true', default=None, help='Override auto-fix')
-    handoff_parser.add_argument('--wait', action='store_true', default=None, help='Override wait for CI checks')
-    handoff_parser.add_argument('--no-wait', action='store_true', default=False, help='Skip waiting for CI checks')
-    handoff_parser.add_argument('--max-fix-attempts', type=int, help='Override max fix attempts')
-    handoff_parser.set_defaults(func=cmd_parse_handoff)
-
     args = parser.parse_args()
     return args.func(args)
 

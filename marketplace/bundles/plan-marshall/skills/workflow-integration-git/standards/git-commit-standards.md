@@ -2,6 +2,19 @@
 
 Standardized git commit format following conventional commits.
 
+## Table of Contents
+
+- [Commit Message Format](#commit-message-format)
+- [Commit Types](#commit-types)
+- [Examples](#examples)
+- [Key Practices](#key-practices)
+- [Subject Line Guidelines](#subject-line-guidelines)
+- [Body Guidelines](#body-guidelines)
+- [Footer Guidelines](#footer-guidelines)
+- [Scope Guidelines](#scope-guidelines)
+- [Anti-Patterns](#anti-patterns)
+- [Verify](#verify)
+
 ## Commit Message Format
 
 ```text

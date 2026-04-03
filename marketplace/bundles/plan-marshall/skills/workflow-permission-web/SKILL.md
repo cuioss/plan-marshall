@@ -25,12 +25,9 @@ Analyzes WebFetch domains across global and project settings, researches domains
 
 ## Parameters
 
-**scope** - Which settings to analyze (global/local/both, default: both). Controls which `--global-file` and `--local-file` arguments are passed to the `analyze` script:
-   - `global` → pass only `--global-file`
-   - `local` → pass only `--local-file`
-   - `both` → pass both `--global-file` and `--local-file`
-   - **Validation**: Must be one of: global, local, both
-   - **Error**: If invalid: "Invalid scope '{value}'. Must be: global, local, or both" and retry
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `scope` | string | no | both | Which settings to analyze: `global`, `local`, or `both`. Controls which `--global-file` and `--local-file` arguments are passed to the `analyze` script. |
 
 ## Usage Examples
 
@@ -116,7 +113,7 @@ SUSPICIOUS ({count}):
 
 ```
 WebFetch Permission Analysis
-========================================
+────────────────────────────────────────
 
 Global Settings:
 - WebFetch permissions: {count}
@@ -179,7 +176,7 @@ Display summary of changes made and final state:
 
 ```
 WebFetch Permission Update Complete
-========================================
+────────────────────────────────────────
 
 Statistics:
 - Domains analyzed: {domains_analyzed}
@@ -269,24 +266,6 @@ Domain categorization is data-driven — loaded from `standards/domain-lists.jso
 - **red_flag_patterns**: Regex patterns that flag suspicious domains
 
 To add or update domain categorization, edit `standards/domain-lists.json` instead of the script.
-
-## Critical Rules
-
-**Security:**
-- Always research unknown domains before approval
-- Flag suspicious domains for review
-- Check against red flags from standards
-
-**Consolidation:**
-- If domain:* exists, remove all specific domains
-- Move major/high-reach domains to global
-- Keep project-specific domains in local
-- Remove duplicates
-
-**User Control:**
-- Never auto-remove without user approval
-- Provide clear rationale for recommendations
-- Allow review mode for granular control
 
 ## Related
 

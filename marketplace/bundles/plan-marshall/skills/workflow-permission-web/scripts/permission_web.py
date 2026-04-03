@@ -5,11 +5,13 @@ WebFetch permission analysis - domain categorization, duplicate detection, and c
 Usage:
     permission_web.py analyze --global-file <path> --local-file <path>
     permission_web.py categorize --domains <json-array>
+    permission_web.py apply --file <path> [--add <json-array>] [--remove <json-array>]
     permission_web.py --help
 
 Subcommands:
     analyze        Analyze WebFetch permissions from settings files
     categorize     Categorize a list of domains against trusted/known lists
+    apply          Apply domain changes to a settings file (writes to disk)
 
 Examples:
     # Analyze global and local settings
@@ -17,26 +19,33 @@ Examples:
 
     # Categorize specific domains
     permission_web.py categorize --domains '["docs.oracle.com", "suspicious-site.xyz"]'
+
+    # Apply changes to settings
+    permission_web.py apply --file ~/.claude/settings.json --add '["docs.oracle.com"]' --remove '["old.com"]'
 """
 
-import argparse
 import json
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import ErrorCode, load_config_file, make_error, parse_json_arg, safe_main  # type: ignore[import-not-found]
+from triage_helpers import (  # type: ignore[import-not-found]
+    ErrorCode,
+    create_workflow_cli,
+    load_skill_config,
+    make_error,
+    parse_json_arg,
+    print_error,
+    print_toon,
+    safe_main,
+)
 
 # ============================================================================
 # DOMAIN KNOWLEDGE (loaded from domain-lists.json)
 # ============================================================================
 
-_DOMAIN_LISTS_FILE = Path(__file__).parent.parent / 'standards' / 'domain-lists.json'
-
-
-_DOMAIN_CONFIG = load_config_file(_DOMAIN_LISTS_FILE, 'domain-lists.json')
+_DOMAIN_CONFIG = load_skill_config(__file__, 'domain-lists.json')
 
 # Domains from trusted-domains.md — fully trusted, safe to recommend for global
 MAJOR_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('major_domains', []))
@@ -275,8 +284,7 @@ def cmd_analyze(args):
                 denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                print(serialize_toon(make_error(f'Invalid JSON in global settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(global_path))))
-                return 1
+                return print_error(f'Invalid JSON in global settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(global_path))
         else:
             stats['global_missing'] = True
 
@@ -291,8 +299,7 @@ def cmd_analyze(args):
                 denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                print(serialize_toon(make_error(f'Invalid JSON in local settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(local_path))))
-                return 1
+                return print_error(f'Invalid JSON in local settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(local_path))
         else:
             stats['local_missing'] = True
 
@@ -325,8 +332,7 @@ def cmd_analyze(args):
         'status': 'success',
     }
 
-    print(serialize_toon(result))
-    return 0
+    return print_toon(result)
 
 
 # ============================================================================
@@ -341,8 +347,7 @@ def cmd_categorize(args):
         return rc
 
     if not isinstance(domains, list):
-        print(serialize_toon(make_error('Input must be a JSON array')))
-        return 1
+        return print_error('Input must be a JSON array')
 
     categories = categorize_domains(domains)
     red_flags: dict[str, list[str]] = {}
@@ -359,8 +364,7 @@ def cmd_categorize(args):
         'status': 'success',
     }
 
-    print(serialize_toon(result))
-    return 0
+    return print_toon(result)
 
 
 # ============================================================================
@@ -378,6 +382,9 @@ def apply_recommendations(
     Reads the settings file, modifies the WebFetch permissions in
     ``permissions.allow``, and writes back. Does not touch other
     permission entries (Bash, Read, etc.) or other settings keys.
+
+    **Security note:** This function writes to the user's Claude settings file.
+    The caller (SKILL.md workflow Step 7) must obtain user approval before invoking.
 
     Args:
         settings_path: Path to settings.json file.
@@ -459,13 +466,11 @@ def cmd_apply(args):
             return rc
 
     if not add_domains and not remove_domains:
-        print(serialize_toon(make_error('At least one of --add or --remove is required', code=ErrorCode.INVALID_INPUT)))
-        return 1
+        return print_error('At least one of --add or --remove is required', code=ErrorCode.INVALID_INPUT)
 
     settings_path = Path(args.file).expanduser()
     result = apply_recommendations(settings_path, add_domains, remove_domains)
-    print(serialize_toon(result))
-    return 0 if result.get('status') == 'success' else 1
+    return print_toon(result)
 
 
 # ============================================================================
@@ -475,37 +480,42 @@ def cmd_apply(args):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
+    parser = create_workflow_cli(
         description='WebFetch permission analysis',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   permission_web.py analyze --global-file ~/.claude/settings.json --local-file .claude/settings.local.json
   permission_web.py categorize --domains '["docs.oracle.com", "unknown-site.xyz"]'
   permission_web.py apply --file ~/.claude/settings.json --add '["docs.oracle.com"]' --remove '["old.domain.com"]'
 """,
+        subcommands=[
+            {
+                'name': 'analyze',
+                'help': 'Analyze WebFetch permissions from settings',
+                'handler': cmd_analyze,
+                'args': [
+                    {'flags': ['--global-file'], 'help': 'Path to global settings.json'},
+                    {'flags': ['--local-file'], 'help': 'Path to local settings.local.json'},
+                ],
+            },
+            {
+                'name': 'categorize',
+                'help': 'Categorize domains',
+                'handler': cmd_categorize,
+                'args': [{'flags': ['--domains'], 'required': True, 'help': 'JSON array of domain strings'}],
+            },
+            {
+                'name': 'apply',
+                'help': 'Apply domain changes to a settings file',
+                'handler': cmd_apply,
+                'args': [
+                    {'flags': ['--file'], 'required': True, 'help': 'Path to settings.json file'},
+                    {'flags': ['--add'], 'help': 'JSON array of domains to add'},
+                    {'flags': ['--remove'], 'help': 'JSON array of domains to remove'},
+                ],
+            },
+        ],
     )
-
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # analyze subcommand
-    analyze_parser = subparsers.add_parser('analyze', help='Analyze WebFetch permissions from settings')
-    analyze_parser.add_argument('--global-file', help='Path to global settings.json')
-    analyze_parser.add_argument('--local-file', help='Path to local settings.local.json')
-    analyze_parser.set_defaults(func=cmd_analyze)
-
-    # categorize subcommand
-    cat_parser = subparsers.add_parser('categorize', help='Categorize domains')
-    cat_parser.add_argument('--domains', required=True, help='JSON array of domain strings')
-    cat_parser.set_defaults(func=cmd_categorize)
-
-    # apply subcommand
-    apply_parser = subparsers.add_parser('apply', help='Apply domain changes to a settings file')
-    apply_parser.add_argument('--file', required=True, help='Path to settings.json file')
-    apply_parser.add_argument('--add', help='JSON array of domains to add')
-    apply_parser.add_argument('--remove', help='JSON array of domains to remove')
-    apply_parser.set_defaults(func=cmd_apply)
-
     args = parser.parse_args()
     return args.func(args)
 

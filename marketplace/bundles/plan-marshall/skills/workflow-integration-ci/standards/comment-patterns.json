@@ -1,5 +1,7 @@
 {
+  "_note": "Regex patterns for PR comment classification. Pre-compiled at import time by pr.py.",
   "thresholds": {
+    "_rationale": "substantial_comment_length (100): below this, comments without keyword matches are typically drive-by acknowledgments. context_match_min_length (20): below this, comments are too short to contain meaningful code references for context matching.",
     "substantial_comment_length": 100,
     "context_match_min_length": 20
   },

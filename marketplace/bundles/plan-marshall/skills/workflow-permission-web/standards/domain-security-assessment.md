@@ -2,6 +2,18 @@
 
 Security evaluation criteria and risk indicators for assessing domain trustworthiness when managing WebFetch permissions.
 
+## Quick Assessment Checklist
+
+For routine domain categorization (most invocations), use this abbreviated checklist:
+
+1. **Check trusted lists** — Is the domain in `domain-lists.json`? If yes → approved.
+2. **Check red flags** — Does the domain match any pattern in `domain-lists.json` red_flags? If yes → flag for review.
+3. **Basic web search** — `WebSearch: "domain-name.com reputation security"`. Any malware/phishing reports? If yes → reject.
+4. **Verify HTTPS** — Does the domain support HTTPS? If no → reject.
+5. **Assess purpose** — Is the domain relevant to software development? If no → defer to user.
+
+For deep research on ambiguous domains, see the full methodology below.
+
 ## Security Red Flags
 
 ### High-Risk Indicators

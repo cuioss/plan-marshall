@@ -1,25 +1,73 @@
 #!/usr/bin/env python3
 """
-Shared helpers for workflow scripts (pr.py, sonar.py, git_workflow.py).
+Shared helpers for workflow scripts (pr.py, sonar.py, git_workflow.py, pr_doctor.py, permission_web.py).
 
 Provides:
-- Triage command handlers (single-item and batch) for JSON→TOON workflows
-- safe_main wrapper for consistent error handling across all workflow scripts
-- Error code taxonomy for cross-skill error propagation
-- Priority calculation utility for severity/boost workflows
+- ``print_toon`` / ``print_error`` — output helpers replacing repetitive print+serialize+return patterns
+- ``safe_main`` — wrapper for consistent error handling across all workflow scripts
+- ``ErrorCode`` / ``make_error`` — error code taxonomy for cross-skill error propagation
+- ``load_skill_config`` — standardized config loading from skill standards directories
+- ``create_workflow_cli`` — argparse boilerplate reduction for subcommand-based scripts
+- ``cmd_triage_single`` / ``cmd_triage_batch_handler`` — triage command handlers for JSON→TOON workflows
+- ``calculate_priority`` — priority calculation utility for severity/boost workflows (used by sonar.py)
+- ``is_test_file`` — test file detection across languages (used by sonar.py, git_workflow.py)
 
 Usage:
-    from triage_helpers import cmd_triage_single, cmd_triage_batch_handler, safe_main
-    from triage_helpers import ErrorCode, make_error, calculate_priority
+    from triage_helpers import print_toon, print_error, safe_main, create_workflow_cli
+    from triage_helpers import ErrorCode, make_error, load_skill_config
 """
 
+import argparse
 import json
 import sys
+import traceback as tb_module
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+__all__ = [
+    # Error handling
+    'ErrorCode', 'make_error',
+    # Output helpers
+    'print_toon', 'print_error',
+    # Main wrapper
+    'safe_main',
+    # JSON/config loading
+    'parse_json_arg', 'load_config_file', 'load_skill_config',
+    # CLI construction
+    'create_workflow_cli',
+    # Priority
+    'calculate_priority', 'PRIORITY_LEVELS',
+    # Test detection
+    'is_test_file',
+    # Triage handlers
+    'cmd_triage_single', 'cmd_triage_batch_handler',
+    # Type definitions
+    'TriageResult',
+]
+
+
+# ============================================================================
+# TYPE DEFINITIONS
+# ============================================================================
+
+
+class TriageResult(TypedDict, total=False):
+    """Expected return shape for triage callback functions.
+
+    Used by ``cmd_triage_single`` and ``cmd_triage_batch_handler`` callbacks.
+    The ``action`` and ``status`` fields are required; all others are optional
+    and vary by domain (CI comments, Sonar issues, etc.).
+    """
+
+    action: str       # Required: 'code_change', 'explain', 'ignore', 'fix', 'suppress'
+    status: str       # Required: 'success' or 'failure'
+    reason: str
+    priority: str
+    suggested_implementation: str | None
+    suppression_string: str | None
 
 
 # ============================================================================
@@ -31,11 +79,19 @@ class ErrorCode:
     """Standardized error codes for cross-skill error propagation.
 
     Used by workflow skills (pr-doctor, integration-ci, integration-sonar,
-    integration-git) to enable consistent error routing across orchestration
-    layers without string matching on error messages.
+    integration-git, permission-web) to enable consistent error routing across
+    orchestration layers without string matching on error messages.
+
+    Semantic guidelines:
+    - ``NOT_FOUND``: A requested resource (file, PR, directory) does not exist.
+    - ``INVALID_INPUT``: Input data has the wrong shape or type (not a parsing failure).
+    - ``PARSE_ERROR``: JSON/TOON/config parsing failed (malformed syntax).
+    - ``FETCH_FAILURE``: A configured provider returned an error during data retrieval.
+    - ``PROVIDER_NOT_CONFIGURED``: No CI/MCP provider is set up at all.
     """
 
     PROVIDER_NOT_CONFIGURED = 'PROVIDER_NOT_CONFIGURED'
+    FETCH_FAILURE = 'FETCH_FAILURE'
     MCP_UNAVAILABLE = 'MCP_UNAVAILABLE'
     TIMEOUT = 'TIMEOUT'
     INVALID_INPUT = 'INVALID_INPUT'
@@ -66,11 +122,35 @@ def make_error(message: str, *, code: str | None = None, **extra: Any) -> dict[s
     return result
 
 
+# ============================================================================
+# OUTPUT HELPERS
+# ============================================================================
+
+
+def print_toon(result: dict[str, Any]) -> int:
+    """Serialize a result dict to TOON, print it, and return an exit code.
+
+    Returns 0 if ``result['status'] == 'success'``, 1 otherwise.
+    Replaces the repetitive ``print(serialize_toon(result)); return 0/1`` pattern.
+    """
+    print(serialize_toon(result))
+    return 0 if result.get('status') == 'success' else 1
+
+
+def print_error(message: str, *, code: str | None = None, **extra: Any) -> int:
+    """Shortcut: create an error payload, print it as TOON, and return 1.
+
+    Replaces the triple: ``print(serialize_toon(make_error(...))); return 1``.
+    """
+    return print_toon(make_error(message, code=code, **extra))
+
+
 def safe_main(main_fn: Callable[[], int]) -> int:
     """Wrap a script's main() to catch unhandled exceptions and emit TOON failure.
 
     Ensures all workflow scripts produce structured TOON output even on
-    unexpected errors, instead of raw tracebacks.
+    unexpected errors, instead of raw tracebacks. The full traceback is
+    included in the TOON payload for debugging.
 
     Usage::
 
@@ -83,7 +163,10 @@ def safe_main(main_fn: Callable[[], int]) -> int:
         # Let argparse --help / missing-arg exits pass through
         raise e
     except Exception as e:
-        print(serialize_toon(make_error(f'Unexpected error: {e}')))
+        print(serialize_toon(make_error(
+            f'Unexpected error: {e}',
+            traceback=tb_module.format_exc(),
+        )))
         return 1
 
 
@@ -143,6 +226,24 @@ def load_config_file(path: Path, description: str = 'config') -> dict[str, Any]:
         return {}
 
 
+def load_skill_config(script_file: str, config_name: str) -> dict[str, Any]:
+    """Load a JSON config from the skill's standards directory.
+
+    Computes the standard path: ``<script_dir>/../standards/<config_name>``
+    and delegates to ``load_config_file``. All workflow scripts follow this
+    directory convention.
+
+    Args:
+        script_file: The ``__file__`` of the calling script.
+        config_name: Config filename (e.g., 'sonar-rules.json').
+
+    Returns:
+        Parsed dict, or empty dict if loading failed.
+    """
+    config_path = Path(script_file).parent.parent / 'standards' / config_name
+    return load_config_file(config_path, config_name)
+
+
 # ============================================================================
 # PRIORITY CALCULATION
 # ============================================================================
@@ -155,8 +256,9 @@ _PRIORITY_INDEX = {level: i for i, level in enumerate(PRIORITY_LEVELS)}
 def calculate_priority(base_priority: str, boost: int = 0) -> str:
     """Calculate final priority by applying a boost to a base level.
 
-    Shared by sonar.py (severity + type boost) and pr_doctor.py (category
-    aggregation). Clamps the result to the valid priority range.
+    Primary consumer: ``sonar.py`` (severity + type boost via
+    ``calculate_sonar_priority``). Available for other workflow scripts
+    that need priority escalation/de-escalation arithmetic.
 
     Args:
         base_priority: Starting priority ('low', 'medium', 'high', 'critical').
@@ -174,9 +276,9 @@ def calculate_priority(base_priority: str, boost: int = 0) -> str:
 # TEST FILE DETECTION
 # ============================================================================
 
-# Consolidated test-file detection patterns used by sonar.py (suppression rules)
-# and git_workflow.py (diff analysis). Covers Java, Python, JavaScript/TypeScript,
+# Consolidated test-file detection patterns. Covers Java, Python, JavaScript/TypeScript,
 # Go, and generic test directory conventions.
+# Consumers: sonar.py (suppression rules for test files), git_workflow.py (diff analysis).
 _TEST_DIR_SEGMENTS = ('/test/', '/tests/', '/__tests__/')
 _TEST_SUFFIXES = (
     'Test.java', 'Tests.java', 'IT.java',           # Java (JUnit)
@@ -229,12 +331,10 @@ def cmd_triage_single(json_str: str, triage_fn: Callable[[dict], dict]) -> int:
     try:
         item = json.loads(json_str)
     except json.JSONDecodeError as e:
-        print(serialize_toon(make_error(f'Invalid JSON input: {e}')))
-        return 1
+        return print_error(f'Invalid JSON input: {e}')
 
     result = triage_fn(item)
-    print(serialize_toon(result))
-    return 0 if result.get('status') == 'success' else 1
+    return print_toon(result)
 
 
 def cmd_triage_batch_handler(
@@ -262,13 +362,86 @@ def cmd_triage_batch_handler(
         return 1
 
     if not isinstance(items, list):
-        print(serialize_toon(make_error('Input must be a JSON array')))
-        return 1
+        return print_error('Input must be a JSON array')
 
-    results = [triage_fn(item) for item in items]
-    summary: dict[str, Any] = {'total': len(results)}
+    results: list[dict[str, Any]] = []
+    failed = 0
+    for item in items:
+        try:
+            results.append(triage_fn(item))
+        except Exception as e:
+            failed += 1
+            item_id = item.get('id', item.get('key', 'unknown')) if isinstance(item, dict) else 'unknown'
+            results.append({
+                'item_id': item_id,
+                'action': 'error',
+                'reason': f'Triage failed: {e}',
+                'status': 'failure',
+            })
+
+    summary: dict[str, Any] = {'total': len(results), 'failed': failed}
     for category in action_categories:
-        summary[category] = sum(1 for r in results if r['action'] == category)
+        summary[category] = sum(1 for r in results if r.get('action') == category)
 
-    print(serialize_toon({'results': results, 'summary': summary, 'status': 'success'}))
-    return 0
+    return print_toon({'results': results, 'summary': summary, 'status': 'success'})
+
+
+# ============================================================================
+# CLI CONSTRUCTION
+# ============================================================================
+
+
+def create_workflow_cli(
+    description: str,
+    epilog: str,
+    subcommands: list[dict[str, Any]],
+) -> argparse.ArgumentParser:
+    """Create a standardized argparse parser for workflow scripts.
+
+    Reduces the ~20-line boilerplate that every workflow script duplicates:
+    ArgumentParser → add_subparsers → per-subcommand setup → set_defaults(func=...).
+
+    Args:
+        description: Parser description.
+        epilog: Examples text for --help output.
+        subcommands: List of dicts, each with:
+            - ``name`` (str): Subcommand name (e.g., 'triage').
+            - ``help`` (str): Subcommand help text.
+            - ``handler`` (Callable): Function to call for this subcommand.
+            - ``args`` (list[dict]): Argument definitions, each with:
+                - ``flags`` (list[str]): Argument flags (e.g., ['--issue']).
+                - Plus any kwargs for ``add_argument`` (type, required, help, etc.).
+
+    Returns:
+        Configured ArgumentParser. Call ``parser.parse_args()`` then ``args.func(args)``.
+
+    Example::
+
+        parser = create_workflow_cli(
+            description='Sonar workflow operations',
+            epilog='  sonar.py triage --issue ...',
+            subcommands=[{
+                'name': 'triage',
+                'help': 'Triage a single Sonar issue',
+                'handler': cmd_triage,
+                'args': [{'flags': ['--issue'], 'required': True, 'help': 'JSON issue data'}],
+            }],
+        )
+        args = parser.parse_args()
+        return args.func(args)
+    """
+    parser = argparse.ArgumentParser(
+        description=description,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog,
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    for cmd in subcommands:
+        sub = subparsers.add_parser(cmd['name'], help=cmd['help'])
+        for arg_def in cmd.get('args', []):
+            flags = arg_def.pop('flags')
+            sub.add_argument(*flags, **arg_def)
+        sub.set_defaults(func=cmd['handler'])
+
+    return parser

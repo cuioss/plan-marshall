@@ -1,4 +1,5 @@
 {
+  "_note": "PR Doctor configuration. Externalized as JSON for consistency with other workflow skills' data-driven pattern, even though the settings are few. build_step_severity maps CI step names to issue severity — compile/test failures block everything (high), lint/style are less urgent (medium).",
   "build_step_severity": {
     "compile": "high",
     "build": "high",

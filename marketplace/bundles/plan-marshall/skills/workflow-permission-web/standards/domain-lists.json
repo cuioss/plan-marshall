@@ -1,4 +1,5 @@
 {
+  "_note": "Source of truth for domain categorization in permission_web.py. The companion trusted-domains.md provides human-readable documentation and must be kept in sync manually when domains are added or removed.",
   "major_domains": [
     "docs.anthropic.com",
     "code.claude.com",

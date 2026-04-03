@@ -26,10 +26,10 @@ Uses `triage_helpers` from `ref-toon-format` for error codes and TOON serializat
 
 ## Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `message` | optional | Custom commit message (auto-generated from diff if omitted) |
-| `push` | optional | Push to remote after committing (default: false) |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `message` | string | no | auto-generate from diff | Custom commit message |
+| `push` | bool | no | false | Push to remote after committing |
 
 ### Commit Standards
 
@@ -37,7 +37,7 @@ Format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md`
 
 ## Prerequisites
 
-No external skill dependencies. Uses `triage_helpers` from `ref-toon-format` for error handling and TOON serialization.
+No external skill dependencies. Uses `triage_helpers` from `ref-toon-format` (see `ref-workflow-architecture` → "Shared Infrastructure" for the full API table).
 
 ## Usage Examples
 
@@ -253,7 +253,7 @@ status: success
 
 ## Related
 
-Orchestrated by `plan-marshall:workflow-pr-doctor` alongside `workflow-integration-ci` and `workflow-integration-sonar`.
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation.
 
 ## References
 

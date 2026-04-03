@@ -182,6 +182,53 @@ user-invocable: false
 
 ---
 
+## Workflow Skill Orchestration
+
+The PR doctor orchestrates three integration workflow skills plus supporting skills:
+
+```
+/workflow-pr-doctor (orchestrator, user-invocable)
+  ├─> workflow-integration-ci    (PR review comment fetch & triage)
+  │     └─> tools-integration-ci (provider abstraction: GitHub/GitLab)
+  ├─> workflow-integration-sonar (Sonar issue fetch & triage)
+  ├─> workflow-integration-git   (commit formatting, artifact cleanup)
+  ├─> manage-architecture        (build command resolution — on-demand for BUILD_FAILURE)
+  └─> manage-findings            (Q-Gate findings — on-demand for Automated Review mode)
+```
+
+`workflow-permission-web` is a standalone user-invocable skill (not part of the PR doctor flow).
+
+### Shared Infrastructure
+
+All workflow scripts share `triage_helpers` from `ref-toon-format` (`marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts/triage_helpers.py`):
+
+| Helper | Purpose | Consumers |
+|--------|---------|-----------|
+| `print_toon` / `print_error` | Output serialization + exit code | All 5 scripts |
+| `safe_main` | Exception-to-TOON wrapper | All 5 scripts |
+| `create_workflow_cli` | Argparse boilerplate reduction | All 5 scripts |
+| `load_skill_config` | Standards directory config loading | All 5 scripts |
+| `ErrorCode` / `make_error` | Structured error taxonomy | All 5 scripts |
+| `cmd_triage_single` / `cmd_triage_batch_handler` | Triage command handlers | pr.py, sonar.py |
+| `calculate_priority` | Priority escalation arithmetic | sonar.py |
+| `is_test_file` | Cross-language test file detection | sonar.py, git_workflow.py |
+
+### Triage Override Guidance
+
+The triage scripts use regex pattern matching (CI comments) or rule-based classification (Sonar issues) and will sometimes misclassify nuanced inputs. When the script's `action` or `priority` doesn't match the semantic intent, override it. Use the script result as a starting point, not a final answer. Document overrides in the commit message or suppression comment.
+
+### Common Error Handling Patterns
+
+| Pattern | When to Apply |
+|---------|--------------|
+| Report error with stderr details, do not proceed | Script returns `status: failure` for a blocking operation (CI status, fetch) |
+| Log warning, skip item, continue remaining | Non-critical per-item failure in batch processing (triage, thread-reply) |
+| Ask user via `AskUserQuestion` (continue/skip/abort) | Timeout, missing file, or ambiguous state requiring human judgment |
+| Report remaining issues, stop looping | `max-fix-attempts` reached for a category |
+| Never force-push as fallback | Push failure — report error and stop |
+
+---
+
 ## Standards Documents
 
 Load on-demand based on what aspect of the architecture you need to understand:

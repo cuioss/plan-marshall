@@ -22,14 +22,14 @@ Handles PR review comment workflows - fetching comments and triaging them into a
 
 ## Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `pr` | optional | PR number (auto-detects current branch's PR if omitted) |
-| `unresolved-only` | optional | Only return unresolved comments (fetch-comments) |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `pr` | int | no | auto-detect | PR number (auto-detects current branch's PR if omitted) |
+| `unresolved-only` | bool | no | false | Only return unresolved comments (fetch-comments) |
 
 ### Shared Infrastructure
 
-Uses `triage_helpers` from `ref-toon-format` for triage handlers, error codes, and TOON serialization.
+Uses `triage_helpers` from `ref-toon-format` (see `ref-workflow-architecture` → "Shared Infrastructure" for the full API table).
 
 ## Prerequisites
 
@@ -62,12 +62,6 @@ workflow-integration-ci (PR comment workflow)
   ├─> tools-integration-ci (provider abstraction: GitHub/GitLab)
   └─> triage_helpers (ref-toon-format) — shared triage, error handling
 ```
-
-### Internal Dependencies
-
-The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `tools-integration-ci` (via PYTHONPATH). This creates a compile-time dependency on those modules' internal API (`get_provider()`, `view_pr_data()`, `fetch_pr_comments_data()`). If `tools-integration-ci` refactors these functions, `pr.py` must be updated in lockstep. The provider contract is validated at import time.
-
-> **Design note:** This skill uses direct Python imports for provider abstraction (code-level coupling), unlike `workflow-integration-sonar` and `workflow-permission-web` which use data-driven JSON config files. The import approach was chosen because CI provider logic requires function-level abstraction (GitHub vs GitLab APIs), not just data-driven classification.
 
 ## Workflows
 
@@ -254,25 +248,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
 
 ## Comment Classification
 
-Classification patterns are data-driven — loaded from `standards/comment-patterns.json`:
+Classification patterns are data-driven — loaded from `standards/comment-patterns.json`. Key principle: classification priority is code_change > ignore > explain, so actionable content always wins (e.g., "LGTM, but please fix the typo" → `code_change`). To add or update patterns, edit `standards/comment-patterns.json` instead of the script.
 
-| Pattern | Action | Priority |
-|---------|--------|----------|
-| security, vulnerability, injection | code_change | high |
-| bug, error, fix, broken | code_change | high |
-| please add/remove/change | code_change | medium |
-| rename, variable name, typo | code_change | low |
-| nit:, nitpick: | code_change | low |
-| why, explain, reasoning, ? | explain | low |
-| lgtm, approved, looks good | ignore | none |
-
-To add or update comment classification patterns, edit `standards/comment-patterns.json` instead of the script.
-
-## Triage Override Guidance
-
-The script triage uses regex pattern matching and will sometimes misclassify nuanced comments. When the script's `action` or `priority` doesn't match the semantic intent of the comment, override it. For example, "Why did you fix it this way?" semantically asks for an explanation even though it contains the word "fix". Use the script result as a starting point, not a final answer.
-
-Note: The classification priority is code_change > ignore > explain. This means actionable content always wins — "LGTM, but please fix the typo" is classified as `code_change`, not `ignore`.
+For triage override guidance, see `ref-workflow-architecture` → "Triage Override Guidance".
 
 ## Error Handling
 
@@ -286,4 +264,4 @@ Error codes follow the shared `ErrorCode` enum from `triage_helpers` (`NOT_FOUND
 
 ## Related
 
-Orchestrated by `plan-marshall:workflow-pr-doctor` alongside `workflow-integration-sonar` and `workflow-integration-git`.
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation.

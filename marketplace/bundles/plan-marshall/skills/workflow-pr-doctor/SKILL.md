@@ -35,18 +35,31 @@ Diagnose and fix pull request issues with parameterized checks.
 | `handoff` | optional | Handoff structure from previous phase (JSON, see schema below) |
 | `max-fix-attempts` | optional | Maximum fix-verify-commit cycles before giving up (default: 3) |
 
+## Mode Selection
+
+This skill operates in two modes based on invocation context:
+
+| Mode | Trigger | Steps |
+|------|---------|-------|
+| **Interactive** (default) | `/workflow-pr-doctor` or explicit parameters | Steps 0-7 below |
+| **Automated Review Lifecycle** | phase-6-finalize handoff with `decisions.automated_review: true` | See `standards/automated-review-lifecycle.md` |
+
 ## Prerequisites
 
-Load required skills:
+Always loaded:
 ```
 Skill: plan-marshall:workflow-integration-ci
 Skill: plan-marshall:workflow-integration-sonar
 Skill: plan-marshall:workflow-integration-git
-Skill: plan-marshall:manage-architecture
-Skill: plan-marshall:manage-findings
 ```
 
-The `manage-architecture` skill is needed for Step 5 (BUILD_FAILURE) to resolve build commands via the architecture API. The `manage-findings` skill is needed by the Automated Review Lifecycle mode (Step 5 `code_change` actions persist as Q-Gate findings).
+Loaded on-demand (only when the specific check requires them):
+```
+Skill: plan-marshall:manage-architecture    # Step 5 BUILD_FAILURE only
+Skill: plan-marshall:manage-findings        # Automated Review Lifecycle mode only
+```
+
+For orchestration context and shared infrastructure, see `ref-workflow-architecture` → "Workflow Skill Orchestration".
 
 ## Workflow
 
@@ -130,9 +143,9 @@ Based on `checks` parameter:
 ### Step 4: Generate Diagnostic Report
 
 ```
-═══════════════════════════════════════════════
+────────────────────────────────────────────────
 PR Diagnostic Report: #{pr}
-═══════════════════════════════════════════════
+────────────────────────────────────────────────
 
 Build Status: {PASS|FAIL}
 Review Comments: {count} unresolved
@@ -336,9 +349,4 @@ All workflow scripts share `triage_helpers` from `ref-toon-format` for JSON pars
 
 ## Related
 
-| Skill | Purpose |
-|-------|---------|
-| `plan-marshall:workflow-integration-ci` | PR review comment handling |
-| `plan-marshall:workflow-integration-sonar` | Sonar quality issue handling |
-| `plan-marshall:workflow-integration-git` | Git commit workflow |
-| `plan-marshall:task-standalone` | Implement tasks before PR |
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation.

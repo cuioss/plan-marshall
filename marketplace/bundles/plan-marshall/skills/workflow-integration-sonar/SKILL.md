@@ -23,12 +23,12 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 ## Parameters
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `project` | required | SonarQube project key |
-| `pr` | optional | Pull request ID |
-| `severities` | optional | Filter by severity (comma-separated: BLOCKER,CRITICAL,MAJOR,MINOR,INFO) |
-| `types` | optional | Filter by type (comma-separated: BUG,CODE_SMELL,VULNERABILITY) |
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `project` | string | yes | — | SonarQube project key |
+| `pr` | string | no | auto-detect | Pull request ID |
+| `severities` | string | no | all | Filter by severity (comma-separated: BLOCKER,CRITICAL,MAJOR,MINOR,INFO) |
+| `types` | string | no | all | Filter by type (comma-separated: BUG,CODE_SMELL,VULNERABILITY) |
 
 ## What This Skill Provides
 
@@ -68,10 +68,10 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
    Call the SonarQube MCP tool directly with the assembled parameters.
    The tool name is configured in `marshal.json` under `sonar.mcp_tool_name`
-   (default: `mcp__sonarqube__search_sonar_issues_in_projects`). If the
-   connected MCP server uses a different tool name, update `marshal.json`
-   rather than editing this skill. Discover available tools via MCP tool
-   listing if the configured name fails.
+   (default: `mcp__sonarqube__search_sonar_issues_in_projects`). The example
+   below uses `{sonar_mcp_tool_name}` as a placeholder — resolve the actual
+   name from `marshal.json` at runtime. If the configured name fails, discover
+   available tools via MCP tool listing.
 
    ```
    {sonar_mcp_tool_name}(
@@ -251,9 +251,7 @@ Triage rules are data-driven — loaded from `standards/sonar-rules.json`:
 
 To add or update Sonar rule handling, edit `standards/sonar-rules.json` instead of the script.
 
-## Triage Override Guidance
-
-The script triage is rule-based and handles common Sonar rules well, but novel or project-specific rules may get a default "fix" action when suppression is more appropriate (or vice versa). When you have context about the codebase that the script lacks — such as knowing a field is used via reflection, or that a pattern is intentional — override the script's decision and document your reasoning in the suppression comment or commit message.
+For triage override guidance, see `ref-workflow-architecture` → "Triage Override Guidance".
 
 ## Error Handling
 
@@ -268,4 +266,4 @@ The script triage is rule-based and handles common Sonar rules well, but novel o
 
 ## Related
 
-Orchestrated by `plan-marshall:workflow-pr-doctor` alongside `workflow-integration-ci` and `workflow-integration-git`.
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation.

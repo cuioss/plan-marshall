@@ -19,19 +19,16 @@ Examples:
     sonar.py triage-batch --issues '[{"key":"I1","rule":"java:S1234",...}, ...]'
 """
 
-import argparse
-import json
 import sys
-from pathlib import Path
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     calculate_priority,
     cmd_triage_batch_handler,
     cmd_triage_single,
+    create_workflow_cli,
     is_test_file,
-    load_config_file,
+    load_skill_config,
     safe_main,
 )
 
@@ -40,10 +37,7 @@ from triage_helpers import (  # type: ignore[import-not-found]
 # TRIAGE CONFIGURATION (loaded from sonar-rules.json)
 # ============================================================================
 
-_RULES_FILE = Path(__file__).parent.parent / 'standards' / 'sonar-rules.json'
-
-
-_RULES_CONFIG = load_config_file(_RULES_FILE, 'sonar-rules.json')
+_RULES_CONFIG = load_skill_config(__file__, 'sonar-rules.json')
 
 SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
 
@@ -181,28 +175,28 @@ def cmd_triage_batch(args):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
+    parser = create_workflow_cli(
         description='Sonar workflow operations',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234"}'
   sonar.py triage-batch --issues '[{"key":"I1","rule":"java:S1234"}, ...]'
 """,
+        subcommands=[
+            {
+                'name': 'triage',
+                'help': 'Triage a single Sonar issue',
+                'handler': cmd_triage,
+                'args': [{'flags': ['--issue'], 'required': True, 'help': 'JSON string with issue data'}],
+            },
+            {
+                'name': 'triage-batch',
+                'help': 'Triage multiple Sonar issues at once',
+                'handler': cmd_triage_batch,
+                'args': [{'flags': ['--issues'], 'required': True, 'help': 'JSON array of issue objects'}],
+            },
+        ],
     )
-
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # triage subcommand
-    triage_parser = subparsers.add_parser('triage', help='Triage a single Sonar issue')
-    triage_parser.add_argument('--issue', required=True, help='JSON string with issue data')
-    triage_parser.set_defaults(func=cmd_triage)
-
-    # triage-batch subcommand
-    batch_parser = subparsers.add_parser('triage-batch', help='Triage multiple Sonar issues at once')
-    batch_parser.add_argument('--issues', required=True, help='JSON array of issue objects')
-    batch_parser.set_defaults(func=cmd_triage_batch)
-
     args = parser.parse_args()
     return args.func(args)
 

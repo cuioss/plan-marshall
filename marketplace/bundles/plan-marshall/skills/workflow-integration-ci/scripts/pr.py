@@ -24,20 +24,20 @@ Examples:
     pr.py triage --comment '{"id":"C1","body":"Please fix this","path":"src/Main.java","line":42}'
 """
 
-import argparse
 import json
 import re
 import sys
-from pathlib import Path
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     cmd_triage_batch_handler,
     cmd_triage_single,
-    load_config_file,
+    create_workflow_cli,
+    load_skill_config,
     make_error,
+    print_error,
+    print_toon,
     safe_main,
 )
 
@@ -45,14 +45,26 @@ from triage_helpers import (  # type: ignore[import-not-found]
 # TRIAGE CONFIGURATION (loaded from comment-patterns.json)
 # ============================================================================
 
-_PATTERNS_FILE = Path(__file__).parent.parent / 'standards' / 'comment-patterns.json'
-
-PATTERNS: dict[str, Any] = load_config_file(_PATTERNS_FILE, 'comment-patterns.json')
+PATTERNS: dict[str, Any] = load_skill_config(__file__, 'comment-patterns.json')
 
 # Configurable thresholds (from comment-patterns.json or defaults)
 _THRESHOLDS = PATTERNS.get('thresholds', {})
 SUBSTANTIAL_COMMENT_LENGTH: int = _THRESHOLDS.get('substantial_comment_length', 100)
 CONTEXT_MATCH_MIN_LENGTH: int = _THRESHOLDS.get('context_match_min_length', 20)
+
+# Pre-compile regex patterns at load time to catch malformed patterns early
+# and avoid repeated compilation per classify_comment() call.
+_COMPILED_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {}
+for _category in ('code_change', 'explain', 'ignore'):
+    _COMPILED_PATTERNS[_category] = {}
+    for _priority, _pattern_list in PATTERNS.get(_category, {}).items():
+        compiled = []
+        for _p in _pattern_list:
+            try:
+                compiled.append(re.compile(_p))
+            except re.error as _e:
+                print(f'WARNING: Invalid regex in comment-patterns.json [{_category}][{_priority}]: {_p} — {_e}', file=sys.stderr)
+        _COMPILED_PATTERNS[_category][_priority] = compiled
 
 
 # ============================================================================
@@ -63,6 +75,10 @@ CONTEXT_MATCH_MIN_LENGTH: int = _THRESHOLDS.get('context_match_min_length', 20)
 # provider module to use, then imports the data-returning functions directly.
 # This avoids the previous subprocess chain (executor → pr.py → executor → ci.py)
 # while maintaining provider abstraction.
+#
+# Import coupling: This creates a compile-time dependency on tools-integration-ci
+# modules' internal API (get_provider(), view_pr_data(), fetch_pr_comments_data()).
+# If tools-integration-ci refactors these functions, pr.py must be updated in lockstep.
 
 
 def _get_provider_module():
@@ -130,7 +146,7 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
     result = mod.fetch_pr_comments_data(pr_number, unresolved_only)
 
     if result.get('status') != 'success':
-        return make_error(result.get('error', 'Failed to fetch PR comments'), code=ErrorCode.PROVIDER_NOT_CONFIGURED)
+        return make_error(result.get('error', 'Failed to fetch PR comments'), code=ErrorCode.FETCH_FAILURE)
 
     # Transform provider result into pr.py's expected format
     return {
@@ -150,13 +166,10 @@ def cmd_fetch_comments(args):
     if not pr_number:
         pr_number = get_current_pr_number()
         if not pr_number:
-            print(serialize_toon(make_error('No PR found for current branch. Use --pr to specify.', code=ErrorCode.NOT_FOUND)))
-            return 1
+            return print_error('No PR found for current branch. Use --pr to specify.', code=ErrorCode.NOT_FOUND)
 
     result = fetch_comments(pr_number, getattr(args, 'unresolved_only', False))
-    print(serialize_toon(result))
-
-    return 0 if result.get('status') == 'success' else 1
+    return print_toon(result)
 
 
 # ============================================================================
@@ -201,24 +214,24 @@ def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
     # priority over ignore/explain. This ensures "LGTM, but please fix
     # the typo" is classified as code_change, not swallowed by ignore.
     for priority in ['high', 'medium', 'low']:
-        for pattern in PATTERNS['code_change'][priority]:
-            if re.search(pattern, body_lower):
-                return {'action': 'code_change', 'priority': priority, 'reason': f'Matches {priority} priority pattern: {pattern}'}
+        for compiled in _COMPILED_PATTERNS['code_change'].get(priority, []):
+            if compiled.search(body_lower):
+                return {'action': 'code_change', 'priority': priority, 'reason': f'Matches {priority} priority pattern: {compiled.pattern}'}
 
     # Check for ignore patterns AFTER code_change — pure acknowledgments
     # with no actionable content.
-    for priority, patterns in PATTERNS['ignore'].items():
-        for pattern in patterns:
-            if re.search(pattern, body_lower):
+    for priority, compiled_list in _COMPILED_PATTERNS['ignore'].items():
+        for compiled in compiled_list:
+            if compiled.search(body_lower):
                 return {'action': 'ignore', 'priority': priority, 'reason': 'Automated or acknowledgment comment'}
 
     # Check for explanation patterns — only after ruling out code_change,
     # so "Why did you fix it this way?" is correctly classified as explain
     # rather than matching "fix" as code_change first (handled above) or
     # matching "?" and missing code_change intent.
-    for priority, patterns in PATTERNS['explain'].items():
-        for pattern in patterns:
-            if re.search(pattern, body_lower):
+    for priority, compiled_list in _COMPILED_PATTERNS['explain'].items():
+        for compiled in compiled_list:
+            if compiled.search(body_lower):
                 return {'action': 'explain', 'priority': priority, 'reason': 'Question or clarification request'}
 
     # Standalone question mark — comment is a question but doesn't match
@@ -343,35 +356,40 @@ def cmd_triage_batch(args):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
+    parser = create_workflow_cli(
         description='PR workflow operations',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   pr.py fetch-comments --pr 123
   pr.py triage --comment '{"id":"C1","body":"Please fix this"}'
 """,
+        subcommands=[
+            {
+                'name': 'fetch-comments',
+                'help': 'Fetch PR review comments (GitHub/GitLab)',
+                'handler': cmd_fetch_comments,
+                'args': [
+                    {'flags': ['--pr'], 'type': int, 'help': "PR number (default: current branch's PR)"},
+                    {'flags': ['--unresolved-only'], 'action': 'store_true', 'help': 'Only return unresolved comments'},
+                ],
+            },
+            {
+                'name': 'triage',
+                'help': 'Triage a single PR review comment',
+                'handler': cmd_triage,
+                'args': [
+                    {'flags': ['--comment'], 'required': True, 'help': 'JSON string with comment data'},
+                    {'flags': ['--context'], 'help': 'Surrounding code context for better classification'},
+                ],
+            },
+            {
+                'name': 'triage-batch',
+                'help': 'Triage multiple PR review comments at once',
+                'handler': cmd_triage_batch,
+                'args': [{'flags': ['--comments'], 'required': True, 'help': 'JSON array of comment objects'}],
+            },
+        ],
     )
-
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # fetch-comments subcommand
-    fetch_parser = subparsers.add_parser('fetch-comments', help='Fetch PR review comments (GitHub/GitLab)')
-    fetch_parser.add_argument('--pr', type=int, help="PR number (default: current branch's PR)")
-    fetch_parser.add_argument('--unresolved-only', action='store_true', help='Only return unresolved comments')
-    fetch_parser.set_defaults(func=cmd_fetch_comments)
-
-    # triage subcommand
-    triage_parser = subparsers.add_parser('triage', help='Triage a single PR review comment')
-    triage_parser.add_argument('--comment', required=True, help='JSON string with comment data')
-    triage_parser.add_argument('--context', help='Surrounding code context for better classification')
-    triage_parser.set_defaults(func=cmd_triage)
-
-    # triage-batch subcommand
-    batch_parser = subparsers.add_parser('triage-batch', help='Triage multiple PR review comments at once')
-    batch_parser.add_argument('--comments', required=True, help='JSON array of comment objects')
-    batch_parser.set_defaults(func=cmd_triage_batch)
-
     args = parser.parse_args()
     return args.func(args)
 

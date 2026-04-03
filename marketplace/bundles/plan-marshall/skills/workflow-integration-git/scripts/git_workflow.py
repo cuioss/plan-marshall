@@ -24,7 +24,6 @@ Examples:
     git_workflow.py detect-artifacts --root /path/to/repo
 """
 
-import argparse
 import os
 import re
 import subprocess
@@ -32,8 +31,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import ErrorCode, is_test_file, load_config_file, make_error, safe_main  # type: ignore[import-not-found]
+from triage_helpers import (  # type: ignore[import-not-found]
+    ErrorCode,
+    create_workflow_cli,
+    is_test_file,
+    load_skill_config,
+    make_error,
+    print_error,
+    print_toon,
+    safe_main,
+)
 
 # ============================================================================
 # CONFIGURATION
@@ -41,8 +48,7 @@ from triage_helpers import ErrorCode, is_test_file, load_config_file, make_error
 
 VALID_TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'ci']
 
-_ARTIFACT_CONFIG_FILE = Path(__file__).parent.parent / 'standards' / 'artifact-patterns.json'
-_ARTIFACT_CONFIG = load_config_file(_ARTIFACT_CONFIG_FILE, 'artifact-patterns.json')
+_ARTIFACT_CONFIG = load_skill_config(__file__, 'artifact-patterns.json')
 
 
 # ============================================================================
@@ -214,11 +220,10 @@ def cmd_format_commit(args):
         'footer': args.footer,
         'formatted_message': formatted,
         'validation': {'valid': is_valid, 'warnings': all_warnings},
-        'status': 'success',
+        'status': 'success' if is_valid else 'failure',
     }
 
-    print(serialize_toon(result))
-    return 0 if is_valid else 1
+    return print_toon(result)
 
 
 # ============================================================================
@@ -369,14 +374,12 @@ def cmd_analyze_diff(args):
     """Handle analyze-diff subcommand."""
     path = Path(args.file)
     if not path.exists():
-        print(serialize_toon(make_error(f'File not found: {args.file}', code=ErrorCode.NOT_FOUND)))
-        return 1
+        return print_error(f'File not found: {args.file}', code=ErrorCode.NOT_FOUND)
 
     diff_content = path.read_text()
     suggestions = analyze_diff(diff_content)
 
-    print(serialize_toon({'mode': 'analysis', 'suggestions': suggestions, 'status': 'success'}))
-    return 0
+    return print_toon({'mode': 'analysis', 'suggestions': suggestions, 'status': 'success'})
 
 
 # ============================================================================
@@ -482,14 +485,12 @@ def cmd_detect_artifacts(args):
     root = Path(args.root) if args.root else Path.cwd()
 
     if not root.is_dir():
-        print(serialize_toon(make_error(f'Directory not found: {root}', code=ErrorCode.NOT_FOUND)))
-        return 1
+        return print_error(f'Directory not found: {root}', code=ErrorCode.NOT_FOUND)
 
     result = scan_artifacts(root, respect_gitignore=not args.no_gitignore)
     result['root'] = str(root)
     result['status'] = 'success'
-    print(serialize_toon(result))
-    return 0
+    return print_toon(result)
 
 
 # ============================================================================
@@ -499,40 +500,45 @@ def cmd_detect_artifacts(args):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
+    parser = create_workflow_cli(
         description='Git workflow operations',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   git_workflow.py format-commit --type feat --scope auth --subject "add login"
   git_workflow.py analyze-diff --file changes.diff
   git_workflow.py detect-artifacts --root /path/to/repo
 """,
+        subcommands=[
+            {
+                'name': 'format-commit',
+                'help': 'Format commit message following conventional commits',
+                'handler': cmd_format_commit,
+                'args': [
+                    {'flags': ['--type'], 'dest': 'commit_type', 'required': True, 'choices': VALID_TYPES, 'help': 'Commit type'},
+                    {'flags': ['--scope'], 'help': 'Commit scope'},
+                    {'flags': ['--subject'], 'required': True, 'help': 'Commit subject'},
+                    {'flags': ['--body'], 'help': 'Commit body'},
+                    {'flags': ['--breaking'], 'help': 'Breaking change description'},
+                    {'flags': ['--footer'], 'help': 'Additional footer'},
+                ],
+            },
+            {
+                'name': 'analyze-diff',
+                'help': 'Analyze diff file to suggest commit message',
+                'handler': cmd_analyze_diff,
+                'args': [{'flags': ['--file'], 'required': True, 'help': 'Diff file to analyze'}],
+            },
+            {
+                'name': 'detect-artifacts',
+                'help': 'Scan for committable artifacts',
+                'handler': cmd_detect_artifacts,
+                'args': [
+                    {'flags': ['--root'], 'help': 'Root directory to scan (default: cwd)'},
+                    {'flags': ['--no-gitignore'], 'action': 'store_true', 'help': 'Include gitignored files in results'},
+                ],
+            },
+        ],
     )
-
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # format-commit subcommand
-    format_parser = subparsers.add_parser('format-commit', help='Format commit message following conventional commits')
-    format_parser.add_argument('--type', dest='commit_type', required=True, choices=VALID_TYPES, help='Commit type')
-    format_parser.add_argument('--scope', help='Commit scope')
-    format_parser.add_argument('--subject', required=True, help='Commit subject')
-    format_parser.add_argument('--body', help='Commit body')
-    format_parser.add_argument('--breaking', help='Breaking change description')
-    format_parser.add_argument('--footer', help='Additional footer')
-    format_parser.set_defaults(func=cmd_format_commit)
-
-    # analyze-diff subcommand
-    analyze_parser = subparsers.add_parser('analyze-diff', help='Analyze diff file to suggest commit message')
-    analyze_parser.add_argument('--file', required=True, help='Diff file to analyze')
-    analyze_parser.set_defaults(func=cmd_analyze_diff)
-
-    # detect-artifacts subcommand
-    artifacts_parser = subparsers.add_parser('detect-artifacts', help='Scan for committable artifacts')
-    artifacts_parser.add_argument('--root', help='Root directory to scan (default: cwd)')
-    artifacts_parser.add_argument('--no-gitignore', action='store_true', help='Include gitignored files in results')
-    artifacts_parser.set_defaults(func=cmd_detect_artifacts)
-
     args = parser.parse_args()
     return args.func(args)
 
