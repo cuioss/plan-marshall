@@ -14,8 +14,10 @@ from _architecture_core import (
     ModuleNotFoundInProjectError,
     get_enriched_path,
     get_module_names,
+    handle_module_not_found,
     load_derived_data,
     load_llm_enriched,
+    print_skills_by_profile,
     print_toon_list,
     save_llm_enriched,
 )
@@ -595,20 +597,6 @@ def _append_to_list(module_name: str, field: str, value: str, project_dir: str =
 # =============================================================================
 
 
-def _handle_module_not_found(module_name: str, project_dir: str) -> int:
-    """Handle module not found error with available modules list."""
-    try:
-        derived = load_derived_data(project_dir)
-        modules = get_module_names(derived)
-    except Exception:
-        modules = []
-
-    print('error: Module not found')
-    print(f'module: {module_name}')
-    print_toon_list('available', modules)
-    return 1
-
-
 def cmd_enrich_project(args) -> int:
     """CLI handler for enrich project command."""
     try:
@@ -648,7 +636,7 @@ def cmd_enrich_module(args) -> int:
         print_toon_list('updated', result['updated'])
         return 0
     except ModuleNotFoundInProjectError:
-        return _handle_module_not_found(args.name, args.project_dir)
+        return handle_module_not_found(args.name, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
         print(f'expected_file: {get_enriched_path(args.project_dir)}')
@@ -675,7 +663,7 @@ def cmd_enrich_package(args) -> int:
             print_toon_list('components', result['components'])
         return 0
     except ModuleNotFoundInProjectError:
-        return _handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
         print(f'expected_file: {get_enriched_path(args.project_dir)}')
@@ -685,37 +673,6 @@ def cmd_enrich_package(args) -> int:
         print('status\terror', file=sys.stderr)
         print(f'error\t{e}', file=sys.stderr)
         return 1
-
-
-def _print_skills_by_profile(skills_by_profile: dict) -> None:
-    """Print skills_by_profile in TOON format.
-
-    Args:
-        skills_by_profile: Dict mapping profile names to structured skill dicts
-    """
-    print('skills_by_profile:')
-    for profile, profile_data in skills_by_profile.items():
-        print(f'  {profile}:')
-        defaults = profile_data.get('defaults', [])
-        optionals = profile_data.get('optionals', [])
-        if defaults:
-            print(f'    defaults[{len(defaults)}]{{skill,description}}:')
-            for entry in defaults:
-                if isinstance(entry, dict):
-                    skill = entry.get('skill', '')
-                    desc = entry.get('description', '')
-                    print(f'      - {skill},"{desc}"')
-                else:
-                    print(f'      - {entry}')
-        if optionals:
-            print(f'    optionals[{len(optionals)}]{{skill,description}}:')
-            for entry in optionals:
-                if isinstance(entry, dict):
-                    skill = entry.get('skill', '')
-                    desc = entry.get('description', '')
-                    print(f'      - {skill},"{desc}"')
-                else:
-                    print(f'      - {entry}')
 
 
 def cmd_enrich_skills_by_profile(args) -> int:
@@ -730,7 +687,7 @@ def cmd_enrich_skills_by_profile(args) -> int:
         print(f'status\t{result["status"]}')
         print(f'module\t{result["module"]}')
         # Output skills_by_profile
-        _print_skills_by_profile(result['skills_by_profile'])
+        print_skills_by_profile(result['skills_by_profile'])
         if result.get('warnings'):
             print()
             print_toon_list('warnings', result['warnings'])
@@ -740,7 +697,7 @@ def cmd_enrich_skills_by_profile(args) -> int:
         print(f'error\tInvalid JSON: {e}', file=sys.stderr)
         return 1
     except ModuleNotFoundInProjectError:
-        return _handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
         print(f'expected_file: {get_enriched_path(args.project_dir)}')
@@ -772,7 +729,7 @@ def cmd_enrich_dependencies(args) -> int:
             print_toon_list('internal_dependencies', result['internal_dependencies'])
         return 0
     except ModuleNotFoundInProjectError:
-        return _handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
         print(f'expected_file: {get_enriched_path(args.project_dir)}')
@@ -793,7 +750,7 @@ def cmd_enrich_tip(args) -> int:
         print_toon_list('tips', result['tips'])
         return 0
     except ModuleNotFoundInProjectError:
-        return _handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
         print(f'expected_file: {get_enriched_path(args.project_dir)}')
@@ -814,7 +771,7 @@ def cmd_enrich_insight(args) -> int:
         print_toon_list('insights', result['insights'])
         return 0
     except ModuleNotFoundInProjectError:
-        return _handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
         print(f'expected_file: {get_enriched_path(args.project_dir)}')
@@ -835,7 +792,7 @@ def cmd_enrich_best_practice(args) -> int:
         print_toon_list('best_practices', result['best_practices'])
         return 0
     except ModuleNotFoundInProjectError:
-        return _handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
         print('error: Enrichment data not found')
         print(f'expected_file: {get_enriched_path(args.project_dir)}')
@@ -862,10 +819,10 @@ def cmd_enrich_add_domain(args) -> int:
         print(f'module\t{result["module"]}')
         print(f'domain\t{result["domain"]}')
         print_toon_list('profiles_updated', result['profiles_updated'])
-        _print_skills_by_profile(result['skills_by_profile'])
+        print_skills_by_profile(result['skills_by_profile'])
         return 0
     except ModuleNotFoundInProjectError:
-        return _handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found(args.module, args.project_dir)
     except (DataNotFoundError, ValueError) as e:
         print(f'error\t{e}')
         return 1

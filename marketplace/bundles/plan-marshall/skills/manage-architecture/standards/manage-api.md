@@ -8,6 +8,8 @@ These commands support the LLM enrichment workflow:
 - Reading raw discovered data (derived-data.json only)
 - Writing enrichment data (llm-enriched.json)
 
+> **Orchestrator workflow**: See `standards/orchestrator-integration.md` for the complete enrichment workflow.
+
 For client/consumer commands, see [client-api.md](client-api.md).
 
 ## Script Pattern

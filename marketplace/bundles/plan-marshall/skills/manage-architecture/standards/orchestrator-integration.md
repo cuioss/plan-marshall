@@ -251,6 +251,8 @@ See the manage-architecture SKILL.md for step-by-step execution instructions.
 | `.plan/project-architecture/derived-data.json` | Extension API output (deterministic) |
 | `.plan/project-architecture/llm-enriched.json` | LLM analysis (mutable) |
 
+> **Storage schema**: See `standards/architecture-persistence.md` for the complete file schema.
+
 ## Related Documents
 
 | Document | Content |

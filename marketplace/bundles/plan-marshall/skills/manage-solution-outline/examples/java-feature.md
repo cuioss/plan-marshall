@@ -40,52 +40,108 @@ Implement a JWT token validation service for the authentication module. The serv
 
 ### 1. Create JwtValidationService class
 
-Create the core service class in `de.cuioss.auth.jwt` package.
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: none
 
-**Location**: `src/main/java/de/cuioss/auth/jwt/JwtValidationService.java`
+**Profiles:**
+- implementation
 
-**Responsibilities**:
-- Validate JWT signature
-- Check token expiration
-- Extract standard claims (sub, iss, exp, iat)
-- Support RS256 and HS256 algorithms
+**Affected files:**
+- `src/main/java/de/cuioss/auth/jwt/JwtValidationService.java`
 
-**Dependencies**:
-- `io.jsonwebtoken:jjwt-api`
-- Existing `KeyProvider` interface
+**Change per file:** New class in package `de.cuioss.auth.jwt`; implements `validate(String token)`, `extractClaims(String token)`, and `isExpired(String token)`; depends on `KeyProvider` for signature verification; supports RS256 and HS256 algorithms via `io.jsonwebtoken:jjwt-api`.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error
+
+**Success Criteria:**
+- Service validates JWT signatures using the existing `KeyProvider`
+- Standard claims (`sub`, `iss`, `exp`, `iat`) are extractable
+- RS256 and HS256 algorithm paths are both reachable
 
 ### 2. Add configuration support
 
-Integrate with the project configuration system.
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 1
 
-**Configuration keys**:
-- `auth.jwt.issuer` - Expected issuer claim
-- `auth.jwt.audience` - Expected audience
-- `auth.jwt.clock-skew` - Allowed clock skew in seconds
+**Profiles:**
+- implementation
 
-**Location**: `src/main/java/de/cuioss/auth/jwt/JwtConfiguration.java`
+**Affected files:**
+- `src/main/java/de/cuioss/auth/jwt/JwtConfiguration.java`
+- `src/main/resources/application.properties`
+
+**Change per file:** `JwtConfiguration.java` — new `@ConfigurationProperties`-bound class with fields `issuer`, `audience`, and `clockSkewSeconds`; `application.properties` — document the three keys `auth.jwt.issuer`, `auth.jwt.audience`, `auth.jwt.clock-skew` with example values.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error
+
+**Success Criteria:**
+- All three configuration keys are bound and accessible at runtime
+- `JwtValidationService` uses `JwtConfiguration` for issuer, audience, and clock-skew checks
 
 ### 3. Implement unit tests
 
-Create comprehensive test coverage.
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 2
 
-**Test class**: `src/test/java/de/cuioss/auth/jwt/JwtValidationServiceTest.java`
+**Profiles:**
+- implementation
+- module_testing
 
-**Test scenarios**:
-- Valid token acceptance
-- Expired token rejection
-- Invalid signature rejection
-- Missing claims handling
-- Clock skew tolerance
+**Affected files:**
+- `src/test/java/de/cuioss/auth/jwt/JwtValidationServiceTest.java`
+
+**Change per file:** New test class covering: valid token acceptance, expired token rejection, invalid signature rejection, missing required claims, and clock-skew tolerance boundary cases. Uses `io.jsonwebtoken:jjwt-impl` to build test tokens inline.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets test`
+- Criteria: All tests pass with no failures
+
+**Success Criteria:**
+- All five test scenarios pass
+- Line coverage on `JwtValidationService` is ≥ 80 %
+- No test relies on external network or real keys
 
 ### 4. Add JavaDoc documentation
 
-Document public API following JavaDoc standards.
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 3
 
-**Coverage**:
-- Class-level documentation with usage example
-- All public methods
-- Configuration properties
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/java/de/cuioss/auth/jwt/JwtValidationService.java`
+- `src/main/java/de/cuioss/auth/jwt/JwtConfiguration.java`
+
+**Change per file:** Add class-level Javadoc with a usage example to both classes; document every public method with `@param`, `@return`, and `@throws`; document each configuration field in `JwtConfiguration` with its key name and valid value range.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify`
+- Criteria: Full verify including Javadoc linting passes without warnings
+
+**Success Criteria:**
+- All public API elements have complete Javadoc
+- `mvn javadoc:javadoc` produces no warnings for the `de.cuioss.auth.jwt` package
 
 ## Approach
 

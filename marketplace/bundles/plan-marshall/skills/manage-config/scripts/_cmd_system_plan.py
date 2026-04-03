@@ -11,6 +11,7 @@ from _cmd_quality_phases import PHASE_SECTIONS, cmd_phase
 from _config_core import (
     EXIT_ERROR,
     MarshalNotInitializedError,
+    _coerce_value,
     error_exit,
     load_config,
     require_initialized,
@@ -37,15 +38,7 @@ def cmd_system(args) -> int:
 
         elif args.verb == 'set':
             field = args.field
-            value = args.value
-
-            # Type coercion
-            if value.lower() == 'true':
-                value = True
-            elif value.lower() == 'false':
-                value = False
-            elif value.isdigit():
-                value = int(value)
+            value = _coerce_value(args.value)
 
             retention[field] = value
             system_config['retention'] = retention

@@ -94,6 +94,33 @@ def validate_script_notation(notation: str) -> str:
     return notation
 
 
+# --- Structural validators (shared by run_config, manage-memory, etc.) ---
+
+
+def check_required_fields(data: dict, required: list[str]) -> tuple[bool, list[str]]:
+    """Check if required fields exist in a dict.
+
+    Returns (all_present, missing_fields).
+    """
+    missing = [f for f in required if f not in data]
+    return len(missing) == 0, missing
+
+
+def check_field_type(data: dict, field: str, expected_type: type) -> tuple[bool, str]:
+    """Check if a field has the expected type.
+
+    Returns (valid, message).
+    """
+    if field not in data:
+        return False, f"Field '{field}' not found"
+
+    actual = type(data[field])
+    if actual != expected_type:
+        return False, f'Expected {expected_type.__name__}, got {actual.__name__}'
+
+    return True, f"Field '{field}' is {expected_type.__name__}"
+
+
 # --- Bool companions (drop-in replacements for existing call sites) ---
 
 def is_valid_plan_id(plan_id: str) -> bool:

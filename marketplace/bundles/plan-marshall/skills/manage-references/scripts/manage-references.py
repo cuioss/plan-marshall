@@ -20,7 +20,7 @@ import argparse
 import sys
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description='Manage references.json files')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -99,11 +99,12 @@ def main():
         handler(args)
     else:
         parser.print_help()
+    return 0
 
 
 if __name__ == '__main__':
     try:
-        main()
+        sys.exit(main())
     except SystemExit:
         raise
     except Exception as e:

@@ -12,9 +12,10 @@ from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     get_module,
+    handle_module_not_found,
     load_derived_data,
-    print_toon_list,
     print_toon_table,
+    require_derived_data,
 )
 
 
@@ -165,23 +166,9 @@ def cmd_suggest_domains(args) -> int:
         print_toon_table('domains', items, ['domain', 'confidence', 'signals', 'additive_to', 'skill_count'])
         return 0
     except ModuleNotFoundInProjectError:
-        from _architecture_core import get_module_names
-
-        try:
-            derived = load_derived_data(args.project_dir)
-            modules = get_module_names(derived)
-        except Exception:
-            modules = []
-        print('error: Module not found')
-        print(f'module: {args.module}')
-        print_toon_list('available', modules)
-        return 1
+        return handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
-        from _architecture_core import get_derived_path
-
-        print('error: Derived data not found')
-        print(f'expected_file: {get_derived_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except Exception as e:
         print('status\terror', file=sys.stderr)

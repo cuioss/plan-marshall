@@ -53,70 +53,162 @@ Refactor the monolithic AuthenticationService into smaller, focused components f
 
 ### 1. Extract TokenService
 
-Move token-related logic to dedicated service.
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: none
 
-**New class**: `de.cuioss.auth.token.TokenService`
+**Profiles:**
+- implementation
 
-**Extract from** `AuthenticationService`:
-- `generateToken()`
-- `validateToken()`
-- `refreshToken()`
-- `revokeToken()`
+**Affected files:**
+- `src/main/java/de/cuioss/auth/AuthenticationService.java`
+- `src/main/java/de/cuioss/auth/token/TokenService.java`
 
-**Keep in** `AuthenticationService`:
-- Delegation calls to TokenService
+**Change per file:** `TokenService.java` — new class in `de.cuioss.auth.token` receiving `generateToken()`, `validateToken()`, `refreshToken()`, and `revokeToken()` moved verbatim from `AuthenticationService`; `AuthenticationService.java` — replace moved method bodies with CDI-injected `TokenService` delegation calls.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error
+
+**Success Criteria:**
+- `TokenService` contains all four token methods
+- `AuthenticationService` delegates to `TokenService` with no duplicated logic
 
 ### 2. Extract SessionManager
 
-Separate session lifecycle management.
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 1
 
-**New class**: `de.cuioss.auth.session.SessionManager`
+**Profiles:**
+- implementation
 
-**Extract**:
-- `createSession()`
-- `invalidateSession()`
-- `getSession()`
-- Session timeout handling
+**Affected files:**
+- `src/main/java/de/cuioss/auth/AuthenticationService.java`
+- `src/main/java/de/cuioss/auth/session/SessionManager.java`
+
+**Change per file:** `SessionManager.java` — new class in `de.cuioss.auth.session` receiving `createSession()`, `invalidateSession()`, `getSession()`, and session timeout handling; `AuthenticationService.java` — inject `SessionManager` via CDI and delegate the four session methods.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error
+
+**Success Criteria:**
+- Session lifecycle is fully owned by `SessionManager`
+- `AuthenticationService` no longer contains session state
 
 ### 3. Extract UserLookupService
 
-Isolate user resolution logic.
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 2
 
-**New class**: `de.cuioss.auth.user.UserLookupService`
+**Profiles:**
+- implementation
 
-**Extract**:
-- `findByUsername()`
-- `findById()`
-- User caching logic
+**Affected files:**
+- `src/main/java/de/cuioss/auth/AuthenticationService.java`
+- `src/main/java/de/cuioss/auth/user/UserLookupService.java`
+
+**Change per file:** `UserLookupService.java` — new class in `de.cuioss.auth.user` receiving `findByUsername()`, `findById()`, and user caching logic; `AuthenticationService.java` — inject `UserLookupService` via CDI and delegate user resolution calls.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error
+
+**Success Criteria:**
+- All user resolution and caching logic lives in `UserLookupService`
+- No user-lookup code remains in `AuthenticationService`
 
 ### 4. Update AuthenticationService
 
-Refactor to orchestrator role.
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 3
 
-**Changes**:
-- Inject new services via CDI
-- Delegate to extracted services
-- Keep only authentication orchestration
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/java/de/cuioss/auth/AuthenticationService.java`
+
+**Change per file:** Retain only `authenticate()` and `logout()` orchestration logic; all three extracted services are injected via `@Inject`; remove any residual duplicated logic; add `@ApplicationScoped` CDI scope annotation if not already present.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error
+
+**Success Criteria:**
+- `AuthenticationService` contains only orchestration logic
+- All three services are injected and used exclusively via delegation
 
 ### 5. Migrate tests
 
-Update test structure to match new classes.
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 4
 
-**New test classes**:
-- `TokenServiceTest.java`
-- `SessionManagerTest.java`
-- `UserLookupServiceTest.java`
+**Profiles:**
+- implementation
+- module_testing
 
-**Update**: `AuthenticationServiceTest.java` - mock new dependencies
+**Affected files:**
+- `src/test/java/de/cuioss/auth/token/TokenServiceTest.java`
+- `src/test/java/de/cuioss/auth/session/SessionManagerTest.java`
+- `src/test/java/de/cuioss/auth/user/UserLookupServiceTest.java`
+- `src/test/java/de/cuioss/auth/AuthenticationServiceTest.java`
+
+**Change per file:** `TokenServiceTest.java`, `SessionManagerTest.java`, `UserLookupServiceTest.java` — new test classes exercising each extracted service in isolation; `AuthenticationServiceTest.java` — replace direct logic tests with mock-injected delegation tests using Mockito or Weld.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets test`
+- Criteria: All tests pass with no failures
+
+**Success Criteria:**
+- Each extracted service has dedicated test coverage
+- `AuthenticationServiceTest` mocks the three injected services
+- No behaviour change detected (characterisation tests pass)
 
 ### 6. Update documentation
 
-Revise architecture documentation.
+**Metadata:**
+- change_type: tech_debt
+- execution_mode: manual
+- domain: java
+- module: cui-authentication
+- depends: 5
 
-**Update**:
-- Package diagram
-- Class relationships
-- README.md
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `docs/architecture/authentication-module.adoc`
+- `README.md`
+
+**Change per file:** `authentication-module.adoc` — update the package diagram and class-relationship section to reflect the new four-class structure (orchestrator + three extracted services); `README.md` — revise the authentication module overview paragraph to describe the new design.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify`
+- Criteria: Full verify passes
+
+**Success Criteria:**
+- Package diagram matches the implemented structure
+- No references to the old monolithic `AuthenticationService` design remain in documentation
 
 ## Approach
 

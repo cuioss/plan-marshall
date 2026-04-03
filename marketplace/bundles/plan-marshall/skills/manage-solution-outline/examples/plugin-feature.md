@@ -57,56 +57,118 @@ Add a build caching skill to the builder bundle that caches build outputs and re
 
 ### 1. Create cache-management script
 
-Python script for cache key generation and storage.
+Python script for cache key generation, storage, restore, and cleanup operations.
 
-**Location**: `marketplace/bundles/pm-dev-builder/skills/build-cache/scripts/manage-cache.py`
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: plan-marshall-plugin-dev
+- module: build-cache
+- depends: none
 
-**Commands**:
-- `key` - Generate cache key from inputs (pom.xml, src/**)
-- `store` - Store build output in cache
-- `restore` - Restore from cache if key matches
-- `clean` - Remove old cache entries
+**Profiles:**
+- implementation
+- module_testing
+
+**Affected files:**
+- `marketplace/bundles/pm-dev-builder/skills/build-cache/scripts/manage-cache.py`
+- `test/builder/build-cache/test_manage_cache.py`
+
+**Change per file:** Create `manage-cache.py` with subcommands: `key` (generate cache key from pom.xml, src/**, tool version, env vars), `store` (archive build output under the key), `restore` (extract cached output if key matches), and `clean` (remove entries older than a configurable TTL). Create test file covering key stability, key sensitivity, store/restore round-trip, and expiration.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests builder"`
+- Criteria: All tests pass
+
+**Success Criteria:**
+- Same inputs always produce the same cache key (stability)
+- Changing any input (pom.xml, src file, tool version) produces a different key (sensitivity)
+- Store followed by restore reconstructs the exact output directory contents
+- Clean removes only entries older than the configured TTL
 
 ### 2. Create SKILL.md definition
 
-Define the skill interface and workflows.
+Define the skill interface, workflows, and script notation for the build-cache skill.
 
-**Location**: `marketplace/bundles/pm-dev-builder/skills/build-cache/SKILL.md`
+**Metadata:**
+- change_type: feature
+- execution_mode: manual
+- domain: plan-marshall-plugin-dev
+- module: build-cache
+- depends: 1
 
-**Workflows**:
-- Pre-build: Check cache, restore if hit
-- Post-build: Store outputs if build succeeded
-- Maintenance: Clean old entries
+**Profiles:**
+- implementation
 
-### 3. Add cache key generation logic
+**Affected files:**
+- `marketplace/bundles/pm-dev-builder/skills/build-cache/SKILL.md`
 
-Implement robust cache key algorithm.
+**Change per file:** Create SKILL.md with frontmatter (name, description, user-invocable: false), workflow sections for pre-build cache check/restore, post-build cache store, and maintenance/clean, with explicit `python3 .plan/execute-script.py` invocations using the correct notation.
 
-**Key inputs**:
-- Hash of pom.xml / build.gradle / package.json
-- Hash of source files (src/**)
-- Build tool version
-- Relevant environment variables
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate builder"`
+- Criteria: Plugin doctor reports no violations for the new skill
+
+**Success Criteria:**
+- Frontmatter is valid and all required fields are present
+- All three workflows (pre-build, post-build, maintenance) are documented
+- Script notation uses the canonical `pm-dev-builder:build-cache:manage-cache` format
+
+### 3. Register skill in plugin.json
+
+Register the new build-cache skill in the bundle manifest.
+
+**Metadata:**
+- change_type: feature
+- execution_mode: manual
+- domain: plan-marshall-plugin-dev
+- module: build-cache
+- depends: 2
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `marketplace/bundles/pm-dev-builder/.claude-plugin/plugin.json`
+
+**Change per file:** Add the `build-cache` skill entry to the `skills` array in the plugin manifest. Skill is context-loaded (not user-invocable), so it must be registered for `Skill:` directive resolution.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate builder"`
+- Criteria: Marketplace inventory shows build-cache as a registered skill
+
+**Success Criteria:**
+- `plugin.json` parses as valid JSON
+- `build-cache` appears in the skills list with correct name and path
+- Plugin doctor reports no manifest violations
 
 ### 4. Integrate with builder-maven-rules
 
-Add cache hooks to Maven build workflow.
+Add cache hooks to the Maven build workflow in the existing builder-maven-rules skill.
 
-**Changes to**: `marketplace/bundles/pm-dev-builder/skills/builder-maven-rules/SKILL.md`
+**Metadata:**
+- change_type: enhancement
+- execution_mode: manual
+- domain: plan-marshall-plugin-dev
+- module: builder-maven-rules
+- depends: 2,3
 
-**Integration points**:
-- Before `mvn compile`: check cache
-- After successful build: store cache
+**Profiles:**
+- implementation
 
-### 5. Add tests
+**Affected files:**
+- `marketplace/bundles/pm-dev-builder/skills/builder-maven-rules/SKILL.md`
 
-**Test file**: `test/builder/build-cache/test_manage_cache.py`
+**Change per file:** Insert two cache integration points into the Maven workflow: before `mvn compile`, invoke `manage-cache restore` and skip the build step on cache hit; after a successful build, invoke `manage-cache store` to persist outputs.
 
-**Test scenarios**:
-- Cache key stability (same inputs → same key)
-- Cache key sensitivity (changed input → different key)
-- Store/restore round-trip
-- Cache expiration
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate builder"`
+- Criteria: Plugin doctor reports no violations for the modified skill
+
+**Success Criteria:**
+- Pre-build cache check step is documented before the compile invocation
+- Post-build cache store step is documented after a successful build
+- Workflow remains coherent — cache miss path falls through to the normal build
 
 ## Approach
 

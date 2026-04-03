@@ -85,4 +85,6 @@ Documentation findings feed into `llm-enriched.json`:
 | Important dependencies | `modules.{name}.key_dependencies` |
 | Framework/library usage | `modules.{name}.skills_by_profile` |
 
+> **Field schema**: See `standards/architecture-persistence.md` for the complete `llm-enriched.json` schema.
+
 See [architecture-persistence.md](architecture-persistence.md) for complete schema.

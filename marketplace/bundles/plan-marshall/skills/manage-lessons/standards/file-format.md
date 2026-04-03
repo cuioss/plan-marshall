@@ -62,7 +62,7 @@ This affects all projects using jakarta.json without explicit dependency.
 |-------|----------|------|-------------|
 | `id` | Yes | string | Unique identifier matching filename without `.md` extension |
 | `component` | Yes | string | Component that the lesson applies to (e.g., `maven-build`, `plan-files`) |
-| `category` | Yes | string | One of: `bug`, `improvement`, `anti-pattern` |
+| `category` | Yes | string | One of: `bug`, `improvement`, `anti-pattern`. These values match the promotable finding types in `manage-findings/standards/jsonl-format.md` |
 | `applied` | Yes | bool | Whether the lesson has been applied (`true`/`false`) |
 | `created` | Yes | string | Creation date in `YYYY-MM-DD` format |
 | `bundle` | No | string | Bundle that the lesson relates to (e.g., `pm-dev-java`). Used for filtering when applying lessons to specific bundles. |

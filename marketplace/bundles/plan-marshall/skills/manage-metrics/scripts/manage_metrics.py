@@ -32,6 +32,21 @@ METRICS_MD = 'metrics.md'
 PHASE_NAMES = list(PHASES)
 
 
+def _coerce_numeric(value: object) -> int | float | str:
+    """Try to coerce a value to int, then float, falling back to the original value."""
+    if not isinstance(value, str):
+        return value  # type: ignore[return-value]
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        pass
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        pass
+    return value
+
+
 def get_plan_dir(plan_id: str) -> Path:
     return base_path('plans', plan_id)
 
@@ -229,29 +244,20 @@ def cmd_generate(args: argparse.Namespace) -> None:
             continue
         phase = phases[phase_name]
 
-        duration = phase.get('duration_seconds', 0)
-        if isinstance(duration, str):
-            try:
-                duration = float(duration)
-            except (ValueError, TypeError):
-                duration = 0.0
+        duration = _coerce_numeric(phase.get('duration_seconds', 0))
+        if not isinstance(duration, (int, float)):
+            duration = 0.0
         total_duration += duration
 
-        tokens = phase.get('total_tokens', 0)
-        if isinstance(tokens, str):
-            try:
-                tokens = int(tokens)
-            except (ValueError, TypeError):
-                tokens = 0
-        total_tokens += tokens
+        tokens = _coerce_numeric(phase.get('total_tokens', 0))
+        if not isinstance(tokens, (int, float)):
+            tokens = 0
+        total_tokens += int(tokens)
 
-        tool_uses = phase.get('tool_uses', 0)
-        if isinstance(tool_uses, str):
-            try:
-                tool_uses = int(tool_uses)
-            except (ValueError, TypeError):
-                tool_uses = 0
-        total_tool_uses += tool_uses
+        tool_uses = _coerce_numeric(phase.get('tool_uses', 0))
+        if not isinstance(tool_uses, (int, float)):
+            tool_uses = 0
+        total_tool_uses += int(tool_uses)
 
         duration_str = format_duration(duration) if duration else '-'
         tokens_str = f'{tokens:,}' if tokens else '-'
@@ -412,7 +418,7 @@ def format_duration(seconds: float) -> str:
     return f'{hours}h {remaining_min}m'
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description='Plan metrics collection and reporting')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -444,11 +450,12 @@ def main() -> None:
 
     args = parser.parse_args()
     args.func(args)
+    return 0
 
 
 if __name__ == '__main__':
     try:
-        main()
+        sys.exit(main())
     except SystemExit:
         raise
     except Exception as e:

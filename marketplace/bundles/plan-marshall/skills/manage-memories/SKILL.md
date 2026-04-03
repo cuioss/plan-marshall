@@ -11,6 +11,8 @@ Memory layer operations for persistent session storage (via `tools-file-ops` ski
 
 **Scope: global** means memory files persist across plans in `.plan/memories/`. They are not tied to any specific plan_id. Cleanup is governed by `system.retention.memory_days` in marshal.json.
 
+> **Not to be confused with** Claude Code's built-in auto-memory system (`~/.claude/projects/*/memory/`). This skill manages structured session context in `.plan/memories/` for plan-marshall workflows. The two memory systems are independent.
+
 ## Enforcement
 
 **Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.

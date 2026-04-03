@@ -8,7 +8,7 @@ import argparse
 import sys
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description='Architecture analysis and enrichment operations')
     parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -249,7 +249,7 @@ def main():
 
 if __name__ == '__main__':
     try:
-        sys.exit(main() or 0)
+        sys.exit(main())
     except SystemExit:
         raise
     except Exception as e:

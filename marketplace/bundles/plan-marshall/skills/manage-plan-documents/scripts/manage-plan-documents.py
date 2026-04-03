@@ -19,7 +19,8 @@ import sys
 
 from _cmd_request import cmd_clarify, cmd_create, cmd_exists, cmd_read, cmd_remove, cmd_update
 from _cmd_types import cmd_list_types
-from _documents_core import get_available_types, load_document_type, serialize_toon
+from _documents_core import get_available_types, load_document_type
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -108,7 +108,7 @@ def _add_phase_subparser(
     return p_phase
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plan-Marshall configuration management', formatter_class=argparse.RawDescriptionHelpFormatter
     )

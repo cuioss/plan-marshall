@@ -13,11 +13,10 @@ import json
 import re
 import subprocess
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from file_ops import base_path  # type: ignore[import-not-found]
+from file_ops import base_path, now_utc_iso  # type: ignore[import-not-found]
 
 # =============================================================================
 # Type definitions
@@ -84,11 +83,6 @@ VALID_FILE_EXTENSIONS = [
 # =============================================================================
 # Basic utilities
 # =============================================================================
-
-
-def now_iso() -> str:
-    """Get current UTC timestamp in ISO format."""
-    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def slugify(title: str, max_length: int = 40) -> str:

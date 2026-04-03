@@ -83,7 +83,7 @@ See [diagrams.md](diagrams.md) for diagram patterns.
 - Each deliverable independently achievable
 - Concrete titles (not abstract goals)
 
-See [deliverables.md](deliverables.md) for format details.
+> **Deliverable format**: See `standards/deliverable-contract.md` for the complete deliverable heading and content specification.
 
 ## Optional Sections
 

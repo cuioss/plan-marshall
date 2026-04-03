@@ -393,3 +393,81 @@ def error_data_not_found(expected_file: str, resolution: str):
     print(f'expected_file: {expected_file}')
     print(f'resolution: {resolution}')
     sys.exit(1)
+
+
+def require_derived_data(project_dir: str = '.') -> 'dict[str, Any]':
+    """Load derived data or exit with a structured error.
+
+    Convenience wrapper that replaces repeated try/except DataNotFoundError
+    blocks in CLI handlers.  On success it returns the loaded dict; on
+    failure it prints the standard error message and calls sys.exit(1).
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        Derived data dict
+
+    Raises:
+        SystemExit: If derived-data.json does not exist
+    """
+    try:
+        return load_derived_data(project_dir)
+    except DataNotFoundError:
+        error_data_not_found(str(get_derived_path(project_dir)), "Run 'architecture.py discover' first")
+        raise  # unreachable – error_data_not_found calls sys.exit(1)
+
+
+def handle_module_not_found(module_name: str, project_dir: str) -> int:
+    """Print module-not-found error with available modules list and return 1.
+
+    Args:
+        module_name: The requested (missing) module name
+        project_dir: Project directory path
+
+    Returns:
+        Always returns 1
+    """
+    try:
+        derived = load_derived_data(project_dir)
+        modules = get_module_names(derived)
+    except Exception:
+        modules = []
+
+    print('error: Module not found')
+    print(f'module: {module_name}')
+    print_toon_list('available', modules)
+    return 1
+
+
+def print_skills_by_profile(skills_by_profile: dict) -> None:
+    """Print skills_by_profile in TOON format.
+
+    Args:
+        skills_by_profile: Dict mapping profile names to structured skill dicts
+            {"profile": {"defaults": [{"skill": "...", "description": "..."}],
+                         "optionals": [...]}}
+    """
+    print('skills_by_profile:')
+    for profile, profile_data in skills_by_profile.items():
+        print(f'  {profile}:')
+        defaults = profile_data.get('defaults', [])
+        optionals = profile_data.get('optionals', [])
+        if defaults:
+            print(f'    defaults[{len(defaults)}]{{skill,description}}:')
+            for entry in defaults:
+                if isinstance(entry, dict):
+                    skill = entry.get('skill', '')
+                    desc = entry.get('description', '')
+                    print(f'      - {skill},"{desc}"')
+                else:
+                    print(f'      - {entry}')
+        if optionals:
+            print(f'    optionals[{len(optionals)}]{{skill,description}}:')
+            for entry in optionals:
+                if isinstance(entry, dict):
+                    skill = entry.get('skill', '')
+                    desc = entry.get('description', '')
+                    print(f'      - {skill},"{desc}"')
+                else:
+                    print(f'      - {entry}')

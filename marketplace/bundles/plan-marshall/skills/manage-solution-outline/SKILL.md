@@ -92,7 +92,7 @@ Description...
 - Each deliverable should be independently achievable
 - Include location, responsibilities, or success criteria
 
-See [standards/deliverables.md](standards/deliverables.md) for reference format.
+See [standards/deliverable-contract.md](standards/deliverable-contract.md) for reference format.
 
 ---
 

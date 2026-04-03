@@ -144,8 +144,8 @@ def cmd_exists(args):
     """Check if file exists in plan directory.
 
     Returns TOON output with exists: true/false.
-    Always exits 0 for expected outcomes (exists, not exists, validation errors).
-    Only exits non-zero for unexpected runtime errors.
+    Exits 0 for both found and not-found outcomes.
+    Exits 1 for validation errors (invalid plan_id or path).
     """
     if not is_valid_plan_id(args.plan_id):
         result = {
@@ -154,8 +154,8 @@ def cmd_exists(args):
             'error': 'invalid_plan_id',
             'message': f'Invalid plan_id format: {args.plan_id}',
         }
-        print(serialize_toon(result))
-        return
+        print(serialize_toon(result), file=sys.stderr)
+        sys.exit(1)
 
     if not is_valid_relative_path(args.file):
         result = {
@@ -165,8 +165,8 @@ def cmd_exists(args):
             'error': 'invalid_path',
             'message': f'Invalid file path: {args.file}',
         }
-        print(serialize_toon(result))
-        return
+        print(serialize_toon(result), file=sys.stderr)
+        sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
@@ -331,7 +331,7 @@ def cmd_delete_plan(args):
         sys.exit(1)
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description='Generic file I/O operations for plan directories')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -387,11 +387,12 @@ def main():
 
     args = parser.parse_args()
     args.func(args)
+    return 0
 
 
 if __name__ == '__main__':
     try:
-        main()
+        sys.exit(main())
     except SystemExit:
         raise
     except Exception as e:

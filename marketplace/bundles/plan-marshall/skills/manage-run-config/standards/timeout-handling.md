@@ -126,6 +126,8 @@ source	computed|initial
 
 ## Storage Format
 
+> **Schema reference**: See `references/run-config-format.md` for the complete storage schema.
+
 Timeouts are stored in `run-configuration.json` under the command entry:
 
 ```json

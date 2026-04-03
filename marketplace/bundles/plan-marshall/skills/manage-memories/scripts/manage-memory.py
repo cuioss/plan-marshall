@@ -19,6 +19,7 @@ from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from file_ops import base_path  # type: ignore[import-not-found]
+from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
@@ -281,43 +282,25 @@ def cmd_cleanup(args) -> int:
         return 1
 
 
-def _check_required_fields(data: dict, required: list[str]) -> tuple[bool, list[str]]:
-    """Check if required fields exist."""
-    missing = [f for f in required if f not in data]
-    return len(missing) == 0, missing
-
-
-def _check_field_type(data: dict, field: str, expected_type: type) -> tuple[bool, str]:
-    """Check if field has expected type."""
-    if field not in data:
-        return False, f"Field '{field}' not found"
-
-    actual = type(data[field])
-    if actual != expected_type:
-        return False, f'Expected {expected_type.__name__}, got {actual.__name__}'
-
-    return True, f"Field '{field}' is {expected_type.__name__}"
-
-
 def validate_memory_format(data: dict) -> list[dict]:
     """Validate memory file format."""
     checks = []
 
     # Check required envelope
     required = ['meta', 'content']
-    passed, missing = _check_required_fields(data, required)
+    passed, missing = check_required_fields(data, required)
     checks.append(
         {'check': 'required_fields', 'passed': passed, 'fields': required, 'missing': missing if not passed else []}
     )
 
     # Check meta structure
     if 'meta' in data:
-        passed, msg = _check_field_type(data, 'meta', dict)
+        passed, msg = check_field_type(data, 'meta', dict)
         checks.append({'check': 'meta_object', 'passed': passed, 'message': msg})
 
         if passed:
             meta_required = ['created', 'category', 'summary']
-            meta_passed, meta_missing = _check_required_fields(data['meta'], meta_required)
+            meta_passed, meta_missing = check_required_fields(data['meta'], meta_required)
             checks.append(
                 {
                     'check': 'meta_required_fields',
@@ -397,7 +380,7 @@ def cmd_validate(args) -> int:
         return 1
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Manage .plan/memory/ layer for session persistence',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -470,7 +453,7 @@ Examples:
         parser.print_help()
         return 1
 
-    return args.func(args)
+    return args.func(args) or 0
 
 
 if __name__ == '__main__':

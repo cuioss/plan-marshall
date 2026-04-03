@@ -9,6 +9,7 @@ Usage:
     from file_ops import (
         atomic_write_file,
         ensure_directory,
+        output_toon,
         output_success,
         output_error,
         parse_markdown_metadata,
@@ -23,6 +24,7 @@ Usage:
 import os
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +33,15 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 # Default base directory for workflow files
 # Can be overridden via PLAN_BASE_DIR environment variable for testing
 _BASE_DIR = Path(os.environ.get('PLAN_BASE_DIR', '.plan'))
+
+
+def now_utc_iso() -> str:
+    """Get current UTC time as ISO 8601 string with Z suffix.
+
+    Returns:
+        ISO 8601 formatted timestamp, e.g., '2025-12-02T10:30:00Z'
+    """
+    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def get_base_dir() -> Path:
@@ -153,6 +164,17 @@ def ensure_directory(path: str | Path) -> Path:
 
     target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir
+
+
+def output_toon(data: dict[str, Any]) -> None:
+    """Print TOON formatted data to stdout.
+
+    Generic TOON output helper for scripts that need to emit structured responses.
+
+    Args:
+        data: Dictionary to serialize as TOON
+    """
+    print(serialize_toon(data))
 
 
 def output_success(operation: str, **kwargs: Any) -> None:

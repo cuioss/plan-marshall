@@ -16,8 +16,7 @@ user-invocable: false
 
 | Contract | Location | Purpose |
 |----------|----------|---------|
-| Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure and fields |
-| Task Format | `plan-marshall:manage-tasks/standards/task-format.md` | TOON file format specification |
+| Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure, fields, status values, and JSON schema |
 
 ## Two-Tier Skill Loading
 

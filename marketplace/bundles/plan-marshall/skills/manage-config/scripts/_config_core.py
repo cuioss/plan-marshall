@@ -172,6 +172,21 @@ def get_skill_description(skill_notation: str) -> str:
         return skill_notation
 
 
+def _coerce_value(value: str) -> str | bool | int:
+    """Coerce string value to appropriate Python type.
+
+    Converts 'true'/'false' (case-insensitive) to bool and digit strings to int.
+    All other values are returned unchanged.
+    """
+    if value.lower() == 'true':
+        return True
+    elif value.lower() == 'false':
+        return False
+    elif value.isdigit():
+        return int(value)
+    return value
+
+
 def is_nested_domain(domain_config: dict) -> bool:
     """Check if domain config uses nested structure.
 

@@ -45,6 +45,7 @@ import sys
 
 # Direct imports from same directory (local imports)
 from plan_logging import get_log_path, list_recent_work, log_entry, log_separator, read_decision_log, read_work_log
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 VALID_TYPES = ('script', 'work', 'decision')
 VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
@@ -52,7 +53,6 @@ VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
 
 def format_toon_output(result: dict) -> str:
     """Format result dict as TOON output using serialize_toon."""
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
     return serialize_toon(result)
 
 
@@ -138,7 +138,7 @@ def _add_write_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--message', required=True, help='Log message')
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Unified logging operations',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -173,14 +173,14 @@ def main():
         handle_separator(args)
     else:
         handle_write(args)
+    return 0
 
 
 if __name__ == '__main__':
     try:
-        main()
+        sys.exit(main())
     except SystemExit:
         raise
     except Exception as e:
-        from toon_parser import serialize_toon
         print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
         sys.exit(1)

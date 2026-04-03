@@ -94,6 +94,8 @@ architecture.py graph [--full]
 
 **Output**: See [module-graph-format.md](module-graph-format.md) for complete format specification.
 
+> **Graph format**: See `standards/module-graph-format.md` for the complete graph output specification.
+
 **Single module output**:
 ```
 status: success
@@ -360,5 +362,7 @@ The primary consumer is **solution-outline** during task planning.
 ```
 
 See [architecture-persistence.md](architecture-persistence.md) for complete schema.
+
+> **Persistence details**: See `standards/architecture-persistence.md` for the underlying storage schema.
 
 Commands merge both files for output. If data does not exist, commands return error with instructions to run discovery first.

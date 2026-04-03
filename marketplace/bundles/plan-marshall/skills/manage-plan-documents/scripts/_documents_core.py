@@ -12,9 +12,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, base_path, output_toon  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Skill directory paths for document definitions and templates
 SKILL_DIR = Path(__file__).parent.parent
@@ -170,11 +170,6 @@ def _cleanup_unreplaced_placeholders(content: str) -> str:
         final_lines.pop()
 
     return '\n'.join(final_lines) + '\n'
-
-
-def output_toon(data: dict) -> None:
-    """Print TOON-serialized output."""
-    print(serialize_toon(data))
 
 
 def output_error(error_key: str, **kwargs) -> None:

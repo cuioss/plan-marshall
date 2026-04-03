@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from constants import PHASES  # type: ignore[import-not-found]
-from file_ops import base_path  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 
 # Import from manage-status for shared functionality
@@ -41,8 +41,6 @@ PHASE_ROUTING = {
 }
 
 
-
-
 def get_plans_dir() -> Path:
     """Get the plans directory."""
     return cast(Path, base_path('plans'))
@@ -51,11 +49,6 @@ def get_plans_dir() -> Path:
 def get_archive_dir() -> Path:
     """Get the archived plans directory."""
     return cast(Path, base_path('archived-plans'))
-
-
-def output_toon(data: dict) -> None:
-    """Output TOON format to stdout."""
-    print(serialize_toon(data))
 
 
 def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
@@ -349,7 +342,7 @@ def cmd_self_test(_args) -> None:
 # =============================================================================
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description='Manage plan lifecycle with phase routing and transitions')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -388,11 +381,12 @@ def main() -> None:
 
     args = parser.parse_args()
     args.func(args)
+    return 0
 
 
 if __name__ == '__main__':
     try:
-        main()
+        sys.exit(main())
     except SystemExit:
         raise
     except Exception as e:

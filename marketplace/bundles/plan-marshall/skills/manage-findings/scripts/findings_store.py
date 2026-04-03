@@ -18,6 +18,7 @@ Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 import json
 import sys
 from fnmatch import fnmatch
+from pathlib import Path
 from typing import Any
 
 from constants import QGATE_PHASES, VALID_RESOLUTIONS  # type: ignore[import-not-found]

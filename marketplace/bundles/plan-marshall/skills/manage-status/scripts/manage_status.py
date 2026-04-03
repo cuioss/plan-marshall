@@ -20,11 +20,10 @@ Usage:
 import argparse
 import json
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, base_path, now_utc_iso, output_toon  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -62,11 +61,6 @@ def get_status_path(plan_id: str) -> Path:
     return cast(Path, base_path('plans', plan_id, 'status.json'))
 
 
-def now_iso() -> str:
-    """Get current time in ISO format."""
-    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-
-
 def read_status(plan_id: str) -> dict[Any, Any]:
     """Read status.json for a plan."""
     path = get_status_path(plan_id)
@@ -79,14 +73,9 @@ def write_status(plan_id: str, status: dict) -> None:
     """Write status.json for a plan."""
     path = get_status_path(plan_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    status['updated'] = now_iso()
+    status['updated'] = now_utc_iso()
     content = json.dumps(status, indent=2)
     atomic_write_file(path, content)
-
-
-def output_toon(data: dict) -> None:
-    """Output TOON format to stdout."""
-    print(serialize_toon(data))
 
 
 # =============================================================================
@@ -132,7 +121,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
 
-    now = now_iso()
+    now = now_utc_iso()
 
     status: dict[str, Any] = {
         'title': args.title,
@@ -465,7 +454,7 @@ def cmd_get_context(args: argparse.Namespace) -> None:
 # =============================================================================
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description='Manage status.json files with phase tracking and metadata')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -522,11 +511,12 @@ def main() -> None:
 
     args = parser.parse_args()
     args.func(args)
+    return 0
 
 
 if __name__ == '__main__':
     try:
-        main()
+        sys.exit(main())
     except SystemExit:
         raise
     except Exception as e:

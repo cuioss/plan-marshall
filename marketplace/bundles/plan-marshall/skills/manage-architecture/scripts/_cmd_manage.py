@@ -10,7 +10,6 @@ from pathlib import Path
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
-    error_data_not_found,
     error_module_not_found,
     get_derived_path,
     get_enriched_path,
@@ -20,6 +19,7 @@ from _architecture_core import (
     load_llm_enriched,
     print_toon_list,
     print_toon_table,
+    require_derived_data,
     save_derived_data,
     save_llm_enriched,
 )
@@ -255,7 +255,7 @@ def cmd_derived(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except Exception as e:
         print('status\terror', file=sys.stderr)
@@ -343,7 +343,7 @@ def cmd_derived_module(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except ModuleNotFoundInProjectError:
         modules = get_module_names(load_derived_data(args.project_dir))

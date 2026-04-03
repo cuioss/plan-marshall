@@ -118,13 +118,15 @@ Removes old files.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory cleanup \
   --category context \
-  --older-than 7d
+  --older-than 5d
 ```
 
 ---
 
 ## Lifecycle Recommendations
 
+> **Source of truth**: Retention defaults are defined in `manage-config/standards/data-model.md`.
+
 | Category | Typical Lifetime | Cleanup Strategy |
 |----------|-----------------|------------------|
-| context | Days | Auto-cleanup after 7d |
+| context | Days | Auto-cleanup after 5d |

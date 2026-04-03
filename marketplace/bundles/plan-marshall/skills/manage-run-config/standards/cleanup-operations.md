@@ -10,6 +10,8 @@ Manage `.plan/` directory storage by removing old files according to configurabl
 
 ## Default Retention
 
+> **Source of truth**: Retention defaults are defined in `manage-config/standards/data-model.md`. Values shown here for convenience.
+
 | Category | Default Retention |
 |----------|-------------------|
 | Logs | 1 day |

@@ -40,7 +40,7 @@ Each line in `findings.jsonl` is a JSON object:
 |-------|------|-------------|
 | `hash_id` | string | 6-character hex hash (auto-generated from title + type) |
 | `timestamp` | string | ISO 8601 UTC (auto-generated on add) |
-| `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `pr-comment` |
+| `type` | string | One of: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `pr-comment`. The first three (`bug`, `improvement`, `anti-pattern`) map to lesson categories — see `manage-lessons/standards/file-format.md` |
 | `title` | string | Short description of the finding |
 | `detail` | string | Full description with context |
 | `severity` | string | `error`, `warning`, or `info` (default: `warning`) |

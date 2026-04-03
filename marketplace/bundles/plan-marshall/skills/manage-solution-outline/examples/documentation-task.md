@@ -61,61 +61,144 @@ Create comprehensive documentation for the API authentication flow, including se
 
 ### 1. Create authentication overview
 
-High-level documentation of auth mechanisms.
+High-level documentation of auth mechanisms covering supported methods, usage guidance, and security considerations.
 
-**Location**: `docs/modules/auth/pages/overview.adoc`
+**Metadata:**
+- change_type: feature
+- execution_mode: manual
+- domain: java
+- module: auth-docs
+- depends: none
 
-**Content**:
-- Supported auth methods (JWT, OAuth2, Basic)
-- When to use which method
-- Security considerations
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `docs/modules/auth/pages/overview.adoc`
+
+**Change per file:** Create new AsciiDoc page documenting supported auth methods (JWT, OAuth2, Basic), guidance on when to use each method, and security considerations.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Criteria: Antora site builds without errors
+
+**Success Criteria:**
+- All three auth methods are documented with examples
+- Security considerations section covers token storage and transport
+- File passes AsciiDoc lint checks
 
 ### 2. Add sequence diagrams
 
-Visual flow documentation.
+Visual flow documentation for the main authentication sequences.
 
-**Location**: `docs/modules/auth/images/`
+**Metadata:**
+- change_type: feature
+- execution_mode: manual
+- domain: java
+- module: auth-docs
+- depends: 1
 
-**Diagrams**:
-- `jwt-flow.puml` - JWT token validation
-- `oauth2-flow.puml` - OAuth2 authorization code flow
-- `refresh-flow.puml` - Token refresh sequence
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `docs/modules/auth/images/jwt-flow.puml`
+- `docs/modules/auth/images/oauth2-flow.puml`
+- `docs/modules/auth/images/refresh-flow.puml`
+
+**Change per file:** Create PlantUML sequence diagrams: JWT token validation flow, OAuth2 authorization code flow, and token refresh sequence.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Criteria: PlantUML diagrams render without errors in the Antora build
+
+**Success Criteria:**
+- All three diagrams render correctly
+- Diagrams are cross-referenced from overview.adoc
 
 ### 3. Write configuration guide
 
-Step-by-step setup instructions.
+Step-by-step setup instructions with required properties, optional tuning, and environment-specific settings.
 
-**Location**: `docs/modules/auth/pages/configuration.adoc`
+**Metadata:**
+- change_type: feature
+- execution_mode: manual
+- domain: java
+- module: auth-docs
+- depends: 1
 
-**Sections**:
-- Required properties
-- Optional tuning parameters
-- Environment-specific settings
-- Example configurations
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `docs/modules/auth/pages/configuration.adoc`
+
+**Change per file:** Create AsciiDoc configuration guide with sections for required properties, optional tuning parameters, environment-specific settings, and example configurations.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Criteria: Antora site builds without errors
+
+**Success Criteria:**
+- All required configuration properties are documented with types and defaults
+- At least one complete example configuration is included
+- Cross-references to overview.adoc are valid
 
 ### 4. Create troubleshooting guide
 
-Common issues and solutions.
+Common issues and solutions for auth failures.
 
-**Location**: `docs/modules/auth/pages/troubleshooting.adoc`
+**Metadata:**
+- change_type: feature
+- execution_mode: manual
+- domain: java
+- module: auth-docs
+- depends: 1,3
 
-**Topics**:
-- Token validation failures
-- Clock skew issues
-- Key configuration problems
-- Debug logging setup
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `docs/modules/auth/pages/troubleshooting.adoc`
+
+**Change per file:** Create AsciiDoc troubleshooting guide covering token validation failures, clock skew issues, key configuration problems, and debug logging setup.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Criteria: Antora site builds without errors
+
+**Success Criteria:**
+- Each issue includes symptom, cause, and resolution
+- Debug logging section includes concrete log output examples
+- Cross-references to configuration.adoc are valid
 
 ### 5. Add API reference
 
-Endpoint documentation.
+Endpoint documentation for all authentication endpoints.
 
-**Location**: `docs/modules/auth/pages/api-reference.adoc`
+**Metadata:**
+- change_type: feature
+- execution_mode: manual
+- domain: java
+- module: auth-docs
+- depends: 1
 
-**Endpoints**:
-- POST /auth/token
-- POST /auth/refresh
-- POST /auth/revoke
-- GET /auth/userinfo
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `docs/modules/auth/pages/api-reference.adoc`
+
+**Change per file:** Create AsciiDoc API reference documenting POST /auth/token, POST /auth/refresh, POST /auth/revoke, and GET /auth/userinfo with request/response schemas and examples.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify -pl docs`
+- Criteria: Antora site builds without errors
+
+**Success Criteria:**
+- All four endpoints are documented with request parameters and response schemas
+- Each endpoint includes at least one request/response example
+- Error response codes are documented for each endpoint
 
 ## Approach
 

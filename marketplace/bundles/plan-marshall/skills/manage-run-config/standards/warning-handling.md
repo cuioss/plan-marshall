@@ -114,6 +114,8 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
 
 ## Storage
 
+> **Schema reference**: See `references/run-config-format.md` for the complete `run-configuration.json` schema.
+
 Warning patterns are stored in `run-configuration.json`:
 
 ```json

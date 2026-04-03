@@ -200,10 +200,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status progre
 status: success
 plan_id: my-feature
 progress:
-  total_phases: 7
+  total_phases: 6
   completed_phases: 3
   current_phase: 4-plan
-  percent: 42
+  percent: 50
 ```
 
 **Progress formula**: `percent = floor(completed_phases / total_phases * 100)`. A phase counts as "completed" only when its status is `done`. Phases with status `in_progress` or `pending` are not counted.
@@ -261,7 +261,7 @@ status: success
 plan_id: my-feature
 title: My Feature
 current_phase: 2-refine
-total_phases: 7
+total_phases: 6
 completed_phases: 1
 change_type: feature
 ```

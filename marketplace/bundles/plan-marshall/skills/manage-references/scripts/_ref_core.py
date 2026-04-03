@@ -10,10 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, base_path, output_toon  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
 
 # =============================================================================
 # Type Definitions
@@ -57,16 +55,6 @@ def write_references(plan_id: str, refs: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     content = json.dumps(refs, indent=2)
     atomic_write_file(path, content)
-
-
-# =============================================================================
-# TOON Output
-# =============================================================================
-
-
-def output_toon(data: dict) -> None:
-    """Print TOON formatted output to stdout."""
-    print(serialize_toon(data))
 
 
 # =============================================================================

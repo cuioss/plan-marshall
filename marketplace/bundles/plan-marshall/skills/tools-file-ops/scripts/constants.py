@@ -49,6 +49,14 @@ FILE_MARSHAL = 'marshal.json'
 FILE_RUN_CONFIG = 'run-config.json'
 
 # ---------------------------------------------------------------------------
+# Hash ID pattern (shared by findings, assessments, logging)
+# All use 6-character hex hashes from hashlib.sha256().hexdigest()[:6]
+# Input varies by domain: findings use (title+type), assessments use
+# (file_path+certainty+confidence), logging uses (message content).
+# ---------------------------------------------------------------------------
+HASH_ID_LENGTH = 6
+
+# ---------------------------------------------------------------------------
 # Assessment certainty values
 # ---------------------------------------------------------------------------
 CERTAINTY_INCLUDE = 'CERTAIN_INCLUDE'
@@ -103,6 +111,22 @@ LOG_TYPE_SCRIPT = 'script'
 LOG_TYPE_WORK = 'work'
 LOG_TYPE_DECISION = 'decision'
 VALID_LOG_TYPES = (LOG_TYPE_SCRIPT, LOG_TYPE_WORK, LOG_TYPE_DECISION)
+
+# ---------------------------------------------------------------------------
+# Workflow profiles (used in deliverables, tasks, skill-domains)
+# Source of truth for profile names referenced across manage-* skills.
+# ---------------------------------------------------------------------------
+PROFILE_IMPLEMENTATION = 'implementation'
+PROFILE_MODULE_TESTING = 'module_testing'
+PROFILE_INTEGRATION_TESTING = 'integration_testing'
+PROFILE_VERIFICATION = 'verification'
+
+VALID_PROFILES = (
+    PROFILE_IMPLEMENTATION,
+    PROFILE_MODULE_TESTING,
+    PROFILE_INTEGRATION_TESTING,
+    PROFILE_VERIFICATION,
+)
 
 # ---------------------------------------------------------------------------
 # Plan directory structure

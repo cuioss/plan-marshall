@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
@@ -86,43 +87,25 @@ def cmd_init(args: argparse.Namespace) -> int:
 # =============================================================================
 
 
-def _check_required_fields(data: dict[str, Any], required: list[str]) -> tuple[bool, list[str]]:
-    """Check if required fields exist."""
-    missing = [f for f in required if f not in data]
-    return len(missing) == 0, missing
-
-
-def _check_field_type(data: dict[str, Any], field: str, expected_type: type) -> tuple[bool, str]:
-    """Check if field has expected type."""
-    if field not in data:
-        return False, f"Field '{field}' not found"
-
-    actual = type(data[field])
-    if actual != expected_type:
-        return False, f'Expected {expected_type.__name__}, got {actual.__name__}'
-
-    return True, f"Field '{field}' is {expected_type.__name__}"
-
-
 def validate_run_config(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Validate run-configuration.json format."""
     checks: list[dict[str, Any]] = []
 
     # Check required fields
     required = ['version', 'commands']
-    passed, missing = _check_required_fields(data, required)
+    passed, missing = check_required_fields(data, required)
     checks.append(
         {'check': 'required_fields', 'passed': passed, 'fields': required, 'missing': missing if not passed else []}
     )
 
     # Check version is integer
     if 'version' in data:
-        passed, msg = _check_field_type(data, 'version', int)
+        passed, msg = check_field_type(data, 'version', int)
         checks.append({'check': 'version_type', 'passed': passed, 'message': msg})
 
     # Check commands is object
     if 'commands' in data:
-        passed, msg = _check_field_type(data, 'commands', dict)
+        passed, msg = check_field_type(data, 'commands', dict)
         checks.append({'check': 'commands_object', 'passed': passed, 'message': msg})
 
         # Validate command entries
@@ -139,7 +122,7 @@ def validate_run_config(data: dict[str, Any]) -> list[dict[str, Any]]:
 
     # Check maven section if present
     if 'maven' in data:
-        passed, msg = _check_field_type(data, 'maven', dict)
+        passed, msg = check_field_type(data, 'maven', dict)
         checks.append({'check': 'maven_object', 'passed': passed, 'message': msg})
 
     return checks
@@ -616,7 +599,7 @@ Examples:
             p_warning.print_help()
             return 1
 
-    return args.func(args)
+    return args.func(args) or 0
 
 
 if __name__ == '__main__':

@@ -666,7 +666,7 @@ def cmd_get_module_context(args) -> int:
 # =============================================================================
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description='Manage solution outline documents')
     subparsers = parser.add_subparsers(dest='command', required=True, help='Command')
 
@@ -720,7 +720,7 @@ def main():
         parser.print_help()
         return 1
 
-    return args.func(args)
+    return args.func(args) or 0
 
 
 if __name__ == '__main__':
