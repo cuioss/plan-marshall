@@ -4,9 +4,9 @@ description: PR review comment workflow - fetch comments and triage for action c
 user-invocable: false
 ---
 
-# CI Integration Workflow Skill (Provider-Agnostic)
+# CI Integration Workflow Skill
 
-Handles PR review comment workflows - fetching comments and triaging them into action categories (code_change, explain, ignore). The script provides fetch and triage operations; the calling LLM implements responses and thread resolution. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
+Handles PR review comment workflows — fetching comments and triaging them into action categories (code_change, explain, ignore). Provider-agnostic: works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction. The script provides fetch and triage operations; the calling LLM implements responses and thread resolution.
 
 ## Enforcement
 
@@ -26,10 +26,6 @@ Handles PR review comment workflows - fetching comments and triaging them into a
 |-----------|------|----------|---------|-------------|
 | `pr` | int | no | auto-detect | PR number (auto-detects current branch's PR if omitted) |
 | `unresolved-only` | bool | no | false | Only return unresolved comments (fetch-comments) |
-
-### Shared Infrastructure
-
-Uses `triage_helpers` from `ref-toon-format` (see `ref-workflow-architecture` → "Shared Infrastructure" for the full API table).
 
 ## Prerequisites
 
@@ -248,19 +244,23 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
 
 ## Comment Classification
 
-Classification patterns are data-driven — loaded from `standards/comment-patterns.json`. Key principle: classification priority is code_change > ignore > explain, so actionable content always wins (e.g., "LGTM, but please fix the typo" → `code_change`). To add or update patterns, edit `standards/comment-patterns.json` instead of the script.
+Classification patterns are data-driven — loaded from `standards/comment-patterns.json`. Classification priority: `code_change(high)` → `code_change(medium/low)` → `ignore` → `explain`, so actionable content always wins (e.g., "LGTM, but please fix the typo" → `code_change`). To add or update patterns, edit `standards/comment-patterns.json` instead of the script.
 
 For triage override guidance, see `ref-workflow-architecture` → "Triage Override Guidance".
 
 ## Error Handling
-
-Error codes follow the shared `ErrorCode` enum from `triage_helpers` (`NOT_FOUND`, `INVALID_INPUT`, `PARSE_ERROR`, `PROVIDER_NOT_CONFIGURED`).
 
 | Failure | Action |
 |---------|--------|
 | fetch-comments failure | Report error to caller with stderr details. Do not proceed to triage. |
 | triage failure | Log warning, skip the comment, continue processing remaining comments. |
 | CI router failure (thread-reply, resolve-thread) | Log warning, continue — replies and resolutions are best-effort. |
+
+## Standards (Load On-Demand)
+
+| Standard | When to Load |
+|----------|-------------|
+| `standards/comment-patterns.json` | Adding/updating classification patterns or thresholds |
 
 ## Related
 

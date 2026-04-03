@@ -16,8 +16,6 @@
     "docs.docker.com",
     "cheatsheetseries.owasp.org",
     "www.keycloak.org",
-    "www.llamaindex.ai",
-    "www.tabnine.com",
     "docs.openrewrite.org",
     "www.graalvm.org",
     "docs.github.com",
@@ -33,9 +31,17 @@
     "medium.com",
     "gitingest.com",
     "www.usertesting.com",
+    "www.llamaindex.ai",
+    "www.tabnine.com",
     "registry.npmjs.org",
+    "npmjs.com",
     "pypi.org",
-    "crates.io"
+    "crates.io",
+    "docs.python.org",
+    "rust-lang.org",
+    "go.dev",
+    "kotlinlang.org",
+    "typescriptlang.org"
   ],
   "red_flags": [
     {"pattern": "free.*download", "description": "Free download sites — common malware distribution vector"},
@@ -55,6 +61,12 @@
     {"pattern": "^account-", "description": "Credential-harvesting prefix pattern"},
     {"pattern": "-verify\\.", "description": "Verification scam pattern (e.g., paypal-verify.com)"},
     {"pattern": "^secure-.*\\.", "description": "Fake security/update prefix pattern"},
-    {"pattern": "^update-.*\\.", "description": "Fake security/update prefix pattern"}
+    {"pattern": "^update-.*\\.", "description": "Fake security/update prefix pattern"},
+    {"pattern": "^bit\\.ly$", "description": "URL shortener — verify destination before trusting"},
+    {"pattern": "^tinyurl\\.com$", "description": "URL shortener — verify destination before trusting"},
+    {"pattern": "^t\\.co$", "description": "URL shortener — verify destination before trusting"},
+    {"pattern": "^goo\\.gl$", "description": "URL shortener — verify destination before trusting"},
+    {"pattern": "^is\\.gd$", "description": "URL shortener — verify destination before trusting"},
+    {"pattern": "^rb\\.gy$", "description": "URL shortener — verify destination before trusting"}
   ]
 }

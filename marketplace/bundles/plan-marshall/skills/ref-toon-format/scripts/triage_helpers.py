@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 import traceback as tb_module
 from collections.abc import Callable
@@ -46,6 +47,8 @@ __all__ = [
     'cmd_triage_single', 'cmd_triage_batch_handler',
     # Type definitions
     'TriageResult',
+    # Regex compilation
+    'compile_patterns_from_config',
 ]
 
 
@@ -387,6 +390,39 @@ def cmd_triage_batch_handler(
 
 
 # ============================================================================
+# REGEX COMPILATION FROM CONFIG
+# ============================================================================
+
+
+def compile_patterns_from_config(
+    patterns: list[str],
+    source_label: str = 'config',
+) -> list[re.Pattern]:
+    """Pre-compile regex patterns from a JSON config list.
+
+    Shared by workflow scripts that load regex patterns from standards/*.json
+    files (pr.py from comment-patterns.json, permission_web.py from
+    domain-lists.json). Centralizes error handling and warning output.
+
+    Args:
+        patterns: List of regex pattern strings.
+        source_label: Human-readable label for warning messages
+            (e.g., 'comment-patterns.json [code_change][high]').
+
+    Returns:
+        List of compiled regex Pattern objects. Invalid patterns are skipped
+        with a stderr warning.
+    """
+    compiled = []
+    for p in patterns:
+        try:
+            compiled.append(re.compile(p))
+        except re.error as e:
+            print(f'WARNING: Invalid regex in {source_label}: {p} — {e}', file=sys.stderr)
+    return compiled
+
+
+# ============================================================================
 # CLI CONSTRUCTION
 # ============================================================================
 
@@ -434,6 +470,10 @@ def create_workflow_cli(
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog,
+    )
+    parser.add_argument(
+        '--verbose', '-v', action='store_true', default=False,
+        help='Enable verbose output for debugging',
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 

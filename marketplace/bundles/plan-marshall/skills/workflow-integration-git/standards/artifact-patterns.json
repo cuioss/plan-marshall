@@ -15,17 +15,24 @@
     "**/*.backup*",
     "**/*.orig",
     "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/*.swp",
+    "**/*.swo",
+    "**/*.log",
     ".plan/temp/**"
   ],
   "uncertain_patterns": [
     "target/**",
     "build/**",
     "dist/**",
+    "out/**",
     ".next/**"
   ],
   "skip_dirs": [
     ".git",
     ".venv",
+    "venv",
+    "env",
     "node_modules"
   ]
 }

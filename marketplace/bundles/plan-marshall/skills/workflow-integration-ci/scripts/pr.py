@@ -33,6 +33,7 @@ from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     cmd_triage_batch_handler,
     cmd_triage_single,
+    compile_patterns_from_config,
     create_workflow_cli,
     load_skill_config,
     make_error,
@@ -59,13 +60,9 @@ _COMPILED_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {}
 for _category in ('code_change', 'explain', 'ignore'):
     _COMPILED_PATTERNS[_category] = {}
     for _priority, _pattern_list in PATTERNS.get(_category, {}).items():
-        compiled = []
-        for _p in _pattern_list:
-            try:
-                compiled.append(re.compile(_p))
-            except re.error as _e:
-                print(f'WARNING: Invalid regex in comment-patterns.json [{_category}][{_priority}]: {_p} — {_e}', file=sys.stderr)
-        _COMPILED_PATTERNS[_category][_priority] = compiled
+        _COMPILED_PATTERNS[_category][_priority] = compile_patterns_from_config(
+            _pattern_list, f'comment-patterns.json [{_category}][{_priority}]',
+        )
 
 
 # ============================================================================
@@ -178,17 +175,20 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
+CAMEL_CASE_MIN_LENGTH: int = _THRESHOLDS.get('camel_case_min_length', 4)
+
+
 def _looks_like_identifier(w: str) -> bool:
     """Check if a word looks like a code identifier.
 
     Matches words with underscores, dots, parens, or camelCase
-    (mixed upper/lower within a word, at least 4 chars).
+    (mixed upper/lower within a word, configurable min length).
     """
     clean = w.rstrip('.,;:)')
     if '_' in clean or '.' in clean or '(' in clean:
         return True
-    # camelCase: has both upper and lower, at least 4 chars
-    if len(clean) >= 4 and any(c.isupper() for c in clean[1:]) and any(c.islower() for c in clean):
+    # camelCase: has both upper and lower, at least CAMEL_CASE_MIN_LENGTH chars
+    if len(clean) >= CAMEL_CASE_MIN_LENGTH and any(c.isupper() for c in clean[1:]) and any(c.islower() for c in clean):
         return True
     return False
 
@@ -276,10 +276,9 @@ def suggest_implementation(action: str, body: str, path: str | None, line: int |
         return f'Reply to comment at {location} with explanation of design decision'
 
     # For code_change, extract the most specific action verb from the body.
-    # Checked in specificity order: more targeted verbs first.
-    body_lower = body.lower()
+    # Uses word boundary matching to avoid false positives (e.g., "prefix" matching "fix").
     # Checked in specificity order: targeted verbs first, then generic ones.
-    # "fix" before "replace/change" so "fix this by replacing" maps to fix.
+    body_lower = body.lower()
     verb_map = [
         (['rename', 'refactor'], 'Rename/refactor as suggested'),
         (['remove', 'delete', 'drop'], 'Remove indicated code'),
@@ -289,7 +288,7 @@ def suggest_implementation(action: str, body: str, path: str | None, line: int |
         (['move', 'extract', 'split'], 'Restructure code as suggested'),
     ]
     for verbs, suggestion in verb_map:
-        if any(v in body_lower for v in verbs):
+        if any(re.search(rf'\b{v}\b', body_lower) for v in verbs):
             return f'{suggestion} at {location}'
 
     return f'Review and address comment at {location}'

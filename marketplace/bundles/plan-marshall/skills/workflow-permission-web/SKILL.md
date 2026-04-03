@@ -206,19 +206,6 @@ Final State:
 - Total unique domains: {count}
 ```
 
-## Statistics Tracking
-
-> **Design note:** These counters are tracked by the LLM at workflow level because the scripts are stateless per-invocation. Each script reports its own counts in TOON output — the LLM sums them across steps.
-
-The following counters must be maintained by the LLM during workflow execution:
-
-- `domains_analyzed`: Total unique domains discovered and analyzed (from `analyze` output)
-- `permissions_added`: Sum of `added` counts from `apply` calls
-- `permissions_removed`: Sum of `removed` counts from `apply` calls
-- `security_checks_performed`: Count of unknown domains researched via WebSearch
-- `files_read`: Count of settings files successfully read (from `analyze` output)
-- `files_modified`: Count of settings files successfully updated (from `apply` calls)
-
 ## Scripts
 
 Script: `plan-marshall:workflow-permission-web` → `permission_web.py`
@@ -283,8 +270,4 @@ To add or update domain categorization, edit `standards/domain-lists.json` inste
 
 ## Related
 
-| Skill | Purpose |
-|-------|---------|
-| `plan-marshall:marshall-steward` | Permission management wizard |
-| `plan-marshall:tools-permission-doctor` | Permission analysis |
-| `plan-marshall:tools-permission-fix` | Permission fixes |
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Related skills: `plan-marshall:marshall-steward` (permission management wizard), `plan-marshall:tools-permission-doctor` (permission analysis), `plan-marshall:tools-permission-fix` (permission fixes).

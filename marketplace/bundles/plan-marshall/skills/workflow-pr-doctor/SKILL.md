@@ -99,6 +99,21 @@ All workflow scripts share `triage_helpers` from `ref-toon-format` for JSON pars
 /workflow-pr-doctor wait=false
 ```
 
+**Script subcommands:**
+```bash
+# Generate diagnostic report
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor diagnose \
+  --build-status failure --build-failures '[{"step":"test","message":"3 failed"}]'
+
+# Parse handoff from phase-6
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor parse-handoff \
+  --handoff '{"artifacts":{"pr_number":123}}'
+
+# Check attempt limit
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor track-attempt \
+  --category build --current 0
+```
+
 ## Workflow
 
 ### Step 0: Process Handoff Input
@@ -180,6 +195,15 @@ Based on `checks` parameter:
 
 ### Step 4: Generate Diagnostic Report
 
+Use the `diagnose` script to aggregate data into a deterministic report:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor diagnose \
+    [--build-status success|failure] \
+    [--build-failures '<json>'] [--review-comments '<json>'] [--sonar-issues '<json>']
+```
+
+Display format:
 ```
 ────────────────────────────────────────────────
 PR Diagnostic Report: #{pr}
@@ -322,7 +346,7 @@ status: success
 
 ### pr_doctor.py parse-handoff
 
-**Purpose:** Parse and validate handoff JSON from phase-6-finalize, merge with explicit parameters.
+**Purpose:** Parse and validate handoff JSON from phase-6-finalize, merge with explicit parameters. See Step 0 above for the handoff schema.
 
 **Usage:**
 ```bash
@@ -331,9 +355,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor parse
     [--pr 456] [--checks build] [--auto-fix] [--max-fix-attempts 5]
 ```
 
-**Output:** TOON with merged parameters and validation warnings.
-
-Explicit CLI parameters always take precedence over handoff values.
+**Output:** TOON with merged parameters and validation warnings. Explicit CLI parameters always take precedence over handoff values.
 
 ## Error Handling
 
@@ -346,6 +368,13 @@ Explicit CLI parameters always take precedence over handoff values.
 | Fix breaks build | Revert fix, report to user. Do not commit broken state. |
 | Max fix attempts reached | Report remaining issues with details. Do not loop further. |
 | Push failure | Report error. Never force-push as fallback. |
+
+## Standards (Load On-Demand)
+
+| Standard | When to Load |
+|----------|-------------|
+| `standards/automated-review-lifecycle.md` | Automated Review Lifecycle mode (phase-6-finalize handoff) |
+| `standards/pr-doctor-config.json` | Adding/updating build step severity or valid checks |
 
 ## Related
 

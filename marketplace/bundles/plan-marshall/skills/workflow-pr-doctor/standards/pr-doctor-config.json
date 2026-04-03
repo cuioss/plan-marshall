@@ -4,9 +4,15 @@
     "compile": "high",
     "build": "high",
     "test": "high",
+    "check": "high",
+    "verify": "high",
+    "package": "medium",
     "lint": "medium",
     "style": "medium",
-    "format": "medium"
+    "format": "medium",
+    "analyze": "medium",
+    "scan": "medium",
+    "deploy": "high"
   },
   "valid_checks": ["build", "reviews", "sonar", "all"],
   "default_max_fix_attempts": 3

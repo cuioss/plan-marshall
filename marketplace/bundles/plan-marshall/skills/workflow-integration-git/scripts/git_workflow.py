@@ -24,10 +24,12 @@ Examples:
     git_workflow.py detect-artifacts --root /path/to/repo
 """
 
+import fnmatch
 import os
 import re
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -73,9 +75,12 @@ def validate_subject(subject: str) -> dict:
 
     # Check imperative mood (basic check with false-positive allow-list)
     first_word = subject.split()[0].lower() if subject.split() else ''
-    # Words ending in -ed/-ing that are NOT past tense/gerund forms
+    # Words ending in -ed/-ing that are NOT past tense/gerund forms.
+    # Includes: natural -ed words (red, embed), imperative verbs that happen
+    # to end in -ed (speed, seed), and natural -ing words (string, ring).
     imperative_allowlist = {
         'red', 'bed', 'shed', 'led', 'fed', 'sled', 'med', 'wed',
+        'speed', 'seed', 'feed', 'need', 'proceed', 'exceed',
         'string', 'ring', 'bring', 'king', 'swing', 'thing', 'spring', 'ping',
         'caching', 'hashing', 'nothing', 'everything', 'something',
         'mixed', 'embed', 'spread', 'thread', 'overhead',
@@ -116,28 +121,18 @@ def wrap_text(text: str, width: int) -> str:
         if len(paragraph) <= width:
             lines.append(paragraph)
         else:
-            # Preserve leading whitespace (for bullet lists, indented blocks)
             stripped = paragraph.lstrip()
             indent = paragraph[: len(paragraph) - len(stripped)]
             effective_width = width - len(indent)
             if effective_width < 20:
-                # Indent too deep to wrap meaningfully — keep as-is
                 lines.append(paragraph)
                 continue
-            words = stripped.split()
-            current_line: list[str] = []
-            current_length = 0
-            for word in words:
-                if current_length + len(word) + 1 <= effective_width:
-                    current_line.append(word)
-                    current_length += len(word) + 1
-                else:
-                    if current_line:
-                        lines.append(indent + ' '.join(current_line))
-                    current_line = [word]
-                    current_length = len(word)
-            if current_line:
-                lines.append(indent + ' '.join(current_line))
+            wrapped = textwrap.fill(
+                stripped, width=effective_width,
+                initial_indent='', subsequent_indent='',
+                break_long_words=False, break_on_hyphens=False,
+            )
+            lines.extend(indent + line for line in wrapped.split('\n'))
     return '\n'.join(lines)
 
 
@@ -237,7 +232,6 @@ def analyze_diff(diff_content: str) -> dict:
     suggestions: dict[str, Any] = {
         'type': 'chore',
         'scope': None,
-        'subject': None,
         'detected_changes': detected_changes,
     }
 
@@ -412,21 +406,24 @@ def get_gitignored_files(root: Path) -> set[str]:
 def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
     """Compile glob-style patterns into regex for single-pass matching.
 
-    Uses a NUL-byte placeholder to prevent double-replacement when converting
-    ** to .* and then * to [^/]* (which would corrupt the .* from **).
+    Uses ``fnmatch.translate()`` for simple glob patterns and placeholder-based
+    conversion for ``**`` recursive directory patterns (which fnmatch does not
+    support).
     """
     compiled = []
     for pattern in patterns:
-        # Convert glob to regex: ** → .*, * → [^/]*, . → \.
-        # Use NUL-byte placeholders to prevent double-replacement:
-        # 1. Protect **/ and ** first, then convert remaining * globs.
-        regex = pattern.replace('.', r'\.')
-        regex = regex.replace('**/', '\x00DIR\x00')
-        regex = regex.replace('**', '\x00STAR\x00')
-        regex = regex.replace('*', '[^/]*')
-        regex = regex.replace('\x00DIR\x00', '(.*/)?')
-        regex = regex.replace('\x00STAR\x00', '.*')
-        compiled.append(re.compile(f'^{regex}$'))
+        if '**' in pattern:
+            # fnmatch doesn't support **; convert manually using placeholders
+            # to prevent double-replacement (e.g., * inside (.*/)?).
+            regex = pattern.replace('.', r'\.')
+            regex = regex.replace('**/', '\x00DIR\x00')
+            regex = regex.replace('**', '\x00STAR\x00')
+            regex = regex.replace('*', '[^/]*')
+            regex = regex.replace('\x00DIR\x00', '(.*/)?')
+            regex = regex.replace('\x00STAR\x00', '.*')
+            compiled.append(re.compile(f'^{regex}$'))
+        else:
+            compiled.append(re.compile(fnmatch.translate(pattern)))
     return compiled
 
 
@@ -458,12 +455,13 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     safe: list[str] = []
     uncertain: list[str] = []
 
-    for dirpath_str, dirnames, filenames in os.walk(str(root)):
+    root_str = str(root)
+    for dirpath_str, dirnames, filenames in os.walk(root_str):
         # Prune directories we never need to descend into
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
 
         for filename in filenames:
-            rel = os.path.relpath(os.path.join(dirpath_str, filename), str(root))
+            rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str)
             if rel in ignored:
                 continue
 

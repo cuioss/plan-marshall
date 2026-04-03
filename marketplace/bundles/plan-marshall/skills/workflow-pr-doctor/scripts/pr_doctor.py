@@ -149,8 +149,8 @@ def merge_handoff_with_params(
 # ============================================================================
 
 
-# In-memory attempt counters per category (reset per script invocation).
-# The caller passes the current count; the script returns whether to continue.
+# Stateless attempt check — the caller tracks the current count and passes
+# it in; the script returns whether to continue or stop.
 def check_attempt(category: str, current: int, max_attempts: int) -> dict[str, Any]:
     """Check whether a fix attempt should proceed or stop.
 

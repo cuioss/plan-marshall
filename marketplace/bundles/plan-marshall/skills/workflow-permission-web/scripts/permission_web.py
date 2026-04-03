@@ -32,6 +32,7 @@ from typing import Any
 
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
+    compile_patterns_from_config,
     create_workflow_cli,
     load_skill_config,
     make_error,
@@ -55,10 +56,16 @@ HIGH_REACH_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('high_reach_domains', []))
 
 # Red flags in domain names — loaded from array-of-objects, pre-compiled for performance
 _RED_FLAGS: list[dict[str, str]] = _DOMAIN_CONFIG.get('red_flags', [])
+_RED_FLAG_RAW_PATTERNS = [entry['pattern'] for entry in _RED_FLAGS if 'pattern' in entry]
+_RED_FLAG_COMPILED_LIST = compile_patterns_from_config(
+    _RED_FLAG_RAW_PATTERNS, 'domain-lists.json [red_flags]',
+)
 _RED_FLAG_COMPILED: list[tuple[str, re.Pattern, str]] = [
-    (entry['pattern'], re.compile(entry['pattern']), entry.get('description', ''))
-    for entry in _RED_FLAGS
-    if 'pattern' in entry
+    (entry['pattern'], compiled, entry.get('description', ''))
+    for entry, compiled in zip(
+        [e for e in _RED_FLAGS if 'pattern' in e],
+        _RED_FLAG_COMPILED_LIST,
+    )
 ]
 
 
@@ -429,9 +436,10 @@ def apply_recommendations(
             new_allow.append(entry)
             added += 1
 
-    # Sort WebFetch entries for consistent output while preserving non-WebFetch
-    # entry order. Separate, sort WebFetch entries, then merge back.
-    non_wf = [e for e in new_allow if not (isinstance(e, str) and e.startswith('WebFetch('))]
+    # Sort all entries deterministically: non-WebFetch entries first (sorted),
+    # then WebFetch entries (sorted). This ensures consistent output regardless
+    # of insertion history.
+    non_wf = sorted(e for e in new_allow if not (isinstance(e, str) and e.startswith('WebFetch(')))
     wf_sorted = sorted(e for e in new_allow if isinstance(e, str) and e.startswith('WebFetch('))
     permissions['allow'] = non_wf + wf_sorted
     # Write back preserving key order (Python 3.7+ dicts are insertion-ordered,

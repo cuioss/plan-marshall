@@ -210,7 +210,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 
 ## Issue Classification
 
-Classification rules are data-driven — loaded from `standards/sonar-rules.json`. Key principles:
+Classification rules are data-driven — loaded from `standards/sonar-rules.json` (keys: `suppressable_rules`, `fix_suggestions`, `test_acceptable_rules`, `severity_priority`, `type_boost`). To add or update rule handling, edit the JSON file instead of the script.
+
+Key principles:
 
 - **Always fix**: VULNERABILITY, SECURITY_HOTSPOT, and BLOCKER severity (enforced by script)
 - **Fix preferred**: CRITICAL severity, BUG type, resource leaks
@@ -219,36 +221,15 @@ Classification rules are data-driven — loaded from `standards/sonar-rules.json
 
 **Supported languages:** Java, JavaScript, TypeScript, Python. Unrecognized rules fall back to the Sonar issue message for triage guidance.
 
-To add or update classification, edit `standards/sonar-rules.json` instead of the script.
+For triage override guidance, see `ref-workflow-architecture` → "Triage Override Guidance".
 
 ## Suppression Format
 
-**Java:**
-```java
-// NOSONAR java:S1234 - reason for suppression
-```
+**Java:** `// NOSONAR java:S1234 - reason for suppression`
 
-**JavaScript/TypeScript:**
-```javascript
-// NOSONAR javascript:S1234 - reason for suppression
-```
+**JavaScript/TypeScript:** `// NOSONAR javascript:S1234 - reason for suppression`
 
-**Python:**
-```python
-# NOSONAR python:S1234 - reason for suppression
-```
-
-## Rule Configuration
-
-Triage rules are data-driven — loaded from `standards/sonar-rules.json`:
-
-- **suppressable_rules**: Rules that may be suppressed with justification
-- **fix_suggestions**: Rule-specific fix guidance
-- **test_acceptable_rules**: Rules acceptable in test files
-
-To add or update Sonar rule handling, edit `standards/sonar-rules.json` instead of the script.
-
-For triage override guidance, see `ref-workflow-architecture` → "Triage Override Guidance".
+**Python:** `# NOSONAR python:S1234 - reason for suppression`
 
 ## Error Handling
 
@@ -260,6 +241,12 @@ For triage override guidance, see `ref-workflow-architecture` → "Triage Overri
 | Fix implementation failure | Report which file/line failed. Do not suppress as fallback — ask the caller. |
 | MCP status change failure | Log warning, continue — marking resolved is best-effort. |
 | Build verification failure after fixes | Report failing tests/compilation. Do not commit broken fixes. |
+
+## Standards (Load On-Demand)
+
+| Standard | When to Load |
+|----------|-------------|
+| `standards/sonar-rules.json` | Adding/updating classification rules, suppressable rules, or fix suggestions |
 
 ## Related
 

@@ -17,12 +17,8 @@ Provides git commit workflow following conventional commits specification. Inclu
 - Never skip artifact cleanup step before committing (LLM must call detect-artifacts and act on results — the script detects but does not delete)
 
 **Constraints:**
-- Commit messages must follow conventional commits format
+- Commit messages must follow conventional commits format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples
 - Push only when explicitly requested via parameters
-
-### Shared Infrastructure
-
-Uses `triage_helpers` from `ref-toon-format` for error codes and TOON serialization.
 
 ## Parameters
 
@@ -30,10 +26,6 @@ Uses `triage_helpers` from `ref-toon-format` for error codes and TOON serializat
 |-----------|------|----------|---------|-------------|
 | `message` | string | no | auto-generate from diff | Custom commit message |
 | `push` | bool | no | false | Push to remote after committing |
-
-### Commit Standards
-
-Format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples.
 
 ## Prerequisites
 
@@ -107,7 +99,7 @@ If no message:
   ```
 - The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
 - If multiple change types are present, use the highest priority: fix > feat > perf > refactor > docs > style > test > chore > ci
-- Note: The script infers scope from the first source file's path structure. For changes spanning multiple modules, the detected scope may not be representative — omit scope for cross-cutting changes.
+- **Scope caveat**: The script infers scope from the first source file's path structure. For changes spanning multiple modules, the detected scope may not be representative — omit scope for cross-cutting changes.
 
 **Step 5: Stage and Commit**
 
@@ -254,8 +246,3 @@ status: success
 ## Related
 
 See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation.
-
-## References
-
-- Conventional Commits: https://www.conventionalcommits.org/
-- Git Commit Best Practices: https://cbea.ms/git-commit/

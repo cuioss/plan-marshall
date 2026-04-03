@@ -41,16 +41,19 @@ _RULES_CONFIG = load_skill_config(__file__, 'sonar-rules.json')
 
 SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
 
-# Severity to priority mapping
-SEVERITY_PRIORITY = {'BLOCKER': 'critical', 'CRITICAL': 'high', 'MAJOR': 'medium', 'MINOR': 'low', 'INFO': 'low'}
+# Severity to priority mapping — externalized to sonar-rules.json for consistency
+# with the data-driven pattern used by all workflow scripts.
+SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG.get('severity_priority', {
+    'BLOCKER': 'critical', 'CRITICAL': 'high', 'MAJOR': 'medium', 'MINOR': 'low', 'INFO': 'low',
+})
 
 # Type to priority boost — includes SECURITY_HOTSPOT (Sonar's 4th issue type)
-TYPE_BOOST = {
+TYPE_BOOST: dict[str, int] = _RULES_CONFIG.get('type_boost', {
     'VULNERABILITY': 1,  # Boost priority
     'SECURITY_HOTSPOT': 1,  # Boost priority — requires review
     'BUG': 0,
     'CODE_SMELL': -1,  # Lower priority
-}
+})
 
 
 # ============================================================================
