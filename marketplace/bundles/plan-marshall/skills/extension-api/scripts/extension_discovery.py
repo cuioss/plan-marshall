@@ -122,9 +122,12 @@ def find_extension_path(bundle_dir: Path) -> Path | None:
 
 
 def discover_all_extensions() -> list[dict[str, Any]]:
-    """Discover all extension.py files in bundles (no applicability check).
+    """Discover all extension.py files in bundles — returns every extension regardless
+    of whether it applies to the current project.
 
-    Scans all bundles for extension.py files in skills/plan-marshall-plugin/
+    Use this for configuration operations (skill domains, workflow extensions)
+    where all extensions need to be queried. For project-specific discovery
+    that filters by applicability, use discover_applicable_extensions() instead.
 
     Returns:
         List of dicts with extension info: {bundle, path, module}
@@ -150,17 +153,19 @@ def discover_all_extensions() -> list[dict[str, Any]]:
     return extensions
 
 
-def discover_extensions(project_root: Path) -> list[dict[str, Any]]:
-    """Discover applicable extensions for a project.
+def discover_applicable_extensions(project_root: Path) -> list[dict[str, Any]]:
+    """Discover extensions that apply to a specific project — filters by
+    whether discover_modules() finds modules in the given project root.
 
-    Scans all bundles for extension.py files. Extensions are included if
-    they have a discover_modules() method that can find modules in the project.
+    Use this for project-specific operations (module discovery, architecture).
+    For querying all extensions regardless of applicability, use
+    discover_all_extensions() instead.
 
     Args:
         project_root: Path to the project root
 
     Returns:
-        List of dicts with extension info: {bundle, path, module}
+        List of dicts with extension info: {bundle, path, module, discovered_modules}
     """
     all_extensions = discover_all_extensions()
     applicable: list[dict[str, Any]] = []
@@ -173,11 +178,17 @@ def discover_extensions(project_root: Path) -> list[dict[str, Any]]:
                 if discovered:  # Only include if modules were found
                     ext['discovered_modules'] = discovered
                     applicable.append(ext)
-            except Exception:
-                # Skip extensions that fail during discovery
-                pass
+            except Exception as e:
+                log_entry(
+                    'script', 'global', 'WARN',
+                    f'[EXTENSION] discover_modules() failed for {ext.get("bundle", "unknown")}: {e}'
+                )
 
     return applicable
+
+
+# Backward-compatible alias — callers may use either name
+discover_extensions = discover_applicable_extensions
 
 
 
@@ -261,7 +272,8 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
     return workflow_extensions
 
 
-def apply_config_defaults(project_root: Path) -> dict[str, Any]:
+def apply_config_defaults(project_root: Path,
+                          pre_discovered: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Apply config_defaults() callback for applicable extensions only.
 
     Called during initialization to let extensions set project-specific
@@ -271,6 +283,8 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
 
     Args:
         project_root: Path to the project root
+        pre_discovered: Optional list of already-discovered extensions
+            (from discover_extensions()). Avoids expensive double discovery.
 
     Returns:
         Dict with results: {
@@ -279,7 +293,12 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
             "errors": list[str]
         }
     """
-    extensions = discover_all_extensions()
+    if pre_discovered is not None:
+        # Use pre-discovered extensions (already filtered by applicability)
+        extensions = pre_discovered
+    else:
+        extensions = discover_all_extensions()
+
     results: dict[str, Any] = {'extensions_called': 0, 'extensions_skipped': 0, 'errors': []}
 
     for ext in extensions:
@@ -290,8 +309,9 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
             results['extensions_skipped'] += 1
             continue
 
-        # Only call config_defaults for extensions whose discover_modules finds modules
-        if hasattr(module, 'discover_modules'):
+        # When using pre-discovered extensions, skip applicability check
+        # (they were already filtered). Otherwise, check discover_modules.
+        if pre_discovered is None and hasattr(module, 'discover_modules'):
             try:
                 discovered = module.discover_modules(project_root)
                 if not discovered:
@@ -321,39 +341,18 @@ def apply_config_defaults(project_root: Path) -> dict[str, Any]:
 def discover_project_modules(project_root: Path) -> dict[str, Any]:
     """Discover all modules and split multi-technology paths into virtual modules.
 
-    Single entry point for module discovery. Handles:
-    - Extension discovery (which bundles apply)
-    - Module discovery per extension
-    - Virtual module splitting (same path from multiple extensions)
+    Thin wrapper around _module_aggregation.discover_project_modules().
+    See that module for the complete return structure documentation.
 
     Args:
         project_root: Path to project root
 
     Returns:
-        {
-            "modules": {
-                "module-name": {
-                    "name": "...",
-                    "build_systems": ["maven"],  # single technology
-                    "paths": {...},
-                    "metadata": {...},
-                    "commands": {
-                        "module-tests": "...",  # string commands
-                        "verify": "..."
-                    },
-                    "virtual_module": {  # only for split modules
-                        "physical_path": "...",
-                        "technology": "maven",
-                        "sibling_modules": ["module-name-npm"]
-                    }
-                }
-            },
-            "extensions_used": ["pm-dev-java", "pm-dev-frontend"]
-        }
+        Dict with 'modules' (name -> module dict) and 'extensions_used' (list of bundle names).
     """
     from _module_aggregation import discover_project_modules as _discover_project_modules
 
-    return _discover_project_modules(project_root, discover_extensions)
+    return _discover_project_modules(project_root, discover_applicable_extensions)
 
 
 # =============================================================================

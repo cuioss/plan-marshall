@@ -47,7 +47,7 @@ extension-api/
 │   ├── extension_base.py           # ExtensionBase ABC, canonical commands
 │   ├── extension_discovery.py      # Extension discovery, loading, aggregation
 │   ├── _build_discover.py          # Module discovery, path building
-│   ├── _build_result.py            # Log file creation, result construction (co-located build utility)
+│   ├── _build_result.py            # Log file creation, result construction, validation (co-located build utility)
 │   ├── _build_parse.py             # Issue structures, warning filtering (co-located build utility)
 │   ├── _build_format.py            # TOON and JSON output formatting (co-located build utility)
 │   ├── _build_wrapper.py           # Build tool wrapper detection (co-located build utility)
@@ -58,7 +58,7 @@ extension-api/
     ├── canonical-commands.md       # Command vocabulary and resolution
     ├── build-execution.md          # Build execution API + return structure
     ├── profiles.md                 # Profile override mechanism + profile contracts
-    └── workflow-overview.md        # 6-phase workflow + user review gate
+    └── workflow-overview.md        # Architecture overview + phase contracts + user review gate
 ```
 
 ---
@@ -124,7 +124,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | Layer | Extension Point | Override Model | Contract Location |
 |-------|-----------------|----------------|-------------------|
 | **Phase Skills** | None | System only, no override | Phase SKILL.md files |
-| **Profile Skills** | workflow_skills in marshal.json | Domain can replace default | [profiles/](standards/) |
+| **Profile Skills** | workflow_skills / workflow_skill_extensions in marshal.json | Domain can replace default | [profiles/](standards/) |
 | **Extensions** | provides_*() in extension.py | Additive (domain provides) | [extensions](standards/) |
 | **Domain Skills** | skills_by_profile in module analysis | Selected per deliverable | Domain bundle SKILL.md |
 
@@ -156,7 +156,7 @@ For understanding the complete system architecture, reference these documents:
 | `extension_base.py` | Library | ExtensionBase ABC, canonical commands, profile patterns |
 | `extension_discovery.py` | Library + CLI | Extension discovery, loading, aggregation, config defaults |
 | `_build_discover.py` | Library | Module discovery, path building, README detection |
-| `_module_aggregation.py` | Library | Virtual module splitting |
+| `_module_aggregation.py` | Library | Virtual module splitting (depends on plan_logging) |
 
 ### Build Execution Utilities (Co-Located, Not Part of Extension API)
 
@@ -310,7 +310,7 @@ class Extension(ExtensionBase):
         - name, build_systems, paths, metadata, packages, dependencies, stats, commands
         """
         # Find descriptors
-        from build_discover import discover_descriptors, build_module_base
+        from _build_discover import discover_descriptors, build_module_base
         descriptors = discover_descriptors(project_root, "descriptor-file")
 
         modules = []

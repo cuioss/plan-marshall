@@ -13,6 +13,8 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+from toon_parser import serialize_toon
+
 # Pattern for OpenRewrite TODO markers
 MARKER_PATTERN = re.compile(r'/\*~~\(TODO:\s*(.+?)\)>\*/')
 
@@ -137,7 +139,11 @@ def cmd_search_markers(args):
     """
     skip = tuple(getattr(args, 'skip_patterns', DEFAULT_SKIP_PATTERNS))
     result = search_openrewrite_markers(args.source_dir, args.extensions, skip)
-    print(json.dumps(result, indent=2))
+    fmt = getattr(args, 'format', 'toon')
+    if fmt == 'json':
+        print(json.dumps(result, indent=2))
+    else:
+        print(serialize_toon(result))
     if result['status'] == 'error':
         return 1
     return 1 if result['data']['ask_user_count'] > 0 else 0

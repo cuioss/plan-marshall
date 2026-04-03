@@ -1,5 +1,7 @@
 # Error Handling
 
+> These error types are referenced by the wizard, menu, and healthcheck flows. Each error includes a recovery action that the steward skill should execute.
+
 Common error types and recovery guidance.
 
 ---

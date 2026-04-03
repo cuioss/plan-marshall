@@ -357,7 +357,7 @@ Extensions providing module discovery must:
 | Bundle | Domain | Build System | Discovery Method |
 |--------|--------|-------------|-----------------|
 | pm-dev-java | java | Maven, Gradle | `maven_cmd_discover.py`, `gradle_cmd_discover.py` |
-| pm-dev-frontend | javascript | npm | Inline in `extension.py` |
+| plan-marshall | build | npm | `_npm_cmd_discover.py` (in build-npm) |
 | pm-documents | documentation | — | Directory-based (doc dirs) |
 | pm-plugin-development | plan-marshall-plugin-dev | — | Bundle-based (marketplace bundles) |
 | pm-requirements | requirements | — | Spec file discovery |

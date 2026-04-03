@@ -69,35 +69,17 @@ def test_all_canonical_commands_contains_all():
 # =============================================================================
 
 
-def test_canonical_commands_structure():
-    """CANONICAL_COMMANDS has expected structure for each command."""
+def test_canonical_commands_only_aliased():
+    """CANONICAL_COMMANDS only contains commands with aliases."""
     for cmd_name, meta in CANONICAL_COMMANDS.items():
-        assert 'phase' in meta, f"{cmd_name} missing 'phase'"
-        assert 'description' in meta, f"{cmd_name} missing 'description'"
-        assert 'required' in meta, f"{cmd_name} missing 'required'"
-        assert isinstance(meta['required'], bool), f"{cmd_name} 'required' should be bool"
+        assert 'aliases' in meta, f"{cmd_name} missing 'aliases'"
+        assert len(meta['aliases']) > 0, f"{cmd_name} has empty aliases"
 
 
-def test_canonical_commands_required():
-    """Required commands are marked correctly."""
-    required_commands = [CMD_MODULE_TESTS, CMD_QUALITY_GATE, CMD_VERIFY]
-    for cmd in required_commands:
-        assert CANONICAL_COMMANDS[cmd]['required'], f'{cmd} should be required'
-
-
-def test_canonical_commands_phases():
-    """Commands are assigned to expected phases."""
-    phase_mapping = {
-        'clean': [CMD_CLEAN],
-        'build': [CMD_COMPILE, CMD_TEST_COMPILE],
-        'test': [CMD_MODULE_TESTS, CMD_INTEGRATION_TESTS, CMD_COVERAGE, CMD_BENCHMARK],
-        'quality': [CMD_QUALITY_GATE],
-        'verify': [CMD_VERIFY],
-        'deploy': [CMD_INSTALL, CMD_CLEAN_INSTALL, CMD_PACKAGE],
-    }
-    for phase, commands in phase_mapping.items():
-        for cmd in commands:
-            assert CANONICAL_COMMANDS[cmd]['phase'] == phase, f'{cmd} should be in {phase} phase'
+def test_canonical_commands_expected_keys():
+    """CANONICAL_COMMANDS contains the expected command keys."""
+    expected = {CMD_INTEGRATION_TESTS, CMD_COVERAGE, CMD_BENCHMARK, CMD_QUALITY_GATE}
+    assert set(CANONICAL_COMMANDS.keys()) == expected
 
 
 # =============================================================================
@@ -408,9 +390,8 @@ if __name__ == '__main__':
     tests = [
         test_cmd_constants_values,
         test_all_canonical_commands_contains_all,
-        test_canonical_commands_structure,
-        test_canonical_commands_required,
-        test_canonical_commands_phases,
+        test_canonical_commands_only_aliased,
+        test_canonical_commands_expected_keys,
         test_profile_patterns_integration_tests,
         test_profile_patterns_quality_gate,
         test_profile_patterns_coverage,

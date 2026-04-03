@@ -6,6 +6,10 @@ This script solves the chicken-and-egg problem of locating plugin scripts
 before the executor is available. It detects the plugin installation path
 and caches it in .plan/marshall-state.toon for subsequent use.
 
+Note: The state file (.plan/marshall-state.toon) is separate from manage-config's
+marshal.json — bootstrap state is needed before the executor/config system is
+available, so it uses its own lightweight caching mechanism.
+
 Usage:
     python3 bootstrap-plugin.py get-root [--refresh]
     python3 bootstrap-plugin.py resolve --bundle <bundle> --path <path>

@@ -42,9 +42,9 @@ The extension scans the project root for build system markers to determine which
 | `package.json` | npm |
 | `pyproject.toml` | Python (pyprojectx) |
 
-Each detected build system delegates to its corresponding discovery script, which parses the build descriptor to extract module names and paths. Results from all build systems are aggregated into a unified module list containing the build system identifier, module path relative to the project root, and the module name.
+Each detected build system delegates to its corresponding discovery script, which parses the build descriptor to extract module names and paths. Results from all build systems are collected and, when multiple build systems coexist at the same path, split into separate virtual modules with technology suffixes (e.g., `my-module-maven`, `my-module-npm`).
 
-When multiple build systems coexist in the same project (e.g., Maven for backend and npm for frontend), the extension merges all discovered modules into a single flat list without deduplication — each module entry carries its build system tag for downstream consumers to filter as needed.
+When multiple build systems coexist in the same project (e.g., Maven for backend and npm for frontend), the extension merges all discovered modules into a single flat list.
 
 ## Discovery Delegation
 
@@ -56,9 +56,9 @@ When multiple build systems coexist in the same project (e.g., Maven for backend
 ## TOON Output Example
 
 ```toon
-status: success
-build_systems: maven,npm
-total_modules: 5
+status	success
+build_systems	maven,npm
+total_modules	5
 
 modules[5]{name,build_system,path}:
 core,maven,modules/core

@@ -317,7 +317,9 @@ def discover_js_sources(module_path: str | Path) -> dict[str, list[str]]:
     mod = Path(module_path)
     sources: dict[str, list[str]] = {'main': [], 'test': []}
 
-    # Check for JVM-style layout first (for hybrid projects)
+    # Check for JVM-style layout first (for hybrid projects like Maven + npm
+    # in the same directory — virtual module splitting handles this at a higher
+    # level, but JVM sources should still be detected for accurate stats)
     for lang in JVM_LANGUAGES:
         main_dir = mod / 'src' / 'main' / lang
         test_dir = mod / 'src' / 'test' / lang

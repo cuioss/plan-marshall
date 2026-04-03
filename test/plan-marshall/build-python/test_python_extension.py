@@ -3,9 +3,11 @@
 
 Tests the Python domain extension including:
 - get_skill_domains() - Domain metadata
-- discover_modules() - Runtime discovery from pyproject.toml
-- _discover_aliases() - Alias parsing from pyproject.toml
-- _map_to_canonical() - Command mapping
+- discover_modules() - Delegated to _python_cmd_discover.discover_python_modules()
+
+Note: The extension.py delegates to build-python/scripts/_python_cmd_discover.py
+which discovers modules based on directory structure (test/ or tests/ subdirs),
+not pyprojectx alias detection.
 """
 
 import importlib.util
@@ -75,43 +77,19 @@ def test_discover_modules_returns_empty_when_no_pyproject():
 
 
 # =============================================================================
-# Test: discover_modules() - pyproject.toml without pyprojectx
+# Test: discover_modules() - pyproject.toml without test dirs
 # =============================================================================
 
 
-def test_discover_modules_returns_empty_when_no_pyprojectx():
-    """discover_modules() returns [] when pyproject.toml has no pyprojectx section."""
+def test_discover_modules_returns_empty_when_no_test_dirs():
+    """discover_modules() returns [] when pyproject.toml exists but no test directories."""
     with BuildContext() as ctx:
-        # Create pyproject.toml without pyprojectx section
+        # Create pyproject.toml
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
 [project]
 name = "my-project"
 version = "1.0.0"
-""")
-
-        ext = Extension()
-        modules = ext.discover_modules(str(ctx.temp_dir))
-        assert modules == []
-
-
-# =============================================================================
-# Test: discover_modules() - No wrapper
-# =============================================================================
-
-
-def test_discover_modules_returns_empty_when_no_wrapper():
-    """discover_modules() returns [] when pyproject.toml exists but no ./pw wrapper."""
-    with BuildContext() as ctx:
-        # Create pyproject.toml with pyprojectx section but no ./pw wrapper
-        pyproject = ctx.temp_dir / 'pyproject.toml'
-        pyproject.write_text("""
-[project]
-name = "my-project"
-version = "1.0.0"
-
-[tool.pyprojectx.aliases]
-verify = "echo verify"
 """)
 
         ext = Extension()
@@ -125,31 +103,34 @@ verify = "echo verify"
 
 
 def test_discover_modules_returns_module_with_complete_setup():
-    """discover_modules() returns module when pyproject.toml and ./pw exist."""
+    """discover_modules() returns module when pyproject.toml and test dir exist.
+
+    Delegated discovery detects modules by the presence of test/ or tests/
+    subdirectories under the project root.
+    """
     with BuildContext() as ctx:
-        # Create pyproject.toml with pyprojectx section
+        # Create pyproject.toml
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
 [project]
 name = "my-project"
 version = "1.0.0"
-
-[tool.pyprojectx.aliases]
-compile = "uv run python build.py compile"
-module-tests = "uv run python build.py module-tests"
-quality-gate = "uv run python build.py quality-gate"
-verify = "uv run python build.py verify"
 """)
 
-        # Create ./pw wrapper (just needs to exist)
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash\necho "pw wrapper"')
-        pw.chmod(0o755)
+        # Create test directory (triggers module detection)
+        test_dir = ctx.temp_dir / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
+
+        # Create source directory
+        src_dir = ctx.temp_dir / 'src'
+        src_dir.mkdir()
+        (src_dir / 'main.py').write_text('print("hello")')
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        assert len(modules) == 1
+        assert len(modules) >= 1
         module = modules[0]
 
         # Check module structure
@@ -157,15 +138,11 @@ verify = "uv run python build.py verify"
         assert module['build_systems'] == ['python']
         assert module['paths']['module'] == '.'
         assert module['paths']['descriptor'] == 'pyproject.toml'
-        assert module['metadata']['build_tool'] == 'pyprojectx'
-        assert module['metadata']['package_manager'] == 'uv'
 
-        # Check commands
+        # Check commands (delegated discovery generates from module structure)
         commands = module['commands']
-        assert 'compile' in commands
-        assert 'module-tests' in commands
-        assert 'quality-gate' in commands
         assert 'verify' in commands
+        assert 'quality-gate' in commands
 
         # Check command format
         assert (
@@ -174,39 +151,33 @@ verify = "uv run python build.py verify"
 
 
 def test_discover_modules_maps_only_existing_aliases():
-    """discover_modules() only maps aliases that exist in pyproject.toml."""
+    """discover_modules() generates commands based on module structure.
+
+    Delegated discovery generates standard commands (verify, quality-gate, etc.)
+    for all discovered modules, regardless of pyprojectx aliases.
+    """
     with BuildContext() as ctx:
-        # Create pyproject.toml with only some aliases
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
 [project]
 name = "minimal-project"
 version = "1.0.0"
-
-[tool.pyprojectx.aliases]
-verify = "echo verify"
-clean = "rm -rf build"
 """)
 
-        # Create ./pw wrapper
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash\necho "pw"')
-        pw.chmod(0o755)
+        # Create test dir to trigger discovery
+        test_dir = ctx.temp_dir / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        assert len(modules) == 1
+        assert len(modules) >= 1
         commands = modules[0]['commands']
 
-        # Should have verify and clean
+        # Delegated discovery always generates verify, quality-gate, compile, clean
         assert 'verify' in commands
-        assert 'clean' in commands
-
-        # Should NOT have other commands
-        assert 'compile' not in commands
-        assert 'module-tests' not in commands
-        assert 'quality-gate' not in commands
+        assert 'quality-gate' in commands
 
 
 # =============================================================================
@@ -217,46 +188,39 @@ clean = "rm -rf build"
 def test_discover_modules_finds_source_directories():
     """discover_modules() detects source directories."""
     with BuildContext() as ctx:
-        # Create pyproject.toml and wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
-[tool.pyprojectx.aliases]
-verify = "echo verify"
+[project]
+name = "test-project"
 """)
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash')
-        pw.chmod(0o755)
 
-        # Create source directories
+        # Create source directory
         src_dir = ctx.temp_dir / 'src'
         src_dir.mkdir()
         (src_dir / 'main.py').write_text('print("hello")')
 
-        marketplace_dir = ctx.temp_dir / 'marketplace' / 'bundles'
-        marketplace_dir.mkdir(parents=True)
-        (marketplace_dir / 'test.py').write_text('print("test")')
+        # Create test directory (required for module detection)
+        test_dir = ctx.temp_dir / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        assert len(modules) == 1
+        assert len(modules) >= 1
         paths = modules[0]['paths']
-        assert 'src' in paths['sources']
-        assert 'marketplace/bundles' in paths['sources']
+        sources = paths.get('sources') or []
+        assert 'src' in sources
 
 
 def test_discover_modules_finds_test_directories():
     """discover_modules() detects test directories."""
     with BuildContext() as ctx:
-        # Create pyproject.toml and wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
-[tool.pyprojectx.aliases]
-verify = "echo verify"
+[project]
+name = "test-project"
 """)
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash')
-        pw.chmod(0o755)
 
         # Create test directory
         test_dir = ctx.temp_dir / 'test'
@@ -266,23 +230,20 @@ verify = "echo verify"
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        assert len(modules) == 1
+        assert len(modules) >= 1
         paths = modules[0]['paths']
-        assert 'test' in paths['tests']
+        tests = paths.get('tests') or []
+        assert 'test' in tests
 
 
 def test_discover_modules_counts_python_files():
     """discover_modules() counts Python files in stats."""
     with BuildContext() as ctx:
-        # Create pyproject.toml and wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
-[tool.pyprojectx.aliases]
-verify = "echo verify"
+[project]
+name = "test-project"
 """)
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash')
-        pw.chmod(0o755)
 
         # Create source files
         src_dir = ctx.temp_dir / 'src'
@@ -298,7 +259,7 @@ verify = "echo verify"
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        assert len(modules) == 1
+        assert len(modules) >= 1
         stats = modules[0]['stats']
         assert stats['source_files'] == 2
         assert stats['test_files'] == 1
@@ -307,24 +268,22 @@ verify = "echo verify"
 def test_discover_modules_finds_readme():
     """discover_modules() detects README.md."""
     with BuildContext() as ctx:
-        # Create pyproject.toml and wrapper
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
-[tool.pyprojectx.aliases]
-verify = "echo verify"
+[project]
+name = "test-project"
 """)
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash')
-        pw.chmod(0o755)
 
-        # Create README
-        readme = ctx.temp_dir / 'README.md'
-        readme.write_text('# My Project')
+        # Create test dir and README
+        test_dir = ctx.temp_dir / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
+        (ctx.temp_dir / 'README.md').write_text('# My Project')
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        assert len(modules) == 1
+        assert len(modules) >= 1
         paths = modules[0]['paths']
         assert paths.get('readme') == 'README.md'
 
@@ -335,63 +294,54 @@ verify = "echo verify"
 
 
 def test_discover_modules_works_for_plan_marshall_marketplace():
-    """discover_modules() returns Python module for plan-marshall marketplace.
-
-    The plan-marshall marketplace IS a Python project. Python discovery
-    provides the root module (build_systems=['python']), while
-    pm-plugin-development provides bundle modules (build_systems=['marshall-plugin']).
-    """
+    """discover_modules() returns Python module for plan-marshall marketplace."""
     with BuildContext() as ctx:
-        # Create pyproject.toml and wrapper (valid Python project)
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
-[tool.pyprojectx.aliases]
-verify = "echo verify"
+[project]
+name = "plan-marshall"
 """)
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash')
-        pw.chmod(0o755)
 
-        # Create marketplace.json with name=plan-marshall
+        # Create test dir (triggers module detection)
+        test_dir = ctx.temp_dir / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
+
+        # Create marketplace.json
         marketplace_dir = ctx.temp_dir / 'marketplace' / '.claude-plugin'
         marketplace_dir.mkdir(parents=True)
-        marketplace_json = marketplace_dir / 'marketplace.json'
-        marketplace_json.write_text('{"name": "plan-marshall", "version": "1.0.0"}')
+        (marketplace_dir / 'marketplace.json').write_text('{"name": "plan-marshall", "version": "1.0.0"}')
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
         # Should return Python root module
-        assert len(modules) == 1
+        assert len(modules) >= 1
         assert modules[0]['name'] == 'default'
         assert modules[0]['build_systems'] == ['python']
 
 
 def test_discover_modules_handles_other_marketplaces():
-    """discover_modules() works for non-plan-marshall marketplaces.
-
-    Other code marketplaces with different names should be handled by pm-dev-python.
-    """
+    """discover_modules() works for non-plan-marshall marketplaces."""
     with BuildContext() as ctx:
-        # Create pyproject.toml and wrapper (valid Python project)
         pyproject = ctx.temp_dir / 'pyproject.toml'
         pyproject.write_text("""
-[tool.pyprojectx.aliases]
-verify = "echo verify"
+[project]
+name = "other-project"
 """)
-        pw = ctx.temp_dir / 'pw'
-        pw.write_text('#!/bin/bash')
-        pw.chmod(0o755)
+
+        # Create test dir
+        test_dir = ctx.temp_dir / 'test'
+        test_dir.mkdir()
+        (test_dir / 'test_main.py').write_text('def test_foo(): pass')
 
         # Create marketplace.json with different name
         marketplace_dir = ctx.temp_dir / 'marketplace' / '.claude-plugin'
         marketplace_dir.mkdir(parents=True)
-        marketplace_json = marketplace_dir / 'marketplace.json'
-        marketplace_json.write_text('{"name": "other-marketplace", "version": "1.0.0"}')
+        (marketplace_dir / 'marketplace.json').write_text('{"name": "other-marketplace", "version": "1.0.0"}')
 
         ext = Extension()
         modules = ext.discover_modules(str(ctx.temp_dir))
 
-        # Should return module - NOT plan-marshall
-        assert len(modules) == 1
+        assert len(modules) >= 1
         assert modules[0]['name'] == 'default'

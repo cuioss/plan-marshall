@@ -3,6 +3,13 @@
 
 Provides categorize_warnings() with pluggable matchers (substring, wildcard, regex)
 used by build-maven and build-gradle check-warnings subcommands.
+
+Note: This module handles the *check-warnings CLI subcommand* (post-hoc classification
+of extracted warnings against acceptable patterns). For *build output filtering*
+during cmd_run (actionable/structured/errors modes), see _build_parse.filter_warnings().
+The two systems serve different pipeline phases:
+  1. cmd_run → _build_parse.filter_warnings() — real-time output filtering
+  2. check-warnings CLI → _warnings_classify.categorize_warnings() — detailed triage
 """
 
 from __future__ import annotations

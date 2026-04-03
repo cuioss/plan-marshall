@@ -81,7 +81,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 | run_config cleanup | `plan-marshall:manage-run-config:run_config` | Clean temp, logs, archived-plans, memory (cleanup/cleanup-status subcommands) |
 | ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection (delegated to tools-integration-ci) |
 | manage-config | `plan-marshall:manage-config:manage-config` | Project-level marshal.json CRUD |
-| scan-marketplace-inventory | `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory` | Script discovery |
+| scan-marketplace-inventory | `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory` | Script discovery (requires pm-plugin-development bundle) |
 | tools-permission-doctor | `plan-marshall:tools-permission-doctor:permission_doctor` | Permission analysis |
 | tools-permission-fix | `plan-marshall:tools-permission-fix:permission_fix` | Permission fixes |
 | generate-executor | `plan-marshall:tools-script-executor:generate_executor` | Executor generation |
@@ -186,7 +186,7 @@ Then execute the workflow described in that file.
 
 | Reference | Purpose | Load When |
 |-----------|---------|-----------|
-| `wizard-flow.md` | First-run wizard steps 1-11 | mode=wizard or --wizard flag |
+| `wizard-flow.md` | First-run wizard steps 1-16 | mode=wizard or --wizard flag |
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains | Menu option 3 |

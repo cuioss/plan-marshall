@@ -75,7 +75,7 @@ def test_search_markers_no_markers():
         java_file = src_dir / 'Test.java'
         java_file.write_text('public class Test {}')
 
-        result = run_script(SCRIPT_PATH, 'search-markers', '--source-dir', str(temp_dir / 'src'))
+        result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(temp_dir / 'src'))
         data = result.json()
 
         assert data['status'] == 'success', 'Should succeed with no markers'
@@ -125,7 +125,7 @@ def test_check_warnings_with_real_patterns():
 def test_search_markers_with_content():
     """Test searching when markers exist in source files (H49)."""
     markers_dir = FIXTURES_DIR / 'source-with-markers'
-    result = run_script(SCRIPT_PATH, 'search-markers', '--source-dir', str(markers_dir / 'src'))
+    result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(markers_dir / 'src'))
     data = result.json()
 
     assert data['status'] == 'success', 'Should succeed'

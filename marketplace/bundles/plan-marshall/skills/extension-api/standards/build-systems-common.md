@@ -132,19 +132,13 @@ Field: <build_system>.acceptable_warnings
 
 ## Canonical Commands
 
-All build systems generate commands using the shared executor pattern:
-
-```
-python3 .plan/execute-script.py {bundle}:{skill}:{script} run --command-args "{tool_args}"
-```
-
-See `canonical-commands.md` for the full canonical command specification.
+See [canonical-commands.md](canonical-commands.md) for the complete canonical command specification and resolution logic.
 
 ---
 
 ## Script API
 
-All build skills share the same subcommand structure:
+All build skills share a common subcommand structure (with tool-specific variations documented in each skill):
 
 | Subcommand | Purpose | Available In |
 |------------|---------|--------------|

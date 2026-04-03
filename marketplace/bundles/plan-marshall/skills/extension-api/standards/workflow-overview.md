@@ -14,7 +14,7 @@ Contract specification for the 6-phase workflow execution model.
 | **2-refine** | `plan-phase-agent phase=2-refine` | Clarify request | Refined request with confidence score |
 | **3-outline** | `plan-phase-agent phase=3-outline` | Create solution outline | solution_outline.md |
 | **4-plan** | `plan-phase-agent phase=4-plan` | Decompose into tasks | TASK-*.toon |
-| **5-execute** | `plan-phase-agent phase=5-execute task_id=TASK-001` | Run implementation + verification | Modified + verified project files |
+| **5-execute** | `plan-phase-agent phase=5-execute task_number=1` | Run implementation + verification | Modified + verified project files |
 | **6-finalize** | `plan-phase-agent phase=6-finalize` | Commit, PR, automated review | Git commit, PR |
 
 ### Phase Transitions

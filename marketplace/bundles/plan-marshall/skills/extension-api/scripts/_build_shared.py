@@ -354,6 +354,7 @@ def add_search_markers_subparser(subparsers, search_markers_fn, *, default_exten
     markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
     markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
     markers_parser.add_argument('--extensions', default=default_extensions, help='Comma-separated extensions')
+    markers_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)')
     markers_parser.set_defaults(func=search_markers_fn)
     return markers_parser
 
@@ -482,6 +483,10 @@ def cmd_run_common(
 
     Handles the execute_direct() result: routes success/error/timeout to
     the appropriate formatter and parses build failures for structured errors.
+
+    Note: Uses format_toon()/format_json() from _build_format for all output.
+    Both paths share the same normalization logic — format_toon delegates to
+    serialize_toon after ordering fields; format_json normalizes Issue objects.
 
     Args:
         result: DirectCommandResult from execute_direct().

@@ -115,6 +115,12 @@ Build systems may include additional context for diagnostics.
 | `wrapper` | string | Maven, Python | Wrapper path used (e.g., `./mvnw`, `./pw`) |
 | `command_type` | string | npm | Execution type: `npm` or `npx` |
 
+#### Dynamic Result Fields (Factory API)
+
+Build systems using `ExecuteConfig` from `_build_execute_factory.py` can inject additional fields into every result via:
+- `extra_result_fields`: Static dict merged into all results
+- `extra_result_fn`: Callable `(args, wrapper) -> dict` for per-invocation dynamic fields (e.g., npm uses this to add `command_type`)
+
 ## Requirements
 
 ### R1: Log File Output

@@ -82,6 +82,8 @@ Only include if corresponding profile/configuration is detected:
 - `coverage` - Requires coverage tooling (JaCoCo, Istanbul, etc.)
 - `benchmark` - Requires benchmark configuration (JMH, etc.)
 
+**Note**: `CMD_BENCHMARK` aliases include `performance` — profile IDs like `performance` or `jmh` map to the `benchmark` canonical command.
+
 ### Aggregator Modules (pom-only)
 
 Modules with `metadata.packaging == "pom"` only receive:

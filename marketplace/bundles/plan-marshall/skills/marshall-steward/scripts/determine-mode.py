@@ -7,6 +7,11 @@ Subcommands:
     check-docs      Check if project docs need .plan/temp documentation
     check-structure Check if project-architecture directory exists
 
+Note: check-docs and check-structure overlap with menu-healthcheck steps 2 and 5.
+The healthcheck runs these same checks via the menu path; this script provides
+direct CLI access for the wizard flow and first-run bootstrap (before the
+executor exists).
+
 Usage:
     python3 determine-mode.py mode
     python3 determine-mode.py check-docs

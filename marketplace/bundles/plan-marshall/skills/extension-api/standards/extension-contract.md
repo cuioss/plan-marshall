@@ -14,6 +14,8 @@ At runtime, they're discovered from the plugin cache:
 ~/.claude/plugins/cache/plan-marshall/{bundle}/1.0.0/skills/plan-marshall-plugin/extension.py
 ```
 
+**Note**: The skill directory name `plan-marshall-plugin` is a convention — `find_extension_path()` in `extension_discovery.py` searches this hardcoded path. All domain bundles must use this directory name for their extension to be discovered.
+
 ---
 
 ## ExtensionBase Import
@@ -686,7 +688,7 @@ class Extension(ExtensionBase):
 
 #### Existing Implementations
 
-No bundles currently provide finalize steps. This is a new extension point.
+No bundles currently provide finalize steps.
 
 ---
 
@@ -895,12 +897,12 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 | Bundle | Domain Key | Triage | Outline Skill | Recipes | Verify Steps | Notes |
 |--------|------------|--------|---------------|---------|-------------|-------|
-| pm-dev-java | java | ext-triage-java | - | - | 2 (impl, test) | Base Java bundle |
+| pm-dev-java | java | ext-triage-java | - | - | - | Base Java bundle |
 | pm-dev-java-cui | java-cui | - | - | - | - | Additive to pm-dev-java |
 | pm-dev-frontend | javascript | ext-triage-js | - | - | - | |
-| pm-dev-python | python | - | - | - | - | |
+| pm-dev-python | python | ext-triage-python | - | - | - | |
 | pm-dev-oci | oci-containers | ext-triage-oci | - | - | - | |
-| pm-documents | documentation | ext-triage-docs | - | - | 1 (doc_sync) | Uses generic skills |
+| pm-documents | documentation | ext-triage-docs | - | - | - | Uses recipe for doc verification |
 | pm-requirements | requirements | ext-triage-reqs | - | - | - | |
 | pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | |
 | plan-marshall | build, general-dev | - | - | 1 (refactor-to-profile-standards) | - | Multi-domain |

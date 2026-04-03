@@ -2,6 +2,17 @@
 
 Sub-menu for skill domains and project structure configuration.
 
+## Table of Contents
+
+- [Configuration Submenu](#configuration-submenu)
+- [Routing](#routing)
+- [Configuration: Plan Phase Settings](#configuration-plan-phase-settings)
+- [Configuration: Review Gates](#configuration-review-gates)
+- [Configuration: Quality Pipelines](#configuration-quality-pipelines)
+- [Configuration: Skill Domains](#configuration-skill-domains)
+- [Configuration: Project Structure](#configuration-project-structure)
+- [Thin Agent Architecture](#thin-agent-architecture)
+
 ---
 
 ## Configuration Submenu
@@ -639,17 +650,9 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 
 ---
 
-## Thin Agent Architecture (7-Phase Model)
+### Thin Agent Architecture
 
-The plan-marshall bundle uses one generic phase agent and direct skill loading:
-
-| Component | Purpose | Phase Skill |
-|-----------|---------|-------------|
-| `phase-agent` (agent) | Generic wrapper for phase-1-init, phase-4-plan | Caller-specified via `skill` param |
-| Direct skill load | Phases 2-refine, 3-outline, 5-execute | Loaded in main context |
-| `q-gate-validation-agent` (agent) | Quality verification | `plan-marshall:phase-5-execute` |
-
-Phase skills are statically known (not resolved from config). Domain-specific extensions are loaded via `resolve-workflow-skill-extension --domain {domain} --type {outline|triage}`.
+> For the full 7-phase architecture model, see [workflow-overview.md](../../../extension-api/standards/workflow-overview.md). This section covers configuration options only.
 
 ---
 

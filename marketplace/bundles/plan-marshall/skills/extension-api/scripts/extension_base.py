@@ -27,17 +27,17 @@ Usage:
 
 from abc import ABC, abstractmethod
 
-# Re-export module discovery utilities from private implementation
+# Re-export module discovery utilities from private implementation.
+# These form the public API for extension.py implementations.
+# Internal constants (EXCLUDE_DIRS, JVM_EXTENSIONS, JVM_LANGUAGES, README_PATTERNS)
+# are NOT re-exported — import from _build_discover directly if needed.
 from _build_discover import (  # noqa: F401
-    EXCLUDE_DIRS,
-    JVM_EXTENSIONS,
-    JVM_LANGUAGES,
-    README_PATTERNS,
     ModuleBase,
     ModulePaths,
     build_module_base,
     count_source_files,
     discover_descriptors,
+    discover_js_sources,
     discover_packages,
     discover_sources,
     find_readme,
@@ -81,96 +81,24 @@ ALL_CANONICAL_COMMANDS = [
 # =============================================================================
 
 CANONICAL_COMMANDS = {
-    # Clean phase
-    CMD_CLEAN: {
-        'phase': 'clean',
-        'description': 'Remove build artifacts and generated files',
-        'required': False,
-    },
-    # Build phase
-    CMD_COMPILE: {
-        'phase': 'build',
-        'description': 'Compile production sources only',
-        'required': False,
-    },
-    CMD_TEST_COMPILE: {
-        'phase': 'build',
-        'description': 'Compile production and test sources',
-        'required': False,
-    },
-    # Test phase
-    CMD_MODULE_TESTS: {
-        'phase': 'test',
-        'description': 'Unit tests for the module (JUnit, Jest, pytest)',
-        'required': True,
-    },
     CMD_INTEGRATION_TESTS: {
-        'phase': 'test',
-        'description': 'Integration tests (containers, external services)',
-        'required': False,
         'aliases': [
-            'integration-tests',
-            'integration-test',
-            'integrationTest',
-            'it',
-            'e2e',
-            'acceptance',
+            'integration-tests', 'integration-test', 'integrationTest',
+            'it', 'e2e', 'acceptance',
         ],
     },
     CMD_COVERAGE: {
-        'phase': 'test',
-        'description': 'Test execution with coverage measurement',
-        'required': False,
         'aliases': ['coverage', 'jacoco'],
     },
     CMD_BENCHMARK: {
-        'phase': 'test',
-        'description': 'Benchmark/performance tests (JMH, k6, wrk)',
-        'required': False,
         'aliases': [
-            'performance',
-            'benchmarks',
-            'jmh',
-            'perf',
-            'stress',
-            'load',
+            'performance', 'benchmarks', 'jmh', 'perf', 'stress', 'load',
         ],
     },
-    # Quality phase
     CMD_QUALITY_GATE: {
-        'phase': 'quality',
-        'description': 'Static analysis, linting, formatting checks',
-        'required': True,
         'aliases': [
-            'pre-commit',
-            'precommit',
-            'sonar',
-            'lint',
-            'check',
-            'quality',
+            'pre-commit', 'precommit', 'sonar', 'lint', 'check', 'quality',
         ],
-    },
-    # Verify phase
-    CMD_VERIFY: {
-        'phase': 'verify',
-        'description': 'Full verification (compile + test + quality)',
-        'required': True,
-    },
-    # Deploy phase
-    CMD_INSTALL: {
-        'phase': 'deploy',
-        'description': 'Install artifact to local repository',
-        'required': False,
-    },
-    CMD_CLEAN_INSTALL: {
-        'phase': 'deploy',
-        'description': 'Clean build artifacts then install to local repository',
-        'required': False,
-    },
-    CMD_PACKAGE: {
-        'phase': 'deploy',
-        'description': 'Create deployable artifact (jar, war, native)',
-        'required': False,
     },
 }
 
@@ -206,6 +134,11 @@ class ExtensionBase(ABC):
     # =========================================================================
     # Required Methods (must be implemented)
     # =========================================================================
+
+    APPLICABLE_PROFILES = ('implementation', 'module_testing', 'integration_testing',
+                           'quality', 'documentation')
+    """Profile names iterated during _build_applicable_result(). Does not include 'core'
+    which is always merged into each profile."""
 
     @abstractmethod
     def get_skill_domains(self) -> list[dict]:
@@ -525,8 +458,7 @@ class ExtensionBase(ABC):
             profile_filter = self._detect_applicable_profiles(profiles, module_data)
 
         skills_by_profile: dict[str, dict] = {}
-        for profile_name in ['implementation', 'module_testing', 'integration_testing',
-                             'quality', 'documentation']:
+        for profile_name in self.APPLICABLE_PROFILES:
             if profile_name not in profiles:
                 continue
             if profile_filter is not None and profile_name not in profile_filter:
