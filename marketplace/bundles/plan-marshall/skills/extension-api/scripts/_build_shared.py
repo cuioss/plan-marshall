@@ -102,6 +102,10 @@ def cmd_parse_common(
     return 0
 
 
+# Default build timeout in seconds for all build systems.
+# Used by ExecuteConfig instances across Maven, Gradle, npm, and Python.
+DEFAULT_BUILD_TIMEOUT = 300
+
 # Buffer added to inner timeout for Bash tool timeout calculation.
 # The Bash tool has a default 120-second timeout. For long-running builds,
 # the outer timeout must be higher than the inner (shell) timeout.

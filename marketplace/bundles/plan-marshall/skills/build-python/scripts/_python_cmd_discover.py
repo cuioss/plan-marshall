@@ -31,6 +31,7 @@ except ModuleNotFoundError:
 from _build_commands import build_canonical_commands
 from _build_discover import EXCLUDE_DIRS
 from extension_base import build_module_base, find_readme
+from plan_logging import log_entry
 
 # Directories that indicate a test module
 TEST_DIR_NAMES = {'test', 'tests'}
@@ -58,6 +59,7 @@ def discover_python_modules(project_root: str) -> list:
         List of module dicts conforming to module-discovery.md contract.
     """
     root = Path(project_root).resolve()
+    log_entry('script', 'global', 'INFO', f'[PYTHON-DISCOVER] Starting discovery in {project_root}')
     modules = []
 
     # Find directories that contain test/ or tests/ subdirectories
@@ -68,6 +70,7 @@ def discover_python_modules(project_root: str) -> list:
         if module:
             modules.append(module)
 
+    log_entry('script', 'global', 'INFO', f'[PYTHON-DISCOVER] Discovered {len(modules)} modules')
     return modules
 
 

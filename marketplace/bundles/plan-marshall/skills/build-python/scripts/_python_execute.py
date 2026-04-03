@@ -11,6 +11,7 @@ Usage:
 
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers
+from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _build_wrapper import detect_wrapper as _detect_wrapper
 from _python_cmd_parse import parse_log
 
@@ -55,7 +56,7 @@ _CONFIG = ExecuteConfig(
     build_command_fn=_python_build_command_fn,
     scope_fn=_python_scope_fn,
     command_key_fn=_python_command_key_fn,
-    default_timeout=300,
+    default_timeout=DEFAULT_BUILD_TIMEOUT,
     wrapper_resolve_fn=_python_wrapper_resolve_fn,
     extra_result_fn=_python_extra_result_fn,
 )

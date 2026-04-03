@@ -13,6 +13,7 @@ import re
 
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers
+from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _npm_cmd_parse import parse_log
 
 # Commands that should use npx instead of npm (direct tool invocations)
@@ -88,7 +89,7 @@ _CONFIG = ExecuteConfig(
     build_command_fn=_npm_build_command_fn,
     scope_fn=_npm_scope_fn,
     command_key_fn=_npm_command_key_fn,
-    default_timeout=300,
+    default_timeout=DEFAULT_BUILD_TIMEOUT,
     wrapper_resolve_fn=_npm_wrapper_resolve_fn,
     parser_needs_command=True,
     supports_env_vars=True,

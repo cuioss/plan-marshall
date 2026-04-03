@@ -32,6 +32,7 @@ from extension_base import (
     discover_packages,
     discover_sources,
 )
+from plan_logging import log_entry
 
 
 # =============================================================================
@@ -52,6 +53,7 @@ def discover_npm_modules(project_root: str) -> list:
         List of module dicts conforming to module-discovery.md contract.
     """
     root = Path(project_root).resolve()
+    log_entry('script', 'global', 'INFO', f'[NPM-DISCOVER] Starting discovery in {project_root}')
     root_pkg = root / 'package.json'
 
     if not root_pkg.exists():
@@ -85,6 +87,7 @@ def discover_npm_modules(project_root: str) -> list:
         if module:
             modules.append(module)
 
+    log_entry('script', 'global', 'INFO', f'[NPM-DISCOVER] Discovered {len(modules)} modules')
     return modules
 
 
@@ -339,7 +342,8 @@ def _load_package_json(path: Path) -> dict | None:
         Parsed dict, or None on error.
     """
     try:
-        return json.loads(path.read_text(encoding='utf-8'))
+        data: dict = json.loads(path.read_text(encoding='utf-8'))
+        return data
     except (OSError, json.JSONDecodeError):
         return None
 

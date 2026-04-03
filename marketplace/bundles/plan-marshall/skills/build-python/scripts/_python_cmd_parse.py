@@ -16,10 +16,10 @@ from _build_parse import (
     CategoryPatterns,
     Issue,
     UnitTestSummary,
+    add_issue_deduped,
     categorize_issue,
     collect_stack_traces,
     extract_test_summary,
-    make_dedup_key,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
@@ -77,20 +77,13 @@ def _parse_mypy(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
         if category == 'other':
             category = 'type_error'
 
-        # Deduplication
-        dedup_key = make_dedup_key(category, file_path, line, message)
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
-
-        issues.append(
-            Issue(
-                file=file_path,
-                line=line,
-                message=message,
-                category=category,
-                severity=SEVERITY_ERROR,
-            )
+        add_issue_deduped(
+            issues, seen,
+            file=file_path,
+            line=line,
+            message=message,
+            severity=SEVERITY_ERROR,
+            category=category,
         )
 
     status = _detect_build_status_base(
@@ -113,20 +106,13 @@ def _parse_ruff(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
         line = int(match.group(2))
         message = f'{match.group(3)} {match.group(4)}'
 
-        # Deduplication
-        dedup_key = make_dedup_key('lint_error', file_path, line, message)
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
-
-        issues.append(
-            Issue(
-                file=file_path,
-                line=line,
-                message=message,
-                category='lint_error',
-                severity=SEVERITY_ERROR,
-            )
+        add_issue_deduped(
+            issues, seen,
+            file=file_path,
+            line=line,
+            message=message,
+            severity=SEVERITY_ERROR,
+            category='lint_error',
         )
 
     status = 'FAILURE' if issues else 'SUCCESS'

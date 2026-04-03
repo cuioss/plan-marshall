@@ -15,70 +15,32 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
+from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns
 from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
     CategoryPatterns,
     Issue,
     UnitTestSummary,
+    add_issue_deduped,
     categorize_issue,
     collect_stack_traces,
-    make_dedup_key,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
 from _build_parser_registry import DetectionRule, ParserRegistry  # noqa: F401 - re-exported for test access
 
-# Maven-specific categorization patterns (substring matching by default,
-# regex when metacharacters are present).
-MAVEN_PATTERNS: CategoryPatterns = {
-    'compilation_error': [
-        'cannot find symbol',
-        'incompatible types',
-        'illegal start',
-        'class, interface, or enum expected',
-        'unreported exception',
-        'method does not override',
-        'not a statement',
-        'package does not exist',
-        'cannot be applied',
-    ],
-    'test_failure': [
-        'tests run:',
-        'failure!',
-        'test failure',
-        'assertionfailed',
-        'expected:',
-    ],
-    'dependency_error': [
-        'could not resolve dependencies',
-        'could not find artifact',
-        'missing, no dependency',
-        'artifact not found',
-        'non-resolvable',
-    ],
-    'javadoc_warning': [
-        'javadoc',
-        'no @param',
-        'no @return',
-        '@param name',
-        'missing @',
-    ],
-    'deprecation_warning': [
-        '[deprecation]',
-        'has been deprecated',
-    ],
-    'unchecked_warning': [
-        '[unchecked]',
-        'unchecked conversion',
-    ],
+# Maven-specific categorization patterns. Extends shared JVM base patterns
+# with Maven-specific additions (substring matching by default).
+MAVEN_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
+    # Override openrewrite_info to include Maven-specific plugin name
     'openrewrite_info': [
         'org.openrewrite',
         'rewrite-maven-plugin',
         'rewrite:',
     ],
-}
+})
 
 
 def parse_file_location(line: str) -> dict[str, str | int | None]:
@@ -168,21 +130,16 @@ def _extract_issues(content: str) -> list[Issue]:
 
             location = parse_file_location(line)
             category = categorize_issue(message, MAVEN_PATTERNS)
+            loc_file = location.get('file')
+            loc_line = location.get('line')
 
-            # Deduplication using shared key format
-            dedup_key = make_dedup_key(category, location.get('file'), location.get('line'), message)
-            if dedup_key in seen:
-                continue
-            seen.add(dedup_key)
-
-            issues.append(
-                Issue(
-                    file=location.get('file'),
-                    line=location.get('line'),
-                    message=message[:500],
-                    severity=severity,
-                    category=category,
-                )
+            add_issue_deduped(
+                issues, seen,
+                file=str(loc_file) if loc_file is not None else None,
+                line=int(loc_line) if loc_line is not None else None,
+                message=message,
+                severity=severity,
+                category=category,
             )
 
     # Attach stack traces to issues

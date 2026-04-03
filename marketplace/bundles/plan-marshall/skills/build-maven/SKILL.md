@@ -1,6 +1,6 @@
 ---
 name: build-maven
-description: Maven build operations with execution, parsing, and module discovery
+description: Maven build operations with execution, output parsing, module discovery, and coverage analysis
 user-invocable: false
 ---
 
@@ -85,6 +85,14 @@ Maven errors route to `pm-dev-java` bundle skills:
 | `compilation_error` | `pm-dev-java:java-core` |
 | `test_failure` | `pm-dev-java:junit-core` |
 | `javadoc_warning` | `pm-dev-java:javadoc` |
+
+## Wrapper Detection
+
+```
+Maven: ./mvnw > mvnw.cmd > mvn (system PATH)
+```
+
+Detection order: `./mvnw` (Unix), `mvnw.cmd` (Windows), `mvn` (system fallback). Falls back to system `mvn` if no wrapper is found.
 
 ## References
 

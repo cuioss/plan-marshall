@@ -15,27 +15,29 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
+from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns
 from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
     CategoryPatterns,
     Issue,
     UnitTestSummary,
+    add_issue_deduped,
     categorize_issue,
     collect_stack_traces,
     extract_test_summary,
-    make_dedup_key,
 )
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
 from _build_parser_registry import DetectionRule, ParserRegistry  # noqa: F401 - re-exported for test access
 
-# Gradle-specific categorization patterns. Uses regex patterns for
-# Gradle task-specific markers alongside shared JVM patterns.
-GRADLE_PATTERNS: CategoryPatterns = {
+# Gradle-specific categorization patterns. Extends shared JVM base patterns
+# with Gradle task markers, Kotlin errors, and regex-based patterns.
+GRADLE_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
+    # Override compilation_error with Gradle-specific regex patterns + Kotlin
     'compilation_error': [
-        # Java errors
+        # Java errors (regex for Gradle's error: prefix)
         r'error:\s+cannot find symbol',
         r'error:\s+incompatible types',
         r'error:\s+illegal start',
@@ -88,12 +90,13 @@ GRADLE_PATTERNS: CategoryPatterns = {
         'unchecked conversion',
         'unchecked call',
     ],
+    # Override openrewrite_info to include Gradle-specific plugin name
     'openrewrite_info': [
         r'org\.openrewrite',
         r'rewrite-gradle-plugin',
         'rewrite:',
     ],
-}
+})
 
 
 def parse_file_location(line: str) -> dict[str, str | int | None]:
@@ -189,25 +192,19 @@ def _extract_issues(lines: list[str]) -> list[Issue]:
             continue
 
         location = parse_file_location(line)
-        message = stripped
-
-        # Deduplication using shared key format
-        dedup_key = make_dedup_key(issue_type, location.get('file'), location.get('line'), message)
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
+        loc_file = location.get('file')
+        loc_line = location.get('line')
 
         # Map type to severity
         severity = SEVERITY_ERROR if 'error' in issue_type else SEVERITY_WARNING
 
-        issues.append(
-            Issue(
-                file=location.get('file'),
-                line=location.get('line'),
-                message=message[:500],
-                severity=severity,
-                category=issue_type,
-            )
+        add_issue_deduped(
+            issues, seen,
+            file=str(loc_file) if loc_file is not None else None,
+            line=int(loc_line) if loc_line is not None else None,
+            message=stripped,
+            severity=severity,
+            category=issue_type,
         )
 
     # Attach stack traces to issues

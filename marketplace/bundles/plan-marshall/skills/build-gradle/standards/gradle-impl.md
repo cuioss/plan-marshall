@@ -166,6 +166,16 @@ Routes to skills in the `pm-dev-java` bundle:
 
 ---
 
+## Wrapper Detection
+
+Detection order (platform-aware):
+- Unix: `./gradlew` > `gradle` (on PATH)
+- Windows: `gradlew.bat` > `gradle` (on PATH)
+
+Falls back to system `gradle` if no wrapper is found. The wrapper ensures reproducible builds by locking the Gradle version.
+
+---
+
 ## Dependency Management
 
 Gradle uses `platform()` and `enforcedPlatform()` for BOM-style dependency management, analogous to Maven's `<dependencyManagement>`. For multi-project builds:

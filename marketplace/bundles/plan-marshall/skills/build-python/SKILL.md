@@ -1,6 +1,6 @@
 ---
 name: build-python
-description: Python/pyprojectx build operations with execution, parsing, and coverage analysis
+description: Python/pyprojectx build operations with execution, output parsing, module discovery, and coverage analysis
 user-invocable: false
 ---
 

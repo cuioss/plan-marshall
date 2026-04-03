@@ -48,6 +48,16 @@ All Maven builds use the Maven Wrapper from the project root:
 
 ---
 
+## Wrapper Detection
+
+Detection order (platform-aware):
+- Unix: `./mvnw` > `mvn` (on PATH)
+- Windows: `mvnw.cmd` > `mvn` (on PATH)
+
+Falls back to system `mvn` if no wrapper is found. The wrapper ensures reproducible builds by locking the Maven version.
+
+---
+
 ## Module Builds
 
 ### Single Module Build
@@ -155,6 +165,25 @@ All other marker types require user confirmation before suppression.
 
 ---
 
+## CI/CD Standards
+
+### Environment Variables
+
+```bash
+export MAVEN_OPTS="-Xmx2g -XX:MaxMetaspaceSize=512m"
+export CI=true
+```
+
+### Non-Interactive Mode
+
+```bash
+./mvnw --batch-mode --no-transfer-progress clean install
+```
+
+Use `--batch-mode` (`-B`) to disable interactive input and `--no-transfer-progress` to suppress download progress bars in CI logs.
+
+---
+
 ## Build Status (Maven-Specific)
 
 Maven has additional failure detection beyond the shared rules:
@@ -162,6 +191,28 @@ Maven has additional failure detection beyond the shared rules:
 | Exit Code | Output Content | Status |
 |-----------|---------------|--------|
 | 0 | Contains `[ERROR]` lines | FAILURE |
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `-l` log file missing with `clean` | Pre-create the log file before running Maven (clean deletes target/) |
+| Memory issues | Adjust `MAVEN_OPTS` (`-Xmx2g -XX:MaxMetaspaceSize=512m`) |
+| Dependency resolution | Check repositories in `pom.xml` or `settings.xml` |
+| Version conflicts | Use `dependency:tree` and `dependency:analyze` |
+| Slow builds | Enable parallel builds (`-T 1C`) |
+
+### Diagnostic Commands
+
+```bash
+./mvnw --version
+./mvnw dependency:tree
+./mvnw dependency:analyze
+./mvnw help:effective-pom
+./mvnw help:all-profiles
+```
 
 ---
 

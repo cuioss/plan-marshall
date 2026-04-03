@@ -1,6 +1,6 @@
 ---
 name: build-gradle
-description: Gradle build operations with execution, parsing, and module discovery
+description: Gradle build operations with execution, output parsing, module discovery, and coverage analysis
 user-invocable: false
 ---
 
@@ -36,7 +36,7 @@ Gradle supports all shared subcommands documented in `build-api-reference.md`:
 
 **run**: The `--command-args` value contains Gradle tasks, e.g., `":module:build"` or `"build"`.
 
-**parse**: Supports the `no-openrewrite` mode in addition to shared modes.
+**parse**: Uses regex patterns for Gradle-specific task markers alongside shared JVM patterns.
 
 **coverage-report**: Auto-detects JaCoCo XML reports in these locations:
 - `build/reports/jacoco/test/jacocoTestReport.xml`
@@ -82,6 +82,14 @@ Gradle errors route to `pm-dev-java` bundle skills (same as Maven):
 | `compilation_error` | `pm-dev-java:java-core` |
 | `test_failure` | `pm-dev-java:junit-core` |
 | `javadoc_warning` | `pm-dev-java:javadoc` |
+
+## Wrapper Detection
+
+```
+Gradle: ./gradlew > gradlew.bat > gradle (system PATH)
+```
+
+Detection order: `./gradlew` (Unix), `gradlew.bat` (Windows), `gradle` (system fallback). Falls back to system `gradle` if no wrapper is found.
 
 ## References
 

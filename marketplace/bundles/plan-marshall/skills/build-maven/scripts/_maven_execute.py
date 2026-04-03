@@ -13,6 +13,7 @@ import re
 
 from _build_execute import CaptureStrategy
 from _build_execute_factory import ExecuteConfig, create_execute_handlers
+from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _maven_cmd_parse import parse_log
 
 
@@ -49,7 +50,7 @@ _CONFIG = ExecuteConfig(
     build_command_fn=_maven_build_command_fn,
     scope_fn=_maven_scope_fn,
     command_key_fn=_maven_command_key_fn,
-    default_timeout=300,
+    default_timeout=DEFAULT_BUILD_TIMEOUT,
 )
 
 execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log)

@@ -376,6 +376,55 @@ def deduplicate_issues(issues: list[Issue]) -> list[Issue]:
     return result
 
 
+def add_issue_deduped(
+    issues: list[Issue],
+    seen: set[str],
+    *,
+    file: str | None,
+    line: int | None,
+    message: str,
+    severity: str,
+    category: str,
+    stack_trace: str | None = None,
+    max_message_len: int = 500,
+) -> bool:
+    """Create and append an Issue if not already seen (dedup by key).
+
+    Consolidates the repeated dedup-then-append pattern used across all
+    build parsers (Maven, Gradle, npm, Python). Each parser previously
+    duplicated the same seen-set + make_dedup_key + append logic.
+
+    Args:
+        issues: List to append to (modified in-place).
+        seen: Dedup key set (modified in-place).
+        file: Source file path or None.
+        line: Line number or None.
+        message: Issue message (truncated to max_message_len).
+        severity: SEVERITY_ERROR or SEVERITY_WARNING.
+        category: Issue category string.
+        stack_trace: Optional stack trace.
+        max_message_len: Max message length in the Issue (default 500).
+
+    Returns:
+        True if the issue was added, False if it was a duplicate.
+    """
+    dedup_key = make_dedup_key(category, file, line, message)
+    if dedup_key in seen:
+        return False
+    seen.add(dedup_key)
+    issues.append(
+        Issue(
+            file=file,
+            line=line,
+            message=message[:max_message_len],
+            severity=severity,
+            category=category,
+            stack_trace=stack_trace,
+        )
+    )
+    return True
+
+
 def make_dedup_key(category: str, file: str | None, line: int | None, message: str) -> str:
     """Create a standard deduplication key for an issue.
 

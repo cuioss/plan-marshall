@@ -1,6 +1,6 @@
 ---
 name: build-npm
-description: npm/npx build operations with execution, multi-parser architecture, and coverage analysis
+description: npm/npx build operations with execution, output parsing, module discovery, and coverage analysis
 user-invocable: false
 ---
 

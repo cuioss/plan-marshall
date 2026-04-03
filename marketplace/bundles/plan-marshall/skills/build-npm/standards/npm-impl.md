@@ -4,7 +4,7 @@ npm-specific standards for build execution and output parsing. For shared standa
 
 ---
 
-## Command Construction
+## Build Command Construction
 
 ### npm vs npx Detection
 
