@@ -131,6 +131,6 @@ When adding a Q-Gate finding, the system checks for existing findings with the s
 
 ## Valid Phases
 
-> Phase names follow the standard 6-phase model. See `plan-marshall:ref-manage-contract` § Phase Names for the canonical definition.
+> Phase names follow the standard 6-phase model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Phase Names for the canonical definition.
 
 Q-Gate files are created per phase: `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`. Phase `1-init` is excluded — it creates plan infrastructure and has no verification step.

@@ -10,7 +10,7 @@ Contract specification for the 6-phase workflow execution model.
 
 | Phase | Agent Call | Purpose | Output |
 |-------|------------|---------|--------|
-| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | status.toon, request.md, references.json |
+| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | status.json, request.md, references.json |
 | **2-refine** | `plan-phase-agent phase=2-refine` | Clarify request | Refined request with confidence score |
 | **3-outline** | `plan-phase-agent phase=3-outline` | Create solution outline | solution_outline.md |
 | **4-plan** | `plan-phase-agent phase=4-plan` | Decompose into tasks | TASK-*.toon |

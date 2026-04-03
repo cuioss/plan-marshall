@@ -1,6 +1,6 @@
 # Python Implementation Standards
 
-Python/pyprojectx-specific standards for build execution, output parsing, and issue handling. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`.
+Python/pyprojectx-specific standards for build execution, output parsing, and issue handling. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`. For canonical commands, see `build-api-reference.md`.
 
 ---
 
@@ -14,35 +14,7 @@ All Python builds use the pyprojectx wrapper from the project root:
 ./pw {command} {args}
 ```
 
-### Canonical Commands
-
-| Command | Purpose |
-|---------|---------|
-| `compile {module}` | Type-check and lint without running tests |
-| `test-compile {module}` | Compile tests only |
-| `module-tests {module}` | Run module test suite |
-| `quality-gate {module}` | Run quality checks (mypy + ruff) |
-| `coverage {module}` | Run tests with coverage collection |
-| `verify {module}` | Full verification (quality-gate + tests) |
-| `clean` | Remove build artifacts |
-
 Omit `{module}` to run against all modules.
-
----
-
-## Output Parsing
-
-### Parser Registry
-
-Python build output is parsed using the shared `ParserRegistry` with tool-specific parsers:
-
-| Parser | Detects | Category |
-|--------|---------|----------|
-| mypy | `file.py:line: error:` | `type_error` |
-| ruff | `file.py:line:col: CODE` | `lint_error` |
-| pytest | `FAILED file.py::test` | `test_failure` |
-
-Since pyprojectx verify runs multiple tools in sequence (mypy + ruff + pytest), all matching parsers are applied and results are combined.
 
 ---
 
@@ -81,21 +53,6 @@ Cache `.pyprojectx/` between CI runs.
 
 ---
 
-## Metadata Extraction
-
-Discovery extracts metadata from `pyproject.toml` when available:
-
-| Field | Source |
-|-------|--------|
-| `name` | `[project].name` |
-| `version` | `[project].version` |
-| `description` | `[project].description` |
-| `requires_python` | `[project].requires-python` |
-
-Dependencies are extracted from `[project].dependencies` (runtime) and `[project].optional-dependencies.dev` (dev).
-
----
-
 ## Troubleshooting
 
 | Issue | Solution |
@@ -106,6 +63,6 @@ Dependencies are extracted from `[project].dependencies` (runtime) and `[project
 | pytest collection errors | Check for `__init__.py` in test directories |
 | Timeout on first run | pyprojectx downloads tools on first invocation |
 
-See SKILL.md for wrapper detection, issue routing, and coverage report paths. See `build-api-reference.md` for shared build documentation.
+See SKILL.md for coverage report paths and parser details. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-python:python_build`

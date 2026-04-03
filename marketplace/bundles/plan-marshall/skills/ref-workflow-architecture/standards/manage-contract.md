@@ -1,12 +1,6 @@
----
-name: ref-manage-contract
-description: Shared contract for all manage-* skills covering enforcement rules, TOON output format, error responses, shared formats, and plan directory layout
-user-invocable: false
----
-
 # Manage-* Skills Shared Contract
 
-**REFERENCE MODE**: Shared contract that all manage-* skills follow. Loaded by manage-* skills to avoid repeating identical sections.
+Shared contract that all manage-* skills follow. Part of the [ref-workflow-architecture](../SKILL.md) documentation.
 
 ## Enforcement Contract
 

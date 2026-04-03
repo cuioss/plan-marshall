@@ -39,7 +39,7 @@ TOON (Token-Oriented Object Notation) is a compact, human-readable encoding of t
 
 ## Available References
 
-Load references progressively based on current task. **Never load all references at once.**
+Load the reference matching your current task:
 
 ### 1. TOON Specification (Technical Reference)
 **File**: `knowledge/toon-specification.md`
@@ -73,4 +73,3 @@ This skill also hosts shared Python modules used across workflow scripts:
 
 ### Related Skills
 - `plan-marshall:ref-workflow-architecture` — Architecture documentation including workflow skill conventions
-- `plan-marshall:manage-memories` — Memory layer operations

@@ -10,30 +10,15 @@ user-invocable: false
 
 **Key Pattern**: Agent loads this skill via `resolve-task-executor --profile implementation`. Skill executes a generic workflow: understand context → plan → implement → verify. Domain-specific knowledge comes from `task.skills` (loaded by agent).
 
-## Contract Compliance
-
-**MANDATORY**: Follow the contracts defined in:
-
-| Contract | Location | Purpose |
-|----------|----------|---------|
-| Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure, fields, status values, and JSON schema |
-| Task Executor Base | `plan-marshall:ref-workflow-architecture/standards/task-executor-base.md` | Shared workflow steps for all task executors |
-
-## Two-Tier Skill Loading
-
-See [ref-workflow-architecture:skill-loading](../ref-workflow-architecture/standards/skill-loading.md) for the complete two-tier skill loading pattern. Agent loads Tier 1 (system skills) automatically, then Tier 2 (domain skills from `task.skills`). This workflow skill defines HOW the agent executes.
-
-## Input / Output
-
-See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the common input contract and base output schema. This profile uses the base output contract without additional fields.
+**Base Contract**: This skill follows the task executor contract defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md). See that document for shared steps ([BASE] steps below), input/output contracts, error handling, integration points, and script notations.
 
 ## Workflow
 
-This skill follows the shared task executor workflow. Steps marked **[BASE]** are defined in [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) — follow them exactly. Steps without the tag are implementation-specific.
+Steps marked **[BASE]** are defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md) — follow them exactly.
 
 ### Step 1: Load Task Context [BASE]
 
-Follow the base workflow. Verify `profile` is `implementation`.
+Verify `profile` is `implementation`.
 
 ### Step 2: Read Compatibility Strategy
 
@@ -89,9 +74,7 @@ Use component `"plan-marshall:task-implementation"`.
 
 ### Step 10: Return Results [BASE]
 
-## Error Handling
-
-See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for common error handling (missing dependencies, verification timeout).
+## Profile-Specific Error Handling
 
 ### Conflicting Changes
 
@@ -100,11 +83,7 @@ If changes conflict with existing code:
 - Prefer preserving existing behavior
 - Ask for clarification if needed
 
-## Integration
+## Script Notations
 
-**Invoked by**: `plan-marshall:phase-5-execute` skill (when task.profile = implementation)
-
-**Skill Loading**: Agent loads this skill via `resolve-task-executor --profile implementation`
-
-**Script Notations**: See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the complete list. This profile additionally uses:
+In addition to the [common notations](../ref-workflow-architecture/standards/task-executors.md), this profile uses:
 - `plan-marshall:manage-config:manage-config` — Read compatibility from project config

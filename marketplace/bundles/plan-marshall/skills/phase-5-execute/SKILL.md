@@ -288,7 +288,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
   --completed 5-execute
 ```
 
-This automatically updates status.toon and moves to the next phase.
+This automatically updates status.json and moves to the next phase.
 
 **After transition**, check `finalize_without_asking` config:
 ```bash

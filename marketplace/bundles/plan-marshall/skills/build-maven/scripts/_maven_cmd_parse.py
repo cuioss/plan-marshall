@@ -29,8 +29,6 @@ from _build_parse import (
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
-from _build_parser_registry import DetectionRule, ParserRegistry  # noqa: F401 - re-exported for test access
-
 # Maven-specific categorization patterns. Extends shared JVM base patterns
 # with Maven-specific additions (substring matching by default).
 MAVEN_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
@@ -49,23 +47,6 @@ def parse_file_location(line: str) -> dict[str, str | int | None]:
     Delegates to shared parse_jvm_file_location from _build_jvm_patterns.
     """
     return parse_jvm_file_location(line)
-
-
-# =============================================================================
-# Maven-specific parser function
-# =============================================================================
-
-
-def _parse_maven_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
-    """Parse Maven build log file."""
-    path = Path(log_file)
-    content = path.read_text(encoding='utf-8', errors='replace')
-
-    issues = _extract_issues(content)
-    test_summary = _extract_test_summary(content)
-    build_status = _detect_build_status(content)
-
-    return issues, test_summary, build_status
 
 
 # =============================================================================
@@ -90,7 +71,13 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    return _parse_maven_log(str(log_file))
+    content = Path(str(log_file)).read_text(encoding='utf-8', errors='replace')
+
+    issues = _extract_issues(content)
+    test_summary = _extract_test_summary(content)
+    build_status = _detect_build_status(content)
+
+    return issues, test_summary, build_status
 
 
 def _extract_issues(content: str) -> list[Issue]:
@@ -146,15 +133,12 @@ def _detect_build_status(content: str) -> str:
 
     Maven-specific: also checks for [ERROR] lines as failure indicator.
     """
-    status = _detect_build_status_base(
+    return _detect_build_status_base(
         content,
         success_markers=['BUILD SUCCESS'],
-        failure_markers=['BUILD FAILURE'],
-        default='SUCCESS',
+        failure_markers=['BUILD FAILURE', '[ERROR]'],
+        default='FAILURE',
     )
-    if status == 'SUCCESS' and re.search(r'^\[ERROR\]', content, re.MULTILINE):
-        return 'FAILURE'
-    return status
 
 
 def _extract_test_summary(content: str) -> UnitTestSummary | None:

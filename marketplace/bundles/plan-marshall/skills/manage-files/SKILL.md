@@ -11,7 +11,7 @@ Generic file operations for plan directories. Provides basic CRUD operations for
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Do not pass absolute paths or `..` traversals in `--file` arguments
@@ -219,7 +219,7 @@ domain: java
 
 ## Error Responses
 
-> See `plan-marshall:ref-manage-contract` for the standard error response format.
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|

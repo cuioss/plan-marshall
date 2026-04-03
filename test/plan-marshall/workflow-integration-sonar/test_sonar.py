@@ -99,7 +99,7 @@ class TestSonarTriage(unittest.TestCase):
         stdout, stderr, code = run_sonar_script(['triage', '--issue', 'not-valid-json'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('Invalid JSON', result['error'])
 
     def test_triage_missing_issue(self):
@@ -224,14 +224,14 @@ class TestSonarTriageBatch(unittest.TestCase):
         stdout, _, code = run_sonar_script(['triage-batch', '--issues', 'not-json'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
 
     def test_triage_batch_not_array(self):
         """Test batch triage rejects non-array input."""
         stdout, _, code = run_sonar_script(['triage-batch', '--issues', '{"key": "I1"}'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('array', result['error'])
 
 

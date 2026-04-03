@@ -26,7 +26,7 @@ The hash provides deterministic traceability — the same message always produce
 
 ## Timestamp Format
 
-> Timestamps use the standard format. See `plan-marshall:ref-manage-contract` § Timestamp Format.
+> Timestamps use the standard format. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Timestamp Format.
 
 ---
 

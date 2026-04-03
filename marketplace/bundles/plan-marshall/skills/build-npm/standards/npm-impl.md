@@ -1,74 +1,6 @@
 # npm Implementation Standards
 
-npm-specific standards for build execution and output parsing. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`.
-
----
-
-## Build Command Construction
-
-### npm vs npx Detection
-
-Commands are automatically routed to either `npm` or `npx` based on the command:
-
-**npx commands** (tools that should use npx):
-- Linters/formatters: `playwright`, `eslint`, `prettier`, `stylelint`
-- TypeScript tools: `tsc`, `tsx`, `ts-node`
-- Test runners: `jest`, `vitest`, `mocha`
-- Bundlers: `webpack`, `rollup`, `esbuild`, `vite`
-- Transpiler: `babel`
-
-**npm commands** (npm scripts):
-- `run <script>`, `test`, `install`, `build`
-
-**Examples:**
-```bash
-# These use npx automatically
-playwright test
-eslint src/
-prettier --check src/
-
-# These use npm
-run test
-run build
-```
-
-### Workspace Targeting
-
-For monorepo projects with npm workspaces:
-
-```bash
-# Single workspace build
-npm run test --workspace=e-2-e-playwright
-
-# Multiple workspaces
-npm run test --workspace=pkg1 --workspace=pkg2
-```
-
----
-
-## Output Parsing
-
-### Multi-Parser Architecture
-
-npm output is detected and routed to tool-specific parsers via the shared `ParserRegistry`:
-
-```
-npm build output → detect_tool_type(content, command)
-    ├─→ "typescript" → parse_typescript()
-    ├─→ "jest"       → parse_jest()
-    ├─→ "eslint"     → parse_eslint()
-    ├─→ "tap"        → parse_tap()
-    └─→ "npm_error"  → parse_npm_errors()
-```
-
-### File Location Extraction
-
-**Supported patterns:**
-
-1. **TypeScript/ESLint style:** `src/components/Button.js:15:3`
-2. **Webpack style:** `@ ./src/components/Button.js 15:3`
-3. **Jest style:** `at Object.<anonymous> (src/utils/helper.js:42:10)`
-4. **Playwright style:** `tests/login.spec.js:15:5`
+npm-specific standards for build execution and output parsing. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`. For npm/npx detection rules and multi-parser architecture, see SKILL.md and `build-api-reference.md`.
 
 ---
 
@@ -132,6 +64,6 @@ npm runs non-interactively when `CI=true` is set.
 | Workspace not found | Verify `workspaces` field in root package.json |
 | TypeScript compilation slow | Use `--incremental` or project references |
 
-See SKILL.md for issue routing and coverage report paths. See `build-api-reference.md` for shared build documentation.
+See SKILL.md for coverage report paths. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-npm:npm`

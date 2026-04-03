@@ -45,7 +45,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │  manage-architecture                                        │  │
+│  │  plan-marshall:manage-architecture                           │  │
 │  │  ════════════════════════════                                        │  │
 │  │                                                                      │  │
 │  │  Each module has skills_by_profile:                                  │  │

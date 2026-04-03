@@ -13,7 +13,7 @@ Unified logging infrastructure providing script execution logging, semantic work
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Log entries are fire-and-forget (no output parsing needed)

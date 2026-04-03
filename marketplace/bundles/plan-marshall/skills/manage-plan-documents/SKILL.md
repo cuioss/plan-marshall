@@ -11,7 +11,7 @@ Domain-specific document management for request documents. Provides logical docu
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Document operations follow the noun-verb pattern (`request {verb}`)
@@ -303,7 +303,7 @@ types:
 
 ## Error Responses
 
-> See `plan-marshall:ref-manage-contract` for the standard error response format.
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|

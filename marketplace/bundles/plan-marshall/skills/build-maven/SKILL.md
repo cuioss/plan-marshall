@@ -21,7 +21,7 @@ See `plan-marshall:extension-api/standards/build-api-reference.md` § Enforcemen
 |--------|------|---------|
 | `maven.py` | CLI | Maven operations dispatcher (includes coverage + warning config) |
 | `_maven_execute.py` | Library | Execution config via factory pattern |
-| `_maven_cmd_discover.py` | Library | Module discovery via pom.xml |
+| `_maven_cmd_discover.py` | Library | Module discovery via pom.xml, profile pipeline utilities |
 | `_maven_cmd_parse.py` | Library | Log parsing, issue extraction (uses shared categorizer) |
 
 Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
@@ -46,15 +46,6 @@ Not available: `find-project` (Gradle-specific).
 
 **discover**: Shells out to Maven for metadata (`dependency:tree`, `help:all-profiles`) in addition to parsing `pom.xml`. This makes discovery slower than static-file-only approaches (Gradle, npm, Python) but provides richer metadata including profiles and dependency scopes.
 
-## Error Categories
-
-Uses the shared JVM error categories (see `build-api-reference.md` § Shared categories).
-
-Maven-specific: uses **substring matching** (case-insensitive) for all patterns. Key patterns:
-- `compilation_error`: "cannot find symbol", "incompatible types", "illegal start", etc.
-- `test_failure`: "tests run:", "failure!", "assertionfailed", "expected:", etc.
-- `dependency_error`: "could not resolve dependencies", "could not find artifact", etc.
-
 ## Module Discovery
 
 Reads `pom.xml` `<modules>` declarations. Modules are identified from the parent POM.
@@ -65,40 +56,13 @@ Reads `pom.xml` `<modules>` declarations. Modules are identified from the parent
 2. Apply skip list from configuration (`build.maven.profiles.skip`)
 3. Map to canonical command names (`build.maven.profiles.map.canonical`)
 
-### Command Generation
-
-| Canonical | Maven Command |
-|-----------|---------------|
-| `verify` | `verify -pl {module}` |
-| `quality-gate` | `-Ppre-commit verify -pl {module}` |
-| `compile` | `compile -pl {module}` |
-| `module-tests` | `test -pl {module}` |
-| `coverage` | `-Pcoverage verify -pl {module}` |
-| `clean` | `clean` |
-
 Profile-to-canonical mappings are configurable via extension defaults.
 
-### Issue Routing
-
-Maven errors route to `pm-dev-java` bundle skills:
-
-| Category | Target Skill |
-|----------|-------------|
-| `compilation_error` | `pm-dev-java:java-core` |
-| `test_failure` | `pm-dev-java:junit-core` |
-| `javadoc_warning` | `pm-dev-java:javadoc` |
-
-## Wrapper Detection
-
-```
-Maven: ./mvnw > mvnw.cmd > mvn (system PATH)
-```
-
-Detection order: `./mvnw` (Unix), `mvnw.cmd` (Windows), `mvn` (system fallback). Falls back to system `mvn` if no wrapper is found.
+For error categories, issue routing, command generation tables, and wrapper detection, see `build-api-reference.md`.
 
 ## References
 
-- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation
+- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation, error categories, issue routing, wrapper detection
 - `plan-marshall:extension-api/standards/build-execution.md` — Execution contract and lifecycle
 - `standards/maven-impl.md` — Maven-specific execution details
-- `standards/pom-maintenance.md` — POM structure and dependency management standards
+- `pm-dev-java:java-maintenance/standards/pom-maintenance.md` — POM structure and dependency management standards

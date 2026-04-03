@@ -106,14 +106,14 @@ class TestCategorizeDomains(unittest.TestCase):
         stdout, _, code = run_pw_script(['categorize', '--domains', 'not-json'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
 
     def test_categorize_not_array(self):
         """Test error when input is not an array."""
         stdout, _, code = run_pw_script(['categorize', '--domains', '"single-string"'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('array', result['error'])
 
 
@@ -235,7 +235,7 @@ class TestAnalyze(unittest.TestCase):
             ])
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
-            self.assertEqual(result['status'], 'failure')
+            self.assertEqual(result['status'], 'error')
             self.assertIn('Invalid JSON', result['error'])
 
     def test_analyze_generates_recommendations(self):
@@ -525,7 +525,7 @@ class TestApply(unittest.TestCase):
         ])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertEqual(result['error_code'], 'NOT_FOUND')
 
     def test_no_add_or_remove(self):
@@ -537,7 +537,7 @@ class TestApply(unittest.TestCase):
             ])
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
-            self.assertEqual(result['status'], 'failure')
+            self.assertEqual(result['status'], 'error')
             self.assertEqual(result['error_code'], 'INVALID_INPUT')
 
     def test_invalid_json_add(self):
@@ -623,7 +623,7 @@ class TestApplyEdgeCases(unittest.TestCase):
             ])
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
-            self.assertEqual(result['status'], 'failure')
+            self.assertEqual(result['status'], 'error')
             self.assertEqual(result['error_code'], 'PARSE_ERROR')
 
     def test_apply_invalid_json_remove(self):
@@ -636,7 +636,7 @@ class TestApplyEdgeCases(unittest.TestCase):
             ])
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
-            self.assertEqual(result['status'], 'failure')
+            self.assertEqual(result['status'], 'error')
 
 
 class TestMain(unittest.TestCase):

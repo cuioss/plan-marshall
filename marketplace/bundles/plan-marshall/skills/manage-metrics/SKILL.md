@@ -13,7 +13,7 @@ Collects wall-clock duration and token usage data per phase, generates increment
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Script-only skill — all access via the script API
@@ -131,7 +131,7 @@ message_count: 127
 
 ## Error Responses
 
-> See `plan-marshall:ref-manage-contract` for the standard error response format.
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|

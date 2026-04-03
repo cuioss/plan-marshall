@@ -33,15 +33,90 @@ from _build_commands import build_canonical_commands
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from extension_base import (
+    PROFILE_PATTERNS,
     build_module_base,
     count_source_files,
     discover_descriptors,
     discover_packages,
     discover_sources,
-    filter_command_line_profiles,
-    filter_skip_profiles,
-    map_canonical_profiles,
 )
+
+
+# =============================================================================
+# Profile Pipeline Utilities (Maven-specific — only Maven uses build profiles)
+# =============================================================================
+
+
+def filter_command_line_profiles(raw_profiles: list[dict]) -> list[dict]:
+    """Filter profiles to command-line activated only.
+
+    Removes profiles that are default-activated (Active: true in build tool output).
+    Only profiles with Active: false are kept — these require explicit activation.
+
+    Args:
+        raw_profiles: List of profile dicts with 'id' and 'is_active' fields.
+
+    Returns:
+        List of profile dicts with 'id' only (is_active removed).
+    """
+    return [{'id': p['id']} for p in raw_profiles if not p.get('is_active', False)]
+
+
+def filter_skip_profiles(profiles: list[dict], skip_list: list[str] | None) -> list[dict]:
+    """Filter out profiles in the skip list.
+
+    Args:
+        profiles: List of profile dicts with 'id' field.
+        skip_list: Profile IDs to exclude (None or empty keeps all).
+
+    Returns:
+        Filtered list of profile dicts.
+    """
+    if not skip_list:
+        return profiles
+    skip_set = {s.strip() for s in skip_list}
+    return [p for p in profiles if p['id'] not in skip_set]
+
+
+def _classify_profile(profile_id: str) -> str:
+    """Classify a profile ID to its canonical command name.
+
+    Args:
+        profile_id: The profile identifier (e.g., "pre-commit", "jacoco").
+
+    Returns:
+        Canonical command name (e.g., "quality-gate", "coverage") or "NO-MATCH-FOUND".
+    """
+    if profile_id in PROFILE_PATTERNS:
+        return PROFILE_PATTERNS[profile_id]  # type: ignore[no-any-return]
+    profile_lower = profile_id.lower()
+    for alias, canonical in PROFILE_PATTERNS.items():
+        if alias.lower() == profile_lower:
+            return canonical  # type: ignore[no-any-return]
+    return 'NO-MATCH-FOUND'
+
+
+def map_canonical_profiles(profiles: list[dict], explicit_mapping: dict[str, str] | None = None) -> list[dict]:
+    """Map profiles to canonical command names.
+
+    Resolution order:
+    1. Explicit mapping (from config) takes precedence
+    2. PROFILE_PATTERNS aliases from extension_base.py
+
+    Args:
+        profiles: List of profile dicts with 'id' field.
+        explicit_mapping: Dict mapping profile_id -> canonical (can be None).
+
+    Returns:
+        List of profile dicts with 'canonical' field added.
+    """
+    mapping = explicit_mapping or {}
+    result = []
+    for profile in profiles:
+        pid = profile['id']
+        canonical = mapping.get(pid) or _classify_profile(pid)
+        result.append({'id': pid, 'canonical': canonical})
+    return result
 
 # =============================================================================
 # Extension Defaults Keys (for config_defaults callback)
@@ -368,11 +443,8 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
     from _config_core import ext_defaults_get
     from plan_logging import log_entry
 
-    log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] called with {len(raw_profiles)} raw profiles')
-
     # 1. Filter to command-line only (Active: false)
     profiles = filter_command_line_profiles(raw_profiles)
-    log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] After command-line filter: {len(profiles)} profiles')
 
     # 2. Get skip list and mapping from configuration (if available)
     skip_list = None
@@ -381,9 +453,6 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
     skip_csv = ext_defaults_get(EXT_KEY_PROFILES_SKIP, project_root)
     if skip_csv:
         skip_list = [s.strip() for s in skip_csv.split(',')]
-        log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Loaded skip list from config: {skip_list}')
-    else:
-        log_entry('script', 'global', 'INFO', '[PROFILE-PIPELINE] No skip list configured in marshal.json')
 
     map_csv = ext_defaults_get(EXT_KEY_PROFILES_MAP, project_root)
     if map_csv:
@@ -392,24 +461,16 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
             if ':' in pair:
                 profile_id, canonical = pair.split(':', 1)
                 explicit_mapping[profile_id.strip()] = canonical.strip()
-        log_entry(
-            'script', 'global', 'INFO', f'[PROFILE-PIPELINE] Loaded explicit mapping from config: {explicit_mapping}'
-        )
-    else:
-        log_entry(
-            'script', 'global', 'INFO', '[PROFILE-PIPELINE] No explicit mapping configured in run-configuration.json'
-        )
 
     # 3. Apply skip list
-    before_skip = len(profiles)
     profiles = filter_skip_profiles(profiles, skip_list)
-    skipped_count = before_skip - len(profiles)
-    if skipped_count > 0:
-        log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Filtered out {skipped_count} profiles via skip list')
 
     # 4. Map to canonical names
     profiles = map_canonical_profiles(profiles, explicit_mapping)
-    log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Final profile count: {len(profiles)}')
+
+    log_entry('script', 'global', 'INFO',
+              f'[PROFILE-PIPELINE] {len(raw_profiles)} raw → {len(profiles)} mapped'
+              f' (skip={skip_list or "none"}, mapping={explicit_mapping or "none"})')
 
     return profiles
 

@@ -390,7 +390,7 @@ Script: `plan-marshall:manage-status:manage_status`
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `read` | `--plan-id` | Read plan status |
-| `create` | `--plan-id --title --phases [--force]` | Initialize status.toon |
+| `create` | `--plan-id --title --phases [--force]` | Initialize status.json |
 | `set-phase` | `--plan-id --phase` | Set current phase |
 | `update-phase` | `--plan-id --phase --status` | Update phase status |
 | `progress` | `--plan-id` | Calculate plan progress |
@@ -407,7 +407,7 @@ Script: `plan-marshall:manage-status:manage_status`
 Status is stored in the plan directory:
 
 ```
-.plan/plans/{plan_id}/status.toon
+.plan/plans/{plan_id}/status.json
 ```
 
 Archived plans:

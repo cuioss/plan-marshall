@@ -38,8 +38,6 @@ Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build
 npm supports all shared subcommands documented in `build-api-reference.md`:
 **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 
-Not available: `search-markers` (OpenRewrite is Java-specific).
-
 ### npm-Specific Notes
 
 **run**: Additional parameters beyond the shared API:
@@ -75,66 +73,14 @@ python3 .plan/execute-script.py plan-marshall:build-npm:js_coverage analyze \
 
 Use `js_coverage.py` when you need to identify specific files with low coverage, not just an overall pass/fail.
 
-## npm vs npx Detection
-
-Commands are routed based on a built-in `NPX_COMMANDS` list in `_npm_execute.py`. Direct tool invocations (prettier, eslint, jest, webpack, tsc, etc.) use `npx`; script invocations (`run test`, `run build`) use `npm`. Adding new CLI tools to the list requires a code change.
-
-## Multi-Parser Architecture
-
-```
-npm build output → detect_tool_type(content, command)
-    ├─→ "typescript" → parse_typescript()
-    ├─→ "jest"       → parse_jest()
-    ├─→ "eslint"     → parse_eslint()
-    ├─→ "tap"        → parse_tap()
-    ├─→ "npm_error"  → parse_npm_errors()
-    └─→ "generic"    → Try each parser in sequence
-```
-
-Detection uses content patterns (e.g., `error TS` for TypeScript, `FAIL` + `Tests:` for Jest). When multiple tools produce output in a single log, the single-dispatch routing may miss secondary tool output — for combined logs, `generic` mode tries all parsers in sequence.
-
-## Error Categories
-
-| Category | Description | Parser |
-|----------|-------------|--------|
-| `compilation_error` | TypeScript errors (TS2xxx codes) | `_npm_parse_typescript.py` |
-| `test_failure` | Jest/Vitest/TAP test failures | `_npm_parse_jest.py`, `_npm_parse_tap.py` |
-| `lint_error` | ESLint violations | `_npm_parse_eslint.py` |
-| `npm_dependency` | ERESOLVE peer dependency conflicts | `_npm_parse_errors.py` |
-| `npm_error` | E404 and other npm command errors | `_npm_parse_errors.py` |
-
-See `build-api-reference.md` § npm categories for additional details.
-
-### Issue Routing
-
-npm errors route to `pm-dev-frontend` bundle skills:
-
-| Category | Target Skill |
-|----------|-------------|
-| `compilation_error` | `pm-dev-frontend:javascript` |
-| `test_failure` | `pm-dev-frontend:jest-testing` |
-| `lint_error` | `pm-dev-frontend:lint-config` |
-
 ## Module Discovery
 
 Reads `package.json` to detect workspaces and available scripts.
 
-### Command Generation
-
-| Canonical | npm Command | Condition |
-|-----------|-------------|-----------|
-| `install` | `install` | Always |
-| `verify` | `run build && run test` (or `run test`) | `build`/`test` scripts |
-| `quality-gate` | `run lint` (or `run check`) | `lint`/`check` script |
-| `compile` | `run build` (or `run typecheck`/`run type-check`) | `build`/`typecheck` script |
-| `module-tests` | `run test` | `test` script |
-| `coverage` | `run test:coverage` (or `run coverage`) | `test:coverage`/`coverage` script |
-| `clean` | `run clean` | `clean` script |
-
-Commands are only generated for scripts present in `package.json`.
+For error categories, issue routing, command generation tables, and wrapper detection, see `build-api-reference.md`.
 
 ## References
 
-- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation
+- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation, error categories, issue routing, wrapper detection
 - `plan-marshall:extension-api/standards/build-execution.md` — Execution contract and lifecycle
 - `standards/npm-impl.md` — npm-specific execution details

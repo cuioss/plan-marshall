@@ -43,7 +43,7 @@ create ──→ [phases 1-6] ──→ archive
 
 ## Phase Names
 
-> Phase names follow the standard 6-phase model. See `plan-marshall:ref-manage-contract` § Phase Names for the canonical definition.
+> Phase names follow the standard 6-phase model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Phase Names for the canonical definition.
 
 ## Routing
 

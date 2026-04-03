@@ -219,12 +219,14 @@ Each module includes:
 | Canonical | Maven | Gradle | npm | Python |
 |-----------|-------|--------|-----|--------|
 | `verify` | `verify -pl {m}` | `:{m}:build` | `run build && run test` | `verify {m}` |
-| `quality-gate` | `-Ppre-commit verify -pl {m}` | `:{m}:check` | `run lint` | `quality-gate {m}` |
+| `quality-gate` | `verify -pl {m}` ¹ | `:{m}:check` | `run lint` | `quality-gate {m}` |
 | `compile` | `compile -pl {m}` | `:{m}:compileJava` | `run build` | `compile {m}` |
 | `module-tests` | `test -pl {m}` | `:{m}:test` | `run test` | `module-tests {m}` |
 | `coverage` | `-Pcoverage verify -pl {m}` | `:{m}:test :{m}:jacocoTestReport` | `run test:coverage` | `coverage {m}` |
 | `clean` | `clean` | `clean` | `run clean` | `clean` |
 | `install` | — | — | `install` | — |
+
+¹ Maven quality-gate defaults to `verify`. When a profile mapping (e.g., `pre-commit:quality-gate`) is configured via extension defaults, it becomes `-P{profile} verify -pl {m}`.
 
 npm commands are conditional on scripts present in `package.json`.
 
@@ -303,6 +305,36 @@ These JVM-oriented categories are identical across Maven and Gradle:
 | `import_error` | Module import errors |
 
 **Multi-parser combination**: Unlike Maven/Gradle/npm which route to a single parser, Python's `parse_log()` runs all matching parsers and combines results. This handles pyprojectx `verify` which runs mypy + ruff + pytest in sequence, producing mixed output in a single log file.
+
+---
+
+## Issue Routing
+
+Build errors are routed to domain-specific skills for resolution guidance:
+
+### Maven / Gradle → pm-dev-java
+
+| Category | Target Skill |
+|----------|-------------|
+| `compilation_error` | `pm-dev-java:java-core` |
+| `test_failure` | `pm-dev-java:junit-core` |
+| `javadoc_warning` | `pm-dev-java:javadoc` |
+
+### npm → pm-dev-frontend
+
+| Category | Target Skill |
+|----------|-------------|
+| `compilation_error` | `pm-dev-frontend:javascript` |
+| `test_failure` | `pm-dev-frontend:jest-testing` |
+| `lint_error` | `pm-dev-frontend:lint-config` |
+
+### Python → pm-dev-python
+
+| Category | Target Skill |
+|----------|-------------|
+| `type_error` | `pm-dev-python:python-core` |
+| `lint_error` | `pm-dev-python:python-core` |
+| `test_failure` | `pm-dev-python:pytest-testing` |
 
 ---
 

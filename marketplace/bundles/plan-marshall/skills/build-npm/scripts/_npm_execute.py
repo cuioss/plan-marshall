@@ -82,8 +82,8 @@ def _npm_extra_result_fn(args: str, wrapper: str) -> dict:
 
 _CONFIG = ExecuteConfig(
     tool_name='npm',
-    unix_wrapper='',
-    windows_wrapper='',
+    unix_wrapper='npm',  # Not used — wrapper_resolve_fn overrides detection
+    windows_wrapper='npm',  # Not used — wrapper_resolve_fn overrides detection
     system_fallback='npm',
     capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
     build_command_fn=_npm_build_command_fn,

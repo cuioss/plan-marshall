@@ -10,18 +10,13 @@ user-invocable: false
 
 **Key Pattern**: No files are modified. Steps contain verification commands to run. Each step is executed and marked done/failed. No domain skills are needed.
 
-## Contract Compliance
+**Base Contract**: This skill follows the task executor contract defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md). See that document for shared steps ([BASE] steps below), input/output contracts, error handling, and script notations.
 
-**MANDATORY**: Follow the contracts defined in:
+**Note**: The `verification` profile is distinct from the `verification` change-type (see [change-types.md](../ref-workflow-architecture/standards/change-types.md)). The profile determines HOW a task executes (run commands, don't modify files); the change-type describes WHY a request was made (validate/confirm something).
 
-| Contract | Location | Purpose |
-|----------|----------|---------|
-| Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure, fields, status values, and JSON schema |
-| Task Executor Base | `plan-marshall:ref-workflow-architecture/standards/task-executor-base.md` | Shared workflow steps for all task executors |
+## Output Extensions
 
-## Input / Output
-
-See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the common input contract and base output schema. This profile extends the base output with:
+This profile extends the base output with:
 
 ```toon
 execution_summary:
@@ -38,17 +33,17 @@ verification:
 
 ## Workflow
 
-This skill follows the shared task executor workflow. Steps marked **[BASE]** are defined in [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md). Steps without the tag are verification-specific.
+Steps marked **[BASE]** are defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md).
 
 ### Step 1: Load Task Context [BASE]
 
-Follow the base workflow. Verify `profile` is `verification`. Steps contain verification commands (not file paths).
+Verify `profile` is `verification`. Steps contain verification commands (not file paths).
 
 ### Step 2: Execute Verification Steps
 
 Steps are executed sequentially. For each step (verification command):
 
-1. Run the command:
+1. Run the command (with a 5-minute timeout):
 ```bash
 {step.target}
 ```
@@ -105,11 +100,3 @@ next_action: requires_attention
 ```
 
 The `findings` array is best-effort: parse compiler errors, test failures, or lint output into structured entries. If parsing fails, include the raw `stderr` for the triage step to analyze.
-
-## Integration
-
-**Invoked by**: `plan-marshall:phase-5-execute` skill (when task.profile = verification)
-
-**Skill Loading**: Agent resolves this skill via `resolve-task-executor --profile verification`
-
-**Script Notations**: See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the complete list.

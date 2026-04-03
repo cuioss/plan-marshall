@@ -113,7 +113,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│                      1 GENERIC PHASE AGENT (plan-marshall)                  │
+│                      4 AGENTS (plan-marshall bundle)                        │
 │                                                                             │
 │  ┌──────────────────────┬────────────────────────────────────────────────┐ │
 │  │ AGENT                │ PURPOSE                                        │ │
@@ -123,6 +123,24 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  │                      │ • Loads caller-specified skill via Skill tool  │ │
 │  │                      │ • Delegates all work to the loaded skill       │ │
 │  │                      │ • Used for phase-1-init and phase-4-plan       │ │
+│  │                      │                                                │ │
+│  ├──────────────────────┼────────────────────────────────────────────────┤ │
+│  │                      │                                                │ │
+│  │ detect-change-type-  │ Analyze request to detect change type          │ │
+│  │ agent                │ • Returns change_type + confidence             │ │
+│  │                      │ • Used during phase-3-outline                  │ │
+│  │                      │                                                │ │
+│  ├──────────────────────┼────────────────────────────────────────────────┤ │
+│  │                      │                                                │ │
+│  │ q-gate-validation-   │ Validate assessments against request intent    │ │
+│  │ agent                │ • Catches false positives, missing coverage    │ │
+│  │                      │ • Used during phase-3-outline                  │ │
+│  │                      │                                                │ │
+│  ├──────────────────────┼────────────────────────────────────────────────┤ │
+│  │                      │                                                │ │
+│  │ research-best-       │ Web research for best practices                │ │
+│  │ practices-agent      │ • Searches multiple sources, synthesizes       │ │
+│  │                      │ • General-purpose research tool                │ │
 │  │                      │                                                │ │
 │  └──────────────────────┴────────────────────────────────────────────────┘ │
 │                                                                             │

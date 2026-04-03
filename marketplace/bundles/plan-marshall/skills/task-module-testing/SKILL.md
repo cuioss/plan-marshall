@@ -10,22 +10,11 @@ user-invocable: false
 
 **Key Pattern**: Agent loads this skill via `resolve-task-executor --profile module_testing`. Skill executes a test-focused workflow: understand context → plan tests → implement tests → verify. Domain-specific testing knowledge comes from `task.skills` (loaded by agent).
 
-## Contract Compliance
+**Base Contract**: This skill follows the task executor contract defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md). See that document for shared steps ([BASE] steps below), input/output contracts, error handling, integration points, and script notations.
 
-**MANDATORY**: Follow the contracts defined in:
+## Output Extensions
 
-| Contract | Location | Purpose |
-|----------|----------|---------|
-| Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Task structure, fields, status values, and JSON schema |
-| Task Executor Base | `plan-marshall:ref-workflow-architecture/standards/task-executor-base.md` | Shared workflow steps for all task executors |
-
-## Two-Tier Skill Loading
-
-See [ref-workflow-architecture:skill-loading](../ref-workflow-architecture/standards/skill-loading.md) for the complete two-tier skill loading pattern. Agent loads Tier 1 (system skills) automatically, then Tier 2 (domain skills from `task.skills`). This workflow skill defines HOW the agent executes tests.
-
-## Input / Output
-
-See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the common input contract and base output schema. This profile extends the base output with:
+This profile extends the base output with:
 
 ```toon
 execution_summary:
@@ -38,11 +27,11 @@ verification:
 
 ## Workflow
 
-This skill follows the shared task executor workflow. Steps marked **[BASE]** are defined in [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) — follow them exactly. Steps without the tag are testing-specific.
+Steps marked **[BASE]** are defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md) — follow them exactly.
 
 ### Step 1: Load Task Context [BASE]
 
-Follow the base workflow. Verify `profile` is `module_testing`.
+Verify `profile` is `module_testing`.
 
 ### Step 2: Understand Implementation Context
 
@@ -93,9 +82,7 @@ Use component `"plan-marshall:task-module-testing"`.
 
 Include the additional `tests_written`, `tests_passed`, and `tests_failed` fields.
 
-## Error Handling
-
-See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for common error handling (missing dependencies, verification timeout).
+## Profile-Specific Error Handling
 
 ### Implementation Not Found
 
@@ -103,11 +90,3 @@ If implementation to test doesn't exist:
 - Check if implementation task is in dependencies
 - If yes, mark task as blocked
 - If no, note in lessons learned
-
-## Integration
-
-**Invoked by**: `plan-marshall:phase-5-execute` skill (when task.profile = module_testing)
-
-**Skill Loading**: Agent resolves this skill via `resolve-task-executor --profile module_testing`
-
-**Script Notations**: See [task-executor-base.md](../ref-workflow-architecture/standards/task-executor-base.md) for the complete list.

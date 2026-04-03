@@ -88,16 +88,16 @@ blockers[1]{type,description,severity}:
 DEPENDENCY,Requires toon-usage skill,CRITICAL
 
 findings[5]{file,line,severity,type,message,effort}:
-HandoffTemplate.java,45,BLOCKER,BUG,Resource leak,10min
-AgentBase.java,78,CRITICAL,VULNERABILITY,SQL injection risk,30min
-MemoryStore.java,123,MAJOR,CODE_SMELL,Duplicate code,15min
-Parser.java,56,MINOR,CODE_SMELL,Complex method,5min
-Config.java,89,INFO,CODE_SMELL,TODO comment,2min
+HandoffTemplate.java,45,BLOCKER,BUG,Resource leak in stream handling,10min
+AgentBase.java,78,CRITICAL,BUG,Null check missing on handoff result,30min
+MemoryStore.java,123,MAJOR,CODE_SMELL,Duplicate code across persist methods,15min
+Parser.java,56,MINOR,CODE_SMELL,Complex method exceeds threshold,5min
+Config.java,89,INFO,CODE_SMELL,TODO comment pending,2min
 
 statistics:
   total_findings: 5
   by_severity{BLOCKER,CRITICAL,MAJOR,MINOR,INFO}: 1,1,1,1,1
-  by_type{BUG,VULNERABILITY,CODE_SMELL}: 1,1,3
+  by_type{BUG,CODE_SMELL}: 2,3
   estimated_total_effort: 62min
 
 instructions[4]:
@@ -383,103 +383,10 @@ categorization:
 - TOON: 380 tokens
 - **Savings**: 380 tokens (50% reduction)
 
-## Migration Guidance
+## References
 
-### Converting JSON to TOON
+For TOON syntax details, migration guidance, best practices, and quality rules, see [toon-specification.md](toon-specification.md).
 
-**Step 1**: Identify uniform arrays
-```json
-{
-  "issues": [
-    {"file": "A.java", "line": 42, "severity": "HIGH"},
-    {"file": "B.java", "line": 89, "severity": "MEDIUM"}
-  ]
-}
-```
-
-**Step 2**: Extract field headers
-- Fields: `file`, `line`, `severity`
-- Count: 2 items
-
-**Step 3**: Convert to TOON
-```toon
-issues[2]{file,line,severity}:
-A.java,42,HIGH
-B.java,89,MEDIUM
-```
-
-**Step 4**: Validate
-- Length declaration `[2]` matches row count: PASS
-- Field count matches header: PASS
-- Token count reduced: PASS
-
-### Handling Non-Uniform Data
-
-**Option 1**: Keep as nested object
-```toon
-context:
-  task: Fix issues
-  priority: high
-  files_analyzed: 15
-```
-
-**Option 2**: Use mixed format
-```toon
-metadata:
-  - {created: 2025-11-26, author: agent-1}
-  - {updated: 2025-11-26, author: agent-2}
-```
-
-### Escaping Special Characters
-
-**Values with commas**:
-```toon
-messages[2]{id,text}:
-1,"Error: Value must be between 0 and 100, inclusive"
-2,"Warning: File not found, using default"
-```
-
-**Values with quotes**:
-```toon
-messages[1]{id,text}:
-1,"She said ""hello"" to me"
-```
-
-## Best Practices
-
-### DO
-
-PASS Use TOON for uniform arrays (issues, files, metrics)
-PASS Include `[N]` length declarations for validation
-PASS Declare `{field1,field2}` headers explicitly
-PASS Use CSV escaping for commas in values
-PASS Keep nesting depth ≤ 3 levels
-PASS Validate row count matches length declaration
-
-### DON'T
-
-FAIL Use TOON for non-uniform data (use nested objects)
-FAIL Skip length declarations (reduces LLM accuracy)
-FAIL Mix field order across rows
-FAIL Exceed 3 levels of nesting
-FAIL Use TOON for API interchange (internal only)
-
-## Quality Rules
-
-When creating TOON handoffs or memory files:
-
-- Length declaration `[N]` matches actual row count
-- Field headers `{field1,field2}` match all rows
-- CSV escaping used for values with commas
-- Consistent field order across rows
-- Nesting depth ≤ 3 levels
-- Token reduction ≥ 30% vs JSON (measure)
-- Proper indentation (2 spaces or 1 tab)
-- No trailing commas in rows
-
-## Resources
-
-### Internal References
-- toon-specification.md - Complete TOON format technical reference
-- plan-marshall:ref-workflow-architecture - Architecture documentation including workflow skill conventions
-- plan-marshall:manage-memories - Memory layer operations
+### Related Skills
+- `plan-marshall:ref-workflow-architecture` — Architecture documentation including workflow skill conventions
+- `plan-marshall:manage-memories` — Memory layer operations

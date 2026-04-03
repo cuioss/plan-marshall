@@ -15,7 +15,7 @@ Memory layer operations for persistent session storage (via `tools-file-ops` ski
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Do not bypass the metadata envelope format for memory files
@@ -230,7 +230,7 @@ Memory files are created during plan execution to persist session context. The `
 
 ## Error Responses
 
-> See `plan-marshall:ref-manage-contract` for the standard error response format.
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|

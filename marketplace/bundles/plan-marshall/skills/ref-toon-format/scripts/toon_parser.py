@@ -23,6 +23,13 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+__all__ = [
+    'ToonParseError',
+    'parse_toon',
+    'parse_toon_table',
+    'serialize_toon',
+]
+
 
 class ToonParseError(Exception):
     """Error during TOON parsing with line context."""

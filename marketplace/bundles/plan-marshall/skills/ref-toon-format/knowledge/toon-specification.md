@@ -286,18 +286,6 @@ toon_output = serialize_toon(data)
 print(toon_output)
 ```
 
-### External Libraries
-
-For non-marketplace use cases, external implementations exist:
-
-| Language | Package | Notes |
-|----------|---------|-------|
-| TypeScript | `@toon-format/toon` (npm) | Community implementation |
-| Python | `toon-format` (PyPI) | Community implementation |
-| Go | `github.com/toon-format/toon-go` | Community implementation |
-
-**Note**: For plan-marshall marketplace scripts, always use the internal `toon_parser.py` module rather than external packages.
-
 ## Best Practices
 
 ### DO Use TOON For:
@@ -330,10 +318,9 @@ FAIL Pure flat tables (use CSV instead)
 - **Nested objects**: 20-30% reduction vs JSON
 - **Non-uniform data**: May be worse than JSON
 
-### LLM Accuracy
-- **Structural validation**: 70% detection of malformed data
-- **Field extraction**: +4% accuracy vs JSON (avg)
-- **Schema clarity**: Explicit headers improve parsing
+### LLM Parsing
+- **Schema clarity**: Explicit `[N]` and `{fields}` headers improve parsing accuracy
+- **Structural validation**: Declared lengths help LLMs detect malformed data
 
 ### Trade-offs
 - **Overhead**: ~5-10% vs pure CSV for tabular data
@@ -365,47 +352,11 @@ FAIL Pure flat tables (use CSV instead)
 
 | Aspect | JSON | TOON | CSV | YAML |
 |--------|------|------|-----|------|
-| **Token Efficiency** | Baseline | -40% | -70% | -15% |
-| **LLM Accuracy** | 52.3% | 73.9% | 44.3% | 54.7% |
-| **Nesting Support** | PASS Full | PASS Full | FAIL None | PASS Full |
-| **Uniform Arrays** | WARN Verbose | PASS Optimal | PASS Compact | WARN Verbose |
-| **Non-uniform Data** | PASS Good | WARN OK | FAIL Poor | PASS Good |
-| **Tooling Support** | PASS Universal | WARN Growing | PASS Universal | PASS Wide |
-| **API Compatibility** | PASS Standard | FAIL Needs conversion | FAIL Limited | WARN Some |
-| **Human Readable** | WARN OK | PASS Good | WARN OK | PASS Excellent |
-| **Schema Clarity** | FAIL Implicit | PASS Explicit | FAIL None | FAIL Implicit |
-
-## Adoption Rules
-
-Before adopting TOON in your project:
-
-- Identify data with uniform array structures
-- Measure current token usage (baseline)
-- Test TOON conversion with sample data
-- Measure token savings (should be >30%)
-- Verify LLM can parse TOON (test prompts)
-- Set up conversion layer (JSON ↔ TOON)
-- Update documentation/examples
-- Add to CI/CD if applicable
-- Monitor ecosystem maturity
-- Track actual cost savings
-
-## Future Outlook
-
-**Current State (Nov 2025)**:
-- Specification stable at v3.0
-- ~20k GitHub stars, active development
-- Growing language support
-- Increasing LLM framework adoption
-
-**Expected Evolution**:
-- More language implementations
-- Framework integrations (LangChain, etc.)
-- Editor support improvements
-- Potential native LLM training on TOON
-
-**Risks**:
-- Format evolution may introduce breaking changes
-- Ecosystem fragmentation if forks emerge
-- May be superseded by newer optimization formats
-- LLM providers could introduce native optimizations
+| **Token Efficiency** | Baseline | ~40% reduction | ~70% reduction | ~15% reduction |
+| **Nesting Support** | Full | Full | None | Full |
+| **Uniform Arrays** | Verbose | Optimal | Compact | Verbose |
+| **Non-uniform Data** | Good | OK | Poor | Good |
+| **Tooling Support** | Universal | Growing | Universal | Wide |
+| **API Compatibility** | Standard | Needs conversion | Limited | Some |
+| **Human Readable** | OK | Good | OK | Excellent |
+| **Schema Clarity** | Implicit | Explicit | None | Implicit |

@@ -277,7 +277,7 @@ The `domain` field is inherited from the deliverable. Domains are arbitrary stri
 
 ### Profile Field
 
-> Profiles follow the standard profile model. See `plan-marshall:ref-manage-contract` § Profiles for the canonical definition.
+> Profiles follow the standard profile model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Profiles for the canonical definition.
 
 ## Skills Inheritance
 

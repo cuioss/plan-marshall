@@ -58,12 +58,12 @@ def main():
             time.sleep(args.interval)
             continue
         except OSError as e:
-            finish('failure', start, polls, args.command_key, f'Check command failed: {e}')
+            finish('error', start, polls, args.command_key, f'Check command failed: {e}')
 
         if result.returncode == 0:
             parsed = parse_toon(result.stdout)
             if args.failure_field and match(parsed, args.failure_field):
-                finish('failure', start, polls, args.command_key, 'Permanent failure')
+                finish('error', start, polls, args.command_key, 'Permanent failure')
             if match(parsed, args.success_field):
                 finish('success', start, polls, args.command_key)
 

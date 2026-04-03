@@ -11,7 +11,7 @@ Run configuration handling for persistent command configuration storage.
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Do not bypass initialization (run-config.json must exist before queries)
@@ -111,7 +111,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ## Error Responses
 
-> See `plan-marshall:ref-manage-contract` for the standard error response format.
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|

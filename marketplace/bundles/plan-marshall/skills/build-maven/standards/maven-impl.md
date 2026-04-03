@@ -191,44 +191,11 @@ export CI=true
 
 Extensions can configure Maven-specific defaults via `config_defaults()` callback. These values are stored in `run-configuration.json` under `extension_defaults`.
 
-### Configuration Keys
+| Key | Format | Example |
+|-----|--------|---------|
+| `build.maven.profiles.skip` | Comma-separated profile names | `itest,native,jfr` |
+| `build.maven.profiles.map.canonical` | `profile:canonical,...` pairs | `pre-commit:quality-gate,coverage:coverage` |
 
-| Key | Format | Description |
-|-----|--------|-------------|
-| `build.maven.profiles.skip` | Comma-separated | Profile names to ignore during discovery |
-| `build.maven.profiles.map.canonical` | Comma-separated pairs | Profile-to-canonical command mappings |
-
-### Profile Skip Configuration
-
-Profiles listed in `build.maven.profiles.skip` are excluded from command generation.
-
-**Key**: `build.maven.profiles.skip`
-**Format**: `profile1,profile2,profile3`
-**Example**: `itest,native,jfr`
-
-### Profile Mapping Configuration
-
-Explicit profile-to-canonical mappings override automatic classification.
-
-**Key**: `build.maven.profiles.map.canonical`
-**Format**: `profile1:canonical1,profile2:canonical2,...`
-**Example**: `pre-commit:quality-gate,coverage:coverage,javadoc:javadoc`
-
-### Usage in config_defaults
-
-```python
-def config_defaults(self, project_root: str) -> None:
-    from _config_core import ext_defaults_set_default
-    from _maven_cmd_discover import EXT_KEY_PROFILES_SKIP, EXT_KEY_PROFILES_MAP
-
-    ext_defaults_set_default(EXT_KEY_PROFILES_SKIP, "itest,native", project_root)
-    ext_defaults_set_default(
-        EXT_KEY_PROFILES_MAP,
-        "pre-commit:quality-gate,coverage:coverage,javadoc:javadoc",
-        project_root
-    )
-```
-
-See SKILL.md for wrapper detection, issue routing, build status, and coverage report paths. See `build-api-reference.md` for shared build documentation.
+See SKILL.md for profile pipeline details. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-maven:maven`

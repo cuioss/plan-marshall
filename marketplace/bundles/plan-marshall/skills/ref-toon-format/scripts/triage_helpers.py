@@ -66,7 +66,7 @@ class TriageResult(TypedDict, total=False):
     """
 
     action: str       # Required: 'code_change', 'explain', 'ignore', 'fix', 'suppress'
-    status: str       # Required: 'success' or 'failure'
+    status: str       # Required: 'success' or 'error'
     reason: str
     priority: str
     suggested_implementation: str | None
@@ -108,7 +108,7 @@ def make_error(message: str, *, code: str | None = None, **extra: Any) -> dict[s
     """Create a standardized error payload for TOON output.
 
     All workflow scripts should use this for error responses to ensure
-    a consistent contract: ``{'error': message, 'status': 'failure', ...}``.
+    a consistent contract: ``{'error': message, 'status': 'error', ...}``.
 
     Args:
         message: Human-readable error description.
@@ -118,7 +118,7 @@ def make_error(message: str, *, code: str | None = None, **extra: Any) -> dict[s
     Returns:
         Dict ready for ``serialize_toon()``.
     """
-    result: dict[str, Any] = {'error': message, 'status': 'failure'}
+    result: dict[str, Any] = {'error': message, 'status': 'error'}
     if code:
         result['error_code'] = code
     result.update(extra)
@@ -379,7 +379,7 @@ def cmd_triage_batch_handler(
                 'item_id': item_id,
                 'action': 'error',
                 'reason': f'Triage failed: {e}',
-                'status': 'failure',
+                'status': 'error',
             })
 
     summary: dict[str, Any] = {'total': len(results), 'failed': failed}

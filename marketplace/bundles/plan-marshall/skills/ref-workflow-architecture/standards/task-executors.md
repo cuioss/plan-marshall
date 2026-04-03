@@ -1,10 +1,10 @@
-# Task Executor Routing
+# Task Executors
 
-How tasks are routed to the appropriate task executor skill during phase-5-execute.
+How tasks are routed to the appropriate task executor skill and the shared workflow that all executors follow.
 
 ---
 
-## Overview
+## Routing Overview
 
 Task executors are workflow skills that handle the actual implementation or testing work during task execution. Unlike phase skills (which are system-only), task executors are configured via marshal.json and can be extended.
 
@@ -31,15 +31,9 @@ Task executors are workflow skills that handle the actual implementation or test
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │ "task_executors": {                                         │ │
 │  │   "implementation": "plan-marshall:task-implementation",      │ │
-│  │   "module_testing": "plan-marshall:task-module-testing",      │ │
-│  │   "integration_testing": "plan-marshall:task-integration_testing" │
+│  │   "module_testing": "plan-marshall:task-module-testing"       │ │
 │  │ }                                                           │ │
 │  └─────────────────────────────────────────────────────────────┘ │
-│                    │                                             │
-│                    ▼                                             │
-│                                                                  │
-│  Returns: plan-marshall:task-implementation                        │
-│                                                                  │
 │                    │                                             │
 │                    ▼                                             │
 │                                                                  │
@@ -48,6 +42,42 @@ Task executors are workflow skills that handle the actual implementation or test
 │  Skill: pm-dev-java:java-cdi               ←─ from task.skills   │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Profile Naming Conventions
+
+**Canonical profile names use underscores** (not hyphens):
+
+| Profile | Purpose | Default Task Executor |
+|---------|---------|----------------------|
+| `implementation` | Production code creation/modification | `plan-marshall:task-implementation` |
+| `module_testing` | Unit/module test creation | `plan-marshall:task-module-testing` |
+| `verification` | Run commands without modifying files | `plan-marshall:task-verification` |
+
+**Why underscores?** Profiles are used as JSON keys, TOON field values, and CLI parameters — underscores are more consistent with these conventions.
+
+---
+
+## Resolve API
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-task-executor --profile {profile}
+```
+
+**Output**:
+```toon
+status: success
+profile: implementation
+task_executor: plan-marshall:task-implementation
+```
+
+**Error (unknown profile)**:
+```toon
+status: error
+error: Unknown profile 'X'. Available profiles: implementation, module_testing
 ```
 
 ---
@@ -63,8 +93,7 @@ Task executors are configured in the system domain:
       "workflow_skills": { ... },
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing",
-        "integration_testing": "plan-marshall:task-integration_testing"
+        "module_testing": "plan-marshall:task-module-testing"
       }
     }
   }
@@ -72,54 +101,6 @@ Task executors are configured in the system domain:
 ```
 
 **Convention**: Profile `X` maps to skill `plan-marshall:task-X` by default.
-
----
-
-## API Reference
-
-### resolve-task-executor
-
-Resolve task executor skill for a given profile.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-task-executor --profile {profile}
-```
-
-**Parameters**:
-- `--profile`: Profile name from task (e.g., `implementation`, `module_testing`)
-
-**Output**:
-```toon
-status: success
-profile: implementation
-task_executor: plan-marshall:task-implementation
-```
-
-**Error (unknown profile)**:
-```toon
-status: error
-error: Unknown profile 'X'. Available profiles: implementation, module_testing, integration_testing
-```
-
----
-
-## Profile Naming Conventions
-
-**Canonical profile names use underscores** (not hyphens):
-
-| Profile | Purpose | Default Task Executor |
-|---------|---------|----------------------|
-| `implementation` | Production code creation/modification | `plan-marshall:task-implementation` |
-| `module_testing` | Unit/module test creation | `plan-marshall:task-module-testing` |
-| `integration_testing` | Integration test creation | `plan-marshall:task-integration_testing` |
-
-**Why underscores?** Profiles are used as:
-1. Keys in `skills_by_profile` JSON objects
-2. Field values in TOON task files
-3. Parameters to `resolve-task-executor`
-
-Underscores are more consistent with JSON key conventions.
 
 ---
 
@@ -176,22 +157,12 @@ The profile system is designed for extension. New profiles can be added without 
    ```bash
    /marshall-steward
    ```
-   The `configure-task-executors` step automatically discovers the new profile from extension.py and registers it in marshal.json.
 
 4. **Verify configuration**:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
      resolve-task-executor --profile my_new_profile
    ```
-
-### Example: Documentation Profile
-
-The `documentation` profile demonstrates this pattern:
-
-1. **pm-documents extension.py** defines `documentation` profile with AsciiDoc skills
-2. **task-documentation** skill (if created) would handle documentation tasks
-3. Deliverables with `profile: documentation` route to this executor
-4. Domain skills provide AsciiDoc/ADR patterns
 
 ---
 
@@ -234,9 +205,183 @@ Skill: pm-dev-java:java-cdi            (domain knowledge)
 
 ---
 
+## Shared Executor Workflow
+
+All task executor skills (task-implementation, task-module-testing, task-verification) share a common workflow. Profile-specific skills define their unique steps and reference this section for the common steps.
+
+### Common Input Contract
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plan_id` | string | Yes | Plan identifier |
+| `task_number` | number | Yes | Task number to execute |
+
+---
+
+### Load Task Context
+
+Read the task file to understand what needs to be done:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+  --plan-id {plan_id} \
+  --number {task_number}
+```
+
+Extract key fields:
+- `domain`: Domain for this task
+- `profile`: Should match the expected profile for this executor
+- `skills`: Domain skills to apply (already loaded by agent)
+- `description`: What to do
+- `steps`: File paths (or commands for verification profile) to work on
+- `verification`: How to verify success
+- `depends_on`: Dependencies (should be complete)
+
+**Note**: Steps are executed sequentially. No explicit "in_progress" marker is needed — proceed directly to execution.
+
+---
+
+### Mark Step Complete
+
+After completing each step:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
+  --plan-id {plan_id} \
+  --task {task_number} \
+  --step {N} \
+  --outcome done
+```
+
+---
+
+### Run Verification
+
+After all steps complete, run task verification.
+
+Execute the verification commands from `task.verification.commands`. Every task SHOULD have commands populated by the plan phase (copied from the deliverable).
+
+**Safety net** (should not trigger in normal operation): If verification commands are missing, log a WARN and resolve from architecture:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARN --message "[VERIFY] ({skill_name}) TASK-{N} missing verification — falling back to architecture resolve"
+
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  resolve --command {resolve_command} --name {module} \
+  --trace-plan-id {plan_id}
+```
+
+Where `{resolve_command}` depends on the profile:
+- `implementation` → `compile`
+- `module_testing` → `module-tests`
+
+---
+
+### Handle Verification Results
+
+**If verification passes**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+  --plan-id {plan_id} \
+  --number {task_number} \
+  --status done
+```
+
+**If verification fails**:
+
+1. Analyze error output
+2. Identify failing component
+3. Fix the issue (profile-specific — see executor skill for scope)
+4. Re-run verification
+5. Iterate until pass (max 3 iterations)
+
+If still failing after 3 iterations:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+  --plan-id {plan_id} \
+  --number {task_number} \
+  --status blocked
+```
+
+Record details in work.log using manage-log.
+
+---
+
+### Record Lessons
+
+On issues or unexpected patterns:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
+  --component "{skill_notation}" \
+  --category improvement \
+  --title "{issue summary}" \
+  --detail "{context and resolution}"
+```
+
+**Valid categories**: `bug`, `improvement`, `anti-pattern`
+
+---
+
+### Return Results
+
+Base output contract (profile-specific executors may add additional fields):
+
+```toon
+status: success | error
+plan_id: {echo}
+task_number: {echo}
+execution_summary:
+  steps_completed: N
+  steps_total: M
+  files_modified: [paths]
+verification:
+  passed: true | false
+  command: "{cmd}"
+next_action: task_complete | requires_attention
+message: {error message if status=error}
+```
+
+---
+
+## Common Error Handling
+
+### Missing Dependency
+
+If a file depends on code not yet implemented:
+- Check if dependency is in a later step
+- If yes, reorder steps
+- If no, create minimal stub and note
+
+### Verification Timeout
+
+If verification command hangs:
+- Kill after 5 minutes
+- Record timeout in lessons
+- Try with reduced scope
+
+---
+
+## Common Script Notations
+
+All task executor skills use these notations (use EXACTLY as shown):
+
+| Notation | Purpose |
+|----------|---------|
+| `plan-marshall:manage-tasks:manage-tasks` | Task operations (get, update, finalize-step) |
+| `plan-marshall:manage-lessons:manage-lessons` | Record lessons (add) |
+| `plan-marshall:manage-logging:manage-logging` | Logging (work) |
+| `plan-marshall:manage-config:manage-config` | Read project configuration |
+| `plan-marshall:manage-architecture:architecture` | Build command resolution (verification fallback) |
+
+---
+
 ## Related Documents
 
 - [skill-loading.md](skill-loading.md) - Two-tier skill loading pattern
 - [phases.md](phases.md) - Workflow phase definitions
 - [agents.md](agents.md) - Agent responsibilities including phase-5-execute skill
-- [profiles.md](../extension-api/standards/profiles.md) - Profile override mechanism
+- `plan-marshall:extension-api` - Extension points

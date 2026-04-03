@@ -11,7 +11,7 @@ This skill provides structure guidelines, examples, and operations for `solution
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Use Write tool for document content, then validate via script (not the script API write path)
@@ -194,7 +194,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ## Error Responses
 
-> See `plan-marshall:ref-manage-contract` for the standard error response format.
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
 | Error Code | Cause |
 |------------|-------|

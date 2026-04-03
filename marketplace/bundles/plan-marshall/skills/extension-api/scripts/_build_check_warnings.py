@@ -9,10 +9,9 @@ severity filter, and pattern handling; the input/output logic is identical.
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import Callable
 
-from _warnings_classify import categorize_warnings, flatten_patterns  # type: ignore[import-not-found]
+from _warnings_classify import categorize_warnings  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
@@ -26,14 +25,13 @@ def create_check_warnings_handler(
     Args:
         matcher: Pattern matcher type ('substring', 'wildcard', 'regex').
         filter_severity: If set, only warnings with this severity are processed.
-        supports_patterns_arg: If True, supports --patterns as flat list input.
+        supports_patterns_arg: Retained for API compatibility (unused — all callers pass False).
 
     Returns:
         A cmd_check_warnings(args) -> int function ready for argparse set_defaults.
     """
     def cmd_check_warnings(args) -> int:
-        return cmd_check_warnings_base(args, matcher=matcher, filter_severity=filter_severity,
-                                       supports_patterns_arg=supports_patterns_arg)
+        return cmd_check_warnings_base(args, matcher=matcher, filter_severity=filter_severity)
     return cmd_check_warnings
 
 
@@ -41,59 +39,37 @@ def cmd_check_warnings_base(
     args,
     matcher: str = 'substring',
     filter_severity: str | None = None,
-    supports_patterns_arg: bool = False,
 ) -> int:
     """Handle check-warnings subcommand with tool-specific classification options.
 
     Args:
         args: Parsed argparse namespace. Expects attributes:
-            warnings (JSON string), acceptable_warnings (JSON string),
-            and optionally patterns (JSON string).
+            warnings (JSON string), acceptable_warnings (JSON string).
         matcher: Pattern matcher type ('substring', 'wildcard', 'regex').
         filter_severity: If set, only warnings with this severity are processed.
-        supports_patterns_arg: If True, supports --patterns as flat list input
-            (Maven-style). Otherwise, only --acceptable-warnings dict is supported.
 
     Returns:
         Exit code: 0 if no fixable/unknown warnings, 1 otherwise.
     """
     warnings = None
-    patterns: list | dict = [] if supports_patterns_arg else {}
+    patterns: dict = {}
 
-    if args.warnings:
-        try:
-            warnings = json.loads(args.warnings)
-        except json.JSONDecodeError as e:
-            print(serialize_toon({'status': 'error', 'error': f'Invalid JSON in --warnings: {e}'}))
-            return 1
+    if not args.warnings:
+        print(serialize_toon({'status': 'error', 'error': 'No input provided. Use --warnings.'}))
+        return 1
 
-        if supports_patterns_arg and getattr(args, 'patterns', None):
-            try:
-                patterns = json.loads(args.patterns)
-            except json.JSONDecodeError as e:
-                print(serialize_toon({'status': 'error', 'error': f'Invalid JSON in --patterns: {e}'}))
-                return 1
-        elif getattr(args, 'acceptable_warnings', None):
-            try:
-                aw = json.loads(args.acceptable_warnings)
-                patterns = flatten_patterns(aw) if supports_patterns_arg else aw
-            except json.JSONDecodeError as e:
-                print(serialize_toon({'status': 'error', 'error': f'Invalid JSON in --acceptable-warnings: {e}'}))
-                return 1
-    else:
-        if sys.stdin.isatty():
-            print(serialize_toon({'status': 'error', 'error': 'No input provided. Use --warnings or pipe JSON to stdin.'}))
-            return 1
+    try:
+        warnings = json.loads(args.warnings)
+    except json.JSONDecodeError as e:
+        print(serialize_toon({'status': 'error', 'error': f'Invalid JSON in --warnings: {e}'}))
+        return 1
+
+    if getattr(args, 'acceptable_warnings', None):
         try:
-            input_data = json.load(sys.stdin)
+            patterns = json.loads(args.acceptable_warnings)
         except json.JSONDecodeError as e:
-            print(serialize_toon({'status': 'error', 'error': f'Invalid JSON from stdin: {e}'}))
+            print(serialize_toon({'status': 'error', 'error': f'Invalid JSON in --acceptable-warnings: {e}'}))
             return 1
-        warnings = input_data.get('warnings', [])
-        if supports_patterns_arg:
-            patterns = input_data.get('patterns', []) or flatten_patterns(input_data.get('acceptable_warnings', {}))
-        else:
-            patterns = input_data.get('acceptable_warnings', {})
 
     if warnings is None or not isinstance(warnings, list):
         print(serialize_toon({'status': 'error', 'error': 'warnings must be an array'}))
@@ -104,12 +80,11 @@ def cmd_check_warnings_base(
         classify_kwargs['filter_severity'] = filter_severity
 
     categorized = categorize_warnings(warnings, patterns, **classify_kwargs)
-    total = sum(len(v) for v in categorized.values()) if supports_patterns_arg else len(warnings)
     fixable_count = len(categorized['fixable'])
     unknown_count = len(categorized['unknown'])
     result = {
         'status': 'success',
-        'total': total,
+        'total': len(warnings),
         'acceptable': len(categorized['acceptable']),
         'fixable': fixable_count,
         'unknown': unknown_count,

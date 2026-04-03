@@ -45,54 +45,18 @@ Gradle supports all shared subcommands documented in `build-api-reference.md`:
 
 **discover**: Reads `settings.gradle(.kts)` `include()` declarations (Groovy and Kotlin DSL). Also detects quality tasks: `spotlessCheck`, `checkstyleMain`, `pmdMain`, `detekt`, `ktlintCheck`.
 
-**find-project**: Gradle-specific utility for resolving module names to Gradle notation (`:services:auth`). Useful when error output contains a module name but you need the Gradle notation to construct a build command. Not available in other build systems — Maven uses `-pl {module}` directly.
+**find-project**: Gradle-specific utility for resolving module names to Gradle notation (`:services:auth`). Useful when error output contains a module name but you need the Gradle notation to construct a build command.
 
 **search-markers**: Default extensions include `.java,.kt` (Kotlin support).
-
-## Error Categories
-
-Uses the shared JVM error categories (see `build-api-reference.md` § Shared categories).
-
-Gradle-specific additions:
-- Uses **regex patterns** for task-specific markers (e.g., `Execution failed for task ':.*:compileJava'`)
-- `compilation_error` additionally detects Kotlin patterns: `Unresolved reference`, `Type mismatch`, `Smart cast` failures
-- Supports Kotlin (`.kt`), Groovy (`.groovy`), and Scala (`.scala`) file location parsing
 
 ## Module Discovery
 
 Reads `settings.gradle(.kts)` to detect multi-project builds. Subprojects are identified from `include()` declarations. Supports both Groovy and Kotlin DSL.
 
-### Command Generation
-
-| Canonical | Gradle Command |
-|-----------|----------------|
-| `verify` | `:{module}:build` |
-| `quality-gate` | `:{module}:check` |
-| `compile` | `:{module}:compileJava` |
-| `module-tests` | `:{module}:test` |
-| `coverage` | `:{module}:test :{module}:jacocoTestReport` |
-| `clean` | `clean` |
-
-### Issue Routing
-
-Gradle errors route to `pm-dev-java` bundle skills (same as Maven):
-
-| Category | Target Skill |
-|----------|-------------|
-| `compilation_error` | `pm-dev-java:java-core` |
-| `test_failure` | `pm-dev-java:junit-core` |
-| `javadoc_warning` | `pm-dev-java:javadoc` |
-
-## Wrapper Detection
-
-```
-Gradle: ./gradlew > gradlew.bat > gradle (system PATH)
-```
-
-Detection order: `./gradlew` (Unix), `gradlew.bat` (Windows), `gradle` (system fallback). Falls back to system `gradle` if no wrapper is found.
+For error categories, issue routing, command generation tables, and wrapper detection, see `build-api-reference.md`.
 
 ## References
 
-- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation
+- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation, error categories, issue routing, wrapper detection
 - `plan-marshall:extension-api/standards/build-execution.md` — Execution contract and lifecycle
 - `standards/gradle-impl.md` — Gradle-specific execution details

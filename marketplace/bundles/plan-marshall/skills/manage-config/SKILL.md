@@ -13,7 +13,7 @@ Manages project-level infrastructure configuration in `.plan/marshal.json`.
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Do not bypass initialization (marshal.json must exist before queries)
@@ -339,7 +339,7 @@ Script characteristics:
 
 ## Error Responses
 
-> See `plan-marshall:ref-manage-contract` for the standard error response format.
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
 | Error | Cause | Resolution |
 |-------|-------|------------|

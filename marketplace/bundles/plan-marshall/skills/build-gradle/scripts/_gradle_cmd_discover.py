@@ -49,14 +49,8 @@ BUILD_GRADLE_KTS = 'build.gradle.kts'
 SETTINGS_GRADLE = 'settings.gradle'
 SETTINGS_GRADLE_KTS = 'settings.gradle.kts'
 
-# Quality task patterns that indicate quality tooling
-QUALITY_TASK_PATTERNS = {
-    'spotlessCheck': 'spotless',
-    'checkstyleMain': 'checkstyle',
-    'pmdMain': 'pmd',
-    'detekt': 'detekt',
-    'ktlintCheck': 'ktlint',
-}
+# Quality task names that indicate quality tooling (used for detection only)
+QUALITY_TASKS = {'spotlessCheck', 'checkstyleMain', 'pmdMain', 'detekt', 'ktlintCheck'}
 
 
 # =============================================================================
@@ -127,17 +121,12 @@ def _find_gradle_descriptors(project_root: str) -> list[tuple[Path, str]]:
             descriptors.append((root, '.'))
             break
 
-    # Submodules from settings.gradle
-    settings_path = None
-    for sf in [SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]:
-        if (root / sf).exists():
-            settings_path = root / sf
-            break
+    # Submodules from settings.gradle (reuse shared parser for consistency)
+    settings_path = find_settings_file(root)
 
     if settings_path:
-        content = settings_path.read_text()
-        for match in re.finditer(r'include\s*[(\'"]+:?([^)\'\"]+)[)\'"]+', content):
-            module_name = match.group(1).replace(':', '/')
+        for project in parse_included_projects(settings_path):
+            module_name = project.lstrip(':').replace(':', '/')
             module_path = root / module_name
             if module_path.exists():
                 # Verify it has a build file
@@ -253,7 +242,7 @@ def _get_quality_tasks(project_root: Path) -> list:
         match = re.match(r'^(\w+)\s+-\s+', line)
         if match:
             task_name = match.group(1)
-            if task_name in QUALITY_TASK_PATTERNS:
+            if task_name in QUALITY_TASKS:
                 tasks.append(task_name)
 
     return tasks

@@ -30,7 +30,7 @@ def test_make_error_basic():
     """Test basic error creation."""
     result = make_error('something failed')
     assert result['error'] == 'something failed'
-    assert result['status'] == 'failure'
+    assert result['status'] == 'error'
     assert 'error_code' not in result
 
 
@@ -38,7 +38,7 @@ def test_make_error_with_code():
     """Test error creation with error code."""
     result = make_error('not found', code=ErrorCode.NOT_FOUND)
     assert result['error_code'] == 'NOT_FOUND'
-    assert result['status'] == 'failure'
+    assert result['status'] == 'error'
 
 
 def test_make_error_with_extra_fields():
@@ -64,7 +64,7 @@ def test_print_toon_success(capsys):
 
 def test_print_toon_failure(capsys):
     """Test print_toon returns 1 for failure."""
-    rc = print_toon({'status': 'failure', 'error': 'bad'})
+    rc = print_toon({'status': 'error', 'error': 'bad'})
     assert rc == 1
 
 

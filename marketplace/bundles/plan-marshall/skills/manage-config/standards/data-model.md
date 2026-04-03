@@ -180,7 +180,7 @@ System-level infrastructure settings.
 
 Phase-specific configuration for the 6-phase workflow model. Each phase with configurable settings has its own sub-section.
 
-> **Phase naming**: JSON keys use the `phase-{N}-{name}` prefix form (e.g., `phase-1-init`). The canonical phase name is `1-init` — see `ref-manage-contract` for the standard phase list.
+> **Phase naming**: JSON keys use the `phase-{N}-{name}` prefix form (e.g., `phase-1-init`). The canonical phase name is `1-init` — see [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) for the standard phase list.
 
 ### phase-1-init
 

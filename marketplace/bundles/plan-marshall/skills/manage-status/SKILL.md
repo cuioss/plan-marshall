@@ -11,7 +11,7 @@ Manage status.json files with phase tracking, metadata, and lifecycle operations
 
 ## Enforcement
 
-> **Base contract**: See `plan-marshall:ref-manage-contract` for shared enforcement rules, TOON output format, and error response patterns.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
 - Only valid phase status values: `pending`, `in_progress`, `done`
@@ -443,7 +443,7 @@ The `route` command maps phases to their implementation skills:
 
 ## Error Responses
 
-> See `plan-marshall:ref-manage-contract` for the standard error response format.
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
 | Error Code | Exit Code | Cause |
 |------------|-----------|-------|

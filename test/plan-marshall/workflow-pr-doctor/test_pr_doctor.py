@@ -100,7 +100,7 @@ class TestParseHandoff(unittest.TestCase):
         stdout, _, code = run_doctor_script(['parse-handoff', '--handoff', 'not-json'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('Invalid', result['error'])
         self.assertIn('JSON', result['error'])
 
@@ -109,7 +109,7 @@ class TestParseHandoff(unittest.TestCase):
         stdout, _, code = run_doctor_script(['parse-handoff', '--handoff', '[1,2,3]'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('object', result['error'])
 
     def test_validation_warns_on_bad_pr_number(self):
@@ -414,7 +414,7 @@ class TestDiagnose(unittest.TestCase):
         ])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertEqual(result['error_code'], 'INVALID_INPUT')
 
     def test_sonar_severity_breakdown(self):

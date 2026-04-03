@@ -138,7 +138,7 @@ class TestPRTriage(unittest.TestCase):
         stdout, _, code = run_pr_script(['triage', '--comment', 'not-valid-json'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('Invalid JSON', result['error'])
 
     def test_triage_missing_comment(self):
@@ -193,14 +193,14 @@ class TestPRTriageBatch(unittest.TestCase):
         stdout, _, code = run_pr_script(['triage-batch', '--comments', 'not-json'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
 
     def test_triage_batch_not_array(self):
         """Test batch triage rejects non-array input."""
         stdout, _, code = run_pr_script(['triage-batch', '--comments', '{"id": "C1"}'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('array', result['error'])
 
 
@@ -674,7 +674,7 @@ class TestProviderContract(unittest.TestCase):
         # Use an impossible PR number to trigger an error from any provider
         result = fetch_comments(999999999)
         # Should return error dict, not raise
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('error', result)
 
     def test_fetch_comments_success_contract_shape(self):
@@ -720,7 +720,7 @@ class TestPRFetchComments(unittest.TestCase):
         stdout, _, code = run_pr_script(['fetch-comments', '--pr', '999'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('error', result)
 
 

@@ -20,6 +20,8 @@ Change types are orthogonal to other dimensions:
 | **Profile** | WHAT aspect of work | implementation, module_testing, quality |
 | **Change-type** | WHY you're doing it | analysis, feature, bug_fix |
 
+Change-type determines the outline workflow (how deliverables are discovered and structured). Profile determines task execution (which executor skill runs). A single deliverable with change-type `feature` may produce tasks with profiles `implementation` and `module_testing`. See [task-executors.md](task-executors.md) for profile→executor mapping.
+
 ### Skill-Based Handling
 
 Each change type has:
@@ -181,6 +183,17 @@ Quality (linting, formatting, JavaDoc) is a **profile**, not a change-type.
 - Change-type: `tech_debt` (cleanup task)
 - Profile: `quality`
 
+### Recipes
+
+Recipes are a **plan source**, not a change-type.
+
+- A recipe provides its own `default_change_type` for deliverables
+- Change_type is not detected via LLM — it comes from the recipe definition
+- Example: "refactor-to-standards" recipe uses change_type=tech_debt
+- Example: "refactor-to-test-standards" recipe uses change_type=tech_debt
+
+See `plan-marshall:extension-api` standards/extension-contract.md#provides_recipes for the recipe contract.
+
 ---
 
 ## Skill-Based Routing
@@ -238,23 +251,8 @@ reasoning: "Request describes improving existing plugin functionality"
 
 ---
 
-## What's NOT a Change-Type
-
-### Recipes
-
-Recipes are a **plan source**, not a change-type.
-
-- A recipe provides its own `default_change_type` for deliverables
-- Change_type is not detected via LLM — it comes from the recipe definition
-- Example: "refactor-to-standards" recipe uses change_type=tech_debt
-- Example: "refactor-to-test-standards" recipe uses change_type=tech_debt
-
-See `plan-marshall:extension-api` standards/extension-contract.md#provides_recipes for the recipe contract.
-
----
-
 ## Related
 
-- [task-executor-routing.md](task-executor-routing.md) - Profile-based executor routing
+- [task-executors.md](task-executors.md) - Profile-based executor routing and shared workflow
 - [phases.md](phases.md) - Phase workflow overview
 - `plan-marshall:detect-change-type-agent` - Detection agent

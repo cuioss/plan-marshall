@@ -1,6 +1,6 @@
 # 6-Phase Execution Model
 
-The plan-marshall bundle implements a 6-phase execution model for structured task completion.
+The plan-marshall bundle implements a 6-phase execution model for structured task completion. This document covers phase flow, transitions, and triggers. For file format details (status.json, TASK-*.json, references.json, etc.), see [artifacts.md](artifacts.md).
 
 ---
 
@@ -19,7 +19,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │       │             │              │              │                  │  │
 │  │   ┌───▼───┐    ┌────▼────┐    ┌────▼────┐   ┌────▼────┐             │  │
 │  │   │config │    │clarified│    │solution │   │ TASK-*  │             │  │
-│  │   │status │    │ request │    │outline  │   │ .toon   │             │  │
+│  │   │status │    │ request │    │outline  │   │ .json   │             │  │
 │  │   │request│    │         │    │   .md   │   │  files  │             │  │
 │  │   └───────┘    └─────────┘    └─────────┘   └─────────┘             │  │
 │  │                                                                      │  │
@@ -57,7 +57,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • description                   .plan/plans/{plan_id}/             │   │
-│  │  • lesson_id                       ├── status.toon                  │   │
+│  │  • lesson_id                       ├── status.json                  │   │
 │  │  • issue URL                       ├── request.md                   │   │
 │  │                                    └── references.json              │   │
 │  │                                                                     │   │
@@ -75,7 +75,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  5. Write request.md                                                        │
 │  6. Initialize references.json                                              │
 │  7. Detect domain                                                           │
-│  8. Create status.toon (6-phase model)                                      │
+│  8. Create status.json (6-phase model)                                      │
 │  9. Store domains in references.json                                        │
 │  10. Transition to 2-refine phase                                           │
 │                                                                             │
@@ -198,9 +198,9 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │  INPUT                           OUTPUT                             │   │
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
-│  │  solution_outline.md             TASK-001.toon                      │   │
-│  │    └── Deliverables              TASK-002.toon                      │   │
-│  │        ├── 1. Title              TASK-003.toon                      │   │
+│  │  solution_outline.md             TASK-001.json                      │   │
+│  │    └── Deliverables              TASK-002.json                      │   │
+│  │        ├── 1. Title              TASK-003.json                      │   │
 │  │        ├── 2. Title              ...                                │   │
 │  │        └── 3. Title                                                 │   │
 │  │                                  Each task contains:                │   │
@@ -224,7 +224,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  3. Analyze for aggregation (same domain/profile/change_type)               │
 │  4. Analyze for splits (mixed execution_mode)                               │
 │  5. Resolve skills from architecture (per profile)                          │
-│  6. Create TASK-*.toon files                                                │
+│  6. Create TASK-*.json files                                                │
 │  7. Determine execution order (parallel groups)                             │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -245,9 +245,9 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │  INPUT                           OUTPUT                             │   │
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
-│  │  TASK-001.toon                   Modified project files             │   │
-│  │  TASK-002.toon                     • New files created              │   │
-│  │  TASK-003.toon                     • Existing files modified        │   │
+│  │  TASK-001.json                   Modified project files             │   │
+│  │  TASK-002.json                     • New files created              │   │
+│  │  TASK-003.json                     • Existing files modified        │   │
 │  │  ...                               • Tests added/updated            │   │
 │  │                                                                     │   │
 │  │  For each task:                  Task status updated:               │   │
@@ -443,7 +443,7 @@ TRANSITION TRIGGERS:
 │  │  ════                                                                │  │
 │  │  • Reads deliverable.domain + profiles for each deliverable          │  │
 │  │  • Resolves skills from architecture (module.skills_by_profile)      │  │
-│  │  • Writes domain + profile + skills to TASK-*.toon                   │  │
+│  │  • Writes domain + profile + skills to TASK-*.json                   │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                      │                                                      │
 │                      │ task.domain, task.skills                             │

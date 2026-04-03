@@ -4,7 +4,7 @@ System overview for the 14 manage-* skills in the plan-marshall bundle.
 
 ## Purpose
 
-The manage-* skills form the data layer for plan-marshall's 6-phase workflow. Each skill owns a specific data domain and exposes a CLI API via Python scripts. All skills follow the shared contract in `ref-manage-contract`.
+The manage-* skills form the data layer for plan-marshall's 6-phase workflow. Each skill owns a specific data domain and exposes a CLI API via Python scripts. All skills follow the shared contract in `[manage-contract.md](manage-contract.md)`.
 
 ## The 14 Skills
 
@@ -94,5 +94,5 @@ All manage-* skills share:
 | `input_validation` | Shared Python module | Plan ID validation, field type checks |
 | `toon_parser` | Shared Python module | TOON serialization/deserialization |
 | `constants` | Shared Python module | Phase names, Q-Gate phases, valid resolutions |
-| `ref-manage-contract` | This bundle | Shared contract, formats, error codes |
+| `[manage-contract.md](manage-contract.md)` | This bundle | Shared contract, formats, error codes |
 | `ref-toon-format` | This bundle | TOON format specification |

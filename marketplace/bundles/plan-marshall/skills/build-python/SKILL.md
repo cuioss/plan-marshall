@@ -33,8 +33,6 @@ Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build
 Python supports all shared subcommands documented in `build-api-reference.md`:
 **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 
-Not available: `search-markers` (OpenRewrite is Java-specific).
-
 ### Python-Specific Notes
 
 **run**: The `--command-args` value contains pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. The result TOON includes a `wrapper` field showing the resolved pyprojectx executable path.
@@ -53,49 +51,16 @@ Generate with `pytest --cov --cov-report=xml`.
 
 Unlike Maven/Gradle/npm which route to a single parser, Python's `parse_log()` runs **all matching parsers** and combines results. This is because pyprojectx `verify` runs multiple tools (mypy + ruff + pytest) in sequence, producing mixed output in a single log file.
 
-## Error Categories
-
-See `build-api-reference.md` § Python categories for the full table.
-
-### Issue Routing
-
-Python errors route to `pm-dev-python` bundle skills:
-
-| Category | Target Skill |
-|----------|-------------|
-| `type_error` | `pm-dev-python:python-core` |
-| `lint_error` | `pm-dev-python:python-core` |
-| `test_failure` | `pm-dev-python:pytest-testing` |
-
-## Wrapper Detection
-
-```
-Python: ./pw > pw.bat > pwx (on PATH)
-```
-
-Detection order: `./pw` (Unix), `pw.bat` (Windows), `pwx` (system PATH). Unlike Maven/Gradle which fall back to system commands, Python raises `FileNotFoundError` if no pyprojectx wrapper is found — pyprojectx is project-specific and has no system-wide equivalent.
-
 ## Module Discovery
 
 Uses the pyprojectx project structure. Modules are directories containing test subdirectories matching the `test/` or `tests/` pattern.
 
 Excludes: `.venv`, `venv`, `.tox`, `.mypy_cache`, `.ruff_cache`, `.pytest_cache`, `dist`, `egg-info`.
 
-### Command Generation
-
-| Canonical | pyprojectx Command |
-|-----------|-------------------|
-| `verify` | `verify {module}` |
-| `quality-gate` | `quality-gate {module}` |
-| `compile` | `compile {module}` |
-| `module-tests` | `module-tests {module}` |
-| `coverage` | `coverage {module}` |
-| `clean` | `clean` |
-
-Omit `{module}` to run against all modules.
+For error categories, issue routing, command generation tables, and wrapper detection, see `build-api-reference.md`.
 
 ## References
 
-- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation
+- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation, error categories, issue routing, wrapper detection
 - `plan-marshall:extension-api/standards/build-execution.md` — Execution contract and lifecycle
 - `standards/python-impl.md` — Python/pyprojectx execution details

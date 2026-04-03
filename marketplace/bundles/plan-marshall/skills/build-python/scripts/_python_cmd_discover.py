@@ -29,9 +29,12 @@ except ModuleNotFoundError:
         tomllib = None  # type: ignore[assignment]
 
 from _build_commands import build_canonical_commands
-from _build_discover import EXCLUDE_DIRS
+from _build_discover import EXCLUDE_DIRS, count_source_files, discover_packages
 from extension_base import build_module_base, find_readme
 from plan_logging import log_entry
+
+# Python file extensions for shared utilities
+PY_EXTENSIONS: dict[str, str] = {'py': '*.py'}
 
 # Directories that indicate a test module
 TEST_DIR_NAMES = {'test', 'tests'}
@@ -164,13 +167,13 @@ def _build_module(module_path: Path, project_root: Path, relative_path: str) -> 
     source_paths = [f'{prefix}/{s}' if prefix else s for s in source_dirs]
     test_paths = [f'{prefix}/{t}' if prefix else t for t in test_dirs]
 
-    # Count files
-    source_files = _count_python_files(module_path, source_dirs)
-    test_files = _count_python_files(module_path, test_dirs)
+    # Count files (shared utility with Python extensions)
+    source_files = count_source_files(module_path, source_dirs, extra_extensions=PY_EXTENSIONS)
+    test_files = count_source_files(module_path, test_dirs, extra_extensions=PY_EXTENSIONS)
 
-    # Packages (Python dotted notation from source dirs)
-    packages = _discover_python_packages(module_path, source_dirs, prefix)
-    test_packages = _discover_python_packages(module_path, test_dirs, prefix)
+    # Packages (shared utility with Python extensions)
+    packages = discover_packages(module_path, source_dirs, prefix, extra_extensions=PY_EXTENSIONS)
+    test_packages = discover_packages(module_path, test_dirs, prefix, extra_extensions=PY_EXTENSIONS)
 
     # Metadata and dependencies from pyproject.toml
     pyproject_data = _parse_pyproject_metadata(module_path)
@@ -237,59 +240,6 @@ def _find_python_test_dirs(module_path: Path) -> list[str]:
         if test_dir.is_dir():
             test_dirs.append(test_name)
     return test_dirs
-
-
-def _count_python_files(module_path: Path, dirs: list[str]) -> int:
-    """Count Python files in the given directories."""
-    count = 0
-    for d in dirs:
-        dir_path = module_path / d
-        if dir_path.exists():
-            count += len(list(dir_path.rglob('*.py')))
-    return count
-
-
-def _discover_python_packages(module_path: Path, source_dirs: list[str], prefix: str) -> dict:
-    """Discover Python packages from source directories.
-
-    Scans for directories containing __init__.py or .py files and
-    converts directory structure to dotted package notation.
-
-    Args:
-        module_path: Absolute path to module directory.
-        source_dirs: List of relative source directory paths.
-        prefix: Module path relative to project root.
-
-    Returns:
-        Dict keyed by dotted package name with path and file list.
-    """
-    packages: dict[str, dict] = {}
-
-    for source_dir in source_dirs:
-        source_path = module_path / source_dir
-        if not source_path.exists():
-            continue
-
-        for py_file in source_path.rglob('*.py'):
-            pkg_dir = py_file.parent
-            try:
-                rel = pkg_dir.relative_to(source_path)
-            except ValueError:
-                continue
-            pkg_name = str(rel).replace('/', '.').replace('\\', '.')
-            if pkg_name == '.':
-                pkg_name = '(root)'
-
-            if pkg_name not in packages:
-                rel_path = f'{prefix}/{source_dir}/{rel}' if prefix else f'{source_dir}/{rel}'
-                packages[pkg_name] = {'path': rel_path.rstrip('/.'), 'files': []}
-            packages[pkg_name]['files'].append(py_file.name)
-
-    # Sort file lists for deterministic output
-    for pkg in packages.values():
-        pkg['files'] = sorted(set(pkg['files']))
-
-    return packages
 
 
 def _parse_pyproject_metadata(module_path: Path) -> dict:

@@ -189,7 +189,7 @@ class TestAnalyzeDiff(unittest.TestCase):
         stdout, _, code = run_git_script(['analyze-diff', '--file', '/nonexistent/file.diff'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('not found', result['error'])
 
     def test_missing_file_arg(self):
@@ -583,7 +583,7 @@ class TestDetectArtifacts(unittest.TestCase):
         stdout, _, code = run_git_script(['detect-artifacts', '--root', '/nonexistent/path'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('not found', result['error'])
 
     def test_defaults_to_cwd_without_root(self):

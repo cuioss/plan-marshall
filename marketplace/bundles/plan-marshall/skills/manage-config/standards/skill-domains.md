@@ -19,7 +19,7 @@ See `data-model.md` for the complete `skill_domains` JSON schema. The key hierar
 
 ## 6-Phase Workflow Model
 
-> Phase names follow the standard 6-phase model. See `plan-marshall:ref-manage-contract` § Phase Names for the canonical definition.
+> Phase names follow the standard 6-phase model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Phase Names for the canonical definition.
 
 The system domain maps each phase to a workflow skill:
 
@@ -151,9 +151,9 @@ Domain-specific extensions that augment workflow skills. Only in technical domai
 
 ### Profiles
 
-> Profiles follow the standard profile model. See `plan-marshall:ref-manage-contract` § Profiles for the canonical definition.
+> Profiles follow the standard profile model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Profiles for the canonical definition.
 
-> **Note**: `quality` is a config profile for skill resolution. `manage-tasks` has additional task-only profiles (`verification`, `standalone`) not mapped to config skill domains — see `ref-manage-contract` for the full profile model.
+> **Note**: `quality` is a config profile for skill resolution. `manage-tasks` has additional task-only profiles (`verification`, `standalone`) not mapped to config skill domains — see [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) for the full profile model.
 
 ### Profile Structure
 
@@ -186,7 +186,7 @@ Foundation skills always included when the domain is selected.
 
 ## Profile-to-Phase Mapping
 
-> Profiles follow the standard profile model. See `plan-marshall:ref-manage-contract` § Profiles for the canonical definition.
+> Profiles follow the standard profile model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Profiles for the canonical definition.
 
 ## System Domain
 

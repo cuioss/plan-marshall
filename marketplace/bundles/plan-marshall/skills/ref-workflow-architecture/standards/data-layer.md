@@ -182,151 +182,27 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 
 ---
 
----
+## Command References
 
-## manage-status Commands
+For full command details, see each manage-* skill's SKILL.md. Key scripts:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                      MANAGE-STATUS COMMANDS                                 │
-│                                                                             │
-│  Script: plan-marshall:manage-status:manage_status                            │
-│                                                                             │
-│  ┌────────────────────┬─────────────────────────┬────────────────────────┐ │
-│  │ COMMAND            │ PARAMETERS              │ PURPOSE                │ │
-│  ├────────────────────┼─────────────────────────┼────────────────────────┤ │
-│  │ create             │ --plan-id --title       │ Create status.json     │ │
-│  │                    │ --phases [--force]      │                        │ │
-│  │ read               │ --plan-id               │ Read full status       │ │
-│  │ set-phase          │ --plan-id --phase       │ Set current phase      │ │
-│  │ update-phase       │ --plan-id --phase       │ Update phase status    │ │
-│  │                    │ --status                │                        │ │
-│  │ progress           │ --plan-id               │ Get progress %         │ │
-│  │ metadata           │ --plan-id --get/--set   │ Get/set metadata       │ │
-│  │                    │ --field [--value]       │                        │ │
-│  │ get-context        │ --plan-id               │ Combined status context│ │
-│  └────────────────────┴─────────────────────────┴────────────────────────┘ │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+| Skill | Script Notation | Purpose |
+|-------|-----------------|---------|
+| `manage-status` | `plan-marshall:manage-status:manage_status` | Phase tracking, metadata, plan discovery |
+| `manage-lifecycle` | `plan-marshall:manage-lifecycle:manage-lifecycle` | Phase transitions, plan listing, archiving |
+| `manage-tasks` | `plan-marshall:manage-tasks:manage-tasks` | Task CRUD, step tracking, status updates |
+| `manage-references` | `plan-marshall:manage-references:manage-references` | Plan refs (domains, branch, issue) |
+| `manage-solution-outline` | `plan-marshall:manage-solution-outline:manage-solution-outline` | Solution document write/read/validate |
+| `manage-plan-documents` | `plan-marshall:manage-plan-documents:manage-plan-documents` | Request and typed document management |
+| `manage-files` | `plan-marshall:manage-files:manage-files` | Directory operations, plan deletion |
+| `manage-findings` | `plan-marshall:manage-findings:manage-findings` | Findings, Q-Gate, assessments |
+| `manage-logging` | `plan-marshall:manage-logging:manage-logging` | Work log, decision log, script log |
+| `manage-config` | `plan-marshall:manage-config:manage-config` | Marshal.json project configuration |
+| `manage-architecture` | `plan-marshall:manage-architecture:architecture` | Module analysis, skill resolution |
+| `manage-assessments` | `plan-marshall:manage-assessments:manage-assessments` | Component evaluations |
+| `manage-metrics` | `plan-marshall:manage-metrics:manage-metrics` | Plan metrics collection |
 
----
-
-## manage-status Lifecycle Commands
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                     MANAGE-STATUS LIFECYCLE COMMANDS                        │
-│                                                                             │
-│  Script: plan-marshall:manage-status:manage_status                               │
-│                                                                             │
-│  ┌────────────────────┬─────────────────────────┬────────────────────────┐ │
-│  │ COMMAND            │ PARAMETERS              │ PURPOSE                │ │
-│  ├────────────────────┼─────────────────────────┼────────────────────────┤ │
-│  │ list               │ [--filter]              │ List all plans         │ │
-│  │ transition         │ --plan-id --completed   │ Move to next phase     │ │
-│  │ archive            │ --plan-id [--dry-run]   │ Archive completed      │ │
-│  │ route              │ --phase                 │ Get skill for phase    │ │
-│  │ get-routing-context│ --plan-id               │ Phase + skill + prog   │ │
-│  └────────────────────┴─────────────────────────┴────────────────────────┘ │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## status.json Structure
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│  status.json STRUCTURE:                                                     │
-│  ═══════════════════════                                                    │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  {                                                                   │  │
-│  │    "title": "Implement JWT Authentication",                          │  │
-│  │    "current_phase": "5-execute",                                     │  │
-│  │    "phases": [                                                       │  │
-│  │      {"name": "1-init", "status": "done"},                           │  │
-│  │      {"name": "2-refine", "status": "done"},                         │  │
-│  │      {"name": "3-outline", "status": "done"},                        │  │
-│  │      {"name": "4-plan", "status": "done"},                           │  │
-│  │      {"name": "5-execute", "status": "in_progress"},                 │  │
-│  │      {"name": "6-finalize", "status": "pending"}                     │  │
-│  │    ],                                                                │  │
-│  │    "metadata": {                                                     │  │
-│  │      "change_type": "feature"                                        │  │
-│  │    },                                                                │  │
-│  │    "created": "2025-12-02T10:00:00Z",                                │  │
-│  │    "updated": "2025-12-02T14:30:00Z"                                 │  │
-│  │  }                                                                   │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## manage-tasks Commands
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                       MANAGE-TASKS COMMANDS                                 │
-│                                                                             │
-│  Script: plan-marshall:manage-tasks:manage-tasks                              │
-│                                                                             │
-│  ┌───────────────┬───────────────────────────┬──────────────────────────┐  │
-│  │ COMMAND       │ PARAMETERS                │ PURPOSE                  │  │
-│  ├───────────────┼───────────────────────────┼──────────────────────────┤  │
-│  │ add           │ --plan-id <<'EOF'...EOF   │ Create TASK-*.json       │  │
-│  │ get           │ --plan-id --number        │ Read task                │  │
-│  │ next          │ --plan-id [--include-     │ Get next pending task    │  │
-│  │               │ context]                  │                          │  │
-│  │ finalize-step │ --plan-id --task --step   │ Mark step done/skipped   │  │
-│  │               │ --outcome [--reason]      │                          │  │
-│  │ update        │ --plan-id --number        │ Update task status       │  │
-│  │               │ --status                  │                          │  │
-│  └───────────────┴───────────────────────────┴──────────────────────────┘  │
-│                                                                             │
-│  TASK-*.json STRUCTURE:                                                     │
-│  ═══════════════════════                                                    │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  title: Implement UserService                                        │  │
-│  │  deliverable: 1                                                      │  │
-│  │  domain: java                                                        │  │
-│  │  profile: implementation                                             │  │
-│  │  status: pending                                                     │  │
-│  │                                                                      │  │
-│  │  description: |                                                      │  │
-│  │    Create UserService with CRUD operations                           │  │
-│  │                                                                      │  │
-│  │  steps:                                                              │  │
-│  │    - src/main/java/com/example/UserService.java                      │  │
-│  │    - src/main/java/com/example/UserRepository.java                   │  │
-│  │                                                                      │  │
-│  │  depends_on: []                                                      │  │
-│  │                                                                      │  │
-│  │  skills:                                                             │  │
-│  │    - pm-dev-java:java-core                                           │  │
-│  │    - pm-dev-java:java-cdi                                            │  │
-│  │                                                                      │  │
-│  │  verification:                                                       │  │
-│  │    commands:                                                         │  │
-│  │      - mvn test -pl user-service                                     │  │
-│  │    criteria: All tests pass                                          │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+For file formats (status.json, TASK-*.json, references.json, etc.), see [artifacts.md](artifacts.md).
 
 ---
 
@@ -422,6 +298,6 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 | [phases.md](phases.md) | Which phase uses which files |
 | `plan-marshall:manage-references/SKILL.md` | Full references commands |
 | `plan-marshall:manage-status/SKILL.md` | Full status commands |
-| `plan-marshall:plan-marshall/SKILL.md` | Full lifecycle commands |
+| `plan-marshall:manage-lifecycle/SKILL.md` | Full lifecycle commands |
 | `plan-marshall:manage-tasks/SKILL.md` | Full task commands |
 | `plan-marshall:manage-logging/SKILL.md` | Work log and script execution logging |

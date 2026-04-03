@@ -51,7 +51,7 @@ user-invocable: false
 │  │   manage-references  manage-status     manage-tasks  manage-solution  │  │
 │  │        │               │               │              │               │  │
 │  │        ▼               ▼               ▼              ▼               │  │
-│  │   references.json status.toon    TASK-*.json   solution_outline.md   │  │
+│  │   references.json status.json    TASK-*.json   solution_outline.md   │  │
 │  │                                                                       │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -67,10 +67,10 @@ user-invocable: false
 | [standards/phases.md](standards/phases.md) | 6-phase model | Phase flow, transitions, outputs |
 | [standards/agents.md](standards/agents.md) | Thin agent pattern | Agent structure, skill invocation |
 | [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
+| [standards/manage-contract.md](standards/manage-contract.md) | manage-* contract | Enforcement, error codes, shared formats |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
-| [standards/artifacts.md](standards/artifacts.md) | Plan file formats | references.json, status.toon, TASK-*.json |
-| [standards/task-executor-routing.md](standards/task-executor-routing.md) | Task executor routing | Profile→executor mapping, extensibility |
-| [standards/task-executor-base.md](standards/task-executor-base.md) | Shared executor steps | Common workflow for all task-* skills |
+| [standards/artifacts.md](standards/artifacts.md) | Plan file formats | references.json, status.json, TASK-*.json |
+| [standards/task-executors.md](standards/task-executors.md) | Task executors | Routing, shared workflow, extensibility |
 | [standards/change-types.md](standards/change-types.md) | Change type vocabulary | analysis, feature, enhancement, bug_fix, tech_debt, verification |
 | `plan-marshall:extension-api` | Extension mechanism | Domain extensions for outline/triage |
 
@@ -159,7 +159,7 @@ user-invocable: false
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │  PLAN FILES (.plan/plans/{plan_id}/)                                 │   │
 │  │  ═══════════════════════════════════                                 │   │
-│  │  status.toon  request.md  references.json  solution_outline.md        │   │
+│  │  status.json  request.md  references.json  solution_outline.md        │   │
 │  │  TASK-001.json  TASK-002.json  ...                                   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
@@ -198,7 +198,7 @@ The triage scripts use pattern matching and will sometimes misclassify nuanced i
 
 ### SKILL.md Template
 
-All workflow skills follow this canonical section order:
+Script-bearing workflow skills follow this canonical section order. Sections marked (optional) may be omitted when not applicable (e.g., task-* skills omit Parameters and Usage Examples since their input comes from task JSON).
 
 ```
 ---
@@ -212,10 +212,10 @@ user-invocable: true|false
 <One paragraph summary.>
 
 ## Enforcement
-## Parameters
-## Prerequisites
-## Architecture
-## Usage Examples
+## Parameters          (optional — omit for task executors)
+## Prerequisites       (optional)
+## Architecture        (optional)
+## Usage Examples      (optional — omit for non-user-invocable skills)
 ## Workflow(s)
 ## Scripts
 ## Error Handling
@@ -225,7 +225,7 @@ user-invocable: true|false
 
 ### Config Loading Convention
 
-All workflow scripts load JSON config from `standards/` using `load_skill_config(__file__, 'config-name.json')` from `triage_helpers`. This resolves to `<script_dir>/../standards/<config_name>`. Configuration that drives script behavior (patterns, rules, thresholds, severity mappings) should be externalized to JSON — not hardcoded in the script.
+Script-bearing workflow skills load JSON config from `standards/` using `load_skill_config(__file__, 'config-name.json')` from `triage_helpers`. This resolves to `<script_dir>/../standards/<config_name>`. Configuration that drives script behavior (patterns, rules, thresholds, severity mappings) should be externalized to JSON — not hardcoded in the script. (Task executor skills typically do not load config files — they receive configuration via the task JSON.)
 
 ### Priority Vocabulary
 
@@ -233,7 +233,7 @@ All workflow scripts use the shared `PRIORITY_LEVELS` tuple from `triage_helpers
 
 ### TOON Output Conventions
 
-- All outputs include `status: success|failure` at the top level
+- All outputs include `status: success|error` at the top level
 - Array fields use the hint notation: `field_name[N]:` for simple arrays, `field_name[N]{key1,key2}:` for arrays of objects
 - Error outputs use `make_error()` for structured error payloads with `error`, `status`, `error_code` fields
 - Use `print_error()` for direct error-and-exit; use `make_error()` + `print_toon()` only when additional processing is needed before output
@@ -264,11 +264,11 @@ Read standards/skill-loading.md
 # Understanding plan file formats
 Read standards/artifacts.md
 
-# Understanding task executor routing
-Read standards/task-executor-routing.md
+# Understanding task executors (routing + shared workflow)
+Read standards/task-executors.md
 
-# Understanding shared task executor workflow
-Read standards/task-executor-base.md
+# Understanding manage-* shared contract
+Read standards/manage-contract.md
 
 # Understanding change type vocabulary
 Read standards/change-types.md

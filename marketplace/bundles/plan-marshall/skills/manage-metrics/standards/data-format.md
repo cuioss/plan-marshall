@@ -32,7 +32,7 @@ enriched.message_count: 127
 
 ### Key Naming Convention
 
-> **Phase naming**: TOON keys use the `phase.{N}-{name}.{field}` prefix form (e.g., `phase.1-init.start`). The canonical phase name is `1-init` — see `ref-manage-contract` for the standard phase list.
+> **Phase naming**: TOON keys use the `phase.{N}-{name}.{field}` prefix form (e.g., `phase.1-init.start`). The canonical phase name is `1-init` — see [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) for the standard phase list.
 
 - `phase.{phase_name}.{field}` — per-phase timing/token data
 - `enriched.{field}` — session transcript enrichment data (attributed to plan as a whole)
@@ -84,7 +84,7 @@ Duration is computed as wall-clock time from start/end timestamps and formatted 
 
 ## Valid Phase Names
 
-> Phase names follow the standard 6-phase model. See `plan-marshall:ref-manage-contract` § Phase Names for the canonical definition.
+> Phase names follow the standard 6-phase model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Phase Names for the canonical definition.
 
 ## Token Data Sources
 

@@ -30,8 +30,6 @@ from _build_parse import (
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
-from _build_parser_registry import DetectionRule, ParserRegistry  # noqa: F401 - re-exported for test access
-
 # Gradle-specific categorization patterns. Extends shared JVM base patterns
 # with Gradle task markers, Kotlin errors, and regex-based patterns.
 GRADLE_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
@@ -98,6 +96,9 @@ GRADLE_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
     ],
 })
 
+# Categories that represent errors (not warnings). Used for severity mapping.
+_ERROR_CATEGORIES = {'compilation_error', 'test_failure', 'dependency_error'}
+
 
 def parse_file_location(line: str) -> dict[str, str | int | None]:
     """Extract file, line, and column from a Gradle error/warning line.
@@ -106,24 +107,6 @@ def parse_file_location(line: str) -> dict[str, str | int | None]:
     Supports Java, Kotlin, Groovy, and Scala source file patterns.
     """
     return parse_jvm_file_location(line)
-
-
-# =============================================================================
-# Gradle-specific parser function
-# =============================================================================
-
-
-def _parse_gradle_log(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
-    """Parse Gradle build log file."""
-    path = Path(log_file)
-    content = path.read_text(encoding='utf-8', errors='replace')
-    lines = content.split('\n')
-
-    issues = _extract_issues(lines)
-    test_summary = _extract_test_summary(content)
-    build_status = _detect_build_status(content)
-
-    return issues, test_summary, build_status
 
 
 # =============================================================================
@@ -148,7 +131,14 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    return _parse_gradle_log(str(log_file))
+    content = Path(str(log_file)).read_text(encoding='utf-8', errors='replace')
+    lines = content.split('\n')
+
+    issues = _extract_issues(lines)
+    test_summary = _extract_test_summary(content)
+    build_status = _detect_build_status(content)
+
+    return issues, test_summary, build_status
 
 
 def _detect_build_status(content: str) -> str:
@@ -189,8 +179,9 @@ def _extract_issues(lines: list[str]) -> list[Issue]:
         loc_file = location.get('file')
         loc_line = location.get('line')
 
-        # Map type to severity
-        severity = SEVERITY_ERROR if 'error' in issue_type else SEVERITY_WARNING
+        # Map category to severity — explicit set avoids false negatives
+        # (e.g., 'test_failure' doesn't contain 'error' but is an error)
+        severity = SEVERITY_ERROR if issue_type in _ERROR_CATEGORIES else SEVERITY_WARNING
 
         add_issue_deduped(
             issues, seen,
