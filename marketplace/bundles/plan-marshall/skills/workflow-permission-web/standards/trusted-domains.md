@@ -2,6 +2,8 @@
 
 Pre-approved domains for WebFetch operations that have passed comprehensive security assessment.
 
+> **Source of truth:** `domain-lists.json` is the sole source of truth for domain categorization used by `permission_web.py`. This document is a human-readable companion that must be kept in sync manually. When adding or removing domains, always update `domain-lists.json` first, then update this document to match.
+
 ## Purpose
 
 This document provides a curated list of domains that are pre-approved for WebFetch operations. These domains have been evaluated against security criteria defined in [domain-security-assessment.md](domain-security-assessment.md) and deemed safe for automated web fetching operations.
@@ -261,7 +263,7 @@ When reviewing WebFetch permission requests:
 
 ## Maintenance Procedures
 
-> **Note:** This list is manually maintained. Domain status can change (compromises, shutdowns, ownership transfers). The `permission_web.py categorize` command uses `domain-lists.json` as its **sole source of truth** — edits to this document are informational only. When adding or removing domains, always update `domain-lists.json` first, then update this document to match.
+> **Note:** This list is manually maintained. Domain status can change (compromises, shutdowns, ownership transfers). See the source of truth note at the top of this document.
 
 ### Adding New Domains
 

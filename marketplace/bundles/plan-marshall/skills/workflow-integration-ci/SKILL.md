@@ -39,6 +39,14 @@ Skill: plan-marshall:tools-integration-ci
 
 The `tools-integration-ci` skill provides the CI router (`ci.py`, `github.py`, `gitlab.py`) for provider abstraction.
 
+## Architecture
+
+```
+workflow-integration-ci (PR comment workflow)
+  ├─> tools-integration-ci (provider abstraction: GitHub/GitLab)
+  └─> triage_helpers (ref-toon-format) — shared triage, error handling
+```
+
 ## Usage Examples
 
 ```bash
@@ -53,14 +61,6 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage 
 
 # Batch triage multiple comments
 python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{"id":"C1","body":"Bug here"},{"id":"C2","body":"LGTM"}]'
-```
-
-## Architecture
-
-```
-workflow-integration-ci (PR comment workflow)
-  ├─> tools-integration-ci (provider abstraction: GitHub/GitLab)
-  └─> triage_helpers (ref-toon-format) — shared triage, error handling
 ```
 
 ## Workflows

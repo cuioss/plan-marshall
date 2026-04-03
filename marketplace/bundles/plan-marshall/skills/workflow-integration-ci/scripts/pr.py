@@ -36,6 +36,7 @@ from triage_helpers import (  # type: ignore[import-not-found]
     create_workflow_cli,
     load_skill_config,
     make_error,
+    parse_json_arg,
     print_error,
     print_toon,
     safe_main,
@@ -335,12 +336,11 @@ def cmd_triage(args):
     """Handle triage subcommand."""
     # Inject CLI --context into the comment JSON if provided
     if getattr(args, 'context', None):
-        try:
-            comment = json.loads(args.comment)
+        comment, rc = parse_json_arg(args.comment, '--comment')
+        if not rc and isinstance(comment, dict):
             comment['context'] = args.context
             return cmd_triage_single(json.dumps(comment), triage_comment)
-        except json.JSONDecodeError:
-            pass  # Let cmd_triage_single handle the error
+        # On parse failure, fall through to cmd_triage_single which reports the error
     return cmd_triage_single(args.comment, triage_comment)
 
 

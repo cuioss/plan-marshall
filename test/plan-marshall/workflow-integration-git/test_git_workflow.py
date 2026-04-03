@@ -788,6 +788,56 @@ class TestToonContract(unittest.TestCase):
         self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
 
 
+class TestArtifactConfigLoading(unittest.TestCase):
+    """Test that artifact patterns are loaded from artifact-patterns.json config."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Import git_workflow module for direct testing."""
+        from git_workflow import SAFE_ARTIFACT_PATTERNS, UNCERTAIN_ARTIFACT_PATTERNS, _SKIP_DIRS  # type: ignore[import-not-found]
+        cls.safe_patterns = SAFE_ARTIFACT_PATTERNS
+        cls.uncertain_patterns = UNCERTAIN_ARTIFACT_PATTERNS
+        cls.skip_dirs = _SKIP_DIRS
+
+    def test_safe_patterns_loaded(self):
+        """Test that safe artifact patterns are loaded from config."""
+        self.assertIsInstance(self.safe_patterns, list)
+        self.assertTrue(len(self.safe_patterns) > 0)
+        # Verify known patterns
+        patterns_str = ' '.join(self.safe_patterns)
+        self.assertIn('*.class', patterns_str)
+        self.assertIn('*.pyc', patterns_str)
+        self.assertIn('.DS_Store', patterns_str)
+
+    def test_uncertain_patterns_loaded(self):
+        """Test that uncertain artifact patterns are loaded from config."""
+        self.assertIsInstance(self.uncertain_patterns, list)
+        self.assertTrue(len(self.uncertain_patterns) > 0)
+        patterns_str = ' '.join(self.uncertain_patterns)
+        self.assertIn('target/**', patterns_str)
+
+    def test_skip_dirs_loaded(self):
+        """Test that skip directories are loaded from config."""
+        self.assertIsInstance(self.skip_dirs, set)
+        self.assertIn('.git', self.skip_dirs)
+        self.assertIn('node_modules', self.skip_dirs)
+        self.assertIn('.venv', self.skip_dirs)
+
+    def test_no_overlap_between_skip_dirs_and_uncertain(self):
+        """Test that skip_dirs entries are not also in uncertain_patterns.
+
+        If a directory is in skip_dirs, it's skipped during traversal and
+        will never reach the uncertain pattern check — having it in both
+        is dead config.
+        """
+        for skip_dir in self.skip_dirs:
+            for pattern in self.uncertain_patterns:
+                self.assertFalse(
+                    pattern.startswith(f'{skip_dir}/') or pattern.startswith(f'{skip_dir}/**'),
+                    f'skip_dir "{skip_dir}" overlaps with uncertain pattern "{pattern}"',
+                )
+
+
 class TestMain(unittest.TestCase):
     """Test git_workflow.py main entry point."""
 

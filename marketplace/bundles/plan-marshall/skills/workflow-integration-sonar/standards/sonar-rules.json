@@ -1,6 +1,11 @@
 {
   "_note": "Rules are language-prefixed (java:, javascript:, typescript:, python:) because Sonar uses these prefixes in its rule keys. Shared rules like S1135 (TODO) appear once per supported language. The flat structure enables O(1) lookup by sonar.py without runtime prefix resolution.",
   "_language_skill_mapping": "For fix implementation guidance: java → pm-dev-java, javascript/typescript → pm-dev-frontend, python → pm-dev-python",
+  "_rationale": {
+    "suppressable_rules": "Rules where suppression with justification is acceptable — typically code style preferences or patterns that are intentional in specific contexts (reflection, API compatibility, CLI output).",
+    "fix_suggestions": "Rule-specific fix guidance loaded at triage time. Maps Sonar rule keys to human-readable fix instructions. Unrecognized rules fall back to the Sonar issue message.",
+    "test_acceptable_rules": "Rules that are acceptable violations in test files — e.g., System.out usage in tests is common and harmless."
+  },
   "suppressable_rules": {
     "java:S1135": "TODO comments - tracked in issue management",
     "java:S1068": "Unused fields - may be for reflection/serialization",

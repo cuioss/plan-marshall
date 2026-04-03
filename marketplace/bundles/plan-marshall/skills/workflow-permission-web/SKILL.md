@@ -29,6 +29,20 @@ Analyzes WebFetch domains across global and project settings, researches domains
 |-----------|------|----------|---------|-------------|
 | `scope` | string | no | both | Which settings to analyze: `global`, `local`, or `both`. Controls which `--global-file` and `--local-file` arguments are passed to the `analyze` script. |
 
+## Prerequisites
+
+No external skill dependencies. Uses `triage_helpers` from `ref-toon-format` (see `ref-workflow-architecture` → "Shared Infrastructure" for the full API table). WebSearch tool access is optional (Step 4).
+
+## Architecture
+
+```
+workflow-permission-web (WebFetch permission analysis)
+  ├─> standards/domain-lists.json (domain categorization rules)
+  ├─> standards/trusted-domains.md (human-readable reference)
+  ├─> standards/domain-security-assessment.md (research methodology)
+  └─> triage_helpers (ref-toon-format) — error handling, TOON serialization
+```
+
 ## Usage Examples
 
 ```

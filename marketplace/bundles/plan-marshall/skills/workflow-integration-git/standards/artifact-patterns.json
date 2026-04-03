@@ -1,4 +1,9 @@
 {
+  "_rationale": {
+    "safe_patterns": "Artifacts that are always safe to auto-delete before commit — build outputs, caches, and OS metadata that should never be version-controlled.",
+    "uncertain_patterns": "Build output directories that might contain intentional files — require user confirmation before deletion.",
+    "skip_dirs": "Directories to skip entirely during traversal — large and never useful to scan for artifacts."
+  },
   "safe_patterns": [
     "**/*.class",
     "**/*.pyc",
@@ -16,11 +21,11 @@
     "target/**",
     "build/**",
     "dist/**",
-    ".next/**",
-    "node_modules/**"
+    ".next/**"
   ],
   "skip_dirs": [
     ".git",
+    ".venv",
     "node_modules"
   ]
 }

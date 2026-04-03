@@ -39,6 +39,13 @@ Format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md`
 
 No external skill dependencies. Uses `triage_helpers` from `ref-toon-format` (see `ref-workflow-architecture` → "Shared Infrastructure" for the full API table).
 
+## Architecture
+
+```
+workflow-integration-git (git commit workflow)
+  └─> triage_helpers (ref-toon-format) — error handling, TOON serialization
+```
+
 ## Usage Examples
 
 ```bash
@@ -51,13 +58,6 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 
 # Detect artifacts before committing
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts
-```
-
-## Architecture
-
-```
-workflow-integration-git (git commit workflow)
-  └─> triage_helpers (ref-toon-format) — error handling, TOON serialization
 ```
 
 ## Workflow: Commit Changes

@@ -61,6 +61,44 @@ Skill: plan-marshall:manage-findings        # Automated Review Lifecycle mode on
 
 For orchestration context and shared infrastructure, see `ref-workflow-architecture` → "Workflow Skill Orchestration".
 
+## Architecture
+
+Delegates to skills:
+```
+/workflow-pr-doctor (orchestrator)
+  ├─> workflow-integration-ci skill (Fetch Comments, Handle Review)
+  │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
+  ├─> workflow-integration-sonar skill (Fetch Issues, Fix Issues)
+  │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
+  ├─> workflow-integration-git skill (Commit workflow)
+  │     └─> triage_helpers (ref-toon-format) — shared error handling
+  └─> manage-architecture skill (Build command resolution)
+```
+
+All workflow scripts share `triage_helpers` from `ref-toon-format` for JSON parsing, TOON serialization, error codes, and batch triage processing.
+
+## Usage Examples
+
+**Fix all PR issues:**
+```
+/workflow-pr-doctor pr=123
+```
+
+**Fix only Sonar issues:**
+```
+/workflow-pr-doctor pr=456 checks=sonar
+```
+
+**Auto-fix without prompts:**
+```
+/workflow-pr-doctor checks=all auto-fix=true
+```
+
+**Skip CI wait, fix current PR:**
+```
+/workflow-pr-doctor wait=false
+```
+
 ## Workflow
 
 ### Step 0: Process Handoff Input
@@ -296,44 +334,6 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor parse
 **Output:** TOON with merged parameters and validation warnings.
 
 Explicit CLI parameters always take precedence over handoff values.
-
-## Usage Examples
-
-**Fix all PR issues:**
-```
-/workflow-pr-doctor pr=123
-```
-
-**Fix only Sonar issues:**
-```
-/workflow-pr-doctor pr=456 checks=sonar
-```
-
-**Auto-fix without prompts:**
-```
-/workflow-pr-doctor checks=all auto-fix=true
-```
-
-**Skip CI wait, fix current PR:**
-```
-/workflow-pr-doctor wait=false
-```
-
-## Architecture
-
-Delegates to skills:
-```
-/workflow-pr-doctor (orchestrator)
-  ├─> workflow-integration-ci skill (Fetch Comments, Handle Review)
-  │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
-  ├─> workflow-integration-sonar skill (Fetch Issues, Fix Issues)
-  │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
-  ├─> workflow-integration-git skill (Commit workflow)
-  │     └─> triage_helpers (ref-toon-format) — shared error handling
-  └─> manage-architecture skill (Build command resolution)
-```
-
-All workflow scripts share `triage_helpers` from `ref-toon-format` for JSON parsing, TOON serialization, error codes, and batch triage processing.
 
 ## Error Handling
 

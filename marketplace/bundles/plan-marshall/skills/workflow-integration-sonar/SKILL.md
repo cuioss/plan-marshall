@@ -30,26 +30,23 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 | `severities` | string | no | all | Filter by severity (comma-separated: BLOCKER,CRITICAL,MAJOR,MINOR,INFO) |
 | `types` | string | no | all | Filter by type (comma-separated: BUG,CODE_SMELL,VULNERABILITY) |
 
-## What This Skill Provides
+## Prerequisites
 
-### Workflows
+No external skill dependencies. Workflow 1 uses the SonarQube MCP tool directly. Workflow 2 uses `triage_helpers` from `ref-toon-format` (see `ref-workflow-architecture` → "Shared Infrastructure" for the full API table).
 
-1. **Fetch Issues (MCP Delegation)** - Constructs and executes MCP tool call for Sonar issue retrieval. Assembles parameters inline (no script needed) and calls the SonarQube MCP tool.
+## Architecture
 
-2. **Fix Issues Workflow** - Processes and resolves issues. Triages each issue for fix vs suppress, implements fixes or adds suppressions.
-
-## When to Activate This Skill
-
-- Fixing Sonar issues in PRs
-- Processing SonarQube quality gate failures
-- Implementing code fixes for violations
-- Adding justified suppressions
+```
+workflow-integration-sonar (Sonar issue workflow)
+  ├─> SonarQube MCP tool (issue fetching, status changes)
+  └─> triage_helpers (ref-toon-format) — shared triage, error handling
+```
 
 ## Workflows
 
 ### Workflow 1: Fetch Issues (MCP Delegation)
 
-**Purpose:** Fetch Sonar issues via the SonarQube MCP tool. No script needed — construct the MCP call directly from the parameters.
+**Purpose:** Fetch Sonar issues via the SonarQube MCP tool. This workflow uses MCP directly — no script needed. The triage workflow (Workflow 2) uses `sonar.py`.
 
 **Input:**
 - **project**: SonarQube project key
