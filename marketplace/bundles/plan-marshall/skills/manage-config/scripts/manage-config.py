@@ -15,7 +15,6 @@ Usage:
 """
 
 import argparse
-import sys
 
 from _cmd_ci import cmd_ci
 from _cmd_ext_defaults import cmd_ext_defaults
@@ -37,6 +36,7 @@ from _cmd_system_plan import cmd_plan, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
 from _config_core import EXIT_ERROR
+from file_ops import safe_main
 
 
 def _add_phase_subparser(
@@ -108,6 +108,7 @@ def _add_phase_subparser(
     return p_phase
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plan-Marshall configuration management', formatter_class=argparse.RawDescriptionHelpFormatter
@@ -350,11 +351,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        from toon_parser import serialize_toon
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

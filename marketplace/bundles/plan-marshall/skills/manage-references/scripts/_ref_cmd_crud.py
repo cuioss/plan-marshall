@@ -11,15 +11,14 @@ from _ref_core import (
     output_toon,
     read_references,
     require_references,
-    validate_plan_id,
+    require_valid_plan_id,
     write_references,
 )
 
 
 def cmd_create(args):
     """Create references.json with basic fields."""
-    if not validate_plan_id(args.plan_id):
-        return
+    require_valid_plan_id(args)
 
     path = get_references_path(args.plan_id)
     if path.exists():
@@ -59,8 +58,7 @@ def cmd_create(args):
 
 def cmd_read(args):
     """Read entire references.json."""
-    if not validate_plan_id(args.plan_id):
-        return
+    require_valid_plan_id(args)
 
     refs = require_references(args.plan_id)
 
@@ -77,8 +75,7 @@ def cmd_read(args):
 
 def cmd_get(args):
     """Get a specific field value."""
-    if not validate_plan_id(args.plan_id):
-        return
+    require_valid_plan_id(args)
 
     refs = require_references(args.plan_id)
 
@@ -100,8 +97,7 @@ def cmd_get(args):
 
 def cmd_set(args):
     """Set a specific field value."""
-    if not validate_plan_id(args.plan_id):
-        return
+    require_valid_plan_id(args)
 
     refs = read_references(args.plan_id)
     previous = refs.get(args.field)

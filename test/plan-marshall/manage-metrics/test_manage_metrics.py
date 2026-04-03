@@ -37,7 +37,7 @@ def test_start_phase_invalid_phase():
     """start-phase rejects invalid phase names."""
     with PlanContext(plan_id='metrics-start-02'):
         result = run_script(SCRIPT_PATH, 'start-phase', '--plan-id', 'metrics-start-02', '--phase', 'invalid')
-        assert result.success  # Script returns success with error status in TOON
+        assert not result.success  # Script exits 1 for errors
         parsed = parse_toon(result.stdout)
         assert parsed['status'] == 'error'
         assert 'Invalid phase' in str(parsed.get('message', ''))
@@ -192,7 +192,7 @@ def test_generate_no_data():
     """generate returns error when no metrics data exists."""
     with PlanContext(plan_id='metrics-gen-02'):
         result = run_script(SCRIPT_PATH, 'generate', '--plan-id', 'metrics-gen-02')
-        assert result.success
+        assert not result.success  # Script exits 1 for errors
         parsed = parse_toon(result.stdout)
         assert parsed['status'] == 'error'
         assert 'No metrics data' in str(parsed.get('message', ''))

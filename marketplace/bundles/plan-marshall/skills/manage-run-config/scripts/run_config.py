@@ -19,9 +19,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 # Constants for timeout handling
@@ -49,12 +48,12 @@ def _output_success(action: str, **kwargs: Any) -> None:
     """Output success result as TOON."""
     result: dict[str, Any] = {'status': 'success', 'action': action}
     result.update(kwargs)
-    print(serialize_toon(result))
+    output_toon(result)
 
 
 def _output_error(error: str) -> None:
-    """Output error result as TOON to stderr."""
-    print(serialize_toon({'status': 'error', 'error': error}), file=sys.stderr)
+    """Output error result as TOON via file_ops."""
+    output_toon({'status': 'error', 'error': 'config_error', 'message': error})
 
 
 # =============================================================================
@@ -149,7 +148,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
                 'format': 'manage-run-config',
                 'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
             }
-            print(serialize_toon(result))
+            output_toon(result)
             return 0
 
         # Add JSON syntax check
@@ -168,7 +167,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
             'format': 'manage-run-config',
             'checks': checks,
         }
-        print(serialize_toon(result))
+        output_toon(result)
         return 0
 
     except Exception as e:
@@ -184,20 +183,12 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def get_run_config_path(project_dir: str | None = None) -> Path:
     """Get path to run-configuration.json.
 
-    Uses PLAN_BASE_DIR env var as project root, appending .plan/ to locate config.
-    Note: Unlike file_ops.base_path() where PLAN_BASE_DIR IS the .plan dir,
-    run_config uses it as the project root (for compatibility with PLAN_DIR_NAME).
+    Delegates to file_ops.get_base_dir() for consistent path resolution.
 
     Args:
-        project_dir: Override directory. Ignored if PLAN_BASE_DIR env var is set.
+        project_dir: Ignored. Kept for API compatibility.
     """
-    import os
-
-    plan_dir_name = os.environ.get('PLAN_DIR_NAME', '.plan')
-    base = os.environ.get('PLAN_BASE_DIR')
-    if base is None:
-        base = project_dir if project_dir else '.'
-    return Path(base).resolve() / plan_dir_name / 'run-configuration.json'
+    return get_base_dir() / 'run-configuration.json'
 
 
 def read_run_config(config_path: Path) -> dict[str, Any]:
@@ -344,7 +335,7 @@ def cmd_warning_list(args: argparse.Namespace) -> int:
                 'categories': {cat: warnings.get(cat, []) for cat in VALID_WARNING_CATEGORIES},
             }
 
-        print(serialize_toon(result))
+        output_toon(result)
         return 0
 
     except Exception as e:
@@ -414,31 +405,31 @@ def cmd_timeout_set(args: argparse.Namespace) -> int:
             cmd_entry['timeout_seconds'] = duration
             _write_json_file(config_path, config)
 
-            print(serialize_toon({
+            output_toon({
                 'status': 'success',
                 'command': command,
                 'timeout_seconds': duration,
                 'source': 'initial',
-            }))
+            })
         else:
             # Compute weighted value favoring higher
             new_timeout = compute_weighted_timeout(existing, duration)
             cmd_entry['timeout_seconds'] = new_timeout
             _write_json_file(config_path, config)
 
-            print(serialize_toon({
+            output_toon({
                 'status': 'success',
                 'command': command,
                 'timeout_seconds': new_timeout,
                 'previous_seconds': existing,
                 'observed_seconds': duration,
                 'source': 'computed',
-            }))
+            })
 
         return 0
 
     except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': str(e)}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': str(e)})
         return 1
 
 
@@ -602,11 +593,10 @@ Examples:
     return args.func(args) or 0
 
 
+@safe_main
+def _main() -> int:
+    return main()
+
+
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    _main()

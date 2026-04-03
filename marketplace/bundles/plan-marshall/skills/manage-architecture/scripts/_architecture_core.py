@@ -5,16 +5,14 @@ Provides load/save operations, TOON output formatting, and error handling.
 """
 
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
 
-# Plan directory name - configurable for test isolation
-_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+from file_ops import get_base_dir  # type: ignore[import-not-found]
 
-# Data directory for architecture files (relative to project_dir argument)
-DATA_DIR = Path(_PLAN_DIR_NAME) / 'project-architecture'
+# Data sub-directory for architecture files (appended to base dir / project_dir)
+_ARCHITECTURE_SUBDIR = 'project-architecture'
 
 # File names
 DERIVED_DATA_FILE = 'derived-data.json'
@@ -57,7 +55,11 @@ class CommandNotFoundError(ArchitectureError):
 
 def get_data_dir(project_dir: str = '.') -> Path:
     """Get the data directory path."""
-    return Path(project_dir) / DATA_DIR
+    return Path(project_dir) / get_base_dir() / _ARCHITECTURE_SUBDIR
+
+
+# Backward-compatible alias used by tests
+DATA_DIR = get_base_dir() / _ARCHITECTURE_SUBDIR
 
 
 def get_derived_path(project_dir: str = '.') -> Path:
@@ -344,13 +346,12 @@ def error_exit(message: str, context: dict[str, Any] | None = None) -> None:
         message: Error message
         context: Optional context dict with key-value pairs
     """
-    print(f'error: {message}')
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    error_data: dict[str, Any] = {'status': 'error', 'error': 'architecture_error', 'message': message}
     if context:
-        for key, value in context.items():
-            if isinstance(value, list):
-                print_toon_list(key, value)
-            else:
-                print(f'{key}: {value}')
+        error_data.update(context)
+    print(serialize_toon(error_data))
     sys.exit(1)
 
 
@@ -361,10 +362,7 @@ def error_module_not_found(module_name: str, available: list):
         module_name: Requested module name
         available: List of available module names
     """
-    print('error: Module not found')
-    print(f'module: {module_name}')
-    print_toon_list('available', available)
-    sys.exit(1)
+    error_exit('Module not found', {'module': module_name, 'available': available})
 
 
 def error_command_not_found(module_name: str, command_name: str, available: list):
@@ -375,11 +373,7 @@ def error_command_not_found(module_name: str, command_name: str, available: list
         command_name: Requested command name
         available: List of available command names
     """
-    print('error: Command not found')
-    print(f'module: {module_name}')
-    print(f'command: {command_name}')
-    print_toon_list('available', available)
-    sys.exit(1)
+    error_exit('Command not found', {'module': module_name, 'command': command_name, 'available': available})
 
 
 def error_data_not_found(expected_file: str, resolution: str):
@@ -389,10 +383,7 @@ def error_data_not_found(expected_file: str, resolution: str):
         expected_file: Path to expected file
         resolution: How to fix
     """
-    print('error: Data not found')
-    print(f'expected_file: {expected_file}')
-    print(f'resolution: {resolution}')
-    sys.exit(1)
+    error_exit('Data not found', {'expected_file': expected_file, 'resolution': resolution})
 
 
 def require_derived_data(project_dir: str = '.') -> 'dict[str, Any]':
@@ -428,15 +419,22 @@ def handle_module_not_found(module_name: str, project_dir: str) -> int:
     Returns:
         Always returns 1
     """
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
     try:
         derived = load_derived_data(project_dir)
         modules = get_module_names(derived)
     except Exception:
         modules = []
 
-    print('error: Module not found')
-    print(f'module: {module_name}')
-    print_toon_list('available', modules)
+    error_data: dict[str, Any] = {
+        'status': 'error',
+        'error': 'architecture_error',
+        'message': 'Module not found',
+        'module': module_name,
+        'available': modules,
+    }
+    print(serialize_toon(error_data))
     return 1
 
 

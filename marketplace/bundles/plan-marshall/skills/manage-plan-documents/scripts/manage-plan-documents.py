@@ -20,6 +20,7 @@ import sys
 from _cmd_request import cmd_clarify, cmd_create, cmd_exists, cmd_read, cmd_remove, cmd_update
 from _cmd_types import cmd_list_types
 from _documents_core import get_available_types, load_document_type
+from file_ops import safe_main  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
@@ -99,6 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+@safe_main
 def main() -> int:
     """Main entry point."""
     parser = build_parser()
@@ -117,10 +119,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

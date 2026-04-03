@@ -29,12 +29,12 @@ Add command usage (--content with \\n encoding):
 """
 
 import argparse
-import sys
 
 from _cmd_crud import cmd_add, cmd_remove, cmd_update
 from _cmd_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
 from _manage_tasks_shared import output_error
+from file_ops import safe_main  # type: ignore[import-not-found]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -144,6 +144,7 @@ COMMANDS = {
 }
 
 
+@safe_main
 def main() -> int:
     """Main entry point."""
     parser = build_parser()
@@ -162,11 +163,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        from toon_parser import serialize_toon
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

@@ -33,18 +33,17 @@ Output (TOON format):
 
 import argparse
 import json
-import os
 import shutil
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-# Direct import - PYTHONPATH set by executor
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+# Direct imports - PYTHONPATH set by executor
+from file_ops import get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]
 
-# Configuration
-PLAN_BASE_DIR = Path(os.environ.get('PLAN_BASE_DIR', '.plan'))
+# Configuration - delegate to file_ops for consistent path resolution
+PLAN_BASE_DIR = get_base_dir()
 MARSHAL_JSON = PLAN_BASE_DIR / 'marshal.json'
 
 
@@ -73,22 +72,18 @@ def get_retention_settings() -> dict:
         SystemExit: If marshal.json doesn't exist or has no retention config
     """
     if not MARSHAL_JSON.exists():
-        print(
-            serialize_toon({'status': 'error', 'error': 'marshal.json not found. Run command /marshall-steward first'})
-        )
+        output_toon({'status': 'error', 'error': 'marshal.json not found. Run command /marshall-steward first'})
         sys.exit(1)
 
     try:
         config = json.loads(MARSHAL_JSON.read_text(encoding='utf-8'))
     except json.JSONDecodeError as e:
-        print(serialize_toon({'status': 'error', 'error': f'Invalid marshal.json: {e}'}))
+        output_toon({'status': 'error', 'error': f'Invalid marshal.json: {e}'})
         sys.exit(1)
 
     if 'system' not in config or 'retention' not in config['system']:
-        print(
-            serialize_toon(
-                {'status': 'error', 'error': 'system.retention not configured. Run command /marshall-steward first'}
-            )
+        output_toon(
+            {'status': 'error', 'error': 'system.retention not configured. Run command /marshall-steward first'}
         )
         sys.exit(1)
 
@@ -389,7 +384,7 @@ def cmd_clean(args) -> int:
         'total_bytes_freed': total_bytes,
     }
 
-    print(serialize_toon(result))
+    output_toon(result)
     return 0
 
 
@@ -416,7 +411,7 @@ def cmd_status(args) -> int:
         'memory_old_bytes': status['memory']['old_bytes'],
     }
 
-    print(serialize_toon(result))
+    output_toon(result)
     return 0
 
 
@@ -445,12 +440,10 @@ def main() -> int:
     return func_result
 
 
+@safe_main
+def _main() -> int:
+    return main()
+
+
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        from toon_parser import serialize_toon
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    _main()

@@ -14,7 +14,7 @@ import os
 import shutil
 import time
 
-from conftest import PLAN_DIR_NAME, PlanContext, get_script_path, run_script
+from conftest import PlanContext, get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
@@ -34,8 +34,8 @@ def test_init_create_new_config():
         assert data.get('status') == 'success', 'Should succeed'
         assert data.get('action') == 'created', "Action should be 'created'"
 
-        # Verify file exists (uses .plan)
-        config_file = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
+        # Verify file exists in base directory
+        config_file = ctx.fixture_dir / 'run-configuration.json'
         assert config_file.exists(), 'Config file should be created'
 
 
@@ -43,8 +43,8 @@ def test_init_skip_existing():
     """Test init skips if file already exists."""
     with PlanContext() as ctx:
         # Create existing file
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
         (plan_dir / 'run-configuration.json').write_text('{"version": 1, "commands": {}}')
 
         result = run_script(SCRIPT_PATH, 'init')
@@ -58,8 +58,8 @@ def test_init_force_overwrite():
     """Test init with --force overwrites existing file."""
     with PlanContext() as ctx:
         # Create existing file with old content
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
         (plan_dir / 'run-configuration.json').write_text('{"version": 1, "commands": {"old": {}}}')
 
         result = run_script(SCRIPT_PATH, 'init', '--force')
@@ -77,7 +77,7 @@ def test_init_correct_structure():
     with PlanContext() as ctx:
         run_script(SCRIPT_PATH, 'init')
 
-        config_file = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
+        config_file = ctx.fixture_dir / 'run-configuration.json'
         content = json.loads(config_file.read_text())
 
         # Check version
@@ -94,18 +94,17 @@ def test_init_correct_structure():
         assert 'platform_specific' in aw, 'Should have platform_specific category'
 
 
-def test_init_creates_plan_dir():
-    """Test init creates .plan directory if needed."""
+def test_init_creates_config_in_base_dir():
+    """Test init creates run-configuration.json in base directory."""
     with PlanContext() as ctx:
-        # Ensure .plan doesn't exist
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        if plan_dir.exists():
-            shutil.rmtree(plan_dir)
+        # Ensure config does not exist yet
+        config_file = ctx.fixture_dir / 'run-configuration.json'
+        if config_file.exists():
+            config_file.unlink()
 
         run_script(SCRIPT_PATH, 'init')
 
-        assert plan_dir.exists(), '.plan directory should be created'
-        assert (plan_dir / 'run-configuration.json').exists(), 'Config file should be created'
+        assert config_file.exists(), 'Config file should be created in base directory'
 
 
 def test_init_output_includes_path():
@@ -312,7 +311,7 @@ def test_timeout_get_default_when_no_persisted():
     """Test timeout get returns default when no persisted value."""
     with PlanContext() as ctx:
         # Create .plan directory
-        (ctx.fixture_dir / PLAN_DIR_NAME).mkdir(parents=True)
+        (ctx.fixture_dir).mkdir(parents=True, exist_ok=True)
 
         result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'ci:pr_checks', '--default', '300')
 
@@ -324,8 +323,8 @@ def test_timeout_get_default_when_no_persisted():
 def test_timeout_get_with_safety_margin():
     """Test timeout get applies safety margin to persisted value."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         # Create config with persisted timeout
         config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 240}}}
@@ -341,8 +340,8 @@ def test_timeout_get_with_safety_margin():
 def test_timeout_get_enforces_minimum_on_persisted():
     """Test timeout get enforces minimum bound when persisted value is too low."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         # Create config with very low persisted timeout (e.g., from warm JVM run)
         config = {
@@ -366,7 +365,7 @@ def test_timeout_get_enforces_minimum_on_default():
     """Test timeout get enforces minimum bound when default is too low."""
     with PlanContext() as ctx:
         # Create .plan directory
-        (ctx.fixture_dir / PLAN_DIR_NAME).mkdir(parents=True)
+        (ctx.fixture_dir).mkdir(parents=True, exist_ok=True)
 
         result = run_script(
             SCRIPT_PATH, 'timeout', 'get', '--command', 'quick:command', '--default', '30'
@@ -380,8 +379,8 @@ def test_timeout_get_enforces_minimum_on_default():
 def test_timeout_set_initial_value():
     """Test timeout set writes directly when no existing value."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         result = run_script(SCRIPT_PATH, 'timeout', 'set', '--command', 'ci:pr_checks', '--duration', '180')
 
@@ -399,8 +398,8 @@ def test_timeout_set_initial_value():
 def test_timeout_set_weighted_update():
     """Test timeout set computes weighted value when existing."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         # Create config with existing timeout
         config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 240}}}
@@ -420,8 +419,8 @@ def test_timeout_set_weighted_update():
 def test_timeout_set_weighted_favors_higher():
     """Test timeout set weighted calculation favors higher value regardless of order."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         # Create config with lower existing timeout
         config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 180}}}
@@ -439,8 +438,8 @@ def test_timeout_set_weighted_favors_higher():
 def test_timeout_set_same_value():
     """Test timeout set with same value returns same value."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         config = {'version': 1, 'commands': {'ci:pr_checks': {'timeout_seconds': 300}}}
         (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
@@ -485,8 +484,8 @@ def test_timeout_set_help():
 def test_warning_add_pattern():
     """Test warning add adds pattern to acceptable list."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize config
         run_script(SCRIPT_PATH, 'init')
@@ -514,8 +513,8 @@ def test_warning_add_pattern():
 def test_warning_add_duplicate_skips():
     """Test warning add skips duplicate pattern."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         # Create config with existing pattern
         config = {
@@ -554,8 +553,8 @@ def test_warning_add_invalid_category():
 def test_warning_list_all_categories():
     """Test warning list returns all categories."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         # Create config with patterns
         config = {
@@ -583,8 +582,8 @@ def test_warning_list_all_categories():
 def test_warning_list_single_category():
     """Test warning list with category filter."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         config = {
             'version': 1,
@@ -610,8 +609,8 @@ def test_warning_list_single_category():
 def test_warning_remove_pattern():
     """Test warning remove removes pattern from list."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         config = {
             'version': 1,
@@ -644,8 +643,8 @@ def test_warning_remove_pattern():
 def test_warning_remove_nonexistent_skips():
     """Test warning remove skips non-existent pattern."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         config = {
             'version': 1,
@@ -689,8 +688,8 @@ def test_warning_add_help():
 def test_warning_list_empty_config():
     """Test warning list with empty/missing config."""
     with PlanContext() as ctx:
-        plan_dir = ctx.fixture_dir / PLAN_DIR_NAME
-        plan_dir.mkdir(parents=True)
+        plan_dir = ctx.fixture_dir
+        plan_dir.mkdir(parents=True, exist_ok=True)
 
         result = run_script(SCRIPT_PATH, 'warning', 'list')
 

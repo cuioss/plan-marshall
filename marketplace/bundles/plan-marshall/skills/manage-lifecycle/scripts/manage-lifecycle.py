@@ -22,13 +22,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from constants import PHASES  # type: ignore[import-not-found]
-from file_ops import base_path, output_toon  # type: ignore[import-not-found]
-from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 # Import from manage-status for shared functionality
 from manage_status import read_status as read_status_json
 from manage_status import write_status as write_status_json
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Phase routing maps phase names to skills (for route command)
 PHASE_ROUTING = {
@@ -108,16 +107,7 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 def cmd_transition(args: argparse.Namespace) -> None:
     """Transition to next phase."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     status = read_status_json(args.plan_id)
     if not status:
@@ -171,16 +161,7 @@ def cmd_transition(args: argparse.Namespace) -> None:
 
 def cmd_archive(args: argparse.Namespace) -> None:
     """Archive a completed plan."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     plan_dir = base_path('plans', args.plan_id)
     if not plan_dir.exists():
@@ -237,16 +218,7 @@ def cmd_route(args: argparse.Namespace) -> None:
 
 def cmd_get_routing_context(args: argparse.Namespace) -> None:
     """Get combined routing context: phase, skill, and progress in one call."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     status = read_status_json(args.plan_id)
     if not status:
@@ -342,6 +314,7 @@ def cmd_self_test(_args) -> None:
 # =============================================================================
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage plan lifecycle with phase routing and transitions')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -385,10 +358,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

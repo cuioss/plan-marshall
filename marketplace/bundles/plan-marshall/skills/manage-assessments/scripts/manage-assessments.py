@@ -18,22 +18,20 @@ Stdlib-only - no external dependencies (except shared modules via PYTHONPATH).
 
 import argparse
 import json
-import sys
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-from input_validation import validate_plan_id  # type: ignore[import-not-found]
+from file_ops import safe_main, output_toon  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id, validate_plan_id  # type: ignore[import-not-found]
 from jsonl_store import (  # type: ignore[import-not-found]
     append_jsonl,
     ensure_parent_dir,
     generate_hash_id,
     get_artifact_path,
-    output_toon,
     read_jsonl,
     timestamp,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Constants
 CERTAINTY_VALUES = ['CERTAIN_INCLUDE', 'CERTAIN_EXCLUDE', 'UNCERTAIN']
@@ -160,6 +158,7 @@ def get_assessment(plan_id: str, hash_id: str) -> dict[str, Any]:
 
 def cmd_add(args: argparse.Namespace) -> int:
     """Handle: add"""
+    require_valid_plan_id(args)
     result = add_assessment(
         plan_id=args.plan_id,
         file_path=args.file_path,
@@ -169,12 +168,13 @@ def cmd_add(args: argparse.Namespace) -> int:
         detail=args.detail,
         evidence=args.evidence,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
 def cmd_query(args: argparse.Namespace) -> int:
     """Handle: query"""
+    require_valid_plan_id(args)
     result = query_assessments(
         plan_id=args.plan_id,
         certainty=args.certainty,
@@ -182,33 +182,36 @@ def cmd_query(args: argparse.Namespace) -> int:
         max_confidence=args.max_confidence,
         file_pattern=args.file_pattern,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
 def cmd_clear(args: argparse.Namespace) -> int:
     """Handle: clear"""
+    require_valid_plan_id(args)
     result = clear_assessments(
         plan_id=args.plan_id,
         agent=args.agent,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
 def cmd_get(args: argparse.Namespace) -> int:
     """Handle: get"""
+    require_valid_plan_id(args)
     result = get_assessment(args.plan_id, args.hash_id)
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Assessment storage for plan-level component evaluations',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    subparsers = parser.add_subparsers(dest='action', required=True)
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
     # add
     add_parser = subparsers.add_parser('add', help='Add an assessment')
@@ -253,10 +256,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

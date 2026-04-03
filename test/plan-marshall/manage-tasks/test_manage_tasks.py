@@ -318,7 +318,8 @@ def test_add_with_dependencies():
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 0
-        assert 'depends_on: [TASK-1]' in result.stdout
+        assert 'depends_on[1]:' in result.stdout
+        assert 'TASK-1' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -469,7 +470,7 @@ def test_list_with_tasks():
 
         assert result.returncode == 0
         assert 'total: 2' in result.stdout
-        assert 'tasks[2]' in result.stdout
+        assert 'tasks_table[2]' in result.stdout
         # Format: {number,title,domain,profile,deliverable,status,progress}
         assert '1,First,java,implementation,1,pending,0/1' in result.stdout
         assert '2,Second,java,implementation,2,pending,0/2' in result.stdout
@@ -491,7 +492,7 @@ def test_list_filter_by_status():
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--status', 'pending')
 
         assert result.returncode == 0
-        assert 'tasks[1]' in result.stdout
+        assert 'tasks_table[1]' in result.stdout
         assert '2,Second' in result.stdout
         assert '1,First' not in result.stdout  # Task 1 is now done (single step)
     finally:
@@ -989,7 +990,9 @@ def test_update_depends_on():
 
         # Verify
         get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'depends_on: [TASK-5, TASK-6]' in get_result.stdout
+        assert 'depends_on[2]:' in get_result.stdout
+        assert 'TASK-5' in get_result.stdout
+        assert 'TASK-6' in get_result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -1014,7 +1017,7 @@ def test_update_clear_depends_on():
 
         # Verify
         get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'depends_on: none' in get_result.stdout
+        assert 'depends_on[0]:' in get_result.stdout
     finally:
         cleanup(temp_dir)
 

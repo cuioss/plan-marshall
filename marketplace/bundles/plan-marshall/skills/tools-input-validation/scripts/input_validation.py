@@ -17,6 +17,8 @@ Usage:
 """
 
 import re
+import sys
+from pathlib import Path
 
 # --- Raising validators (for new code and argparse integration) ---
 
@@ -119,6 +121,87 @@ def check_field_type(data: dict, field: str, expected_type: type) -> tuple[bool,
         return False, f'Expected {expected_type.__name__}, got {actual.__name__}'
 
     return True, f"Field '{field}' is {expected_type.__name__}"
+
+
+# --- Argparse integration helpers ---
+
+
+def require_valid_plan_id(args) -> str:
+    """Validate plan_id from argparse args, exit with TOON error if invalid.
+
+    Extracts args.plan_id, validates kebab-case format. On failure, prints
+    a standard TOON error to stdout and calls sys.exit(1).
+
+    Returns the validated plan_id string for chaining.
+
+    Usage in command handlers:
+        plan_id = require_valid_plan_id(args)
+    """
+    from toon_parser import serialize_toon
+
+    plan_id: str = getattr(args, 'plan_id', None) or ''
+    if not plan_id:
+        print(serialize_toon({
+            'status': 'error',
+            'error': 'missing_plan_id',
+            'message': 'plan_id is required',
+        }))
+        sys.exit(1)
+    if not is_valid_plan_id(plan_id):
+        print(serialize_toon({
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_plan_id',
+            'message': f'Invalid plan_id format: {plan_id}',
+        }))
+        sys.exit(1)
+    return plan_id
+
+
+def require_plan_file(plan_id: str, *path_parts: str) -> Path:
+    """Validate plan_id and check that a plan file exists, exit with TOON error if not.
+
+    Combines plan_id validation, path construction, and existence check into
+    one call. Eliminates the repeated 3-step pattern across manage-* scripts.
+
+    Args:
+        plan_id: Plan identifier (kebab-case)
+        *path_parts: Additional path components after plans/{plan_id}/
+            e.g. require_plan_file(plan_id, 'status.json')
+            e.g. require_plan_file(plan_id)  # just checks plan dir exists
+
+    Returns:
+        Path to the validated file/directory.
+
+    Usage:
+        plan_dir = require_plan_file(plan_id)
+        status_path = require_plan_file(plan_id, 'status.json')
+    """
+    from file_ops import base_path  # type: ignore[import-not-found]
+    from toon_parser import serialize_toon
+
+    if not is_valid_plan_id(plan_id):
+        print(serialize_toon({
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_plan_id',
+            'message': f'Invalid plan_id format: {plan_id}',
+        }))
+        sys.exit(1)
+
+    target = base_path('plans', plan_id, *path_parts)
+    if not target.exists():
+        error_code = 'file_not_found' if path_parts else 'plan_not_found'
+        file_desc = str(Path(*path_parts)) if path_parts else f'plan {plan_id}'
+        print(serialize_toon({
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': error_code,
+            'message': f'Not found: {file_desc}',
+        }))
+        sys.exit(1)
+
+    return target
 
 
 # --- Bool companions (drop-in replacements for existing call sites) ---

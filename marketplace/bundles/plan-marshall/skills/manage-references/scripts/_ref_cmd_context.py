@@ -7,14 +7,13 @@ Handles: get-context
 from _ref_core import (
     output_toon,
     require_references,
-    validate_plan_id,
+    require_valid_plan_id,
 )
 
 
 def cmd_get_context(args):
     """Get all references context in one call."""
-    if not validate_plan_id(args.plan_id):
-        return
+    require_valid_plan_id(args)
 
     refs = require_references(args.plan_id)
 

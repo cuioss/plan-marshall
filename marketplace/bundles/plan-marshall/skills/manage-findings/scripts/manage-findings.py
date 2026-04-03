@@ -24,6 +24,7 @@ from pathlib import Path
 # Allow direct invocation and testing — executor sets PYTHONPATH for production
 sys.path.insert(0, str(Path(__file__).parent))
 
+from file_ops import output_toon, safe_main
 from findings_store import (
     FINDING_TYPES,
     QGATE_PHASES,
@@ -34,7 +35,6 @@ from findings_store import (
     add_qgate_finding,
     clear_qgate_findings,
     get_finding,
-    output_toon,
     promote_finding,
     query_findings,
     query_qgate_findings,
@@ -57,7 +57,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         rule=args.rule,
         severity=args.severity,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -74,7 +74,7 @@ def cmd_query(args: argparse.Namespace) -> int:
         promoted=promoted,
         file_pattern=args.file_pattern,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -82,9 +82,9 @@ def cmd_get(args: argparse.Namespace) -> int:
     """Handle: get"""
     result = get_finding(args.plan_id, args.hash_id)
     if result:
-        print(output_toon(result))
+        output_toon(result)
         return 0 if result.get('status') == 'success' else 1
-    print(output_toon({'status': 'error', 'message': f'Finding not found: {args.hash_id}'}))
+    output_toon({'status': 'error', 'message': f'Finding not found: {args.hash_id}'})
     return 1
 
 
@@ -96,7 +96,7 @@ def cmd_resolve(args: argparse.Namespace) -> int:
         resolution=args.resolution,
         detail=args.detail,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -107,7 +107,7 @@ def cmd_promote(args: argparse.Namespace) -> int:
         hash_id=args.hash_id,
         promoted_to=args.promoted_to,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -125,7 +125,7 @@ def cmd_qgate_add(args: argparse.Namespace) -> int:
         severity=args.severity,
         iteration=args.iteration,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') in ('success', 'deduplicated', 'reopened') else 1
 
 
@@ -138,7 +138,7 @@ def cmd_qgate_query(args: argparse.Namespace) -> int:
         source=args.source,
         iteration=args.iteration,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -151,7 +151,7 @@ def cmd_qgate_resolve(args: argparse.Namespace) -> int:
         resolution=args.resolution,
         detail=args.detail,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
@@ -161,10 +161,11 @@ def cmd_qgate_clear(args: argparse.Namespace) -> int:
         plan_id=args.plan_id,
         phase=args.phase,
     )
-    print(output_toon(result))
+    output_toon(result)
     return 0 if result.get('status') == 'success' else 1
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Unified finding and Q-Gate storage',
@@ -271,11 +272,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        from toon_parser import serialize_toon
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

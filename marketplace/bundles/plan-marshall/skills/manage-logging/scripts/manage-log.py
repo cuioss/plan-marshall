@@ -45,15 +45,10 @@ import sys
 
 # Direct imports from same directory (local imports)
 from plan_logging import get_log_path, list_recent_work, log_entry, log_separator, read_decision_log, read_work_log
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 
 VALID_TYPES = ('script', 'work', 'decision')
 VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
-
-
-def format_toon_output(result: dict) -> str:
-    """Format result dict as TOON output using serialize_toon."""
-    return serialize_toon(result)
 
 
 def handle_read(args: argparse.Namespace) -> None:
@@ -105,10 +100,10 @@ def handle_read(args: argparse.Namespace) -> None:
 
     # Output
     if result.get('status') == 'error':
-        print(format_toon_output(result), file=sys.stderr)
+        output_toon(result)
         sys.exit(1)
     else:
-        print(format_toon_output(result))
+        output_toon(result)
 
 
 def handle_separator(args: argparse.Namespace) -> None:
@@ -116,7 +111,7 @@ def handle_separator(args: argparse.Namespace) -> None:
     log_separator(args.type, args.plan_id)
 
 
-def handle_write(args: argparse.Namespace) -> None:
+def handle_write(args: argparse.Namespace) -> int | None:
     """Handle write subcommand."""
     log_type = args.log_type
     plan_id = args.plan_id
@@ -127,8 +122,8 @@ def handle_write(args: argparse.Namespace) -> None:
     try:
         log_entry(log_type, plan_id, level, message)
     except Exception as e:
-        print(f'Error: {e}', file=sys.stderr)
-        sys.exit(1)
+        output_toon({'status': 'error', 'error': 'write_failed', 'message': str(e)})
+        return 1
 
 
 def _add_write_args(parser: argparse.ArgumentParser) -> None:
@@ -138,6 +133,7 @@ def _add_write_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--message', required=True, help='Log message')
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Unified logging operations',
@@ -177,10 +173,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

@@ -133,6 +133,12 @@ The `route` command maps phases to their implementation skills:
 | `5-execute` | `plan-marshall:phase-5-execute` |
 | `6-finalize` | `plan-marshall:phase-6-finalize` |
 
+## Integration
+
+**Called by**: `plan-marshall:plan-marshall` orchestrator for phase transitions, `phase-1-init` for initial status creation, and `phase-6-finalize` for archiving.
+
+**Delegates to**: `manage-status` for underlying status.json storage operations.
+
 ## Related Skills
 
 - `manage-status` — Underlying status.json operations (lifecycle delegates to this for storage)

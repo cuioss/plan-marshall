@@ -24,6 +24,7 @@ import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from file_ops import get_base_dir  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 
 # =============================================================================
@@ -35,7 +36,7 @@ LOG_ENABLED = True
 
 def get_plan_base_dir() -> Path:
     """Get base directory for plan structure."""
-    return Path(os.environ.get('PLAN_BASE_DIR', '.plan'))
+    return get_base_dir()
 
 
 def get_max_output() -> int:

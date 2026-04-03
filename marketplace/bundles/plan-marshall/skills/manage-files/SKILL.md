@@ -49,12 +49,9 @@ Files are stored in plan directories:
 
 ```
 .plan/plans/{plan_id}/
-  request.md
-  solution_outline.md
-  references.json
-  status.toon
-  tasks/
 ```
+
+For domain-specific files within the plan directory, use the dedicated manage-* skills (see Relationship to Domain Skills below).
 
 ---
 
@@ -299,7 +296,7 @@ message: File does not exist: config.json
 
 ---
 
-## Integration Points
+## Integration
 
 ### With Domain Skills
 

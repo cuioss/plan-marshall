@@ -154,7 +154,7 @@ def test_add_with_skills():
         )
 
         assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'skills:' in result.stdout
+        assert 'skills[3]:' in result.stdout
         assert 'pm-dev-java:java-core' in result.stdout
     finally:
         cleanup(temp_dir)
@@ -298,7 +298,7 @@ def test_get_returns_skills():
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
 
         assert result.returncode == 0
-        assert 'skills:' in result.stdout
+        assert 'skills[2]:' in result.stdout
         assert 'pm-dev-java:java-core' in result.stdout
         assert 'pm-dev-java:java-cdi' in result.stdout
     finally:
@@ -609,8 +609,8 @@ def test_next_tasks_includes_skills():
         result = run_script(SCRIPT_PATH, 'next-tasks', '--plan-id', 'test-plan')
 
         assert result.returncode == 0
-        assert 'skills:' in result.stdout
         assert 'pm-dev-java:java-core' in result.stdout
+        assert 'pm-dev-java:java-cdi' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -676,7 +676,7 @@ def test_next_returns_new_fields():
         assert result.returncode == 0
         assert 'domain: java' in result.stdout
         assert 'profile: implementation' in result.stdout
-        assert 'skills:' in result.stdout
+        assert 'skills[2]:' in result.stdout
         assert 'origin: plan' in result.stdout
     finally:
         cleanup(temp_dir)

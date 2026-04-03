@@ -220,7 +220,7 @@ def test_load_not_found():
         output = result.stdout if result.stdout.strip() else result.stderr
         data = parse_output(output)
 
-        assert data.get('success') is False, 'Should fail for non-existent file'
+        assert data.get('status') == 'error', 'Should fail for non-existent file'
 
 
 def test_invalid_category():
@@ -372,7 +372,7 @@ def test_validate_file_not_found():
         output = result.stdout if result.stdout.strip() else result.stderr
         data = parse_output(output)
 
-        assert data.get('success') is False, 'Should fail for non-existent file'
+        assert data.get('status') == 'error', 'Should fail for non-existent file'
 
 
 def test_validate_format_is_memory():

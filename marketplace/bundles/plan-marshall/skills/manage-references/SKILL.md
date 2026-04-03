@@ -367,7 +367,7 @@ message: Cannot add to non-list field 'branch'
 
 ---
 
-## Integration Points
+## Integration
 
 ### With plan-execute
 

@@ -23,7 +23,7 @@ This skill provides structure guidelines, examples, and operations for `solution
 - Document creation follows the resolve-path, Write, validate pattern
 - Deliverable numbering must be sequential starting from 1
 
-## When to Load This Skill
+## When to Activate This Skill
 
 Load this skill in Step 1 when:
 - Creating a solution outline (via `phase-3-outline` skill)

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, TypedDict, cast
 
 from file_ops import base_path, now_utc_iso  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 
 # =============================================================================
 # Type definitions
@@ -496,245 +497,19 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
 # =============================================================================
 
 
-def format_list_value(val) -> str:
-    """Format a list value for TOON output."""
-    if isinstance(val, list):
-        return f'[{", ".join(str(v) for v in val)}]'
-    return str(val)
-
-
 def output_toon(data: dict) -> None:
-    """Print TOON formatted output.
+    """Print TOON formatted output using standard serializer."""
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
-    Note: This is a domain-specific TOON formatter for task structures, not a
-    generic serialize_toon wrapper. Cannot be replaced by file_ops.output_success
-    because it hand-formats nested task/step/verification blocks.
-    """
-    lines = []
-
-    # Top-level simple fields
-    for key in [
-        'status',
-        'plan_id',
-        'file',
-        'renamed',
-        'total_tasks',
-        'task_number',
-        'step',
-        'domain_filter',
-        'profile_filter',
-        'ready_count',
-        'in_progress_count',
-        'blocked_count',
-        'progress',
-        'task_complete',
-    ]:
-        if key in data:
-            val = data[key]
-            if isinstance(val, bool):
-                val = 'true' if val else 'false'
-            lines.append(f'{key}: {val}')
-
-    # Task/step status fields
-    for key in ['task_status', 'step_status', 'step_target', 'next_step', 'next_step_target', 'message']:
-        if key in data:
-            val = data[key]
-            if val is None:
-                lines.append(f'{key}: null')
-            else:
-                lines.append(f'{key}: {val}')
-
-    # Finalized step block (for finalize-step command)
-    if 'finalized' in data:
-        lines.append('')
-        lines.append('finalized:')
-        fin = data['finalized']
-        for key in ['step_number', 'step_target', 'outcome', 'reason']:
-            if key in fin:
-                lines.append(f'  {key}: {fin[key]}')
-
-    # Next step block (structured format for finalize-step)
-    if 'next_step' in data and isinstance(data['next_step'], dict):
-        lines.append('')
-        nxt = data['next_step']
-        if nxt is None:
-            lines.append('next_step: null')
-        else:
-            lines.append('next_step:')
-            for key in ['number', 'target']:
-                if key in nxt:
-                    lines.append(f'  {key}: {nxt[key]}')
-
-    # Counts block
-    if 'counts' in data:
-        lines.append('')
-        lines.append('counts:')
-        for k, v in data['counts'].items():
-            if isinstance(v, dict):
-                lines.append(f'  {k}:')
-                for k2, v2 in v.items():
-                    lines.append(f'    {k2}: {v2}')
-            else:
-                lines.append(f'  {k}: {v}')
-
-    # Single task block
-    if 'task' in data:
-        lines.append('')
-        lines.append('task:')
-        task = data['task']
-        for key in [
-            'number',
-            'title',
-            'domain',
-            'profile',
-            'origin',
-            'status',
-            'current_step',
-            'step_count',
-        ]:
-            if key in task and task[key] is not None:
-                lines.append(f'  {key}: {task[key]}')
-        if 'skills' in task:
-            skills = task['skills']
-            if skills:
-                lines.append(f'  skills: {format_list_value(skills)}')
-            else:
-                lines.append('  skills: []')
-        if 'deliverable' in task:
-            lines.append(f'  deliverable: {task["deliverable"]}')
-        if 'depends_on' in task:
-            deps = task['depends_on']
-            if deps:
-                lines.append(f'  depends_on: {format_list_value(deps)}')
-            else:
-                lines.append('  depends_on: none')
-        if 'description' in task:
-            lines.append(f'  description: {task["description"]}')
-        if 'steps' in task:
-            steps = task['steps']
-            lines.append(f'  steps[{len(steps)}]{{number,target,status}}:')
-            for s in steps:
-                lines.append(f'  {s["number"]},{s["target"]},{s["status"]}')
-        if 'verification' in task:
-            verif = task['verification']
-            lines.append('  verification:')
-            cmds = verif.get('commands', [])
-            lines.append(f'    commands[{len(cmds)}]:')
-            for cmd in cmds:
-                lines.append(f'    - {cmd}')
-            lines.append(f'    criteria: {verif.get("criteria", "")}')
-            lines.append(f'    manual: {"true" if verif.get("manual", False) else "false"}')
-
-    # Removed block
-    if 'removed' in data:
-        lines.append('')
-        lines.append('removed:')
-        rem = data['removed']
-        for key in ['number', 'title', 'file']:
-            if key in rem:
-                lines.append(f'  {key}: {rem[key]}')
-
-    # Blocked tasks block
-    if 'blocked_tasks' in data:
-        blocked = data['blocked_tasks']
-        lines.append('')
-        lines.append(f'blocked_tasks[{len(blocked)}]{{number,title,waiting_for}}:')
-        for bt in blocked:
-            waiting = bt.get('waiting_for', [])
-            if isinstance(waiting, list):
-                waiting = ', '.join(waiting)
-            lines.append(f'{bt["number"]},{bt["title"]},{waiting}')
-
-    # Ready tasks block (for next-tasks command)
-    if 'ready_tasks' in data:
-        ready = data['ready_tasks']
-        lines.append('')
-        lines.append(f'ready_tasks[{len(ready)}]{{number,title,domain,profile,progress}}:')
-        for rt in ready:
-            domain = rt.get('domain') or ''
-            profile = rt.get('profile') or ''
-            lines.append(f'{rt["number"]},{rt["title"]},{domain},{profile},{rt["progress"]}')
-            if rt.get('skills'):
-                lines.append(f'  skills: {format_list_value(rt["skills"])}')
-            if rt.get('deliverable'):
-                lines.append(f'  deliverable: {rt["deliverable"]}')
-
-    # In-progress tasks block (for next-tasks command)
-    if 'in_progress_tasks' in data:
-        in_prog = data['in_progress_tasks']
-        lines.append('')
-        lines.append(f'in_progress_tasks[{len(in_prog)}]{{number,title,domain,profile,progress}}:')
-        for it in in_prog:
-            domain = it.get('domain') or ''
-            profile = it.get('profile') or ''
-            lines.append(f'{it["number"]},{it["title"]},{domain},{profile},{it["progress"]}')
-            if it.get('skills'):
-                lines.append(f'  skills: {format_list_value(it["skills"])}')
-
-    # Next block
-    if 'next' in data:
-        lines.append('')
-        if data['next'] is None:
-            lines.append('next: null')
-        else:
-            lines.append('next:')
-            nxt = data['next']
-            for key in [
-                'task_number',
-                'task_title',
-                'domain',
-                'profile',
-                'origin',
-                'step_number',
-                'step_target',
-                'deliverable',
-                'deliverable_source',
-            ]:
-                if key in nxt:
-                    val = nxt[key]
-                    if isinstance(val, bool):
-                        val = 'true' if val else 'false'
-                    lines.append(f'  {key}: {val}')
-            if 'skills' in nxt:
-                skills = nxt['skills']
-                if skills:
-                    lines.append('  skills:')
-                    for skill in skills:
-                        lines.append(f'    - {skill}')
-                else:
-                    lines.append('  skills: []')
-
-    # Context block
-    if 'context' in data:
-        lines.append('')
-        lines.append('context:')
-        ctx = data['context']
-        for k, v in ctx.items():
-            lines.append(f'  {k}: {v}')
-
-    # Tasks list (tabular)
-    if 'tasks_table' in data:
-        tasks = data['tasks_table']
-        lines.append('')
-        lines.append(f'tasks[{len(tasks)}]{{number,title,domain,profile,deliverable,status,progress}}:')
-        for t in tasks:
-            deliv = t.get('deliverable', 0)
-            domain = t.get('domain') or ''
-            profile = t.get('profile') or ''
-            lines.append(
-                f'{t["number"]},{t["title"]},{domain},{profile},{deliv},{t["status"]},{t["progress"]}'
-            )
-
-    print('\n'.join(lines))
+    print(serialize_toon(data))
 
 
-def output_error(message: str) -> None:
-    """Print TOON error output to stderr.
+def output_error(message: str, error_code: str = 'error') -> None:
+    """Print TOON error output to stderr."""
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
-    Note: Incompatible with file_ops.output_error — different signature
-    (1 arg vs 2) and hand-rolled format instead of serialize_toon.
-    """
-    print(f'status: error\nmessage: {message}', file=sys.stderr)
+    toon_str = serialize_toon({'status': 'error', 'error': error_code, 'message': message})
+    print(toon_str, file=sys.stderr)
 
 
 def get_deliverable_context(deliverable: int) -> dict:

@@ -477,7 +477,7 @@ Script characteristics:
 
 ---
 
-## Integration Points
+## Integration
 
 ### With plan-marshall Skill
 - Called during wizard initialization

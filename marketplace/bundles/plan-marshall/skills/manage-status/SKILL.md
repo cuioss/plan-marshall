@@ -308,7 +308,7 @@ message: status.json not found
 
 ---
 
-## Integration Points
+## Integration
 
 ### With manage-lifecycle
 

@@ -102,21 +102,21 @@ def test_exists_absent():
 
 
 def test_exists_invalid_plan_id():
-    """Test exists with invalid plan ID returns TOON error on stderr and exits 1."""
+    """Test exists with invalid plan ID returns TOON error on stdout and exits 1."""
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'Invalid_Plan', '--file', 'test.md')
         assert not result.success, 'Should exit 1 for validation errors'
-        data = parse_toon(result.stderr)
+        data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'invalid_plan_id'
 
 
 def test_exists_invalid_file_path():
-    """Test exists with invalid file path returns TOON error on stderr and exits 1."""
+    """Test exists with invalid file path returns TOON error on stdout and exits 1."""
     with PlanContext(plan_id='file-exists'):
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'file-exists', '--file', '../escape.md')
         assert not result.success, 'Should exit 1 for validation errors'
-        data = parse_toon(result.stderr)
+        data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'invalid_path'
 

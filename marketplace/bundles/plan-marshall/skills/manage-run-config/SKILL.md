@@ -121,7 +121,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ---
 
-## Integration Points
+## Integration
 
 ### With planning Bundle
 - Commands record execution history to run configuration

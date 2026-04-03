@@ -241,7 +241,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ---
 
-## Integration Points
+## Integration
 
 ### With phase-agent (phase-4-plan)
 

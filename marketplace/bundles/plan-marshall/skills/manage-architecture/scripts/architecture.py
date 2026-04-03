@@ -7,7 +7,10 @@ Entry point for all architecture operations. Dispatches to command modules.
 import argparse
 import sys
 
+from file_ops import safe_main  # type: ignore[import-not-found]
 
+
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Architecture analysis and enrichment operations')
     parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
@@ -248,11 +251,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        from toon_parser import serialize_toon
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

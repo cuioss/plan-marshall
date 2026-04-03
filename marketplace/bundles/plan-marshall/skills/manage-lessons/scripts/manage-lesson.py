@@ -20,8 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from file_ops import atomic_write_file, base_path, output_toon, parse_markdown_metadata  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, base_path, output_toon, parse_markdown_metadata, safe_main  # type: ignore[import-not-found]
 
 VALID_CATEGORIES = ['bug', 'improvement', 'anti-pattern']
 
@@ -322,6 +321,7 @@ def cmd_from_error(args: argparse.Namespace) -> None:
     output_toon({'status': 'success', 'id': lesson_id, 'created_from': 'error_context'})
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage lessons learned')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -376,10 +376,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

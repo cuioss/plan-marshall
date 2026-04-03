@@ -12,7 +12,7 @@ Tests:
 import json
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PLAN_DIR_NAME, PlanContext, get_script_path, run_script
+from conftest import PlanContext, get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
@@ -46,7 +46,7 @@ def test_warning_add_creates_entry():
         assert data['action'] == 'added', "Action should be 'added'"
 
         # Verify in config file
-        config_path = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
+        config_path = ctx.fixture_dir / 'run-configuration.json'
         config = json.loads(config_path.read_text())
         warnings = config['maven']['acceptable_warnings']['transitive_dependency']
         assert 'uses commons-logging via spring-core' in warnings, f'Pattern should be in config: {warnings}'
@@ -156,7 +156,7 @@ def test_warning_remove_existing():
         assert data['action'] == 'removed', "Action should be 'removed'"
 
         # Verify removed from config
-        config_path = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
+        config_path = ctx.fixture_dir / 'run-configuration.json'
         config = json.loads(config_path.read_text())
         warnings = config['maven']['acceptable_warnings']['transitive_dependency']
         assert 'to be removed' not in warnings, 'Pattern should be removed'
@@ -201,7 +201,7 @@ def test_warning_add_with_build_system():
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
         # Verify in npm section, not maven
-        config_path = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
+        config_path = ctx.fixture_dir / 'run-configuration.json'
         config = json.loads(config_path.read_text())
         npm_warnings = config.get('npm', {}).get('acceptable_warnings', {}).get('transitive_dependency', [])
         assert 'npm warning' in npm_warnings, f'Should be in npm section: {config}'

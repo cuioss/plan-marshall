@@ -23,10 +23,9 @@ import sys
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
-from file_ops import atomic_write_file, base_path, now_utc_iso, output_toon  # type: ignore[import-not-found]
-from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, base_path, now_utc_iso, output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # =============================================================================
 # TypedDict Definitions
@@ -85,16 +84,7 @@ def write_status(plan_id: str, status: dict) -> None:
 
 def cmd_create(args: argparse.Namespace) -> None:
     """Create status.json for a new plan."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     path = get_status_path(args.plan_id)
     if path.exists() and not args.force:
@@ -153,16 +143,7 @@ def cmd_create(args: argparse.Namespace) -> None:
 
 def cmd_read(args: argparse.Namespace) -> None:
     """Read plan status."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     status = read_status(args.plan_id)
     if not status:
@@ -181,16 +162,7 @@ def cmd_read(args: argparse.Namespace) -> None:
 
 def cmd_set_phase(args: argparse.Namespace) -> None:
     """Set current phase."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     status = read_status(args.plan_id)
     if not status:
@@ -233,16 +205,7 @@ def cmd_set_phase(args: argparse.Namespace) -> None:
 
 def cmd_update_phase(args: argparse.Namespace) -> None:
     """Update a specific phase status."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     status = read_status(args.plan_id)
     if not status:
@@ -281,16 +244,7 @@ def cmd_update_phase(args: argparse.Namespace) -> None:
 
 def cmd_progress(args: argparse.Namespace) -> None:
     """Calculate plan progress."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     status = read_status(args.plan_id)
     if not status:
@@ -325,16 +279,7 @@ def cmd_progress(args: argparse.Namespace) -> None:
 
 def cmd_metadata(args: argparse.Namespace) -> None:
     """Get or set a metadata field in status.json."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     status = read_status(args.plan_id)
     if not status:
@@ -409,16 +354,7 @@ def cmd_metadata(args: argparse.Namespace) -> None:
 
 def cmd_get_context(args: argparse.Namespace) -> None:
     """Get combined status context (phase, progress, metadata)."""
-    if not is_valid_plan_id(args.plan_id):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_plan_id',
-                'message': f'Invalid plan_id format: {args.plan_id}',
-            }
-        )
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     status = read_status(args.plan_id)
     if not status:
@@ -454,6 +390,7 @@ def cmd_get_context(args: argparse.Namespace) -> None:
 # =============================================================================
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage status.json files with phase tracking and metadata')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -515,10 +452,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

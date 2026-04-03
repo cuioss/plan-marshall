@@ -17,9 +17,11 @@ Usage:
 """
 
 import argparse
-import sys
+
+from file_ops import safe_main  # type: ignore[import-not-found]
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage references.json files')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -103,11 +105,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        from toon_parser import serialize_toon
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

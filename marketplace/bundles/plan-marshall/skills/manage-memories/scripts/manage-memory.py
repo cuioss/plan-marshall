@@ -11,16 +11,14 @@ Output: TOON to stdout with operation results.
 import argparse
 import json
 import re
-import sys
 import warnings
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from file_ops import base_path  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -117,13 +115,13 @@ def output_success(operation: str, **kwargs) -> None:
     """Output success result as TOON to stdout."""
     result = {'status': 'success', 'success': True, 'operation': operation}
     result.update(kwargs)
-    print(serialize_toon(result))
+    output_toon(result)
 
 
-def output_error(operation: str, error: str) -> None:
-    """Output error result as TOON to stderr."""
-    result = {'status': 'error', 'success': False, 'operation': operation, 'error': error}
-    print(serialize_toon(result), file=sys.stderr)
+def output_error(operation: str, error: str) -> int:
+    """Output error result as TOON to stderr and return 1."""
+    output_toon({'status': 'error', 'error': operation, 'message': error})
+    return 1
 
 
 def cmd_save(args) -> int:
@@ -353,7 +351,7 @@ def cmd_validate(args) -> int:
                 'format': 'memory',
                 'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
             }
-            print(serialize_toon(result))
+            output_toon(result)
             return 0
 
         # Add JSON syntax check
@@ -373,13 +371,14 @@ def cmd_validate(args) -> int:
             'format': 'memory',
             'checks': checks,
         }
-        print(serialize_toon(result))
+        output_toon(result)
         return 0
     except Exception as e:
         output_error('validate', str(e))
         return 1
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Manage .plan/memory/ layer for session persistence',
@@ -457,11 +456,4 @@ Examples:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        from toon_parser import serialize_toon
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

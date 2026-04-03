@@ -282,7 +282,7 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 ---
 
-## Integration Points
+## Integration
 
 ### With Script Executor
 

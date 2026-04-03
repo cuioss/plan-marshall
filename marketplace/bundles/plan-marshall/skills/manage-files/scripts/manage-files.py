@@ -22,10 +22,9 @@ import sys
 from pathlib import Path
 from typing import cast
 
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
-from input_validation import is_valid_plan_id, is_valid_relative_path  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import is_valid_relative_path, require_valid_plan_id  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def get_plan_dir(plan_id: str) -> Path:
@@ -35,19 +34,17 @@ def get_plan_dir(plan_id: str) -> Path:
 
 def cmd_read(args: argparse.Namespace) -> None:
     """Read file content from plan directory."""
-    if not is_valid_plan_id(args.plan_id):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'message': f'Invalid plan_id format: {args.plan_id}'}), file=sys.stderr)
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'})
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
     if not file_path.exists():
-        print(serialize_toon({'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {file_path}'}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {file_path}'})
         sys.exit(1)
 
     print(file_path.read_text(encoding='utf-8'), end='')
@@ -55,12 +52,10 @@ def cmd_read(args: argparse.Namespace) -> None:
 
 def cmd_write(args: argparse.Namespace) -> None:
     """Write content to file in plan directory."""
-    if not is_valid_plan_id(args.plan_id):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'message': f'Invalid plan_id format: {args.plan_id}'}), file=sys.stderr)
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'})
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -72,11 +67,11 @@ def cmd_write(args: argparse.Namespace) -> None:
     elif args.content:
         content = args.content
     else:
-        print(serialize_toon({'status': 'error', 'error': 'missing_content', 'message': 'Must provide --content or --stdin'}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': 'missing_content', 'message': 'Must provide --content or --stdin'})
         sys.exit(1)
 
     if not content:
-        print(serialize_toon({'status': 'error', 'error': 'empty_content', 'message': 'Content cannot be empty'}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': 'empty_content', 'message': 'Content cannot be empty'})
         sys.exit(1)
 
     # Ensure plan directory exists
@@ -85,49 +80,45 @@ def cmd_write(args: argparse.Namespace) -> None:
     # Write atomically
     atomic_write_file(file_path, content)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-FILES] Created {args.file}')
-    print(serialize_toon({'status': 'success', 'action': 'created', 'file': args.file, 'path': str(file_path)}))
+    output_toon({'status': 'success', 'action': 'created', 'file': args.file, 'path': str(file_path)})
 
 
 def cmd_remove(args: argparse.Namespace) -> None:
     """Remove file from plan directory."""
-    if not is_valid_plan_id(args.plan_id):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'message': f'Invalid plan_id format: {args.plan_id}'}), file=sys.stderr)
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'})
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
     if not file_path.exists():
-        print(serialize_toon({'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {file_path}'}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {file_path}'})
         sys.exit(1)
 
     file_path.unlink()
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-FILES] Removed {args.file}')
-    print(serialize_toon({'status': 'success', 'action': 'removed', 'file': args.file, 'path': str(file_path)}))
+    output_toon({'status': 'success', 'action': 'removed', 'file': args.file, 'path': str(file_path)})
 
 
 def cmd_list(args: argparse.Namespace) -> None:
     """List files in plan directory."""
-    if not is_valid_plan_id(args.plan_id):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'message': f'Invalid plan_id format: {args.plan_id}'}), file=sys.stderr)
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     plan_dir = get_plan_dir(args.plan_id)
 
     if args.dir:
         if not is_valid_relative_path(args.dir):
-            print(serialize_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid directory path: {args.dir}'}), file=sys.stderr)
+            output_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid directory path: {args.dir}'})
             sys.exit(1)
         target_dir = plan_dir / args.dir
     else:
         target_dir = plan_dir
 
     if not target_dir.exists():
-        print(serialize_toon({'status': 'error', 'error': 'dir_not_found', 'message': f'Directory not found: {target_dir}'}), file=sys.stderr)
+        output_toon({'status': 'error', 'error': 'dir_not_found', 'message': f'Directory not found: {target_dir}'})
         sys.exit(1)
 
     files = []
@@ -137,7 +128,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         else:
             files.append(item.name)
 
-    print(serialize_toon({'status': 'success', 'plan_id': args.plan_id, 'files': files}))
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'files': files})
 
 
 def cmd_exists(args):
@@ -147,38 +138,28 @@ def cmd_exists(args):
     Exits 0 for both found and not-found outcomes.
     Exits 1 for validation errors (invalid plan_id or path).
     """
-    if not is_valid_plan_id(args.plan_id):
-        result = {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f'Invalid plan_id format: {args.plan_id}',
-        }
-        print(serialize_toon(result), file=sys.stderr)
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        result = {
+        output_toon({
             'status': 'error',
             'plan_id': args.plan_id,
             'file': args.file,
             'error': 'invalid_path',
             'message': f'Invalid file path: {args.file}',
-        }
-        print(serialize_toon(result), file=sys.stderr)
+        })
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
-    result = {
+    output_toon({
         'status': 'success',
         'plan_id': args.plan_id,
         'file': args.file,
         'exists': file_path.exists(),
         'path': str(file_path),
-    }
-    print(serialize_toon(result))
+    })
 
 
 def cmd_mkdir(args):
@@ -186,24 +167,15 @@ def cmd_mkdir(args):
 
     Returns TOON output with the created directory path.
     """
-    if not is_valid_plan_id(args.plan_id):
-        result = {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f'Invalid plan_id format: {args.plan_id}',
-        }
-        print(serialize_toon(result))
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.dir):
-        result = {
+        output_toon({
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'invalid_path',
             'message': f'Invalid directory path: {args.dir}',
-        }
-        print(serialize_toon(result))
+        })
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -212,14 +184,13 @@ def cmd_mkdir(args):
     already_exists = target_dir.exists()
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    result = {
+    output_toon({
         'status': 'success',
         'plan_id': args.plan_id,
         'action': 'exists' if already_exists else 'created',
         'dir': args.dir,
         'path': str(target_dir),
-    }
-    print(serialize_toon(result))
+    })
 
 
 def cmd_create_or_reference(args):
@@ -228,15 +199,7 @@ def cmd_create_or_reference(args):
     Returns TOON output indicating whether the plan was created or already exists.
     This replaces the two-step list+check pattern in plan-init.
     """
-    if not is_valid_plan_id(args.plan_id):
-        result = {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f'Invalid plan_id format: {args.plan_id}',
-        }
-        print(serialize_toon(result))
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     plan_dir = get_plan_dir(args.plan_id)
 
@@ -256,13 +219,13 @@ def cmd_create_or_reference(args):
                 # Parse error or read error - just note file exists
                 result['has_status'] = True
 
-        print(serialize_toon(result))
+        output_toon(result)
     else:
         # Create the plan directory
         plan_dir.mkdir(parents=True, exist_ok=True)
 
         result = {'status': 'success', 'plan_id': args.plan_id, 'action': 'created', 'path': str(plan_dir)}
-        print(serialize_toon(result))
+        output_toon(result)
 
 
 def cmd_delete_plan(args):
@@ -275,26 +238,17 @@ def cmd_delete_plan(args):
     """
     import shutil
 
-    if not is_valid_plan_id(args.plan_id):
-        result = {
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_plan_id',
-            'message': f'Invalid plan_id format: {args.plan_id}',
-        }
-        print(serialize_toon(result))
-        sys.exit(1)
+    require_valid_plan_id(args)
 
     plan_dir = get_plan_dir(args.plan_id)
 
     if not plan_dir.exists():
-        result = {
+        output_toon({
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'plan_not_found',
             'message': f'Plan directory does not exist: {plan_dir}',
-        }
-        print(serialize_toon(result))
+        })
         sys.exit(1)
 
     # Count files before deletion for audit trail
@@ -303,34 +257,32 @@ def cmd_delete_plan(args):
     try:
         shutil.rmtree(plan_dir)
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-FILES] Deleted plan ({files_removed} files)')
-        result = {
+        output_toon({
             'status': 'success',
             'plan_id': args.plan_id,
             'action': 'deleted',
             'path': str(plan_dir),
             'files_removed': files_removed,
-        }
-        print(serialize_toon(result))
+        })
     except PermissionError as e:
-        result = {
+        output_toon({
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'permission_denied',
             'message': f'Permission denied: {e}',
-        }
-        print(serialize_toon(result))
+        })
         sys.exit(1)
     except Exception as e:
-        result = {
+        output_toon({
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'delete_failed',
             'message': f'Failed to delete plan directory: {e}',
-        }
-        print(serialize_toon(result))
+        })
         sys.exit(1)
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Generic file I/O operations for plan directories')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -391,10 +343,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    try:
-        sys.exit(main())
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'unexpected', 'message': str(e)}), file=sys.stderr)
-        sys.exit(1)
+    main()

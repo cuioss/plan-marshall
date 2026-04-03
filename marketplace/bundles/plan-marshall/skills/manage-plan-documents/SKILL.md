@@ -359,13 +359,7 @@ See [standards/adding-document-types.md](standards/adding-document-types.md) for
 - Step-by-step guide to add new document types
 - New types require: a `.toon` schema in `documents/`, a template in `templates/`, and a command handler in `scripts/`
 
-## Related Skills
-
-- `plan-marshall:manage-solution-outline` - Solution outline management (validate, read, list-deliverables)
-
----
-
-## Integration Points
+## Integration
 
 ### With plan-init
 
@@ -395,3 +389,7 @@ Then write solution outline using `plan-marshall:manage-solution-outline` skill.
 ### With file_ops
 
 This skill uses `file_ops` utilities (`atomic_write_file`, `base_path`) directly for file I/O. Use manage-files for non-typed documents.
+
+## Related Skills
+
+- `plan-marshall:manage-solution-outline` - Solution outline management (validate, read, list-deliverables)
