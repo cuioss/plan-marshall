@@ -16,7 +16,7 @@ Collects wall-clock duration and token usage data per phase, generates increment
 > **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
 **Skill-specific constraints:**
-- Script-only skill — all access via the script API
+- Script-only skill — all access via the script API; script uses underscore (`manage_metrics`) for Python module compatibility
 - Never hard-code token values — only use data from Task agent `<usage>` tags
 - Metrics data stored in `.plan/plans/{plan_id}/work/metrics.toon`; human-readable output in `.plan/plans/{plan_id}/metrics.md`
 - Phase names must be one of: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize` (must match `manage-status` phases exactly)
@@ -121,6 +121,35 @@ message_count: 127
   work/metrics.toon    # Intermediate timing/token data per phase
   metrics.md           # Human-readable metrics report
 ```
+
+### metrics.toon Format
+
+```toon
+phases:
+  1-init:
+    start_time: 2026-03-27T10:00:00+00:00
+    end_time: 2026-03-27T10:03:00+00:00
+    duration_seconds: 180.0
+    total_tokens: 25514
+    duration_ms: 23332
+    tool_uses: 12
+  2-refine:
+    start_time: 2026-03-27T10:03:30+00:00
+    end_time: 2026-03-27T10:05:00+00:00
+    duration_seconds: 90.0
+enrichment:
+  input_tokens: 450000
+  output_tokens: 35000
+  total_tokens: 485000
+  message_count: 127
+```
+
+### Generated metrics.md
+
+The `generate` command produces a markdown report with:
+- Per-phase table (duration formatted as `Xm Ys`, token counts, tool uses)
+- Totals row with aggregate values
+- Enrichment section (if `enrich` was called)
 
 ## Expected Workflow
 

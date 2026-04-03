@@ -77,4 +77,4 @@ These will cause validation failure:
 | Missing `**Profiles:**` section | Required section |
 | Empty `**Profiles:**` block | Must have at least one profile |
 
-> **Complete anti-patterns**: See `standards/deliverable-contract.md` for the full list of invalid patterns.
+> **Complete anti-patterns**: See `standards/solution-outline-standard.md` for the full list of invalid patterns.

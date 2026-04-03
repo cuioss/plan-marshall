@@ -331,6 +331,6 @@ qgate_pending_count: {0 if no findings}
 - [architecture-diagram.md](references/architecture-diagram.md) - Change-type routing architecture (normal plans)
 - [recipe-flow.md](references/recipe-flow.md) - Recipe flow architecture (built-in and custom recipes)
 - [change-types.md](../../ref-workflow-architecture/standards/change-types.md) - Change type vocabulary and agent routing
-- [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
+- [solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) - Deliverable structure
 - [workflow-architecture](../../ref-workflow-architecture) - Workflow architecture overview
 - [outline-workflow-detail.md](standards/outline-workflow-detail.md) - Detailed track procedures (Q-Gate re-entry, recipe detection, change-type detection, Simple/Complex track steps)

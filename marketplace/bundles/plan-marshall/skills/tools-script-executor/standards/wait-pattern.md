@@ -324,7 +324,7 @@ The key is used to store/retrieve execution history in `run-configuration.json` 
 
 ## Adaptive Timeout Learning
 
-The wait utility delegates all timeout management to `run-config timeout get/set`. See [timeout-handling.md](../../run-config/standards/timeout-handling.md) for the algorithm specification.
+The wait utility delegates all timeout management to `run-config timeout get/set`. See [run-config-standard.md](../../manage-run-config/standards/run-config-standard.md) for the algorithm specification.
 
 ```
                 ADAPTIVE TIMEOUT LEARNING

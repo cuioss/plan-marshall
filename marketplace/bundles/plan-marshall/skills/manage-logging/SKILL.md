@@ -278,6 +278,21 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 ---
 
+## Error Responses
+
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
+
+| Error Code | Cause |
+|------------|-------|
+| `invalid_plan_id` | plan_id format invalid |
+| `invalid_log_type` | Log type not in: script, work, decision |
+| `invalid_level` | Level not in: INFO, WARN, ERROR |
+| `write_failed` | File system permission denied or directory missing |
+
+**Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures.
+
+---
+
 ## Integration
 
 ### With Script Executor
@@ -299,5 +314,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 | Script | Notation | Description |
 |--------|----------|-------------|
-| `manage-log.py` | `plan-marshall:manage-logging:manage-logging` | CLI for logging operations (write and read) |
+| `manage-logging.py` | `plan-marshall:manage-logging:manage-logging` | CLI for logging operations (write and read) |
 | `plan_logging.py` | - | Python module (imported, not executed) |
+
+## Related Skills
+
+- `manage-status` — Phase tracking that logging augments
+- `manage-metrics` — Metric data that complements work logs
+- `manage-files` — Generic file operations used alongside logging

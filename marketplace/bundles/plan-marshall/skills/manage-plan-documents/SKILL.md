@@ -316,47 +316,23 @@ types:
 
 ---
 
-## Architecture
-
-See [standards/architecture.md](standards/architecture.md) for:
-- Declarative engine design
-- Document definition schema
-
-See [standards/adding-document-types.md](standards/adding-document-types.md) for:
-- Step-by-step guide to add new document types
-- New types require: a `.toon` schema in `documents/`, a template in `templates/`, and a command handler in `scripts/`
-
 ## Integration
 
-### With plan-init
+### Producers
 
-Plan initialization creates request document:
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | request create | Create initial request document |
+| `phase-2-refine` | request clarify, request update | Add clarifications and update sections |
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  request create \
-  --plan-id $PLAN_ID \
-  --title "$TITLE" \
-  --source description \
-  --body "$BODY"
-```
+### Consumers
 
-### With phase-3-outline skill
-
-The thin agent reads the request document:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  request read \
-  --plan-id $PLAN_ID
-```
-
-Then write solution outline using `plan-marshall:manage-solution-outline` skill.
-
-### With file_ops
-
-This skill uses `file_ops` utilities (`atomic_write_file`, `base_path`) directly for file I/O. Use manage-files for non-typed documents.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-3-outline` | request read | Read request to design solution |
+| `phase-4-plan` | request read | Read request for task planning context |
 
 ## Related Skills
 
-- `plan-marshall:manage-solution-outline` - Solution outline management (validate, read, list-deliverables)
+- `manage-solution-outline` — Solution outline management (validate, read, list-deliverables)
+- `manage-files` — Generic file operations for non-typed plan documents

@@ -255,16 +255,25 @@ created_from: error_context
 
 ---
 
-## Integration Points
+## Integration
 
-### With plan-execute
+### Producers
 
-When errors occur during execution, create lessons to document the issue and solution.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-5-execute` | add, from-error | Document errors and solutions during execution |
+| `phase-6-finalize` | add | Promote findings to lessons |
+| `plugin-doctor` | add | Capture recurring component issues |
 
-### With manage-findings
+### Consumers
 
-Findings of type bug, improvement, anti-pattern, and triage are promoted to lessons at 6-finalize.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `plugin-apply-lessons-learned` | list, update | Apply lessons to marketplace components |
+| `phase-6-finalize` | list | Query unapplied lessons for promotion |
 
-### With plugin-doctor
+## Related Skills
 
-Apply lessons to fix recurring issues in marketplace components.
+- `manage-findings` — Findings promoted to lessons at 6-finalize
+- `manage-memories` — Complementary global persistence (session context)
+- `manage-run-config` — Complementary global persistence (execution state)

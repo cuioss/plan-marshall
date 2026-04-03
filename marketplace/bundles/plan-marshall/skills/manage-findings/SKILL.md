@@ -1,6 +1,6 @@
 ---
 name: manage-findings
-description: Unified finding, Q-Gate, and assessment storage with JSONL persistence for plan-scoped findings, phase-scoped Q-Gate findings, and component assessments
+description: Unified JSONL storage for plan-scoped findings, phase-scoped Q-Gate findings, and component assessments
 user-invocable: false
 scope: plan
 ---
@@ -239,4 +239,4 @@ At `6-finalize`:
 
 - `manage-lessons` — Promotion target for bug, improvement, anti-pattern, triage findings
 - `manage-architecture` — Promotion target for tip, insight, best-practice findings (via `enrich` commands)
-- `manage-assessments` — Complementary: assessments track component evaluations, findings track issues discovered
+- `manage-status` — Plan lifecycle tracking complementing findings resolution

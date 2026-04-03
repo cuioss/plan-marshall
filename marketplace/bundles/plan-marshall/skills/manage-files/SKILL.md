@@ -233,17 +233,15 @@ domain: java
 
 ## Integration
 
-### With Domain Skills
+### Consumers
 
-Domain-specific skills (manage-references, manage-status) may use this skill for basic file operations, or import shared libraries directly.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | create-or-reference, write | Create plan directory and initial files |
+| `phase-3-outline` | write, read | Generic file I/O for plan artifacts |
+| `phase-5-execute` | read, write, list | File operations during task execution |
 
-### With Orchestration Skills
-
-Plan orchestration skills (plan-init, solution-outline, task-plan, plan-execute) use this skill for generic file I/O.
-
----
-
-## Relationship to Domain Skills
+### Relationship to Domain Skills
 
 | Skill | Manages | Use manage-files for |
 |-------|---------|---------------------|
@@ -256,5 +254,6 @@ Plan orchestration skills (plan-init, solution-outline, task-plan, plan-execute)
 
 ## Related Skills
 
-- `manage-plan-documents` — Typed plan document operations (request.md, solution_outline.md)
+- `manage-plan-documents` — Typed plan document operations (request.md)
 - `manage-references` — Reference tracking for plans (references.json)
+- `manage-logging` — Logging operations that complement file I/O

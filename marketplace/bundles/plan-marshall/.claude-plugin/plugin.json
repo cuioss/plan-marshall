@@ -23,6 +23,7 @@
   "skills": [
     "./skills/extension-api",
     "./skills/manage-architecture",
+    "./skills/manage-findings",
     "./skills/manage-lessons",
     "./skills/manage-memories",
     "./skills/manage-run-config",

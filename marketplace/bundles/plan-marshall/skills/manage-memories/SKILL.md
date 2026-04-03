@@ -38,7 +38,7 @@ Manage the memory layer for session persistence (via `tools-file-ops` skill).
 
 ### Parameters
 
-- **operation** (required): One of `save`, `load`, `list`, `query`, `cleanup`
+- **command** (required): One of `save`, `load`, `list`, `query`, `cleanup`, `validate`
 - **category** (optional): Currently `context` (session snapshots)
 - **identifier** (optional): File identifier or summary name
 - **content** (optional): JSON content for save operations

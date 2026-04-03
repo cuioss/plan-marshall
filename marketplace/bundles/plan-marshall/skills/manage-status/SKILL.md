@@ -395,26 +395,9 @@ failed: 0
 
 ---
 
-## Valid Phases
+## Valid Phases & Routing
 
-The standard phase set (must be used in order):
-
-`1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`
-
-Phase transitions are sequential -- you cannot skip phases. The `transition` command enforces this ordering.
-
-## Phase-to-Skill Routing
-
-The `route` command maps phases to their implementation skills:
-
-| Phase | Skill |
-|-------|-------|
-| `1-init` | `plan-marshall:phase-1-init` |
-| `2-refine` | `plan-marshall:phase-2-refine` |
-| `3-outline` | `plan-marshall:phase-3-outline` |
-| `4-plan` | `plan-marshall:phase-4-plan` |
-| `5-execute` | `plan-marshall:phase-5-execute` |
-| `6-finalize` | `plan-marshall:phase-6-finalize` |
+Phase set, transition rules, and phase-to-skill routing are defined in [standards/status-lifecycle.md](standards/status-lifecycle.md). The standard 6-phase model (`1-init` through `6-finalize`) is sequential — the `transition` command enforces ordering.
 
 ---
 
@@ -450,9 +433,9 @@ The `route` command maps phases to their implementation skills:
 | `invalid_plan_id` | 1 | Plan ID not in kebab-case format |
 | `file_not_found` | 1 | status.json doesn't exist |
 | `file_exists` | 1 | status.json already exists (use `--force`) |
-| `invalid_phase` | 1 | Phase name not in the phases list |
-| `phase_not_found` | 1 | Phase doesn't exist in status.json |
-| `unknown_phase` | 1 | Phase name not in valid phases set (route command) |
+| `invalid_phase` | 1 | Phase name not in the phases list (set-phase, update-phase, transition) |
+| `phase_not_found` | 1 | Phase doesn't exist in this plan's status.json phases array |
+| `unknown_phase` | 1 | Phase name not in the static valid phases set (`1-init` through `6-finalize`); only used by `route` command |
 | `plan_not_found` | 1 | Plan directory does not exist (delete-plan command) |
 | `not_found` | 1 | Plan directory not found (archive command) |
 | `not_found` | 0 | Metadata field doesn't exist — valid query result (returns `value: null`), not an error |

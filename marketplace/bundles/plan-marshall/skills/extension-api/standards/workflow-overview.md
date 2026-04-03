@@ -262,6 +262,6 @@ recoverable	{true|false}
 - `plan-marshall:phase-5-execute/SKILL.md` - Execute phase skill
 - `plan-marshall:phase-6-finalize/SKILL.md` - Finalize phase skill
 - [extension-contract.md](extension-contract.md) - Extension mechanism
-- [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
+- [solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) - Deliverable structure
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure
 - [ref-workflow-architecture:artifacts](../../ref-workflow-architecture/standards/artifacts.md) - Artifact formats (TOON)

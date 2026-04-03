@@ -44,7 +44,7 @@ Run configuration handling for persistent command configuration storage.
 }
 ```
 
-See [standards/run-config-format.md](standards/run-config-format.md) for complete schema.
+See [standards/run-config-standard.md](standards/run-config-standard.md) for complete schema.
 
 ---
 
@@ -76,36 +76,73 @@ Script characteristics:
 
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
-| [timeout-handling.md](standards/timeout-handling.md) | Adaptive timeout management | Managing command timeouts |
-| [warning-handling.md](standards/warning-handling.md) | Acceptable warning patterns | Filtering build warnings |
-| [run-config-format.md](standards/run-config-format.md) | Schema + cleanup operations | Full config schema and directory cleanup |
+| [run-config-standard.md](standards/run-config-standard.md) | Schema, timeouts, warnings, cleanup | Full run configuration reference |
 
 ---
 
-## Quick Start
+## Operations
 
-### Initialize Configuration
+Script: `plan-marshall:manage-run-config:run_config`
+
+### init
+
+Initialize run-config.json with defaults.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config init
 ```
 
-### Validate Configuration
+### validate
+
+Validate configuration structure.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config validate
 ```
 
----
+### timeout get / set
 
-## Integration
+Manage adaptive command timeouts.
 
-### With planning Bundle
-- Commands record execution history to run configuration
+```bash
+# Get current timeout for a command
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
+  --command mvn-verify
 
-### With lessons-learned Skill
-- Lessons learned are stored separately via `plan-marshall:manage-lessons` skill
-- Run configuration tracks execution state only
+# Set timeout value
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
+  --command mvn-verify --value 300000
+```
+
+### warning add / list / remove
+
+Manage acceptable build warning patterns.
+
+```bash
+# Add an acceptable warning
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning add \
+  --category transitive_dependency --pattern "jakarta.json-api"
+
+# List warnings for a category
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning list \
+  --category transitive_dependency
+
+# Remove a warning pattern
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning remove \
+  --category transitive_dependency --pattern "jakarta.json-api"
+```
+
+### cleanup / cleanup-status
+
+Directory cleanup using retention settings from marshal.json.
+
+```bash
+# Check what would be cleaned up
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup-status
+
+# Run cleanup
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup
+```
 
 ---
 
@@ -123,9 +160,28 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config valid
 
 ---
 
-## References
+## Integration
 
-- `standards/run-config-format.md` - Complete schema documentation
-- `standards/timeout-handling.md` - Adaptive timeout management
-- `standards/warning-handling.md` - Acceptable warning patterns
-- `standards/run-config-format.md` also covers cleanup operations (merged from cleanup-operations.md)
+### Producers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `marshall-steward` | init | Initialize run configuration during setup |
+| Build skills | timeout set | Update timeouts after command execution |
+| Build skills | warning add | Register acceptable warning patterns |
+
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| Build skills | timeout get | Read timeout values for command execution |
+| Build skills | warning list | Filter build warnings against accepted patterns |
+| `manage-memories` cleanup | cleanup | Remove stale memory files using retention settings |
+
+---
+
+## Related Skills
+
+- `manage-config` — Project-level marshal.json configuration (provides retention settings)
+- `manage-lessons` — Complementary global persistence (lessons learned)
+- `manage-memories` — Complementary global persistence (session context)

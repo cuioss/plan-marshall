@@ -68,7 +68,7 @@ Skill: plan-marshall:extension-api
 | Completed Phase | Contract to Verify |
 |-----------------|-------------------|
 | 1-init | references.json required fields (domains) |
-| 3-outline | deliverable-contract.md |
+| 3-outline | solution-outline-standard.md |
 | 4-plan | task-contract.md |
 | 5-execute | task verification criteria |
 
@@ -697,7 +697,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ### Phase 2: Solution Outline Complete
 
-**Contract Reference**: `plan-marshall:manage-solution-outline` standards/deliverable-contract.md
+**Contract Reference**: `plan-marshall:manage-solution-outline` standards/solution-outline-standard.md
 
 **Verification**:
 ```bash

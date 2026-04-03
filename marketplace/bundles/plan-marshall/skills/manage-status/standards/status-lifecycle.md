@@ -49,6 +49,15 @@ create ──→ [phases 1-6] ──→ archive
 
 The `route` command maps phases to workflow skills. This is a fallback mapping — the authoritative source is `manage-config`'s `skill_domains.system.workflow_skills` in `marshal.json`.
 
+| Phase | Skill |
+|-------|-------|
+| `1-init` | `plan-marshall:phase-1-init` |
+| `2-refine` | `plan-marshall:phase-2-refine` |
+| `3-outline` | `plan-marshall:phase-3-outline` |
+| `4-plan` | `plan-marshall:phase-4-plan` |
+| `5-execute` | `plan-marshall:phase-5-execute` |
+| `6-finalize` | `plan-marshall:phase-6-finalize` |
+
 ## Metadata
 
 Arbitrary key-value pairs stored in `status.json` under the `metadata` object. Common fields:

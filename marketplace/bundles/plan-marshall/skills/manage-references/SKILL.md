@@ -340,15 +340,23 @@ modified_files[3]:
 
 ## Integration
 
-### With plan-execute
+### Producers
 
-Execution phase adds modified files via `add-file` as implementation progresses.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | create, set, set-list | Initialize references with branch, domains, build system |
+| `phase-3-outline` | set-list | Set affected_files from solution outline |
+| `phase-5-execute` | add-file | Track modified files as implementation progresses |
 
-### With plan-finalize
+### Consumers
 
-Finalization reads `modified_files` via `get-context --include-files` for commit scope and PR body.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-3-outline` | get, get-context | Read domains and build system for skill routing |
+| `phase-5-execute` | get-context | Read build system for task execution |
+| `phase-6-finalize` | get-context --include-files | Read modified_files for commit scope and PR body |
 
 ## Related Skills
 
 - `manage-files` — Generic file operations for plan directories
-- `manage-plan-documents` — Typed plan document operations (request.md, solution_outline.md)
+- `manage-plan-documents` — Typed plan document operations (request.md)

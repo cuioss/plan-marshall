@@ -43,7 +43,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read -
 | Completed Phase | Contract |
 |-----------------|----------|
 | 1-init | references.json required fields (domains) |
-| 3-outline | deliverable-contract.md |
+| 3-outline | solution-outline-standard.md |
 | 4-plan | task-contract.md |
 | 5-execute | task verification criteria |
 

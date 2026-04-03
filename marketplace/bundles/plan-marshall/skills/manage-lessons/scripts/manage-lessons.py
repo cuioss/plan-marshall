@@ -15,7 +15,6 @@ Usage:
 import argparse
 import json
 import re
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -105,7 +104,7 @@ def write_lesson_to(path: Path, metadata: dict, title: str, body: str) -> None:
     atomic_write_file(path, '\n'.join(lines))
 
 
-def cmd_add(args: argparse.Namespace) -> None:
+def cmd_add(args: argparse.Namespace) -> int:
     """Create a new lesson."""
     if args.category not in VALID_CATEGORIES:
         output_toon(
@@ -116,7 +115,7 @@ def cmd_add(args: argparse.Namespace) -> None:
                 'valid_categories': VALID_CATEGORIES,
             }
         )
-        sys.exit(1)
+        return 1
 
     lesson_id = get_next_id()
     today = datetime.now(UTC).strftime('%Y-%m-%d')
@@ -143,15 +142,16 @@ def cmd_add(args: argparse.Namespace) -> None:
             'category': args.category,
         }
     )
+    return 0
 
 
-def cmd_update(args: argparse.Namespace) -> None:
+def cmd_update(args: argparse.Namespace) -> int:
     """Update lesson metadata."""
     metadata, title, body = read_lesson(args.id)
 
     if not metadata:
         output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
-        sys.exit(1)
+        return 1
 
     # Determine which field to update
     field = None
@@ -178,7 +178,7 @@ def cmd_update(args: argparse.Namespace) -> None:
                     'valid_categories': VALID_CATEGORIES,
                 }
             )
-            sys.exit(1)
+            return 1
         field = 'category'
         previous = metadata.get('category')
         value = args.category
@@ -186,20 +186,21 @@ def cmd_update(args: argparse.Namespace) -> None:
 
     if not field:
         output_toon({'status': 'error', 'error': 'no_update', 'message': 'No field to update specified'})
-        sys.exit(1)
+        return 1
 
     write_lesson(args.id, metadata, title, body)
 
     output_toon({'status': 'success', 'id': args.id, 'field': field, 'value': value, 'previous': previous})
+    return 0
 
 
-def cmd_get(args: argparse.Namespace) -> None:
+def cmd_get(args: argparse.Namespace) -> int:
     """Get a single lesson."""
     metadata, title, body = read_lesson(args.id)
 
     if not metadata:
         output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
-        sys.exit(1)
+        return 1
 
     result = {
         'status': 'success',
@@ -215,15 +216,16 @@ def cmd_get(args: argparse.Namespace) -> None:
         result['content'] = body
 
     output_toon(result)
+    return 0
 
 
-def cmd_list(args: argparse.Namespace) -> None:
+def cmd_list(args: argparse.Namespace) -> int:
     """List lessons with filtering."""
     lessons_dir = get_lessons_dir()
 
     if not lessons_dir.exists():
         output_toon({'status': 'success', 'total': 0, 'filtered': 0, 'lessons': []})
-        return
+        return 0
 
     lessons = []
     total = 0
@@ -261,6 +263,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         )
 
     output_toon({'status': 'success', 'total': total, 'filtered': len(lessons), 'lessons': lessons})
+    return 0
 
 
 def get_archived_dir() -> Path:
@@ -268,13 +271,13 @@ def get_archived_dir() -> Path:
     return base_path(DIR_ARCHIVED_LESSONS)
 
 
-def cmd_archive(args: argparse.Namespace) -> None:
+def cmd_archive(args: argparse.Namespace) -> int:
     """Archive a lesson: set applied=true and move to archived-lessons."""
     metadata, title, body = read_lesson(args.id)
 
     if not metadata:
         output_toon({'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'})
-        sys.exit(1)
+        return 1
 
     lessons_dir = get_lessons_dir()
     archived_dir = get_archived_dir()
@@ -293,15 +296,16 @@ def cmd_archive(args: argparse.Namespace) -> None:
     src.unlink()
 
     output_toon({'status': 'success', 'id': args.id, 'archived_to': str(dst)})
+    return 0
 
 
-def cmd_from_error(args: argparse.Namespace) -> None:
+def cmd_from_error(args: argparse.Namespace) -> int:
     """Create lesson from error context."""
     try:
         context = json.loads(args.context)
     except json.JSONDecodeError:
         output_toon({'status': 'error', 'error': 'invalid_json', 'message': 'Context must be valid JSON'})
-        sys.exit(1)
+        return 1
 
     component = context.get('component', 'unknown')
     error = context.get('error', 'Unknown error')
@@ -320,6 +324,7 @@ def cmd_from_error(args: argparse.Namespace) -> None:
     write_lesson(lesson_id, metadata, title, body)
 
     output_toon({'status': 'success', 'id': lesson_id, 'created_from': 'error_context'})
+    return 0
 
 
 @safe_main
@@ -372,8 +377,7 @@ def main() -> int:
     from_error_parser.set_defaults(func=cmd_from_error)
 
     args = parser.parse_args()
-    args.func(args)
-    return 0
+    return args.func(args)
 
 
 if __name__ == '__main__':

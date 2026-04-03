@@ -273,6 +273,8 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 
 ## Standard Domains
 
+> **Detailed reference**: See [standards/skill-domains.md](standards/skill-domains.md) for domain structure, profiles, and validation rules. See [standards/skill-domains-operations.md](standards/skill-domains-operations.md) for resolution commands and usage patterns.
+
 ### System Domain
 
 The `system` domain contains task executors and base skills applied to all tasks.
@@ -324,16 +326,21 @@ Script characteristics:
 
 ## Integration
 
-### With plan-marshall Skill
-- Called during wizard initialization
-- Called from configuration menus
+### Producers
 
-### With Implementation Agents
-- `skill-domains get-defaults` provides skills to load
-- `skill-domains get-optionals` provides available optionals
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `marshall-steward` | init, skill-domains configure | Initialize and configure domains |
+| `manage-architecture` | skill-domains set, ext-defaults | Set domain skills from enrichment |
 
-### With Cleanup
-- `system retention get` provides retention settings
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | plan get, resolve-domain-skills | Read plan config, resolve skills |
+| `phase-4-plan` | resolve-task-executor | Resolve executor skill for task profile |
+| `phase-5-execute` | resolve-domain-skills | Load skills for task execution |
+| `manage-run-config` | system retention get | Read retention settings for cleanup |
 
 ---
 

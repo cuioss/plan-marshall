@@ -24,6 +24,23 @@ python3 .plan/execute-script.py plan-marshall:{skill}:{script} {command} {args}
 - Internal modules use underscore prefix (e.g., `_tasks_core.py`, `_cmd_crud.py`)
 - All script output uses TOON format (see `plan-marshall:ref-toon-format` for full specification)
 
+## Script Implementation Patterns
+
+Recommended patterns for manage-* script implementations:
+
+**Output**: Use `output_toon()` from `file_ops` for all TOON output. For success/error shortcuts, use `output_success()` and `output_toon_error()` from `file_ops`. Avoid defining skill-local output wrappers.
+
+**Error handling**: Command handler functions (`cmd_*`) should return `int` (0 for success, 1 for error). Avoid `sys.exit(1)` in command handlers — return error codes instead, letting `main()` propagate them via `safe_main`.
+
+**Module structure**: Scripts with 3+ commands should use the modular pattern:
+- `_*_core.py` — Shared utilities (path resolution, JSON I/O, validation)
+- `_cmd_*.py` — Command group handlers (one file per logical group)
+- Entry-point script — Argument parsing and dispatch only
+
+**Naming conventions**:
+- `_cmd_*.py` prefix for command modules (not `_ref_cmd_*` or other prefixes)
+- `_*_core.py` for shared core module (abbreviated skill name, e.g., `_tasks_core.py`)
+
 ## Shared Formats
 
 Canonical format definitions used across all manage-* skills. Individual skill standards reference this section rather than redefining these formats.

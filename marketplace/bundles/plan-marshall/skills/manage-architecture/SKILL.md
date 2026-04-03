@@ -319,11 +319,10 @@ Load standards documents in the order listed — each builds on the previous:
 
 | # | Reference | When to Load |
 |---|-----------|--------------|
-| 1 | [manage-api.md](standards/manage-api.md) | First — covers setup, raw data, and enrich commands used in Steps 1-8 |
-| 2 | [architecture-persistence.md](standards/architecture-persistence.md) | When you need field schemas, purpose values, or skills_by_profile structure |
+| 1 | [manage-api.md](standards/manage-api.md) | First — covers setup, raw data, enrich commands (Steps 1-8), and orchestration flow |
+| 2 | [architecture-persistence.md](standards/architecture-persistence.md) | When you need field schemas, purpose values, skills_by_profile structure, module graph format, or documentation source priorities |
 | 3 | [client-api.md](standards/client-api.md) | When consuming enriched data (Step 9 verification, or downstream skills) |
-| 4 | [documentation-sources.md](standards/documentation-sources.md) | During Step 5 — details on which files to read and how to extract information |
-| 5 | `pm-dev-java:manage-maven-profiles` | Only during Step 2, only for Maven projects with unmatched profiles |
+| 4 | `pm-dev-java:manage-maven-profiles` | Only during Step 2, only for Maven projects with unmatched profiles |
 
 ---
 
@@ -341,3 +340,4 @@ Output is consumed by:
 
 - `manage-solution-outline` — Consumes architecture data for placement decisions
 - `manage-config` — Project-level configuration used during analysis
+- `manage-files` — Generic file operations used during discovery

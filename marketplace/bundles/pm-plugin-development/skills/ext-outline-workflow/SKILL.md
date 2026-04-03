@@ -138,7 +138,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Deliverable Validation
 
-**MANDATORY** before writing solution_outline.md — verify EVERY deliverable has ALL 6 required sections (from deliverable-contract.md):
+**MANDATORY** before writing solution_outline.md — verify EVERY deliverable has ALL 6 required sections (from solution-outline-standard.md):
 
 | Section | Check |
 |---------|-------|
@@ -216,7 +216,7 @@ Common mistakes: Do NOT use `--component {path}`, file paths as scope parameters
 
 **CRITICAL**: Do NOT create a separate "update tests" or "consolidate tests" deliverable when individual deliverables already have `module_testing` in their Profiles block.
 
-The 1:N profile mapping (deliverable-contract.md) means each deliverable with `module_testing` profile automatically generates a separate test task. Creating an additional test deliverable for the same test files causes **redundant tasks** that modify identical files.
+The 1:N profile mapping (solution-outline-standard.md) means each deliverable with `module_testing` profile automatically generates a separate test task. Creating an additional test deliverable for the same test files causes **redundant tasks** that modify identical files.
 
 | Scenario | Correct Approach |
 |----------|-----------------|
@@ -354,4 +354,4 @@ domain: plan-marshall-plugin-dev
 - Log assessments to assessments.jsonl for Q-Gate verification
 - Select verification commands using the profile-based priority (see Decision Guide above)
 - Return structured TOON output
-- Every deliverable MUST include ALL required fields from deliverable-contract.md
+- Every deliverable MUST include ALL required fields from solution-outline-standard.md

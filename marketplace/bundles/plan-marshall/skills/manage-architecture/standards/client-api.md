@@ -92,9 +92,7 @@ architecture.py graph [--full]
 **Parameters**:
 - `--full`: Include aggregator modules (pom-only parents). By default, modules with no source paths are filtered out.
 
-**Output**: See [module-graph-format.md](module-graph-format.md) for complete format specification.
-
-> **Graph format**: See `standards/module-graph-format.md` for the complete graph output specification.
+**Output**: See the "Module Graph Format" section in [architecture-persistence.md](architecture-persistence.md) for complete format specification.
 
 **Single module output**:
 ```

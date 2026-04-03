@@ -98,7 +98,7 @@ IF frontmatter contains implements:
 ```
 
 **Contract Locations**:
-- `plan-marshall:manage-solution-outline/standards/deliverable-contract.md`
+- `plan-marshall:manage-solution-outline/standards/solution-outline-standard.md`
 - `plan-marshall:extension-api/standards/*.md`
 
 ## Issue Types
