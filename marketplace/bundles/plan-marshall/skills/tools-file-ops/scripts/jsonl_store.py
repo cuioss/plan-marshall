@@ -3,7 +3,7 @@
 Shared JSONL storage infrastructure for plan-scoped artifacts.
 
 Provides common JSONL operations (append, read, update, find), hash ID generation,
-timestamps, and TOON output formatting used by manage-assessments and manage-findings.
+and timestamps used by manage-assessments and manage-findings.
 
 Usage:
     from jsonl_store import (
@@ -15,7 +15,6 @@ Usage:
         update_jsonl,
         find_by_title,
         timestamp,
-        output_toon,
     )
 """
 
@@ -26,8 +25,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from constants import HASH_ID_LENGTH  # type: ignore[import-not-found]
 from file_ops import base_path  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def get_artifact_path(plan_id: str, filename: str) -> Path:
@@ -38,7 +37,7 @@ def get_artifact_path(plan_id: str, filename: str) -> Path:
 def generate_hash_id() -> str:
     """Generate a 6-char hex hash for artifact identification."""
     data = f'{datetime.now(UTC).isoformat()}{secrets.token_hex(8)}'
-    return hashlib.sha256(data.encode()).hexdigest()[:6]
+    return hashlib.sha256(data.encode()).hexdigest()[:HASH_ID_LENGTH]
 
 
 def ensure_parent_dir(path: Path) -> None:
@@ -98,10 +97,5 @@ def find_by_title(path: Path, title: str) -> dict[str, Any] | None:
 
 def timestamp() -> str:
     """Get current ISO timestamp."""
-    return datetime.now(UTC).isoformat()
-
-
-def output_toon(data: dict[str, Any]) -> str:
-    """Format output as TOON."""
-    result: str = serialize_toon(data)
-    return result
+    from file_ops import now_utc_iso
+    return now_utc_iso()

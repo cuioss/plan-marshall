@@ -45,6 +45,52 @@ def now_utc_iso() -> str:
     return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
+def parse_duration(duration_str: str) -> 'timedelta':
+    """Parse a duration string like '7d', '24h', '30m' into a timedelta.
+
+    Args:
+        duration_str: Duration string with suffix d (days), h (hours), or m (minutes)
+
+    Returns:
+        timedelta object
+
+    Raises:
+        ValueError: If format is invalid
+    """
+    import re
+    from datetime import timedelta
+    match = re.match(r'^(\d+)([dhm])$', duration_str.strip())
+    if not match:
+        raise ValueError(f"Invalid duration format: '{duration_str}'. Use Nd, Nh, or Nm.")
+    value = int(match.group(1))
+    unit = match.group(2)
+    if unit == 'd':
+        return timedelta(days=value)
+    if unit == 'h':
+        return timedelta(hours=value)
+    return timedelta(minutes=value)
+
+
+def format_duration(seconds: float) -> str:
+    """Format seconds into human-readable duration string.
+
+    Args:
+        seconds: Duration in seconds
+
+    Returns:
+        Formatted string like '5.2s', '3m12s', '1h5m'
+    """
+    if seconds < 60:
+        return f'{seconds:.1f}s'
+    if seconds < 3600:
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        return f'{m}m{s}s'
+    h = int(seconds // 3600)
+    m = int(seconds % 3600 // 60)
+    return f'{h}h{m}m'
+
+
 def get_base_dir() -> Path:
     """Get the base directory for workflow files.
 

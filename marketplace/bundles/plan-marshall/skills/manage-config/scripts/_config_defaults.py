@@ -5,6 +5,8 @@ Contains build system and domain default structures used during
 project initialization and detection.
 """
 
+from constants import VALID_PROFILES  # type: ignore[import-not-found]
+
 # Reserved keys in nested domain config (not profile names)
 # bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
 # task_executors: System domain only - profile to task skill mapping
@@ -20,6 +22,7 @@ RESERVED_DOMAIN_KEYS = [
 
 # Task executors map profile -> workflow skill
 # Convention: profile X maps to plan-marshall:task-X
+# Keys align with constants.VALID_PROFILES (source of truth for profile names)
 # These are defaults; marshall-steward auto-discovers from extension.py files
 DEFAULT_TASK_EXECUTORS = {
     'implementation': 'plan-marshall:task-implementation',

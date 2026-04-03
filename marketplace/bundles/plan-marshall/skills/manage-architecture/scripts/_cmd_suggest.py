@@ -14,9 +14,9 @@ from _architecture_core import (
     get_module,
     handle_module_not_found,
     load_derived_data,
-    print_toon_table,
     require_derived_data,
 )
+from file_ops import print_toon_table  # type: ignore[import-not-found]
 
 
 # =============================================================================

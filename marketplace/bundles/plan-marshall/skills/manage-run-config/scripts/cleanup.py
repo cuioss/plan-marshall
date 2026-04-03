@@ -40,11 +40,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
+from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES, DIR_TEMP, FILE_MARSHAL  # type: ignore[import-not-found]
 from file_ops import get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]
 
 # Configuration - delegate to file_ops for consistent path resolution
 PLAN_BASE_DIR = get_base_dir()
-MARSHAL_JSON = PLAN_BASE_DIR / 'marshal.json'
+MARSHAL_JSON = PLAN_BASE_DIR / FILE_MARSHAL
 
 
 @dataclass
@@ -112,7 +113,7 @@ def clean_temp(dry_run: bool = False) -> tuple[int, int]:
     Returns:
         (files_deleted, bytes_freed)
     """
-    temp_dir = PLAN_BASE_DIR / 'temp'
+    temp_dir = PLAN_BASE_DIR / DIR_TEMP
     if not temp_dir.exists():
         return 0, 0
 
@@ -150,7 +151,7 @@ def clean_logs(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
     Returns:
         (files_deleted, bytes_freed)
     """
-    logs_dir = PLAN_BASE_DIR / 'logs'
+    logs_dir = PLAN_BASE_DIR / DIR_LOGS
     if not logs_dir.exists():
         return 0, 0
 
@@ -178,7 +179,7 @@ def clean_archived_plans(max_age_days: int, dry_run: bool = False) -> tuple[int,
     Returns:
         (dirs_deleted, bytes_freed)
     """
-    archived_dir = PLAN_BASE_DIR / 'archived-plans'
+    archived_dir = PLAN_BASE_DIR / DIR_ARCHIVED
     if not archived_dir.exists():
         return 0, 0
 
@@ -218,7 +219,7 @@ def clean_memory(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
     Returns:
         (files_deleted, bytes_freed)
     """
-    memory_dir = PLAN_BASE_DIR / 'memory'
+    memory_dir = PLAN_BASE_DIR / DIR_MEMORIES
     if not memory_dir.exists():
         return 0, 0
 
@@ -264,7 +265,7 @@ def get_status() -> dict:
     retention = get_retention_settings()
 
     # Temp stats
-    temp_dir = PLAN_BASE_DIR / 'temp'
+    temp_dir = PLAN_BASE_DIR / DIR_TEMP
     temp_files = 0
     temp_bytes = 0
     if temp_dir.exists():
@@ -277,7 +278,7 @@ def get_status() -> dict:
                     pass
 
     # Logs stats
-    logs_dir = PLAN_BASE_DIR / 'logs'
+    logs_dir = PLAN_BASE_DIR / DIR_LOGS
     logs_total = 0
     logs_old = 0
     logs_old_bytes = 0
@@ -292,7 +293,7 @@ def get_status() -> dict:
                     pass
 
     # Archived plans stats
-    archived_dir = PLAN_BASE_DIR / 'archived-plans'
+    archived_dir = PLAN_BASE_DIR / DIR_ARCHIVED
     archived_total = 0
     archived_old = 0
     archived_old_bytes = 0
@@ -310,7 +311,7 @@ def get_status() -> dict:
                         pass
 
     # Memory stats
-    memory_dir = PLAN_BASE_DIR / 'memory'
+    memory_dir = PLAN_BASE_DIR / DIR_MEMORIES
     memory_total = 0
     memory_old = 0
     memory_old_bytes = 0

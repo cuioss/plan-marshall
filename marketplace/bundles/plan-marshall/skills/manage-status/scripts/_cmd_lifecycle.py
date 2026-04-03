@@ -18,6 +18,7 @@ from _status_core import (
     require_valid_plan_id,
     write_status,
 )
+from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS, PHASE_STATUS_PENDING  # type: ignore[import-not-found]
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 
@@ -55,12 +56,12 @@ def cmd_create(args: argparse.Namespace) -> None:
     status: dict[str, Any] = {
         'title': args.title,
         'current_phase': phases[0],
-        'phases': [{'name': p, 'status': 'pending'} for p in phases],
+        'phases': [{'name': p, 'status': PHASE_STATUS_PENDING} for p in phases],
         'created': now,
         'updated': now,
     }
     # Mark first phase as in_progress
-    status['phases'][0]['status'] = 'in_progress'
+    status['phases'][0]['status'] = PHASE_STATUS_IN_PROGRESS
 
     write_status(args.plan_id, status)
 
@@ -96,12 +97,12 @@ def cmd_transition(args: argparse.Namespace) -> None:
     completed_idx = phase_names.index(args.completed)
 
     # Mark completed phase as done
-    phases[completed_idx]['status'] = 'done'
+    phases[completed_idx]['status'] = PHASE_STATUS_DONE
 
     # Determine next phase
     if completed_idx + 1 < len(phases):
         next_phase = phase_names[completed_idx + 1]
-        phases[completed_idx + 1]['status'] = 'in_progress'
+        phases[completed_idx + 1]['status'] = PHASE_STATUS_IN_PROGRESS
         status['current_phase'] = next_phase
     else:
         next_phase = None

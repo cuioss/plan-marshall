@@ -7,8 +7,8 @@ Provides path resolution, read/write operations, and TOON output formatting.
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
+from constants import FILE_REFERENCES  # type: ignore[import-not-found]
 from file_ops import get_plan_dir, output_toon, read_json, write_json  # type: ignore[import-not-found]
-from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 
 # =============================================================================
 # Type Definitions
@@ -35,7 +35,7 @@ class ReferencesData(TypedDict, total=False):
 
 def get_references_path(plan_id: str) -> Path:
     """Get the references.json file path."""
-    return get_plan_dir(plan_id) / 'references.json'
+    return get_plan_dir(plan_id) / FILE_REFERENCES
 
 
 def read_references(plan_id: str) -> dict[Any, Any]:

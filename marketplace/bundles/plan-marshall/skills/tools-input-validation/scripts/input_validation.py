@@ -227,6 +227,26 @@ def add_phase_arg(parser, *, choices=None, required: bool = True) -> None:
     parser.add_argument('--phase', required=required, choices=choices, help='Phase name')
 
 
+def add_boolean_arg(parser, name: str, *, help_text: str = '', default: bool = False) -> None:
+    """Add a boolean argument with consistent true/false string parsing.
+
+    Adds --{name} with type conversion from string 'true'/'false' to bool.
+    Handles case-insensitive input.
+
+    Args:
+        parser: argparse parser or subparser
+        name: Argument name (without --)
+        help_text: Help string
+        default: Default value
+    """
+    parser.add_argument(
+        f'--{name}',
+        type=lambda x: x.lower() in ('true', '1', 'yes'),
+        default=default,
+        help=help_text,
+    )
+
+
 # --- Bool companions (drop-in replacements for existing call sites) ---
 
 def is_valid_plan_id(plan_id: str) -> bool:

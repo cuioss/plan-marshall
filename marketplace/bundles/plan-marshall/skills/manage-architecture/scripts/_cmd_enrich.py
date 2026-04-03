@@ -18,9 +18,9 @@ from _architecture_core import (
     load_derived_data,
     load_llm_enriched,
     print_skills_by_profile,
-    print_toon_list,
     save_llm_enriched,
 )
+from file_ops import print_toon_list  # type: ignore[import-not-found]
 
 # =============================================================================
 # API Functions

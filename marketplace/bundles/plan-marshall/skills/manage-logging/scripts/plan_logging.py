@@ -21,9 +21,10 @@ import hashlib
 import os
 import re
 import time
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 
+from constants import HASH_ID_LENGTH, VALID_LOG_LEVELS, VALID_LOG_TYPES, VALID_WORK_CATEGORIES, DIR_PLANS, DIR_LOGS  # type: ignore[import-not-found]
 from file_ops import get_base_dir  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 
@@ -51,12 +52,12 @@ def get_retention_days() -> int:
 
 def get_global_log_dir() -> Path:
     """Get global log directory."""
-    return get_plan_base_dir() / 'logs'
+    return get_plan_base_dir() / DIR_LOGS
 
 
 def get_plans_dir() -> Path:
     """Get plans directory."""
-    return get_plan_base_dir() / 'plans'
+    return get_plan_base_dir() / DIR_PLANS
 
 
 # =============================================================================
@@ -66,12 +67,13 @@ def get_plans_dir() -> Path:
 
 def format_timestamp() -> str:
     """Get current time in ISO 8601 UTC format."""
-    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    from file_ops import now_utc_iso
+    return now_utc_iso()
 
 
 def compute_entry_hash(message: str) -> str:
     """Compute 6-digit hash from message content."""
-    return hashlib.sha256(message.encode()).hexdigest()[:6]
+    return hashlib.sha256(message.encode()).hexdigest()[:HASH_ID_LENGTH]
 
 
 def format_log_entry(level: str, message: str, **fields) -> str:
@@ -157,8 +159,8 @@ def get_log_path(plan_id: str | None, log_type: str = 'script') -> Path:
 # UNIFIED LOG ENTRY (SIMPLIFIED API)
 # =============================================================================
 
-VALID_TYPES = ('script', 'work', 'decision')
-VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
+VALID_TYPES = VALID_LOG_TYPES
+VALID_LEVELS = VALID_LOG_LEVELS
 
 
 def log_entry(log_type: str, plan_id: str, level: str, message: str) -> None:
@@ -275,7 +277,7 @@ def cleanup_old_script_logs(max_age_days: int | None = None) -> int:
 # WORK LOGGING
 # =============================================================================
 
-VALID_CATEGORIES = ['ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING']
+VALID_CATEGORIES = VALID_WORK_CATEGORIES
 
 
 def log_work(plan_id: str, category: str, message: str, phase: str, detail: str | None = None) -> dict:

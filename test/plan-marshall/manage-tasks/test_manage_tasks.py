@@ -174,7 +174,7 @@ def test_add_rejects_zero_deliverable_for_plan_origin():
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 1, f'Should have failed but got: {result.stdout}'
-        assert 'deliverable' in result.stderr.lower()
+        assert 'deliverable' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
 
@@ -206,7 +206,7 @@ def test_add_fails_without_content():
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', '')
 
         assert result.returncode != 0
-        assert 'error' in result.stderr.lower()
+        assert 'error' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
 
@@ -223,7 +223,7 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode != 0
-        assert 'deliverable' in result.stderr.lower()
+        assert 'deliverable' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
 
@@ -242,7 +242,7 @@ def test_add_fails_with_invalid_deliverable():
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode == 1
-        assert 'error' in result.stderr.lower()
+        assert 'error' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
 
@@ -259,7 +259,7 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode != 0
-        assert 'domain' in result.stderr.lower()
+        assert 'domain' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
 
@@ -294,7 +294,7 @@ description: Desc"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode != 0
-        assert 'steps' in result.stderr.lower()
+        assert 'steps' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
 
@@ -412,8 +412,8 @@ def test_get_nonexistent_returns_error():
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '99')
 
         assert result.returncode == 1
-        assert 'error' in result.stderr.lower()
-        assert 'TASK-99' in result.stderr
+        assert 'error' in result.stdout.lower()
+        assert 'TASK-99' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -824,7 +824,7 @@ def test_finalize_step_invalid_step():
         )
 
         assert result.returncode == 1
-        assert 'Step 99 not found' in result.stderr
+        assert 'Step 99 not found' in result.stdout
     finally:
         cleanup(temp_dir)
 
@@ -942,7 +942,7 @@ def test_remove_step_last_fails():
         result = run_script(SCRIPT_PATH, 'remove-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
 
         assert result.returncode == 1
-        assert 'Cannot remove the last step' in result.stderr
+        assert 'Cannot remove the last step' in result.stdout
     finally:
         cleanup(temp_dir)
 

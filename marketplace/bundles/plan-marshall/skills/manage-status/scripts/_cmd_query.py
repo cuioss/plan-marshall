@@ -16,6 +16,7 @@ from _status_core import (
     require_valid_plan_id,
     write_status,
 )
+from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS  # type: ignore[import-not-found]
 
 
 def cmd_read(args: argparse.Namespace) -> None:
@@ -47,7 +48,7 @@ def cmd_set_phase(args: argparse.Namespace) -> None:
     # Update phase statuses
     for phase in status['phases']:
         if phase['name'] == args.phase:
-            phase['status'] = 'in_progress'
+            phase['status'] = PHASE_STATUS_IN_PROGRESS
 
     write_status(args.plan_id, status)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Phase: {previous} -> {args.phase}')
@@ -88,7 +89,7 @@ def cmd_progress(args: argparse.Namespace) -> None:
 
     phases = status.get('phases', [])
     total = len(phases)
-    completed = sum(1 for p in phases if p.get('status') == 'done')
+    completed = sum(1 for p in phases if p.get('status') == PHASE_STATUS_DONE)
     percent = int((completed / total) * 100) if total > 0 else 0
 
     output_toon(
@@ -174,7 +175,7 @@ def cmd_get_context(args: argparse.Namespace) -> None:
 
     phases = status.get('phases', [])
     total = len(phases)
-    completed = sum(1 for p in phases if p.get('status') == 'done')
+    completed = sum(1 for p in phases if p.get('status') == PHASE_STATUS_DONE)
 
     # Build context
     context: dict[str, Any] = {
@@ -220,7 +221,7 @@ def cmd_list(args: argparse.Namespace) -> None:
                 if current_phase not in filter_phases:
                     continue
 
-            plans.append({'id': plan_dir.name, 'current_phase': current_phase, 'status': 'in_progress'})
+            plans.append({'id': plan_dir.name, 'current_phase': current_phase, 'status': PHASE_STATUS_IN_PROGRESS})
         except (KeyError, TypeError):
             # Skip plans with corrupted status
             continue

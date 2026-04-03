@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from file_ops import base_path, now_utc_iso, output_toon, output_toon_error, read_json, safe_main, write_json  # type: ignore[import-not-found]
+from constants import DIR_MEMORIES  # type: ignore[import-not-found]
+from file_ops import base_path, now_utc_iso, output_success as _output_success, output_toon, output_toon_error, read_json, safe_main, write_json  # type: ignore[import-not-found]
+from file_ops import parse_duration as _parse_duration  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
@@ -25,27 +27,13 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 
 # Get memory base path from base_path
-MEMORY_BASE = base_path('memory')
+MEMORY_BASE = base_path(DIR_MEMORIES)
 CATEGORIES = ('context',)
 
 
 def parse_duration(duration_str: str) -> timedelta:
     """Parse duration string like '7d', '24h', '30m' into timedelta."""
-    match = re.match(r'^(\d+)([dhm])$', duration_str.lower())
-    if not match:
-        raise ValueError(f"Invalid duration format: {duration_str}. Use format like '7d', '24h', '30m'")
-
-    value = int(match.group(1))
-    unit = match.group(2)
-
-    if unit == 'd':
-        return timedelta(days=value)
-    elif unit == 'h':
-        return timedelta(hours=value)
-    elif unit == 'm':
-        return timedelta(minutes=value)
-
-    raise ValueError(f'Unknown duration unit: {unit}')
+    return _parse_duration(duration_str)
 
 
 def get_memory_path(category: str, identifier: str | None = None) -> Path:
@@ -108,9 +96,7 @@ def get_file_info(file_path: Path) -> dict:
 
 def output_success(operation: str, **kwargs) -> None:
     """Output success result as TOON to stdout."""
-    result = {'status': 'success', 'success': True, 'operation': operation}
-    result.update(kwargs)
-    output_toon(result)
+    _output_success(operation, **kwargs)
 
 
 def output_error(operation: str, error: str) -> int:
@@ -243,6 +229,7 @@ def cmd_cleanup(args) -> int:
     try:
         duration = parse_duration(args.older_than)
         cutoff = datetime.now(UTC) - duration
+        dry_run = getattr(args, 'dry_run', False)
 
         removed = []
         categories = [args.category] if args.category else CATEGORIES
@@ -259,16 +246,25 @@ def cmd_cleanup(args) -> int:
                     if created_str:
                         created = datetime.fromisoformat(created_str.rstrip('Z')).replace(tzinfo=UTC)
                         if created < cutoff:
-                            file_path.unlink()
+                            if not dry_run:
+                                file_path.unlink()
                             removed.append(str(file_path))
                 except (json.JSONDecodeError, ValueError, KeyError):
                     # If we can't read the file, check file modification time
                     stat = file_path.stat()
                     if datetime.fromtimestamp(stat.st_mtime) < cutoff:
-                        file_path.unlink()
+                        if not dry_run:
+                            file_path.unlink()
                         removed.append(str(file_path))
 
-        output_success('cleanup', older_than=args.older_than, removed_count=len(removed), removed=removed)
+        status = 'dry_run' if dry_run else 'success'
+        output_toon({
+            'status': status,
+            'operation': 'cleanup',
+            'older_than': args.older_than,
+            'removed_count': len(removed),
+            'removed': removed,
+        })
         return 0
     except Exception as e:
         output_error('cleanup', str(e))
@@ -434,6 +430,7 @@ Examples:
     p_cleanup.add_argument(
         '--older-than', required=True, dest='older_than', help='Remove files older than (e.g., 7d, 24h)'
     )
+    p_cleanup.add_argument('--dry-run', action='store_true', dest='dry_run', help='Show what would be removed without removing')
     p_cleanup.set_defaults(func=cmd_cleanup)
 
     # validate command

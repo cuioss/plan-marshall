@@ -254,7 +254,7 @@ steps:
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
         assert result.returncode != 0
-        assert 'skill' in result.stderr.lower() or 'bundle:skill' in result.stderr.lower()
+        assert 'skill' in result.stdout.lower() or 'bundle:skill' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
 
@@ -485,7 +485,7 @@ def test_update_fails_with_invalid_skills():
         )
 
         assert result.returncode != 0
-        assert 'skill' in result.stderr.lower() or 'bundle:skill' in result.stderr.lower()
+        assert 'skill' in result.stdout.lower() or 'bundle:skill' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
 

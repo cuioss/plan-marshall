@@ -167,4 +167,99 @@ DIR_WORK = 'work'
 DIR_LESSONS = 'lessons-learned'
 DIR_LOGS = 'logs'
 DIR_TASKS = 'tasks'
-DIR_MEMORIES = 'memories'
+DIR_MEMORIES = 'memory'
+DIR_ARCHIVED_LESSONS = 'archived-lessons'
+DIR_ARCHITECTURE = 'project-architecture'
+DIR_TEMP = 'temp'
+
+# ---------------------------------------------------------------------------
+# Exit codes
+# ---------------------------------------------------------------------------
+EXIT_SUCCESS = 0
+EXIT_ERROR = 1
+
+# ---------------------------------------------------------------------------
+# Task statuses (extend phase statuses with 'blocked')
+# ---------------------------------------------------------------------------
+TASK_STATUS_BLOCKED = 'blocked'
+
+VALID_TASK_STATUSES = (
+    PHASE_STATUS_PENDING,
+    PHASE_STATUS_IN_PROGRESS,
+    PHASE_STATUS_DONE,
+    TASK_STATUS_BLOCKED,
+)
+
+# ---------------------------------------------------------------------------
+# Step statuses (extend phase statuses with 'skipped')
+# ---------------------------------------------------------------------------
+STEP_STATUS_SKIPPED = 'skipped'
+
+VALID_STEP_STATUSES = (
+    PHASE_STATUS_PENDING,
+    PHASE_STATUS_IN_PROGRESS,
+    PHASE_STATUS_DONE,
+    STEP_STATUS_SKIPPED,
+)
+
+# ---------------------------------------------------------------------------
+# Task origins
+# ---------------------------------------------------------------------------
+VALID_TASK_ORIGINS = (
+    'plan',
+    'fix',
+    'sonar',
+    'pr',
+    'lint',
+    'security',
+    'documentation',
+    'holistic',
+)
+
+# ---------------------------------------------------------------------------
+# Change types (used in deliverables and change-type detection)
+# ---------------------------------------------------------------------------
+VALID_CHANGE_TYPES = (
+    'analysis',
+    'feature',
+    'enhancement',
+    'bug_fix',
+    'tech_debt',
+    'verification',
+)
+
+# ---------------------------------------------------------------------------
+# Execution modes (used in deliverables)
+# ---------------------------------------------------------------------------
+VALID_EXECUTION_MODES = ('automated', 'manual', 'mixed')
+
+# ---------------------------------------------------------------------------
+# Warning categories (used by run-config acceptable warnings)
+# ---------------------------------------------------------------------------
+VALID_WARNING_CATEGORIES = (
+    'transitive_dependency',
+    'plugin_compatibility',
+    'platform_specific',
+)
+
+# ---------------------------------------------------------------------------
+# Valid source file extensions (used for step path validation)
+# ---------------------------------------------------------------------------
+VALID_SOURCE_EXTENSIONS = (
+    '.md', '.py', '.java', '.js', '.ts', '.tsx', '.jsx',
+    '.json', '.yaml', '.yml', '.xml', '.sh', '.bash',
+    '.properties', '.adoc', '.toon', '.html', '.css',
+)
+
+# ---------------------------------------------------------------------------
+# Work log categories
+# ---------------------------------------------------------------------------
+VALID_WORK_CATEGORIES = ('ARTIFACT', 'PROGRESS', 'ERROR', 'OUTCOME', 'FINDING')
+
+# ---------------------------------------------------------------------------
+# Storage filenames (additional)
+# ---------------------------------------------------------------------------
+FILE_DERIVED_DATA = 'derived-data.json'
+FILE_LLM_ENRICHED = 'llm-enriched.json'
+FILE_SOLUTION_OUTLINE = 'solution_outline.md'
+FILE_WORK_METRICS = 'work/metrics.toon'

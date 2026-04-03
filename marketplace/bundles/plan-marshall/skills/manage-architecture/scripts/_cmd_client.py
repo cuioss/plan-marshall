@@ -21,10 +21,9 @@ from _architecture_core import (
     load_llm_enriched_or_empty,
     merge_module_data,
     print_skills_by_profile,
-    print_toon_list,
-    print_toon_table,
     require_derived_data,
 )
+from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
 
 # =============================================================================
 # API Functions

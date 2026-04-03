@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from constants import LESSON_CATEGORIES  # type: ignore[import-not-found]
+from constants import DIR_ARCHIVED_LESSONS, DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, base_path, output_toon, parse_markdown_metadata, safe_main  # type: ignore[import-not-found]
 
 VALID_CATEGORIES = LESSON_CATEGORIES
@@ -28,7 +28,7 @@ VALID_CATEGORIES = LESSON_CATEGORIES
 
 def get_lessons_dir() -> Path:
     """Get the lessons-learned directory."""
-    return base_path('lessons-learned')
+    return base_path(DIR_LESSONS)
 
 
 def get_next_id() -> str:
@@ -265,7 +265,7 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 def get_archived_dir() -> Path:
     """Get the archived-lessons directory."""
-    return base_path('archived-lessons')
+    return base_path(DIR_ARCHIVED_LESSONS)
 
 
 def cmd_archive(args: argparse.Namespace) -> None:

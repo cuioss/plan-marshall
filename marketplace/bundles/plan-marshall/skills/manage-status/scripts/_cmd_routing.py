@@ -12,7 +12,7 @@ from _status_core import (
     output_toon,
     require_status,
 )
-from constants import PHASES  # type: ignore[import-not-found]
+from constants import PHASE_STATUS_DONE, PHASES  # type: ignore[import-not-found]
 
 
 def cmd_route(args: argparse.Namespace) -> None:
@@ -43,7 +43,7 @@ def cmd_get_routing_context(args: argparse.Namespace) -> None:
 
     # Calculate progress
     total = len(phases)
-    completed = sum(1 for p in phases if p.get('status') == 'done')
+    completed = sum(1 for p in phases if p.get('status') == PHASE_STATUS_DONE)
 
     # Get skill routing
     skill = 'unknown'

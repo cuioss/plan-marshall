@@ -5,10 +5,10 @@ Handles: get-context
 """
 
 from _ref_core import (
-    output_toon,
     require_references,
-    require_valid_plan_id,
 )
+from file_ops import output_toon  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
 def cmd_get_context(args):

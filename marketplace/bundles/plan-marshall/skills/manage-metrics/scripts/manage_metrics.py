@@ -21,11 +21,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from constants import PHASES  # type: ignore[import-not-found]
-from file_ops import atomic_write_file, get_plan_dir, now_utc_iso, output_toon, safe_main  # type: ignore[import-not-found]
+from constants import FILE_WORK_METRICS, PHASES  # type: ignore[import-not-found]
+from file_ops import atomic_write_file, format_duration, get_plan_dir, now_utc_iso, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ignore[import-not-found]
 
-METRICS_FILE = 'work/metrics.toon'
+METRICS_FILE = FILE_WORK_METRICS
 METRICS_MD = 'metrics.md'
 PHASE_NAMES = list(PHASES)
 
@@ -390,18 +390,6 @@ def cmd_enrich(args: argparse.Namespace) -> int:
         'message_count': message_count,
     })
     return 0
-
-
-def format_duration(seconds: float) -> str:
-    if seconds < 60:
-        return f'{seconds:.1f}s'
-    minutes = int(seconds // 60)
-    remaining = seconds % 60
-    if minutes < 60:
-        return f'{minutes}m {remaining:.0f}s'
-    hours = int(minutes // 60)
-    remaining_min = minutes % 60
-    return f'{hours}h {remaining_min}m'
 
 
 @safe_main

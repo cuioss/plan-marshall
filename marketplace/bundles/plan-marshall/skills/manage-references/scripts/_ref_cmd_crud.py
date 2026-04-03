@@ -6,12 +6,12 @@ Handles: create, read, get, set
 
 from _ref_core import (
     get_references_path,
-    output_toon,
     read_references,
     require_references,
-    require_valid_plan_id,
     write_references,
 )
+from file_ops import output_toon  # type: ignore[import-not-found]
+from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
 def cmd_create(args):

@@ -9,17 +9,16 @@ import json
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
+from constants import EXIT_ERROR, EXIT_SUCCESS, FILE_MARSHAL  # type: ignore[import-not-found]
 from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
 
 # Bundle path for skill description resolution
 BUNDLES_DIR = Path(__file__).parent.parent.parent.parent.parent  # .../bundles/
 
-EXIT_SUCCESS = 0
-EXIT_ERROR = 1
-
 # File location - derived from file_ops.get_base_dir() for env-var consistency
 PLAN_BASE_DIR = get_base_dir()
-MARSHAL_PATH = PLAN_BASE_DIR / 'marshal.json'
+MARSHAL_PATH = PLAN_BASE_DIR / FILE_MARSHAL
+# Note: uses 'run-configuration.json', distinct from constants.FILE_RUN_CONFIG ('run-config.json')
 RUN_CONFIG_PATH = PLAN_BASE_DIR / 'run-configuration.json'
 
 

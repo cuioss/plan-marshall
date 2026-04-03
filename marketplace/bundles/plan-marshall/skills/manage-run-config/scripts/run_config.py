@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from constants import VALID_WARNING_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
@@ -263,7 +264,7 @@ def timeout_set(command_key: str, duration: int, project_dir: str = '.') -> None
 # Warning Subcommands
 # =============================================================================
 
-VALID_WARNING_CATEGORIES = ['transitive_dependency', 'plugin_compatibility', 'platform_specific']
+# VALID_WARNING_CATEGORIES imported from constants
 
 
 def get_acceptable_warnings(config: dict[str, Any], build_system: str = 'maven') -> dict[str, Any]:

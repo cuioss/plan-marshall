@@ -208,7 +208,9 @@ def test_cleanup():
         result = run_memory_script('cleanup', '--category', 'context', '--older-than', '1d')
         data = parse_output(result.stdout)
 
-        assert data.get('success') is True, 'Should succeed'
+        assert data.get('status') == 'success', 'Should succeed'
+        assert data.get('operation') == 'cleanup', 'Operation should be cleanup'
+        assert data.get('older_than') == '1d', 'Should echo older_than parameter'
         assert data.get('removed_count', 0) >= 1, 'Should remove at least 1 file'
 
 

@@ -17,12 +17,11 @@ from _architecture_core import (
     get_module_names,
     load_derived_data,
     load_llm_enriched,
-    print_toon_list,
-    print_toon_table,
     require_derived_data,
     save_derived_data,
     save_llm_enriched,
 )
+from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
 
 # =============================================================================
 # API Functions

@@ -12,11 +12,13 @@ Contains:
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, TypedDict
 
-from file_ops import get_plan_dir, now_utc_iso, output_toon  # type: ignore[import-not-found]  # noqa: F401 - re-exported
+from constants import (  # type: ignore[import-not-found]
+    VALID_TASK_ORIGINS, VALID_SOURCE_EXTENSIONS, DIR_TASKS,
+)
+from file_ops import get_plan_dir, now_utc_iso, output_toon, output_toon_error  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 
 # =============================================================================
@@ -58,27 +60,8 @@ class TaskDict(TypedDict, total=False):
 
 # Domains are arbitrary strings - defined in marshal.json, not hardcoded
 # Profiles are arbitrary strings - defined in marshal.json per-domain, not hardcoded
-VALID_ORIGINS = ['plan', 'fix', 'sonar', 'pr', 'lint', 'security', 'documentation', 'holistic']
-VALID_FILE_EXTENSIONS = [
-    '.md',
-    '.py',
-    '.java',
-    '.js',
-    '.ts',
-    '.tsx',
-    '.jsx',
-    '.json',
-    '.yaml',
-    '.yml',
-    '.xml',
-    '.sh',
-    '.bash',
-    '.properties',
-    '.adoc',
-    '.toon',
-    '.html',
-    '.css',
-]
+VALID_ORIGINS = VALID_TASK_ORIGINS
+VALID_FILE_EXTENSIONS = VALID_SOURCE_EXTENSIONS
 
 
 # =============================================================================
@@ -261,7 +244,7 @@ def format_depends_on(deps: list[str]) -> str:
 
 def get_tasks_dir(plan_id: str) -> Path:
     """Get the tasks directory for a plan."""
-    return get_plan_dir(plan_id) / 'tasks'
+    return get_plan_dir(plan_id) / DIR_TASKS
 
 
 def parse_task_file(content: str) -> dict[str, Any]:
@@ -496,10 +479,8 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
 
 
 def output_error(message: str, error_code: str = 'error') -> None:
-    """Print TOON error output to stderr."""
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-    print(serialize_toon({'status': 'error', 'error': error_code, 'message': message}), file=sys.stderr)
+    """Print TOON error output. Delegates to file_ops.output_toon_error."""
+    output_toon_error(error_code, message)
 
 
 def get_deliverable_context(deliverable: int) -> dict:

@@ -9,20 +9,17 @@ import sys
 from pathlib import Path
 from typing import Any, NoReturn
 
+from constants import DIR_ARCHITECTURE, FILE_DERIVED_DATA, FILE_LLM_ENRICHED  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
-    format_toon_value,  # noqa: F401 - re-exported
     get_base_dir,
-    print_toon_kv,  # noqa: F401 - re-exported
-    print_toon_list,  # noqa: F401 - re-exported
-    print_toon_table,  # noqa: F401 - re-exported
 )
 
 # Data sub-directory for architecture files (appended to base dir / project_dir)
-_ARCHITECTURE_SUBDIR = 'project-architecture'
+_ARCHITECTURE_SUBDIR = DIR_ARCHITECTURE
 
 # File names
-DERIVED_DATA_FILE = 'derived-data.json'
-LLM_ENRICHED_FILE = 'llm-enriched.json'
+DERIVED_DATA_FILE = FILE_DERIVED_DATA
+LLM_ENRICHED_FILE = FILE_LLM_ENRICHED
 
 
 # =============================================================================
@@ -261,10 +258,6 @@ def merge_module_data(derived: dict[str, Any], enriched: dict[str, Any], module_
             merged[key] = value
 
     return merged
-
-
-# TOON formatting functions imported from file_ops:
-# format_toon_value, print_toon_kv, print_toon_list, print_toon_table
 
 
 # =============================================================================

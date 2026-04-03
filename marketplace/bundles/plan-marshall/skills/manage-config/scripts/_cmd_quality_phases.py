@@ -18,16 +18,10 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import get_default_config
+from constants import PHASES  # type: ignore[import-not-found]
 
-# Valid phase sections
-PHASE_SECTIONS = {
-    'phase-1-init',
-    'phase-2-refine',
-    'phase-3-outline',
-    'phase-4-plan',
-    'phase-5-execute',
-    'phase-6-finalize',
-}
+# Valid phase sections - derived from centralized PHASES with 'phase-' prefix for marshal.json keys
+PHASE_SECTIONS = {f'phase-{p}' for p in PHASES}
 
 # Phases that use ordered steps list (set-steps, add-step, remove-step, set-max-iterations)
 LIST_STEP_PHASES = {'phase-5-execute', 'phase-6-finalize'}

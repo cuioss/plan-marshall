@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
-from constants import PHASES  # type: ignore[import-not-found]
+from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS, PHASES  # type: ignore[import-not-found]
 from file_ops import base_path, get_plan_dir, now_utc_iso, output_toon, read_json, write_json  # type: ignore[import-not-found]
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 from plan_logging import log_entry  # type: ignore[import-not-found]  # noqa: F401 - re-exported
@@ -43,7 +43,7 @@ class StatusData(TypedDict):
 
 def get_status_path(plan_id: str) -> Path:
     """Get the status.json file path."""
-    return get_plan_dir(plan_id) / 'status.json'
+    return get_plan_dir(plan_id) / FILE_STATUS
 
 
 def read_status(plan_id: str) -> dict[Any, Any]:
@@ -74,17 +74,17 @@ PHASE_ROUTING = {
 
 def get_plans_dir() -> Path:
     """Get the plans directory."""
-    return cast(Path, base_path('plans'))
+    return cast(Path, base_path(DIR_PLANS))
 
 
 def get_archive_dir() -> Path:
     """Get the archived plans directory."""
-    return cast(Path, base_path('archived-plans'))
+    return cast(Path, base_path(DIR_ARCHIVED))
 
 
 def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
     """Try to read status.json from a plan directory."""
-    status_file = plan_dir / 'status.json'
+    status_file = plan_dir / FILE_STATUS
     if status_file.exists():
         try:
             return cast(dict[Any, Any], json.loads(status_file.read_text(encoding='utf-8')))
