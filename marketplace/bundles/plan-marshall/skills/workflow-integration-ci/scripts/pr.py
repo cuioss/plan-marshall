@@ -49,6 +49,11 @@ _PATTERNS_FILE = Path(__file__).parent.parent / 'standards' / 'comment-patterns.
 
 PATTERNS: dict[str, Any] = load_config_file(_PATTERNS_FILE, 'comment-patterns.json')
 
+# Configurable thresholds (from comment-patterns.json or defaults)
+_THRESHOLDS = PATTERNS.get('thresholds', {})
+SUBSTANTIAL_COMMENT_LENGTH: int = _THRESHOLDS.get('substantial_comment_length', 100)
+CONTEXT_MATCH_MIN_LENGTH: int = _THRESHOLDS.get('context_match_min_length', 20)
+
 
 # ============================================================================
 # FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via direct import)
@@ -223,7 +228,7 @@ def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
 
     # Context-aware classification: if code context is provided and the
     # comment references specific code patterns, boost to code_change
-    if context and len(body) > 20:
+    if context and len(body) > CONTEXT_MATCH_MIN_LENGTH:
         # Comment mentions something visible in the code context —
         # likely a targeted review comment that needs action
         context_lower = context.lower()
@@ -235,8 +240,8 @@ def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
     # Longer comments (>100 chars) likely contain substantive feedback that
     # warrants attention even without keyword matches. Short comments without
     # recognizable patterns are typically drive-by acknowledgments.
-    if len(body) > 100:
-        return {'action': 'code_change', 'priority': 'low', 'reason': 'Substantial review comment (>100 chars) requires attention'}
+    if len(body) > SUBSTANTIAL_COMMENT_LENGTH:
+        return {'action': 'code_change', 'priority': 'low', 'reason': f'Substantial review comment (>{SUBSTANTIAL_COMMENT_LENGTH} chars) requires attention'}
 
     return {'action': 'ignore', 'priority': 'none', 'reason': 'Brief comment with no actionable content'}
 

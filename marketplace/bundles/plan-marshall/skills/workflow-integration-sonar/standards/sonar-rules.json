@@ -1,4 +1,5 @@
 {
+  "_note": "Rules are language-prefixed (java:, javascript:, typescript:, python:) because Sonar uses these prefixes in its rule keys. Shared rules like S1135 (TODO) appear once per supported language.",
   "suppressable_rules": {
     "java:S1135": "TODO comments - tracked in issue management",
     "java:S1068": "Unused fields - may be for reflection/serialization",

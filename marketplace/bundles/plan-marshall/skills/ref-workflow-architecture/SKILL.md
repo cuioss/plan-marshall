@@ -140,7 +140,7 @@ user-invocable: false
 │  │  phase-1-init   phase-2-refine   phase-3-outline   phase-4-plan      │   │
 │  │  phase-5-execute   phase-6-finalize                                  │   │
 │  │  task-implementation           task-module-testing                   │   │
-│  │  git-workflow         pr-workflow                                    │   │
+│  │  git_workflow         pr-workflow                                    │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │

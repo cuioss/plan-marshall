@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Shared helpers for workflow scripts (pr.py, sonar.py, git-workflow.py).
+Shared helpers for workflow scripts (pr.py, sonar.py, git_workflow.py).
 
 Provides:
 - Triage command handlers (single-item and batch) for JSON→TOON workflows
@@ -168,6 +168,45 @@ def calculate_priority(base_priority: str, boost: int = 0) -> str:
     current_idx = _PRIORITY_INDEX.get(base_priority, 0)
     new_idx = max(0, min(len(PRIORITY_LEVELS) - 1, current_idx + boost))
     return PRIORITY_LEVELS[new_idx]
+
+
+# ============================================================================
+# TEST FILE DETECTION
+# ============================================================================
+
+# Consolidated test-file detection patterns used by sonar.py (suppression rules)
+# and git_workflow.py (diff analysis). Covers Java, Python, JavaScript/TypeScript,
+# Go, and generic test directory conventions.
+_TEST_DIR_SEGMENTS = ('/test/', '/tests/', '/__tests__/')
+_TEST_SUFFIXES = (
+    'Test.java', 'Tests.java', 'IT.java',           # Java (JUnit)
+    '.test.js', '.test.ts', '.test.jsx', '.test.tsx',  # JS/TS (Jest/Vitest)
+    '.spec.js', '.spec.ts', '.spec.jsx', '.spec.tsx',  # JS/TS (Jasmine/Mocha)
+    '_test.go',                                        # Go
+    '_test.py',                                        # Python (pytest)
+)
+_TEST_PREFIXES = ('test_',)  # Python test files (test_foo.py)
+_TEST_DIR_PREFIXES = ('test/', 'tests/')  # Top-level test directories
+
+
+def is_test_file(file_path: str) -> bool:
+    """Determine whether a file path refers to a test file.
+
+    Checks directory segments, file suffixes, and file prefixes against
+    known test conventions across Java, Python, JavaScript/TypeScript, and Go.
+    """
+    if any(seg in file_path for seg in _TEST_DIR_SEGMENTS):
+        return True
+    if any(file_path.endswith(suffix) for suffix in _TEST_SUFFIXES):
+        return True
+    # Check filename (last path component) for prefix patterns
+    filename = file_path.rsplit('/', 1)[-1] if '/' in file_path else file_path
+    if any(filename.startswith(prefix) for prefix in _TEST_PREFIXES):
+        return True
+    # Top-level test directories
+    if any(file_path.startswith(prefix) for prefix in _TEST_DIR_PREFIXES):
+        return True
+    return False
 
 
 # ============================================================================

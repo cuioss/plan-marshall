@@ -169,7 +169,7 @@ Based on checks parameter:
 
 **Protected files check**: Before applying any fix, check the file path against `protected_files` from the handoff constraints. If a fix would modify a protected file, skip that fix and report it as "skipped — protected file" in the summary. Do not prompt the user for each protected file — just skip and log.
 
-**Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`) in the LLM's working memory, starting at 0. Before each fix cycle, call `track-attempt --category {cat} --current {count}` to check whether to proceed (the script is stateless — the caller owns the counter). Increment after each fix → verify cycle. After reaching `max-fix-attempts` (default: 3) for a category, stop that category and report remaining issues to the user rather than looping indefinitely.
+**Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`) in the LLM's working memory, starting at 0. Increment after each fix → verify cycle. After reaching `max-fix-attempts` (default: 3) for a category, stop that category and report remaining issues to the user rather than looping indefinitely. The `track-attempt` subcommand is available for validation but simple counter arithmetic is preferred over a subprocess call for each iteration check.
 
 ### Step 6: Verify and Commit
 

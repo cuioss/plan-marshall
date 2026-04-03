@@ -20,24 +20,32 @@ Examples:
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import ErrorCode, make_error, parse_json_arg, safe_main  # type: ignore[import-not-found]
+from triage_helpers import ErrorCode, load_config_file, make_error, parse_json_arg, safe_main  # type: ignore[import-not-found]
+
+# ============================================================================
+# CONFIGURATION (loaded from pr-doctor-config.json)
+# ============================================================================
+
+_CONFIG_FILE = Path(__file__).parent.parent / 'standards' / 'pr-doctor-config.json'
+_CONFIG = load_config_file(_CONFIG_FILE, 'pr-doctor-config.json')
 
 # ============================================================================
 # HANDOFF SCHEMA
 # ============================================================================
 
-VALID_CHECKS = {'build', 'reviews', 'sonar', 'all'}
-DEFAULT_MAX_FIX_ATTEMPTS = 3
+VALID_CHECKS = set(_CONFIG.get('valid_checks', ['build', 'reviews', 'sonar', 'all']))
+DEFAULT_MAX_FIX_ATTEMPTS = _CONFIG.get('default_max_fix_attempts', 3)
 
 # Build step to severity mapping — compile/test failures block everything (high),
 # lint/style failures are less urgent (medium). Unknown steps default to high.
-BUILD_STEP_SEVERITY = {
+BUILD_STEP_SEVERITY: dict[str, str] = _CONFIG.get('build_step_severity', {
     'compile': 'high', 'build': 'high', 'test': 'high',
     'lint': 'medium', 'style': 'medium', 'format': 'medium',
-}
+})
 
 
 def validate_handoff(handoff: dict) -> list[str]:

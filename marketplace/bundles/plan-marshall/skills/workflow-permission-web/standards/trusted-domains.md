@@ -144,6 +144,18 @@ AI/ML platforms and tools documentation:
   - Purpose: AI-powered code completion documentation
   - Trust Level: Fully Trusted (Established AI tool)
 
+### Web Standards and References
+
+Official web standards and developer reference documentation:
+
+- **developer.mozilla.org** - MDN Web Docs
+  - Purpose: Web API documentation, HTML/CSS/JavaScript reference
+  - Trust Level: Fully Trusted (Mozilla Foundation)
+
+- **www.w3.org** - World Wide Web Consortium
+  - Purpose: Web standards, specifications, accessibility guidelines
+  - Trust Level: Fully Trusted (W3C standards body)
+
 ### Code Hosting and Collaboration
 
 GitHub and related code hosting platforms:

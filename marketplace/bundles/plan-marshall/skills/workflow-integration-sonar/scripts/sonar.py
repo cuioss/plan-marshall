@@ -30,6 +30,7 @@ from triage_helpers import (  # type: ignore[import-not-found]
     calculate_priority,
     cmd_triage_batch_handler,
     cmd_triage_single,
+    is_test_file,
     load_config_file,
     safe_main,
 )
@@ -103,15 +104,7 @@ def should_suppress(rule: str, file: str, issue_type: str) -> tuple:
         return True, SUPPRESSABLE_RULES[rule]
 
     # Test files often have acceptable exceptions — detect across languages
-    is_test_file = (
-        '/test/' in file
-        or '/tests/' in file
-        or '/__tests__/' in file
-        or file.endswith('Test.java')
-        or file.startswith('test_')
-        or file.endswith(('.test.js', '.test.ts', '.spec.js', '.spec.ts'))
-    )
-    if is_test_file:
+    if is_test_file(file):
         # Console/stdout usage and missing assertions are acceptable in tests
         if rule in _TEST_ACCEPTABLE_RULES:
             return True, 'Test code - acceptable pattern'

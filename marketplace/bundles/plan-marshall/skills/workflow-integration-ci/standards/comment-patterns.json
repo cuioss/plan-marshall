@@ -1,4 +1,8 @@
 {
+  "thresholds": {
+    "substantial_comment_length": 100,
+    "context_match_min_length": 20
+  },
   "code_change": {
     "high": [
       "\\bsecurity\\b",

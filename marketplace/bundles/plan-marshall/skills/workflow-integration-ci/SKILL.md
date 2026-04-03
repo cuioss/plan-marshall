@@ -14,11 +14,9 @@ Handles PR review comment workflows - fetching comments and triaging them into a
 
 **Prohibited actions:**
 - Never resolve review comments without addressing the reviewer's concern
-- Never force-push or amend published commits in response to reviews
 - Never dismiss reviews without documented justification
 
 **Constraints:**
-- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Review comment responses must explain the fix or provide rationale for disagreement
 - CI wait timeout must be respected with user prompt on expiry
 
@@ -29,15 +27,9 @@ Handles PR review comment workflows - fetching comments and triaging them into a
 | `pr` | optional | PR number (auto-detects current branch's PR if omitted) |
 | `unresolved-only` | optional | Only return unresolved comments (fetch-comments) |
 
-### Internal Dependencies
-
-The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `tools-integration-ci` (via PYTHONPATH). This avoids subprocess overhead but creates a compile-time dependency on those modules' internal API (`get_provider()`, `view_pr_data()`, `fetch_pr_comments_data()`). If `tools-integration-ci` refactors these functions, `pr.py` must be updated in lockstep. The provider contract is validated at import time — `_get_provider_module()` checks for required functions and returns `None` on mismatch.
-
-> **Design note:** This skill uses direct Python imports for provider abstraction (code-level coupling), unlike `workflow-integration-sonar` and `workflow-permission-web` which use data-driven JSON config files. The import approach was chosen because CI provider logic requires function-level abstraction (GitHub vs GitLab APIs), not just data-driven classification.
-
 ### Shared Infrastructure
 
-Triage subcommands (`triage`, `triage-batch`) delegate to `triage_helpers` from `ref-toon-format` for JSON parsing, error handling, and batch processing. See `ref-toon-format/scripts/triage_helpers.py` for the shared API.
+Uses `triage_helpers` from `ref-toon-format` for triage handlers, error codes, and TOON serialization.
 
 ## Prerequisites
 
@@ -70,6 +62,12 @@ workflow-integration-ci (PR comment workflow)
   ├─> tools-integration-ci (provider abstraction: GitHub/GitLab)
   └─> triage_helpers (ref-toon-format) — shared triage, error handling
 ```
+
+### Internal Dependencies
+
+The `pr.py` script imports `ci.py`, `github.py`, and `gitlab.py` directly from `tools-integration-ci` (via PYTHONPATH). This creates a compile-time dependency on those modules' internal API (`get_provider()`, `view_pr_data()`, `fetch_pr_comments_data()`). If `tools-integration-ci` refactors these functions, `pr.py` must be updated in lockstep. The provider contract is validated at import time.
+
+> **Design note:** This skill uses direct Python imports for provider abstraction (code-level coupling), unlike `workflow-integration-sonar` and `workflow-permission-web` which use data-driven JSON config files. The import approach was chosen because CI provider logic requires function-level abstraction (GitHub vs GitLab APIs), not just data-driven classification.
 
 ## Workflows
 
@@ -288,8 +286,4 @@ Error codes follow the shared `ErrorCode` enum from `triage_helpers` (`NOT_FOUND
 
 ## Related
 
-| Skill | Purpose |
-|-------|---------|
-| `plan-marshall:workflow-integration-sonar` | Often used together in PR workflows |
-| `plan-marshall:workflow-integration-git` | Commits changes after responses |
-| `plan-marshall:workflow-pr-doctor` | Orchestrates this skill with Sonar and git workflows |
+Orchestrated by `plan-marshall:workflow-pr-doctor` alongside `workflow-integration-sonar` and `workflow-integration-git`.

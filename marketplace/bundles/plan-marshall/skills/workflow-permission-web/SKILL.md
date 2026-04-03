@@ -18,7 +18,6 @@ Analyzes WebFetch domains across global and project settings, researches domains
 - Do not skip security research for unknown domains
 
 **Constraints:**
-- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Always research unknown domains before categorizing them
 - Prefer project-local permissions over global when appropriate
 - All user interactions use `AskUserQuestion` tool with proper YAML structure

@@ -3,10 +3,10 @@
 Git workflow operations - format commits and analyze diffs.
 
 Usage:
-    git-workflow.py format-commit --type <type> --subject <subject> [options]
-    git-workflow.py analyze-diff --file <diff-file>
-    git-workflow.py detect-artifacts [--root <dir>]
-    git-workflow.py --help
+    git_workflow.py format-commit --type <type> --subject <subject> [options]
+    git_workflow.py analyze-diff --file <diff-file>
+    git_workflow.py detect-artifacts [--root <dir>]
+    git_workflow.py --help
 
 Subcommands:
     format-commit      Format commit message following conventional commits
@@ -15,16 +15,17 @@ Subcommands:
 
 Examples:
     # Format a commit message
-    git-workflow.py format-commit --type feat --scope auth --subject "add login flow"
+    git_workflow.py format-commit --type feat --scope auth --subject "add login flow"
 
     # Analyze a diff for commit suggestions
-    git-workflow.py analyze-diff --file changes.diff
+    git_workflow.py analyze-diff --file changes.diff
 
     # Detect artifacts before committing
-    git-workflow.py detect-artifacts --root /path/to/repo
+    git_workflow.py detect-artifacts --root /path/to/repo
 """
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -32,13 +33,16 @@ from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-from triage_helpers import ErrorCode, make_error, safe_main  # type: ignore[import-not-found]
+from triage_helpers import ErrorCode, is_test_file, load_config_file, make_error, safe_main  # type: ignore[import-not-found]
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
 VALID_TYPES = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'ci']
+
+_ARTIFACT_CONFIG_FILE = Path(__file__).parent.parent / 'standards' / 'artifact-patterns.json'
+_ARTIFACT_CONFIG = load_config_file(_ARTIFACT_CONFIG_FILE, 'artifact-patterns.json')
 
 
 # ============================================================================
@@ -243,12 +247,7 @@ def analyze_diff(diff_content: str) -> dict:
         f for f in files_changed
         if '/src/' in f or f.startswith('src/') or f.endswith(('.py', '.js', '.ts', '.jsx', '.tsx'))
     ]
-    test_files = [
-        f
-        for f in files_changed
-        if '/test/' in f or '/tests/' in f or '/__tests__/' in f or 'Test' in f
-        or f.startswith('test_') or f.startswith('test/') or f.startswith('tests/')
-    ]
+    test_files = [f for f in files_changed if is_test_file(f)]
     doc_files = [f for f in files_changed if f.endswith(('.md', '.adoc', '.txt', '.rst'))]
     ci_files = [
         f
@@ -319,6 +318,12 @@ def analyze_diff(diff_content: str) -> dict:
         suggestions['type'] = 'fix'
         detected_changes.append('Bug fix patterns detected in diff context')
 
+    # Performance improvement indicators — check comments for perf keywords
+    elif re.search(r'\b(perf(?:ormance)?|optimi[zs]e|benchmark|latency|throughput|cache|memoize)\b',
+                   comment_lines, re.IGNORECASE) and src_files:
+        suggestions['type'] = 'perf'
+        detected_changes.append('Performance improvement patterns detected in diff context')
+
     # CI configuration changes
     elif ci_files and not src_files:
         suggestions['type'] = 'ci'
@@ -378,35 +383,9 @@ def cmd_analyze_diff(args):
 # DETECT-ARTIFACTS SUBCOMMAND
 # ============================================================================
 
-# Patterns that are always safe to delete (never belong in a commit)
-SAFE_ARTIFACT_PATTERNS = [
-    # Java
-    '**/*.class',
-    # Python
-    '**/*.pyc',
-    '**/__pycache__/**',
-    '**/*.egg-info/**',
-    '**/.eggs/**',
-    # Node.js / TypeScript
-    '**/*.tsbuildinfo',
-    # General temp/backup
-    '**/*.temp',
-    '**/*.backup*',
-    '**/*.orig',
-    # OS artifacts
-    '**/.DS_Store',
-    # Plan temp (explicitly temporary)
-    '.plan/temp/**',
-]
-
-# Patterns that require user confirmation before deletion
-UNCERTAIN_ARTIFACT_PATTERNS = [
-    'target/**',
-    'build/**',
-    'dist/**',
-    '.next/**',
-    'node_modules/**',
-]
+# Artifact patterns loaded from standards/artifact-patterns.json
+SAFE_ARTIFACT_PATTERNS: list[str] = _ARTIFACT_CONFIG.get('safe_patterns', [])
+UNCERTAIN_ARTIFACT_PATTERNS: list[str] = _ARTIFACT_CONFIG.get('uncertain_patterns', [])
 
 
 def get_gitignored_files(root: Path) -> set[str]:
@@ -456,7 +435,7 @@ _UNCERTAIN_REGEXES = _compile_patterns(UNCERTAIN_ARTIFACT_PATTERNS)
 # Only directories that are NEVER artifact-matched themselves. Directories
 # like __pycache__, .eggs, .next must NOT be skipped since they match
 # safe/uncertain artifact patterns.
-_SKIP_DIRS = {'.git', 'node_modules'}
+_SKIP_DIRS = set(_ARTIFACT_CONFIG.get('skip_dirs', ['.git', 'node_modules']))
 
 
 def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
@@ -476,13 +455,12 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     safe: list[str] = []
     uncertain: list[str] = []
 
-    for dirpath, dirnames, filenames in root.walk():
+    for dirpath_str, dirnames, filenames in os.walk(str(root)):
         # Prune directories we never need to descend into
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
 
         for filename in filenames:
-            path = dirpath / filename
-            rel = str(path.relative_to(root))
+            rel = os.path.relpath(os.path.join(dirpath_str, filename), str(root))
             if rel in ignored:
                 continue
 
@@ -526,9 +504,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  git-workflow.py format-commit --type feat --scope auth --subject "add login"
-  git-workflow.py analyze-diff --file changes.diff
-  git-workflow.py detect-artifacts --root /path/to/repo
+  git_workflow.py format-commit --type feat --scope auth --subject "add login"
+  git_workflow.py analyze-diff --file changes.diff
+  git_workflow.py detect-artifacts --root /path/to/repo
 """,
     )
 

@@ -6,35 +6,21 @@ Pre-commit artifact detection and cleanup. Run before staging to prevent build a
 
 Most repos already have a `.gitignore` that covers common artifact patterns (`*.class`, `target/`, `build/`, `node_modules/`). The `detect-artifacts` command **respects .gitignore by default** — gitignored files are excluded from results since they cannot be accidentally committed. This means on well-configured repos, the command typically returns empty results.
 
-Use `--no-gitignore` to audit all artifact patterns regardless of .gitignore coverage. This is useful for verifying .gitignore completeness or finding artifacts in repos with incomplete coverage.
+Use `--no-gitignore` to audit all artifact patterns regardless of .gitignore coverage.
 
 ## Artifact Detection
 
-The `detect-artifacts` command in `git-workflow.py` is the **source of truth** for artifact patterns. Use it instead of manual Glob calls.
+The `detect-artifacts` command in `git_workflow.py` is the **source of truth** for artifact detection. Pattern definitions are in `standards/artifact-patterns.json`.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts [--root <repo-root>]
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts [--root <repo-root>]
 ```
 
-The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists, respecting `.gitignore` by default.
+The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists.
 
 ## Cleanup Rules
 
-### Safe Deletions (automatic)
+- **Safe deletions** (automatic): Patterns in `artifact-patterns.json` → `safe_patterns` — delete without asking
+- **Uncertain cases** (ask user): Patterns in `artifact-patterns.json` → `uncertain_patterns` — use `AskUserQuestion` before deleting
 
-The script classifies these patterns as safe — delete without asking:
-- `*.class` — compiled Java bytecode
-- `*.temp`, `*.backup`, `*.backup*`, `*.orig` — temporary files
-- `*.pyc` and `__pycache__/` — Python bytecode
-- `.DS_Store` — macOS metadata
-
-Delete using `rm <file>` (or `rm -rf <dir>` for directories).
-
-### Uncertain Cases (ask user)
-
-The script classifies these as uncertain — use `AskUserQuestion` before deleting:
-- Files in `target/`, `build/`, `dist/`, `.next/`, `node_modules/`
-- Files >1MB
-- Files outside the safe pattern list
-
-Note: `.plan/temp/` files are classified as **safe** (auto-deletable), not uncertain, since they are explicitly temporary.
+To add or update artifact detection patterns, edit `standards/artifact-patterns.json` instead of the script.

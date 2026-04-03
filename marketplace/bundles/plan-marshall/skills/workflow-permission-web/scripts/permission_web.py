@@ -44,9 +44,13 @@ MAJOR_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('major_domains', []))
 # High-reach developer platforms — commonly needed across projects
 HIGH_REACH_DOMAINS: set[str] = set(_DOMAIN_CONFIG.get('high_reach_domains', []))
 
-# Red flags in domain names — pre-compiled for performance
-_RED_FLAG_RAW: list[str] = _DOMAIN_CONFIG.get('red_flag_patterns', [])
-_RED_FLAG_COMPILED: list[re.Pattern] = [re.compile(p) for p in _RED_FLAG_RAW]
+# Red flags in domain names — loaded from array-of-objects, pre-compiled for performance
+_RED_FLAGS: list[dict[str, str]] = _DOMAIN_CONFIG.get('red_flags', [])
+_RED_FLAG_COMPILED: list[tuple[str, re.Pattern, str]] = [
+    (entry['pattern'], re.compile(entry['pattern']), entry.get('description', ''))
+    for entry in _RED_FLAGS
+    if 'pattern' in entry
+]
 
 
 # ============================================================================
@@ -107,9 +111,9 @@ def check_red_flags(domain: str) -> list[str]:
     """Check domain for red flag patterns. Returns list of matched pattern strings."""
     flags = []
     clean = domain.lower()
-    for raw, compiled in zip(_RED_FLAG_RAW, _RED_FLAG_COMPILED):
+    for raw_pattern, compiled, _desc in _RED_FLAG_COMPILED:
         if compiled.search(clean):
-            flags.append(raw)
+            flags.append(raw_pattern)
     return flags
 
 

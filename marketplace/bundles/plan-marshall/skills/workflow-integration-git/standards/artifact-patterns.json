@@ -1,0 +1,26 @@
+{
+  "safe_patterns": [
+    "**/*.class",
+    "**/*.pyc",
+    "**/__pycache__/**",
+    "**/*.egg-info/**",
+    "**/.eggs/**",
+    "**/*.tsbuildinfo",
+    "**/*.temp",
+    "**/*.backup*",
+    "**/*.orig",
+    "**/.DS_Store",
+    ".plan/temp/**"
+  ],
+  "uncertain_patterns": [
+    "target/**",
+    "build/**",
+    "dist/**",
+    ".next/**",
+    "node_modules/**"
+  ],
+  "skip_dirs": [
+    ".git",
+    "node_modules"
+  ]
+}

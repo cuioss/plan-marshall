@@ -1,4 +1,4 @@
-"""Tests for git-workflow.py - consolidated git workflow script."""
+"""Tests for git_workflow.py - consolidated git workflow script."""
 
 import sys
 import tempfile
@@ -12,17 +12,17 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E4
 from conftest import get_script_path, run_script  # noqa: E402
 
 # Script under test
-SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git_workflow.py')
 
 
 def run_git_script(args: list) -> tuple:
-    """Run git-workflow.py with args and return (stdout, stderr, returncode)."""
+    """Run git_workflow.py with args and return (stdout, stderr, returncode)."""
     result = run_script(SCRIPT_PATH, *args)
     return result.stdout, result.stderr, result.returncode
 
 
 class TestFormatCommit(unittest.TestCase):
-    """Test git-workflow.py format-commit subcommand."""
+    """Test git_workflow.py format-commit subcommand."""
 
     def test_basic_format(self):
         """Test basic commit message formatting."""
@@ -162,7 +162,7 @@ class TestFormatCommit(unittest.TestCase):
 
 
 class TestAnalyzeDiff(unittest.TestCase):
-    """Test git-workflow.py analyze-diff subcommand."""
+    """Test git_workflow.py analyze-diff subcommand."""
 
     def test_analyze_bug_fix(self):
         """Test analysis detects bug fix patterns from comment keywords."""
@@ -451,7 +451,7 @@ class TestFormatCommitHeaderLength(unittest.TestCase):
 
 
 class TestDetectArtifacts(unittest.TestCase):
-    """Test git-workflow.py detect-artifacts subcommand."""
+    """Test git_workflow.py detect-artifacts subcommand."""
 
     def setUp(self):
         """Create a temporary directory with artifact files."""
@@ -669,7 +669,7 @@ class TestWrapText(unittest.TestCase):
     def setUpClass(cls):
         """Import wrap_text for direct testing."""
         from importlib import import_module
-        mod = import_module('git-workflow')
+        mod = import_module('git_workflow')
         cls.wrap_text = staticmethod(mod.wrap_text)
 
     def test_short_line_unchanged(self):
@@ -714,7 +714,7 @@ class TestWrapText(unittest.TestCase):
 
 
 class TestAnalyzeDiffEdgeCases(unittest.TestCase):
-    """Test git-workflow.py analyze-diff edge cases."""
+    """Test git_workflow.py analyze-diff edge cases."""
 
     def test_analyze_empty_diff_file(self):
         """Test analysis of an empty diff file returns default suggestions."""
@@ -789,7 +789,7 @@ class TestToonContract(unittest.TestCase):
 
 
 class TestMain(unittest.TestCase):
-    """Test git-workflow.py main entry point."""
+    """Test git_workflow.py main entry point."""
 
     def test_no_subcommand(self):
         """Test error when no subcommand provided."""

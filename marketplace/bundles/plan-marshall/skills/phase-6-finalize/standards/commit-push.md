@@ -30,7 +30,7 @@ git status --porcelain
 
 If output is empty → no changes to commit, done.
 
-### Load git-workflow skill
+### Load git_workflow skill
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
@@ -41,6 +41,6 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 Skill: plan-marshall:workflow-integration-git
 ```
 
-Execute the git-workflow skill's **Workflow: Commit Changes** with:
+Execute the git_workflow skill's **Workflow: Commit Changes** with:
 - `message`: Generated from request.md summary
 - `push`: true (always push in finalize)

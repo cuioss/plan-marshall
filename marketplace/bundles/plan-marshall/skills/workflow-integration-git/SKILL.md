@@ -13,18 +13,16 @@ Provides git commit workflow following conventional commits specification. Inclu
 **Execution mode**: Execute git commit workflow steps sequentially, delegating to script for artifact cleanup and commit formatting.
 
 **Prohibited actions:**
-- Never force-push or amend published commits without explicit user approval
 - Never commit secrets, credentials, or `.env` files
 - Never skip artifact cleanup step before committing (LLM must call detect-artifacts and act on results — the script detects but does not delete)
 
 **Constraints:**
-- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Commit messages must follow conventional commits format
 - Push only when explicitly requested via parameters
 
 ### Shared Infrastructure
 
-Error handling and TOON serialization delegate to `triage_helpers` from `ref-toon-format`. See `ref-toon-format/scripts/triage_helpers.py` for the shared API.
+Uses `triage_helpers` from `ref-toon-format` for error codes and TOON serialization.
 
 ## Parameters
 
@@ -45,14 +43,14 @@ No external skill dependencies. Uses `triage_helpers` from `ref-toon-format` for
 
 ```bash
 # Format a commit message
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
   --type feat --scope auth --subject "add login flow"
 
 # Analyze a diff for commit suggestions
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --file changes.diff
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff --file changes.diff
 
 # Detect artifacts before committing
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts
 ```
 
 ## Architecture
@@ -87,7 +85,7 @@ If no changes → Report "No changes to commit"
 Detect artifacts using the script:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts [--root <repo-root>]
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts [--root <repo-root>]
 ```
 
 The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists.
@@ -105,7 +103,7 @@ If no message:
 - Analyze diff using script to get type/scope hints:
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --file <diff-file>
+  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff --file <diff-file>
   ```
 - The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
 - If multiple change types are present, use the highest priority: fix > feat > perf > refactor > docs > style > test > chore > ci
@@ -144,7 +142,7 @@ pushed: true
 
 ## Scripts
 
-**Script**: `plan-marshall:workflow-integration-git:git-workflow`
+**Script**: `plan-marshall:workflow-integration-git:git_workflow`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
@@ -157,7 +155,7 @@ pushed: true
 Format commit message following conventional commits.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
   --type feat \
   --scope http \
   --subject "add retry config" \
@@ -191,7 +189,7 @@ status: success
 Analyze diff file to suggest commit message parameters.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff \
   --file changes.diff
 ```
 
@@ -215,7 +213,7 @@ Scan a directory for build artifacts and temporary files that should not be comm
 Files already covered by `.gitignore` are excluded by default since they cannot be accidentally committed.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts \
   [--root /path/to/repo] [--no-gitignore]
 ```
 
@@ -255,11 +253,7 @@ status: success
 
 ## Related
 
-| Skill | Purpose |
-|-------|---------|
-| `plan-marshall:workflow-integration-ci` | PR review comment handling |
-| `plan-marshall:workflow-integration-sonar` | Sonar quality issue handling |
-| `plan-marshall:workflow-pr-doctor` | Orchestrates this skill with CI and Sonar workflows |
+Orchestrated by `plan-marshall:workflow-pr-doctor` alongside `workflow-integration-ci` and `workflow-integration-sonar`.
 
 ## References
 

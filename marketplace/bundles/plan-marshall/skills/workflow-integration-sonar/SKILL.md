@@ -18,7 +18,6 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 - Never skip build verification after implementing fixes
 
 **Constraints:**
-- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Suppressions require inline comments explaining the rationale
 - Fix-vs-suppress decisions must be logged
 
@@ -214,25 +213,16 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 
 ## Issue Classification
 
-### Always Fix (enforced by script)
-- VULNERABILITY type (any severity — forced to `fix` action with `high`+ priority)
-- SECURITY_HOTSPOT type (any severity — forced to `fix` action with `high`+ priority, requires review)
-- BLOCKER severity
-- Security rules (e.g., `java:S3649`, `java:S5131`, `javascript:S3649`, `python:S5131`)
+Classification rules are data-driven — loaded from `standards/sonar-rules.json`. Key principles:
 
-### Fix Preferred
-- CRITICAL severity
-- BUG type
-- Resource leaks (e.g., `java:S2095`)
-
-### May Suppress
-- INFO severity
-- TODO comments (`*:S1135`) - if tracked in issue management
-- Unused fields for reflection (`java:S1068`)
-- Console/stdout in test code (`java:S106`, `javascript:S106`, `python:S106`)
-- Missing assertions in tests (`java:S2699`)
+- **Always fix**: VULNERABILITY, SECURITY_HOTSPOT, and BLOCKER severity (enforced by script)
+- **Fix preferred**: CRITICAL severity, BUG type, resource leaks
+- **May suppress**: Rules listed in `suppressable_rules` (with documented justification)
+- **Test exceptions**: Rules in `test_acceptable_rules` are acceptable in test files
 
 **Supported languages:** Java, JavaScript, TypeScript, Python. Unrecognized rules fall back to the Sonar issue message for triage guidance.
+
+To add or update classification, edit `standards/sonar-rules.json` instead of the script.
 
 ## Suppression Format
 
@@ -278,8 +268,4 @@ The script triage is rule-based and handles common Sonar rules well, but novel o
 
 ## Related
 
-| Skill | Purpose |
-|-------|---------|
-| `plan-marshall:workflow-integration-ci` | Often used together in PR workflows |
-| `plan-marshall:workflow-integration-git` | Commits fixes |
-| `plan-marshall:workflow-pr-doctor` | Orchestrates this skill with CI and git workflows |
+Orchestrated by `plan-marshall:workflow-pr-doctor` alongside `workflow-integration-ci` and `workflow-integration-git`.
