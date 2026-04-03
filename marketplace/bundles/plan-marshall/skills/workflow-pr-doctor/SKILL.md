@@ -31,7 +31,7 @@ Diagnose and fix pull request issues with parameterized checks.
 | `pr` | optional | Pull request number/URL (auto-detects current if not provided) |
 | `checks` | optional | build\|reviews\|sonar\|all (default: all) |
 | `auto-fix` | optional | Auto-apply fixes without prompting (default: false). CLI flag is boolean — pass `auto-fix=true` to enable, omit to use default or handoff value |
-| `wait` | optional | Wait for CI/Sonar to complete (default: true) |
+| `wait` | optional | Wait for CI/Sonar to complete (default: true). `--no-wait` takes precedence over `--wait` if both are provided |
 | `handoff` | optional | Handoff structure from previous phase (JSON, see schema below) |
 | `max-fix-attempts` | optional | Maximum fix-verify-commit cycles before giving up (default: 3) |
 
@@ -41,7 +41,7 @@ This skill operates in two modes based on invocation context:
 
 | Mode | Trigger | Steps |
 |------|---------|-------|
-| **Interactive** (default) | `/workflow-pr-doctor` or explicit parameters | Steps 0-7 below |
+| **Interactive** (default) | `/workflow-pr-doctor` or explicit parameters | Steps 1-8 below |
 | **Automated Review Lifecycle** | phase-6-finalize handoff with `decisions.automated_review: true` | See `standards/automated-review-lifecycle.md` |
 
 ## Prerequisites
@@ -55,7 +55,7 @@ Skill: plan-marshall:workflow-integration-git
 
 Loaded on-demand (only when the specific check requires them):
 ```
-Skill: plan-marshall:manage-architecture    # Step 5 BUILD_FAILURE only
+Skill: plan-marshall:manage-architecture    # Step 6 BUILD_FAILURE only
 Skill: plan-marshall:manage-findings        # Automated Review Lifecycle mode only
 ```
 
@@ -66,6 +66,7 @@ For orchestration context and shared infrastructure, see `ref-workflow-architect
 Delegates to skills:
 ```
 /workflow-pr-doctor (orchestrator)
+  ├─> triage_helpers (ref-toon-format) — error handling, TOON serialization
   ├─> workflow-integration-ci skill (Fetch Comments, Handle Review)
   │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
   ├─> workflow-integration-sonar skill (Fetch Issues, Fix Issues)
@@ -74,8 +75,6 @@ Delegates to skills:
   │     └─> triage_helpers (ref-toon-format) — shared error handling
   └─> manage-architecture skill (Build command resolution)
 ```
-
-All workflow scripts share `triage_helpers` from `ref-toon-format` for JSON parsing, TOON serialization, error codes, and batch triage processing.
 
 ## Usage Examples
 
@@ -116,7 +115,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor track
 
 ## Workflow
 
-### Step 0: Process Handoff Input
+### Step 1: Process Handoff Input
 
 If `handoff` parameter provided: Parse JSON with this schema:
 
@@ -147,7 +146,7 @@ Field notes:
 
 Extract and merge with explicit parameters (explicit parameters take precedence).
 
-### Step 1: Get PR Information
+### Step 2: Get PR Information
 
 Auto-detect if not provided:
 ```bash
@@ -156,7 +155,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
 
 Validate: PR must have valid `pr_number` in TOON output.
 
-### Step 2: Wait for Checks (If Requested)
+### Step 3: Wait for Checks (If Requested)
 
 If wait=true:
 ```bash
@@ -183,7 +182,7 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-### Step 3: Diagnose Issues
+### Step 4: Diagnose Issues
 
 Based on `checks` parameter:
 
@@ -193,7 +192,7 @@ Based on `checks` parameter:
 
 **Sonar**: workflow-integration-sonar (Fetch Issues) → SONAR_QUALITY ({count}/{severity}). If Sonar MCP is unavailable, skip Sonar checks and report as "skipped — MCP not connected".
 
-### Step 4: Generate Diagnostic Report
+### Step 5: Generate Diagnostic Report
 
 Use the `diagnose` script to aggregate data into a deterministic report:
 
@@ -220,7 +219,7 @@ Recommended Actions:
 {action list}
 ```
 
-### Step 5: Fix Issues
+### Step 6: Fix Issues
 
 Based on checks parameter:
 
@@ -238,22 +237,22 @@ Based on checks parameter:
    ```
    Use the returned `executable` to run verify.
 
-**REVIEW_COMMENTS**: Delegate to workflow-integration-ci Workflow 2 (Handle Review). The CI skill handles: fetching comments, batch triage, and classifying actions. The pr-doctor then processes each action (code_change → Edit files, explain → reply, ignore → resolve thread) and commits via the git skill.
+**REVIEW_COMMENTS**: Delegate to workflow-integration-ci "Handle Review" workflow. The CI skill handles fetching comments, batch triage, and classifying actions (code_change/explain/ignore). The pr-doctor processes each action and commits via the git skill.
 
-**SONAR_QUALITY**: Delegate to workflow-integration-sonar Workflow 2 (Fix Issues). The Sonar skill handles: batch triage and fix-vs-suppress classification. The pr-doctor then executes each action (fix → Edit files, suppress → add NOSONAR comment) and commits via the git skill.
+**SONAR_QUALITY**: Delegate to workflow-integration-sonar "Fix Issues" workflow. The Sonar skill handles batch triage and fix-vs-suppress classification. The pr-doctor executes each action and commits via the git skill.
 
 **Protected files check**: Before applying any fix, check the file path against `protected_files` from the handoff constraints. If a fix would modify a protected file, skip that fix and report it as "skipped — protected file" in the summary. Do not prompt the user for each protected file — just skip and log.
 
-**Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`) in the LLM's working memory, starting at 0. Increment after each fix → verify cycle. After reaching `max-fix-attempts` (default: 3) for a category, stop that category and report remaining issues to the user rather than looping indefinitely. The `track-attempt` subcommand is available for validation but simple counter arithmetic is preferred over a subprocess call for each iteration check.
+**Iteration guard**: Maintain a counter per category (`build_attempts`, `sonar_attempts`, `review_attempts`) in the LLM's working memory, starting at 0. Increment after each fix → verify cycle. After reaching `max-fix-attempts` for a category (configured in `standards/pr-doctor-config.json`), stop that category and report remaining issues to the user rather than looping indefinitely. The `track-attempt` subcommand is available for validation but simple counter arithmetic is preferred over a subprocess call for each iteration check.
 
-### Step 6: Verify and Commit
+### Step 7: Verify and Commit
 
 After fixes:
 1. Verify build passes (via architecture API)
-2. Commit via workflow-integration-git skill (which includes artifact cleanup in Step 3)
+2. Commit via workflow-integration-git skill (which includes artifact cleanup)
 3. Push to PR branch
 
-### Step 7: Generate Summary
+### Step 8: Generate Summary
 
 Display a final diagnostic summary:
 
@@ -378,4 +377,4 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor parse
 
 ## Related
 
-See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation.
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Related skills: `plan-marshall:workflow-integration-ci` (PR comment fetch and triage), `plan-marshall:workflow-integration-sonar` (Sonar issue triage), `plan-marshall:workflow-integration-git` (commit workflow).

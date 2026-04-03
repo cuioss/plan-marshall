@@ -21,8 +21,8 @@
       "\\bxss\\b",
       "\\bcsrf\\b",
       "\\bbug\\b",
-      "\\berror\\b",
-      "\\bfix\\b",
+      "\\berror\\s+(?:here|in|at|on|handling)\\b",
+      "(?:please|must|need(?:s)?\\s+to|should)\\s+(?:be\\s+)?fix",
       "\\bbroken\\b",
       "\\bcrash\\b",
       "\\bnull pointer\\b",
@@ -48,8 +48,8 @@
       "\\bspelling\\b",
       "\\bformatting\\b",
       "\\bstyle\\b",
-      "^nit:",
-      "^nitpick:"
+      "\\bnit:",
+      "\\bnitpick:"
     ]
   },
   "explain": {

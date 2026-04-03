@@ -215,7 +215,7 @@ def cmd_format_commit(args):
         'footer': args.footer,
         'formatted_message': formatted,
         'validation': {'valid': is_valid, 'warnings': all_warnings},
-        'status': 'success' if is_valid else 'failure',
+        'status': 'success' if is_valid else 'error',
     }
 
     return print_toon(result)

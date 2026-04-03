@@ -6,12 +6,14 @@ Uses tools-integration-ci ci router for provider abstraction.
 
 Usage:
     pr.py fetch-comments [--pr <number>] [--unresolved-only]
-    pr.py triage --comment <json>
+    pr.py triage --comment <json> [--context <code>]
+    pr.py triage-batch --comments <json-array>
     pr.py --help
 
 Subcommands:
     fetch-comments    Fetch PR review comments (GitHub or GitLab via ci router)
     triage           Triage a single PR review comment
+    triage-batch     Triage multiple PR review comments at once
 
 Examples:
     # Fetch comments for current branch's PR
@@ -22,6 +24,9 @@ Examples:
 
     # Triage a single comment
     pr.py triage --comment '{"id":"C1","body":"Please fix this","path":"src/Main.java","line":42}'
+
+    # Batch triage multiple comments
+    pr.py triage-batch --comments '[{"id":"C1","body":"Fix this"},{"id":"C2","body":"LGTM"}]'
 """
 
 import json

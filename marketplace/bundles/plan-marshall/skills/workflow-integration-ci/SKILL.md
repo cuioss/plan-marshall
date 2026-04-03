@@ -1,6 +1,6 @@
 ---
 name: workflow-integration-ci
-description: PR review comment workflow - fetch comments and triage for action classification (GitHub and GitLab via tools-integration-ci)
+description: PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)
 user-invocable: false
 ---
 
@@ -114,6 +114,15 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
 
 **Input:** PR number or comment list from Fetch workflow
 
+**GitHub GraphQL ID Format Rules:**
+
+| Operation | Parameter | ID Field | Format Example |
+|-----------|-----------|----------|----------------|
+| `thread-reply --thread-id` | Comment's `id` field | GraphQL node ID | `PRRC_kwDO...` |
+| `resolve-thread --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
+
+**NEVER use numeric IDs** — GitHub GraphQL requires global node IDs.
+
 **Steps:**
 
 1. **Get Comments**
@@ -167,7 +176,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-
      ```
 
    **For ignore:**
-   - Resolve the thread (no reply needed):
+   - Resolve the thread without replying (convention: pure acknowledgments like "LGTM" and bot comments do not need a response):
      ```bash
      python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
          --pr-number {pr} --thread-id {thread_id}

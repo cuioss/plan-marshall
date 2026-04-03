@@ -258,15 +258,15 @@ status: success
 | Apply returns failure | Ask user (retry, skip file, abort). Track in files_modified counter. |
 | Red flag domain detected | Flag for review. Never auto-approve suspicious domains. |
 
-## Rule Configuration
+## Standards (Load On-Demand)
 
-Domain categorization is data-driven — loaded from `standards/domain-lists.json` (the source of truth for scripts). The companion `standards/trusted-domains.md` provides human-readable documentation and must be kept in sync manually when domains are added or removed.
+| Standard | When to Load |
+|----------|-------------|
+| `standards/domain-lists.json` | Adding/updating domain categorization, red flag patterns, or trusted domain lists |
+| `standards/trusted-domains.md` | Human-readable domain reference and maintenance procedures |
+| `standards/domain-security-assessment.md` | Deep security assessment for ambiguous domains |
 
-- **major_domains**: Fully trusted documentation and tool domains
-- **high_reach_domains**: Developer platforms commonly needed across projects
-- **red_flag_patterns**: Regex patterns that flag suspicious domains
-
-To add or update domain categorization, edit `standards/domain-lists.json` instead of the script.
+Domain categorization is data-driven — loaded from `standards/domain-lists.json` (the source of truth for scripts). The companion `standards/trusted-domains.md` provides human-readable documentation and must be kept in sync manually when domains are added or removed. To add or update domain categorization, edit `standards/domain-lists.json` instead of the script.
 
 ## Related
 

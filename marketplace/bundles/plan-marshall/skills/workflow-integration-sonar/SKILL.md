@@ -1,6 +1,6 @@
 ---
 name: workflow-integration-sonar
-description: Sonar issue workflow - fetch issues, triage, and fix or suppress based on context
+description: SonarQube/SonarCloud issue workflow - fetch issues, triage, and fix or suppress based on context
 user-invocable: false
 ---
 
@@ -40,6 +40,18 @@ No external skill dependencies. Workflow 1 uses the SonarQube MCP tool directly.
 workflow-integration-sonar (Sonar issue workflow)
   ├─> SonarQube MCP tool (issue fetching, status changes)
   └─> triage_helpers (ref-toon-format) — shared triage, error handling
+```
+
+## Usage Examples
+
+```bash
+# Triage a single Sonar issue
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage \
+  --issue '{"key":"ISSUE-1","rule":"java:S1234","type":"BUG","severity":"MAJOR","file":"src/Main.java","line":42,"message":"Fix this"}'
+
+# Batch triage multiple issues
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch \
+  --issues '[{"key":"I1","rule":"java:S1234","type":"BUG","severity":"MAJOR","file":"src/Main.java","line":42,"message":"Fix this"}]'
 ```
 
 ## Workflows

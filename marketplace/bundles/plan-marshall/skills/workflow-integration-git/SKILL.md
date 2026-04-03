@@ -80,9 +80,7 @@ Detect artifacts using the script:
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts [--root <repo-root>]
 ```
 
-The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists.
-For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
-For full detection patterns and cleanup rules, read `standards/artifact-cleanup.md`.
+The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files are excluded since they cannot be accidentally committed. For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
 
 **Step 4: Generate Commit Message**
 
@@ -138,7 +136,7 @@ pushed: true
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By is NOT appended — the caller adds it at `git commit` time to match the project's configured format and avoid duplication) |
+| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By NOT appended — caller adds it at `git commit` time per project convention) |
 | `analyze-diff` | `--file` | Analyze diff for commit suggestions |
 | `detect-artifacts` | `[--root]` | Scan for committable artifacts |
 
@@ -191,7 +189,6 @@ mode: analysis
 suggestions:
   type: feat
   scope: auth
-  subject: ~
   detected_changes[1]:
     - Significant new code added
   files_changed[1]:
@@ -241,7 +238,7 @@ status: success
 | Standard | When to Load |
 |----------|-------------|
 | `standards/git-commit-standards.md` | Edge cases: breaking changes, multi-footer, scope guidelines, anti-patterns |
-| `standards/artifact-cleanup.md` | Artifact detection patterns and cleanup rules |
+| `standards/artifact-patterns.json` | Adding/updating artifact detection patterns and cleanup rules |
 
 ## Related
 

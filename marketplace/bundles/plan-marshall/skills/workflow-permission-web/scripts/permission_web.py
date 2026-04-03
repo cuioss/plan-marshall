@@ -60,12 +60,9 @@ _RED_FLAG_RAW_PATTERNS = [entry['pattern'] for entry in _RED_FLAGS if 'pattern' 
 _RED_FLAG_COMPILED_LIST = compile_patterns_from_config(
     _RED_FLAG_RAW_PATTERNS, 'domain-lists.json [red_flags]',
 )
-_RED_FLAG_COMPILED: list[tuple[str, re.Pattern, str]] = [
-    (entry['pattern'], compiled, entry.get('description', ''))
-    for entry, compiled in zip(
-        [e for e in _RED_FLAGS if 'pattern' in e],
-        _RED_FLAG_COMPILED_LIST,
-    )
+_RED_FLAG_COMPILED: list[tuple[str, re.Pattern]] = [
+    (raw, compiled)
+    for raw, compiled in zip(_RED_FLAG_RAW_PATTERNS, _RED_FLAG_COMPILED_LIST)
 ]
 
 
@@ -127,7 +124,7 @@ def check_red_flags(domain: str) -> list[str]:
     """Check domain for red flag patterns. Returns list of matched pattern strings."""
     flags = []
     clean = domain.lower()
-    for raw_pattern, compiled, _desc in _RED_FLAG_COMPILED:
+    for raw_pattern, compiled in _RED_FLAG_COMPILED:
         if compiled.search(clean):
             flags.append(raw_pattern)
     return flags

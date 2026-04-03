@@ -58,7 +58,8 @@
     "python:S1481": "Remove unused local variable",
     "python:S1135": "Complete TODO or track in issue management system",
     "python:S5131": "Sanitize user input to prevent injection",
-    "python:S930": "Fix function call argument count"
+    "python:S930": "Fix function call argument count",
+    "java:S2699": "Add assertions to verify test expectations"
   },
   "test_acceptable_rules": [
     "java:S106",

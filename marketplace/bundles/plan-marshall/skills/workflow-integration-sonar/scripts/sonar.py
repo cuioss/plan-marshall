@@ -43,17 +43,10 @@ SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
 
 # Severity to priority mapping — externalized to sonar-rules.json for consistency
 # with the data-driven pattern used by all workflow scripts.
-SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG.get('severity_priority', {
-    'BLOCKER': 'critical', 'CRITICAL': 'high', 'MAJOR': 'medium', 'MINOR': 'low', 'INFO': 'low',
-})
+SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG['severity_priority']
 
 # Type to priority boost — includes SECURITY_HOTSPOT (Sonar's 4th issue type)
-TYPE_BOOST: dict[str, int] = _RULES_CONFIG.get('type_boost', {
-    'VULNERABILITY': 1,  # Boost priority
-    'SECURITY_HOTSPOT': 1,  # Boost priority — requires review
-    'BUG': 0,
-    'CODE_SMELL': -1,  # Lower priority
-})
+TYPE_BOOST: dict[str, int] = _RULES_CONFIG['type_boost']
 
 
 # ============================================================================
@@ -94,7 +87,7 @@ def calculate_sonar_priority(severity: str, issue_type: str) -> str:
     return calculate_priority(base_priority, boost)
 
 
-def should_suppress(rule: str, file: str, issue_type: str) -> tuple:
+def should_suppress(rule: str, file: str, issue_type: str) -> tuple[bool, str | None]:
     """Determine if issue should be suppressed."""
     # Check suppressable rules
     if rule in SUPPRESSABLE_RULES:
