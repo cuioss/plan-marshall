@@ -7,7 +7,7 @@ Provides load/save operations, TOON output formatting, and error handling.
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from file_ops import (  # type: ignore[import-not-found]
     format_toon_value,  # noqa: F401 - re-exported
@@ -272,8 +272,11 @@ def merge_module_data(derived: dict[str, Any], enriched: dict[str, Any], module_
 # =============================================================================
 
 
-def error_exit(message: str, context: dict[str, Any] | None = None) -> None:
+def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn':
     """Print error in TOON format and exit with code 1.
+
+    CLI-boundary helper — only call from command handlers, not library functions.
+    For library code, raise ArchitectureError or DataNotFoundError instead.
 
     Args:
         message: Error message

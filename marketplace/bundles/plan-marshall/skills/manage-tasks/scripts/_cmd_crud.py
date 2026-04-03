@@ -5,7 +5,7 @@ CRUD command handlers for manage-tasks.py.
 Contains: add, update, remove subcommands.
 """
 
-from _manage_tasks_shared import (
+from _tasks_core import (
     find_task_file,
     format_task_file,
     get_next_number,

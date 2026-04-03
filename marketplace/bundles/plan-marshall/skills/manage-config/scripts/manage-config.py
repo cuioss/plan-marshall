@@ -20,17 +20,19 @@ from _cmd_ci import cmd_ci
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
 from _cmd_skill_domains import (
+    cmd_list_verify_steps,
+    cmd_skill_domains,
+)
+from _cmd_skill_resolution import (
     cmd_configure_task_executors,
     cmd_get_skills_by_profile,
     cmd_list_finalize_steps,
     cmd_list_recipes,
-    cmd_list_verify_steps,
     cmd_resolve_domain_skills,
     cmd_resolve_outline_skill,
     cmd_resolve_recipe,
     cmd_resolve_task_executor,
     cmd_resolve_workflow_skill_extension,
-    cmd_skill_domains,
 )
 from _cmd_system_plan import cmd_plan, cmd_system
 

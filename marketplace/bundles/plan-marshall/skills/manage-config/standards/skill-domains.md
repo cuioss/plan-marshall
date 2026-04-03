@@ -154,7 +154,9 @@ Domain-specific extensions that augment workflow skills. Only in technical domai
 | `implementation` | execute (impl tasks) | Production code patterns |
 | `module_testing` | execute (unit/module test tasks) | Unit and module test patterns |
 | `integration_testing` | execute (integration test tasks) | Integration test patterns |
-| `quality` | verify | Verification, documentation standards |
+| `quality` | verify | Documentation and quality standards |
+
+> **Note**: `quality` is a config profile for skill resolution. `manage-tasks` has additional task-only profiles (`verification`, `standalone`) not mapped to config skill domains — see `ref-manage-contract` for the full profile model.
 
 ### Profile Structure
 

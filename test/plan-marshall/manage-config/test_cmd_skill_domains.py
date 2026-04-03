@@ -753,16 +753,16 @@ def test_get_skills_by_profile_unknown_domain():
         assert 'unknown' in result.stdout.lower()
 
 
-def test_get_skills_by_profile_flat_domain_error():
-    """Test get-skills-by-profile returns error for flat structure domain (no bundle)."""
+def test_get_skills_by_profile_flat_domain_fallback():
+    """Test get-skills-by-profile returns core skills for flat structure domain (no bundle)."""
     with PlanContext() as ctx:
         # Create marshal.json with flat structure (no bundle reference)
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
 
-        assert 'error' in result.stdout.lower(), 'Should report error for domain without bundle'
-        assert 'bundle' in result.stdout.lower() or 'profile' in result.stdout.lower()
+        assert 'success' in result.stdout.lower(), 'Should succeed with fallback to top-level defaults'
+        assert 'skills_by_profile' in result.stdout
 
 
 # =============================================================================

@@ -1,5 +1,7 @@
 # Adding New Document Types
 
+> **Current status**: Only the `request` document type is implemented. This guide exists for future extensibility.
+
 ## Overview
 
 Adding a new document type requires **no Python code changes**. Create two files:

@@ -32,6 +32,8 @@ enriched.message_count: 127
 
 ### Key Naming Convention
 
+> **Phase naming**: TOON keys use the `phase.{N}-{name}.{field}` prefix form (e.g., `phase.1-init.start`). The canonical phase name is `1-init` — see `ref-manage-contract` for the standard phase list.
+
 - `phase.{phase_name}.{field}` — per-phase timing/token data
 - `enriched.{field}` — session transcript enrichment data (attributed to plan as a whole)
 

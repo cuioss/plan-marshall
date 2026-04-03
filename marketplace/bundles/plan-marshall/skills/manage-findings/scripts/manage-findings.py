@@ -30,7 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from file_ops import output_toon, safe_main
-from findings_store import (
+from _findings_core import (
     CERTAINTY_VALUES,
     FINDING_TYPES,
     QGATE_PHASES,

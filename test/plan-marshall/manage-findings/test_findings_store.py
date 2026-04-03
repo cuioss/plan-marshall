@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for findings_store.py - the storage engine for findings and Q-Gate findings."""
+"""Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings."""
 
 import sys
 from pathlib import Path
@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext
 
 # conftest sets up PYTHONPATH so we can import the store directly
-from findings_store import (  # type: ignore[import-not-found]
+from _findings_core import (  # type: ignore[import-not-found]
     FINDING_TYPES,
     QGATE_PHASES,
     QGATE_SOURCES,

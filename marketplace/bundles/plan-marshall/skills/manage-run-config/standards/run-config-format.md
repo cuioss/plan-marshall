@@ -199,14 +199,7 @@ Clean temporary files, logs, archived plans, and memory based on retention setti
 
 ### Default Retention
 
-> **Source of truth**: Retention defaults are defined in `manage-config/standards/data-model.md`.
-
-| Category | Default Retention |
-|----------|-------------------|
-| Logs | 1 day |
-| Archived plans | 5 days |
-| Memory | 5 days |
-| Temp files | Always cleaned |
+Retention defaults are defined in `manage-config/standards/data-model.md` under `system.retention`. Refer to that standard for the canonical table of retention fields, types, and default values.
 
 ### Cleaned Directories
 
