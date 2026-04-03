@@ -14,7 +14,7 @@ Always use the Gradle wrapper for reproducible builds:
 ./gradlew [tasks] [options]
 ```
 
-**Important**: Use `--console=plain` to disable rich console output for parseable logs.
+Use `--console=plain` to disable rich console output for parseable logs (the build script adds this automatically).
 
 ### Common Tasks
 
@@ -43,11 +43,9 @@ Always use the Gradle wrapper for reproducible builds:
 
 ---
 
-## Module/Project Builds
+## Module Targeting
 
-### Multi-Project Build
-
-#### Build Specific Subproject
+### Single Subproject Build
 
 ```bash
 # By project path
@@ -68,9 +66,9 @@ Gradle automatically builds dependencies.
 
 ---
 
-## Quality Profiles
+## Quality Configuration
 
-Gradle doesn't have Maven-like profiles, but uses equivalent mechanisms:
+Gradle uses task groups and build properties instead of Maven-like profiles:
 
 ### Task Groups
 
@@ -85,7 +83,7 @@ tasks.register("preCommit") {
 ./gradlew preCommit
 ```
 
-### Build Types
+### Build Properties
 
 ```kotlin
 tasks.named<Test>("test") {
@@ -111,19 +109,6 @@ export CI=true
 
 ---
 
-## Kotlin Support
-
-Error parsing includes Kotlin-specific patterns:
-- `Unresolved reference` — missing imports/symbols
-- `Type mismatch` — type assignment errors
-- `Smart cast to ... is impossible` — unsafe cast patterns
-- `None of the following candidates is applicable` — overload resolution
-- `Val cannot be reassigned` — immutability violations
-
-These are categorized as `compilation_error` alongside Java errors.
-
----
-
 ## Troubleshooting
 
 | Issue | Solution |
@@ -144,15 +129,6 @@ These are categorized as `compilation_error` alongside Java errors.
 ./gradlew dependencyInsight --dependency log4j
 ```
 
----
-
-## Dependency Management
-
-Gradle uses `platform()` and `enforcedPlatform()` for BOM-style dependency management, analogous to Maven's `<dependencyManagement>`. For multi-project builds:
-- Define versions in a version catalog (`gradle/libs.versions.toml`) or platform project
-- Child projects should not override platform-managed versions
-- Use `dependencies { implementation platform(project(':bom')) }` for internal BOMs
-
-See SKILL.md for wrapper detection, issue routing, and coverage report paths. See `build-api-reference.md` for shared build documentation.
+See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-gradle:gradle`

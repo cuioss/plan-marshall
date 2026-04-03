@@ -35,6 +35,27 @@ from _build_shared import cmd_run_common
 from _build_wrapper import detect_wrapper as _detect_wrapper
 
 
+def default_command_key_fn(command_args: str) -> str:
+    """Default command key extraction: first token, normalized to underscores.
+
+    Works for Maven goals, npm scripts, and pyprojectx commands.
+    Gradle should override to strip leading colons.
+    """
+    first_token = command_args.split()[0] if command_args else 'default'
+    return first_token.replace(' ', '_').replace('-', '_')
+
+
+def default_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[list[str], str]:
+    """Default build command: [wrapper] + args.split().
+
+    Suitable for tools that use STDOUT_REDIRECT capture (e.g., pyprojectx).
+    Tools with special flags (Maven -l, Gradle --console=plain) should override.
+    """
+    cmd_parts = [wrapper] + args.split()
+    command_str = ' '.join(cmd_parts)
+    return cmd_parts, command_str
+
+
 @dataclass(frozen=True)
 class ExecuteConfig:
     """Configuration for a build system's execution layer."""

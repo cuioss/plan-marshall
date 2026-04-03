@@ -1,6 +1,6 @@
 ---
 name: build-python
-description: Python/pyprojectx build operations with execution, output parsing, module discovery, and coverage analysis
+description: Python/pyprojectx build operations — mypy type-checking, ruff linting, pytest with Cobertura coverage, and test-directory-based module discovery
 user-invocable: false
 ---
 
@@ -10,59 +10,41 @@ Python build execution via pyprojectx (`./pw` wrapper) with output parsing for m
 
 ## Enforcement
 
-See `plan-marshall:extension-api/standards/build-api-reference.md` § Enforcement for shared rules.
+See `build-api-reference.md` § Enforcement for shared rules.
+All commands use `python3 .plan/execute-script.py plan-marshall:build-python:python_build {command} {args}`.
 
-**Tool-specific constraint:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:build-python:python_build {command} {args}`
+**Note on script naming**: Named `python_build.py` (not `python.py`) to avoid shadowing Python's module namespace. Notation: `plan-marshall:build-python:python_build`.
 
-**Note on script naming**: The script is named `python_build.py` (not `python.py`) to avoid shadowing Python's own module namespace. This results in the notation `plan-marshall:build-python:python_build`.
+## Scripts
 
-## Scripts Overview
-
-| Script | Type | Purpose |
-|--------|------|---------|
-| `python_build.py` | CLI | pyprojectx operations dispatcher (includes coverage + warning config) |
-| `_python_execute.py` | Library | Execution config via factory pattern |
-| `_python_cmd_parse.py` | Library | Log parsing for mypy, ruff, pytest |
-| `_python_cmd_discover.py` | Library | Module discovery via test directory detection |
-
-Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build_shared.py`, `_build_parse.py`, `_build_coverage_report.py`, `_build_check_warnings.py`.
+| Script | Purpose |
+|--------|---------|
+| `python_build.py` | CLI dispatcher |
+| `_python_execute.py` | Execution config via factory (uses shared `default_command_key_fn`, `default_build_command_fn`) |
+| `_python_cmd_parse.py` | Multi-parser registry for mypy, ruff, pytest |
+| `_python_cmd_discover.py` | Module discovery via test directory detection |
 
 ## Subcommands
 
-Python supports all shared subcommands documented in `build-api-reference.md`:
-**run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
+Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
+See `build-api-reference.md` for the full subcommand API and availability matrix.
 
-Not available: `search-markers` (JVM-specific), `find-project` (Gradle-specific). `parse` does not support `no-openrewrite` mode.
+### Python-Specific Behavior
 
-### Python-Specific Notes
+- **run**: `--command-args` takes pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. Result includes `wrapper` field showing resolved executable path
+- **coverage-report**: Searches `coverage.xml`, `htmlcov/coverage.xml`. Generate with `pytest --cov --cov-report=xml`
+- **discover**: Modules are directories containing `test/` or `tests/` subdirectories. Metadata from `pyproject.toml` via `tomllib`. Excludes `.venv`, `venv`, `.tox`, cache directories
 
-**run**: The `--command-args` value contains pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. The result TOON includes a `wrapper` field showing the resolved pyprojectx executable path.
+## Parser Architecture
 
-**parse**: Does not support `no-openrewrite` mode (not applicable).
-
-**coverage-report**: Auto-detects coverage.py Cobertura XML in these locations:
-- `coverage.xml` (project root)
-- `htmlcov/coverage.xml`
-
-Generate with `pytest --cov --cov-report=xml`.
-
-**discover**: Modules are directories containing `test/` or `tests/` subdirectories. Metadata extracted from `pyproject.toml` using `tomllib`. Searches one level deep from project root, plus root itself.
-
-## Multi-Parser Combination
-
-Unlike Maven/Gradle/npm which route to a single parser, Python's `parse_log()` runs **all matching parsers** and combines results. This is because pyprojectx `verify` runs multiple tools (mypy + ruff + pytest) in sequence, producing mixed output in a single log file.
+Unlike Maven/Gradle (single parser) and npm (single-match registry), Python runs **all matching parsers** and combines results. This handles pyprojectx `verify` which runs mypy + ruff + pytest in sequence, producing mixed output in a single log file.
 
 ## Module Discovery
 
-Uses the pyprojectx project structure. Modules are directories containing test subdirectories matching the `test/` or `tests/` pattern.
-
-Excludes: `.venv`, `venv`, `.tox`, `.mypy_cache`, `.ruff_cache`, `.pytest_cache`, `dist`, `egg-info`.
-
-For error categories, issue routing, command generation tables, and wrapper detection, see `build-api-reference.md`.
+Directories with `test/` or `tests/` subdirectories. Searches one level deep from project root, plus root itself.
 
 ## References
 
-- `plan-marshall:extension-api/standards/build-api-reference.md` — Shared subcommand documentation, error categories, issue routing, wrapper detection
-- `plan-marshall:extension-api/standards/build-execution.md` — Execution contract and lifecycle
+- `build-api-reference.md` — Shared subcommand API, error categories, issue routing, wrapper detection
+- `build-execution.md` — Execution contract and lifecycle
 - `standards/python-impl.md` — Python/pyprojectx execution details

@@ -12,7 +12,7 @@ Usage:
 import re
 
 from _build_execute import CaptureStrategy
-from _build_execute_factory import ExecuteConfig, create_execute_handlers
+from _build_execute_factory import ExecuteConfig, create_execute_handlers, default_command_key_fn
 from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _maven_cmd_parse import parse_log
 
@@ -35,12 +35,6 @@ def _maven_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[lis
     return cmd_parts, command_str
 
 
-def _maven_command_key_fn(command_args: str) -> str:
-    """Extract command key suffix from Maven args (first goal, normalized to underscores)."""
-    first_goal = command_args.split()[0] if command_args else 'default'
-    return first_goal.replace(' ', '_').replace('-', '_')
-
-
 _CONFIG = ExecuteConfig(
     tool_name='maven',
     unix_wrapper='mvnw',
@@ -49,7 +43,7 @@ _CONFIG = ExecuteConfig(
     capture_strategy=CaptureStrategy.TOOL_LOG_FLAG,
     build_command_fn=_maven_build_command_fn,
     scope_fn=_maven_scope_fn,
-    command_key_fn=_maven_command_key_fn,
+    command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
 )
 

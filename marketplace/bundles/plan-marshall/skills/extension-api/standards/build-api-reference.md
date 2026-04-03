@@ -357,6 +357,8 @@ Build errors are routed to domain-specific skills for resolution guidance:
 
 **npm/npx routing**: Commands are automatically routed based on a built-in list of known CLI tools. Script invocations (`run test`, `run build`) use `npm`; direct tool invocations (eslint, jest, tsc, prettier, webpack, etc.) use `npx`.
 
+**Shared factory defaults**: The execution factory (`_build_execute_factory.py`) provides `default_command_key_fn()` (extracts first token, normalizes to underscores) and `default_build_command_fn()` (assembles `[wrapper] + args.split()` for STDOUT_REDIRECT tools). Maven, npm, and Python use the default command key function; Gradle overrides it to handle `:module:task` notation. Python uses the default build command function; others override for tool-specific flags.
+
 ---
 
 ## Timeout Learning

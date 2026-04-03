@@ -10,22 +10,10 @@ Usage:
 """
 
 from _build_execute import CaptureStrategy
-from _build_execute_factory import ExecuteConfig, create_execute_handlers
+from _build_execute_factory import ExecuteConfig, create_execute_handlers, default_build_command_fn, default_command_key_fn
 from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _build_wrapper import detect_wrapper as _detect_wrapper
 from _python_cmd_parse import parse_log
-
-
-def _python_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[list[str], str]:
-    """Build pyprojectx command."""
-    cmd_parts = [wrapper] + args.split()
-    command_str = ' '.join(cmd_parts)
-    return cmd_parts, command_str
-
-
-def _python_command_key_fn(command_args: str) -> str:
-    """Extract command key suffix from pyprojectx args."""
-    return command_args.split()[0].replace(' ', '_').replace('-', '_') if command_args else 'default'
 
 
 def _python_wrapper_resolve_fn(project_dir: str) -> str:
@@ -53,9 +41,9 @@ _CONFIG = ExecuteConfig(
     windows_wrapper='pw.bat',
     system_fallback='pwx',
     capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
-    build_command_fn=_python_build_command_fn,
+    build_command_fn=default_build_command_fn,
     scope_fn=_python_scope_fn,
-    command_key_fn=_python_command_key_fn,
+    command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
     wrapper_resolve_fn=_python_wrapper_resolve_fn,
     extra_result_fn=_python_extra_result_fn,

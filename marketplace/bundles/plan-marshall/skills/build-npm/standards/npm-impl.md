@@ -4,9 +4,29 @@ npm-specific standards for build execution and output parsing. For shared standa
 
 ---
 
-## Working Directory
+## Build Command Construction
 
-### Custom Working Directory
+### Base Command
+
+npm commands are routed automatically between `npm` and `npx` based on the command type. Direct tool invocations (eslint, tsc, jest, etc.) use `npx`; package script invocations use `npm`.
+
+### Common Commands
+
+| Command | Purpose |
+|---------|---------|
+| `run test` | Run package.json test script |
+| `run build` | Production build |
+| `run lint` | Run configured linters |
+| `run test:ci` | CI/CD test script |
+| `npx eslint src/` | Direct ESLint invocation |
+| `npx tsc --noEmit` | Type-check without emit |
+| `npx playwright test` | E2E test execution |
+
+---
+
+## Module Targeting
+
+### Working Directory
 
 For projects with nested frontend directories:
 
@@ -16,29 +36,31 @@ python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
     --working-dir frontend/
 ```
 
----
+### Workspace Targeting
 
-## Best Practices
-
-### Build Command Selection
-
-**Test execution:**
-- Use `run test` for package.json test script
-- Use `run test:ci` for CI/CD environments
-
-**Linting:**
-- Use `run lint` for configured linters
-- Use `npx eslint src/` for direct ESLint
-
-**Building:**
-- Use `run build` for production builds
-
-### Environment Configuration
+For monorepo workspace builds:
 
 ```bash
-NODE_ENV=test CI=true npm run test           # Test environment
-NODE_ENV=production npm run build            # Production build
-PLAYWRIGHT_BASE_URL=http://localhost:3000 npm run test:e2e  # E2E tests
+npm run test --workspace=packages/core
+npm run build --workspace=packages/ui
+```
+
+---
+
+## Quality Configuration
+
+npm projects typically configure quality via package.json scripts:
+
+```json
+{
+  "scripts": {
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:ci": "jest --ci --coverage",
+    "verify": "npm run lint && npm run typecheck && npm run test"
+  }
+}
 ```
 
 ---

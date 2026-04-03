@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Tests for Gradle coverage-report subcommand.
 
+Uses shared build_test_helpers for common coverage test patterns.
 Uses the same JaCoCo XML format as Maven - the coverage parser is shared.
 """
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from toon_parser import parse_toon  # type: ignore[import-not-found]
-
-from conftest import get_script_path, run_script
+from build_test_helpers import (
+    assert_coverage_custom_threshold,
+    assert_coverage_has_low_items,
+    assert_coverage_high,
+    assert_coverage_low,
+    assert_coverage_missing_file,
+)
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-gradle', 'gradle.py')
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'coverage'
@@ -18,68 +22,25 @@ FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'coverage'
 
 def test_coverage_report_high_coverage():
     """Test coverage-report with report above threshold."""
-    result = run_script(
-        SCRIPT_PATH, 'coverage-report',
-        '--report-path', str(FIXTURES_DIR / 'high-coverage.xml'),
-        '--threshold', '80',
-    )
-    assert result.success, f'Script failed: {result.stderr}'
-
-    data = parse_toon(result.stdout)
-    assert data['status'] == 'success'
-    assert data['passed'] is True
-    assert float(data['overall']['line']) >= 80
+    assert_coverage_high(SCRIPT_PATH, FIXTURES_DIR / 'high-coverage.xml')
 
 
 def test_coverage_report_low_coverage():
     """Test coverage-report with report below threshold."""
-    result = run_script(
-        SCRIPT_PATH, 'coverage-report',
-        '--report-path', str(FIXTURES_DIR / 'low-coverage.xml'),
-        '--threshold', '80',
-    )
-    assert not result.success
-
-    data = parse_toon(result.stdout)
-    assert data['status'] == 'success'
-    assert data['passed'] is False
-    assert 'below threshold' in data['message']
+    assert_coverage_low(SCRIPT_PATH, FIXTURES_DIR / 'low-coverage.xml')
 
 
 def test_coverage_report_low_coverage_classes():
     """Test that low-coverage classes are identified."""
-    result = run_script(
-        SCRIPT_PATH, 'coverage-report',
-        '--report-path', str(FIXTURES_DIR / 'low-coverage.xml'),
-        '--threshold', '80',
-    )
-    data = parse_toon(result.stdout)
-    assert 'low_coverage' in data
+    data = assert_coverage_has_low_items(SCRIPT_PATH, FIXTURES_DIR / 'low-coverage.xml')
     assert len(data['low_coverage']) > 0
 
 
 def test_coverage_report_missing_file():
     """Test coverage-report with non-existent report."""
-    result = run_script(
-        SCRIPT_PATH, 'coverage-report',
-        '--report-path', '/nonexistent/jacoco.xml',
-    )
-    assert not result.success
-
-    data = parse_toon(result.stdout)
-    assert data['status'] == 'error'
-    assert data['error'] == 'report_not_found'
+    assert_coverage_missing_file(SCRIPT_PATH)
 
 
 def test_coverage_report_custom_threshold():
     """Test coverage-report with low threshold that passes on high-coverage report."""
-    result = run_script(
-        SCRIPT_PATH, 'coverage-report',
-        '--report-path', str(FIXTURES_DIR / 'high-coverage.xml'),
-        '--threshold', '60',
-    )
-    assert result.success, f'Script failed: {result.stderr}'
-
-    data = parse_toon(result.stdout)
-    assert data['passed'] is True
-    assert str(data['threshold']) == '60'
+    assert_coverage_custom_threshold(SCRIPT_PATH, FIXTURES_DIR / 'high-coverage.xml', threshold=60)

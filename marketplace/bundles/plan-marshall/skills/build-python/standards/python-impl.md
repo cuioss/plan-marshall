@@ -18,26 +18,55 @@ Omit `{module}` to run against all modules.
 
 ---
 
-## Best Practices
+## Module Targeting
 
-### Build Command Selection
+### Single Module Build
 
-**Quality checks:**
-- Use `quality-gate` for mypy + ruff without running tests
-- Use `compile` for type-checking only
-- Use `verify` for full verification (quality-gate + tests)
-
-**Testing:**
-- Use `module-tests {module}` for a specific module
-- Use `module-tests` (no module) for all modules
-- Use `coverage {module}` for tests with coverage collection
-
-### Environment Configuration
+Use the module name as the second argument:
 
 ```bash
-CI=true ./pw verify              # CI environment
-./pw module-tests core           # Specific module testing
-./pw coverage core               # Coverage generation
+./pw module-tests core           # Test specific module
+./pw coverage core               # Coverage for specific module
+./pw quality-gate core           # Quality checks for specific module
+```
+
+### All Modules
+
+Omit the module argument to target all:
+
+```bash
+./pw verify                      # Full verification (all modules)
+./pw module-tests                # Test all modules
+./pw quality-gate                # Quality checks for all modules
+```
+
+---
+
+## Quality Configuration
+
+### Quality Commands
+
+| Command | Purpose |
+|---------|---------|
+| `quality-gate` | Run mypy + ruff without tests |
+| `compile` | Type-checking only (mypy) |
+| `verify` | Full verification (quality-gate + tests) |
+| `module-tests {module}` | Run tests for a specific module |
+| `coverage {module}` | Tests with coverage collection |
+
+### Tool Configuration
+
+Quality tools are configured in `pyproject.toml`:
+
+```toml
+[tool.mypy]
+strict = true
+
+[tool.ruff]
+line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
 ```
 
 ---

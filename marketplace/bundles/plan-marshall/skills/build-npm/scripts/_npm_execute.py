@@ -12,7 +12,7 @@ Usage:
 import re
 
 from _build_execute import CaptureStrategy
-from _build_execute_factory import ExecuteConfig, create_execute_handlers
+from _build_execute_factory import ExecuteConfig, create_execute_handlers, default_command_key_fn
 from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _npm_cmd_parse import parse_log
 
@@ -61,11 +61,6 @@ def _npm_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[list[
     return cmd_parts, command_str
 
 
-def _npm_command_key_fn(command_args: str) -> str:
-    """Extract command key suffix from npm args."""
-    return command_args.split()[0].replace(' ', '_').replace('-', '_') if command_args else 'default'
-
-
 def _npm_wrapper_resolve_fn(project_dir: str) -> str:
     """npm doesn't need wrapper detection — return 'npm' as placeholder.
 
@@ -88,7 +83,7 @@ _CONFIG = ExecuteConfig(
     capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
     build_command_fn=_npm_build_command_fn,
     scope_fn=_npm_scope_fn,
-    command_key_fn=_npm_command_key_fn,
+    command_key_fn=default_command_key_fn,
     default_timeout=DEFAULT_BUILD_TIMEOUT,
     wrapper_resolve_fn=_npm_wrapper_resolve_fn,
     parser_needs_command=True,

@@ -14,15 +14,7 @@ All Maven builds use the Maven Wrapper from the project root:
 ./mvnw {goals} {options}
 ```
 
-**Output Capture**: Use Maven's `-l` (log file) flag for output capture with timestamped filenames:
-
-```bash
-./mvnw -l target/build-output-2025-11-25-143022.log clean install
-```
-
 ### Common Goals
-
-**Note**: `clean` is a separate command. Run it explicitly before other goals when needed, or use `clean install` combination for fresh builds.
 
 | Goal | Purpose |
 |------|---------|
@@ -36,26 +28,20 @@ All Maven builds use the Maven Wrapper from the project root:
 | `-Ppre-commit verify` | Pre-commit quality checks |
 | `-Pcoverage verify` | Coverage analysis build |
 
-### Log File Handling (CRITICAL)
+### Log File Handling
 
-**Problem**: When using `-l target/build.log` with `clean`, the `clean` phase deletes `target/` before Maven can create the log file.
-
-**Solution**: ALWAYS pre-create the log file before executing Maven:
-
-1. Generate timestamped filename: `target/build-output-{YYYY-MM-DD-HHmmss}.log`
-2. Pre-create the log file (use Write tool)
-3. Execute: `./mvnw -l target/build-output-{timestamp}.log {goals}`
+Maven uses the `-l` flag for log file output capture. The build script handles log file creation automatically. When running manually, pre-create the log file before executing with `clean` (the `clean` phase deletes `target/` before Maven can create the log file).
 
 ---
 
-## Module Builds
+## Module Targeting
 
 ### Single Module Build
 
 Use `-pl` (project list) to build specific modules:
 
 ```bash
-./mvnw -l target/module-build.log clean install -pl module-name
+./mvnw clean install -pl module-name
 ```
 
 For nested modules: `-pl parent/child-module`
@@ -70,22 +56,20 @@ For nested modules: `-pl parent/child-module`
 
 ### Resume From Module
 
-Use `-rf` (resume from) to restart a failed build:
+Use `-rf` to restart a failed build:
 
 ```bash
-./mvnw -l target/resume-build.log clean install -rf :module-name
+./mvnw clean install -rf :module-name
 ```
 
 ---
 
 ## Quality Profiles
 
-**Note**: Profile commands do NOT include clean goal. Run `clean` separately if needed.
-
 ### Pre-Commit Profile
 
 ```bash
-./mvnw -l target/pre-commit.log -Ppre-commit verify
+./mvnw -Ppre-commit verify
 ```
 
 Includes: Compilation with warnings, unit tests, code quality checks, JavaDoc validation.
@@ -93,7 +77,7 @@ Includes: Compilation with warnings, unit tests, code quality checks, JavaDoc va
 ### Coverage Profile
 
 ```bash
-./mvnw -l target/coverage.log -Pcoverage verify
+./mvnw -Pcoverage verify
 ```
 
 Includes: All pre-commit checks, JaCoCo coverage, threshold verification.
@@ -101,57 +85,19 @@ Includes: All pre-commit checks, JaCoCo coverage, threshold verification.
 ### Integration Tests Profile
 
 ```bash
-./mvnw -l target/integration.log -Pintegration-tests verify
+./mvnw -Pintegration-tests verify
 ```
 
 Runs integration tests (*IT.java, *ITCase.java).
 
----
+### Extension Defaults
 
-## OpenRewrite Marker Handling
+Profile behavior is configurable via extension defaults in `run-configuration.json`:
 
-### Marker Format
-
-```java
-/*~~(TODO: message about the issue)>*/
-```
-
-### Marker Categories
-
-**Category 1: LogRecord Warnings (AUTO-SUPPRESS)**
-
-Recipe: `CuiLogRecordPatternRecipe`
-
-```java
-// cui-rewrite:disable CuiLogRecordPatternRecipe
-LOGGER.info("Direct message for debugging");
-```
-
-**Category 2: Exception Warnings (AUTO-SUPPRESS)**
-
-Recipe: `InvalidExceptionUsageRecipe`
-
-```java
-// cui-rewrite:disable InvalidExceptionUsageRecipe
-catch (SomeException e) { ... }
-```
-
-**Category 3: Other Markers (ASK USER)**
-
-All other marker types require user confirmation before suppression.
-
-### Suppression Syntax
-
-```java
-// Single line
-// cui-rewrite:disable RecipeName
-<statement>
-
-// Block
-// cui-rewrite:disable RecipeName
-<statements>
-// cui-rewrite:enable RecipeName
-```
+| Key | Format | Example |
+|-----|--------|---------|
+| `build.maven.profiles.skip` | Comma-separated profile names | `itest,native,jfr` |
+| `build.maven.profiles.map.canonical` | `profile:canonical,...` pairs | `pre-commit:quality-gate,coverage:coverage` |
 
 ---
 
@@ -185,17 +131,6 @@ export CI=true
 ./mvnw help:all-profiles
 ```
 
----
-
-## Extension Defaults Configuration
-
-Extensions can configure Maven-specific defaults via `config_defaults()` callback. These values are stored in `run-configuration.json` under `extension_defaults`.
-
-| Key | Format | Example |
-|-----|--------|---------|
-| `build.maven.profiles.skip` | Comma-separated profile names | `itest,native,jfr` |
-| `build.maven.profiles.map.canonical` | `profile:canonical,...` pairs | `pre-commit:quality-gate,coverage:coverage` |
-
-See SKILL.md for profile pipeline details. See `build-api-reference.md` for shared build documentation.
+See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-maven:maven`
