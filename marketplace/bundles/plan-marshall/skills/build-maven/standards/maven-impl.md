@@ -48,16 +48,6 @@ All Maven builds use the Maven Wrapper from the project root:
 
 ---
 
-## Wrapper Detection
-
-Detection order (platform-aware):
-- Unix: `./mvnw` > `mvn` (on PATH)
-- Windows: `mvnw.cmd` > `mvn` (on PATH)
-
-Falls back to system `mvn` if no wrapper is found. The wrapper ensures reproducible builds by locking the Maven version.
-
----
-
 ## Module Builds
 
 ### Single Module Build
@@ -167,30 +157,11 @@ All other marker types require user confirmation before suppression.
 
 ## CI/CD Standards
 
-### Environment Variables
-
 ```bash
 export MAVEN_OPTS="-Xmx2g -XX:MaxMetaspaceSize=512m"
 export CI=true
-```
-
-### Non-Interactive Mode
-
-```bash
 ./mvnw --batch-mode --no-transfer-progress clean install
 ```
-
-Use `--batch-mode` (`-B`) to disable interactive input and `--no-transfer-progress` to suppress download progress bars in CI logs.
-
----
-
-## Build Status (Maven-Specific)
-
-Maven has additional failure detection beyond the shared rules:
-
-| Exit Code | Output Content | Status |
-|-----------|---------------|--------|
-| 0 | Contains `[ERROR]` lines | FAILURE |
 
 ---
 
@@ -213,19 +184,6 @@ Maven has additional failure detection beyond the shared rules:
 ./mvnw help:effective-pom
 ./mvnw help:all-profiles
 ```
-
----
-
-## Issue Routing
-
-Routes to skills in the `pm-dev-java` bundle:
-
-| Issue Type | Fix Command |
-|------------|-------------|
-| `compilation_error` | `/java-implement-code` |
-| `test_failure` | `/java-implement-tests` |
-| `javadoc_warning` | `/java-fix-javadoc` |
-| `dependency_error` | Manual POM fix |
 
 ---
 
@@ -271,14 +229,6 @@ def config_defaults(self, project_root: str) -> None:
     )
 ```
 
----
-
-## Coverage Report Paths
-
-| Path | Description |
-|------|-------------|
-| `target/site/jacoco/jacoco.xml` | Standard single-module report |
-| `target/jacoco/report.xml` | Alternative report location |
-| `target/site/jacoco-aggregate/jacoco.xml` | Multi-module aggregate report |
+See SKILL.md for wrapper detection, issue routing, build status, and coverage report paths. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-maven:maven`

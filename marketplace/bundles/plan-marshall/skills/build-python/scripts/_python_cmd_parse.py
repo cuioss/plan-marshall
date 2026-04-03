@@ -138,20 +138,13 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
         # Try to extract line number from traceback (file.py:NN: message)
         line_num = _find_pytest_line_number(content, file_path, test_name)
 
-        # Deduplication
-        dedup_key = f'test_failure:{file_path}:{line_num}:{message[:100]}'
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
-
-        issues.append(
-            Issue(
-                file=file_path,
-                line=line_num,
-                message=message,
-                category='test_failure',
-                severity=SEVERITY_ERROR,
-            )
+        add_issue_deduped(
+            issues, seen,
+            file=file_path,
+            line=line_num,
+            message=message,
+            severity=SEVERITY_ERROR,
+            category='test_failure',
         )
 
     # Attach stack traces to issues

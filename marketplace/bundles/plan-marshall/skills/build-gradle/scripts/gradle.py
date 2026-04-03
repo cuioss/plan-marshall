@@ -42,6 +42,7 @@ cmd_coverage_report = create_coverage_report_handler(
     search_paths=[
         ('build/reports/jacoco/test/jacocoTestReport.xml', 'jacoco'),
         ('build/reports/jacoco/jacocoTestReport.xml', 'jacoco'),
+        ('build/jacoco/test.xml', 'jacoco'),
     ],
     not_found_message='No JaCoCo XML report found. Run coverage build first.',
 )
@@ -68,6 +69,8 @@ def main() -> int:
         run_args_help="Complete Gradle command arguments (e.g., ':module:build' or 'build')",
         parse_handler=parse_log,
         parse_help='Parse Gradle build output and categorize issues',
+        parse_extra_modes=['no-openrewrite'],
+        parse_extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
         coverage_handler=cmd_coverage_report,
         coverage_help='Parse JaCoCo coverage report',
         check_warnings_handler=cmd_check_warnings,

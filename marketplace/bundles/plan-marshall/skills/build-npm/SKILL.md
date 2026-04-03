@@ -35,7 +35,7 @@ Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build
 
 ## Subcommands
 
-npm supports the shared subcommands documented in `build-api-reference.md`:
+npm supports all shared subcommands documented in `build-api-reference.md`:
 **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 
 Not available: `search-markers` (OpenRewrite is Java-specific).
@@ -95,7 +95,15 @@ Detection uses content patterns (e.g., `error TS` for TypeScript, `FAIL` + `Test
 
 ## Error Categories
 
-See `build-api-reference.md` § npm categories for the full table.
+| Category | Description | Parser |
+|----------|-------------|--------|
+| `compilation_error` | TypeScript errors (TS2xxx codes) | `_npm_parse_typescript.py` |
+| `test_failure` | Jest/Vitest/TAP test failures | `_npm_parse_jest.py`, `_npm_parse_tap.py` |
+| `lint_error` | ESLint violations | `_npm_parse_eslint.py` |
+| `npm_dependency` | ERESOLVE peer dependency conflicts | `_npm_parse_errors.py` |
+| `npm_error` | E404 and other npm command errors | `_npm_parse_errors.py` |
+
+See `build-api-reference.md` § npm categories for additional details.
 
 ### Issue Routing
 

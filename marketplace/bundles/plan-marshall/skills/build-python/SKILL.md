@@ -30,7 +30,7 @@ Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build
 
 ## Subcommands
 
-Python supports the shared subcommands documented in `build-api-reference.md`:
+Python supports all shared subcommands documented in `build-api-reference.md`:
 **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 
 Not available: `search-markers` (OpenRewrite is Java-specific).

@@ -145,12 +145,12 @@ class TestStdoutRedirectSuccess:
 
 
 # =============================================================================
-# Tests: CaptureStrategy.MAVEN_LOG_FLAG - success
+# Tests: CaptureStrategy.TOOL_LOG_FLAG - success
 # =============================================================================
 
 
 class TestMavenLogFlagSuccess:
-    """Tests for successful execution with MAVEN_LOG_FLAG strategy."""
+    """Tests for successful execution with TOOL_LOG_FLAG strategy."""
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute.subprocess.run')
@@ -160,7 +160,7 @@ class TestMavenLogFlagSuccess:
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = MagicMock(returncode=0)
 
-        _call_execute(capture_strategy=CaptureStrategy.MAVEN_LOG_FLAG)
+        _call_execute(capture_strategy=CaptureStrategy.TOOL_LOG_FLAG)
 
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs['capture_output'] is False
@@ -174,7 +174,7 @@ class TestMavenLogFlagSuccess:
         mock_run.return_value = MagicMock(returncode=0)
 
         with patch('builtins.open', mock_open()) as mocked_open:
-            _call_execute(capture_strategy=CaptureStrategy.MAVEN_LOG_FLAG)
+            _call_execute(capture_strategy=CaptureStrategy.TOOL_LOG_FLAG)
             mocked_open.assert_not_called()
 
     @patch('_build_execute.timeout_set')
@@ -185,7 +185,7 @@ class TestMavenLogFlagSuccess:
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = MagicMock(returncode=0)
 
-        result = _call_execute(capture_strategy=CaptureStrategy.MAVEN_LOG_FLAG)
+        result = _call_execute(capture_strategy=CaptureStrategy.TOOL_LOG_FLAG)
 
         assert result['status'] == 'success'
         assert result['exit_code'] == 0
@@ -659,8 +659,8 @@ class TestCaptureStrategyEnum:
     def test_stdout_redirect_value(self):
         assert CaptureStrategy.STDOUT_REDIRECT.value == 'stdout_redirect'
 
-    def test_maven_log_flag_value(self):
-        assert CaptureStrategy.MAVEN_LOG_FLAG.value == 'maven_log_flag'
+    def test_tool_log_flag_value(self):
+        assert CaptureStrategy.TOOL_LOG_FLAG.value == 'tool_log_flag'
 
     def test_enum_has_two_members(self):
         assert len(CaptureStrategy) == 2

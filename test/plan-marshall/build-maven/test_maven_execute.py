@@ -40,7 +40,7 @@ def test_config_default_timeout():
 def test_config_capture_strategy():
     """Config uses Maven log flag strategy."""
     from _build_execute import CaptureStrategy
-    assert _CONFIG.capture_strategy == CaptureStrategy.MAVEN_LOG_FLAG
+    assert _CONFIG.capture_strategy == CaptureStrategy.TOOL_LOG_FLAG
 
 
 # =============================================================================

@@ -17,7 +17,7 @@ Usage:
         tool_name="maven",
         build_command_fn=my_build_command_fn,
         scope_fn=my_scope_fn,
-        capture_strategy=CaptureStrategy.MAVEN_LOG_FLAG,
+        capture_strategy=CaptureStrategy.TOOL_LOG_FLAG,
     )
 """
 
@@ -39,6 +39,11 @@ from run_config import timeout_get, timeout_set
 # fails on a cold start).
 MIN_TIMEOUT = 60
 
+# Maximum timeout cap (seconds) — prevents exponential growth from successive
+# timeouts (each timeout doubles the learned value: 300→600→1200→...).
+# 30 minutes is a reasonable upper bound for any single build command.
+MAX_TIMEOUT = 1800
+
 
 class CaptureStrategy(Enum):
     """How build output is captured to the log file."""
@@ -46,8 +51,8 @@ class CaptureStrategy(Enum):
     STDOUT_REDIRECT = 'stdout_redirect'
     """Redirect stdout/stderr to log file via open() (Gradle, npm, Python)."""
 
-    MAVEN_LOG_FLAG = 'maven_log_flag'
-    """Use Maven's -l flag; subprocess gets capture_output=False."""
+    TOOL_LOG_FLAG = 'tool_log_flag'
+    """Tool manages log file (e.g., Maven -l flag); subprocess gets capture_output=False."""
 
 
 # Type for build command function: (wrapper, args, log_file) -> (cmd_parts, command_str)
@@ -143,7 +148,7 @@ def execute_direct_base(
     start_time = time.time()
 
     try:
-        if capture_strategy == CaptureStrategy.MAVEN_LOG_FLAG:
+        if capture_strategy == CaptureStrategy.TOOL_LOG_FLAG:
             # Maven uses -l flag; no stdout capture needed
             result = subprocess.run(
                 cmd_parts,
@@ -195,8 +200,9 @@ def execute_direct_base(
     except subprocess.TimeoutExpired:
         duration_seconds = int(time.time() - start_time)
         log_entry('script', 'global', 'ERROR', f'[{log_prefix}] Timeout after {timeout_seconds}s: {command_str}')
-        # Adaptive learning: double the timeout so next run has enough headroom
-        timeout_set(command_key, timeout_seconds * 2, project_dir)
+        # Adaptive learning: double the timeout so next run has enough headroom,
+        # but cap at MAX_TIMEOUT to prevent exponential growth from successive timeouts.
+        timeout_set(command_key, min(timeout_seconds * 2, MAX_TIMEOUT), project_dir)
         return {
             'status': 'timeout',
             'exit_code': -1,

@@ -45,7 +45,7 @@ def test_structured_fields():
 
 
 def test_format_toon_success_basic():
-    """Formats success result with tab separators."""
+    """Formats success result with colon-space separators."""
     result = {
         'status': 'success',
         'exit_code': 0,
@@ -55,11 +55,11 @@ def test_format_toon_success_basic():
     }
     output = format_toon(result)
 
-    assert 'status\tsuccess' in output
-    assert 'exit_code\t0' in output
-    assert 'duration_seconds\t45' in output
-    assert 'log_file\t.plan/temp/build-output/default/maven.log' in output
-    assert 'command\t./mvnw clean verify' in output
+    assert 'status: success' in output
+    assert 'exit_code: 0' in output
+    assert 'duration_seconds: 45' in output
+    assert 'log_file: .plan/temp/build-output/default/maven.log' in output
+    assert 'command: ./mvnw clean verify' in output
 
 
 def test_format_toon_success_field_order():
@@ -74,11 +74,11 @@ def test_format_toon_success_field_order():
     output = format_toon(result)
     lines = output.split('\n')
 
-    assert lines[0].startswith('status\t')
-    assert lines[1].startswith('exit_code\t')
-    assert lines[2].startswith('duration_seconds\t')
-    assert lines[3].startswith('log_file\t')
-    assert lines[4].startswith('command\t')
+    assert lines[0].startswith('status: ')
+    assert lines[1].startswith('exit_code: ')
+    assert lines[2].startswith('duration_seconds: ')
+    assert lines[3].startswith('log_file: ')
+    assert lines[4].startswith('command: ')
 
 
 def test_format_toon_with_extra_fields():
@@ -93,7 +93,7 @@ def test_format_toon_with_extra_fields():
     }
     output = format_toon(result)
 
-    assert 'wrapper\t./mvnw' in output
+    assert 'wrapper: ./mvnw' in output
 
 
 # =============================================================================
@@ -113,8 +113,8 @@ def test_format_toon_error_with_error_field():
     }
     output = format_toon(result)
 
-    assert 'status\terror' in output
-    assert 'error\tbuild_failed' in output
+    assert 'status: error' in output
+    assert 'error: build_failed' in output
 
 
 def test_format_toon_error_with_errors_list():
@@ -134,8 +134,8 @@ def test_format_toon_error_with_errors_list():
     output = format_toon(result)
 
     assert 'errors[2]{file,line,message,category}:' in output
-    assert 'src/Main.java\t15\tcannot find symbol\tcompilation' in output
-    assert 'src/Test.java\t42\ttest failed\ttest_failure' in output
+    assert '  src/Main.java,15,cannot find symbol,compilation' in output
+    assert '  src/Test.java,42,test failed,test_failure' in output
 
 
 def test_format_toon_errors_with_issue_objects():
@@ -159,7 +159,7 @@ def test_format_toon_errors_with_issue_objects():
     output = format_toon(result)
 
     assert 'errors[1]{file,line,message,category}:' in output
-    assert 'src/Main.java\t15\tcannot find symbol\tcompilation' in output
+    assert '  src/Main.java,15,cannot find symbol,compilation' in output
 
 
 def test_format_toon_errors_null_line():
@@ -176,7 +176,7 @@ def test_format_toon_errors_null_line():
     }
     output = format_toon(result)
 
-    assert 'pom.xml\t-\tdependency error\tdependency' in output
+    assert '  pom.xml,-,dependency error,dependency' in output
 
 
 # =============================================================================
@@ -199,7 +199,7 @@ def test_format_toon_warnings_actionable_mode():
     output = format_toon(result)
 
     assert 'warnings[1]{file,line,message}:' in output
-    assert 'pom.xml\t-\tdeprecated version' in output
+    assert '  pom.xml,-,deprecated version' in output
 
 
 def test_format_toon_warnings_structured_mode():
@@ -218,8 +218,8 @@ def test_format_toon_warnings_structured_mode():
     output = format_toon(result)
 
     assert 'warnings[2]{file,line,message,accepted}:' in output
-    assert 'pom.xml\t-\tdeprecated version\t' in output
-    assert 'src/Util.java\t10\tunchecked cast\t[accepted]' in output
+    assert '  pom.xml,-,deprecated version,' in output
+    assert '  src/Util.java,10,unchecked cast,[accepted]' in output
 
 
 def test_format_toon_warnings_with_issue_objects():
@@ -349,9 +349,9 @@ def test_format_toon_timeout():
     }
     output = format_toon(result)
 
-    assert 'status\ttimeout' in output
-    assert 'error\ttimeout' in output
-    assert 'timeout_used_seconds\t300' in output
+    assert 'status: timeout' in output
+    assert 'error: timeout' in output
+    assert 'timeout_used_seconds: 300' in output
 
 
 # =============================================================================

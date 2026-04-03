@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns
+from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns, parse_jvm_file_location
 from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
@@ -44,18 +44,11 @@ MAVEN_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
 
 
 def parse_file_location(line: str) -> dict[str, str | int | None]:
-    """Extract file, line, and column from a Maven error/warning line."""
-    result: dict[str, str | int | None] = {'file': None, 'line': None, 'column': None}
-    match = re.search(r'([^\s\[\]]+\.java):\[(\d+),(\d+)\]', line)
-    if match:
-        return {'file': match.group(1), 'line': int(match.group(2)), 'column': int(match.group(3))}
-    match = re.search(r'([^\s\[\]]+\.java):(\d+):', line)
-    if match:
-        return {'file': match.group(1), 'line': int(match.group(2)), 'column': None}
-    match = re.search(r'(\w+Test)\.(\w+):(\d+)', line)
-    if match:
-        return {'file': f'{match.group(1)}.java', 'line': int(match.group(3)), 'column': None, 'method': match.group(2)}
-    return result
+    """Extract file, line, and column from a Maven error/warning line.
+
+    Delegates to shared parse_jvm_file_location from _build_jvm_patterns.
+    """
+    return parse_jvm_file_location(line)
 
 
 # =============================================================================

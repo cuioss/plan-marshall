@@ -46,13 +46,13 @@ def test_run_success_output_format():
 
         assert result.returncode == 0, f'Successful run should exit with 0: {result.stderr}'
 
-        # Parse TOON output
+        # Parse TOON output (colon-space format)
         lines = result.stdout.strip().split('\n')
         toon = {}
         for line in lines:
-            if '\t' in line:
-                key, value = line.split('\t', 1)
-                toon[key] = value
+            if ': ' in line:
+                key, value = line.split(': ', 1)
+                toon[key.strip()] = value.strip()
 
         assert toon.get('status') == 'success', f'Status should be success: {toon}'
         assert 'log_file' in toon, 'Should include log_file'
@@ -66,7 +66,7 @@ def test_run_includes_log_file():
         result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', cwd=temp_dir)
 
         assert result.returncode == 0
-        assert 'log_file\t' in result.stdout, 'Should include log_file'
+        assert 'log_file: ' in result.stdout, 'Should include log_file'
         assert 'npm-' in result.stdout, 'Log file should contain npm prefix'
 
 
@@ -90,7 +90,7 @@ def test_run_failure_returns_exit_1():
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'run nonexistent-script-xyz', cwd=temp_dir)
 
         assert result.returncode == 1, 'Failed run should exit with 1'
-        assert 'status\terror' in result.stdout, 'Should have error status'
+        assert 'status: error' in result.stdout, 'Should have error status'
 
 
 # =============================================================================
@@ -105,7 +105,7 @@ def test_run_mode_actionable():
             SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'actionable', cwd=temp_dir
         )
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        assert 'status\tsuccess' in result.stdout
+        assert 'status: success' in result.stdout
 
 
 def test_run_mode_errors():

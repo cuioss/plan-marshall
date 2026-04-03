@@ -31,6 +31,8 @@ Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build
 Maven supports all shared subcommands documented in `build-api-reference.md`:
 **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **search-markers**.
 
+Not available: `find-project` (Gradle-specific).
+
 ### Maven-Specific Notes
 
 **run**: The `--command-args` value contains Maven goals and options, e.g., `"verify -Ppre-commit -pl my-module"`.

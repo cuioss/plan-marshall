@@ -203,11 +203,11 @@ class TestCmdRunCommonOutputFormat:
         assert '"status"' in stdout
         assert '"success"' in stdout
 
-    def test_toon_format_produces_tabs(self, capsys):
+    def test_toon_format_produces_colon_space(self, capsys):
         result = _make_result(status='success')
         cmd_run_common(result, _noop_parser, 'maven', output_format='toon')
         stdout = capsys.readouterr().out
-        assert 'status\tsuccess' in stdout
+        assert 'status: success' in stdout
 
 
 # =============================================================================

@@ -26,11 +26,11 @@ from pathlib import Path
 from _build_commands import build_canonical_commands, build_chained_commands
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
+from _build_discover import JS_EXTENSIONS, discover_js_sources
 from extension_base import (
     build_module_base,
     count_source_files,
     discover_packages,
-    discover_sources,
 )
 from plan_logging import log_entry
 
@@ -204,19 +204,19 @@ def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_r
 
     relative_path = base.paths.module
 
-    # Source directories (shared multi-language discovery)
-    sources = discover_sources(module_path)
+    # Source directories (JS-aware discovery for JS/TS projects)
+    sources = discover_js_sources(module_path)
     prefix = relative_path if relative_path != '.' else ''
     source_paths = [f'{prefix}/{s}' if prefix else s for s in sources['main']]
     test_paths = [f'{prefix}/{t}' if prefix else t for t in sources['test']]
 
-    # Packages via shared discovery
-    packages = discover_packages(module_path, sources.get('main', []), prefix)
-    test_packages = discover_packages(module_path, sources.get('test', []), prefix)
+    # Packages via shared discovery (with JS extensions)
+    packages = discover_packages(module_path, sources.get('main', []), prefix, extra_extensions=JS_EXTENSIONS)
+    test_packages = discover_packages(module_path, sources.get('test', []), prefix, extra_extensions=JS_EXTENSIONS)
 
-    # Stats via shared counting
-    source_files = count_source_files(module_path, sources['main'])
-    test_files = count_source_files(module_path, sources['test'])
+    # Stats via shared counting (with JS extensions)
+    source_files = count_source_files(module_path, sources['main'], extra_extensions=JS_EXTENSIONS)
+    test_files = count_source_files(module_path, sources['test'], extra_extensions=JS_EXTENSIONS)
 
     # Scripts from package.json
     scripts = pkg_data.get('scripts', {})

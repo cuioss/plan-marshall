@@ -36,7 +36,7 @@ Gradle supports all shared subcommands documented in `build-api-reference.md`:
 
 **run**: The `--command-args` value contains Gradle tasks, e.g., `":module:build"` or `"build"`.
 
-**parse**: Uses regex patterns for Gradle-specific task markers alongside shared JVM patterns.
+**parse**: Uses regex patterns for Gradle-specific task markers alongside shared JVM patterns. Supports the `no-openrewrite` mode in addition to shared modes.
 
 **coverage-report**: Auto-detects JaCoCo XML reports in these locations:
 - `build/reports/jacoco/test/jacocoTestReport.xml`

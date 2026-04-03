@@ -15,7 +15,7 @@ Usage:
         unix_wrapper='mvnw',
         windows_wrapper='mvnw.cmd',
         system_fallback='mvn',
-        capture_strategy=CaptureStrategy.MAVEN_LOG_FLAG,
+        capture_strategy=CaptureStrategy.TOOL_LOG_FLAG,
         scope_fn=_maven_scope_fn,
         build_command_fn=_maven_build_command_fn,
         default_timeout=300,

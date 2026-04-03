@@ -14,14 +14,6 @@ All Python builds use the pyprojectx wrapper from the project root:
 ./pw {command} {args}
 ```
 
-### Wrapper Detection
-
-Detection order (platform-aware):
-- Unix: `./pw` > `pwx` (on PATH)
-- Windows: `pw.bat` > `pwx` (on PATH)
-
-If no wrapper is found, a `FileNotFoundError` is raised (unlike Maven/Gradle which fall back to system commands).
-
 ### Canonical Commands
 
 | Command | Purpose |
@@ -85,7 +77,7 @@ export CI=true
 export PYTHONDONTWRITEBYTECODE=1
 ```
 
-pyprojectx runs non-interactively by default. Cache `.pyprojectx/` between CI runs.
+Cache `.pyprojectx/` between CI runs.
 
 ---
 
@@ -114,28 +106,6 @@ Dependencies are extracted from `[project].dependencies` (runtime) and `[project
 | pytest collection errors | Check for `__init__.py` in test directories |
 | Timeout on first run | pyprojectx downloads tools on first invocation |
 
----
-
-## Issue Routing
-
-Routes to skills in the `pm-dev-python` bundle:
-
-| Issue Type | Target Skill |
-|------------|-------------|
-| `type_error` | `pm-dev-python:python-core` |
-| `lint_error` | `pm-dev-python:python-core` |
-| `test_failure` | `pm-dev-python:pytest-testing` |
-| `import_error` | Check `pyproject.toml` `[tool.mypy]` configuration |
-
----
-
-## Coverage Report Paths
-
-| Path | Format |
-|------|--------|
-| `coverage.xml` | Cobertura XML |
-| `htmlcov/coverage.xml` | Cobertura XML (alternate) |
-
-Generate with: `pytest --cov --cov-report=xml`
+See SKILL.md for wrapper detection, issue routing, and coverage report paths. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-python:python_build`

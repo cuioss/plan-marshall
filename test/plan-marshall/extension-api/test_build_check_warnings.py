@@ -17,7 +17,13 @@ import pytest
 _SCRIPT_DIR = Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
 sys.path.insert(0, str(_SCRIPT_DIR))
 
+# Also add toon_parser path
+_TOON_DIR = Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
+sys.path.insert(0, str(_TOON_DIR))
+
 _bcw = importlib.import_module('_build_check_warnings')
+
+from toon_parser import parse_toon  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +65,7 @@ class TestFactory:
             acceptable_json=json.dumps({'dep': ['com.example.*']}),
         )
         exit_code = handler(args)
-        output = json.loads(capsys.readouterr().out)
+        output = parse_toon(capsys.readouterr().out)
         assert exit_code == 0
         assert output['acceptable'] == 1
 
@@ -74,7 +80,7 @@ class TestFactory:
             acceptable_json=json.dumps({'g': ['warn msg', 'error msg']}),
         )
         handler(args)
-        output = json.loads(capsys.readouterr().out)
+        output = parse_toon(capsys.readouterr().out)
         # Only the WARNING-severity item should be processed
         assert output['total'] == 2
         assert output['acceptable'] == 1
@@ -128,8 +134,8 @@ class TestJsonInput:
         args = _args(warnings_json='not valid json')
         exit_code = _bcw.cmd_check_warnings_base(args)
         assert exit_code == 1
-        output = json.loads(capsys.readouterr().out)
-        assert output['success'] is False
+        output = parse_toon(capsys.readouterr().out)
+        assert output['status'] == 'error'
         assert 'Invalid JSON' in output['error']
 
     def test_invalid_acceptable_warnings_json(self, capsys):
@@ -139,14 +145,14 @@ class TestJsonInput:
         )
         exit_code = _bcw.cmd_check_warnings_base(args)
         assert exit_code == 1
-        output = json.loads(capsys.readouterr().out)
+        output = parse_toon(capsys.readouterr().out)
         assert 'Invalid JSON' in output['error']
 
     def test_warnings_must_be_array(self, capsys):
         args = _args(warnings_json=json.dumps({'not': 'array'}))
         exit_code = _bcw.cmd_check_warnings_base(args)
         assert exit_code == 1
-        output = json.loads(capsys.readouterr().out)
+        output = parse_toon(capsys.readouterr().out)
         assert 'must be an array' in output['error']
 
 
@@ -177,7 +183,7 @@ class TestStdinInput:
             mock_stdin.isatty.return_value = True
             exit_code = _bcw.cmd_check_warnings_base(args)
         assert exit_code == 1
-        output = json.loads(capsys.readouterr().out)
+        output = parse_toon(capsys.readouterr().out)
         assert 'No input provided' in output['error']
 
 
@@ -198,8 +204,8 @@ class TestOutputStructure:
             acceptable_json=json.dumps({'g': ['acceptable msg']}),
         )
         _bcw.cmd_check_warnings_base(args, matcher='substring')
-        output = json.loads(capsys.readouterr().out)
-        assert output['success'] is True
+        output = parse_toon(capsys.readouterr().out)
+        assert output['status'] == 'success'
         assert 'total' in output
         assert 'acceptable' in output
         assert 'fixable' in output
@@ -224,7 +230,7 @@ class TestPatternsArg:
         )
         exit_code = _bcw.cmd_check_warnings_base(args, matcher='substring', supports_patterns_arg=True)
         assert exit_code == 0
-        output = json.loads(capsys.readouterr().out)
+        output = parse_toon(capsys.readouterr().out)
         assert output['acceptable'] == 2
 
     def test_invalid_patterns_json(self, capsys):
@@ -234,7 +240,7 @@ class TestPatternsArg:
         )
         exit_code = _bcw.cmd_check_warnings_base(args, matcher='substring', supports_patterns_arg=True)
         assert exit_code == 1
-        output = json.loads(capsys.readouterr().out)
+        output = parse_toon(capsys.readouterr().out)
         assert 'Invalid JSON' in output['error']
 
     def test_acceptable_warnings_flattened_when_patterns_arg(self, capsys):

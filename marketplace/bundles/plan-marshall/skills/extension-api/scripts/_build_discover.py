@@ -41,6 +41,24 @@ JVM_EXTENSIONS: dict[str, str] = {
 }
 """Glob patterns for JVM source files, keyed by language name."""
 
+# JavaScript/TypeScript extensions for npm/frontend projects
+JS_EXTENSIONS: dict[str, str] = {
+    'js': '*.js',
+    'jsx': '*.jsx',
+    'ts': '*.ts',
+    'tsx': '*.tsx',
+    'mjs': '*.mjs',
+    'cjs': '*.cjs',
+}
+"""Glob patterns for JavaScript/TypeScript source files."""
+
+# Common JS source directory names (not following src/main/{lang} convention)
+JS_SOURCE_DIRS = ['src', 'lib', 'app', 'pages', 'components']
+"""Standard source directory names for JavaScript/TypeScript projects."""
+
+JS_TEST_DIRS = ['test', 'tests', '__tests__', 'spec', 'specs', 'e2e']
+"""Standard test directory names for JavaScript/TypeScript projects."""
+
 
 # =============================================================================
 # Data Classes
@@ -278,22 +296,81 @@ def discover_sources(module_path: str | Path) -> dict[str, list[str]]:
     return sources
 
 
-def count_source_files(module_path: str | Path, source_dirs: list[str]) -> int:
-    """Count JVM source files in the given source directories.
+def discover_js_sources(module_path: str | Path) -> dict[str, list[str]]:
+    """Discover source directories for JavaScript/TypeScript projects.
+
+    Unlike JVM projects which use src/main/{lang}, JS projects use
+    flat directories like src/, lib/, app/. Test directories include
+    test/, tests/, __tests__/, spec/.
+
+    Args:
+        module_path: Absolute path to module directory.
+
+    Returns:
+        Dict with 'main' and 'test' keys, each containing a list of
+        relative source directory paths that exist.
+    """
+    mod = Path(module_path)
+    sources: dict[str, list[str]] = {'main': [], 'test': []}
+
+    # Check for JVM-style layout first (for hybrid projects)
+    for lang in JVM_LANGUAGES:
+        main_dir = mod / 'src' / 'main' / lang
+        test_dir = mod / 'src' / 'test' / lang
+        if main_dir.exists():
+            sources['main'].append(f'src/main/{lang}')
+        if test_dir.exists():
+            sources['test'].append(f'src/test/{lang}')
+
+    # JS-style source directories (only if no JVM sources found in that dir)
+    for dir_name in JS_SOURCE_DIRS:
+        dir_path = mod / dir_name
+        if dir_path.is_dir() and dir_name not in [d.split('/')[-1] for d in sources['main']]:
+            # Verify it actually has JS/TS files
+            has_js = any(list(dir_path.rglob(ext))[:1] for ext in JS_EXTENSIONS.values())
+            if has_js:
+                sources['main'].append(dir_name)
+
+    # JS-style test directories
+    for dir_name in JS_TEST_DIRS:
+        dir_path = mod / dir_name
+        if dir_path.is_dir():
+            sources['test'].append(dir_name)
+
+    # Resources directories (shared with JVM)
+    if (mod / 'src' / 'main' / 'resources').exists():
+        sources['main'].append('src/main/resources')
+    if (mod / 'src' / 'test' / 'resources').exists():
+        sources['test'].append('src/test/resources')
+
+    return sources
+
+
+def count_source_files(module_path: str | Path, source_dirs: list[str], extra_extensions: dict[str, str] | None = None) -> int:
+    """Count source files in the given source directories.
 
     Determines the language from the directory path (e.g. ``src/main/kotlin``
     → ``*.kt``) and counts matching files recursively. Resource directories
-    and directories not mapping to a known JVM language are skipped.
+    and directories not mapping to a known language are skipped.
+
+    For JS/TS projects, pass ``extra_extensions=JS_EXTENSIONS`` to count
+    JavaScript and TypeScript files in flat source directories.
 
     Args:
         module_path: Absolute path to module directory.
         source_dirs: List of relative source directory paths
-            (as returned by :func:`discover_sources`).
+            (as returned by :func:`discover_sources` or :func:`discover_js_sources`).
+        extra_extensions: Additional file extension mappings beyond JVM.
+            Keys are arbitrary identifiers, values are glob patterns.
 
     Returns:
-        Total count of JVM source files across all directories.
+        Total count of source files across all directories.
     """
     mod = Path(module_path)
+    all_extensions = dict(JVM_EXTENSIONS)
+    if extra_extensions:
+        all_extensions.update(extra_extensions)
+
     count = 0
     for src in source_dirs:
         src_path = mod / src
@@ -301,8 +378,12 @@ def count_source_files(module_path: str | Path, source_dirs: list[str]) -> int:
             continue
         # Determine language from trailing directory name
         lang = Path(src).name
-        if lang in JVM_EXTENSIONS:
-            count += len(list(src_path.rglob(JVM_EXTENSIONS[lang])))
+        if lang in all_extensions:
+            count += len(list(src_path.rglob(all_extensions[lang])))
+        elif extra_extensions:
+            # For flat dirs (src/, lib/), count all extra extension files
+            for ext_glob in extra_extensions.values():
+                count += len(list(src_path.rglob(ext_glob)))
         # Skip resources and other non-code directories
     return count
 
@@ -311,17 +392,22 @@ def discover_packages(
     module_path: str | Path,
     source_dirs: list[str],
     relative_path: str,
+    extra_extensions: dict[str, str] | None = None,
 ) -> dict:
-    """Discover JVM packages from source directories.
+    """Discover packages from source directories.
 
-    Scans source directories for JVM source files and groups them by
+    Scans source directories for source files and groups them by
     package (directory structure converted to dotted notation).
+
+    For JVM projects, uses JVM_EXTENSIONS by default. For JS/TS projects,
+    pass ``extra_extensions=JS_EXTENSIONS`` to also find JavaScript packages.
 
     Args:
         module_path: Absolute path to module directory.
         source_dirs: List of relative source directory paths to scan.
         relative_path: Module path relative to project root (used to
             prefix paths in the output). Use ``""`` for root modules.
+        extra_extensions: Additional file extension mappings beyond JVM.
 
     Returns:
         Dict keyed by package name. Each value contains::
@@ -335,8 +421,14 @@ def discover_packages(
     mod = Path(module_path)
     packages: dict[str, dict] = {}
 
-    # Collect all JVM file extensions to search for
-    all_extensions = list(JVM_EXTENSIONS.values())
+    # Collect all file extensions to search for
+    all_ext = dict(JVM_EXTENSIONS)
+    if extra_extensions:
+        all_ext.update(extra_extensions)
+    all_extensions = list(all_ext.values())
+    all_suffixes = {'.java', '.kt', '.groovy', '.scala'}
+    if extra_extensions:
+        all_suffixes.update(f'.{k}' for k in extra_extensions)
 
     for source_dir in source_dirs:
         source_path = mod / source_dir
@@ -380,7 +472,7 @@ def discover_packages(
             # List direct source files (not recursive — sub-packages have their own entry)
             direct_files = sorted(
                 f.name for f in pkg_dir.iterdir()
-                if f.is_file() and f.suffix in {'.java', '.kt', '.groovy', '.scala'}
+                if f.is_file() and f.suffix in all_suffixes
                 and f.name != 'package-info.java'
             )
             if direct_files:

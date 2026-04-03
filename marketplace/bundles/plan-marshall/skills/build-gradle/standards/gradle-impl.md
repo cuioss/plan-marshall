@@ -103,16 +103,9 @@ tasks.named<Test>("test") {
 
 ## CI/CD Standards
 
-### Environment Variables
-
 ```bash
 export GRADLE_OPTS="-Xmx2g -XX:MaxMetaspaceSize=512m"
 export CI=true
-```
-
-### Non-Interactive Mode
-
-```bash
 ./gradlew build --no-daemon --console=plain
 ```
 
@@ -153,29 +146,6 @@ These are categorized as `compilation_error` alongside Java errors.
 
 ---
 
-## Issue Routing
-
-Routes to skills in the `pm-dev-java` bundle:
-
-| Issue Type | Target Skill |
-|------------|-------------|
-| `compilation_error` | `pm-dev-java:java-core` |
-| `test_failure` | `pm-dev-java:junit-core` |
-| `javadoc_warning` | `pm-dev-java:javadoc` |
-| `dependency_error` | Manual build.gradle fix |
-
----
-
-## Wrapper Detection
-
-Detection order (platform-aware):
-- Unix: `./gradlew` > `gradle` (on PATH)
-- Windows: `gradlew.bat` > `gradle` (on PATH)
-
-Falls back to system `gradle` if no wrapper is found. The wrapper ensures reproducible builds by locking the Gradle version.
-
----
-
 ## Dependency Management
 
 Gradle uses `platform()` and `enforcedPlatform()` for BOM-style dependency management, analogous to Maven's `<dependencyManagement>`. For multi-project builds:
@@ -183,13 +153,6 @@ Gradle uses `platform()` and `enforcedPlatform()` for BOM-style dependency manag
 - Child projects should not override platform-managed versions
 - Use `dependencies { implementation platform(project(':bom')) }` for internal BOMs
 
----
-
-## Coverage Report Paths
-
-| Path | Description |
-|------|-------------|
-| `build/reports/jacoco/test/jacocoTestReport.xml` | Standard Gradle JaCoCo report |
-| `build/reports/jacoco/jacocoTestReport.xml` | Alternative report location |
+See SKILL.md for wrapper detection, issue routing, and coverage report paths. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-gradle:gradle`

@@ -113,30 +113,12 @@ PLAYWRIGHT_BASE_URL=http://localhost:3000 npm run test:e2e  # E2E tests
 
 ## CI/CD Standards
 
-### Environment Variables
-
 ```bash
 export CI=true
 export NODE_ENV=test
 ```
 
-### Non-Interactive Mode
-
-npm runs non-interactively when `CI=true` is set. This disables prompts and progress bars.
-
----
-
-## Issue Routing
-
-Routes to skills in the `pm-dev-frontend` bundle:
-
-| Issue Type | Target Skill |
-|------------|-------------|
-| `compilation_error` | `pm-dev-frontend:javascript` |
-| `test_failure` | `pm-dev-frontend:jest-testing` |
-| `lint_error` | `pm-dev-frontend:lint-config` |
-| `npm_dependency` | Manual package.json fix |
-| `npm_error` | Manual npm configuration fix |
+npm runs non-interactively when `CI=true` is set.
 
 ---
 
@@ -150,16 +132,6 @@ Routes to skills in the `pm-dev-frontend` bundle:
 | Workspace not found | Verify `workspaces` field in root package.json |
 | TypeScript compilation slow | Use `--incremental` or project references |
 
----
-
-## Coverage Report Paths
-
-| Path | Format |
-|------|--------|
-| `coverage/coverage-summary.json` | Jest/Istanbul JSON |
-| `coverage/lcov.info` | LCOV |
-| `dist/coverage/coverage-summary.json` | Alternative JSON location |
-
-Generate with: `npx jest --coverage` or `npx vitest run --coverage`
+See SKILL.md for issue routing and coverage report paths. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-npm:npm`

@@ -46,21 +46,21 @@ def test_analyze_help():
 def test_analyze_json_coverage():
     """Test analyzing JSON coverage report."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'coverage-summary.json'))
-    data = result.json()
+    data = result.toon()
     assert data['status'] == 'success', 'Successfully analyzed JSON coverage'
 
 
 def test_analyze_overall_coverage_present():
     """Test overall coverage metrics are present."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'coverage-summary.json'))
-    data = result.json()
+    data = result.toon()
     assert 'overall_coverage' in data.get('data', {}), 'Overall coverage present'
 
 
 def test_analyze_line_coverage_numeric():
     """Test line coverage is numeric."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'coverage-summary.json'))
-    data = result.json()
+    data = result.toon()
     line_coverage = data.get('data', {}).get('overall_coverage', {}).get('line_coverage')
     assert isinstance(line_coverage, (int, float)), 'Line coverage is numeric'
 
@@ -68,14 +68,14 @@ def test_analyze_line_coverage_numeric():
 def test_analyze_by_file_present():
     """Test by_file array is present."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'coverage-summary.json'))
-    data = result.json()
+    data = result.toon()
     assert 'by_file' in data.get('data', {}), 'By-file data present'
 
 
 def test_analyze_high_coverage():
     """Test analyzing high coverage report."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'high-coverage.json'))
-    data = result.json()
+    data = result.toon()
     assert data['status'] == 'success', 'Analyzed high coverage report'
 
 
@@ -84,7 +84,7 @@ def test_analyze_low_coverage():
     result = run_script(
         SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'low-coverage.json'), '--threshold', '80'
     )
-    data = result.json()
+    data = result.toon()
     low_coverage = data.get('data', {}).get('low_coverage_files', [])
     assert isinstance(low_coverage, list), 'Low coverage files array present'
 
@@ -92,14 +92,14 @@ def test_analyze_low_coverage():
 def test_analyze_lcov_format():
     """Test analyzing LCOV format report."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'lcov.info'), '--format', 'lcov')
-    data = result.json()
+    data = result.toon()
     assert data['status'] == 'success', 'Successfully analyzed LCOV format'
 
 
 def test_analyze_missing_report_error():
     """Test error handling for missing report file."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', 'nonexistent.json')
-    data = result.json()
+    data = result.toon()
     assert data['status'] == 'error', 'Returns error for missing file'
 
 
@@ -108,14 +108,14 @@ def test_analyze_threshold_parameter():
     result = run_script(
         SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'coverage-summary.json'), '--threshold', '70'
     )
-    data = result.json()
+    data = result.toon()
     assert data.get('metrics', {}).get('threshold') == 70.0, 'Threshold parameter used'
 
 
 def test_analyze_empty_coverage():
     """Test handling empty coverage report."""
     result = run_script(SCRIPT_PATH, 'analyze', '--report', str(FIXTURES_DIR / 'empty-coverage.json'))
-    data = result.json()
+    data = result.toon()
     # Should handle empty gracefully
     assert data['status'] in ['success', 'error'], 'Handled empty coverage'
 

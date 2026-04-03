@@ -4,6 +4,10 @@
 Shared formatting for build command results across build systems.
 Provides TOON and JSON output formats per build-execution.md specification.
 
+Uses serialize_toon from toon_parser (ref-toon-format) as the canonical
+TOON serializer. This module normalizes build-specific data structures
+(Issue objects, UnitTestSummary) before delegating to serialize_toon.
+
 Usage:
     from build_format import format_toon, format_json
 
@@ -16,7 +20,10 @@ Usage:
 """
 
 import json
+from collections import OrderedDict
 from typing import Any
+
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # =============================================================================
 # Constants
@@ -41,93 +48,80 @@ STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}
 
 
 def format_toon(result: dict) -> str:
-    """Format result dict as TOON output.
+    """Format result dict as TOON output using canonical serialize_toon.
 
-    Produces tab-separated key-value pairs for scalar fields,
-    followed by structured sections for errors, warnings, and tests.
+    Normalizes Issue/UnitTestSummary objects to plain dicts, orders fields
+    per the build-execution.md specification, then delegates to serialize_toon
+    from toon_parser (ref-toon-format skill).
 
     Args:
         result: Result dict from build_result.*_result() functions.
             May contain Issue objects (with to_dict()) or plain dicts.
 
     Returns:
-        TOON-formatted string with tab separators.
-
-    Example output (success):
-        status\tsuccess
-        exit_code\t0
-        duration_seconds\t45
-        log_file\t.plan/temp/build-output/default/maven-2026-01-06-143000.log
-        command\t./mvnw clean verify
-
-    Example output (error with issues):
-        status\terror
-        exit_code\t1
-        ...
-        error\tbuild_failed
-
-        errors[2]{file,line,message,category}:
-        src/Main.java\t15\tcannot find symbol\tcompilation
-        src/Test.java\t42\ttest failed\ttest_failure
-
-        warnings[1]{file,line,message}:
-        pom.xml\t-\tdeprecated version\tdeprecation
-
-        tests:
-          passed: 10
-          failed: 2
-          skipped: 1
+        TOON-formatted string.
     """
-    lines = []
+    # Build ordered dict to control field output order
+    ordered: OrderedDict[str, Any] = OrderedDict()
 
     # Core fields first (in order)
     for field in CORE_FIELDS:
         if field in result:
-            lines.append(f'{field}\t{result[field]}')
+            ordered[field] = result[field]
 
     # Extra scalar fields
     for field in EXTRA_FIELDS:
         if field in result:
-            lines.append(f'{field}\t{result[field]}')
+            ordered[field] = result[field]
 
-    # Errors section
+    # Errors section — normalize Issue objects to dicts with consistent fields
     if 'errors' in result and result['errors']:
-        lines.append('')  # Blank line before section
         errors = _normalize_issues(result['errors'])
-        lines.append(f'errors[{len(errors)}]{{file,line,message,category}}:')
-        for err in errors:
-            line_num = err.get('line') if err.get('line') is not None else '-'
-            category = err.get('category', '')
-            lines.append(f'{err.get("file", "-")}\t{line_num}\t{err.get("message", "")}\t{category}')
+        # Ensure consistent field set for uniform array serialization
+        ordered['errors'] = [
+            OrderedDict([
+                ('file', err.get('file', '-') or '-'),
+                ('line', err.get('line') if err.get('line') is not None else '-'),
+                ('message', err.get('message', '')),
+                ('category', err.get('category', '')),
+            ])
+            for err in errors
+        ]
 
-    # Warnings section
+    # Warnings section — normalize with optional accepted field
     if 'warnings' in result and result['warnings']:
-        lines.append('')  # Blank line before section
         warnings = _normalize_issues(result['warnings'])
-        # Check if any warning has 'accepted' field (structured mode)
         has_accepted = any(w.get('accepted') is not None for w in warnings)
         if has_accepted:
-            lines.append(f'warnings[{len(warnings)}]{{file,line,message,accepted}}:')
-            for warn in warnings:
-                line_num = warn.get('line') if warn.get('line') is not None else '-'
-                accepted = '[accepted]' if warn.get('accepted') else ''
-                lines.append(f'{warn.get("file", "-")}\t{line_num}\t{warn.get("message", "")}\t{accepted}')
+            ordered['warnings'] = [
+                OrderedDict([
+                    ('file', w.get('file', '-') or '-'),
+                    ('line', w.get('line') if w.get('line') is not None else '-'),
+                    ('message', w.get('message', '')),
+                    ('accepted', '[accepted]' if w.get('accepted') else ''),
+                ])
+                for w in warnings
+            ]
         else:
-            lines.append(f'warnings[{len(warnings)}]{{file,line,message}}:')
-            for warn in warnings:
-                line_num = warn.get('line') if warn.get('line') is not None else '-'
-                lines.append(f'{warn.get("file", "-")}\t{line_num}\t{warn.get("message", "")}')
+            ordered['warnings'] = [
+                OrderedDict([
+                    ('file', w.get('file', '-') or '-'),
+                    ('line', w.get('line') if w.get('line') is not None else '-'),
+                    ('message', w.get('message', '')),
+                ])
+                for w in warnings
+            ]
 
-    # Tests section
+    # Tests section — normalize UnitTestSummary to dict
     if 'tests' in result and result['tests']:
-        lines.append('')  # Blank line before section
         tests = _normalize_dict(result['tests'])
-        lines.append('tests:')
-        lines.append(f'  passed: {tests.get("passed", 0)}')
-        lines.append(f'  failed: {tests.get("failed", 0)}')
-        lines.append(f'  skipped: {tests.get("skipped", 0)}')
+        ordered['tests'] = OrderedDict([
+            ('passed', tests.get('passed', 0)),
+            ('failed', tests.get('failed', 0)),
+            ('skipped', tests.get('skipped', 0)),
+        ])
 
-    return '\n'.join(lines)
+    return serialize_toon(dict(ordered))
 
 
 # =============================================================================

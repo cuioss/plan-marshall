@@ -65,7 +65,7 @@ def cmd_parse_common(
     """
     log_path = Path(args.log)
     if not log_path.exists():
-        print(json.dumps({'status': 'error', 'error': f'Log file not found: {args.log}'}, indent=2))
+        print(format_toon({'status': 'error', 'error': f'Log file not found: {args.log}'}))
         return 1
 
     if parser_needs_command:

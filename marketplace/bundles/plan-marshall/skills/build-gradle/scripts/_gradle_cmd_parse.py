@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns
+from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns, parse_jvm_file_location
 from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
@@ -102,16 +102,10 @@ GRADLE_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
 def parse_file_location(line: str) -> dict[str, str | int | None]:
     """Extract file, line, and column from a Gradle error/warning line.
 
-    Supports Java, Kotlin, and Groovy source file patterns.
-    Returns dict with consistent keys matching Maven's parse_file_location().
+    Delegates to shared parse_jvm_file_location from _build_jvm_patterns.
+    Supports Java, Kotlin, Groovy, and Scala source file patterns.
     """
-    result: dict[str, str | int | None] = {'file': None, 'line': None, 'column': None}
-    match = re.search(r'([^\s:]+\.(java|kt|groovy)):(\d+):?(\d+)?', line)
-    if match:
-        result['file'] = match.group(1)
-        result['line'] = int(match.group(3))
-        result['column'] = int(match.group(4)) if match.group(4) else None
-    return result
+    return parse_jvm_file_location(line)
 
 
 # =============================================================================
