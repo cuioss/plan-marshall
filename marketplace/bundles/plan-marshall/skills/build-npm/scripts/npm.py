@@ -41,7 +41,6 @@ cmd_coverage_report = create_coverage_report_handler(
 
 cmd_check_warnings = create_check_warnings_handler(
     matcher='substring',
-    supports_patterns_arg=False,
 )
 
 

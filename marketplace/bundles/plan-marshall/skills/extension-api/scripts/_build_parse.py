@@ -315,28 +315,6 @@ def generate_summary_from_issues(issues: list[Issue]) -> dict:
 CategoryPatterns = dict[str, list[str]]
 
 
-def deduplicate_issues(issues: list[Issue]) -> list[Issue]:
-    """Remove duplicate issues based on category, file, line, and message prefix.
-
-    Standard dedup key format: '{category}:{file}:{line}:{message[:100]}'
-    Used by all build parsers for consistent deduplication.
-
-    Args:
-        issues: List of Issues, possibly containing duplicates.
-
-    Returns:
-        Deduplicated list preserving original order.
-    """
-    seen: set[str] = set()
-    result: list[Issue] = []
-    for issue in issues:
-        dedup_key = f'{issue.category}:{issue.file}:{issue.line}:{issue.message[:100]}'
-        if dedup_key not in seen:
-            seen.add(dedup_key)
-            result.append(issue)
-    return result
-
-
 def add_issue_deduped(
     issues: list[Issue],
     seen: set[str],

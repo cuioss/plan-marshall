@@ -1,6 +1,6 @@
 # Build Execution API
 
-Specification for build command execution in domain extensions.
+Specification for build command execution in domain extensions. This document covers the **execution contract** (input/output fields, lifecycle, format specs). For subcommand documentation and error categories, see `build-api-reference.md`. For timeouts and log handling standards, see `build-systems-common.md`.
 
 ## Purpose
 
@@ -112,7 +112,7 @@ Build systems may include additional context for diagnostics.
 | Field | Type | Scope | Description |
 |-------|------|-------|-------------|
 | `timeout_used_seconds` | int | All | Timeout that was applied |
-| `wrapper` | string | Maven | Wrapper path used (e.g., `./mvnw`) |
+| `wrapper` | string | Maven, Python | Wrapper path used (e.g., `./mvnw`, `./pw`) |
 | `command_type` | string | npm | Execution type: `npm` or `npx` |
 
 ## Requirements
@@ -213,7 +213,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
 Extensions expose a single `run` subcommand with format and mode selection:
 
 ```bash
-python3 .plan/execute-script.py {bundle}:plan-marshall-plugin:{script} run \
+python3 .plan/execute-script.py {bundle}:build-{tool}:{script} run \
   --command-args "verify -pl core-api" \
   --format toon \             # or --format json
   --mode actionable           # or --mode structured, --mode errors
@@ -379,7 +379,7 @@ Each domain bundle provides its own `{build_system}_execute.py` module that:
 - Integrates with timeout learning (R3)
 - Returns `DirectCommandResult` structure
 
-Location: `{bundle}/skills/plan-marshall-plugin/scripts/{build_system}_execute.py`
+Location: `{bundle}/skills/build-{tool}/scripts/_{build_system}_execute.py`
 
 | Build System | Module |
 |--------------|--------|

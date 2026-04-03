@@ -64,6 +64,17 @@ npm runs non-interactively when `CI=true` is set.
 | Workspace not found | Verify `workspaces` field in root package.json |
 | TypeScript compilation slow | Use `--incremental` or project references |
 
+### Diagnostic Commands
+
+```bash
+npm --version
+npm ls
+npm ls --all
+npm outdated
+npm audit
+npx tsc --version
+```
+
 See SKILL.md for coverage report paths. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-npm:npm`

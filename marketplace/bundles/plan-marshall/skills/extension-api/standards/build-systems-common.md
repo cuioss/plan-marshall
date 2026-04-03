@@ -18,7 +18,7 @@ timeout = last_successful_duration * 1.25
 |-----------|-------|
 | Default timeout | 300 seconds (5 minutes) |
 | Minimum timeout | 60 seconds |
-| Maximum timeout | 600 seconds (10 minutes) |
+| Maximum timeout | 1800 seconds (30 minutes) |
 | Discovery timeout | 120 seconds |
 
 **Note**: All timeouts use **seconds** (not milliseconds). The build script API accepts `--timeout` in seconds.
@@ -26,14 +26,14 @@ timeout = last_successful_duration * 1.25
 ### Adaptive Learning
 
 - On successful completion, actual duration is recorded
-- On timeout failure, the cached timeout is doubled for the next run
+- On timeout failure, the cached timeout is doubled for the next run (capped at 1800s)
 - Command key format varies per build system (e.g., `maven:verify`, `python:module_tests`)
 
 ### Timeout Behavior
 
 On timeout:
 1. Kill build process
-2. Return exit code 124
+2. Return exit code -1 (with status `timeout`)
 3. Log file contains partial output up to timeout
 4. Build marked as FAILURE
 
@@ -184,3 +184,32 @@ Issues are categorized and routed to appropriate fix strategies:
 | `openrewrite_info` | OpenRewrite plugin output | Maven, Gradle |
 | `playwright_error` | Browser automation failures | npm |
 | `import_error` | Module import errors | Python |
+
+---
+
+## CI/CD Standards
+
+All build systems support CI mode via environment variables:
+
+| Build System | CI Environment Variables | Additional Flags |
+|-------------|--------------------------|------------------|
+| Maven | `CI=true`, `MAVEN_OPTS="-Xmx2g -XX:MaxMetaspaceSize=512m"` | `--batch-mode --no-transfer-progress` |
+| Gradle | `CI=true`, `GRADLE_OPTS="-Xmx2g -XX:MaxMetaspaceSize=512m"` | `--no-daemon --console=plain` |
+| npm | `CI=true`, `NODE_ENV=test` | (non-interactive automatically) |
+| Python | `CI=true`, `PYTHONDONTWRITEBYTECODE=1` | Cache `.pyprojectx/` between runs |
+
+See each tool's `*-impl.md` for full CI/CD configuration details.
+
+---
+
+## Common Troubleshooting Patterns
+
+| Issue | Applies To | Solution |
+|-------|-----------|----------|
+| Memory issues | Maven, Gradle | Adjust `*_OPTS` (`-Xmx2g -XX:MaxMetaspaceSize=512m`) |
+| Dependency resolution failures | All | Check descriptor file (pom.xml, build.gradle, package.json, pyproject.toml) |
+| Version conflicts | Maven, Gradle | Use `dependency:tree` / `dependencyInsight` |
+| Slow builds | Maven, Gradle | Enable parallel builds (`-T 1C` / `--parallel`) |
+| Build timeout | All | Increase `--timeout` or check for hanging processes |
+
+See each tool's `*-impl.md` for tool-specific diagnostic commands.

@@ -166,6 +166,7 @@ def execute_direct_base(
                     timeout=timeout_seconds,
                     stdout=log,
                     stderr=subprocess.STDOUT,
+                    check=False,
                     cwd=cwd,
                     env=env,
                 )

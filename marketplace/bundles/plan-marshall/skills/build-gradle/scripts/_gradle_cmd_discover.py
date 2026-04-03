@@ -430,25 +430,17 @@ def _extract_gradle_module(
         'name': name,
         'build_systems': ['gradle'],
         'paths': {
-            k: v
-            for k, v in {
-                'module': rel_path_str,
-                'descriptor': base.paths.descriptor,
-                'sources': source_paths if source_paths else None,
-                'tests': test_paths if test_paths else None,
-                'readme': base.paths.readme,
-            }.items()
-            if v is not None
+            'module': rel_path_str,
+            'descriptor': base.paths.descriptor,
+            'sources': source_paths if source_paths else None,
+            'tests': test_paths if test_paths else None,
+            'readme': base.paths.readme,
         },
         'metadata': {
-            k: v
-            for k, v in {
-                'artifact_id': name,
-                'group_id': group_id,
-                'packaging': 'jar',
-                'description': description,
-            }.items()
-            if v is not None
+            'artifact_id': name,
+            'group_id': group_id,
+            'packaging': 'jar',
+            'description': description,
         },
         'packages': packages,
         'test_packages': test_packages,

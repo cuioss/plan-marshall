@@ -42,9 +42,9 @@ def _gradle_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[li
 
 
 def _gradle_command_key_fn(command_args: str) -> str:
-    """Extract command key suffix from Gradle args (first task, colons to underscores)."""
+    """Extract command key suffix from Gradle args (first task, normalized to underscores)."""
     first_task = command_args.split()[0] if command_args else 'default'
-    return first_task.lstrip(':').replace(':', '_')
+    return first_task.lstrip(':').replace(':', '_').replace('-', '_')
 
 
 _CONFIG = ExecuteConfig(

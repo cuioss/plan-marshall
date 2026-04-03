@@ -175,6 +175,14 @@ python3 .plan/execute-script.py {notation} check-warnings \
 - `--warnings` — JSON array of warning objects
 - `--acceptable-warnings` — JSON object with acceptable patterns (substring or regex)
 
+**Matcher type by tool**:
+| Tool | Matcher | Severity Filter |
+|------|---------|----------------|
+| Maven | `substring` | WARNING only |
+| Gradle | `wildcard` | None (all severities) |
+| npm | `substring` | None |
+| Python | `substring` | None |
+
 ---
 
 ### discover
@@ -356,10 +364,12 @@ Build errors are routed to domain-specific skills for resolution guidance:
 All build skills integrate with adaptive timeout learning via `run-config`. The timeout for a command is adjusted based on historical execution times:
 - First run: uses `--timeout` value or default (300s)
 - Subsequent runs: `last_duration × 1.25` (25% safety margin)
+- On timeout failure: timeout is doubled for the next run (capped at 1800s)
 - Minimum floor: 60 seconds (never below this regardless of learned value)
+- Maximum cap: 1800 seconds (prevents exponential growth from successive timeouts)
 - Storage: `.plan/run-configuration.json` with command keys like `maven:verify`, `gradle:build`
 
-See `build-execution.md` § R3 for algorithm details and API.
+See `build-execution.md` § R3 for the full algorithm and Python API.
 
 ---
 

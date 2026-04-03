@@ -37,8 +37,8 @@ from typing import Literal, TypedDict
 
 
 def _get_plan_dir() -> str:
-    """Get the .plan directory name, respecting PLAN_BASE_DIR override."""
-    return os.environ.get('PLAN_BASE_DIR', '.plan')
+    """Get the .plan directory name, respecting PLAN_DIR_NAME override."""
+    return os.environ.get('PLAN_DIR_NAME', '.plan')
 
 
 # =============================================================================
@@ -62,7 +62,7 @@ class DirectCommandResult(TypedDict, total=False):
 
     Optional fields (build-system specific):
         timeout_used_seconds: Timeout that was applied.
-        wrapper: Maven/Gradle wrapper path used.
+        wrapper: Maven/Gradle/Python wrapper path used.
         command_type: npm command type ("npm" or "npx").
         error: Error message (on error/timeout only).
 
@@ -96,7 +96,7 @@ class DirectCommandResult(TypedDict, total=False):
     command: str
     # Optional fields
     timeout_used_seconds: int
-    wrapper: str  # Maven/Gradle: wrapper path used
+    wrapper: str  # Maven/Gradle/Python: wrapper path used
     command_type: str  # npm: "npm" or "npx"
     error: str  # Error message (on error/timeout only)
 

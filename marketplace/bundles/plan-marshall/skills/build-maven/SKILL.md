@@ -44,7 +44,9 @@ Not available: `find-project` (Gradle-specific).
 - `target/jacoco/report.xml`
 - `target/site/jacoco-aggregate/jacoco.xml`
 
-**discover**: Shells out to Maven for metadata (`dependency:tree`, `help:all-profiles`) in addition to parsing `pom.xml`. This makes discovery slower than static-file-only approaches (Gradle, npm, Python) but provides richer metadata including profiles and dependency scopes.
+**discover**: Shells out to Maven for metadata (`dependency:tree`, `help:all-profiles`) in addition to parsing `pom.xml`. This makes discovery slower than static-file-only approaches (npm, Python) but provides richer metadata including profiles and dependency scopes. Gradle discovery also shells out for metadata with similar performance characteristics.
+
+**search-markers**: Default extensions: `.java`.
 
 ## Module Discovery
 

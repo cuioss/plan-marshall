@@ -18,14 +18,12 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 def create_check_warnings_handler(
     matcher: str = 'substring',
     filter_severity: str | None = None,
-    supports_patterns_arg: bool = False,
 ) -> Callable:
     """Factory: create a tool-specific check-warnings subcommand handler.
 
     Args:
         matcher: Pattern matcher type ('substring', 'wildcard', 'regex').
         filter_severity: If set, only warnings with this severity are processed.
-        supports_patterns_arg: Retained for API compatibility (unused — all callers pass False).
 
     Returns:
         A cmd_check_warnings(args) -> int function ready for argparse set_defaults.

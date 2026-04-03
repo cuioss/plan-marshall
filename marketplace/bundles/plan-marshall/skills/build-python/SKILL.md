@@ -33,6 +33,8 @@ Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build
 Python supports all shared subcommands documented in `build-api-reference.md`:
 **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 
+Not available: `search-markers` (JVM-specific), `find-project` (Gradle-specific). `parse` does not support `no-openrewrite` mode.
+
 ### Python-Specific Notes
 
 **run**: The `--command-args` value contains pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. The result TOON includes a `wrapper` field showing the resolved pyprojectx executable path.

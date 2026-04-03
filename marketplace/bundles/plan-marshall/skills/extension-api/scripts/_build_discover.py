@@ -52,6 +52,10 @@ JS_EXTENSIONS: dict[str, str] = {
 }
 """Glob patterns for JavaScript/TypeScript source files."""
 
+# Python extensions for Python projects
+PY_EXTENSIONS: dict[str, str] = {'py': '*.py'}
+"""Glob patterns for Python source files."""
+
 # Common JS source directory names (not following src/main/{lang} convention)
 JS_SOURCE_DIRS = ['src', 'lib', 'app', 'pages', 'components']
 """Standard source directory names for JavaScript/TypeScript projects."""

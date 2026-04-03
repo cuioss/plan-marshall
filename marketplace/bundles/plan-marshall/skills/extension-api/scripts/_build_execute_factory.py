@@ -68,7 +68,7 @@ class ExecuteConfig:
     """Default timeout in seconds if no learned value exists."""
 
     extra_result_fields: dict = field(default_factory=dict)
-    """Additional fields to include in all result dicts."""
+    """Static extra fields for all results. Currently unused — prefer extra_result_fn for dynamic fields."""
 
     wrapper_resolve_fn: Callable[[str], str] | None = None
     """Custom wrapper resolution: (project_dir) -> wrapper path.

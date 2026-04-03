@@ -172,8 +172,13 @@ def discover_maven_modules(project_root: str) -> list:
         # Get all metadata from Maven (coordinates, profiles, dependencies)
         maven_data = _get_maven_metadata(pom_path.parent, root)
 
-        # Skip if Maven failed (no fallback - requires Maven for correct data)
+        # If Maven failed, return error-only structure (matches Gradle contract)
         if maven_data is None:
+            modules.append({
+                'name': base.name,
+                'build_systems': ['maven'],
+                'error': 'Unable to retrieve metadata - Maven commands failed',
+            })
             continue
 
         # Build complete module data

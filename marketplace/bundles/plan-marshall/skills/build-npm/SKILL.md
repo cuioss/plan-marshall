@@ -38,6 +38,8 @@ Shared infrastructure from `extension-api`: `_build_execute_factory.py`, `_build
 npm supports all shared subcommands documented in `build-api-reference.md`:
 **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
 
+Not available: `search-markers` (JVM-specific), `find-project` (Gradle-specific). `parse` does not support `no-openrewrite` mode.
+
 ### npm-Specific Notes
 
 **run**: Additional parameters beyond the shared API:
@@ -72,6 +74,10 @@ python3 .plan/execute-script.py plan-marshall:build-npm:js_coverage analyze \
 ```
 
 Use `js_coverage.py` when you need to identify specific files with low coverage, not just an overall pass/fail.
+
+## Parser Routing
+
+npm uses a single-match parser registry: log content is analyzed to detect the tool type (TypeScript, Jest, ESLint, TAP, or npm errors), then routed to the matching parser. This differs from Python's multi-parser combination which runs all matching parsers on the same log.
 
 ## Module Discovery
 

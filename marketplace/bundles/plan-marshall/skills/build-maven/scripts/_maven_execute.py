@@ -36,9 +36,9 @@ def _maven_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[lis
 
 
 def _maven_command_key_fn(command_args: str) -> str:
-    """Extract command key suffix from Maven args (first goal, hyphens to underscores)."""
+    """Extract command key suffix from Maven args (first goal, normalized to underscores)."""
     first_goal = command_args.split()[0] if command_args else 'default'
-    return first_goal.replace('-', '_')
+    return first_goal.replace(' ', '_').replace('-', '_')
 
 
 _CONFIG = ExecuteConfig(

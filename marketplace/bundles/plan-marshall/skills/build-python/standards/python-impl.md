@@ -63,6 +63,16 @@ Cache `.pyprojectx/` between CI runs.
 | pytest collection errors | Check for `__init__.py` in test directories |
 | Timeout on first run | pyprojectx downloads tools on first invocation |
 
+### Diagnostic Commands
+
+```bash
+python3 --version
+./pw --version
+./pw mypy --version
+./pw ruff --version
+./pw pytest --version
+```
+
 See SKILL.md for coverage report paths and parser details. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-python:python_build`
