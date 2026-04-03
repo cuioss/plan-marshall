@@ -23,7 +23,16 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
 
-from constants import QGATE_PHASES, VALID_RESOLUTIONS  # type: ignore[import-not-found]
+from constants import (  # type: ignore[import-not-found]
+    ARCHITECTURE_TYPES,
+    FINDING_SEVERITIES,
+    FINDING_TYPES,
+    LESSON_TYPES,
+    QGATE_PHASES,
+    QGATE_SOURCES,
+    VALID_CERTAINTIES,
+    VALID_RESOLUTIONS,
+)
 from input_validation import validate_plan_id  # type: ignore[import-not-found]
 from jsonl_store import (  # type: ignore[import-not-found]
     append_jsonl,
@@ -37,37 +46,11 @@ from jsonl_store import (  # type: ignore[import-not-found]
 )
 
 
-# --- Shared Constants ---
-
-FINDING_TYPES = [
-    # Lesson-like (knowledge)
-    'bug',
-    'improvement',
-    'anti-pattern',
-    'triage',
-    'tip',
-    'insight',
-    'best-practice',
-    # Bug-like (issues)
-    'build-error',
-    'test-failure',
-    'lint-issue',
-    'sonar-issue',
-    'pr-comment',
-]
-
-RESOLUTIONS = list(VALID_RESOLUTIONS)
-
-SEVERITIES = ['error', 'warning', 'info']
-
-# Valid Q-Gate finding sources
-QGATE_SOURCES = ['qgate', 'user_review']
-
-# Types that default to manage-lessons promotion
-LESSON_TYPES = {'bug', 'improvement', 'anti-pattern', 'triage'}
-
-# Types that default to architecture promotion
-ARCHITECTURE_TYPES = {'tip', 'insight', 'best-practice'}
+# --- Backward-compatible aliases (imported from constants) ---
+# These names are re-exported for manage-findings.py and tests
+SEVERITIES = FINDING_SEVERITIES
+RESOLUTIONS = VALID_RESOLUTIONS
+CERTAINTY_VALUES = VALID_CERTAINTIES
 
 
 # --- Path Helpers ---
@@ -410,11 +393,6 @@ def clear_qgate_findings(
     path.unlink()
 
     return {'status': 'success', 'phase': phase, 'cleared': cleared}
-
-
-# --- Assessment Constants ---
-
-CERTAINTY_VALUES = ['CERTAIN_INCLUDE', 'CERTAIN_EXCLUDE', 'UNCERTAIN']
 
 
 # --- Assessment Path Helper ---

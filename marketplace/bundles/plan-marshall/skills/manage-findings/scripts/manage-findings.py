@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from file_ops import output_toon, safe_main
+from input_validation import add_plan_id_arg, add_phase_arg  # type: ignore[import-not-found]
 from _findings_core import (
     CERTAINTY_VALUES,
     FINDING_TYPES,
@@ -232,7 +233,7 @@ def main() -> int:
 
     # add
     add_parser = subparsers.add_parser('add', help='Add a finding')
-    add_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(add_parser)
     add_parser.add_argument('--type', required=True, choices=FINDING_TYPES, dest='type', help='Finding type')
     add_parser.add_argument('--title', required=True, dest='title', help='Short title')
     add_parser.add_argument('--detail', required=True, help='Detailed description')
@@ -246,7 +247,7 @@ def main() -> int:
 
     # query
     query_parser = subparsers.add_parser('query', help='Query findings')
-    query_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(query_parser)
     query_parser.add_argument('--type', help='Filter by type (comma-separated)')
     query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
     query_parser.add_argument('--promoted', help='Filter by promoted (true/false)')
@@ -255,13 +256,13 @@ def main() -> int:
 
     # get
     get_parser = subparsers.add_parser('get', help='Get single finding')
-    get_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(get_parser)
     get_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
     get_parser.set_defaults(func=cmd_get)
 
     # resolve
     resolve_parser = subparsers.add_parser('resolve', help='Resolve a finding')
-    resolve_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(resolve_parser)
     resolve_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
     resolve_parser.add_argument('--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status')
     resolve_parser.add_argument('--detail', help='Resolution detail')
@@ -269,7 +270,7 @@ def main() -> int:
 
     # promote
     promote_parser = subparsers.add_parser('promote', help='Promote a finding')
-    promote_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(promote_parser)
     promote_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
     promote_parser.add_argument('--promoted-to', required=True, dest='promoted_to', help='Target ID or "architecture"')
     promote_parser.set_defaults(func=cmd_promote)
@@ -280,8 +281,8 @@ def main() -> int:
 
     # qgate add
     q_add_parser = qgate_sub.add_parser('add', help='Add a Q-Gate finding')
-    q_add_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
-    q_add_parser.add_argument('--phase', required=True, choices=QGATE_PHASES, help='Phase name')
+    add_plan_id_arg(q_add_parser)
+    add_phase_arg(q_add_parser, choices=QGATE_PHASES)
     q_add_parser.add_argument('--source', required=True, choices=QGATE_SOURCES, help='Finding source')
     q_add_parser.add_argument('--type', required=True, choices=FINDING_TYPES, help='Finding type')
     q_add_parser.add_argument('--title', required=True, help='Short title')
@@ -294,8 +295,8 @@ def main() -> int:
 
     # qgate query
     q_query_parser = qgate_sub.add_parser('query', help='Query Q-Gate findings')
-    q_query_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
-    q_query_parser.add_argument('--phase', required=True, choices=QGATE_PHASES, help='Phase name')
+    add_plan_id_arg(q_query_parser)
+    add_phase_arg(q_query_parser, choices=QGATE_PHASES)
     q_query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
     q_query_parser.add_argument('--source', choices=QGATE_SOURCES, help='Filter by source')
     q_query_parser.add_argument('--iteration', type=int, help='Filter by iteration')
@@ -303,17 +304,17 @@ def main() -> int:
 
     # qgate resolve
     q_resolve_parser = qgate_sub.add_parser('resolve', help='Resolve a Q-Gate finding')
-    q_resolve_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(q_resolve_parser)
     q_resolve_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
     q_resolve_parser.add_argument('--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status')
-    q_resolve_parser.add_argument('--phase', required=True, choices=QGATE_PHASES, help='Phase name')
+    add_phase_arg(q_resolve_parser, choices=QGATE_PHASES)
     q_resolve_parser.add_argument('--detail', help='Resolution detail')
     q_resolve_parser.set_defaults(func=cmd_qgate_resolve)
 
     # qgate clear
     q_clear_parser = qgate_sub.add_parser('clear', help='Clear Q-Gate findings for a phase')
-    q_clear_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
-    q_clear_parser.add_argument('--phase', required=True, choices=QGATE_PHASES, help='Phase name')
+    add_plan_id_arg(q_clear_parser)
+    add_phase_arg(q_clear_parser, choices=QGATE_PHASES)
     q_clear_parser.set_defaults(func=cmd_qgate_clear)
 
     # --- Assessment commands ---
@@ -322,7 +323,7 @@ def main() -> int:
 
     # assessment add
     a_add_parser = assessment_sub.add_parser('add', help='Add an assessment')
-    a_add_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(a_add_parser)
     a_add_parser.add_argument('--file-path', required=True, dest='file_path', help='Path to assessed component')
     a_add_parser.add_argument('--certainty', required=True, choices=CERTAINTY_VALUES, help='Certainty value')
     a_add_parser.add_argument('--confidence', required=True, type=int, help='Confidence 0-100')
@@ -333,7 +334,7 @@ def main() -> int:
 
     # assessment query
     a_query_parser = assessment_sub.add_parser('query', help='Query assessments')
-    a_query_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(a_query_parser)
     a_query_parser.add_argument('--certainty', choices=CERTAINTY_VALUES, help='Filter by certainty')
     a_query_parser.add_argument('--min-confidence', type=int, help='Minimum confidence')
     a_query_parser.add_argument('--max-confidence', type=int, help='Maximum confidence')
@@ -342,13 +343,13 @@ def main() -> int:
 
     # assessment get
     a_get_parser = assessment_sub.add_parser('get', help='Get single assessment')
-    a_get_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(a_get_parser)
     a_get_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Assessment hash ID')
     a_get_parser.set_defaults(func=cmd_assessment_get)
 
     # assessment clear
     a_clear_parser = assessment_sub.add_parser('clear', help='Clear assessments')
-    a_clear_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(a_clear_parser)
     a_clear_parser.add_argument('--agent', help='Only clear assessments from this agent')
     a_clear_parser.set_defaults(func=cmd_assessment_clear)
 

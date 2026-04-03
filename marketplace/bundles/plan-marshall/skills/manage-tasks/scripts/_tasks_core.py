@@ -492,15 +492,14 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     return result
 
 
-# output_toon imported from file_ops and re-exported for backward compatibility
+# output_toon imported from file_ops and re-exported
 
 
 def output_error(message: str, error_code: str = 'error') -> None:
     """Print TOON error output to stderr."""
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
-    toon_str = serialize_toon({'status': 'error', 'error': error_code, 'message': message})
-    print(toon_str, file=sys.stderr)
+    print(serialize_toon({'status': 'error', 'error': error_code, 'message': message}), file=sys.stderr)
 
 
 def get_deliverable_context(deliverable: int) -> dict:

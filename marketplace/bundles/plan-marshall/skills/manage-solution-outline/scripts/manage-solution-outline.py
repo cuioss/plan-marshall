@@ -29,7 +29,7 @@ from _plan_parsing import (  # type: ignore[import-not-found]
     parse_document_sections,
 )
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ignore[import-not-found]
 
 SOLUTION_FILE = 'solution_outline.md'
 ARCHITECTURE_DIR = 'project-architecture'
@@ -595,34 +595,34 @@ def main() -> int:
 
     # validate
     validate_parser = subparsers.add_parser('validate', help='Validate solution structure')
-    validate_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(validate_parser)
     validate_parser.set_defaults(func=cmd_validate)
 
     # list-deliverables
     list_parser = subparsers.add_parser('list-deliverables', help='Extract deliverables')
-    list_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(list_parser)
     list_parser.set_defaults(func=cmd_list_deliverables)
 
     # read
     read_parser = subparsers.add_parser('read', help='Read solution outline')
-    read_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(read_parser)
     read_parser.add_argument('--raw', action='store_true', help='Output raw content')
     read_parser.add_argument('--deliverable-number', type=int, help='Read specific deliverable by number')
     read_parser.set_defaults(func=cmd_read)
 
     # exists
     exists_parser = subparsers.add_parser('exists', help='Check if solution exists')
-    exists_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(exists_parser)
     exists_parser.set_defaults(func=cmd_exists)
 
     # resolve-path
     resolve_parser = subparsers.add_parser('resolve-path', help='Get target file path for direct Write')
-    resolve_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(resolve_parser)
     resolve_parser.set_defaults(func=cmd_resolve_path)
 
     # write
     write_parser = subparsers.add_parser('write', help='Validate solution outline on disk (written via Write tool)')
-    write_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(write_parser)
     write_parser.add_argument('--force', action='store_true', help='(legacy, ignored)')
     write_parser.set_defaults(func=cmd_write)
 
@@ -630,7 +630,7 @@ def main() -> int:
     update_parser = subparsers.add_parser(
         'update', help='Validate updated solution outline on disk (written via Write tool)'
     )
-    update_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(update_parser)
     update_parser.set_defaults(func=cmd_update)
 
     # get-module-context

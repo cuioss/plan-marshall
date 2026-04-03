@@ -23,7 +23,7 @@ from pathlib import Path
 
 from constants import PHASES  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, get_plan_dir, now_utc_iso, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ignore[import-not-found]
 
 METRICS_FILE = 'work/metrics.toon'
 METRICS_MD = 'metrics.md'
@@ -411,13 +411,13 @@ def main() -> int:
 
     # start-phase
     sp = subparsers.add_parser('start-phase', help='Record phase start timestamp')
-    sp.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(sp)
     sp.add_argument('--phase', required=True, help='Phase name (e.g., 1-init)')
     sp.set_defaults(func=cmd_start_phase)
 
     # end-phase
     ep = subparsers.add_parser('end-phase', help='Record phase end timestamp and optional token data')
-    ep.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(ep)
     ep.add_argument('--phase', required=True, help='Phase name')
     ep.add_argument('--total-tokens', type=int, default=None, help='Total tokens from Task agent <usage>')
     ep.add_argument('--duration-ms', type=int, default=None, help='Duration in ms from Task agent <usage>')
@@ -426,12 +426,12 @@ def main() -> int:
 
     # generate
     gp = subparsers.add_parser('generate', help='Generate metrics.md from collected data')
-    gp.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(gp)
     gp.set_defaults(func=cmd_generate)
 
     # enrich
     enr = subparsers.add_parser('enrich', help='Enrich metrics from JSONL transcript')
-    enr.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(enr)
     enr.add_argument('--session-id', required=True, help='Session ID for transcript lookup')
     enr.set_defaults(func=cmd_enrich)
 

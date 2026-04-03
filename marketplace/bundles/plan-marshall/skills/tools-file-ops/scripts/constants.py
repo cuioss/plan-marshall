@@ -65,14 +65,43 @@ CERTAINTY_UNCERTAIN = 'UNCERTAIN'
 VALID_CERTAINTIES = (CERTAINTY_INCLUDE, CERTAINTY_EXCLUDE, CERTAINTY_UNCERTAIN)
 
 # ---------------------------------------------------------------------------
-# Finding types
+# Finding types (12-type taxonomy used by manage-findings)
 # ---------------------------------------------------------------------------
-FINDING_TYPES = ('quality', 'compliance', 'security', 'performance', 'maintainability')
+FINDING_TYPES = (
+    # Lesson-like (knowledge)
+    'bug',
+    'improvement',
+    'anti-pattern',
+    'triage',
+    'tip',
+    'insight',
+    'best-practice',
+    # Bug-like (issues)
+    'build-error',
+    'test-failure',
+    'lint-issue',
+    'sonar-issue',
+    'pr-comment',
+)
 
 # ---------------------------------------------------------------------------
 # Finding severities
 # ---------------------------------------------------------------------------
-FINDING_SEVERITIES = ('critical', 'major', 'minor', 'info')
+FINDING_SEVERITIES = ('error', 'warning', 'info')
+
+# ---------------------------------------------------------------------------
+# Q-Gate finding sources
+# ---------------------------------------------------------------------------
+QGATE_SOURCES = ('qgate', 'user_review')
+
+# ---------------------------------------------------------------------------
+# Finding type subsets (used for promotion routing)
+# ---------------------------------------------------------------------------
+# Types that default to manage-lessons promotion
+LESSON_TYPES = frozenset(('bug', 'improvement', 'anti-pattern', 'triage'))
+
+# Types that default to architecture promotion
+ARCHITECTURE_TYPES = frozenset(('tip', 'insight', 'best-practice'))
 
 # ---------------------------------------------------------------------------
 # Finding / Q-Gate resolution values

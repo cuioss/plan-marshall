@@ -84,7 +84,7 @@ Duration is computed as wall-clock time from start/end timestamps and formatted 
 
 ## Valid Phase Names
 
-Must match `manage-status` phases exactly: `1-init`, `2-refine`, `3-outline`, `4-plan`, `5-execute`, `6-finalize`.
+> Phase names follow the standard 6-phase model. See `plan-marshall:ref-manage-contract` § Phase Names for the canonical definition.
 
 ## Token Data Sources
 

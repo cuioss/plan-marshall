@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from file_ops import base_path, now_utc_iso, output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import base_path, now_utc_iso, output_toon, output_toon_error, read_json, safe_main, write_json  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
@@ -26,7 +26,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 # Get memory base path from base_path
 MEMORY_BASE = base_path('memory')
-CATEGORIES = ['context']
+CATEGORIES = ('context',)
 
 
 def parse_duration(duration_str: str) -> timedelta:
@@ -79,17 +79,12 @@ def create_memory_envelope(category: str, identifier: str, content: Any, session
 
 def read_memory_file(file_path: Path) -> dict:
     """Read and parse a memory file."""
-    with open(file_path, encoding='utf-8') as f:
-        data: dict = json.load(f)
-        return data
+    return read_json(file_path)
 
 
 def write_memory_file(file_path: Path, data: dict) -> None:
     """Write memory file with proper formatting."""
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.write('\n')
+    write_json(file_path, data)
 
 
 def get_file_info(file_path: Path) -> dict:
@@ -119,8 +114,8 @@ def output_success(operation: str, **kwargs) -> None:
 
 
 def output_error(operation: str, error: str) -> int:
-    """Output error result as TOON to stderr and return 1."""
-    output_toon({'status': 'error', 'error': operation, 'message': error})
+    """Output error result as TOON and return 1."""
+    output_toon_error(operation, error)
     return 1
 
 

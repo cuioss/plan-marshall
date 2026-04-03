@@ -308,6 +308,21 @@ def output_error(operation: str, error: str) -> None:
     print(serialize_toon(result), file=sys.stderr)
 
 
+def output_toon_error(error_code: str, message: str, **kwargs: Any) -> None:
+    """Print TOON error output to stdout following the manage-* contract.
+
+    Standard error format: status=error, error=<code>, message=<msg>.
+
+    Args:
+        error_code: Machine-readable error code (e.g., 'invalid_plan_id')
+        message: Human-readable error description
+        **kwargs: Additional fields to include in output
+    """
+    result: dict[str, Any] = {'status': 'error', 'error': error_code, 'message': message}
+    result.update(kwargs)
+    print(serialize_toon(result))
+
+
 def parse_markdown_metadata(content: str) -> dict[str, str]:
     """Parse key=value metadata from markdown content.
 

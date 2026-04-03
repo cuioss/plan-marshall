@@ -21,6 +21,7 @@ from _cmd_request import cmd_clarify, cmd_create, cmd_exists, cmd_read, cmd_remo
 from _cmd_types import cmd_list_types
 from _documents_core import get_available_types, load_document_type
 from file_ops import safe_main  # type: ignore[import-not-found]
+from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
@@ -46,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
 
         # Create
         create_parser = type_subparsers.add_parser('create', help='Create document')
-        create_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+        add_plan_id_arg(create_parser)
         create_parser.add_argument('--force', action='store_true', help='Overwrite if exists')
 
         # Add field arguments dynamically
@@ -66,31 +67,31 @@ def build_parser() -> argparse.ArgumentParser:
 
         # Read
         read_parser = type_subparsers.add_parser('read', help='Read document')
-        read_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+        add_plan_id_arg(read_parser)
         read_parser.add_argument('--raw', action='store_true', help='Output raw content')
         read_parser.add_argument('--section', help='Read specific section (e.g., clarified_request)')
         read_parser.set_defaults(func=lambda args, dt=doc_type: cmd_read(dt, args))
 
         # Update
         update_parser = type_subparsers.add_parser('update', help='Update document section')
-        update_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+        add_plan_id_arg(update_parser)
         update_parser.add_argument('--section', required=True, help='Section to update')
         update_parser.add_argument('--content', required=True, help='New content')
         update_parser.set_defaults(func=lambda args, dt=doc_type: cmd_update(dt, args))
 
         # Exists
         exists_parser = type_subparsers.add_parser('exists', help='Check if document exists')
-        exists_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+        add_plan_id_arg(exists_parser)
         exists_parser.set_defaults(func=lambda args, dt=doc_type: cmd_exists(dt, args))
 
         # Remove
         remove_parser = type_subparsers.add_parser('remove', help='Remove document')
-        remove_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+        add_plan_id_arg(remove_parser)
         remove_parser.set_defaults(func=lambda args, dt=doc_type: cmd_remove(dt, args))
 
         # Clarify (add clarifications and clarified request)
         clarify_parser = type_subparsers.add_parser('clarify', help='Add clarifications to document')
-        clarify_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+        add_plan_id_arg(clarify_parser)
         clarify_parser.add_argument('--clarifications', help='Q&A clarifications content')
         clarify_parser.add_argument(
             '--clarified-request', dest='clarified_request', help='Synthesized clarified request'

@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-from file_ops import atomic_write_file, get_plan_dir, now_utc_iso, output_toon  # type: ignore[import-not-found]  # noqa: F401 - atomic_write_file re-exported
+from file_ops import atomic_write_file, get_plan_dir, now_utc_iso, output_toon, output_toon_error  # type: ignore[import-not-found]  # noqa: F401 - atomic_write_file re-exported
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -170,8 +170,8 @@ def _cleanup_unreplaced_placeholders(content: str) -> str:
 
 
 def output_error(error_key: str, **kwargs) -> None:
-    """Print TOON-serialized error output."""
-    output_toon({'status': 'error', 'error': error_key, **kwargs})
+    """Print TOON-serialized error output. Delegates to file_ops.output_toon_error."""
+    output_toon_error(error_key, kwargs.pop('message', ''), **kwargs)
 
 
 def validate_doc_type_and_plan(doc_type: str, plan_id: str) -> dict | None:

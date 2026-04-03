@@ -21,7 +21,7 @@ import argparse
 import sys
 
 from file_ops import atomic_write_file, get_plan_dir, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import is_valid_relative_path, require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import add_plan_id_arg, is_valid_relative_path, require_valid_plan_id  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 
@@ -231,13 +231,13 @@ def main() -> int:
 
     # read
     read_parser = subparsers.add_parser('read', help='Read file content')
-    read_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(read_parser)
     read_parser.add_argument('--file', required=True, help='Relative file path')
     read_parser.set_defaults(func=cmd_read)
 
     # write
     write_parser = subparsers.add_parser('write', help='Write file content')
-    write_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(write_parser)
     write_parser.add_argument('--file', required=True, help='Relative file path')
     write_parser.add_argument('--content', help='Content to write')
     write_parser.add_argument('--stdin', action='store_true', help='Read content from stdin')
@@ -245,25 +245,25 @@ def main() -> int:
 
     # remove
     remove_parser = subparsers.add_parser('remove', help='Remove file')
-    remove_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(remove_parser)
     remove_parser.add_argument('--file', required=True, help='Relative file path')
     remove_parser.set_defaults(func=cmd_remove)
 
     # list
     list_parser = subparsers.add_parser('list', help='List files')
-    list_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(list_parser)
     list_parser.add_argument('--dir', help='Subdirectory to list')
     list_parser.set_defaults(func=cmd_list)
 
     # exists
     exists_parser = subparsers.add_parser('exists', help='Check if file exists')
-    exists_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(exists_parser)
     exists_parser.add_argument('--file', required=True, help='Relative file path')
     exists_parser.set_defaults(func=cmd_exists)
 
     # mkdir
     mkdir_parser = subparsers.add_parser('mkdir', help='Create subdirectory')
-    mkdir_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(mkdir_parser)
     mkdir_parser.add_argument('--dir', required=True, help='Directory to create')
     mkdir_parser.set_defaults(func=cmd_mkdir)
 
@@ -271,7 +271,7 @@ def main() -> int:
     create_ref_parser = subparsers.add_parser(
         'create-or-reference', help='Create plan directory or reference existing one'
     )
-    create_ref_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(create_ref_parser)
     create_ref_parser.set_defaults(func=cmd_create_or_reference)
 
     args = parser.parse_args()

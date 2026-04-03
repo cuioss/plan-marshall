@@ -20,9 +20,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
+from constants import LESSON_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import atomic_write_file, base_path, output_toon, parse_markdown_metadata, safe_main  # type: ignore[import-not-found]
 
-VALID_CATEGORIES = ['bug', 'improvement', 'anti-pattern']
+VALID_CATEGORIES = LESSON_CATEGORIES
 
 
 def get_lessons_dir() -> Path:

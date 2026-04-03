@@ -29,6 +29,7 @@ from _cmd_lifecycle import cmd_archive, cmd_create, cmd_delete_plan, cmd_transit
 from _cmd_query import cmd_get_context, cmd_list, cmd_metadata, cmd_progress, cmd_read, cmd_set_phase, cmd_update_phase
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from file_ops import safe_main  # type: ignore[import-not-found]
+from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 
 
 @safe_main
@@ -38,7 +39,7 @@ def main() -> int:
 
     # create
     create_parser = subparsers.add_parser('create', help='Create status.json')
-    create_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(create_parser)
     create_parser.add_argument('--title', required=True, help='Plan title')
     create_parser.add_argument(
         '--phases',
@@ -50,18 +51,18 @@ def main() -> int:
 
     # read
     read_parser = subparsers.add_parser('read', help='Read plan status')
-    read_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(read_parser)
     read_parser.set_defaults(func=cmd_read)
 
     # set-phase
     set_phase_parser = subparsers.add_parser('set-phase', help='Set current phase')
-    set_phase_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(set_phase_parser)
     set_phase_parser.add_argument('--phase', required=True, help='Phase name')
     set_phase_parser.set_defaults(func=cmd_set_phase)
 
     # update-phase
     update_phase_parser = subparsers.add_parser('update-phase', help='Update phase status')
-    update_phase_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(update_phase_parser)
     update_phase_parser.add_argument('--phase', required=True, help='Phase name')
     update_phase_parser.add_argument(
         '--status', required=True, choices=['pending', 'in_progress', 'done'], help='Phase status'
@@ -70,12 +71,12 @@ def main() -> int:
 
     # progress
     progress_parser = subparsers.add_parser('progress', help='Calculate progress')
-    progress_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(progress_parser)
     progress_parser.set_defaults(func=cmd_progress)
 
     # metadata
     metadata_parser = subparsers.add_parser('metadata', help='Get or set metadata fields')
-    metadata_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(metadata_parser)
     metadata_parser.add_argument('--get', action='store_true', help='Get metadata field')
     metadata_parser.add_argument('--set', action='store_true', help='Set metadata field')
     metadata_parser.add_argument('--field', required=True, help='Metadata field name')
@@ -84,7 +85,7 @@ def main() -> int:
 
     # get-context
     get_context_parser = subparsers.add_parser('get-context', help='Get combined status context')
-    get_context_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(get_context_parser)
     get_context_parser.set_defaults(func=cmd_get_context)
 
     # list
@@ -94,13 +95,13 @@ def main() -> int:
 
     # transition
     transition_parser = subparsers.add_parser('transition', help='Transition to next phase')
-    transition_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(transition_parser)
     transition_parser.add_argument('--completed', required=True, help='Completed phase')
     transition_parser.set_defaults(func=cmd_transition)
 
     # archive
     archive_parser = subparsers.add_parser('archive', help='Archive completed plan')
-    archive_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(archive_parser)
     archive_parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
     archive_parser.set_defaults(func=cmd_archive)
 
@@ -113,12 +114,12 @@ def main() -> int:
     routing_context_parser = subparsers.add_parser(
         'get-routing-context', help='Get combined routing context (phase, skill, progress)'
     )
-    routing_context_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(routing_context_parser)
     routing_context_parser.set_defaults(func=cmd_get_routing_context)
 
     # delete-plan
     delete_plan_parser = subparsers.add_parser('delete-plan', help='Delete entire plan directory')
-    delete_plan_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(delete_plan_parser)
     delete_plan_parser.set_defaults(func=cmd_delete_plan)
 
     # self-test

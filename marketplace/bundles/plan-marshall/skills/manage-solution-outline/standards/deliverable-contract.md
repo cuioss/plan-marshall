@@ -64,12 +64,7 @@ Error if domain not found in marshal.json.
 
 Each deliverable has a `**Profiles:**` block listing which profiles apply. Task-plan creates one task per profile (1:N mapping).
 
-| Profile | Description | Architecture Source |
-|---------|-------------|---------------------|
-| `implementation` | Production code task | `module.skills_by_profile.implementation` |
-| `module_testing` | Unit/module test task | `module.skills_by_profile.module_testing` |
-| `integration_testing` | Integration test task | `module.skills_by_profile.integration_testing` |
-| `verification` | Verification-only task (no files to modify) | N/A — runs verification commands only |
+> Profiles follow the standard profile model. See `plan-marshall:ref-manage-contract` § Profiles for the canonical definition. Architecture source for each profile is `module.skills_by_profile.{profile}` (except `verification` which has no architecture source — runs commands only).
 
 **Note**: Integration tests are separate deliverables (different module), not embedded profiles. Verification profile deliverables may have an empty `Affected files` section.
 

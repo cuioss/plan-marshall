@@ -44,11 +44,13 @@ import argparse
 import sys
 
 # Direct imports from same directory (local imports)
+from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES  # type: ignore[import-not-found]
+from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 from plan_logging import get_log_path, list_recent_work, log_entry, log_separator, read_decision_log, read_work_log
 from file_ops import output_toon, safe_main
 
-VALID_TYPES = ('script', 'work', 'decision')
-VALID_LEVELS = ('INFO', 'WARN', 'ERROR')
+VALID_TYPES = VALID_LOG_TYPES
+VALID_LEVELS = VALID_LOG_LEVELS
 
 
 def handle_read(args: argparse.Namespace) -> None:
@@ -128,7 +130,7 @@ def handle_write(args: argparse.Namespace) -> int | None:
 
 def _add_write_args(parser: argparse.ArgumentParser) -> None:
     """Add common write arguments to a subparser."""
-    parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(parser)
     parser.add_argument('--level', required=True, choices=VALID_LEVELS, help='Log level')
     parser.add_argument('--message', required=True, help='Log message')
 
@@ -151,12 +153,12 @@ def main() -> int:
 
     # Separator subcommand
     sep_parser = subparsers.add_parser('separator', help='Add visual separator (blank line) to log')
-    sep_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(sep_parser)
     sep_parser.add_argument('--type', default='work', choices=VALID_TYPES, help='Log type (default: work)')
 
     # Read subcommand
     read_parser = subparsers.add_parser('read', help='Read log entries')
-    read_parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(read_parser)
     read_parser.add_argument('--type', required=True, choices=VALID_TYPES, help='Log type')
     read_parser.add_argument('--limit', type=int, help='Max entries to return')
     read_parser.add_argument('--phase', help='Filter by phase (work/decision logs only)')

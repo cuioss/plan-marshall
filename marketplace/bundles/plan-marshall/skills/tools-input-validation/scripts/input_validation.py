@@ -204,6 +204,29 @@ def require_plan_file(plan_id: str, *path_parts: str) -> Path:
     return target
 
 
+# --- Argparse builder helpers ---
+# Reduce boilerplate for the --plan-id / --phase arguments repeated across 50+ subparsers.
+
+
+def add_plan_id_arg(parser, required: bool = True) -> None:
+    """Add the standard --plan-id argument to a parser or subparser."""
+    parser.add_argument('--plan-id', required=required, help='Plan identifier (kebab-case)')
+
+
+def add_phase_arg(parser, *, choices=None, required: bool = True) -> None:
+    """Add the standard --phase argument to a parser or subparser.
+
+    Args:
+        parser: argparse parser or subparser
+        choices: Sequence of valid phase values. Defaults to PHASES from constants.
+        required: Whether the argument is required (default True)
+    """
+    if choices is None:
+        from constants import PHASES  # type: ignore[import-not-found]
+        choices = PHASES
+    parser.add_argument('--phase', required=required, choices=choices, help='Phase name')
+
+
 # --- Bool companions (drop-in replacements for existing call sites) ---
 
 def is_valid_plan_id(plan_id: str) -> bool:

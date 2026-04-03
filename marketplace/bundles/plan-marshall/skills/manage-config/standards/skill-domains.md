@@ -19,16 +19,18 @@ See `data-model.md` for the complete `skill_domains` JSON schema. The key hierar
 
 ## 6-Phase Workflow Model
 
-The system domain contains workflow skills for the 6 execution phases:
+> Phase names follow the standard 6-phase model. See `plan-marshall:ref-manage-contract` § Phase Names for the canonical definition.
 
-| Phase | Purpose | Workflow Skill |
-|-------|---------|----------------|
-| `1-init` | Initialize plan, detect artifacts | `plan-marshall:phase-1-init` |
-| `2-refine` | Clarify request until confidence threshold | `plan-marshall:phase-2-refine` |
-| `3-outline` | Create solution outline with deliverables | `plan-marshall:phase-3-outline` |
-| `4-plan` | Transform deliverables into executable tasks | `plan-marshall:phase-4-plan` |
-| `5-execute` | Execute individual tasks + verification | `plan-marshall:phase-5-execute` |
-| `6-finalize` | Commit, push, PR creation | `plan-marshall:phase-6-finalize` |
+The system domain maps each phase to a workflow skill:
+
+| Phase | Workflow Skill |
+|-------|----------------|
+| `1-init` | `plan-marshall:phase-1-init` |
+| `2-refine` | `plan-marshall:phase-2-refine` |
+| `3-outline` | `plan-marshall:phase-3-outline` |
+| `4-plan` | `plan-marshall:phase-4-plan` |
+| `5-execute` | `plan-marshall:phase-5-execute` |
+| `6-finalize` | `plan-marshall:phase-6-finalize` |
 
 ## Structure
 
@@ -149,12 +151,7 @@ Domain-specific extensions that augment workflow skills. Only in technical domai
 
 ### Profiles
 
-| Profile | Phase Used | Purpose |
-|---------|------------|---------|
-| `implementation` | execute (impl tasks) | Production code patterns |
-| `module_testing` | execute (unit/module test tasks) | Unit and module test patterns |
-| `integration_testing` | execute (integration test tasks) | Integration test patterns |
-| `quality` | verify | Documentation and quality standards |
+> Profiles follow the standard profile model. See `plan-marshall:ref-manage-contract` § Profiles for the canonical definition.
 
 > **Note**: `quality` is a config profile for skill resolution. `manage-tasks` has additional task-only profiles (`verification`, `standalone`) not mapped to config skill domains — see `ref-manage-contract` for the full profile model.
 
@@ -189,12 +186,7 @@ Foundation skills always included when the domain is selected.
 
 ## Profile-to-Phase Mapping
 
-| Profile | Phase | Use Case |
-|---------|-------|----------|
-| `implementation` | execute | Production code development tasks |
-| `module_testing` | execute | Unit/module test development tasks |
-| `integration_testing` | execute | Integration test development tasks |
-| `quality` | verify | Documentation, verification, compliance |
+> Profiles follow the standard profile model. See `plan-marshall:ref-manage-contract` § Profiles for the canonical definition.
 
 ## System Domain
 

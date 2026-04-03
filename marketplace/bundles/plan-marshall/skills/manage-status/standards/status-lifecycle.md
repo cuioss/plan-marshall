@@ -43,16 +43,7 @@ create ──→ [phases 1-6] ──→ archive
 
 ## Phase Names
 
-Standard 6-phase model (must match `constants.PHASES`):
-
-| Phase | Purpose |
-|-------|---------|
-| `1-init` | Initialize plan structure |
-| `2-refine` | Clarify request until confident |
-| `3-outline` | Create solution outline with deliverables |
-| `4-plan` | Create tasks from deliverables |
-| `5-execute` | Execute implementation tasks |
-| `6-finalize` | Finalize with commit/PR |
+> Phase names follow the standard 6-phase model. See `plan-marshall:ref-manage-contract` § Phase Names for the canonical definition.
 
 ## Routing
 

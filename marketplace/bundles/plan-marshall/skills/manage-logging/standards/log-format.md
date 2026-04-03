@@ -26,20 +26,7 @@ The hash provides deterministic traceability — the same message always produce
 
 ## Timestamp Format
 
-All timestamps use ISO 8601 format in UTC timezone:
-
-```
-YYYY-MM-DDTHH:MM:SSZ
-```
-
-**Examples**:
-- `2025-12-11T12:14:26Z`
-- `2025-12-11T00:00:00Z`
-
-**Rules**:
-- Always UTC (Z suffix)
-- No milliseconds (seconds precision)
-- No timezone offset notation
+> Timestamps use the standard format. See `plan-marshall:ref-manage-contract` § Timestamp Format.
 
 ---
 

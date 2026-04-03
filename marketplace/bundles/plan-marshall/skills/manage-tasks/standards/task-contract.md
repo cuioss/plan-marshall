@@ -277,14 +277,7 @@ The `domain` field is inherited from the deliverable. Domains are arbitrary stri
 
 ### Profile Field
 
-The `profile` field determines the workflow type:
-
-| Profile | Description |
-|---------|-------------|
-| `implementation` | Create/modify production code |
-| `module_testing` | Create/modify test code |
-| `quality` | Documentation, verification |
-| `verification` | Verification-only (no files to modify, runs commands only) |
+> Profiles follow the standard profile model. See `plan-marshall:ref-manage-contract` § Profiles for the canonical definition.
 
 ## Skills Inheritance
 
