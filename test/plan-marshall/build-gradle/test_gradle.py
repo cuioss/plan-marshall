@@ -56,7 +56,7 @@ def test_parse_compilation_errors():
 def test_parse_missing_file():
     """Test missing file handling."""
     result = run_script(SCRIPT_PATH, 'parse', '--log', 'nonexistent.log', '--mode', 'structured')
-    data = result.json()
+    data = result.toon()
 
     assert data['status'] == 'error', 'Should return error status for missing file'
 
@@ -123,9 +123,9 @@ def test_check_warnings_empty():
     acceptable = json.dumps({})
 
     result = run_script(SCRIPT_PATH, 'check-warnings', '--warnings', warnings, '--acceptable-warnings', acceptable)
-    data = result.json()
+    data = result.toon()
 
-    assert data['success'] is True, 'Should succeed with no warnings'
+    assert data['status'] == 'success', 'Should succeed with no warnings'
     assert data['total'] == 0, 'Total should be 0'
 
 
@@ -145,9 +145,9 @@ def test_check_warnings_with_real_patterns():
     })
 
     result = run_script(SCRIPT_PATH, 'check-warnings', '--warnings', warnings, '--acceptable-warnings', acceptable)
-    data = result.json()
+    data = result.toon()
 
-    assert data['success'] is True, 'Should succeed'
+    assert data['status'] == 'success', 'Should succeed'
     assert data['total'] == 3, f'Should count all warnings, got: {data}'
     assert data['acceptable'] >= 2, f'Should accept deprecation and unchecked, got: {data}'
 

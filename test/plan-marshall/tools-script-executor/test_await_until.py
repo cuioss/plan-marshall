@@ -299,10 +299,10 @@ def test_default_timeout_without_history():
 def test_execution_history_updated():
     """Execution history is updated after successful poll."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Create empty run-configuration.json
+        # Create empty run-configuration.json at PLAN_BASE_DIR root
+        # (get_base_dir() returns PLAN_BASE_DIR directly, not PLAN_BASE_DIR/.plan)
         run_config = {'version': 1, 'commands': {}}
-        config_path = Path(tmpdir) / '.plan' / 'run-configuration.json'
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path = Path(tmpdir) / 'run-configuration.json'
         config_path.write_text(json.dumps(run_config))
 
         # Set PLAN_BASE_DIR so script writes to tmpdir

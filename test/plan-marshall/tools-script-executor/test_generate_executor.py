@@ -3,12 +3,15 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from datetime import date
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from conftest import _MARKETPLACE_SCRIPT_DIRS  # noqa: E402
 
 # Path to the script
 SCRIPTS_DIR = (
@@ -16,6 +19,16 @@ SCRIPTS_DIR = (
     / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts'
 )
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
+
+
+def _subprocess_env() -> dict[str, str]:
+    """Build environment with PYTHONPATH for subprocess calls."""
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
+    return env
 
 
 def load_module():
@@ -173,7 +186,7 @@ def test_cleanup_preserves_recent_logs():
 
 def test_help_output():
     """Script shows help with --help."""
-    result = subprocess.run(['python3', str(GENERATE_SCRIPT), '--help'], capture_output=True, text=True)
+    result = subprocess.run(['python3', str(GENERATE_SCRIPT), '--help'], capture_output=True, text=True, env=_subprocess_env())
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'generate' in result.stdout, "Missing 'generate' in help"
@@ -185,7 +198,7 @@ def test_help_output():
 
 def test_generate_help():
     """Generate subcommand has help."""
-    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'generate', '--help'], capture_output=True, text=True)
+    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'generate', '--help'], capture_output=True, text=True, env=_subprocess_env())
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert '--force' in result.stdout, "Missing '--force' in help"
@@ -196,7 +209,7 @@ def test_verify_requires_executor():
     """Verify fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
         # Run in temp directory where .plan doesn't exist
-        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'verify'], capture_output=True, text=True, cwd=tmp)
+        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'verify'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env())
 
         assert result.returncode == 1, f'Expected failure, got {result.returncode}'
 
@@ -204,7 +217,7 @@ def test_verify_requires_executor():
 def test_drift_requires_executor():
     """Drift fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
-        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'drift'], capture_output=True, text=True, cwd=tmp)
+        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'drift'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env())
 
         assert result.returncode == 1, f'Expected failure, got {result.returncode}'
         assert 'Could not read executor mappings' in result.stderr
@@ -213,7 +226,7 @@ def test_drift_requires_executor():
 def test_paths_requires_executor():
     """Paths fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
-        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'paths'], capture_output=True, text=True, cwd=tmp)
+        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'paths'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env())
 
         assert result.returncode == 1, f'Expected failure, got {result.returncode}'
         assert 'Could not read executor mappings' in result.stderr
@@ -221,7 +234,7 @@ def test_paths_requires_executor():
 
 def test_drift_help():
     """Drift subcommand has help."""
-    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'drift', '--help'], capture_output=True, text=True)
+    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'drift', '--help'], capture_output=True, text=True, env=_subprocess_env())
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'drift' in result.stdout.lower(), "Missing 'drift' in help"
@@ -229,7 +242,7 @@ def test_drift_help():
 
 def test_paths_help():
     """Paths subcommand has help."""
-    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'paths', '--help'], capture_output=True, text=True)
+    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'paths', '--help'], capture_output=True, text=True, env=_subprocess_env())
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'paths' in result.stdout.lower(), "Missing 'paths' in help"

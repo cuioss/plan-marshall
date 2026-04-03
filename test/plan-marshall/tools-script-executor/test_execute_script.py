@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
 """Unit tests for execute-script.py executor (template)."""
 
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from conftest import _MARKETPLACE_SCRIPT_DIRS  # noqa: E402
+
+
+def _subprocess_env() -> dict[str, str]:
+    """Build environment with PYTHONPATH for subprocess calls."""
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
+    return env
 
 # Path to templates and scripts
 SKILL_DIR = (
@@ -232,7 +245,7 @@ def test_generate_script_help():
     script_path = SCRIPTS_DIR / 'generate_executor.py'
 
     if script_path.exists():
-        result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True)
+        result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True, env=_subprocess_env())
 
         assert result.returncode == 0, f'Script failed: {result.stderr}'
         assert 'generate' in result.stdout, "Missing 'generate' subcommand in help"
@@ -243,7 +256,7 @@ def test_verify_script_help():
     script_path = SCRIPTS_DIR / 'verify-executor.py'
 
     if script_path.exists():
-        result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True)
+        result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True, env=_subprocess_env())
 
         assert result.returncode == 0, f'Script failed: {result.stderr}'
         assert 'check' in result.stdout, "Missing 'check' subcommand in help"

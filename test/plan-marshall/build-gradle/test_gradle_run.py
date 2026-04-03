@@ -53,18 +53,13 @@ def test_run_success_output_format():
 
         assert result.returncode == 0, f'Successful run should exit with 0: {result.stderr}'
 
-        # Parse tab-separated TOON output
-        lines = result.stdout.strip().split('\n')
-        toon = {}
-        for line in lines:
-            if '\t' in line:
-                key, value = line.split('\t', 1)
-                toon[key] = value
+        # Parse TOON output
+        data = result.toon()
 
-        assert toon.get('status') == 'success', f'Status should be success: {toon}'
-        assert 'log_file' in toon, 'Should include log_file'
-        assert toon.get('exit_code') == '0', 'Exit code should be 0'
-        assert 'command' in toon, 'Should include command (not command_executed)'
+        assert data.get('status') == 'success', f'Status should be success: {data}'
+        assert 'log_file' in data, 'Should include log_file'
+        assert str(data.get('exit_code')) == '0', 'Exit code should be 0'
+        assert 'command' in data, 'Should include command (not command_executed)'
 
 
 def test_run_includes_duration():
@@ -86,7 +81,7 @@ def test_run_failure_includes_errors():
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
 
         assert result.returncode == 1, 'Failed run should exit with 1'
-        assert 'status\terror' in result.stdout, 'Should have error status (tab-separated)'
+        assert 'status: error' in result.stdout, 'Should have error status'
 
 
 # =============================================================================
@@ -100,7 +95,7 @@ def test_run_mode_actionable():
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', '--mode', 'actionable', cwd=temp_dir)
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        assert 'status\tsuccess' in result.stdout, 'Should have success status (tab-separated)'
+        assert 'status: success' in result.stdout, 'Should have success status'
 
 
 def test_run_mode_errors():
@@ -154,8 +149,8 @@ def test_run_format_toon_default():
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        # Should be tab-separated, not JSON
-        assert '\t' in result.stdout, 'Should use tab separator'
+        # Should be TOON format (key: value), not JSON
+        assert 'status: ' in result.stdout, 'Should use TOON key: value format'
         assert '{' not in result.stdout.split('\n')[0], 'First line should not be JSON'
 
 
