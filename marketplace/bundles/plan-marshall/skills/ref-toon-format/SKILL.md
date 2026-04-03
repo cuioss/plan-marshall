@@ -66,10 +66,5 @@ This skill also hosts shared Python modules used across workflow scripts:
 
 `triage_helpers.py` lives here because all its output flows through `print_toon()` / TOON serialization, making this the natural home for the shared output layer. Other exports (`create_workflow_cli`, `ErrorCode`, `is_test_file`, `calculate_priority`, triage command handlers) are co-located to avoid fragmenting a cohesive utility module.
 
-## Resources
-
-- TOON Specification: https://github.com/toon-format/spec
-- TOON Playground: https://toon-format.github.io/playground
-
 ### Related Skills
 - `plan-marshall:ref-workflow-architecture` — Architecture documentation including workflow skill conventions

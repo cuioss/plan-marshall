@@ -66,7 +66,7 @@ user-invocable: false
 |----------|-------|-------------|
 | [standards/phases.md](standards/phases.md) | 6-phase model | Phase flow, transitions, outputs |
 | [standards/agents.md](standards/agents.md) | Thin agent pattern | Agent structure, skill invocation |
-| [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
+| [standards/data-layer.md](standards/data-layer.md) | manage-* skills | Inventory, dependency graph, data flow, shared infra |
 | [standards/manage-contract.md](standards/manage-contract.md) | manage-* contract | Enforcement, error codes, shared formats |
 | [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
 | [standards/artifacts.md](standards/artifacts.md) | Plan file formats | references.json, status.json, TASK-*.json |
@@ -148,11 +148,12 @@ user-invocable: false
 │                                     │                                       │
 │                                     ▼                                       │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  DATA LAYER (manage-* Skills)                                        │   │
-│  │  ════════════════════════════                                        │   │
-│  │  manage-references    manage-status        manage-tasks                │   │
-│  │  manage-solution-outline    manage-plan-documents    manage-files     │   │
-│  │  manage-architecture        manage-findings          manage-logging   │   │
+│  │  DATA LAYER (14 manage-* Skills)                                     │   │
+│  │  ══════════════════════════════                                      │   │
+│  │  manage-status  manage-references  manage-tasks  manage-files        │   │
+│  │  manage-solution-outline  manage-plan-documents  manage-findings     │   │
+│  │  manage-architecture  manage-config  manage-logging  manage-metrics  │   │
+│  │  manage-lessons  manage-memories  manage-run-config                  │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                     │                                       │
 │                                     ▼                                       │
@@ -183,6 +184,10 @@ user-invocable: false
 | `plan-marshall:task-implementation` | Implementation profile workflow |
 | `plan-marshall:task-module-testing` | Module testing profile workflow |
 | `plan-marshall:task-verification` | Verification-only profile workflow |
+| `plan-marshall:workflow-integration-git` | Git commit workflow |
+| `plan-marshall:workflow-integration-ci` | CI/PR review comment workflow |
+| `plan-marshall:workflow-integration-sonar` | Sonar issue workflow |
+| `plan-marshall:workflow-pr-doctor` | PR issue diagnosis workflow |
 
 ---
 
@@ -229,18 +234,32 @@ Script-bearing workflow skills load JSON config from `standards/` using `load_sk
 
 ### Priority Vocabulary
 
-All workflow scripts use the shared `PRIORITY_LEVELS` tuple from `triage_helpers`: `low`, `medium`, `high`, `critical`. The additional value `none` is used only for non-actionable items (e.g., ignored comments). Scripts should map their domain-specific severity to these canonical levels.
+All workflow scripts use the shared `PRIORITY_LEVELS` tuple from `triage_helpers`: `low`, `medium`, `high`, `critical`. Scripts must map their domain-specific severity to these canonical levels. Do not use `none` or other values outside this vocabulary.
 
 ### TOON Output Conventions
 
-- All outputs include `status: success|error` at the top level
-- Array fields use the hint notation: `field_name[N]:` for simple arrays, `field_name[N]{key1,key2}:` for arrays of objects
-- Error outputs use `make_error()` for structured error payloads with `error`, `status`, `error_code` fields
-- Use `print_error()` for direct error-and-exit; use `make_error()` + `print_toon()` only when additional processing is needed before output
+See [manage-contract.md — TOON Output Contract](standards/manage-contract.md) for the full output contract (success/error format, `output_toon` vs `serialize_toon`).
 
-### Error Handling Tables
+### Error Handling Patterns
 
-All workflow skills use a consistent `| Failure | Action |` table in their Error Handling section. Keep actions specific and prescriptive.
+All workflow skills use a consistent `| Failure | Action |` table. Common patterns shared across skills:
+
+| Pattern | Action | Used By |
+|---------|--------|---------|
+| Script returns error | Report error to caller with details. Do not proceed to next step. | All |
+| Triage/classification failure | Log warning, skip the item, continue processing remaining items. | ci, sonar |
+| Best-effort operation failure | Log warning, continue — replies, resolutions, status changes are best-effort. | ci, sonar |
+| Push failure | Report error. Never force-push as fallback. | git, pr-doctor |
+| Settings file not found | Report as missing. Ask user (create defaults, skip, abort). | permission-web |
+| CI wait timeout | Ask user via AskUserQuestion (continue/skip/abort). | pr-doctor |
+| Max fix attempts reached | Report remaining issues with details. Do not loop further. | pr-doctor |
+| Build verification failure | Report failing tests/compilation. Do not commit broken state. | sonar, pr-doctor |
+
+Each skill's Error Handling section documents skill-specific overrides only.
+
+### Standards (Load On-Demand) Convention
+
+All `standards/*.json` files are loaded at script import time by `load_skill_config()`. All `standards/*.md` files are loaded on-demand by the LLM when edge cases or deep reference is needed. Each skill documents its load-on-demand standards in a `## Standards (Load On-Demand)` table.
 
 ---
 

@@ -84,23 +84,11 @@ The canonical phase name format is `{N}-{name}` (e.g., `1-init`). Context-specif
 
 ### Profiles
 
-Profiles control which skills are loaded during task execution. Two sets exist:
+Profiles control which skills are loaded during task execution. See [task-executors.md](task-executors.md) for executor routing and profile naming conventions.
 
-**Config profiles** (defined in `manage-config` skill_domains, control skill resolution):
+**Config profiles** (defined in `manage-config` skill_domains, control skill resolution): `implementation`, `module_testing`, `integration_testing`, `quality`.
 
-| Profile | Phase | Purpose |
-|---------|-------|---------|
-| `implementation` | execute | Production code patterns |
-| `module_testing` | execute | Unit and module test patterns |
-| `integration_testing` | execute | Integration test patterns |
-| `quality` | verify | Documentation and quality standards |
-
-**Additional task profiles** (used in `manage-tasks`, not mapped to config skill domains):
-
-| Profile | Purpose |
-|---------|---------|
-| `verification` | Verification-only tasks (no files to modify, runs commands only) |
-| `standalone` | Tasks not tied to a specific skill domain |
+**Additional task profiles** (used in `manage-tasks`, not mapped to config skill domains): `verification`, `standalone`.
 
 ## Noun-Verb API Convention
 
@@ -158,144 +146,15 @@ Error codes shared across multiple manage-* skills:
 | `file_not_found` | Expected file does not exist | manage-files, manage-memories, manage-references, manage-status |
 | `not_found` | Requested resource does not exist | manage-findings, manage-lessons, manage-status |
 | `file_exists` | Resource already exists on create | manage-plan-documents, manage-references, manage-status |
-| `missing_required` / `missing_argument` | Required parameter not provided | manage-lessons, manage-plan-documents, manage-tasks |
+| `missing_required` | Required parameter not provided | manage-lessons, manage-plan-documents, manage-tasks |
 | `validation_error` | Data failed structural validation | manage-memories, manage-plan-documents |
 | `invalid_phase` | Phase name not in valid set | manage-findings, manage-metrics, manage-status |
 
-### Per-Skill Error Codes
-
-#### manage-config
-| Error Code | Cause |
-|------------|-------|
-| `not_initialized` | marshal.json missing |
-| `invalid_domain` | Domain not in skill_domains |
-| `invalid_field` | Unknown field for phase/noun |
-| `skill_not_found` | Skill not in domain defaults/optionals |
-
-#### manage-files
-| Error Code | Cause |
-|------------|-------|
-| `missing_content` | Write called with empty content |
-| `invalid_path` | Path contains `..` or absolute components |
-| `permission_error` | File system permission denied |
-
-#### manage-findings
-| Error Code | Cause |
-|------------|-------|
-| `already_promoted` | Finding was previously promoted |
-| `invalid_type` | Type not in finding types |
-| `invalid_resolution` | Resolution not in valid values |
-
-#### manage-lessons
-| Error Code | Cause |
-|------------|-------|
-| `invalid_category` | Category not in: bug, improvement, anti-pattern |
-| `invalid_context` | JSON context parsing failed (from-error) |
-
-#### manage-memories
-| Error Code | Cause |
-|------------|-------|
-| `invalid_category` | Category not in valid set |
-| `invalid_content` | Content is not valid JSON |
-
-#### manage-metrics
-| Error Code | Cause |
-|------------|-------|
-| `no_data` | No metrics collected yet |
-| `write_failed` | File system write error |
-| `session_not_found` | JSONL session file not found (enrich) |
-
-#### manage-plan-documents
-| Error Code | Cause |
-|------------|-------|
-| `document_not_found` | Document does not exist |
-| `section_not_found` | Requested section missing |
-
-#### manage-references
-| Error Code | Cause |
-|------------|-------|
-| `field_not_found` | Requested field does not exist |
-| `type_mismatch` | List operation on non-list field |
-
-#### manage-run-config
-| Error Code | Cause |
-|------------|-------|
-| `not_initialized` | run-configuration.json missing |
-| `key_not_found` | Configuration key does not exist |
-| `invalid_value` | Value fails type validation |
-| `invalid_category` | Warning category not in valid set |
-| `marshal_not_found` | marshal.json missing (cleanup needs retention) |
-
-#### manage-solution-outline
-| Error Code | Cause |
-|------------|-------|
-| `parse_error` | Failed to parse document structure |
-| `validation_failed` | Missing required sections or invalid numbering |
-| `deliverable_not_found` | Deliverable number does not exist |
-
-#### manage-status
-| Error Code | Cause |
-|------------|-------|
-| `phase_not_found` | Phase not in status.json |
-| `unknown_phase` | Phase name not in valid set (route) |
-| `plan_not_found` | Plan directory does not exist |
-
-#### manage-tasks
-| Error Code | Cause |
-|------------|-------|
-| `task_not_found` | Task number does not exist |
-| `step_not_found` | Step number not in task |
-| `invalid_content` | TOON content parsing failed |
-| `circular_dependency` | Task dependency creates a cycle |
-| `invalid_outcome` | Step outcome not `done` or `skipped` |
-| `plan_dir_not_found` | Plan directory does not exist |
+Per-skill error codes are documented in each skill's own SKILL.md.
 
 ## Plan Directory Layout
 
-Plan-scoped manage-* skills store data under `.plan/plans/{plan_id}/`:
-
-```
-.plan/
-  plans/
-    {plan_id}/
-      status.json          # manage-status
-      references.json      # manage-references
-      request.md           # manage-plan-documents
-      solution_outline.md  # manage-solution-outline
-      artifacts/
-        findings.jsonl     # manage-findings (plan)
-        assessments.jsonl  # manage-findings (assessments)
-        qgate-{phase}.jsonl # manage-findings (Q-Gate)
-      tasks/
-        TASK-001.json      # manage-tasks
-      logs/
-        script-execution.log  # manage-logging
-        work.log              # manage-logging
-        decision.log          # manage-logging
-      work/
-        metrics.toon       # manage-metrics
-      metrics.md           # manage-metrics
-```
-
-Global-scoped skills store data under `.plan/` directly:
-
-```
-.plan/
-  marshal.json             # manage-config
-  run-configuration.json   # manage-run-config
-  memories/                # manage-memories
-    context/               #   session snapshots
-  lessons-learned/         # manage-lessons
-    YYYY-MM-DD-NNN.md      #   individual lessons
-    archived/              #   applied lessons
-  logs/                    # manage-logging (global fallback)
-  project-architecture/    # manage-architecture
-    derived-data.json      #   module discovery output
-    llm-enriched.json      #   LLM enrichment data
-  archived-plans/          # manage-status (archive target)
-    YYYY-MM-DD-{plan_id}/  #   archived plan directories
-  temp/                    # temporary files (always cleaned)
-```
+See [artifacts.md — Plan Directory Structure](artifacts.md#plan-directory-structure) for the canonical directory tree with file-to-skill mappings.
 
 ## Scope Model
 

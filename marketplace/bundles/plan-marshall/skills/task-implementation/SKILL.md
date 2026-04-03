@@ -12,11 +12,18 @@ user-invocable: false
 
 **Base Contract**: This skill follows the task executor contract defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md). See that document for shared steps ([BASE] steps below), input/output contracts, error handling, integration points, and script notations.
 
+**Output Extensions**: None — this profile uses the base output contract as-is.
+
 ## Workflow
 
 Steps marked **[BASE]** are defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md) — follow them exactly.
 
 ### Step 1: Load Task Context [BASE]
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+  --plan-id {plan_id} --number {task_number}
+```
 
 Verify `profile` is `implementation`.
 
@@ -60,17 +67,28 @@ For each step (file path):
 
 ### Step 6: Mark Step Complete [BASE]
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
+  --plan-id {plan_id} --task {task_number} --step {N} --outcome done
+```
+
 ### Step 7: Run Verification [BASE]
 
 Implementation tasks verify compilability only — full test execution belongs to module_testing profile. The safety net resolve command is `compile`.
 
 ### Step 8: Handle Verification Results [BASE]
 
-On failure: analyze error output, identify failing component, fix the issue, re-run verification.
+On failure: analyze error output, identify failing component, fix the issue, re-run verification (max `verification_max_iterations` from config, default 5).
 
 ### Step 9: Record Lessons [BASE]
 
 Use component `"plan-marshall:task-implementation"`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
+  --component "plan-marshall:task-implementation" --category improvement \
+  --title "{issue summary}" --detail "{context and resolution}"
+```
 
 ### Step 10: Return Results [BASE]
 
@@ -83,7 +101,6 @@ If changes conflict with existing code:
 - Prefer preserving existing behavior
 - Ask for clarification if needed
 
-## Script Notations
+## Additional Script Notations
 
-In addition to the [common notations](../ref-workflow-architecture/standards/task-executors.md), this profile uses:
-- `plan-marshall:manage-config:manage-config` — Read compatibility from project config
+- `plan-marshall:manage-config:manage-config` — Read compatibility strategy (Step 2)

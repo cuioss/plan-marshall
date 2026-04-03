@@ -132,8 +132,6 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key Insight**: Skills are associated with modules via `skills_by_profile` in architecture data. Deliverables list which profiles apply (visible to user). Task-plan resolves skills from architecture for each profile, creating one task per profile (1:N mapping).
-
 ---
 
 ## Execute Phase Skill Loading
@@ -287,12 +285,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 
 ---
 
-## Related Documents
+## Related
 
-| Document | Purpose |
-|----------|---------|
-| [agents.md](agents.md) | Agent skill loading steps |
-| [phases.md](phases.md) | When each skill type is used |
-| `plan-marshall:manage-architecture` | Source of module.skills_by_profile |
-| `plan-marshall:phase-3-outline` | Where module/skills are selected |
-| `plan-marshall:extension-api` | Extension points |
+- [agents.md](agents.md) — Agent skill loading steps
+- [phases.md](phases.md) — When each skill type is used

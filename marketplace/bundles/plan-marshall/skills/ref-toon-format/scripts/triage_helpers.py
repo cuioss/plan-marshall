@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Shared helpers for workflow scripts (pr.py, sonar.py, git_workflow.py, pr_doctor.py, permission_web.py).
+Shared helpers for workflow scripts in plan-marshall bundle.
 
 Provides:
 - ``print_toon`` / ``print_error`` — output helpers replacing repetitive print+serialize+return patterns
@@ -361,8 +361,7 @@ def cmd_triage_batch_handler(
     try:
         items = json.loads(json_str)
     except json.JSONDecodeError as e:
-        print(serialize_toon(make_error(f'Invalid JSON input: {e}')))
-        return 1
+        return print_error(f'Invalid JSON input: {e}')
 
     if not isinstance(items, list):
         return print_error('Input must be a JSON array')
@@ -480,8 +479,9 @@ def create_workflow_cli(
     for cmd in subcommands:
         sub = subparsers.add_parser(cmd['name'], help=cmd['help'])
         for arg_def in cmd.get('args', []):
-            flags = arg_def.pop('flags')
-            sub.add_argument(*flags, **arg_def)
+            flags = arg_def['flags']
+            kwargs = {k: v for k, v in arg_def.items() if k != 'flags'}
+            sub.add_argument(*flags, **kwargs)
         sub.set_defaults(func=cmd['handler'])
 
     return parser

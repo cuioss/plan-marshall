@@ -7,10 +7,14 @@ encoding optimized for LLM token efficiency.
 
 Supports:
 - Simple key-value pairs (key: value)
-- Nested objects via indentation
+- Nested objects via indentation (2-space indent only)
 - Uniform arrays with headers (items[N]{field1,field2}:)
 - Comments (#)
 - Multi-line values (|)
+
+Limitations:
+- Only 2-space indentation is supported for nesting (not tabs or 4-space)
+- Percentage values (e.g., '95%') are parsed as int (lossy — '95%' becomes 95)
 
 Stdlib-only - no external dependencies.
 

@@ -134,6 +134,14 @@ products[2]{id,name,description}:
 2,Gadget,"Multi-purpose tool, batteries included"
 ```
 
+### Inline Uniform Values
+
+```toon
+# Single-row uniform data can be inlined (shorthand for a 1-row table)
+by_severity{BLOCKER,CRITICAL,MAJOR,MINOR,INFO}: 1,1,1,1,1
+by_type{BUG,CODE_SMELL}: 2,3
+```
+
 ### Mixed Nesting
 
 ```toon
@@ -329,30 +337,13 @@ FAIL Pure flat tables (use CSV instead)
 
 ## Specification Status
 
-**Current**: Version 3.0 (Stable)
-**Governance**: Community-driven via GitHub
-**Evolution**: "The TOON format is stable, but also an idea in progress"
-
-**Change Process**:
-1. Propose via GitHub issue
-2. Community discussion
-3. Specification PR
-4. Implementation alignment
-5. Version bump if breaking
-
-## Resources
-
-- **Specification**: https://github.com/toon-format/spec
-- **Main Repository**: https://github.com/toon-format/toon
-- **Playground**: https://toon-format.github.io/playground
-- **Benchmarks**: https://github.com/toon-format/benchmarks
-- **TypeScript SDK**: https://www.npmjs.com/package/@toon-format/toon
+**Current**: Version 3.0 (Stable). Internal to plan-marshall marketplace.
 
 ## Comparison Quick Reference
 
 | Aspect | JSON | TOON | CSV | YAML |
 |--------|------|------|-----|------|
-| **Token Efficiency** | Baseline | ~40% reduction | ~70% reduction | ~15% reduction |
+| **Token Efficiency** | Baseline | 30-60% reduction | ~70% reduction | ~15% reduction |
 | **Nesting Support** | Full | Full | None | Full |
 | **Uniform Arrays** | Verbose | Optimal | Compact | Verbose |
 | **Non-uniform Data** | Good | OK | Poor | Good |

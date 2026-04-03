@@ -92,8 +92,6 @@ File formats and structures for plan data storage.
 
 ---
 
----
-
 ## status.json
 
 Plan lifecycle status with phase tracking.
@@ -152,8 +150,8 @@ updated: 2025-12-02T14:30:00Z
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   {create|read|set-phase|update-phase|progress} --plan-id {id}
 
-# Lifecycle transitions
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle \
+# Lifecycle transitions (subcommands of manage-status)
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
   {transition|list|archive|route} --plan-id {id}
 ```
 
@@ -274,7 +272,7 @@ Solution design document with deliverables.
 |-------|----------|-------------|
 | `domain` | Metadata | Single domain from references.json domains |
 | `module` | Metadata | Target module name (from architecture) |
-| `change_type` | Metadata | create, modify, refactor, migrate, delete |
+| `change_type` | Metadata | One of: analysis, feature, enhancement, bug_fix, tech_debt, verification (see [change-types.md](change-types.md)) |
 | `execution_mode` | Metadata | automated, manual, mixed |
 | `depends` | Metadata | Dependencies: none, N. Title, N, M |
 | `**Profiles:**` | Block | List of profiles: implementation (always), module_testing (if applicable) |
@@ -704,15 +702,7 @@ archive     .plan/archived-plans/{date}-{plan_id}/
 
 ---
 
-## Related Documentation
+## Related
 
-| Document | Purpose |
-|----------|---------|
-| [phases.md](phases.md) | 6-phase execution model |
-| [data-layer.md](data-layer.md) | manage-* skills that access these files |
-| [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
-| `plan-marshall:manage-references` | references.json operations |
-| `plan-marshall:manage-status:manage_status` | status.json operations |
-| `plan-marshall:manage-tasks` | TASK-*.json operations |
-| `plan-marshall:manage-solution-outline` | solution_outline.md operations |
-| `plan-marshall:manage-logging` | work.log, decision.log, and script-execution.log operations |
+- [phases.md](phases.md) — 6-phase execution model
+- [data-layer.md](data-layer.md) — manage-* skills and command references

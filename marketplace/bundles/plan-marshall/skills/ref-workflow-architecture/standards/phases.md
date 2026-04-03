@@ -485,57 +485,12 @@ TRANSITION TRIGGERS:
 
 ## Q-Gate Validation Agent
 
-Q-Gate is a GENERIC AGENT TOOL that extensions call during Phase 3 (Outline) to validate assessments.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                        Q-GATE VALIDATION AGENT                              │
-│                                                                             │
-│  TYPE: Generic agent tool (NOT a workflow step)                             │
-│  CALLED BY: Extensions during their workflow                                │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                                                                     │   │
-│  │  INPUT                           OUTPUT                             │   │
-│  │  ═════                           ══════                             │   │
-│  │                                                                     │   │
-│  │  • plan_id                       • CONFIRMED assessments            │   │
-│  │  • domains                       • FILTERED assessments             │   │
-│  │  • CERTAIN_INCLUDE assessments   • affected_files in references.json│   │
-│  │                                  • Statistics (confirmed/filtered)  │   │
-│  │                                                                     │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  STEPS:                                                                     │
-│  ──────                                                                     │
-│  1. Load domain skills (via resolve-workflow-skill)                         │
-│  2. Read clarified request (or original request)                            │
-│  3. Validate each CERTAIN_INCLUDE assessment:                               │
-│     • Output Ownership - Component documents another's output               │
-│     • Consumer vs Producer - Component consumes, not produces               │
-│     • Request Intent Match - Modification fulfills request                  │
-│     • Duplicate Detection - Not already covered                             │
-│  4. Write CONFIRMED/FILTERED assessments to assessments.jsonl               │
-│  5. Persist affected_files to references.json                               │
-│  6. Log lifecycle and return statistics                                     │
-│                                                                             │
-│  WHY GENERIC:                                                               │
-│  ───────────                                                                │
-│  • Same validation criteria across all domains                              │
-│  • Reusable by all domain extensions                                        │
-│  • Loads domain skills for context (but validation logic is generic)        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Q-Gate is a generic agent tool that extensions call during Phase 3 (Outline) to validate CERTAIN_INCLUDE assessments against request intent. It catches false positives, missing coverage, and scope drift. See the `q-gate-validation-agent` definition in [agents.md](agents.md) for the agent inventory entry and the agent file itself for full I/O contract.
 
 ---
 
-## Related Documents
+## Related
 
-| Document | Purpose |
-|----------|---------|
-| [agents.md](agents.md) | Thin agent pattern details |
-| [skill-loading.md](skill-loading.md) | How skills are resolved |
-| [artifacts.md](artifacts.md) | Plan file formats |
-| `plan-marshall:extension-api` | Extension points |
+- [agents.md](agents.md) — Thin agent pattern
+- [skill-loading.md](skill-loading.md) — Skill resolution
+- [artifacts.md](artifacts.md) — Plan file formats

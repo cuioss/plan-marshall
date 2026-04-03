@@ -107,17 +107,12 @@ The plan-marshall bundle uses manage-* skills as the data access layer for all p
 │  │                       │                   │                          │  │
 │  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
 │  │                       │                   │                          │  │
-│  │ manage-assessments    │ assessments.jsonl │ Component evaluations    │  │
-│  │                       │                   │ • add (certainty/conf.)  │  │
-│  │                       │                   │ • query (with filters)   │  │
-│  │                       │                   │ • clear (all or agent)   │  │
-│  │                       │                   │                          │  │
-│  ├───────────────────────┼───────────────────┼──────────────────────────┤  │
-│  │                       │                   │                          │  │
-│  │ manage-findings       │ findings.jsonl    │ Findings + Q-Gate        │  │
+│  │ manage-findings       │ findings.jsonl    │ Findings + Q-Gate +      │  │
+│  │                       │ assessments.jsonl │ Assessments              │  │
 │  │                       │ qgate-{phase}     │ • add/query/resolve      │  │
 │  │                       │   .jsonl          │ • promote (findings)     │  │
 │  │                       │                   │ • qgate add/query/clear  │  │
+│  │                       │                   │ • assessment add/query   │  │
 │  │                       │                   │                          │  │
 │  └───────────────────────┴───────────────────┴──────────────────────────┘  │
 │                                                                             │
@@ -188,8 +183,7 @@ For full command details, see each manage-* skill's SKILL.md. Key scripts:
 
 | Skill | Script Notation | Purpose |
 |-------|-----------------|---------|
-| `manage-status` | `plan-marshall:manage-status:manage_status` | Phase tracking, metadata, plan discovery |
-| `manage-lifecycle` | `plan-marshall:manage-lifecycle:manage-lifecycle` | Phase transitions, plan listing, archiving |
+| `manage-status` | `plan-marshall:manage-status:manage_status` | Phase tracking, metadata, transitions, plan discovery, archiving |
 | `manage-tasks` | `plan-marshall:manage-tasks:manage-tasks` | Task CRUD, step tracking, status updates |
 | `manage-references` | `plan-marshall:manage-references:manage-references` | Plan refs (domains, branch, issue) |
 | `manage-solution-outline` | `plan-marshall:manage-solution-outline:manage-solution-outline` | Solution document write/read/validate |
@@ -199,7 +193,6 @@ For full command details, see each manage-* skill's SKILL.md. Key scripts:
 | `manage-logging` | `plan-marshall:manage-logging:manage-logging` | Work log, decision log, script log |
 | `manage-config` | `plan-marshall:manage-config:manage-config` | Marshal.json project configuration |
 | `manage-architecture` | `plan-marshall:manage-architecture:architecture` | Module analysis, skill resolution |
-| `manage-assessments` | `plan-marshall:manage-assessments:manage-assessments` | Component evaluations |
 | `manage-metrics` | `plan-marshall:manage-metrics:manage-metrics` | Plan metrics collection |
 
 For file formats (status.json, TASK-*.json, references.json, etc.), see [artifacts.md](artifacts.md).
@@ -254,39 +247,73 @@ For file formats (status.json, TASK-*.json, references.json, etc.), see [artifac
 
 ## Plan Directory Structure
 
+See [artifacts.md — Plan Directory Structure](artifacts.md#plan-directory-structure) for the canonical directory tree.
+
+---
+
+## Dependency Graph
+
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                     PLAN DIRECTORY STRUCTURE                                │
-│                                                                             │
-│  .plan/                                                                     │
-│  ├── execute-script.py          # Script executor                           │
-│  ├── plans/                     # Active plans                              │
-│  │   └── {plan_id}/                                                         │
-│  │       ├── status.json        # Lifecycle (phases, progress, metadata)   │
-│  │       ├── request.md         # Original request                         │
-│  │       ├── references.json    # Plan refs & config (domains, branch, issue) │
-│  │       ├── solution_outline.md# Deliverables                              │
-│  │       ├── artifacts/          # Plan-level artifacts                    │
-│  │       │   ├── assessments.jsonl      # Component assessments          │
-│  │       │   ├── findings.jsonl         # Unified findings               │
-│  │       │   └── qgate-{phase}.jsonl    # Per-phase Q-Gate findings      │
-│  │       ├── work/              # Working files (outline phase+)           │
-│  │       ├── tasks/             # Task files                               │
-│  │       │   ├── TASK-001.json                                             │
-│  │       │   └── TASK-002.json                                             │
-│  │       └── logs/              # Execution logs                           │
-│  │           ├── work.log                                                   │
-│  │           ├── decision.log                                               │
-│  │           └── script-execution.log                                       │
-│  │                                                                          │
-│  ├── archived-plans/            # Completed plans                          │
-│  │   └── {date}-{plan_id}/                                                  │
-│  │                                                                          │
-│  └── temp/                      # Temporary files                          │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+manage-config (configuration authority)
+├── manage-architecture (reads skill_domains for module resolution)
+│   └── manage-solution-outline (primary consumer of architecture data)
+├── manage-solution-outline (validates domains against config)
+│   └── manage-tasks (deliverables → tasks 1:N mapping)
+├── manage-tasks (inherits domain/profile from deliverables)
+├── manage-status (routes phases using config workflow_skills)
+│   └── manage-metrics (parallels phase transitions with timing)
+├── manage-run-config (reads retention from marshal.json for cleanup)
+└── manage-memories (reads retention from marshal.json for cleanup)
+
+manage-findings
+└── manage-lessons (promotion: findings → lessons)
+
+manage-logging (independent, fire-and-forget)
+manage-files (low-level utility, used by other manage-* skills)
+manage-references (independent plan metadata)
+manage-plan-documents (independent request storage)
 ```
+
+---
+
+## Data Flow Through Phases
+
+```
+Phase 1 (init):
+  manage-status create → manage-references create → manage-plan-documents request create
+
+Phase 2 (refine):
+  manage-plan-documents request clarify
+
+Phase 3 (outline):
+  manage-architecture → manage-solution-outline write
+
+Phase 4 (plan):
+  manage-solution-outline list-deliverables → manage-tasks add (per deliverable)
+
+Phase 5 (execute):
+  manage-tasks next → [execute task] → manage-tasks finalize-step
+  manage-findings add (during verification)
+
+Phase 6 (finalize):
+  manage-findings qgate add → manage-findings promote → manage-lessons add
+  manage-metrics generate → manage-status archive
+```
+
+---
+
+## Shared Infrastructure
+
+All manage-* skills share:
+
+| Component | Source | Purpose |
+|-----------|--------|---------|
+| `file_ops` | Shared Python module | Path resolution, JSON I/O, TOON output, timestamps |
+| `input_validation` | Shared Python module | Plan ID validation, field type checks |
+| `toon_parser` | Shared Python module | TOON serialization/deserialization |
+| `constants` | Shared Python module | Phase names, Q-Gate phases, valid resolutions |
+| [manage-contract.md](manage-contract.md) | This bundle | Shared contract, formats, error codes |
+| `ref-toon-format` | This bundle | TOON format specification |
 
 ---
 
@@ -296,8 +323,4 @@ For file formats (status.json, TASK-*.json, references.json, etc.), see [artifac
 |----------|---------|
 | [artifacts.md](artifacts.md) | Plan file formats in detail |
 | [phases.md](phases.md) | Which phase uses which files |
-| `plan-marshall:manage-references/SKILL.md` | Full references commands |
-| `plan-marshall:manage-status/SKILL.md` | Full status commands |
-| `plan-marshall:manage-lifecycle/SKILL.md` | Full lifecycle commands |
-| `plan-marshall:manage-tasks/SKILL.md` | Full task commands |
-| `plan-marshall:manage-logging/SKILL.md` | Work log and script execution logging |
+| [manage-contract.md](manage-contract.md) | Shared contract, formats, error codes |

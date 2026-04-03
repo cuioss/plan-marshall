@@ -37,13 +37,18 @@ Steps marked **[BASE]** are defined in [task-executors.md](../ref-workflow-archi
 
 ### Step 1: Load Task Context [BASE]
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+  --plan-id {plan_id} --number {task_number}
+```
+
 Verify `profile` is `verification`. Steps contain verification commands (not file paths).
 
 ### Step 2: Execute Verification Steps
 
 Steps are executed sequentially. For each step (verification command):
 
-1. Run the command (with a 5-minute timeout):
+1. Run the command:
 ```bash
 {step.target}
 ```
@@ -51,6 +56,11 @@ Steps are executed sequentially. For each step (verification command):
 2. Check exit code and output
 
 ### Step 3: Mark Step Complete [BASE]
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
+  --plan-id {plan_id} --task {task_number} --step {N} --outcome done
+```
 
 ### Step 4: Handle Failures
 
@@ -75,28 +85,4 @@ Use component `"plan-marshall:task-verification"`. Record lessons on unexpected 
 
 On **success**: Use the base output contract with `next_action: task_complete`.
 
-On **failure** (structured output for phase-5-execute triage):
-
-```toon
-status: error
-plan_id: {plan_id}
-task_number: {task_number}
-execution_summary:
-  steps_completed: {N}
-  steps_total: {M}
-  commands_run:
-    - {cmd1}
-verification:
-  passed: false
-  command: "{failed command}"
-  exit_code: {exit_code}
-  stderr: "{truncated stderr, max 2000 chars}"
-  findings:
-    - type: {compile-error|test-failure|lint-issue}
-      file: {file_path}
-      line: {line_number}
-      message: "{error message}"
-next_action: requires_attention
-```
-
-The `findings` array is best-effort: parse compiler errors, test failures, or lint output into structured entries. If parsing fails, include the raw `stderr` for the triage step to analyze.
+On **failure**: Use the base output contract with `status: error`, `next_action: requires_attention`, and the profile-specific extension fields (`commands_run`, `exit_code`, `stderr`, `findings`). The `findings` array is best-effort: parse compiler errors, test failures, or lint output into structured entries. If parsing fails, include the raw `stderr` for the triage step to analyze.

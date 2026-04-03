@@ -108,7 +108,7 @@ instructions[4]:
 
 next_steps[3]:
 - Fix resource leak in HandoffTemplate
-- Address SQL injection in AgentBase
+- Add null check in AgentBase
 - Refactor duplicate code in MemoryStore
 ```
 
@@ -143,7 +143,7 @@ current_task:
   started: 2025-11-26T10:45:00Z
 ```
 
-**Storage**: `{memory-storage}/task-history.toon`
+**Storage**: `.plan/memories/task-history.toon`
 
 **Use Cases**:
 - Multi-session workflows
@@ -177,7 +177,7 @@ summary:
   total_issues_found: 45
 ```
 
-**Storage**: `{memory-storage}/analysis-state.toon`
+**Storage**: `.plan/memories/analysis-state.toon`
 
 **Use Cases**:
 - Large codebase analysis
@@ -383,10 +383,6 @@ categorization:
 - TOON: 380 tokens
 - **Savings**: 380 tokens (50% reduction)
 
-## References
+## Related
 
-For TOON syntax details, migration guidance, best practices, and quality rules, see [toon-specification.md](toon-specification.md).
-
-### Related Skills
-- `plan-marshall:ref-workflow-architecture` — Architecture documentation including workflow skill conventions
-- `plan-marshall:manage-memories` — Memory layer operations
+- [toon-specification.md](toon-specification.md) — TOON syntax and best practices

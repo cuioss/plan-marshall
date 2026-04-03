@@ -93,7 +93,8 @@ Task executors are configured in the system domain:
       "workflow_skills": { ... },
       "task_executors": {
         "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing"
+        "module_testing": "plan-marshall:task-module-testing",
+        "verification": "plan-marshall:task-verification"
       }
     }
   }
@@ -205,6 +206,22 @@ Skill: pm-dev-java:java-cdi            (domain knowledge)
 
 ---
 
+## Verification Scope by Profile
+
+| Profile | Verification Command | Scope |
+|---------|---------------------|-------|
+| `implementation` | `compile` | Compilability only — full tests belong to module_testing |
+| `module_testing` | `module-tests` | Full test suite for the module |
+| `verification` | (from task steps) | Run step commands without modifying files |
+
+---
+
+## Component Naming Convention
+
+When recording lessons via `manage-lessons add --component`, use `{bundle}:{skill-name}` format. Each task executor uses its own skill name as the component (e.g., `plan-marshall:task-implementation`).
+
+---
+
 ## Shared Executor Workflow
 
 All task executor skills (task-implementation, task-module-testing, task-verification) share a common workflow. Profile-specific skills define their unique steps and reference this section for the common steps.
@@ -295,7 +312,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
 2. Identify failing component
 3. Fix the issue (profile-specific — see executor skill for scope)
 4. Re-run verification
-5. Iterate until pass (max 3 iterations)
+5. Iterate until pass (max `verification_max_iterations` from config, default 5)
 
 If still failing after 3 iterations:
 
@@ -379,9 +396,7 @@ All task executor skills use these notations (use EXACTLY as shown):
 
 ---
 
-## Related Documents
+## Related
 
-- [skill-loading.md](skill-loading.md) - Two-tier skill loading pattern
-- [phases.md](phases.md) - Workflow phase definitions
-- [agents.md](agents.md) - Agent responsibilities including phase-5-execute skill
-- `plan-marshall:extension-api` - Extension points
+- [skill-loading.md](skill-loading.md) — Two-tier skill loading
+- [phases.md](phases.md) — Workflow phase definitions

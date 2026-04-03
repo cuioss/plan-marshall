@@ -31,6 +31,11 @@ Steps marked **[BASE]** are defined in [task-executors.md](../ref-workflow-archi
 
 ### Step 1: Load Task Context [BASE]
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+  --plan-id {plan_id} --number {task_number}
+```
+
 Verify `profile` is `module_testing`.
 
 ### Step 2: Understand Implementation Context
@@ -63,6 +68,11 @@ Include positive and negative test cases with descriptive test names.
 
 ### Step 5: Mark Step Complete [BASE]
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
+  --plan-id {plan_id} --task {task_number} --step {N} --outcome done
+```
+
 ### Step 6: Run Verification [BASE]
 
 Module testing tasks run the full test suite for the module, not targeted test classes. The safety net resolve command is `module-tests`.
@@ -77,6 +87,12 @@ On test failure:
 ### Step 8: Record Lessons [BASE]
 
 Use component `"plan-marshall:task-module-testing"`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
+  --component "plan-marshall:task-module-testing" --category improvement \
+  --title "{issue summary}" --detail "{context and resolution}"
+```
 
 ### Step 9: Return Results [BASE]
 
