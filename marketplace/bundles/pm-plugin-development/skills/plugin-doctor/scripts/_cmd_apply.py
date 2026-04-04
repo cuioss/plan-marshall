@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from _fix_shared import read_json_input, resolve_issue_type
+from _doctor_shared import read_json_input
 
 
 def load_templates(script_dir: Path) -> dict:
@@ -98,7 +98,12 @@ def apply_missing_field_fix(file_path: Path, fix: dict, templates: dict) -> dict
     if frontmatter_end == -1:
         return {'success': False, 'error': 'Invalid frontmatter structure'}
 
-    defaults = {'name': file_path.stem, 'description': '[Description needed]', 'tools': 'Read', 'user-invocable': 'false'}
+    defaults = {
+        'name': file_path.stem,
+        'description': '[Description needed]',
+        'tools': 'Read',
+        'user-invocable': 'false',
+    }
     default_value = defaults.get(field_name, '[Value needed]')
 
     new_line = f'{field_name}: {default_value}'
@@ -364,7 +369,7 @@ FIX_HANDLERS = {
 
 def apply_single_fix(fix: dict, bundle_dir: Path, templates: dict) -> dict:
     """Apply a single fix to a component file."""
-    fix_type = resolve_issue_type(fix.get('type', ''))
+    fix_type = fix.get('type', '')
     file_path = fix.get('file', '')
 
     if not fix_type:

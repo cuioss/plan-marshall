@@ -676,9 +676,7 @@ Read `references/bloated-guide.md` for standards.
         all_issues = _collect_issues(data)
 
         bloat_issues = [i for i in all_issues if i['type'] == 'subdoc-bloat']
-        assert len(bloat_issues) >= 1, (
-            f'Should detect subdoc-bloat, got issues: {[i["type"] for i in all_issues]}'
-        )
+        assert len(bloat_issues) >= 1, f'Should detect subdoc-bloat, got issues: {[i["type"] for i in all_issues]}'
         assert bloat_issues[0]['classification'] == 'BLOATED', (
             f'Expected BLOATED, got {bloat_issues[0]["classification"]}'
         )

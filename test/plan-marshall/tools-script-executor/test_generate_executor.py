@@ -1,25 +1,38 @@
 #!/usr/bin/env python3
-"""Unit tests for generate-executor.py script."""
+"""Unit tests for generate_executor.py script."""
 
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from datetime import date
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from conftest import _MARKETPLACE_SCRIPT_DIRS  # noqa: E402
 
 # Path to the script
 SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
     / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts'
 )
-GENERATE_SCRIPT = SCRIPTS_DIR / 'generate-executor.py'
+GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
+
+
+def _subprocess_env() -> dict[str, str]:
+    """Build environment with PYTHONPATH for subprocess calls."""
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
+    return env
 
 
 def load_module():
-    """Load the generate-executor module."""
+    """Load the generate_executor module."""
     with open(GENERATE_SCRIPT) as f:
         code = f.read()
 
@@ -173,7 +186,9 @@ def test_cleanup_preserves_recent_logs():
 
 def test_help_output():
     """Script shows help with --help."""
-    result = subprocess.run(['python3', str(GENERATE_SCRIPT), '--help'], capture_output=True, text=True)
+    result = subprocess.run(
+        ['python3', str(GENERATE_SCRIPT), '--help'], capture_output=True, text=True, env=_subprocess_env()
+    )
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'generate' in result.stdout, "Missing 'generate' in help"
@@ -185,7 +200,9 @@ def test_help_output():
 
 def test_generate_help():
     """Generate subcommand has help."""
-    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'generate', '--help'], capture_output=True, text=True)
+    result = subprocess.run(
+        ['python3', str(GENERATE_SCRIPT), 'generate', '--help'], capture_output=True, text=True, env=_subprocess_env()
+    )
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert '--force' in result.stdout, "Missing '--force' in help"
@@ -196,7 +213,9 @@ def test_verify_requires_executor():
     """Verify fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
         # Run in temp directory where .plan doesn't exist
-        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'verify'], capture_output=True, text=True, cwd=tmp)
+        result = subprocess.run(
+            ['python3', str(GENERATE_SCRIPT), 'verify'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env()
+        )
 
         assert result.returncode == 1, f'Expected failure, got {result.returncode}'
 
@@ -204,7 +223,9 @@ def test_verify_requires_executor():
 def test_drift_requires_executor():
     """Drift fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
-        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'drift'], capture_output=True, text=True, cwd=tmp)
+        result = subprocess.run(
+            ['python3', str(GENERATE_SCRIPT), 'drift'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env()
+        )
 
         assert result.returncode == 1, f'Expected failure, got {result.returncode}'
         assert 'Could not read executor mappings' in result.stderr
@@ -213,7 +234,9 @@ def test_drift_requires_executor():
 def test_paths_requires_executor():
     """Paths fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
-        result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'paths'], capture_output=True, text=True, cwd=tmp)
+        result = subprocess.run(
+            ['python3', str(GENERATE_SCRIPT), 'paths'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env()
+        )
 
         assert result.returncode == 1, f'Expected failure, got {result.returncode}'
         assert 'Could not read executor mappings' in result.stderr
@@ -221,7 +244,9 @@ def test_paths_requires_executor():
 
 def test_drift_help():
     """Drift subcommand has help."""
-    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'drift', '--help'], capture_output=True, text=True)
+    result = subprocess.run(
+        ['python3', str(GENERATE_SCRIPT), 'drift', '--help'], capture_output=True, text=True, env=_subprocess_env()
+    )
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'drift' in result.stdout.lower(), "Missing 'drift' in help"
@@ -229,7 +254,9 @@ def test_drift_help():
 
 def test_paths_help():
     """Paths subcommand has help."""
-    result = subprocess.run(['python3', str(GENERATE_SCRIPT), 'paths', '--help'], capture_output=True, text=True)
+    result = subprocess.run(
+        ['python3', str(GENERATE_SCRIPT), 'paths', '--help'], capture_output=True, text=True, env=_subprocess_env()
+    )
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
     assert 'paths' in result.stdout.lower(), "Missing 'paths' in help"
@@ -403,3 +430,108 @@ def test_skips_private_modules():
         assert '_internal' not in path, 'Should not include _internal.py'
         assert '_helper' not in path, 'Should not include _helper.py'
         assert 'main.py' in path, 'Should include main.py'
+
+
+# =============================================================================
+# TESTS: _collect_script_dirs (subdirectory scanning)
+# =============================================================================
+
+
+def test_collect_script_dirs_includes_subdirectories():
+    """Subdirectories of script directories are included in collected paths."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        # Create marketplace structure with subdirectories
+        scripts_dir = base / 'bundle' / 'skills' / 'script-shared' / 'scripts'
+        (scripts_dir / 'build').mkdir(parents=True)
+        (scripts_dir / 'extension').mkdir(parents=True)
+        # Place a .py file so the scripts dir is meaningful
+        (scripts_dir / 'build' / '_build_shared.py').write_text('# shared')
+        (scripts_dir / 'extension' / 'extension_base.py').write_text('# ext')
+
+        dirs = module._collect_script_dirs(base)
+
+        # Should contain the parent scripts dir
+        assert str(scripts_dir) in dirs, f'Expected {scripts_dir} in {dirs}'
+        # Should contain subdirectories
+        assert str(scripts_dir / 'build') in dirs, f'Expected build subdir in {dirs}'
+        assert str(scripts_dir / 'extension') in dirs, f'Expected extension subdir in {dirs}'
+
+
+def test_collect_script_dirs_skips_pycache():
+    """__pycache__ directories are excluded from subdirectory scanning."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        scripts_dir = base / 'bundle' / 'skills' / 'my-skill' / 'scripts'
+        (scripts_dir / '__pycache__').mkdir(parents=True)
+        (scripts_dir / 'real_subdir').mkdir(parents=True)
+        (scripts_dir / 'main.py').write_text('# main')
+
+        dirs = module._collect_script_dirs(base)
+
+        pycache_str = str(scripts_dir / '__pycache__')
+        real_str = str(scripts_dir / 'real_subdir')
+        assert pycache_str not in dirs, f'__pycache__ should be excluded, got {dirs}'
+        assert real_str in dirs, f'Expected real_subdir in {dirs}'
+
+
+def test_collect_script_dirs_skips_hidden_subdirectories():
+    """Hidden subdirectories (starting with .) are excluded from scanning."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        scripts_dir = base / 'bundle' / 'skills' / 'my-skill' / 'scripts'
+        (scripts_dir / '.hidden').mkdir(parents=True)
+        (scripts_dir / 'visible').mkdir(parents=True)
+        (scripts_dir / 'main.py').write_text('# main')
+
+        dirs = module._collect_script_dirs(base)
+
+        hidden_str = str(scripts_dir / '.hidden')
+        visible_str = str(scripts_dir / 'visible')
+        assert hidden_str not in dirs, f'.hidden should be excluded, got {dirs}'
+        assert visible_str in dirs, f'Expected visible in {dirs}'
+
+
+def test_build_pythonpath_includes_subdirectories():
+    """_build_pythonpath includes subdirectory paths in the PYTHONPATH string."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        # Create structure with subdirectories
+        scripts_dir = base / 'my-bundle' / 'skills' / 'script-shared' / 'scripts'
+        (scripts_dir / 'build').mkdir(parents=True)
+        (scripts_dir / 'build' / '_helper.py').write_text('# helper')
+
+        pythonpath = module._build_pythonpath(base)
+
+        assert str(scripts_dir) in pythonpath, f'Parent dir missing from PYTHONPATH: {pythonpath}'
+        assert str(scripts_dir / 'build') in pythonpath, f'Subdir missing from PYTHONPATH: {pythonpath}'
+
+
+def test_collect_script_dirs_versioned_includes_subdirectories():
+    """Subdirectory scanning works with versioned plugin-cache structure."""
+    module = load_module()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+
+        # Create versioned structure: bundle/1.0.0/skills/skill/scripts/subdir/
+        scripts_dir = base / 'plan-marshall' / '1.0.0' / 'skills' / 'script-shared' / 'scripts'
+        (scripts_dir / 'build').mkdir(parents=True)
+        (scripts_dir / 'build' / '_build_shared.py').write_text('# shared')
+
+        dirs = module._collect_script_dirs(base)
+
+        assert str(scripts_dir) in dirs, f'Expected versioned scripts dir in {dirs}'
+        assert str(scripts_dir / 'build') in dirs, f'Expected versioned build subdir in {dirs}'

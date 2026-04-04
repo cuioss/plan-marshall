@@ -47,10 +47,19 @@ extension-api/
 │   ├── extension_base.py           # ExtensionBase ABC, canonical commands
 │   ├── extension_discovery.py      # Extension discovery, loading, aggregation
 │   ├── _build_discover.py          # Module discovery, path building
-│   ├── _build_result.py            # Log file creation, result construction (co-located build utility)
+│   ├── _build_result.py            # Log file creation, result construction, validation (co-located build utility)
 │   ├── _build_parse.py             # Issue structures, warning filtering (co-located build utility)
 │   ├── _build_format.py            # TOON and JSON output formatting (co-located build utility)
-│   ├── _build_wrapper.py           # Build tool wrapper detection (co-located build utility)
+│   ├── _build_execute.py           # Subprocess execution, timeout learning, wrapper detection (co-located build utility)
+│   ├── _build_execute_factory.py   # Factory for build-system-specific handlers (co-located build utility)
+│   ├── _build_shared.py            # Shared CLI helpers, cmd_run_common (co-located build utility)
+│   ├── _build_check_warnings.py    # Warning categorization factory (co-located build utility)
+│   ├── _build_coverage_report.py   # Coverage report parsing factory (co-located build utility)
+│   ├── _build_jvm_patterns.py      # Shared JVM error patterns (co-located build utility)
+│   ├── _build_parser_registry.py   # Multi-parser registry (co-located build utility)
+│   ├── _coverage_parse.py          # Format-agnostic coverage parsing (co-located build utility)
+│   ├── _markers_search.py          # OpenRewrite TODO marker search (co-located build utility)
+│   ├── _warnings_classify.py       # Warning categorization with matchers (co-located build utility)
 │   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
     ├── extension-contract.md       # Extension API contract (all methods, hooks, validation)
@@ -58,7 +67,7 @@ extension-api/
     ├── canonical-commands.md       # Command vocabulary and resolution
     ├── build-execution.md          # Build execution API + return structure
     ├── profiles.md                 # Profile override mechanism + profile contracts
-    └── workflow-overview.md        # 6-phase workflow + user review gate
+    └── workflow-overview.md        # Architecture overview + phase contracts + user review gate
 ```
 
 ---
@@ -105,8 +114,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 │                            │ delegates to                        │
 │                            ▼                                     │
 │  LAYER 2: PROFILE SKILLS (System default, domain CAN override)  │
-│  task-implementation (profile=implementation)                    │
-│  task-module-testing (profile=module_testing)                    │
+│  task-executor (profiles: implementation, module_testing, etc.)  │
 │                            │                                     │
 │                            │ loads                               │
 │                            ▼                                     │
@@ -125,7 +133,7 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | Layer | Extension Point | Override Model | Contract Location |
 |-------|-----------------|----------------|-------------------|
 | **Phase Skills** | None | System only, no override | Phase SKILL.md files |
-| **Profile Skills** | workflow_skills in marshal.json | Domain can replace default | [profiles/](standards/) |
+| **Profile Skills** | workflow_skills / workflow_skill_extensions in marshal.json | Domain can replace default | [profiles/](standards/) |
 | **Extensions** | provides_*() in extension.py | Additive (domain provides) | [extensions](standards/) |
 | **Domain Skills** | skills_by_profile in module analysis | Selected per deliverable | Domain bundle SKILL.md |
 
@@ -144,8 +152,6 @@ For understanding the complete system architecture, reference these documents:
 | [profiles.md](standards/profiles.md) | Profile override mechanism + contracts | Understanding/overriding profile skills |
 | [workflow-overview.md](standards/workflow-overview.md) | 6-phase workflow + user review gate | Understanding phase transitions and contracts |
 
-**Note**: These documents define the target architecture. Implementation may be in progress.
-
 ---
 
 ## Scripts
@@ -157,7 +163,7 @@ For understanding the complete system architecture, reference these documents:
 | `extension_base.py` | Library | ExtensionBase ABC, canonical commands, profile patterns |
 | `extension_discovery.py` | Library + CLI | Extension discovery, loading, aggregation, config defaults |
 | `_build_discover.py` | Library | Module discovery, path building, README detection |
-| `_module_aggregation.py` | Library | Virtual module splitting |
+| `_module_aggregation.py` | Library | Virtual module splitting (depends on plan_logging) |
 
 ### Build Execution Utilities (Co-Located, Not Part of Extension API)
 
@@ -165,10 +171,19 @@ These are co-located here for PYTHONPATH convenience but are NOT part of the ext
 
 | Script | Type | Purpose |
 |--------|------|---------|
+| `_build_execute.py` | Library | Subprocess execution, timeout learning, capture strategies |
+| `_build_execute_factory.py` | Library | Factory for build-system-specific execute_direct/cmd_run |
 | `_build_result.py` | Library | Log file creation, result dict construction |
 | `_build_parse.py` | Library | Issue structures, warning filtering |
 | `_build_format.py` | Library | TOON and JSON output formatting |
-| `_build_wrapper.py` | Library | Build tool wrapper detection |
+| `_build_shared.py` | Library | cmd_run_common(), bash timeout helpers, canonical command generation |
+| `_build_coverage_report.py` | Library | Coverage report parsing with factory |
+| `_build_check_warnings.py` | Library | Warning categorization with factory |
+| `_build_jvm_patterns.py` | Library | Shared JVM error/warning category patterns |
+| `_build_parser_registry.py` | Library | Registry-based multi-parser for build output |
+| `_coverage_parse.py` | Library | Format-agnostic coverage report parsing (JaCoCo, Cobertura, LCOV, Jest) |
+| `_markers_search.py` | Library | OpenRewrite TODO marker search |
+| `_warnings_classify.py` | Library | Warning categorization with pluggable matchers |
 
 ### CLI Commands
 
@@ -228,7 +243,7 @@ from _build_parse import (
 
 ## Canonical Command Constants
 
-Import from `extension_base` for type-safe command references:
+Import `CMD_*` constants from `extension_base` for type-safe command references:
 
 ```python
 from extension_base import (
@@ -249,24 +264,9 @@ from extension_base import (
 )
 ```
 
-| Constant | Value | Required | Description |
-|----------|-------|----------|-------------|
-| `CMD_CLEAN` | `clean` | No | Remove build artifacts |
-| `CMD_QUALITY_GATE` | `quality-gate` | Yes | Static analysis, linting |
-| `CMD_VERIFY` | `verify` | Yes* | Full verification (*non-pom modules) |
-| `CMD_MODULE_TESTS` | `module-tests` | Conditional | Unit tests (if tests exist) |
-| `CMD_COMPILE` | `compile` | No | Compile production sources |
-| `CMD_TEST_COMPILE` | `test-compile` | No | Compile test sources |
-| `CMD_INTEGRATION_TESTS` | `integration-tests` | No | Integration tests |
-| `CMD_COVERAGE` | `coverage` | No | Coverage measurement |
-| `CMD_BENCHMARK` | `benchmark` | No | Benchmark/performance tests |
-| `CMD_INSTALL` | `install` | No | Install to local repository |
-| `CMD_CLEAN_INSTALL` | `clean-install` | No | Clean and install combined |
-| `CMD_PACKAGE` | `package` | No | Create deployable artifact |
+Required commands: `quality-gate` (all modules), `verify` (non-pom), `module-tests` (if tests exist). `clean` is always separate — other commands do NOT include clean goal.
 
-**Note**: `clean` is a separate command. Other commands do NOT include clean goal.
-
-See [canonical-commands.md](standards/canonical-commands.md) for command resolution logic.
+See [canonical-commands.md](standards/canonical-commands.md) for the complete vocabulary, resolution logic, and requirements.
 
 ---
 
@@ -306,7 +306,7 @@ class Extension(ExtensionBase):
         - name, build_systems, paths, metadata, packages, dependencies, stats, commands
         """
         # Find descriptors
-        from build_discover import discover_descriptors, build_module_base
+        from _build_discover import discover_descriptors, build_module_base
         descriptors = discover_descriptors(project_root, "descriptor-file")
 
         modules = []

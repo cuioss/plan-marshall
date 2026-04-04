@@ -1,105 +1,54 @@
 #!/usr/bin/env python3
 """
-Sonar workflow operations - fetch issues and triage them.
+Sonar workflow operations - triage issues for fix or suppress.
 
 Usage:
-    sonar.py fetch --project <key> [options]
     sonar.py triage --issue <json>
+    sonar.py triage-batch --issues <json-array>
     sonar.py --help
 
 Subcommands:
-    fetch       Fetch Sonar issues for a PR or project
-    triage      Triage a single Sonar issue
+    triage         Triage a single Sonar issue
+    triage-batch   Triage multiple Sonar issues at once
 
 Examples:
-    # Fetch issues for a project
-    sonar.py fetch --project myproject --pr 123 --severities BLOCKER,CRITICAL
-
     # Triage a single issue
     sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234",...}'
+
+    # Triage multiple issues at once
+    sonar.py triage-batch --issues '[{"key":"I1","rule":"java:S1234",...}, ...]'
 """
 
-import argparse
-import json
 import sys
-from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-# ============================================================================
-# TRIAGE CONFIGURATION
-# ============================================================================
-
-# Rules that are typically suppressable (false positives or intentional)
-SUPPRESSABLE_RULES = {
-    'java:S1135': 'TODO comments - tracked in issue management',
-    'java:S1068': 'Unused fields - may be for reflection/serialization',
-    'java:S1172': 'Unused parameters - may be for API compatibility',
-    'java:S106': 'System.out - acceptable in CLI/test code',
-    'java:S2139': 'Logger vs exception - design decision',
-}
-
-# Severity to priority mapping
-SEVERITY_PRIORITY = {'BLOCKER': 'critical', 'CRITICAL': 'high', 'MAJOR': 'medium', 'MINOR': 'low', 'INFO': 'low'}
-
-# Type to priority boost
-TYPE_BOOST = {
-    'VULNERABILITY': 1,  # Boost priority
-    'BUG': 0,
-    'CODE_SMELL': -1,  # Lower priority
-}
-
+from triage_helpers import (  # type: ignore[import-not-found]
+    calculate_priority,
+    cmd_triage_batch_handler,
+    cmd_triage_single,
+    create_workflow_cli,
+    is_test_file,
+    load_skill_config,
+    safe_main,
+)
 
 # ============================================================================
-# FETCH SUBCOMMAND
+# TRIAGE CONFIGURATION (loaded from sonar-rules.json)
 # ============================================================================
 
+_RULES_CONFIG = load_skill_config(__file__, 'sonar-rules.json')
 
-def generate_mcp_instruction(project: str, pr: str | None = None, severities: str | None = None) -> dict[str, Any]:
-    """Generate MCP tool invocation instruction for Claude."""
-    parameters: dict[str, Any] = {'projects': [project]}
-    instruction: dict[str, Any] = {'tool': 'mcp__sonarqube__search_sonar_issues_in_projects', 'parameters': parameters}
+SUPPRESSABLE_RULES: dict[str, str] = _RULES_CONFIG.get('suppressable_rules', {})
 
-    if pr:
-        parameters['pullRequestId'] = pr
+# Severity to priority mapping — externalized to sonar-rules.json for consistency
+# with the data-driven pattern used by all workflow scripts.
+SEVERITY_PRIORITY: dict[str, str] = _RULES_CONFIG['severity_priority']
 
-    if severities:
-        parameters['severities'] = severities
+# Type to priority boost — includes SECURITY_HOTSPOT (Sonar's 4th issue type).
+# Values are index offsets in PRIORITY_LEVELS: +1 promotes, -1 demotes.
+TYPE_BOOST: dict[str, int] = _RULES_CONFIG['type_boost']
 
-    return instruction
-
-
-def create_fetch_output(
-    project: str, pr: str | None = None, severities: str | None = None, types: str | None = None
-) -> dict:
-    """Generate MCP tool instruction and expected response structure.
-
-    This does NOT fetch issues directly — it produces the MCP tool call
-    parameters that the caller (the LLM) must execute via the SonarQube
-    MCP tool to retrieve actual issues.
-    """
-    return {
-        'project_key': project,
-        'pull_request_id': pr,
-        'mcp_instruction': generate_mcp_instruction(project, pr, severities),
-        'expected_response_structure': {
-            'key': 'EXAMPLE-001',
-            'type': 'BUG|CODE_SMELL|VULNERABILITY',
-            'severity': 'BLOCKER|CRITICAL|MAJOR|MINOR|INFO',
-            'file': 'src/main/java/Example.java',
-            'line': 42,
-            'rule': 'java:S1234',
-            'message': 'Issue description',
-        },
-        'status': 'success',
-    }
-
-
-def cmd_fetch(args):
-    """Handle fetch subcommand - fetch Sonar issues for a PR."""
-    result = create_fetch_output(args.project, args.pr, args.severities, args.types)
-    print(serialize_toon(result))
-    return 0
+# Issue types that must always be fixed — loaded from sonar-rules.json.
+_ALWAYS_FIX_TYPES: dict[str, str] = _RULES_CONFIG.get('always_fix_types', {})
 
 
 # ============================================================================
@@ -107,53 +56,67 @@ def cmd_fetch(args):
 # ============================================================================
 
 
+_FIX_SUGGESTIONS: dict[str, str] = _RULES_CONFIG.get('fix_suggestions', {})
+_TEST_ACCEPTABLE_RULES: set[str] = set(_RULES_CONFIG.get('test_acceptable_rules', []))
+
+
 def get_fix_suggestion(rule: str, message: str, file: str, line: int) -> str:
-    """Generate fix suggestion based on rule."""
-    suggestions = {
-        'java:S2095': 'Wrap resource in try-with-resources block',
-        'java:S1192': 'Extract duplicated string to constant',
-        'java:S3649': 'Use parameterized query instead of string concatenation',
-        'java:S1068': 'Remove unused field or add @SuppressWarnings with reason',
-        'java:S1135': 'Complete TODO or track in issue management system',
-        'java:S106': 'Replace System.out with CuiLogger',
-        'java:S1481': 'Remove unused local variable',
-        'java:S1854': 'Remove useless assignment',
-        'java:S1144': 'Remove unused private method',
-    }
+    """Generate fix suggestion based on rule.
 
-    rule_id = rule.split(':')[-1] if ':' in rule else rule
-    full_rule = f'java:{rule_id}' if not rule.startswith('java:') else rule
-
-    suggestion = suggestions.get(full_rule, f'Review and fix: {message}')
+    Supports Java, JavaScript/TypeScript, and Python rules. Rule-to-suggestion
+    mappings are loaded from ``standards/sonar-rules.json``. Falls back to
+    the Sonar issue message for unrecognized rules.
+    """
+    suggestion = _FIX_SUGGESTIONS.get(rule, f'Review and fix: {message}')
     return f'{suggestion} at {file}:{line}'
 
 
-def get_suppression_string(rule: str, reason: str) -> str:
-    """Generate suppression string for the issue."""
-    return f'// NOSONAR {rule} - {reason}'
+_SUPPRESSION_SYNTAX: dict[str, str] = _RULES_CONFIG.get(
+    'suppression_syntax',
+    {
+        'python': '# NOSONAR {rule} - {reason}',
+        'default': '// NOSONAR {rule} - {reason}',
+    },
+)
 
 
-def calculate_priority(severity: str, issue_type: str) -> str:
-    """Calculate priority based on severity and type."""
+def get_suppression_string(rule: str, reason: str, file: str = '') -> str:
+    """Generate suppression string for the issue using language-appropriate comment syntax.
+
+    Language detection order: file extension → rule prefix → default (//).
+    Syntax templates are loaded from ``standards/sonar-rules.json`` suppression_syntax.
+    """
+    # Detect language from file extension or rule prefix
+    lang = None
+    if file.endswith('.py') or rule.startswith('python:'):
+        lang = 'python'
+    template = _SUPPRESSION_SYNTAX.get(
+        lang or 'default', _SUPPRESSION_SYNTAX.get('default', '// NOSONAR {rule} - {reason}')
+    )
+    return template.format(rule=rule, reason=reason)
+
+
+def calculate_sonar_priority(severity: str, issue_type: str) -> str:
+    """Calculate priority based on Sonar severity and issue type.
+
+    Delegates to shared ``calculate_priority`` from triage_helpers with
+    a severity-to-base mapping and type-based boost.
+    """
     base_priority = SEVERITY_PRIORITY.get(severity, 'low')
     boost = TYPE_BOOST.get(issue_type, 0)
-
-    priority_levels = ['low', 'medium', 'high', 'critical']
-    current_idx = priority_levels.index(base_priority)
-    new_idx = max(0, min(len(priority_levels) - 1, current_idx + boost))
-
-    return priority_levels[new_idx]
+    return calculate_priority(base_priority, boost)
 
 
-def should_suppress(rule: str, file: str, issue_type: str) -> tuple:
+def should_suppress(rule: str, file: str, issue_type: str) -> tuple[bool, str | None]:
     """Determine if issue should be suppressed."""
     # Check suppressable rules
     if rule in SUPPRESSABLE_RULES:
         return True, SUPPRESSABLE_RULES[rule]
 
-    # Test files often have acceptable exceptions
-    if '/test/' in file or 'Test.java' in file:
-        if rule in ['java:S106', 'java:S2699']:
+    # Test files often have acceptable exceptions — detect across languages
+    if is_test_file(file):
+        # Console/stdout usage and missing assertions are acceptable in tests
+        if rule in _TEST_ACCEPTABLE_RULES:
             return True, 'Test code - acceptable pattern'
 
     return False, None
@@ -169,6 +132,19 @@ def triage_issue(issue: dict) -> dict:
     rule = issue.get('rule', 'unknown')
     message = issue.get('message', '')
 
+    # Issue types that must always be fixed (loaded from sonar-rules.json)
+    if issue_type in _ALWAYS_FIX_TYPES:
+        priority = 'critical' if severity == 'BLOCKER' else 'high'
+        return {
+            'issue_key': key,
+            'action': 'fix',
+            'reason': _ALWAYS_FIX_TYPES[issue_type],
+            'priority': priority,
+            'suggested_implementation': get_fix_suggestion(rule, message, file, line),
+            'suppression_string': None,
+            'status': 'success',
+        }
+
     # Check if should suppress
     suppress, suppress_reason = should_suppress(rule, file, issue_type)
 
@@ -179,12 +155,12 @@ def triage_issue(issue: dict) -> dict:
             'reason': suppress_reason,
             'priority': 'low',
             'suggested_implementation': None,
-            'suppression_string': get_suppression_string(rule, suppress_reason),
+            'suppression_string': get_suppression_string(rule, suppress_reason or '', file),
             'status': 'success',
         }
 
     # Calculate priority and suggest fix
-    priority = calculate_priority(severity, issue_type)
+    priority = calculate_sonar_priority(severity, issue_type)
     fix_suggestion = get_fix_suggestion(rule, message, file, line)
 
     return {
@@ -194,23 +170,18 @@ def triage_issue(issue: dict) -> dict:
         'priority': priority,
         'suggested_implementation': fix_suggestion,
         'suppression_string': None,
-        'command_to_use': None,
         'status': 'success',
     }
 
 
 def cmd_triage(args):
     """Handle triage subcommand - triage a single Sonar issue."""
-    try:
-        issue = json.loads(args.issue)
-    except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
-        return 1
+    return cmd_triage_single(args.issue, triage_issue)
 
-    result = triage_issue(issue)
-    print(serialize_toon(result))
 
-    return 0 if result.get('status') == 'success' else 1
+def cmd_triage_batch(args):
+    """Handle triage-batch subcommand — triage multiple issues at once."""
+    return cmd_triage_batch_handler(args.issues, triage_issue, ['fix', 'suppress'])
 
 
 # ============================================================================
@@ -220,36 +191,31 @@ def cmd_triage(args):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
+    parser = create_workflow_cli(
         description='Sonar workflow operations',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  sonar.py fetch --project myproject --pr 123
   sonar.py triage --issue '{"key":"ISSUE-1","rule":"java:S1234"}'
+  sonar.py triage-batch --issues '[{"key":"I1","rule":"java:S1234"}, ...]'
 """,
+        subcommands=[
+            {
+                'name': 'triage',
+                'help': 'Triage a single Sonar issue',
+                'handler': cmd_triage,
+                'args': [{'flags': ['--issue'], 'required': True, 'help': 'JSON string with issue data'}],
+            },
+            {
+                'name': 'triage-batch',
+                'help': 'Triage multiple Sonar issues at once',
+                'handler': cmd_triage_batch,
+                'args': [{'flags': ['--issues'], 'required': True, 'help': 'JSON array of issue objects'}],
+            },
+        ],
     )
-
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # fetch subcommand
-    fetch_parser = subparsers.add_parser('fetch', help='Fetch Sonar issues for a PR or project')
-    fetch_parser.add_argument('--project', required=True, help='SonarQube project key')
-    fetch_parser.add_argument('--pr', help='Pull request ID')
-    fetch_parser.add_argument(
-        '--severities', help='Filter by severities (comma-separated: BLOCKER,CRITICAL,MAJOR,MINOR,INFO)'
-    )
-    fetch_parser.add_argument('--types', help='Filter by types (comma-separated: BUG,CODE_SMELL,VULNERABILITY)')
-    fetch_parser.set_defaults(func=cmd_fetch)
-
-    # triage subcommand
-    triage_parser = subparsers.add_parser('triage', help='Triage a single Sonar issue')
-    triage_parser.add_argument('--issue', required=True, help='JSON string with issue data')
-    triage_parser.set_defaults(func=cmd_triage)
-
     args = parser.parse_args()
     return args.func(args)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

@@ -61,7 +61,10 @@ def check_continuous_improvement(content: str, component_type: str) -> dict:
         if component_type == 'agent' and ci_pattern == 'self-update':
             agent_lessons_via_skill = True
 
-    return {'present': ci_present, 'format': {'pattern': ci_pattern, 'agent_lessons_via_skill': agent_lessons_via_skill}}
+    return {
+        'present': ci_present,
+        'format': {'pattern': ci_pattern, 'agent_lessons_via_skill': agent_lessons_via_skill},
+    }
 
 
 def get_bloat_classification(line_count: int, component_type: str) -> str:
@@ -452,7 +455,6 @@ def check_forbidden_metadata(content: str) -> tuple[bool, str]:
     if matches:
         return True, ','.join(matches)
     return False, ''
-
 
 
 def analyze_markdown_file(file_path: Path, component_type: str) -> dict:

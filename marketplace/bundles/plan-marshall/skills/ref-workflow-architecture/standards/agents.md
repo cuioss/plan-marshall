@@ -113,7 +113,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                                                                             │
-│                      1 GENERIC PHASE AGENT (plan-marshall)                  │
+│                      4 AGENTS (plan-marshall bundle)                        │
 │                                                                             │
 │  ┌──────────────────────┬────────────────────────────────────────────────┐ │
 │  │ AGENT                │ PURPOSE                                        │ │
@@ -124,6 +124,24 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 │  │                      │ • Delegates all work to the loaded skill       │ │
 │  │                      │ • Used for phase-1-init and phase-4-plan       │ │
 │  │                      │                                                │ │
+│  ├──────────────────────┼────────────────────────────────────────────────┤ │
+│  │                      │                                                │ │
+│  │ detect-change-type-  │ Analyze request to detect change type          │ │
+│  │ agent                │ • Returns change_type + confidence             │ │
+│  │                      │ • Used during phase-3-outline                  │ │
+│  │                      │                                                │ │
+│  ├──────────────────────┼────────────────────────────────────────────────┤ │
+│  │                      │                                                │ │
+│  │ q-gate-validation-   │ Validate assessments against request intent    │ │
+│  │ agent                │ • Catches false positives, missing coverage    │ │
+│  │                      │ • Used during phase-3-outline                  │ │
+│  │                      │                                                │ │
+│  ├──────────────────────┼────────────────────────────────────────────────┤ │
+│  │                      │                                                │ │
+│  │ research-best-       │ Web research for best practices                │ │
+│  │ practices-agent      │ • Searches multiple sources, synthesizes       │ │
+│  │                      │ • General-purpose research tool                │ │
+│  │                      │                                                │ │
 │  └──────────────────────┴────────────────────────────────────────────────┘ │
 │                                                                             │
 │  NOTE: Phases 2-refine, 3-outline, and 5-execute load skills directly     │
@@ -133,106 +151,7 @@ Understanding when to use `Skill:` vs `Task:` is critical for proper context man
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                     4 ANALYSIS AGENTS (pm-plugin-development)               │
-│                                                                             │
-│  ┌──────────────────────┬────────────────────────────────────────────────┐ │
-│  │ AGENT                │ PURPOSE                                        │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ inventory-           │ Load inventory and assess scope                │ │
-│  │ assessment-agent     │ • Runs scan-marketplace-inventory              │ │
-│  │                      │ • Determines affected artifacts/bundles        │ │
-│  │                      │ • Groups inventory by component type           │ │
-│  │                      │                                                │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ skill-analysis-      │ Analyze skill files against criteria           │ │
-│  │ agent                │ • Reads each SKILL.md                          │ │
-│  │                      │ • Applies match/exclude indicators             │ │
-│  │                      │ • Returns findings with evidence               │ │
-│  │                      │                                                │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ command-analysis-    │ Analyze command files against criteria         │ │
-│  │ agent                │ • Reads each command .md                       │ │
-│  │                      │ • Applies match/exclude indicators             │ │
-│  │                      │ • Returns findings with evidence               │ │
-│  │                      │                                                │ │
-│  ├──────────────────────┼────────────────────────────────────────────────┤ │
-│  │                      │                                                │ │
-│  │ agent-analysis-      │ Analyze agent files against criteria           │ │
-│  │ agent                │ • Reads each agent .md                         │ │
-│  │                      │ • Applies match/exclude indicators             │ │
-│  │                      │ • Returns findings with evidence               │ │
-│  │                      │                                                │ │
-│  └──────────────────────┴────────────────────────────────────────────────┘ │
-│                                                                             │
-│  These agents are spawned by ext-outline-workflow during path-multi          │
-│  workflow. They run in PARALLEL for efficient cross-cutting analysis.      │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Outline Phase: Skill-Direct Invocation
-
-The outline phase uses skill-direct invocation to enable parallel agent spawning:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                   OUTLINE PHASE FLOW (SKILL-DIRECT)                         │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  /plan-marshall action=outline                                        │  │
-│  │         │                                                            │  │
-│  │         ▼                                                            │  │
-│  │  ┌────────────────────────────────────────────────────────────────┐ │  │
-│  │  │ Skill: plan-marshall:phase-3-outline   ← DIRECT (stays in main)  │ │  │
-│  │  │                                                                │ │  │
-│  │  │  • Loads domain extension                                      │ │  │
-│  │  │  • Determines workflow path (simple/complex)                   │ │  │
-│  │  │                                                                │ │  │
-│  │  │    ┌────────────────────────────────────────────────────────┐ │ │  │
-│  │  │    │ Skill: ext-outline-workflow  ← DIRECT (stays in main)    │ │ │  │
-│  │  │    │                                                        │ │ │  │
-│  │  │    │  • For complex workflow (path-multi):                  │ │ │  │
-│  │  │    │                                                        │ │ │  │
-│  │  │    │  ┌──────────────────────────────────────────────────┐ │ │ │  │
-│  │  │    │  │ Step 1: Task: ext-outline-inventory-agent         │ │ │ │  │
-│  │  │    │  │ → Returns grouped inventory                      │ │ │ │  │
-│  │  │    │  └──────────────────────────────────────────────────┘ │ │ │  │
-│  │  │    │                          │                             │ │ │  │
-│  │  │    │                          ▼                             │ │ │  │
-│  │  │    │  ┌──────────────────────────────────────────────────┐ │ │ │  │
-│  │  │    │  │ Step 3: Parallel Analysis (3 Task agents)        │ │ │ │  │
-│  │  │    │  │                                                  │ │ │ │  │
-│  │  │    │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐   │ │ │ │  │
-│  │  │    │  │  │ ext-out-   │ │ ext-out-   │ │ ext-out-   │   │ │ │ │  │
-│  │  │    │  │  │ line-skill │ │ line-cmd   │ │ line-agent │   │ │ │ │  │
-│  │  │    │  │  │ -agent     │ │ -agent     │ │ -agent     │   │ │ │ │  │
-│  │  │    │  │  └────────────┘ └────────────┘ └────────────┘   │ │ │ │  │
-│  │  │    │  │                                                  │ │ │ │  │
-│  │  │    │  └──────────────────────────────────────────────────┘ │ │ │  │
-│  │  │    │                          │                             │ │ │  │
-│  │  │    │                          ▼                             │ │ │  │
-│  │  │    │  Aggregate findings → Build deliverables               │ │ │  │
-│  │  │    │                                                        │ │ │  │
-│  │  │    └────────────────────────────────────────────────────────┘ │ │  │
-│  │  │                                                                │ │  │
-│  │  └────────────────────────────────────────────────────────────────┘ │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│  KEY: Skills loaded via Skill: stay in main context, enabling Task spawns  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Other bundles (e.g., `pm-plugin-development`) define their own analysis agents that are spawned by domain extensions during the outline phase. See the respective bundle documentation.
 
 ---
 
@@ -275,105 +194,27 @@ Each agent follows the same pattern:
 
 ---
 
-## Agent Responsibilities
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                      AGENT RESPONSIBILITIES                                 │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  AGENT DOES:                          AGENT DOES NOT:                │  │
-│  │  ══════════                           ══════════════                 │  │
-│  │                                                                      │  │
-│  │  PASS Load system skills                 ✗ Spawn other agents           │  │
-│  │  PASS Resolve workflow skill             ✗ Cross scope boundaries       │  │
-│  │  PASS Load resolved skill                ✗ Invoke commands              │  │
-│  │  PASS Delegate to skill                  ✗ Make high-level decisions    │  │
-│  │  PASS Return structured result           ✗ Access files outside scope   │  │
-│  │  PASS Provide context isolation                                         │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  PHASE SKILL DOES:                    PHASE SKILL DOES NOT:          │  │
-│  │  ════════════════                     ═════════════════              │  │
-│  │                                                                      │  │
-│  │  PASS Contains workflow logic            ✗ Handle phase transitions     │  │
-│  │  PASS Calls manage-* scripts             ✗ Invoke commands directly     │  │
-│  │  PASS Makes decisions                    ✗ Access files outside scope   │  │
-│  │  PASS Spawns analysis agents (when in    ✗ Duplicate agent logic        │  │
-│  │    main context)                                                     │  │
-│  │  PASS Returns structured result                                         │  │
-│  │  PASS Records lessons learned                                           │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
 ## Agent Constraints
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                       AGENT CONSTRAINTS                                     │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  MUST NOT:                                                           │  │
-│  │  ════════                                                            │  │
-│  │                                                                      │  │
-│  │  ┌────────────────────────────────────────────────────────────────┐ │  │
-│  │  │                                                                │ │  │
-│  │  │  ✗ Use Read/Write/Edit on .plan/plans/ files                   │ │  │
-│  │  │                                                                │ │  │
-│  │  │  ✗ Use cat/head/tail/ls on .plan/ directory                    │ │  │
-│  │  │                                                                │ │  │
-│  │  │  ✗ Spawn other agents (subagent constraint)                    │ │  │
-│  │  │                                                                │ │  │
-│  │  │  ✗ Invoke commands (commands are user-facing)                  │ │  │
-│  │  │                                                                │ │  │
-│  │  │  ✗ Hardcode skill names (must resolve from marshal.json)       │ │  │
-│  │  │                                                                │ │  │
-│  │  │  ✗ Cross scope boundaries (init agent doesn't create tasks)    │ │  │
-│  │  │                                                                │ │  │
-│  │  └────────────────────────────────────────────────────────────────┘ │  │
-│  │                                                                      │  │
-│  │  MUST DO:                                                            │  │
-│  │  ════════                                                            │  │
-│  │                                                                      │  │
-│  │  ┌────────────────────────────────────────────────────────────────┐ │  │
-│  │  │                                                                │ │  │
-│  │  │  PASS Access .plan/ files ONLY via execute-script.py              │ │  │
-│  │  │                                                                │ │  │
-│  │  │  PASS Load system skills (Step 0) before any action               │ │  │
-│  │  │                                                                │ │  │
-│  │  │  PASS Resolve workflow skill from marshal.json                    │ │  │
-│  │  │                                                                │ │  │
-│  │  │  PASS Delegate to skill for actual work                           │ │  │
-│  │  │                                                                │ │  │
-│  │  │  PASS Return structured TOON output                               │ │  │
-│  │  │                                                                │ │  │
-│  │  │  PASS Log skill loading decisions                                 │ │  │
-│  │  │                                                                │ │  │
-│  │  └────────────────────────────────────────────────────────────────┘ │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+**MUST NOT:**
+- Use Read/Write/Edit on `.plan/plans/` files
+- Use cat/head/tail/ls on `.plan/` directory
+- Spawn other agents (subagent constraint)
+- Invoke commands (commands are user-facing)
+- Hardcode skill names (must resolve from marshal.json)
+- Cross scope boundaries (init agent doesn't create tasks)
+
+**MUST DO:**
+- Access `.plan/` files ONLY via execute-script.py
+- Load system skills (Step 0) before any action
+- Resolve workflow skill from marshal.json
+- Delegate to skill for actual work
+- Return structured TOON output
+- Log skill loading decisions
 
 ---
 
-## Related Documents
+## Related
 
-| Document | Purpose |
-|----------|---------|
-| [skill-loading.md](skill-loading.md) | Two-tier skill loading pattern |
-| [phases.md](phases.md) | 6-phase execution model |
-| `plan-marshall:extension-api` | Extension points |
+- [skill-loading.md](skill-loading.md) — Two-tier skill loading
+- [phases.md](phases.md) — 6-phase model

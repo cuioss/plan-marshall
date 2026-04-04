@@ -21,7 +21,7 @@ Reads all plan artifacts and cross-checks them for consistency. Reports findings
 If `plan` parameter provided, use it. Otherwise auto-detect:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle list
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list
 ```
 
 Pick the plan with `in_progress` phase. If multiple, pick most recently updated. If none, report "No active plan found" and stop.
@@ -49,10 +49,10 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id}
 
 # F: Assessments summary
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments query --plan-id {plan_id} --certainty CERTAIN_INCLUDE
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment query --plan-id {plan_id} --certainty CERTAIN_INCLUDE
 
 # G: Script execution log (errors only)
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type script
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type script
 ```
 
 If an artifact does not exist yet (phase not reached), note it and skip. Only check artifacts that should exist given the current phase.

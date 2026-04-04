@@ -32,12 +32,13 @@ python3 .plan/execute-script.py {notation} {subcommand} {args...}
 
 ## Notation Format
 
-Simplified notation: `{bundle}:{skill}`
+Script execution notation: `{bundle}:{skill}:{script}`
 
 | Example |
 |---------|
-| `plan-marshall:manage-files` |
-| `pm-dev-java:plan-marshall-plugin` |
+| `plan-marshall:manage-files:manage-files` |
+| `plan-marshall:build-maven:maven` |
+| `plan-marshall:tools-integration-ci:ci` |
 
 ## Examples
 
@@ -186,7 +187,7 @@ When `.plan/execute-script.py` doesn't exist yet (first run), use the bootstrap 
 Check `.plan/marshall-state.toon` for cached `plugin_root`, or detect it:
 
 ```bash
-python3 ~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap-plugin.py get-root
+python3 ~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap_plugin.py get-root
 ```
 
 Output:
@@ -236,18 +237,19 @@ Read standards/wait-pattern.md
 ```bash
 # Adaptive mode (timeout managed via run-config)
 # Outer shell timeout (600s) prevents Claude from canceling
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
   --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
   --success-field "status=success" \
   --failure-field "status=failure" \
   --command-key "ci:pr_checks"
 
-# Explicit mode (manual timeout)
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await-until \
-  --check-cmd "gh pr checks 123 --json state" \
+# Explicit mode (custom interval)
+timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until \
+  --check-cmd "python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status --pr-number 123" \
   --success-field "status=success" \
-  --timeout 300 \
-  --interval 30
+  --failure-field "status=failure" \
+  --command-key "ci:custom_check" \
+  --interval 15
 ```
 
 **Note**: When using Bash tool, set `timeout` parameter to `600000` (ms) to match shell timeout.

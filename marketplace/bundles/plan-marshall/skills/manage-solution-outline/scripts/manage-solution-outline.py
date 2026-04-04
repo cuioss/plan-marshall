@@ -21,7 +21,6 @@ Usage:
 """
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -29,9 +28,8 @@ from _plan_parsing import (  # type: ignore[import-not-found]
     extract_deliverables,
     parse_document_sections,
 )
-from file_ops import base_path  # type: ignore[import-not-found]
-from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ignore[import-not-found]
 
 SOLUTION_FILE = 'solution_outline.md'
 ARCHITECTURE_DIR = 'project-architecture'
@@ -159,9 +157,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
     affected_files = deliverable.get('affected_files', [])
     if 'module_testing' in profiles and affected_files:
         test_indicators = ('test/', 'Test.', '_test.', 'test_', '.test.', 'spec/', '/tests/')
-        has_test_files = any(
-            any(indicator in f for indicator in test_indicators) for f in affected_files
-        )
+        has_test_files = any(any(indicator in f for indicator in test_indicators) for f in affected_files)
         if not has_test_files:
             warnings.append(
                 f'D{num}: module_testing profile but no test files detected in affected files '
@@ -210,35 +206,22 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
 
 def cmd_validate(args) -> int:
     """Validate solution outline structure against deliverable contract."""
-    if not is_valid_plan_id(args.plan_id):
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'invalid_plan_id',
-                    'plan_id': args.plan_id,
-                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
-                }
-            )
-        )
-        return 1
+    require_valid_plan_id(args)
 
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'document_not_found',
-                    'plan_id': args.plan_id,
-                    'file': SOLUTION_FILE,
-                    'suggestions': [
-                        'Use resolve-path to get the target path, then Write tool to create the file',
-                        'Check plan_id spelling',
-                    ],
-                }
-            )
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'document_not_found',
+                'plan_id': args.plan_id,
+                'file': SOLUTION_FILE,
+                'suggestions': [
+                    'Use resolve-path to get the target path, then Write tool to create the file',
+                    'Check plan_id spelling',
+                ],
+            }
         )
         return 1
 
@@ -246,17 +229,15 @@ def cmd_validate(args) -> int:
     errors, warnings, info = validate_solution_structure(content)
 
     if errors:
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'validation_failed',
-                    'plan_id': args.plan_id,
-                    'issues': errors,
-                    'warnings': warnings,
-                    'deliverable_count': info['deliverable_count'],
-                }
-            )
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'validation_failed',
+                'plan_id': args.plan_id,
+                'issues': errors,
+                'warnings': warnings,
+                'deliverable_count': info['deliverable_count'],
+            }
         )
         return 1
 
@@ -279,79 +260,65 @@ def cmd_validate(args) -> int:
     if warnings:
         result['warnings'] = warnings
 
-    print(serialize_toon(result))
+    output_toon(result)
     return 0
 
 
 def cmd_list_deliverables(args) -> int:
     """List deliverables from solution outline."""
-    if not is_valid_plan_id(args.plan_id):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
-        return 1
+    require_valid_plan_id(args)
 
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        print(
-            serialize_toon(
-                {'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'file': SOLUTION_FILE}
-            )
-        )
+        output_toon({'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'file': SOLUTION_FILE})
         return 1
 
     content = file_path.read_text(encoding='utf-8')
     sections = parse_document_sections(content)
 
     if 'deliverables' not in sections:
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'plan_id': args.plan_id,
-                    'error': 'section_not_found',
-                    'message': 'Deliverables section not found',
-                }
-            )
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'section_not_found',
+                'message': 'Deliverables section not found',
+            }
         )
         return 1
 
     deliverables = extract_deliverables(sections['deliverables'])
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'plan_id': args.plan_id,
-                'deliverable_count': len(deliverables),
-                'deliverables': deliverables,
-            }
-        )
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'deliverable_count': len(deliverables),
+            'deliverables': deliverables,
+        }
     )
     return 0
 
 
 def cmd_read(args) -> int:
     """Read solution outline."""
-    if not is_valid_plan_id(args.plan_id):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
-        return 1
+    require_valid_plan_id(args)
 
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'document_not_found',
-                    'plan_id': args.plan_id,
-                    'file': SOLUTION_FILE,
-                    'suggestions': [
-                        'Use resolve-path to get the target path, then Write tool to create the file',
-                        'Check plan_id spelling',
-                    ],
-                }
-            )
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'document_not_found',
+                'plan_id': args.plan_id,
+                'file': SOLUTION_FILE,
+                'suggestions': [
+                    'Use resolve-path to get the target path, then Write tool to create the file',
+                    'Check plan_id spelling',
+                ],
+            }
         )
         return 1
 
@@ -362,15 +329,13 @@ def cmd_read(args) -> int:
     if deliverable_number is not None:
         sections = parse_document_sections(content)
         if 'deliverables' not in sections:
-            print(
-                serialize_toon(
-                    {
-                        'status': 'error',
-                        'error': 'section_not_found',
-                        'plan_id': args.plan_id,
-                        'message': 'Deliverables section not found',
-                    }
-                )
+            output_toon(
+                {
+                    'status': 'error',
+                    'error': 'section_not_found',
+                    'plan_id': args.plan_id,
+                    'message': 'Deliverables section not found',
+                }
             )
             return 1
 
@@ -378,27 +343,23 @@ def cmd_read(args) -> int:
 
         for d in deliverables:
             if d['number'] == deliverable_number:
-                print(
-                    serialize_toon(
-                        {
-                            'status': 'success',
-                            'plan_id': args.plan_id,
-                            'deliverable': d,
-                        }
-                    )
+                output_toon(
+                    {
+                        'status': 'success',
+                        'plan_id': args.plan_id,
+                        'deliverable': d,
+                    }
                 )
                 return 0
 
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'deliverable_not_found',
-                    'plan_id': args.plan_id,
-                    'number': deliverable_number,
-                    'available': [d['number'] for d in deliverables],
-                }
-            )
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'deliverable_not_found',
+                'plan_id': args.plan_id,
+                'number': deliverable_number,
+                'available': [d['number'] for d in deliverables],
+            }
         )
         return 1
 
@@ -406,23 +367,19 @@ def cmd_read(args) -> int:
         print(content)
     else:
         sections = parse_document_sections(content)
-        print(
-            serialize_toon({'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'content': sections})
-        )
+        output_toon({'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'content': sections})
 
     return 0
 
 
 def cmd_exists(args) -> int:
     """Check if solution outline exists."""
-    if not is_valid_plan_id(args.plan_id):
-        print(serialize_toon({'status': 'error', 'error': 'invalid_plan_id', 'plan_id': args.plan_id}))
-        return 1
+    require_valid_plan_id(args)
 
     file_path = get_solution_path(args.plan_id)
     exists = file_path.exists()
 
-    print(serialize_toon({'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'exists': exists}))
+    output_toon({'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'exists': exists})
 
     return 0
 
@@ -493,30 +450,17 @@ def cmd_resolve_path(args) -> int:
 
     Used by LLM to get the path for direct file write via Write tool.
     """
-    if not is_valid_plan_id(args.plan_id):
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'invalid_plan_id',
-                    'plan_id': args.plan_id,
-                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
-                }
-            )
-        )
-        return 1
+    require_valid_plan_id(args)
 
     file_path = get_solution_path(args.plan_id)
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'plan_id': args.plan_id,
-                'path': str(file_path),
-                'exists': file_path.exists(),
-            }
-        )
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'path': str(file_path),
+            'exists': file_path.exists(),
+        }
     )
     return 0
 
@@ -528,25 +472,14 @@ def cmd_write(args) -> int:
     Validates against the deliverable contract. Use --force to allow overwriting
     an existing file (checked before external write via resolve-path exists field).
     """
-    if not is_valid_plan_id(args.plan_id):
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'invalid_plan_id',
-                    'plan_id': args.plan_id,
-                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
-                }
-            )
-        )
-        return 1
+    require_valid_plan_id(args)
 
     file_path = get_solution_path(args.plan_id)
 
     exit_code, result = _validate_file_on_disk(args.plan_id, file_path)
     if exit_code == 0:
         result['action'] = 'created'
-    print(serialize_toon(result))
+    output_toon(result)
     return exit_code
 
 
@@ -556,39 +489,26 @@ def cmd_update(args) -> int:
     File must already exist and be updated externally (via Write tool).
     Validates against the deliverable contract.
     """
-    if not is_valid_plan_id(args.plan_id):
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'invalid_plan_id',
-                    'plan_id': args.plan_id,
-                    'message': 'Plan ID must be kebab-case (lowercase, hyphens only)',
-                }
-            )
-        )
-        return 1
+    require_valid_plan_id(args)
 
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        print(
-            serialize_toon(
-                {
-                    'status': 'error',
-                    'error': 'document_not_found',
-                    'plan_id': args.plan_id,
-                    'file': SOLUTION_FILE,
-                    'message': 'Cannot update: solution outline does not exist. Use write to create it.',
-                }
-            )
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'document_not_found',
+                'plan_id': args.plan_id,
+                'file': SOLUTION_FILE,
+                'message': 'Cannot update: solution outline does not exist. Use write to create it.',
+            }
         )
         return 1
 
     exit_code, result = _validate_file_on_disk(args.plan_id, file_path)
     if exit_code == 0:
         result['action'] = 'updated'
-    print(serialize_toon(result))
+    output_toon(result)
     return exit_code
 
 
@@ -604,15 +524,13 @@ def cmd_get_module_context(args) -> int:
     enriched_path = arch_dir / LLM_ENRICHED_FILE
 
     if not derived_path.exists():
-        print(
-            serialize_toon(
-                {
-                    'status': 'not_found',
-                    'file': str(arch_dir),
-                    'message': 'Project architecture not discovered. Run architecture discovery first.',
-                    'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover',
-                }
-            )
+        output_toon(
+            {
+                'status': 'not_found',
+                'file': str(arch_dir),
+                'message': 'Project architecture not discovered. Run architecture discovery first.',
+                'suggestion': 'Run: python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover',
+            }
         )
         return 0  # Not an error - just means no architecture available
 
@@ -627,7 +545,7 @@ def cmd_get_module_context(args) -> int:
             with open(enriched_path, encoding='utf-8') as f:
                 enriched_data = json.load(f)
     except Exception as e:
-        print(serialize_toon({'status': 'error', 'error': 'parse_error', 'file': str(arch_dir), 'message': str(e)}))
+        output_toon({'status': 'error', 'error': 'parse_error', 'file': str(arch_dir), 'message': str(e)})
         return 1
 
     # Extract modules from derived data
@@ -657,7 +575,7 @@ def cmd_get_module_context(args) -> int:
             module_info['skills_by_profile'] = enriched['skills_by_profile']
         modules_list.append(module_info)
 
-    print(serialize_toon(context))
+    output_toon(context)
     return 0
 
 
@@ -666,40 +584,41 @@ def cmd_get_module_context(args) -> int:
 # =============================================================================
 
 
-def main():
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(description='Manage solution outline documents')
     subparsers = parser.add_subparsers(dest='command', required=True, help='Command')
 
     # validate
     validate_parser = subparsers.add_parser('validate', help='Validate solution structure')
-    validate_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(validate_parser)
     validate_parser.set_defaults(func=cmd_validate)
 
     # list-deliverables
     list_parser = subparsers.add_parser('list-deliverables', help='Extract deliverables')
-    list_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(list_parser)
     list_parser.set_defaults(func=cmd_list_deliverables)
 
     # read
     read_parser = subparsers.add_parser('read', help='Read solution outline')
-    read_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(read_parser)
     read_parser.add_argument('--raw', action='store_true', help='Output raw content')
     read_parser.add_argument('--deliverable-number', type=int, help='Read specific deliverable by number')
     read_parser.set_defaults(func=cmd_read)
 
     # exists
     exists_parser = subparsers.add_parser('exists', help='Check if solution exists')
-    exists_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(exists_parser)
     exists_parser.set_defaults(func=cmd_exists)
 
     # resolve-path
     resolve_parser = subparsers.add_parser('resolve-path', help='Get target file path for direct Write')
-    resolve_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(resolve_parser)
     resolve_parser.set_defaults(func=cmd_resolve_path)
 
     # write
     write_parser = subparsers.add_parser('write', help='Validate solution outline on disk (written via Write tool)')
-    write_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(write_parser)
     write_parser.add_argument('--force', action='store_true', help='(legacy, ignored)')
     write_parser.set_defaults(func=cmd_write)
 
@@ -707,7 +626,7 @@ def main():
     update_parser = subparsers.add_parser(
         'update', help='Validate updated solution outline on disk (written via Write tool)'
     )
-    update_parser.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(update_parser)
     update_parser.set_defaults(func=cmd_update)
 
     # get-module-context
@@ -720,8 +639,8 @@ def main():
         parser.print_help()
         return 1
 
-    return args.func(args)
+    return args.func(args) or 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

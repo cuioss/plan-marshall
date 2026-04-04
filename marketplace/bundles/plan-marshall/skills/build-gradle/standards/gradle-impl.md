@@ -1,6 +1,6 @@
 # Gradle Implementation Standards
 
-Standards for Gradle build command construction, module targeting, and timeout management.
+Gradle-specific standards for build command construction, module targeting, and quality configuration. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`.
 
 ---
 
@@ -14,18 +14,7 @@ Always use the Gradle wrapper for reproducible builds:
 ./gradlew [tasks] [options]
 ```
 
-### Log File Handling
-
-Gradle outputs to console by default. The `gradle run` command captures logs automatically:
-
-**Log file location**: `.plan/temp/build-output/{scope}/gradle-{timestamp}.log`
-
-- `{scope}` = module name or `default` for root builds
-- `{timestamp}` = `YYYY-MM-DD-HHMMSS`
-
-**Example**: `.plan/temp/build-output/default/gradle-2026-01-04-143022.log`
-
-**Important**: Use `--console=plain` to disable rich console output for parseable logs.
+Use `--console=plain` to disable rich console output for parseable logs (the build script adds this automatically).
 
 ### Common Tasks
 
@@ -51,22 +40,12 @@ Gradle outputs to console by default. The `gradle run` command captures logs aut
 | `--parallel` | Parallel execution |
 | `--no-daemon` | Disable daemon |
 | `--stacktrace` | Print stacktrace |
-| `--info` | Set log level to info |
-| `--debug` | Set log level to debug |
 
 ---
 
-## Module/Project Builds
+## Module Targeting
 
-### Single Project Build
-
-```bash
-./gradlew build
-```
-
-### Multi-Project Build
-
-#### Build Specific Subproject
+### Single Subproject Build
 
 ```bash
 # By project path
@@ -78,12 +57,6 @@ Gradle outputs to console by default. The `gradle run` command captures logs aut
 
 Gradle automatically builds dependencies.
 
-#### Parallel Execution
-
-```bash
-./gradlew build --parallel
-```
-
 ### Project Path Detection
 
 1. Search `settings.gradle(.kts)` for `include` statements
@@ -93,65 +66,9 @@ Gradle automatically builds dependencies.
 
 ---
 
-## Timeout Management
+## Quality Configuration
 
-### Timeout Calculation
-
-```
-timeout = last_successful_duration * 1.25
-```
-
-Minimum timeout: 60000ms (1 minute)
-Maximum timeout: 600000ms (10 minutes)
-
-### Timeout Handling
-
-On timeout:
-1. Kill Gradle process
-2. Report partial results if available
-3. Suggest increasing timeout or investigating slow tasks
-
----
-
-## Build Status Determination
-
-### Success Indicators
-
-- Exit code 0
-- Output contains "BUILD SUCCESSFUL"
-
-### Failure Indicators
-
-- Non-zero exit code
-- Output contains "BUILD FAILED"
-- Output contains "FAILURE:"
-
-### Parsing Priority
-
-1. Check exit code first
-2. Verify with log content
-3. Extract specific failure reasons
-
----
-
-## Quality Profiles
-
-Gradle doesn't have Maven-like profiles, but similar functionality via:
-
-### Build Types
-
-```kotlin
-// build.gradle.kts
-tasks.named<Test>("test") {
-    if (project.hasProperty("quick")) {
-        exclude("**/IntegrationTest*")
-    }
-}
-```
-
-```bash
-./gradlew test -Pquick
-```
+Gradle uses task groups and build properties instead of Maven-like profiles:
 
 ### Task Groups
 
@@ -166,34 +83,33 @@ tasks.register("preCommit") {
 ./gradlew preCommit
 ```
 
+### Build Properties
+
+```kotlin
+tasks.named<Test>("test") {
+    if (project.hasProperty("quick")) {
+        exclude("**/IntegrationTest*")
+    }
+}
+```
+
+```bash
+./gradlew test -Pquick
+```
+
 ---
 
 ## CI/CD Standards
 
-### Environment Variables
-
 ```bash
 export GRADLE_OPTS="-Xmx2g -XX:MaxMetaspaceSize=512m"
 export CI=true
-```
-
-### Non-Interactive Mode
-
-```bash
 ./gradlew build --no-daemon --console=plain
-```
-
-### Build Cache
-
-```bash
-./gradlew build --build-cache
 ```
 
 ---
 
 ## Troubleshooting
-
-### Common Issues
 
 | Issue | Solution |
 |-------|----------|
@@ -206,60 +122,13 @@ export CI=true
 ### Diagnostic Commands
 
 ```bash
-# Show Gradle version
 ./gradlew --version
-
-# Show project structure
 ./gradlew projects
-
-# Show task dependencies
 ./gradlew :taskname --dry-run
-
-# Show dependency tree
 ./gradlew dependencies
-
-# Investigate specific dependency
 ./gradlew dependencyInsight --dependency log4j
 ```
 
----
-
-## Script Reference
-
-| Subcommand | Description |
-|------------|-------------|
-| `run` | Execute Gradle build with automatic log file handling and parsed output (primary API) |
-| `parse` | Parse Gradle build output and categorize issues |
-| `find-project` | Find Gradle project path from project name |
-| `search-markers` | Search for OpenRewrite TODO markers |
-| `check-warnings` | Categorize build warnings against acceptable patterns |
+See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-gradle:gradle`
-
-### run Command
-
-```bash
-python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
-    --targets "<tasks>" \
-    [--project <module>] \
-    [--format toon|json] \
-    [--mode actionable|structured|errors] \
-    [--timeout <ms>]
-```
-
-**Output format**: Tab-separated TOON (default) or JSON with `--format json`
-
-**Fields**: `status`, `exit_code`, `duration_seconds`, `log_file`, `command`
-
----
-
-## Coverage Report Paths
-
-The coverage report parser (`_gradle_cmd_coverage_report.py`) searches these JaCoCo XML report paths in order:
-
-| Path | Description |
-|------|-------------|
-| `build/reports/jacoco/test/jacocoTestReport.xml` | Standard Gradle JaCoCo report |
-| `build/reports/jacoco/jacocoTestReport.xml` | Alternative report location |
-
-For multi-project builds, pass `--module-path {module-dir}` to scope the search to a specific subproject's `build/` directory.

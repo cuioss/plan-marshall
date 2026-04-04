@@ -13,8 +13,7 @@ from extension_base import ExtensionBase  # type: ignore[import-not-found]
 class Extension(ExtensionBase):
     """OCI container extension for pm-dev-oci bundle."""
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if OCI domain applies based on Dockerfile or container config."""
         paths = module_data.get('paths', {})
         module_path = paths.get('module', '')
@@ -22,10 +21,18 @@ class Extension(ExtensionBase):
 
         signals = []
         all_paths = [module_path] + sources
-        container_filenames = ('dockerfile', 'containerfile', 'docker-compose',
-                               'compose.yml', 'compose.yaml', '.dockerignore',
-                               '.containerignore', '.hadolint.yaml',
-                               '.hadolint.yml', '.trivyignore')
+        container_filenames = (
+            'dockerfile',
+            'containerfile',
+            'docker-compose',
+            'compose.yml',
+            'compose.yaml',
+            '.dockerignore',
+            '.containerignore',
+            '.hadolint.yaml',
+            '.hadolint.yml',
+            '.trivyignore',
+        )
         container_dirs = ('docker/',)
         for p in all_paths:
             p_lower = str(p).lower()
@@ -40,11 +47,15 @@ class Extension(ExtensionBase):
             signals.append('container metadata detected')
 
         if not signals:
-            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
 
-        return self._build_applicable_result('high', signals,
-                                              module_data=module_data,
-                                              active_profiles=active_profiles)
+        return self._build_applicable_result('high', signals, module_data=module_data, active_profiles=active_profiles)
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""
@@ -52,32 +63,34 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            'domain': {
-                'key': 'oci-containers',
-                'name': 'OCI Containers',
-                'description': 'OCI container standards, Dockerfile best practices, and container security',
-            },
-            'profiles': {
-                'core': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-oci:oci-standards',
-                            'description': 'OCI container standards and Dockerfile best practices',
-                        },
-                    ],
-                    'optionals': [],
+        return [
+            {
+                'domain': {
+                    'key': 'oci-containers',
+                    'name': 'OCI Containers',
+                    'description': 'OCI container standards, Dockerfile best practices, and container security',
                 },
-                'implementation': {'defaults': [], 'optionals': []},
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-oci:oci-security',
-                            'description': 'Container security standards and OWASP best practices',
-                        },
-                    ],
-                    'optionals': [],
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-oci:oci-standards',
+                                'description': 'OCI container standards and Dockerfile best practices',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-oci:oci-security',
+                                'description': 'Container security standards and OWASP best practices',
+                            },
+                        ],
+                        'optionals': [],
+                    },
                 },
-            },
-        }]
+            }
+        ]

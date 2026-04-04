@@ -13,7 +13,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'build-npm', 'npm.py')
 
 # Import modules under test (PYTHONPATH set by conftest)
 from _build_shared import get_bash_timeout  # noqa: E402
-from npm import detect_command_type, execute_direct  # noqa: E402
+from _npm_execute import detect_command_type, execute_direct  # noqa: E402
 
 # =============================================================================
 # Test: API functions (via import)

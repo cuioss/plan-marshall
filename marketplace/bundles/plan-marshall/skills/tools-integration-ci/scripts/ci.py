@@ -21,6 +21,10 @@ import json
 import sys
 from pathlib import Path
 
+from ci_base import output_error  # type: ignore[import-not-found]
+
+KNOWN_PROVIDERS = ('github', 'gitlab')
+
 
 def find_plan_dir() -> Path | None:
     """Find .plan directory by walking up from current directory."""
@@ -33,7 +37,7 @@ def find_plan_dir() -> Path | None:
 
 
 def get_provider() -> str | None:
-    """Read ci.provider from marshal.json."""
+    """Read ci.provider from marshal.json and validate against known providers."""
     plan_dir = find_plan_dir()
     if not plan_dir:
         return None
@@ -43,31 +47,34 @@ def get_provider() -> str | None:
         with open(marshal_path) as f:
             config = json.load(f)
             provider = config.get('ci', {}).get('provider')
-            return str(provider) if provider else None
-    except (OSError, json.JSONDecodeError):
+            if not provider:
+                return None
+            provider_str = str(provider)
+            if provider_str not in KNOWN_PROVIDERS:
+                print(f'Warning: Unknown CI provider in marshal.json: {provider_str}', file=sys.stderr)
+                return None
+            return provider_str
+    except (OSError, json.JSONDecodeError) as e:
+        print(f'Warning: Failed to read marshal.json: {e}', file=sys.stderr)
         return None
 
 
 def main() -> int:
     provider = get_provider()
     if not provider:
-        print('status: error', file=sys.stderr)
-        print('operation: router', file=sys.stderr)
-        print('error: CI provider not configured. Run /marshall-steward first.', file=sys.stderr)
-        return 1
+        return output_error('router', 'CI provider not configured. Run /marshall-steward first.')
 
     if provider == 'github':
         from github import main as provider_main
     elif provider == 'gitlab':
         from gitlab import main as provider_main
     else:
-        print('status: error', file=sys.stderr)
-        print('operation: router', file=sys.stderr)
-        print(f'error: Unknown CI provider: {provider}', file=sys.stderr)
-        return 1
+        return output_error('router', f'Unknown CI provider: {provider}')
 
     return provider_main()
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    from file_ops import safe_main  # type: ignore[import-not-found]
+
+    safe_main(main)()

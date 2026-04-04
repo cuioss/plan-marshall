@@ -20,6 +20,8 @@ Change types are orthogonal to other dimensions:
 | **Profile** | WHAT aspect of work | implementation, module_testing, quality |
 | **Change-type** | WHY you're doing it | analysis, feature, bug_fix |
 
+Change-type determines the outline workflow (how deliverables are discovered and structured). Profile determines task execution (which executor skill runs). A single deliverable with change-type `feature` may produce tasks with profiles `implementation` and `module_testing`. See [task-executors.md](task-executors.md) for profile→executor mapping.
+
 ### Skill-Based Handling
 
 Each change type has:
@@ -57,101 +59,14 @@ verification (6) →  Validate at end
 
 ## Detailed Definitions
 
-### analysis (Priority 1)
-
-**Purpose**: Investigate, research, or understand something before taking action.
-
-**Indicators**:
-- "analyze", "investigate", "understand", "research", "explore"
-- "why is X happening", "how does X work"
-- "find out", "determine", "assess"
-
-**Deliverable**: Findings report with conclusions and recommendations.
-
-**Example Requests**:
-- "Analyze why login is slow"
-- "Investigate the memory leak"
-- "Understand how the plugin system works"
-
-### feature (Priority 2)
-
-**Purpose**: Create new functionality that doesn't currently exist.
-
-**Indicators**:
-- "add", "create", "new", "implement", "build"
-- "introduce", "establish"
-- Request describes functionality that doesn't exist
-
-**Deliverable**: New code (files, classes, functions).
-
-**Example Requests**:
-- "Add user authentication"
-- "Create a new API endpoint"
-- "Implement dark mode"
-
-### enhancement (Priority 3)
-
-**Purpose**: Improve or extend existing functionality.
-
-**Indicators**:
-- "improve", "enhance", "extend", "update", "upgrade"
-- "add to existing", "expand", "optimize"
-- Request describes changes to something that exists
-
-**Deliverable**: Modified code with improved functionality.
-
-**Example Requests**:
-- "Improve error messages in the login flow"
-- "Add validation to the existing form"
-- "Extend the search to support filters"
-
-### bug_fix (Priority 4)
-
-**Purpose**: Fix a defect, error, or incorrect behavior.
-
-**Indicators**:
-- "fix", "repair", "correct", "resolve"
-- "bug", "error", "issue", "broken", "wrong"
-- Describes something that should work but doesn't
-
-**Deliverable**: Fixed code with minimal changes.
-
-**Example Requests**:
-- "Fix the login timeout issue"
-- "Resolve the null pointer exception"
-- "Correct the date formatting bug"
-
-### tech_debt (Priority 5)
-
-**Purpose**: Refactor, clean up, or improve code quality without changing behavior.
-
-**Indicators**:
-- "refactor", "restructure", "reorganize", "clean up"
-- "remove", "delete", "deprecate", "migrate"
-- "simplify", "consolidate"
-
-**Deliverable**: Improved code structure, same behavior.
-
-**Example Requests**:
-- "Refactor the authentication module"
-- "Remove deprecated API endpoints"
-- "Migrate from callbacks to async/await"
-
-### verification (Priority 6)
-
-**Purpose**: Validate, verify, or confirm something is correct.
-
-**Indicators**:
-- "verify", "validate", "check", "confirm"
-- "ensure", "test that", "make sure"
-- Asks to confirm a state rather than change it
-
-**Deliverable**: Pass/fail report with evidence.
-
-**Example Requests**:
-- "Verify the migration completed successfully"
-- "Check that all endpoints return valid JSON"
-- "Confirm the refactoring didn't break tests"
+| Type | Purpose | Key Indicators | Deliverable | Example |
+|------|---------|---------------|-------------|---------|
+| `analysis` | Investigate, research, understand | analyze, investigate, why, how, find out | Findings report | "Analyze why login is slow" |
+| `feature` | New functionality | add, create, new, implement, build | New code | "Add user authentication" |
+| `enhancement` | Improve existing | improve, extend, update, optimize | Modified code | "Extend search to support filters" |
+| `bug_fix` | Fix defect | fix, repair, correct, bug, broken | Fixed code (minimal) | "Fix the login timeout issue" |
+| `tech_debt` | Refactor without behavior change | refactor, clean up, remove, migrate, simplify | Same behavior, better structure | "Refactor the auth module" |
+| `verification` | Validate correctness | verify, check, confirm, ensure | Pass/fail report | "Check all endpoints return valid JSON" |
 
 ---
 
@@ -181,32 +96,24 @@ Quality (linting, formatting, JavaDoc) is a **profile**, not a change-type.
 - Change-type: `tech_debt` (cleanup task)
 - Profile: `quality`
 
+### Recipes
+
+Recipes are a **plan source**, not a change-type.
+
+- A recipe provides its own `default_change_type` for deliverables
+- Change_type is not detected via LLM — it comes from the recipe definition
+- Example: "refactor-to-standards" recipe uses change_type=tech_debt
+- Example: "refactor-to-test-standards" recipe uses change_type=tech_debt
+
+See `plan-marshall:extension-api` standards/extension-contract.md#provides_recipes for the recipe contract.
+
 ---
 
 ## Skill-Based Routing
 
-### Resolution Process
+Change-type routing and domain skill resolution is handled by `plan-marshall:phase-3-outline` (Steps 9-10). See that skill for the full resolution process, marshal.json configuration, and fallback pattern.
 
-1. **Detect change_type** via LLM analysis (detect-change-type-agent)
-2. **Resolve** domain-specific or generic change-type instructions (phase-3-outline Steps 9-10)
-3. Execute discovery, analysis, and deliverable creation per change-type instructions
-
-### Configuration in marshal.json
-
-```json
-"skill_domains": {
-  "plan-marshall-plugin-dev": {
-    "outline_skill": "pm-plugin-development:ext-outline-workflow"
-  }
-}
-```
-
-### Fallback Pattern
-
-If no domain-specific skill is configured:
-- Use generic instructions from `plan-marshall:phase-3-outline/standards/change-{type}.md`
-
-### Architecture
+**Architecture summary**:
 
 | Component | Purpose |
 |-----------|---------|
@@ -238,23 +145,8 @@ reasoning: "Request describes improving existing plugin functionality"
 
 ---
 
-## What's NOT a Change-Type
-
-### Recipes
-
-Recipes are a **plan source**, not a change-type.
-
-- A recipe provides its own `default_change_type` for deliverables
-- Change_type is not detected via LLM — it comes from the recipe definition
-- Example: "refactor-to-standards" recipe uses change_type=tech_debt
-- Example: "refactor-to-test-standards" recipe uses change_type=tech_debt
-
-See `plan-marshall:extension-api` standards/extension-contract.md#provides_recipes for the recipe contract.
-
----
-
 ## Related
 
-- [task-executor-routing.md](task-executor-routing.md) - Profile-based executor routing
+- [task-executors.md](task-executors.md) - Profile-based executor routing and shared workflow
 - [phases.md](phases.md) - Phase workflow overview
 - `plan-marshall:detect-change-type-agent` - Detection agent

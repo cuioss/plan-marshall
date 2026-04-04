@@ -2,6 +2,7 @@
 name: manage-references
 description: Manage references.json files with field-level access and list management
 user-invocable: false
+scope: plan
 ---
 
 # Manage References Skill
@@ -10,33 +11,12 @@ Manage references.json files with field-level access and list management. Tracks
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify references.json directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations section
+**Skill-specific constraints:**
 - Do not mix `add-list` and `set-list` without understanding their semantics (append vs replace)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-references:manage-references {command} {args}`
 - References are plan-scoped; always provide `--plan-id`
 - File paths in modified_files and affected_files are always relative to repository root
-
-## What This Skill Provides
-
-- Read/write references.json (JSON storage, TOON output)
-- Field-level get/set operations
-- List management (add/remove items)
-- File tracking for modified files
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Setting branch or issue references
-- Adding modified files to tracking
-- Managing external documentation references
-
----
 
 ## Storage Location
 
@@ -78,9 +58,9 @@ JSON format for storage:
 | `base_branch` | string | Base branch for PR (e.g., main) |
 | `issue_url` | string | GitHub issue URL |
 | `build_system` | string | Build system (maven, gradle, npm, none) |
-| `modified_files` | list | Files modified during implementation |
+| `modified_files` | list | Files modified during implementation (tracked by plan-execute as files are changed) |
 | `domains` | list | Plan domains (e.g., java, documentation) |
-| `affected_files` | list | Files affected during outline phase (for execution tracking) |
+| `affected_files` | list | Files identified during outline phase as potentially needing changes (scope tracking, may be superset of modified_files) |
 | `external_docs` | table | External documentation references |
 
 ---
@@ -280,12 +260,12 @@ count: 2
 - Returns `previous_count` showing how many items were replaced
 
 **When to use `set-list` vs `add-list`**:
-- Use `set-list` when you have the complete list of values to store
-- Use `add-list` when appending to an existing list without knowing its contents
+- Use `set-list` when you have the complete, authoritative list (e.g., after re-scanning affected files)
+- Use `add-list` when incrementally building a list (e.g., adding files as they are modified during execution)
 
 ### get-context
 
-Get all references context in one call. Useful for getting comprehensive plan context.
+Get all references in one call, with scalar fields at top level and list fields as counts (or full lists with `--include-files`). More efficient than multiple `get` calls when you need the full picture.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get-context \
@@ -341,23 +321,42 @@ modified_files[3]:
 
 ---
 
-## Error Handling
+## Error Responses
 
-```toon
-status: error
-plan_id: my-feature
-error: file_not_found
-message: references.json not found
-```
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
+
+| Error Code | Cause |
+|------------|-------|
+| `file_not_found` | references.json doesn't exist |
+| `invalid_plan_id` | plan_id format invalid |
+| `field_not_found` | Requested field doesn't exist (get) |
+| `type_mismatch` | Attempting list operation on non-list field (add-list on a string field) |
+| `file_exists` | references.json already exists on create |
+| `field_not_set` | Field exists but has no value (returns `value: null`, exit 0) |
+
+**Default values**: Unset fields return `field_not_found` on `get`. The `create` command initializes `modified_files` and `affected_files` as empty lists and `base_branch` as `main`. All other fields are optional — only present if explicitly set via `--field` arguments.
 
 ---
 
-## Integration Points
+## Integration
 
-### With plan-execute
+### Producers
 
-Execution phase adds modified files as work progresses.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | create, set, set-list | Initialize references with branch, domains, build system |
+| `phase-3-outline` | set-list | Set affected_files from solution outline |
+| `phase-5-execute` | add-file | Track modified files as implementation progresses |
 
-### With plan-finalize
+### Consumers
 
-Finalization reads modified files for commit/PR creation.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-3-outline` | get, get-context | Read domains and build system for skill routing |
+| `phase-5-execute` | get-context | Read build system for task execution |
+| `phase-6-finalize` | get-context --include-files | Read modified_files for commit scope and PR body |
+
+## Related
+
+- `manage-files` — Generic file operations for plan directories
+- `manage-plan-documents` — Typed plan document operations (request.md)

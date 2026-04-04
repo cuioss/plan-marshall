@@ -2,41 +2,23 @@
 name: manage-config
 description: Project-level infrastructure configuration for marshal.json
 user-invocable: false
+scope: hybrid
 ---
 
-# Plan-Marshall Config Skill
+# Manage Config Skill
 
 Manages project-level infrastructure configuration in `.plan/marshal.json`.
 
+**Scope: hybrid** means this skill manages project-level settings (marshal.json persists across plans) while also providing plan-phase-specific configuration (branching, commit strategy, verification steps).
+
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify marshal.json directly; all mutations go through the script API
-- Do not invent script arguments not listed in the API Reference
+**Skill-specific constraints:**
 - Do not bypass initialization (marshal.json must exist before queries)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-config:manage-config {command} {args}`
 - Domain configuration follows the noun-verb pattern documented in the API Reference
 - Phase configuration uses the `plan {phase} {verb}` pattern
-
-## What This Skill Provides
-
-- **Skill Domains**: Implementation skill defaults and optionals per domain
-- **System Settings**: Retention and cleanup configuration
-- **Plan Phase Configuration**: Phase-specific settings (branching, compatibility, commit strategy, pipelines)
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Initializing project configuration (`/marshall-steward` wizard)
-- Querying implementation skills for a domain
-- Managing retention settings
-- Configuring plan phase settings
-
----
 
 ## Workflow: Initialize Configuration
 
@@ -136,11 +118,53 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value per_plan
 ```
 
+### Manage Verification Steps
+
+```bash
+# Add a step to the verification pipeline
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute add-step --step sonar_check --position 2
+
+# Replace all verification steps
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set-steps --steps "quality_check,build_verify,sonar_check"
+
+# Remove a step
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute remove-step --step sonar_check
+```
+
+### Resolve Skills for a Domain and Profile
+
+```bash
+# Get aggregated skills for java implementation profile
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-domain-skills --domain java --profile implementation
+
+# Resolve task executor for a profile
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-task-executor --profile module_testing
+```
+
+### Extension Defaults
+
+```bash
+# Set a write-once default (only if key doesn't exist)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ext-defaults set-default --key preferred_build_profile --value fast
+
+# Get an extension default
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  ext-defaults get --key preferred_build_profile
+```
+
 ---
 
 ## Workflow: CI Operations
 
 CI operations use the provider-agnostic `ci` router. The router reads `ci.provider` from marshal.json and delegates to the correct provider script (github.py or gitlab.py).
+
+**Note**: CI commands use a different notation — they route through `tools-integration-ci`, not `manage-config`. The config skill only stores the CI provider/tools settings; actual CI operations are in the `workflow-integration-ci` and `workflow-integration-git` skills.
 
 ### Example: View Issue
 
@@ -160,128 +184,23 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 
 ## API Reference
 
-### Noun: skill-domains
+> Full API specification: See [standards/api-reference.md](standards/api-reference.md).
 
-| Verb | Parameters | Purpose |
-|------|------------|---------|
-| `list` | (none) | List all domains |
-| `get` | `--domain` | Get full domain config (returns nested structure for technical domains) |
-| `get-defaults` | `--domain` | Get default skills (returns `core.defaults` for nested domains) |
-| `get-optionals` | `--domain` | Get optional skills (returns `core.optionals` for nested domains) |
-| `set` | `--domain [--profile] [--defaults] [--optionals]` | Set domain config (profiles read from extension.py, system domain only) |
-| `add` | `--domain --defaults [--optionals]` | Add new domain |
-| `validate` | `--domain --skill` | Check if skill valid (searches all profiles for nested domains) |
-| `detect` | (none) | Auto-detect domains from project files |
-| `get-extensions` | `--domain` | Get workflow skill extensions for domain |
-| `set-extensions` | `--domain --type --skill` | Set workflow skill extension (types: outline, triage) |
-| `get-available` | (none) | Get available domains based on detected build systems |
-| `configure` | `--domains` | Configure selected domains with templates |
-
-### resolve-domain-skills
-
-| Parameters | Purpose |
-|------------|---------|
-| `--domain --profile` | Resolve skills for domain and profile (aggregates `{domain}.core` + `{domain}.{profile}`) |
-
-Standard profiles: `implementation`, `module_testing`, `integration_testing`, `quality`.
-
-### resolve-workflow-skill
-
-| Parameters | Purpose |
-|------------|---------|
-| `--phase` | Resolve system workflow skill for phase (init, refine, outline, plan, execute, verify, finalize) |
-
-Always returns from the `system` domain's `workflow_skills`.
-
-### resolve-workflow-skill-extension
-
-| Parameters | Purpose |
-|------------|---------|
-| `--domain --type` | Resolve domain-specific workflow extension (types: outline, triage) |
-
-Returns null (not error) if extension doesn't exist for the domain.
-
-### get-workflow-skills
-
-| Parameters | Purpose |
-|------------|---------|
-| (none) | Get all workflow skills from system domain (6-phase model) |
-
-### get-skills-by-profile
-
-| Parameters | Purpose |
-|------------|---------|
-| `--domain` | Get skills organized by profile for architecture enrichment |
-
-### configure-task-executors
-
-| Parameters | Purpose |
-|------------|---------|
-| (none) | Auto-discover profiles and register task executors (convention: profile X -> `plan-marshall:task-X`) |
-
-### resolve-task-executor
-
-| Parameters | Purpose |
-|------------|---------|
-| `--profile` | Resolve task executor skill for a profile (e.g., implementation, module_testing) |
-
-### Noun: ext-defaults
-
-| Verb | Parameters | Purpose |
-|------|------------|---------|
-| `get` | `--key` | Get extension default value |
-| `set` | `--key --value` | Set extension default value (always overwrites) |
-| `set-default` | `--key --value` | Set value only if key does not exist (write-once) |
-| `list` | (none) | List all extension defaults |
-| `remove` | `--key` | Remove extension default |
-
-### Noun: system
-
-| Verb | Parameters | Purpose |
-|------|------------|---------|
-| `retention get` | (none) | Get all retention settings |
-| `retention set` | `--field --value` | Set retention field |
-
-### Noun: plan
-
-Phase-specific configuration using `plan {phase} {verb}` pattern.
-
-| Verb | Parameters | Purpose |
-|------|------------|---------|
-| `phase-1-init get` | `[--field]` | Get init phase configuration |
-| `phase-1-init set` | `--field --value` | Set init phase field (branch_strategy) |
-| `phase-2-refine get` | `[--field]` | Get refine phase configuration |
-| `phase-2-refine set` | `--field --value` | Set refine phase field (confidence_threshold, compatibility) |
-| `phase-5-execute get` | `[--field]` | Get execute phase configuration (includes verification steps) |
-| `phase-5-execute set` | `--field --value` | Set execute phase field (commit_strategy) |
-| `phase-5-execute set-steps` | `--steps` | Replace entire verify steps list (comma-separated) |
-| `phase-5-execute add-step` | `--step [--position]` | Add step to verify list |
-| `phase-5-execute remove-step` | `--step` | Remove step from verify list |
-| `phase-5-execute set-max-iterations` | `--value` | Set verification max iterations |
-| `phase-6-finalize get` | (none) | Get finalize phase configuration |
-| `phase-6-finalize set-steps` | `--steps` | Replace entire finalize steps list (comma-separated) |
-| `phase-6-finalize add-step` | `--step [--position]` | Add step to finalize list |
-| `phase-6-finalize remove-step` | `--step` | Remove step from finalize list |
-| `phase-6-finalize set-max-iterations` | `--value` | Set finalize max iterations |
-
-### Noun: ci
-
-| Verb | Parameters | Purpose |
-|------|------------|---------|
-| `get` | (none) | Get full CI config |
-| `get-provider` | (none) | Get CI provider and repo URL |
-| `get-tools` | (none) | Get authenticated tools list |
-| `get-command` | `--name` | Get single CI command by name (ready to execute) |
-| `set-provider` | `--provider --repo-url` | Set CI provider |
-| `set-tools` | `--tools` | Set authenticated tools (comma-separated) |
-| `persist` | `--provider --repo-url [--commands] [--tools] [--git-present]` | Persist full CI config (provider, commands, tools) |
-
-### init
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  init [--force]
-```
+| Noun | Key Verbs |
+|------|-----------|
+| `skill-domains` | list, get, get-defaults, get-optionals, set, add, validate, detect, configure, get-extensions, set-extensions, get-available |
+| `resolve-domain-skills` | `--domain --profile` (aggregates core + profile skills) |
+| `resolve-workflow-skill` | `--phase` (resolve system workflow skill) |
+| `resolve-workflow-skill-extension` | `--domain --type` (outline, triage) |
+| `get-workflow-skills` | Get all workflow skills from system domain |
+| `get-skills-by-profile` | `--domain` (skills organized by profile) |
+| `configure-task-executors` | Auto-discover profiles and register executors |
+| `resolve-task-executor` | `--profile` (resolve executor for profile) |
+| `ext-defaults` | get, set, set-default, list, remove |
+| `system` | retention get, retention set |
+| `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
+| `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
+| `init` | Initialize marshal.json (with optional `--force`) |
 
 ---
 
@@ -304,9 +223,9 @@ The defaults template contains only `system` domain. Technical domains (java, ja
       "defaults": ["plan-marshall:dev-general-practices"],
       "optionals": ["plan-marshall:dev-general-practices"],
       "task_executors": {
-        "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing",
-        "integration_testing": "plan-marshall:task-integration_testing"
+        "implementation": "plan-marshall:task-executor",
+        "module_testing": "plan-marshall:task-executor",
+        "integration_testing": "plan-marshall:task-executor"
       }
     },
     "java": {
@@ -353,6 +272,8 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 ---
 
 ## Standard Domains
+
+> **Detailed reference**: See [standards/skill-domains.md](standards/skill-domains.md) for domain structure, profiles, and validation rules. See [standards/skill-domains-operations.md](standards/skill-domains-operations.md) for resolution commands and usage patterns.
 
 ### System Domain
 
@@ -403,31 +324,42 @@ Script characteristics:
 
 ---
 
-## Integration Points
+## Integration
 
-### With plan-marshall Skill
-- Called during wizard initialization
-- Called from configuration menus
+### Producers
 
-### With Implementation Agents
-- `skill-domains get-defaults` provides skills to load
-- `skill-domains get-optionals` provides available optionals
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `marshall-steward` | init, skill-domains configure | Initialize and configure domains |
+| `manage-architecture` | skill-domains set, ext-defaults | Set domain skills from enrichment |
 
-### With Cleanup
-- `system retention get` provides retention settings
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | plan get, resolve-domain-skills | Read plan config, resolve skills |
+| `phase-4-plan` | resolve-task-executor | Resolve executor skill for task profile |
+| `phase-5-execute` | resolve-domain-skills | Load skills for task execution |
+| `manage-run-config` | system retention get | Read retention settings for cleanup |
 
 ---
 
-## Error Handling
+## Error Responses
 
-All operations validate prerequisites before proceeding:
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
-```toon
-status: error
-error: marshal.json not found. Run command /marshall-steward first
-```
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| `not_initialized` | marshal.json missing | Run `/marshall-steward` |
+| `invalid_domain` | Domain not in skill_domains | Check domain name or run `/marshall-steward` |
+| `skill_domains not configured` | No domains in marshal.json | Run `/marshall-steward` |
+| `invalid_field` | Unknown field for phase/noun | Check field reference table above |
+| `skill_not_found` | Skill not in domain defaults/optionals | Check with `validate --domain --skill` |
 
-Standard error conditions:
-- `marshal.json not found` - Run `/marshall-steward` first
-- `skill_domains not configured` - Run `/marshall-steward` first
-- `Unknown domain: {name}` - Domain doesn't exist
+---
+
+## Related
+
+- `manage-architecture` — Consumes configuration for project analysis
+- `marshall-steward` — Interactive configuration wizard
+- `extension-api` — Build system detection uses config

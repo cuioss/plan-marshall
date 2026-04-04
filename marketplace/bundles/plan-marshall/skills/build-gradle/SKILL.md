@@ -1,6 +1,6 @@
 ---
 name: build-gradle
-description: Gradle build operations with execution, parsing, and module discovery
+description: Gradle build operations — Java/Kotlin builds with JaCoCo coverage, quality task detection, multi-project discovery, and OpenRewrite markers
 user-invocable: false
 ---
 
@@ -10,61 +10,39 @@ Gradle build execution with output parsing, module discovery, and wrapper detect
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+See `build-api-reference.md` § Enforcement for shared rules.
+All commands use `python3 .plan/execute-script.py plan-marshall:build-gradle:gradle {command} {args}`.
 
-**Prohibited actions:**
-- Do not invoke Gradle directly; all builds go through the script API
-- Do not invent script arguments not listed in the operations table
-- Do not bypass wrapper detection logic
+## Scripts
 
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:build-gradle:gradle {command} {args}`
-- Output format defaults to TOON; use `--format json` only when explicitly required
+| Script | Purpose |
+|--------|---------|
+| `gradle.py` | CLI dispatcher |
+| `_gradle_execute.py` | Execution config via factory (custom command_key_fn for `:module:` notation) |
+| `_gradle_cmd_discover.py` | Module discovery via settings.gradle(.kts) + Gradle metadata commands |
+| `_gradle_cmd_parse.py` | Log parsing with JVM base patterns + Kotlin error patterns |
+| `_gradle_cmd_find_project.py` | Subproject name-to-notation resolution |
 
-## Scripts Overview
+## Subcommands
 
-| Script | Type | Purpose |
-|--------|------|---------|
-| `gradle.py` | CLI | Gradle operations dispatcher |
-| `_gradle_execute.py` | Library | Foundation execution, wrapper detection |
-| `_gradle_cmd_discover.py` | Library | Module discovery via build.gradle |
-| `_gradle_cmd_parse.py` | Library | Log parsing, issue extraction |
-| `_gradle_cmd_find_project.py` | Library | Gradle subproject location |
-| `_gradle_cmd_check_warnings.py` | Library | Warning categorization |
-| `_gradle_cmd_search_markers.py` | Library | Marker detection in Gradle projects |
+Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**, **search-markers**, **find-project**.
+See `build-api-reference.md` for the full subcommand API and availability matrix.
 
-## Gradle run (Primary API)
+### Gradle-Specific Behavior
 
-```bash
-python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run \
-    --command-args "<tasks>" \
-    [--format <toon|json>] \
-    [--timeout <seconds>] \
-    [--mode <mode>]
-```
+- **run**: `--command-args` takes Gradle tasks, e.g., `":module:build"` or `"build"`
+- **parse**: Additional `no-openrewrite` mode; includes Kotlin-specific error patterns (Unresolved reference, Type mismatch, etc.)
+- **coverage-report**: Searches `build/reports/jacoco/test/jacocoTestReport.xml`, `build/reports/jacoco/jacocoTestReport.xml`, `build/jacoco/test.xml`
+- **discover**: Reads `settings.gradle(.kts)` `include()` declarations (Groovy + Kotlin DSL); detects quality tasks (`spotlessCheck`, `checkstyleMain`, `pmdMain`, `detekt`, `ktlintCheck`)
+- **find-project**: Resolves module names to Gradle notation (e.g., `auth` → `:services:auth`)
+- **search-markers**: Default extensions: `.java,.kt`
 
-**Parameters**:
-- `--command-args` - Complete Gradle command arguments, e.g. `":module:build"` or `"build"` (required)
-- `--format` - Output format: toon (default), json
-- `--timeout` - Timeout in seconds (default: 300, adaptive — doubles on timeout failure)
-- `--mode` - Output mode: actionable (default), structured, errors
+## Module Discovery
 
-### Low-level Operations
-
-| Command | Purpose |
-|---------|---------|
-| `gradle parse` | Parse Gradle build output |
-| `gradle find-project` | Find Gradle subproject |
-| `gradle search-markers` | Search markers in Gradle project |
-| `gradle check-warnings` | Check Gradle warnings |
-
-## Wrapper Detection
-
-```
-Gradle: ./gradlew > gradle (on PATH)
-```
+Reads `settings.gradle(.kts)` for `include()` declarations. Supports both Groovy and Kotlin DSL. Shells out to Gradle for properties, dependencies, and quality task detection.
 
 ## References
 
-- `plan-marshall:extension-api` - Extension API contract
-- `standards/gradle-impl.md` - Gradle execution details
+- `build-api-reference.md` — Shared subcommand API, error categories, issue routing, wrapper detection
+- `build-execution.md` — Execution contract and lifecycle
+- `standards/gradle-impl.md` — Gradle-specific execution and configuration details

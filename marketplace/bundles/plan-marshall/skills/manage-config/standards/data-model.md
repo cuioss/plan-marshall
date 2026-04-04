@@ -53,9 +53,9 @@ JSON structure and field definitions for project configuration.
       "defaults": ["plan-marshall:dev-general-practices"],
       "optionals": ["plan-marshall:dev-general-practices"],
       "task_executors": {
-        "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing",
-        "integration_testing": "plan-marshall:task-integration_testing"
+        "implementation": "plan-marshall:task-executor",
+        "module_testing": "plan-marshall:task-executor",
+        "integration_testing": "plan-marshall:task-executor"
       }
     },
     "java": {
@@ -78,75 +78,12 @@ JSON structure and field definitions for project configuration.
 
 ## Section: skill_domains
 
-Skill configuration per domain.
+Skill configuration per domain. See [skill-domains.md](skill-domains.md) for complete domain structure, profiles, validation rules, and technical domain catalog. See [skill-domains-operations.md](skill-domains-operations.md) for resolution commands and usage patterns.
 
-### System Domain Structure
-
-The `system` domain contains task executors and base skills applied globally.
-
-```json
-{
-  "skill_domains": {
-    "system": {
-      "defaults": ["bundle:skill", ...],
-      "optionals": ["bundle:skill", ...],
-      "task_executors": {
-        "implementation": "plan-marshall:task-implementation",
-        "module_testing": "plan-marshall:task-module-testing",
-        "integration_testing": "plan-marshall:task-integration_testing"
-      }
-    }
-  }
-}
-```
-
-### Technical Domain Structure (Bundle-Based)
-
-Technical domains (java, javascript, etc.) reference a bundle and declare workflow skill extensions. Profiles (core, implementation, module_testing, etc.) are loaded at runtime from `extension.py` in the bundle.
-
-```json
-{
-  "skill_domains": {
-    "{domain}": {
-      "bundle": "pm-dev-java",
-      "workflow_skill_extensions": {
-        "outline": "bundle:extension-skill",
-        "triage": "bundle:triage-skill"
-      }
-    }
-  }
-}
-```
-
-### Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `task_executors` | object | System domain only - maps profiles to task executor skills |
-| `bundle` | string | Technical domains - bundle providing this domain |
-| `workflow_skill_extensions` | object | Domain-specific extensions (outline, triage) |
-| `defaults` | array | Skills always loaded |
-| `optionals` | array | Skills available for selection |
-
-### Profiles
-
-Profiles determine which skills to load based on task context. They are loaded from `extension.py` at runtime, not stored in marshal.json.
-
-| Profile | Phase | Description |
-|---------|-------|-------------|
-| `implementation` | execute | Production code development |
-| `module_testing` | execute | Unit/module test development |
-| `integration_testing` | execute | Integration test development |
-| `quality` | verify | Documentation and verification |
-
-### Extension Types
-
-Extensions provide domain-specific behavior:
-
-| Type | Phase | Description |
-|------|-------|-------------|
-| `outline` | outline | Domain patterns and deliverable identification |
-| `triage` | verify | Finding decision logic (fix/suppress/accept) |
+Key structural summary:
+- **System domain**: Contains `defaults`, `optionals`, and `task_executors`
+- **Technical domains**: Reference a `bundle` and declare `workflow_skill_extensions` (outline, triage)
+- **Profiles**: Loaded at runtime from `extension.py`, not stored in marshal.json
 
 ## Section: system
 
@@ -179,6 +116,8 @@ System-level infrastructure settings.
 ## Section: plan
 
 Phase-specific configuration for the 6-phase workflow model. Each phase with configurable settings has its own sub-section.
+
+> **Phase naming**: JSON keys use the `phase-{N}-{name}` prefix form (e.g., `phase-1-init`). The canonical phase name is `1-init` — see [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) for the standard phase list.
 
 ### phase-1-init
 

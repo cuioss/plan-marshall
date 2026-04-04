@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for the determine-mode.py script.
+Tests for the determine_mode.py script.
 
 Tests both subcommands:
 - mode: Determine wizard vs menu mode based on existing files
@@ -10,8 +10,8 @@ Tests both subcommands:
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
-# Script path to determine-mode.py
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine-mode.py'
+# Script path to determine_mode.py
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine_mode.py'
 
 
 class TestModeSubcommand(ScriptTestCase):
@@ -19,7 +19,7 @@ class TestModeSubcommand(ScriptTestCase):
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'determine-mode.py'
+    script = 'determine_mode.py'
 
     def test_wizard_mode_when_executor_missing(self):
         """Should return wizard mode when executor is missing."""
@@ -118,7 +118,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'determine-mode.py'
+    script = 'determine_mode.py'
 
     def test_ok_when_no_docs_exist(self):
         """Should return ok when no documentation files exist."""
@@ -132,9 +132,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         """Should return ok when docs have all required content."""
         claude_md = self.temp_dir / 'CLAUDE.md'
         claude_md.write_text(
-            '# Project\n\n'
-            'Use `.plan/temp/` for temporary files.\n\n'
-            'For file operations use Glob, Read, Grep tools.\n'
+            '# Project\n\nUse `.plan/temp/` for temporary files.\n\nFor file operations use Glob, Read, Grep tools.\n'
         )
 
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
@@ -146,9 +144,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
     def test_needs_update_when_claude_md_missing_plan_temp(self):
         """Should detect missing plan_temp pattern in CLAUDE.md."""
         claude_md = self.temp_dir / 'CLAUDE.md'
-        claude_md.write_text(
-            '# Project\n\nFor file operations use Glob, Read, Grep tools.\n'
-        )
+        claude_md.write_text('# Project\n\nFor file operations use Glob, Read, Grep tools.\n')
 
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
@@ -256,7 +252,7 @@ class TestSubcommandRequired(ScriptTestCase):
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'determine-mode.py'
+    script = 'determine_mode.py'
 
     def test_error_without_subcommand(self):
         """Should error when no subcommand is provided."""

@@ -20,7 +20,7 @@ Use Glob/Grep to find affected components:
 Log findings:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Enhancement: {N} files affected in {module}"
 ```
 

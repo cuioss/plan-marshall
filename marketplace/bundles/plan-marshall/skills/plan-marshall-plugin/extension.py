@@ -2,29 +2,16 @@
 """Extension API for plan-marshall bundle - build system discovery.
 
 Consolidates module discovery for Maven, Gradle, npm, and Python build systems.
-Build execution scripts live in sibling skill directories (build-maven, build-gradle,
-build-npm, build-python).
+Delegates to build-system-specific discovery scripts in sibling skill directories
+(build-maven, build-gradle, build-npm, build-python).
 """
 
-import json
-import sys
-import tomllib
 from pathlib import Path
 
-from extension_base import ExtensionBase, build_module_base, discover_descriptors  # type: ignore[import-not-found]
+from extension_base import ExtensionBase  # type: ignore[import-not-found]
 
 # Build systems that indicate code content (vs documentation or plugin metadata)
 _CODE_BUILD_SYSTEMS = {'maven', 'gradle', 'npm', 'python'}
-
-# Add sibling skill script directories to path
-SKILLS_DIR = Path(__file__).parent.parent  # plan-marshall/skills/
-for skill_name in ['build-maven', 'build-gradle', 'build-npm', 'build-python']:
-    scripts_dir = SKILLS_DIR / skill_name / 'scripts'
-    if scripts_dir.exists() and str(scripts_dir) not in sys.path:
-        sys.path.insert(0, str(scripts_dir))
-
-from _build_wrapper import has_wrapper  # type: ignore[import-not-found]  # noqa: E402
-from npm import execute_direct  # type: ignore[import-not-found]  # noqa: E402
 
 # Build file constants
 POM_XML = 'pom.xml'
@@ -34,6 +21,7 @@ SETTINGS_GRADLE = 'settings.gradle'
 SETTINGS_GRADLE_KTS = 'settings.gradle.kts'
 PACKAGE_JSON = 'package.json'
 PYPROJECT_TOML = 'pyproject.toml'
+
 
 class Extension(ExtensionBase):
     """Build system discovery and cross-cutting development extension for plan-marshall bundle."""
@@ -117,47 +105,28 @@ class Extension(ExtensionBase):
             },
         ]
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
-        """Applicable only to modules with code build systems."""
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        """Applicable only to modules with code build systems.
+
+        Uses general-dev domain skills (not build domain, which has empty profiles).
+        """
         build_systems = set(module_data.get('build_systems', []))
         if not build_systems & _CODE_BUILD_SYSTEMS:
             return {
-                'applicable': False, 'confidence': 'none',
-                'signals': [], 'additive_to': None, 'skills_by_profile': {},
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
             }
 
-        domains = self._general_dev_domain()
-        profiles = domains.get('profiles', {})
-        core = profiles.get('core', {})
-        core_defaults = core.get('defaults', [])
-        core_optionals = core.get('optionals', [])
-
-        # Apply profile filtering (config override or no filtering for general-dev)
-        profile_filter = active_profiles
-
-        skills_by_profile: dict[str, dict] = {}
-        for profile_name in ['implementation', 'module_testing', 'integration_testing',
-                             'quality', 'documentation']:
-            if profile_name not in profiles:
-                continue
-            if profile_filter is not None and profile_name not in profile_filter:
-                continue
-            profile = profiles[profile_name]
-            merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
-            merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
-            if merged_defaults or merged_optionals:
-                skills_by_profile[profile_name] = {
-                    'defaults': merged_defaults,
-                    'optionals': merged_optionals,
-                }
-        return {
-            'applicable': True,
-            'confidence': 'high',
-            'signals': ['cross-cutting'],
-            'additive_to': None,
-            'skills_by_profile': skills_by_profile,
-        }
+        return self._build_applicable_result(
+            'high',
+            ['cross-cutting'],
+            module_data=module_data,
+            active_profiles=active_profiles,
+            domain_key='general-dev',
+        )
 
     # =========================================================================
     # discover_modules() - Consolidated build system discovery
@@ -166,11 +135,11 @@ class Extension(ExtensionBase):
     def discover_modules(self, project_root: str) -> list:
         """Discover all modules across Maven, Gradle, npm, and Python.
 
-        Delegates to build-system-specific discovery logic:
-        - Maven: _maven_cmd_discover.discover_maven_modules()
-        - Gradle: _gradle_cmd_discover.discover_gradle_modules()
-        - npm: package.json scanning with npm commands
-        - Python: pyproject.toml parsing for pyprojectx aliases
+        Delegates to build-system-specific discovery scripts:
+        - Maven: build-maven/scripts/_maven_cmd_discover.py
+        - Gradle: build-gradle/scripts/_gradle_cmd_discover.py
+        - npm: build-npm/scripts/_npm_cmd_discover.py
+        - Python: build-python/scripts/_python_cmd_discover.py
         """
         modules = []
 
@@ -227,424 +196,37 @@ class Extension(ExtensionBase):
         return result
 
     # =========================================================================
-    # npm Discovery (from pm-dev-frontend)
+    # npm Discovery (delegated to build-npm)
     # =========================================================================
 
     def _discover_npm(self, project_root: str) -> list:
-        """Discover npm modules with complete metadata."""
-        descriptors = discover_descriptors(project_root, PACKAGE_JSON)
-        if not descriptors:
-            return []
+        """Discover npm modules via package.json analysis.
 
-        root_package_json = Path(project_root) / PACKAGE_JSON
-        has_root_package_json = root_package_json.exists()
-
-        modules = []
-        discovered_paths: set[str] = set()
-
-        for desc_path in descriptors:
-            base = build_module_base(project_root, str(desc_path))
-
-            if base.paths.module in discovered_paths:
-                continue
-            discovered_paths.add(base.paths.module)
-
-            module_dir = Path(project_root) / base.paths.module if base.paths.module != '.' else Path(project_root)
-
-            workspaces = self._get_workspaces_from_npm(str(module_dir))
-            if workspaces and base.paths.module == '.':
-                continue
-
-            module_data = self._enrich_npm_module(base, project_root, has_root_package_json)
-            if module_data:
-                modules.append(module_data)
-
-        return modules
-
-    def _get_workspaces_from_npm(self, module_dir: str) -> list:
-        """Get workspaces from npm pkg get."""
-        result = execute_direct(
-            args='pkg get workspaces', command_key='npm:discover-workspaces', default_timeout=30, working_dir=module_dir
-        )
-
-        if result['status'] != 'success':
-            return []
-
-        try:
-            log_content = Path(result['log_file']).read_text().strip()
-            if not log_content or log_content == 'undefined' or log_content == '{}':
-                return []
-            data = json.loads(log_content)
-            if isinstance(data, list):
-                return data
-            elif isinstance(data, dict):
-                return data.get('packages', [])
-            return []
-        except (json.JSONDecodeError, OSError):
-            return []
-
-    def _enrich_npm_module(self, base, project_root: str, has_root_package_json: bool) -> dict | None:
-        """Enrich base module with npm-specific data using npm commands."""
+        Delegates to build-npm/scripts/_npm_cmd_discover.py which handles
+        workspaces, metadata enrichment, and canonical command generation.
+        """
         root = Path(project_root)
-        module_path = root / base.paths.module if base.paths.module != '.' else root
+        if not (root / PACKAGE_JSON).exists():
+            return []
 
-        pkg_metadata = self._get_npm_metadata(str(module_path))
-        if pkg_metadata is None:
-            return None
+        from _npm_cmd_discover import discover_npm_modules
 
-        name = pkg_metadata.get('name', base.name)
-
-        source_dirs_local = self._discover_npm_source_dirs(module_path, pkg_metadata)
-        test_dirs_local = self._discover_npm_test_dirs(module_path, pkg_metadata)
-
-        module_prefix = base.paths.module
-        if module_prefix == '.':
-            source_dirs = source_dirs_local
-            test_dirs = test_dirs_local
-        else:
-            source_dirs = [f'{module_prefix}/{d}' for d in source_dirs_local]
-            test_dirs = [f'{module_prefix}/{d}' for d in test_dirs_local]
-
-        paths = {
-            k: v
-            for k, v in {
-                'module': base.paths.module,
-                'descriptor': base.paths.descriptor,
-                'sources': source_dirs,
-                'tests': test_dirs,
-                'readme': base.paths.readme,
-            }.items()
-            if v is not None
-        }
-
-        metadata = {
-            k: v
-            for k, v in {
-                'type': pkg_metadata.get('type'),
-                'description': pkg_metadata.get('description'),
-            }.items()
-            if v is not None
-        }
-
-        packages = self._discover_npm_packages(module_path, pkg_metadata, base.paths.module)
-        dependencies = self._get_npm_dependencies(str(module_path))
-
-        source_files = self._count_js_files(module_path, source_dirs_local)
-        test_files = self._count_js_files(module_path, test_dirs_local)
-
-        scripts = pkg_metadata.get('scripts', {})
-        commands = self._build_npm_commands(base.paths.module, scripts, has_root_package_json)
-
-        return {
-            'name': name,
-            'build_systems': ['npm'],
-            'paths': paths,
-            'metadata': metadata,
-            'packages': packages,
-            'dependencies': dependencies,
-            'stats': {'source_files': source_files, 'test_files': test_files},
-            'commands': commands,
-        }
-
-    def _get_npm_metadata(self, module_dir: str) -> dict | None:
-        """Get module metadata from npm pkg get."""
-        result = execute_direct(
-            args='pkg get name description type scripts exports',
-            command_key='npm:discover-metadata',
-            default_timeout=30,
-            working_dir=module_dir,
-        )
-
-        if result['status'] != 'success':
-            return None
-
-        try:
-            log_content = Path(result['log_file']).read_text().strip()
-            if not log_content or log_content == '{}':
-                return {}
-            return json.loads(log_content)
-        except (json.JSONDecodeError, OSError):
-            return None
-
-    def _get_npm_dependencies(self, module_dir: str) -> list:
-        """Get dependencies from npm ls."""
-        result = execute_direct(
-            args='ls --json --depth=0',
-            command_key='npm:discover-dependencies',
-            default_timeout=60,
-            working_dir=module_dir,
-        )
-
-        dependencies = []
-
-        if result['status'] != 'success':
-            pass
-
-        try:
-            log_content = Path(result['log_file']).read_text().strip()
-            if not log_content or log_content == '{}':
-                return []
-
-            data = json.loads(log_content)
-            deps = data.get('dependencies', {})
-
-            for name, info in deps.items():
-                if isinstance(info, dict) and info.get('dev', False):
-                    scope = 'test'
-                elif isinstance(info, dict) and info.get('peer', False):
-                    scope = 'provided'
-                else:
-                    scope = 'compile'
-                dependencies.append(f'{name}:{scope}')
-
-        except (json.JSONDecodeError, OSError):
-            pass
-
-        return dependencies
-
-    def _discover_npm_source_dirs(self, module_path: Path, pkg: dict) -> list:
-        """Discover source directories for an npm module."""
-        source_dirs = []
-        for src_dir in ['src', 'lib', 'source']:
-            if (module_path / src_dir).exists():
-                source_dirs.append(src_dir)
-                break
-        return source_dirs
-
-    def _discover_npm_test_dirs(self, module_path: Path, pkg: dict) -> list:
-        """Discover test directories for an npm module."""
-        test_dirs = []
-        for test_dir in ['test', 'tests', '__tests__', 'spec']:
-            if (module_path / test_dir).exists():
-                test_dirs.append(test_dir)
-
-        jest_config = pkg.get('jest', {})
-        if isinstance(jest_config, dict) and not test_dirs:
-            test_match = jest_config.get('testMatch', [])
-            for pattern in test_match:
-                if '__tests__' in pattern:
-                    test_dirs.append('__tests__')
-                    break
-
-        return test_dirs
-
-    def _discover_npm_packages(self, module_path: Path, pkg: dict, relative_path: str) -> dict:
-        """Discover npm packages from exports or directories."""
-        packages = {}
-        module_rel = relative_path if relative_path else '.'
-
-        exports = pkg.get('exports', {})
-        if isinstance(exports, dict):
-            for export_key, export_value in exports.items():
-                if export_key == '.' or not export_key.startswith('./'):
-                    continue
-                pkg_name = export_key[2:]
-                if pkg_name:
-                    export_path = export_value if isinstance(export_value, str) else None
-                    pkg_path = f'{module_rel}/src/{pkg_name}' if module_rel != '.' else f'src/{pkg_name}'
-                    pkg_entry: dict = {'path': pkg_path}
-                    if export_path:
-                        pkg_entry['exports'] = export_key
-                    pkg_dir = module_path / 'src' / pkg_name
-                    if pkg_dir.exists():
-                        direct_files = sorted(
-                            f.name for f in pkg_dir.iterdir()
-                            if f.is_file() and f.suffix in {'.js', '.ts', '.mjs', '.cjs'}
-                            and not f.name.endswith('.d.ts')
-                        )
-                        if direct_files:
-                            pkg_entry['files'] = direct_files
-                    packages[pkg_name] = pkg_entry
-
-        if not packages:
-            for src_dir_name in ['src', 'lib']:
-                src_dir = module_path / src_dir_name
-                if src_dir.exists() and src_dir.is_dir():
-                    for subdir in src_dir.iterdir():
-                        if subdir.is_dir() and not subdir.name.startswith('.'):
-                            pkg_name = subdir.name
-                            if module_rel != '.':
-                                pkg_path = f'{module_rel}/{src_dir_name}/{pkg_name}'
-                            else:
-                                pkg_path = f'{src_dir_name}/{pkg_name}'
-                            pkg_entry = {'path': pkg_path}
-                            direct_files = sorted(
-                                f.name for f in subdir.iterdir()
-                                if f.is_file() and f.suffix in {'.js', '.ts', '.mjs', '.cjs'}
-                                and not f.name.endswith('.d.ts')
-                            )
-                            if direct_files:
-                                pkg_entry['files'] = direct_files
-                            packages[pkg_name] = pkg_entry
-                    break
-
-        return packages
-
-    def _build_npm_commands(self, module_path: str, scripts: dict, has_root_package_json: bool = True) -> dict:
-        """Build canonical command mappings based on available scripts."""
-        commands = {}
-        base = 'python3 .plan/execute-script.py plan-marshall:build-npm:npm run'
-
-        if module_path == '.':
-            routing = ''
-        elif has_root_package_json:
-            routing = f' --workspace={module_path}'
-        else:
-            routing = f'--prefix {module_path} '
-
-        def _cmd(npm_cmd: str) -> str:
-            if routing.startswith('--prefix'):
-                return f'{routing}{npm_cmd}'
-            else:
-                return f'{npm_cmd}{routing}'
-
-        if 'clean' in scripts:
-            commands['clean'] = f'{base} --command-args "{_cmd("run clean")}"'
-
-        if 'build' in scripts:
-            commands['compile'] = f'{base} --command-args "{_cmd("run build")}"'
-
-        if 'test' in scripts:
-            commands['module-tests'] = f'{base} --command-args "{_cmd("test")}"'
-
-        if 'lint' in scripts:
-            commands['quality-gate'] = f'{base} --command-args "{_cmd("run lint")}"'
-
-        if 'build' in scripts and 'test' in scripts:
-            commands['verify'] = f'{base} --command-args "{_cmd("run build && npm test")}"'
-        elif 'test' in scripts:
-            commands['verify'] = f'{base} --command-args "{_cmd("test")}"'
-
-        return commands
-
-    def _count_js_files(self, module_path: Path, directories: list) -> int:
-        """Count JavaScript/TypeScript files in directories."""
-        count = 0
-        js_extensions = {'.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'}
-
-        for dir_name in directories:
-            dir_path = module_path / dir_name
-            if dir_path.exists():
-                for file in dir_path.rglob('*'):
-                    if file.is_file() and file.suffix in js_extensions:
-                        count += 1
-
-        return count
+        return discover_npm_modules(project_root)
 
     # =========================================================================
-    # Python Discovery (from pm-dev-python)
+    # Python Discovery (delegated to build-python)
     # =========================================================================
 
     def _discover_python(self, project_root: str) -> list:
-        """Discover Python modules via runtime inspection."""
+        """Discover Python modules via pyprojectx project analysis.
+
+        Delegates to build-python/scripts/_python_cmd_discover.py which handles
+        module detection, metadata extraction, and canonical command generation.
+        """
         root = Path(project_root)
-        pyproject = root / PYPROJECT_TOML
-
-        if not pyproject.exists():
+        if not (root / PYPROJECT_TOML).exists():
             return []
 
-        aliases = self._discover_python_aliases(pyproject)
-        if not aliases:
-            return []
+        from _python_cmd_discover import discover_python_modules
 
-        if not self._has_python_wrapper(root):
-            return []
-
-        commands = self._map_python_to_canonical(aliases)
-        return [self._build_python_root_module(project_root, commands)]
-
-    def _discover_python_aliases(self, pyproject: Path) -> dict:
-        """Parse [tool.pyprojectx.aliases] from pyproject.toml."""
-        try:
-            with open(pyproject, 'rb') as f:
-                data = tomllib.load(f)
-            aliases = data.get('tool', {}).get('pyprojectx', {}).get('aliases', {})
-            return dict(aliases) if isinstance(aliases, dict) else {}
-        except (OSError, tomllib.TOMLDecodeError):
-            return {}
-
-    def _has_python_wrapper(self, project_root: Path) -> bool:
-        """Check if pyprojectx wrapper exists."""
-        return bool(has_wrapper(project_root, 'pw', 'pw.bat'))
-
-    def _map_python_to_canonical(self, aliases: dict) -> dict:
-        """Map pyprojectx aliases to canonical command strings."""
-        base = 'python3 .plan/execute-script.py plan-marshall:build-python:python_build run'
-
-        CANONICAL_MAPPING = {
-            'compile': 'compile',
-            'test-compile': 'test-compile',
-            'module-tests': 'module-tests',
-            'quality-gate': 'quality-gate',
-            'verify': 'verify',
-            'clean': 'clean',
-            'coverage': 'coverage',
-        }
-
-        commands = {}
-        for canonical, alias_name in CANONICAL_MAPPING.items():
-            if alias_name in aliases:
-                commands[canonical] = f'{base} --command-args "{canonical}"'
-
-        return commands
-
-    def _build_python_root_module(self, project_root: str, commands: dict) -> dict:
-        """Build root module descriptor for Python project."""
-        root = Path(project_root)
-
-        source_dirs = []
-        for src_dir in ['src', 'marketplace/bundles', 'lib']:
-            if (root / src_dir).exists():
-                source_dirs.append(src_dir)
-
-        test_dirs = []
-        for test_dir in ['test', 'tests']:
-            if (root / test_dir).exists():
-                test_dirs.append(test_dir)
-
-        readme = None
-        for name in ['README.md', 'README', 'readme.md', 'Readme.md', 'README.adoc']:
-            if (root / name).exists():
-                readme = name
-                break
-
-        paths: dict = {
-            'module': '.',
-            'descriptor': PYPROJECT_TOML,
-            'sources': source_dirs,
-            'tests': test_dirs,
-        }
-        if readme:
-            paths['readme'] = readme
-
-        metadata = {
-            'build_tool': 'pyprojectx',
-            'package_manager': 'uv',
-        }
-
-        source_files = 0
-        for dir_name in source_dirs:
-            dir_path = root / dir_name
-            if dir_path.exists():
-                for file in dir_path.rglob('*.py'):
-                    if file.is_file():
-                        source_files += 1
-
-        test_files = 0
-        for dir_name in test_dirs:
-            dir_path = root / dir_name
-            if dir_path.exists():
-                for file in dir_path.rglob('*.py'):
-                    if file.is_file():
-                        test_files += 1
-
-        return {
-            'name': 'default',
-            'build_systems': ['python'],
-            'paths': paths,
-            'metadata': metadata,
-            'packages': {},
-            'dependencies': [],
-            'stats': {'source_files': source_files, 'test_files': test_files},
-            'commands': commands,
-        }
+        return discover_python_modules(project_root)

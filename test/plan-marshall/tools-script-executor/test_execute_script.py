@@ -1,12 +1,26 @@
 #!/usr/bin/env python3
 """Unit tests for execute-script.py executor (template)."""
 
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from conftest import _MARKETPLACE_SCRIPT_DIRS  # noqa: E402
+
+
+def _subprocess_env() -> dict[str, str]:
+    """Build environment with PYTHONPATH for subprocess calls."""
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
+    return env
+
 
 # Path to templates and scripts
 SKILL_DIR = (
@@ -34,6 +48,7 @@ def load_executor_module():
     )
     code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
+    code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
 
     # Add logging dir to path so plan_logging can be imported
     sys.path.insert(0, str(LOGGING_DIR))
@@ -197,14 +212,14 @@ print(json.dumps(sys.argv[1:]))
 def test_skip_logging_for_manage_log_success():
     """Skip logging for successful manage-log calls (avoids meta-logging noise)."""
     executor = load_executor_module()
-    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-log', exit_code=0)
+    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-logging', exit_code=0)
     assert result is True, 'Should skip logging for successful manage-log calls'
 
 
 def test_log_manage_log_on_error():
     """Log manage-log calls when they fail (errors should be logged)."""
     executor = load_executor_module()
-    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-log', exit_code=1)
+    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-logging', exit_code=1)
     assert result is False, 'Should log manage-log calls when they fail'
 
 
@@ -223,16 +238,18 @@ def test_log_normal_scripts_failure():
 
 
 # =============================================================================
-# TESTS: generate-executor.py script
+# TESTS: generate_executor.py script
 # =============================================================================
 
 
 def test_generate_script_help():
     """Generate script shows help."""
-    script_path = SCRIPTS_DIR / 'generate-executor.py'
+    script_path = SCRIPTS_DIR / 'generate_executor.py'
 
     if script_path.exists():
-        result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True)
+        result = subprocess.run(
+            ['python3', str(script_path), '--help'], capture_output=True, text=True, env=_subprocess_env()
+        )
 
         assert result.returncode == 0, f'Script failed: {result.stderr}'
         assert 'generate' in result.stdout, "Missing 'generate' subcommand in help"
@@ -243,7 +260,9 @@ def test_verify_script_help():
     script_path = SCRIPTS_DIR / 'verify-executor.py'
 
     if script_path.exists():
-        result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True)
+        result = subprocess.run(
+            ['python3', str(script_path), '--help'], capture_output=True, text=True, env=_subprocess_env()
+        )
 
         assert result.returncode == 0, f'Script failed: {result.stderr}'
         assert 'check' in result.stdout, "Missing 'check' subcommand in help"

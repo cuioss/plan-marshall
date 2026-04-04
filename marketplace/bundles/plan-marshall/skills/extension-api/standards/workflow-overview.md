@@ -10,11 +10,11 @@ Contract specification for the 6-phase workflow execution model.
 
 | Phase | Agent Call | Purpose | Output |
 |-------|------------|---------|--------|
-| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | status.toon, request.md, references.json |
+| **1-init** | `plan-phase-agent phase=1-init` | Initialize plan | status.json, request.md, references.json |
 | **2-refine** | `plan-phase-agent phase=2-refine` | Clarify request | Refined request with confidence score |
 | **3-outline** | `plan-phase-agent phase=3-outline` | Create solution outline | solution_outline.md |
 | **4-plan** | `plan-phase-agent phase=4-plan` | Decompose into tasks | TASK-*.toon |
-| **5-execute** | `plan-phase-agent phase=5-execute task_id=TASK-001` | Run implementation + verification | Modified + verified project files |
+| **5-execute** | `plan-phase-agent phase=5-execute task_number=1` | Run implementation + verification | Modified + verified project files |
 | **6-finalize** | `plan-phase-agent phase=6-finalize` | Commit, PR, automated review | Git commit, PR |
 
 ### Phase Transitions
@@ -25,7 +25,7 @@ Contract specification for the 6-phase workflow execution model.
 | 2-refine | 3-outline | Confidence threshold reached |
 | 3-outline | 4-plan | User approval of solution outline |
 | 4-plan | 5-execute | Auto-continue (unless `stop-after=4-plan`) |
-| 5-execute | 6-finalize | All tasks completed + verification passed |
+| 5-execute | 6-finalize | All tasks completed + verification passed (no remaining findings or all findings triaged) |
 | 5-execute | 5-execute | Findings detected → triage + create fix tasks |
 | 6-finalize | COMPLETE | Commit/PR done (or no findings) |
 | 6-finalize | 5-execute | Findings detected → create fix tasks |
@@ -253,7 +253,7 @@ recoverable	{true|false}
 
 ---
 
-## Related Documents
+## Related
 
 - `plan-marshall:phase-1-init/SKILL.md` - Init phase skill
 - `plan-marshall:phase-2-refine/SKILL.md` - Refine phase skill
@@ -262,6 +262,6 @@ recoverable	{true|false}
 - `plan-marshall:phase-5-execute/SKILL.md` - Execute phase skill
 - `plan-marshall:phase-6-finalize/SKILL.md` - Finalize phase skill
 - [extension-contract.md](extension-contract.md) - Extension mechanism
-- [deliverable-contract.md](../../manage-solution-outline/standards/deliverable-contract.md) - Deliverable structure
+- [solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) - Deliverable structure
 - [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure
 - [ref-workflow-architecture:artifacts](../../ref-workflow-architecture/standards/artifacts.md) - Artifact formats (TOON)

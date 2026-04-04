@@ -26,20 +26,96 @@ Output:
     JSON array of module objects conforming to module-discovery.md contract.
 """
 
-import argparse
-import json
 import re
-import sys
 from pathlib import Path
 
-# Add extension-api scripts to path for base library imports
-EXTENSION_API_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
+# Direct imports - executor sets up PYTHONPATH for cross-skill imports
+from _build_discover import (
+    build_module_base,
+    count_source_files,
+    discover_descriptors,
+    discover_packages,
+    discover_sources,
 )
-if str(EXTENSION_API_DIR) not in sys.path:
-    sys.path.insert(0, str(EXTENSION_API_DIR))
+from _build_shared import build_canonical_commands
+from _extension_constants import PROFILE_PATTERNS
 
-from extension_base import PROFILE_PATTERNS, build_module_base, discover_descriptors  # noqa: E402
+# =============================================================================
+# Profile Pipeline Utilities (Maven-specific — only Maven uses build profiles)
+# =============================================================================
+
+
+def filter_command_line_profiles(raw_profiles: list[dict]) -> list[dict]:
+    """Filter profiles to command-line activated only.
+
+    Removes profiles that are default-activated (Active: true in build tool output).
+    Only profiles with Active: false are kept — these require explicit activation.
+
+    Args:
+        raw_profiles: List of profile dicts with 'id' and 'is_active' fields.
+
+    Returns:
+        List of profile dicts with 'id' only (is_active removed).
+    """
+    return [{'id': p['id']} for p in raw_profiles if not p.get('is_active', False)]
+
+
+def filter_skip_profiles(profiles: list[dict], skip_list: list[str] | None) -> list[dict]:
+    """Filter out profiles in the skip list.
+
+    Args:
+        profiles: List of profile dicts with 'id' field.
+        skip_list: Profile IDs to exclude (None or empty keeps all).
+
+    Returns:
+        Filtered list of profile dicts.
+    """
+    if not skip_list:
+        return profiles
+    skip_set = {s.strip() for s in skip_list}
+    return [p for p in profiles if p['id'] not in skip_set]
+
+
+def _classify_profile(profile_id: str) -> str:
+    """Classify a profile ID to its canonical command name.
+
+    Args:
+        profile_id: The profile identifier (e.g., "pre-commit", "jacoco").
+
+    Returns:
+        Canonical command name (e.g., "quality-gate", "coverage") or "NO-MATCH-FOUND".
+    """
+    if profile_id in PROFILE_PATTERNS:
+        return PROFILE_PATTERNS[profile_id]  # type: ignore[no-any-return]
+    profile_lower = profile_id.lower()
+    for alias, canonical in PROFILE_PATTERNS.items():
+        if alias.lower() == profile_lower:
+            return canonical  # type: ignore[no-any-return]
+    return 'NO-MATCH-FOUND'
+
+
+def map_canonical_profiles(profiles: list[dict], explicit_mapping: dict[str, str] | None = None) -> list[dict]:
+    """Map profiles to canonical command names.
+
+    Resolution order:
+    1. Explicit mapping (from config) takes precedence
+    2. PROFILE_PATTERNS aliases from extension_base.py
+
+    Args:
+        profiles: List of profile dicts with 'id' field.
+        explicit_mapping: Dict mapping profile_id -> canonical (can be None).
+
+    Returns:
+        List of profile dicts with 'canonical' field added.
+    """
+    mapping = explicit_mapping or {}
+    result = []
+    for profile in profiles:
+        pid = profile['id']
+        canonical = mapping.get(pid) or _classify_profile(pid)
+        result.append({'id': pid, 'canonical': canonical})
+    return result
+
 
 # =============================================================================
 # Extension Defaults Keys (for config_defaults callback)
@@ -95,8 +171,15 @@ def discover_maven_modules(project_root: str) -> list:
         # Get all metadata from Maven (coordinates, profiles, dependencies)
         maven_data = _get_maven_metadata(pom_path.parent, root)
 
-        # Skip if Maven failed (no fallback - requires Maven for correct data)
+        # If Maven failed, return error-only structure (matches Gradle contract)
         if maven_data is None:
+            modules.append(
+                {
+                    'name': base.name,
+                    'build_systems': ['maven'],
+                    'error': 'Unable to retrieve metadata - Maven commands failed',
+                }
+            )
             continue
 
         # Build complete module data
@@ -134,22 +217,23 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
     profiles = maven_data.get('profiles', [])
     dependencies = maven_data.get('dependencies', [])
 
-    # Description from pom.xml (per spec: "description is optional - parse from pom.xml if present")
-    description = _get_description(pom_path)
+    # Description and parent from pom.xml (single read, per spec: not in dependency:tree)
+    pom_local = _parse_pom_local_metadata(pom_path)
+    description = pom_local['description']
 
-    # Source directories
-    sources = _discover_sources(module_path)
+    # Source directories (shared multi-language discovery)
+    sources = discover_sources(module_path)
     source_paths = [f'{relative_path}/{s}' if relative_path != '.' else s for s in sources['main']]
     test_paths = [f'{relative_path}/{t}' if relative_path != '.' else t for t in sources['test']]
 
-    # Packages
+    # Packages (shared multi-language package discovery)
     rel = relative_path if relative_path != '.' else ''
-    packages = _discover_packages(module_path, sources, rel)
-    test_packages = _discover_test_packages(module_path, sources, rel)
+    packages = discover_packages(module_path, sources.get('main', []), rel)
+    test_packages = discover_packages(module_path, sources.get('test', []), rel)
 
-    # Stats
-    source_files = _count_java_files(module_path, sources['main'])
-    test_files = _count_java_files(module_path, sources['test'])
+    # Stats (shared multi-language file counting)
+    source_files = count_source_files(module_path, sources['main'])
+    test_files = count_source_files(module_path, sources['test'])
 
     # Commands
     commands = _build_commands(
@@ -167,7 +251,7 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
         'group_id': group_id,
         'packaging': packaging,
         'description': description,
-        'parent': maven_data.get('parent'),
+        'parent': pom_local['parent'],
     }
     if profiles:
         metadata['profiles'] = profiles
@@ -191,34 +275,38 @@ def _build_module(base, pom_path: Path, project_root: Path, maven_data: dict) ->
     }
 
 
-def _get_description(pom_path: Path) -> str | None:
-    """Get description from pom.xml (per spec: parse from pom.xml if present)."""
-    content = pom_path.read_text()
-    # Skip description inside <parent> block
-    content_no_parent = re.sub(r'<parent>.*?</parent>', '', content, flags=re.DOTALL)
-    match = re.search(r'<description>([^<]+)</description>', content_no_parent)
-    return match.group(1).strip() if match else None
+def _parse_pom_local_metadata(pom_path: Path) -> dict:
+    """Extract description and parent from pom.xml in a single read.
 
+    These fields are not available from Maven commands (dependency:tree, etc.)
+    so they must be parsed from the POM file directly.
 
-def _get_parent(pom_path: Path) -> str | None:
-    """Get parent GAV from pom.xml (not available in dependency:tree).
+    Args:
+        pom_path: Path to pom.xml file.
 
     Returns:
-        Parent reference as 'groupId:artifactId' or None
+        Dict with 'description' (str|None) and 'parent' (str|None).
     """
     content = pom_path.read_text()
-    # Extract <parent> block
+
+    # Description: skip <parent> block to avoid matching parent's description
+    description = None
+    content_no_parent = re.sub(r'<parent>.*?</parent>', '', content, flags=re.DOTALL)
+    desc_match = re.search(r'<description>([^<]+)</description>', content_no_parent)
+    if desc_match:
+        description = desc_match.group(1).strip()
+
+    # Parent GAV
+    parent = None
     parent_match = re.search(r'<parent>(.*?)</parent>', content, flags=re.DOTALL)
-    if not parent_match:
-        return None
+    if parent_match:
+        parent_block = parent_match.group(1)
+        group_match = re.search(r'<groupId>([^<]+)</groupId>', parent_block)
+        artifact_match = re.search(r'<artifactId>([^<]+)</artifactId>', parent_block)
+        if group_match and artifact_match:
+            parent = f'{group_match.group(1).strip()}:{artifact_match.group(1).strip()}'
 
-    parent_block = parent_match.group(1)
-    group_match = re.search(r'<groupId>([^<]+)</groupId>', parent_block)
-    artifact_match = re.search(r'<artifactId>([^<]+)</artifactId>', parent_block)
-
-    if group_match and artifact_match:
-        return f'{group_match.group(1).strip()}:{artifact_match.group(1).strip()}'
-    return None
+    return {'description': description, 'parent': parent}
 
 
 # =============================================================================
@@ -268,8 +356,6 @@ def _parse_coordinates_from_maven_output(log_content: str) -> dict:
 # Profile Extraction (via Maven help:all-profiles)
 # =============================================================================
 
-# PROFILE_PATTERNS imported above from extension_base for canonical classification
-
 
 def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
     """Get coordinates, profiles and dependencies using Maven commands.
@@ -294,7 +380,6 @@ def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
             "artifact_id": str,
             "group_id": str,
             "packaging": str,
-            "parent": str | None,  # from pom.xml (per spec)
             "profiles": list,
             "dependencies": list
         }
@@ -336,14 +421,10 @@ def _get_maven_metadata(module_path: Path, project_root: Path) -> dict | None:
     # Apply profile pipeline: parse -> filter command-line -> skip -> map
     profiles = _apply_profile_pipeline(raw_profiles, str(project_root))
 
-    # Parent and description from pom.xml (per spec: not available in dependency:tree)
-    parent = _get_parent(pom_path)
-
     return {
         'artifact_id': coordinates.get('artifact_id'),
         'group_id': coordinates.get('group_id'),
         'packaging': coordinates.get('packaging'),
-        'parent': parent,
         'profiles': profiles,
         'dependencies': dependencies,
     }
@@ -368,11 +449,8 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
     from _config_core import ext_defaults_get
     from plan_logging import log_entry
 
-    log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] called with {len(raw_profiles)} raw profiles')
-
     # 1. Filter to command-line only (Active: false)
-    profiles = _filter_command_line_profiles(raw_profiles)
-    log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] After command-line filter: {len(profiles)} profiles')
+    profiles = filter_command_line_profiles(raw_profiles)
 
     # 2. Get skip list and mapping from configuration (if available)
     skip_list = None
@@ -381,9 +459,6 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
     skip_csv = ext_defaults_get(EXT_KEY_PROFILES_SKIP, project_root)
     if skip_csv:
         skip_list = [s.strip() for s in skip_csv.split(',')]
-        log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Loaded skip list from config: {skip_list}')
-    else:
-        log_entry('script', 'global', 'INFO', '[PROFILE-PIPELINE] No skip list configured in marshal.json')
 
     map_csv = ext_defaults_get(EXT_KEY_PROFILES_MAP, project_root)
     if map_csv:
@@ -392,24 +467,20 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
             if ':' in pair:
                 profile_id, canonical = pair.split(':', 1)
                 explicit_mapping[profile_id.strip()] = canonical.strip()
-        log_entry(
-            'script', 'global', 'INFO', f'[PROFILE-PIPELINE] Loaded explicit mapping from config: {explicit_mapping}'
-        )
-    else:
-        log_entry(
-            'script', 'global', 'INFO', '[PROFILE-PIPELINE] No explicit mapping configured in run-configuration.json'
-        )
 
     # 3. Apply skip list
-    before_skip = len(profiles)
-    profiles = _filter_skip_profiles(profiles, skip_list)
-    skipped_count = before_skip - len(profiles)
-    if skipped_count > 0:
-        log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Filtered out {skipped_count} profiles via skip list')
+    profiles = filter_skip_profiles(profiles, skip_list)
 
     # 4. Map to canonical names
-    profiles = _map_canonical_profiles(profiles, explicit_mapping)
-    log_entry('script', 'global', 'INFO', f'[PROFILE-PIPELINE] Final profile count: {len(profiles)}')
+    profiles = map_canonical_profiles(profiles, explicit_mapping)
+
+    log_entry(
+        'script',
+        'global',
+        'INFO',
+        f'[PROFILE-PIPELINE] {len(raw_profiles)} raw → {len(profiles)} mapped'
+        f' (skip={skip_list or "none"}, mapping={explicit_mapping or "none"})',
+    )
 
     return profiles
 
@@ -441,72 +512,6 @@ def _parse_profiles_from_maven_output(log_content: str) -> list:
         profiles.append({'id': profile_id, 'is_active': is_active})
 
     return profiles
-
-
-def _filter_command_line_profiles(raw_profiles: list) -> list:
-    """Filter profiles to command-line activated only.
-
-    Removes profiles that are default-activated (Active: true in Maven output).
-    Only profiles with Active: false are kept - these require explicit -P activation.
-
-    Args:
-        raw_profiles: List of profile dicts with id and is_active fields
-
-    Returns:
-        List of profile dicts with is_active field removed
-    """
-    return [{'id': p['id']} for p in raw_profiles if not p.get('is_active', False)]
-
-
-def _filter_skip_profiles(profiles: list, skip_list: list | None) -> list:
-    """Filter out profiles in the skip list.
-
-    Args:
-        profiles: List of profile dicts with id field
-        skip_list: List of profile IDs to exclude (None or empty keeps all)
-
-    Returns:
-        Filtered list of profile dicts
-    """
-    if not skip_list:
-        return profiles
-
-    # Normalize skip list entries (trim whitespace)
-    skip_set = {s.strip() for s in skip_list}
-
-    return [p for p in profiles if p['id'] not in skip_set]
-
-
-def _map_canonical_profiles(profiles: list, explicit_mapping: dict | None) -> list:
-    """Map profiles to canonical command names.
-
-    Resolution order:
-    1. Explicit mapping (from config) takes precedence
-    2. PROFILE_PATTERNS aliases from extension_base.py
-
-    Args:
-        profiles: List of profile dicts with id field
-        explicit_mapping: Dict mapping profile_id -> canonical (can be None)
-
-    Returns:
-        List of profile dicts with canonical field added
-    """
-    mapping = explicit_mapping or {}
-    result = []
-
-    for profile in profiles:
-        profile_id = profile['id']
-
-        # 1. Check explicit mapping first
-        if profile_id in mapping:
-            canonical = mapping[profile_id]
-        else:
-            # 2. Fall back to alias matching
-            canonical = _classify_profile(profile_id)
-
-        result.append({'id': profile_id, 'canonical': canonical})
-
-    return result
 
 
 def _parse_dependencies_from_maven_output(log_content: str) -> list:
@@ -547,133 +552,6 @@ def _parse_dependencies_from_maven_output(log_content: str) -> list:
     return dependencies
 
 
-def _classify_profile(profile_id: str) -> str:
-    """Classify a profile ID to its canonical command name.
-
-    Uses PROFILE_PATTERNS from extension_base.py which maps aliases to
-    canonical command names. Only exact matches are supported - no substring
-    or partial matching.
-
-    Args:
-        profile_id: The profile identifier (e.g., "pre-commit", "jacoco")
-
-    Returns:
-        Canonical command name (e.g., "quality-gate", "coverage") or "NO-MATCH-FOUND"
-    """
-    # PROFILE_PATTERNS is alias -> canonical (from extension_base.py)
-    # Exact match required - no substring matching
-    if profile_id in PROFILE_PATTERNS:
-        return PROFILE_PATTERNS[profile_id]  # type: ignore[no-any-return]
-
-    # Case-insensitive exact match
-    profile_lower = profile_id.lower()
-    for alias, canonical in PROFILE_PATTERNS.items():
-        if alias.lower() == profile_lower:
-            return canonical  # type: ignore[no-any-return]
-
-    return 'NO-MATCH-FOUND'
-
-
-# =============================================================================
-# Source Discovery
-# =============================================================================
-
-
-def _discover_sources(module_path: Path) -> dict:
-    """Discover source directories including resources.
-
-    Returns both code and resources directories:
-    - main: src/main/java, src/main/resources
-    - test: src/test/java, src/test/resources
-    """
-    sources: dict[str, list[str]] = {'main': [], 'test': []}
-
-    # Main sources
-    if (module_path / 'src' / 'main' / 'java').exists():
-        sources['main'].append('src/main/java')
-    if (module_path / 'src' / 'main' / 'resources').exists():
-        sources['main'].append('src/main/resources')
-
-    # Test sources
-    if (module_path / 'src' / 'test' / 'java').exists():
-        sources['test'].append('src/test/java')
-    if (module_path / 'src' / 'test' / 'resources').exists():
-        sources['test'].append('src/test/resources')
-
-    return sources
-
-
-def _discover_packages_from_dirs(
-    module_path: Path, source_dirs: list[str], relative_path: str
-) -> dict:
-    """Discover Java packages from a list of source directories.
-
-    Returns dict keyed by package name with path, optional package_info,
-    and optional files (sorted list of direct .java children).
-    """
-    packages = {}
-
-    for source_dir in source_dirs:
-        source_path = module_path / source_dir
-        if not source_path.exists():
-            continue
-
-        seen = set()
-        for java_file in source_path.rglob('*.java'):
-            pkg_dir = java_file.parent
-            pkg_name = str(pkg_dir.relative_to(source_path)).replace('/', '.').replace('\\', '.')
-
-            # Skip root "." package - files directly in source root are not valid packages
-            if pkg_name and pkg_name != '.' and pkg_name not in seen:
-                seen.add(pkg_name)
-
-                rel_path = str(pkg_dir.relative_to(module_path))
-                if relative_path:
-                    rel_path = f'{relative_path}/{rel_path}'
-
-                pkg_info: dict[str, str | list[str]] = {'path': rel_path}
-
-                # Check for package-info.java
-                info_file = pkg_dir / 'package-info.java'
-                if info_file.exists():
-                    info_path = str(info_file.relative_to(module_path))
-                    if relative_path:
-                        info_path = f'{relative_path}/{info_path}'
-                    pkg_info['package_info'] = info_path
-
-                # List direct .java files (not recursive — sub-package files belong to their own entry)
-                direct_files = sorted(
-                    f.name for f in pkg_dir.iterdir()
-                    if f.is_file() and f.suffix == '.java' and f.name != 'package-info.java'
-                )
-                if direct_files:
-                    pkg_info['files'] = direct_files
-
-                packages[pkg_name] = pkg_info
-
-    return packages
-
-
-def _discover_packages(module_path: Path, sources: dict, relative_path: str) -> dict:
-    """Discover Java packages as dict keyed by package name."""
-    return _discover_packages_from_dirs(module_path, sources.get('main', []), relative_path)
-
-
-def _discover_test_packages(module_path: Path, sources: dict, relative_path: str) -> dict:
-    """Discover Java test packages as dict keyed by package name."""
-    return _discover_packages_from_dirs(module_path, sources.get('test', []), relative_path)
-
-
-def _count_java_files(module_path: Path, source_dirs: list) -> int:
-    """Count Java files in source directories."""
-    count = 0
-    for src in source_dirs:
-        src_path = module_path / src
-        if src_path.exists():
-            count += len(list(src_path.rglob('*.java')))
-    return count
-
-
 # =============================================================================
 # Commands
 # =============================================================================
@@ -702,94 +580,40 @@ def _build_commands(
         profiles: List of profile dicts with id, canonical
         relative_path: Path relative to project root ("" or "." for root module)
     """
-    base = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run'
-    commands = {}
-    # Embed -pl in command-args for submodules, empty for root
+    skill = 'plan-marshall:build-maven:maven'
     is_root_module = not relative_path or relative_path == '.'
     pl_arg = '' if is_root_module else f' -pl {module_name}'
 
     # 1. Always: clean (all modules including pom)
-    commands['clean'] = f'{base} --command-args "clean{pl_arg}"'
+    cmd_map: dict[str, str] = {
+        'clean': f'clean{pl_arg}',
+        'quality-gate': f'verify{pl_arg}',
+        'verify': f'verify{pl_arg}',
+        'install': f'install{pl_arg}',
+    }
 
-    # 2. Always: quality-gate, verify, install (all modules including pom)
-    commands['quality-gate'] = f'{base} --command-args "verify{pl_arg}"'
-    commands['verify'] = f'{base} --command-args "verify{pl_arg}"'
-    commands['install'] = f'{base} --command-args "install{pl_arg}"'
-
-    # 3. Non-pom modules get additional commands
+    # 2. Non-pom modules get additional commands
     if packaging != 'pom':
-        commands['clean-install'] = f'{base} --command-args "clean install{pl_arg}"'
-        commands['package'] = f'{base} --command-args "package{pl_arg}"'
+        cmd_map['clean-install'] = f'clean install{pl_arg}'
+        cmd_map['package'] = f'package{pl_arg}'
 
-        # 4. Source-conditional: compile
         if has_sources:
-            commands['compile'] = f'{base} --command-args "compile{pl_arg}"'
+            cmd_map['compile'] = f'compile{pl_arg}'
 
-        # 5. Test-conditional: test-compile, module-tests
         if has_tests:
-            commands['test-compile'] = f'{base} --command-args "test-compile{pl_arg}"'
-            commands['module-tests'] = f'{base} --command-args "test{pl_arg}"'
+            cmd_map['test-compile'] = f'test-compile{pl_arg}'
+            cmd_map['module-tests'] = f'test{pl_arg}'
 
-    # 6. Profile-based commands (integration-tests, coverage, benchmark)
+    # 3. Profile-based commands (integration-tests, coverage, benchmark)
     for profile in profiles or []:
         canonical = profile.get('canonical')
         profile_id = profile.get('id')
 
         if canonical and profile_id:
-            # quality-gate enhancement with profile
+            profile_args = f'verify -P{profile_id}{pl_arg}'
             if canonical == 'quality-gate':
-                cmd = _generate_profile_command(profile_id, module_name, relative_path)
-                if cmd:
-                    commands['quality-gate'] = cmd
-            # Additional profile-based commands
+                cmd_map['quality-gate'] = profile_args
             elif canonical in ['integration-tests', 'coverage', 'benchmark']:
-                cmd = _generate_profile_command(profile_id, module_name, relative_path)
-                if cmd:
-                    commands[canonical] = cmd
+                cmd_map[canonical] = profile_args
 
-    return commands
-
-
-def _generate_profile_command(profile_id: str, module_name: str, relative_path: str) -> str:
-    """Generate command for a profile.
-
-    Note: Commands do NOT include clean goal. Run clean separately if needed.
-
-    Args:
-        profile_id: Maven profile ID
-        module_name: Module artifact ID
-        relative_path: Path relative to project root ("" or "." for root module)
-    """
-    base = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run'
-
-    # Embed -pl in command-args for submodules, empty for root
-    is_root_module = not relative_path or relative_path == '.'
-    pl_arg = '' if is_root_module else f' -pl {module_name}'
-
-    # Profile activation via -P flag (no clean goal), module via -pl
-    return f'{base} --command-args "verify -P{profile_id}{pl_arg}"'
-
-
-# =============================================================================
-# CLI
-# =============================================================================
-
-
-def main():
-    parser = argparse.ArgumentParser(description='Maven module discovery')
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # discover subcommand
-    discover_parser = subparsers.add_parser('discover', help='Discover Maven modules')
-    discover_parser.add_argument('--root', required=True, help='Project root directory')
-    discover_parser.add_argument('--format', choices=['json'], default='json', help='Output format')
-
-    args = parser.parse_args()
-
-    if args.command == 'discover':
-        modules = discover_maven_modules(args.root)
-        print(json.dumps(modules, indent=2))
-
-
-if __name__ == '__main__':
-    main()
+    return build_canonical_commands(skill, cmd_map)

@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, add_issue_deduped  # type: ignore[import-not-found]
 
 # TAP summary patterns
 TESTS_PATTERN = re.compile(r'^#\s*tests\s+(\d+)', re.MULTILINE)
@@ -61,7 +61,8 @@ def _extract_issues(content: str) -> list[Issue]:
     Returns:
         List of Issue dataclasses with test failures.
     """
-    issues = []
+    issues: list[Issue] = []
+    seen: set[str] = set()
     lines = content.split('\n')
     i = 0
 
@@ -125,15 +126,15 @@ def _extract_issues(content: str) -> list[Issue]:
 
             message = error_msg if error_msg else test_name
 
-            issues.append(
-                Issue(
-                    file=file_path,
-                    line=line_num,
-                    message=message,
-                    severity=SEVERITY_ERROR,
-                    category='test_failure',
-                    stack_trace=stack_trace,
-                )
+            add_issue_deduped(
+                issues,
+                seen,
+                file=file_path,
+                line=line_num,
+                message=message,
+                severity=SEVERITY_ERROR,
+                category='test_failure',
+                stack_trace=stack_trace,
             )
         else:
             i += 1

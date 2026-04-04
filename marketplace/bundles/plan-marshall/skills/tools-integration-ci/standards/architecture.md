@@ -102,6 +102,11 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {domain} {
 | **Testing** | Test each provider independently |
 | **Router simplicity** | Just reads config and imports |
 
+### Provider Implementation Details
+
+- [github-impl.md](github-impl.md) — GitHub-specific CLI mappings and field names
+- [gitlab-impl.md](gitlab-impl.md) — GitLab-specific CLI mappings and field names
+
 ---
 
 ## Shared Infrastructure
@@ -110,9 +115,12 @@ All CI operations share:
 
 | Component | Purpose |
 |-----------|---------|
+| **ci_base.py** | CLI runner, auth, parser, polling framework, elapsed computation |
 | **Timeout handling** | `plan-marshall:manage-run-config` for adaptive timeouts |
 | **Output format** | TOON for all script outputs |
 | **Two-layer execution** | Outer Bash timeout + inner shell timeout |
+
+See [wait-pattern.md](../../tools-script-executor/standards/wait-pattern.md) for the await_until polling utility.
 
 ---
 

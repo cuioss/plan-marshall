@@ -96,8 +96,7 @@ def test_validate_command_missing_workflow_section():
     """Validate command without WORKFLOW section is invalid."""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write(
-            '---\nname: no-workflow\ndescription: Missing workflow\n---\n\n'
-            '# Command\n\n## USAGE EXAMPLES\n\nExample.\n'
+            '---\nname: no-workflow\ndescription: Missing workflow\n---\n\n# Command\n\n## USAGE EXAMPLES\n\nExample.\n'
         )
         f.flush()
         result = run_script(SCRIPT_PATH, 'validate', '--file', f.name, '--type', 'command')

@@ -4,10 +4,9 @@
     "build_status": "SUCCESS",
     "issues": [],
     "summary": {
-      "compilation_errors": 0,
-      "test_failures": 0,
-      "javadoc_warnings": 0,
-      "total_issues": 0
+      "total_issues": 0,
+      "total_errors": 0,
+      "total_warnings": 0
     }
   },
   "metrics": {

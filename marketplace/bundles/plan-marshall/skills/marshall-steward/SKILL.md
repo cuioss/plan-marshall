@@ -74,24 +74,35 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 
 ## Scripts
 
+### Own Scripts (bootstrap-capable, run before executor exists)
+
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| determine-mode | `plan-marshall:marshall-steward:determine-mode` | Determine wizard vs menu mode |
-| gitignore-setup | `plan-marshall:marshall-steward:gitignore-setup` | Configure .gitignore for .plan/ |
-| cleanup | `plan-marshall:manage-run-config:cleanup` | Clean temp, logs, archived-plans, memory (delegated to run-config) |
-| ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection (delegated to tools-integration-ci) |
+| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode |
+| gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
+| bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/marshall-state.toon` |
+
+### Delegated Scripts (require executor)
+
+| Script | Notation | Purpose |
+|--------|----------|---------|
+| generate-executor | `plan-marshall:tools-script-executor:generate_executor` | Executor generation |
 | manage-config | `plan-marshall:manage-config:manage-config` | Project-level marshal.json CRUD |
-| scan-marketplace-inventory | `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory` | Script discovery |
-| tools-permission-doctor | `plan-marshall:tools-permission-doctor:permission-doctor` | Permission analysis |
-| tools-permission-fix | `plan-marshall:tools-permission-fix:permission-fix` | Permission fixes |
-| generate-executor | `plan-marshall:tools-script-executor:generate-executor` | Executor generation |
+| run_config | `plan-marshall:manage-run-config:run_config` | Clean temp, logs, archived-plans, memory |
+| ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection |
+| permission_doctor | `plan-marshall:tools-permission-doctor:permission_doctor` | Permission analysis |
+| permission_fix | `plan-marshall:tools-permission-fix:permission_fix` | Permission fixes |
+| extension_discovery | `plan-marshall:extension-api:extension_discovery` | Extension config defaults |
 
 ---
 
 ## Prerequisites
 
-This skill requires `${PLUGIN_ROOT}` to be set by the invoking command (e.g., `/marshall-steward`).
-The plugin root is detected via `bootstrap-plugin.py` and cached in `.plan/marshall-state.toon`.
+The `/marshall-steward` command must set `${PLUGIN_ROOT}` before loading this skill:
+
+1. Run `bootstrap_plugin.py get-root` (direct Python call with glob) to detect plugin root
+2. Set `${PLUGIN_ROOT}` to the returned path
+3. The plugin root is cached in `.plan/marshall-state.toon` for subsequent calls
 
 ---
 
@@ -102,7 +113,7 @@ Determine whether to run wizard or menu based on existing files.
 **BOOTSTRAP**: Since execute-script.py may not exist yet, use DIRECT Python call with glob:
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine-mode.py mode
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py mode
 ```
 
 **Output (TOON)**:
@@ -121,7 +132,7 @@ reason	executor_missing
 
 ### Check for `--wizard` Flag
 
-If `--wizard` flag provided, force wizard regardless of determine-mode result:
+If `--wizard` flag provided, force wizard regardless of determine_mode result:
 ```
 Read references/wizard-flow.md
 ```
@@ -178,7 +189,7 @@ When routing indicates to load a reference:
 ```
 Read references/{file}.md
 ```
-Then execute the workflow described in that file.
+Then execute the workflow described in that file. Each reference file is loaded in full when its menu path is chosen — only one reference is active at a time.
 
 ---
 
@@ -186,12 +197,14 @@ Then execute the workflow described in that file.
 
 | Reference | Purpose | Load When |
 |-----------|---------|-----------|
-| `wizard-flow.md` | First-run wizard steps 1-11 | mode=wizard or --wizard flag |
+| `wizard-flow.md` | First-run wizard steps 1-16 | mode=wizard or --wizard flag |
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains | Menu option 3 |
-| `output-format.md` | TOON output standards | Reference for output formatting |
+| `shared-settings.md` | **DEPRECATED** — Plan phases, review gates, quality pipelines now delegate to `manage-config` | Retained for transition reference only |
 | `error-handling.md` | Error types and recovery | On error conditions |
+
+> **Note**: `shared-doc-check.md` content has been inlined into `wizard-flow.md` and `menu-maintenance.md`. For TOON output format, see `plan-marshall:ref-toon-format`.
 
 ---
 

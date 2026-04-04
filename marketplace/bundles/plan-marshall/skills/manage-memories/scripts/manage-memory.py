@@ -5,47 +5,39 @@ Manage the .plan/memory/ layer for session persistence.
 Provides CRUD operations for memory files organized by category:
 context, decisions, interfaces.
 
-Output: JSON to stdout with operation results.
+Output: TOON to stdout with operation results.
 """
 
 import argparse
 import json
 import re
-import sys
 import warnings
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
-from file_ops import base_path  # type: ignore[import-not-found]
+from constants import DIR_MEMORIES  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    base_path,
+    now_utc_iso,
+    output_toon,
+    output_toon_error,
+    parse_duration,  # type: ignore[import-not-found]
+    read_json,
+    safe_main,
+    write_json,
+)
+from file_ops import output_success as _output_success
+from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 
 # Get memory base path from base_path
-MEMORY_BASE = base_path('memory')
-CATEGORIES = ['context']
-
-
-def parse_duration(duration_str: str) -> timedelta:
-    """Parse duration string like '7d', '24h', '30m' into timedelta."""
-    match = re.match(r'^(\d+)([dhm])$', duration_str.lower())
-    if not match:
-        raise ValueError(f"Invalid duration format: {duration_str}. Use format like '7d', '24h', '30m'")
-
-    value = int(match.group(1))
-    unit = match.group(2)
-
-    if unit == 'd':
-        return timedelta(days=value)
-    elif unit == 'h':
-        return timedelta(hours=value)
-    elif unit == 'm':
-        return timedelta(minutes=value)
-
-    raise ValueError(f'Unknown duration unit: {unit}')
+MEMORY_BASE = base_path(DIR_MEMORIES)
+CATEGORIES = ('context',)
 
 
 def get_memory_path(category: str, identifier: str | None = None) -> Path:
@@ -68,7 +60,7 @@ def create_memory_envelope(category: str, identifier: str, content: Any, session
     """Create memory file with metadata envelope."""
     return {
         'meta': {
-            'created': datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
+            'created': now_utc_iso(),
             'category': category,
             'summary': identifier,
             'session_id': session_id,
@@ -79,17 +71,13 @@ def create_memory_envelope(category: str, identifier: str, content: Any, session
 
 def read_memory_file(file_path: Path) -> dict:
     """Read and parse a memory file."""
-    with open(file_path, encoding='utf-8') as f:
-        data: dict = json.load(f)
-        return data
+    result: dict = read_json(file_path)
+    return result
 
 
 def write_memory_file(file_path: Path, data: dict) -> None:
     """Write memory file with proper formatting."""
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.write('\n')
+    write_json(file_path, data)
 
 
 def get_file_info(file_path: Path) -> dict:
@@ -112,16 +100,14 @@ def get_file_info(file_path: Path) -> dict:
 
 
 def output_success(operation: str, **kwargs) -> None:
-    """Output success result as JSON."""
-    result = {'success': True, 'operation': operation}
-    result.update(kwargs)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    """Output success result as TOON to stdout."""
+    _output_success(operation, **kwargs)
 
 
-def output_error(operation: str, error: str) -> None:
-    """Output error result as JSON to stderr."""
-    result = {'success': False, 'operation': operation, 'error': error}
-    print(json.dumps(result, indent=2), file=sys.stderr)
+def output_error(operation: str, error: str) -> int:
+    """Output error result as TOON and return 1."""
+    output_toon_error(operation, error)
+    return 1
 
 
 def cmd_save(args) -> int:
@@ -177,7 +163,7 @@ def cmd_list(args) -> int:
         if args.category:
             categories = [args.category]
         else:
-            categories = CATEGORIES
+            categories = list(CATEGORIES)
 
         for category in categories:
             cat_path = MEMORY_BASE / category
@@ -191,10 +177,11 @@ def cmd_list(args) -> int:
                 if args.since:
                     try:
                         duration = parse_duration(args.since)
-                        cutoff = datetime.now(UTC).replace(tzinfo=None) - duration
+                        cutoff = datetime.now(UTC) - duration
                         created_str = info.get('created', '')
                         if created_str:
-                            created = datetime.fromisoformat(created_str.rstrip('Z'))
+                            # Parse ISO timestamp; append UTC if naive (Z-suffix stripped)
+                            created = datetime.fromisoformat(created_str.rstrip('Z')).replace(tzinfo=UTC)
                             if created < cutoff:
                                 continue
                     except (ValueError, TypeError):
@@ -246,7 +233,8 @@ def cmd_cleanup(args) -> int:
     """Remove old memory files based on age."""
     try:
         duration = parse_duration(args.older_than)
-        cutoff = datetime.now(UTC).replace(tzinfo=None) - duration
+        cutoff = datetime.now(UTC) - duration
+        dry_run = getattr(args, 'dry_run', False)
 
         removed = []
         categories = [args.category] if args.category else CATEGORIES
@@ -261,40 +249,33 @@ def cmd_cleanup(args) -> int:
                     data = read_memory_file(file_path)
                     created_str = data.get('meta', {}).get('created', '')
                     if created_str:
-                        created = datetime.fromisoformat(created_str.rstrip('Z'))
+                        created = datetime.fromisoformat(created_str.rstrip('Z')).replace(tzinfo=UTC)
                         if created < cutoff:
-                            file_path.unlink()
+                            if not dry_run:
+                                file_path.unlink()
                             removed.append(str(file_path))
                 except (json.JSONDecodeError, ValueError, KeyError):
                     # If we can't read the file, check file modification time
                     stat = file_path.stat()
                     if datetime.fromtimestamp(stat.st_mtime) < cutoff:
-                        file_path.unlink()
+                        if not dry_run:
+                            file_path.unlink()
                         removed.append(str(file_path))
 
-        output_success('cleanup', older_than=args.older_than, removed_count=len(removed), removed=removed)
+        status = 'dry_run' if dry_run else 'success'
+        output_toon(
+            {
+                'status': status,
+                'operation': 'cleanup',
+                'older_than': args.older_than,
+                'removed_count': len(removed),
+                'removed': removed,
+            }
+        )
         return 0
     except Exception as e:
         output_error('cleanup', str(e))
         return 1
-
-
-def check_required_fields(data: dict, required: list[str]) -> tuple:
-    """Check if required fields exist."""
-    missing = [f for f in required if f not in data]
-    return len(missing) == 0, missing
-
-
-def check_field_type(data: dict, field: str, expected_type: type) -> tuple:
-    """Check if field has expected type."""
-    if field not in data:
-        return False, f"Field '{field}' not found"
-
-    actual = type(data[field])
-    if actual != expected_type:
-        return False, f'Expected {expected_type.__name__}, got {actual.__name__}'
-
-    return True, f"Field '{field}' is {expected_type.__name__}"
 
 
 def validate_memory_format(data: dict) -> list[dict]:
@@ -361,13 +342,14 @@ def cmd_validate(args) -> int:
             data = read_memory_file(file_path)
         except json.JSONDecodeError as e:
             result = {
+                'status': 'success',
                 'success': True,
                 'valid': False,
                 'file': str(file_path),
                 'format': 'memory',
                 'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
             }
-            print(json.dumps(result, indent=2, ensure_ascii=False))
+            output_toon(result)
             return 0
 
         # Add JSON syntax check
@@ -379,15 +361,23 @@ def cmd_validate(args) -> int:
         # Determine overall validity
         valid = all(c.get('passed', True) for c in checks)
 
-        result = {'success': True, 'valid': valid, 'file': str(file_path), 'format': 'memory', 'checks': checks}
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        result = {
+            'status': 'success',
+            'success': True,
+            'valid': valid,
+            'file': str(file_path),
+            'format': 'memory',
+            'checks': checks,
+        }
+        output_toon(result)
         return 0
     except Exception as e:
         output_error('validate', str(e))
         return 1
 
 
-def main():
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Manage .plan/memory/ layer for session persistence',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -447,6 +437,9 @@ Examples:
     p_cleanup.add_argument(
         '--older-than', required=True, dest='older_than', help='Remove files older than (e.g., 7d, 24h)'
     )
+    p_cleanup.add_argument(
+        '--dry-run', action='store_true', dest='dry_run', help='Show what would be removed without removing'
+    )
     p_cleanup.set_defaults(func=cmd_cleanup)
 
     # validate command
@@ -460,8 +453,8 @@ Examples:
         parser.print_help()
         return 1
 
-    return args.func(args)
+    return args.func(args) or 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

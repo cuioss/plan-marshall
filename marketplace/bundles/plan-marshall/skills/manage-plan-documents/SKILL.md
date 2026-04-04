@@ -2,6 +2,7 @@
 name: manage-plan-documents
 description: Manage request documents within plan directories with schema validation and template-based creation
 user-invocable: false
+scope: plan
 ---
 
 # Manage Plan Documents Skill
@@ -10,36 +11,11 @@ Domain-specific document management for request documents. Provides logical docu
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify request.md directly; use the script API for create, update, and clarify operations
-- Do not invent script arguments not listed in the Operations section
-- Do not skip the noun-verb command pattern (`request {verb}`)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents {command} {args}`
-- Document operations follow the noun-verb pattern (e.g., `request create`, `request read`)
+**Skill-specific constraints:**
+- Document operations follow the noun-verb pattern (`request {verb}`)
 - For solution outlines, use `plan-marshall:manage-solution-outline` instead
-
-## What This Skill Provides
-
-- Logical document names (abstract from physical filenames)
-- Declarative document type definitions
-- Template-based document creation
-- Section-based reading and updates
-- TOON output format
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Creating request documents (via template)
-- Reading request documents with structured output
-- Updating specific sections of request documents
-
-**For solution outlines**, use the `plan-marshall:manage-solution-outline` skill instead.
-
----
 
 ## Document Types
 
@@ -138,7 +114,7 @@ content:
 - `--raw`: Output raw markdown content
 - `--section {section_name}`: Read specific section only (e.g., `clarified_request`)
 
-**Fallback behavior**: When `--section clarified_request` is used but the section doesn't exist, automatically falls back to `original_input`. The response includes both `section` (what was actually returned) and `requested_section` (what was requested). This simplifies callers who want the clarified request if available, otherwise the original input.
+**Fallback behavior**: When `--section clarified_request` is used but the section doesn't exist, automatically falls back to `original_input`. The response includes both `section` (what was actually returned) and `requested_section` (what was requested). This simplifies callers who want the clarified request if available, otherwise the original input. Other sections do NOT have fallback behavior — requesting a non-existent section returns `status: error, error: section_not_found`.
 
 **Read specific section:**
 
@@ -216,7 +192,9 @@ A: Exclude workflow JSON - Only include explicit ## Output sections" \
 | `--clarifications` | No | Q&A clarifications content |
 | `--clarified-request` | No | Synthesized clarified request |
 
-At least one of `--clarifications` or `--clarified-request` must be provided.
+At least one of `--clarifications` or `--clarified-request` must be provided. If neither is given, returns `status: error, error: missing_argument`.
+
+**Idempotency**: Calling `clarify` multiple times appends to the Clarifications section and replaces the Clarified Request section. This supports iterative refinement during phase-2-refine.
 
 **Output:**
 
@@ -323,81 +301,38 @@ types:
 
 ---
 
-## Error Handling
+## Error Responses
 
-```toon
-status: error
-plan_id: my-feature
-document: request
-error: document_not_found
-message: Request document does not exist for plan my-feature
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
-suggestions[2]:
-- Create the request document first
-- Check plan_id spelling
-```
-
----
-
-## Scripts
-
-**Script**: `plan-marshall:manage-plan-documents:manage-plan-documents`
-
-| Command | Parameters | Description |
-|---------|------------|-------------|
-| `request create` | `--plan-id --title --source --body [--source-id] [--context] [--force]` | Create request document |
-| `request read` | `--plan-id [--raw] [--section]` | Read document (parsed, raw, or specific section) |
-| `request update` | `--plan-id --section --content` | Update specific section |
-| `request clarify` | `--plan-id [--clarifications] [--clarified-request]` | Add clarifications and clarified request |
-| `request exists` | `--plan-id` | Check if document exists |
-| `request remove` | `--plan-id` | Delete document |
-| `list-types` | (none) | List available document types |
+| Error Code | Cause |
+|------------|-------|
+| `document_not_found` | Document doesn't exist (read, update, clarify, remove) |
+| `invalid_plan_id` | plan_id format invalid |
+| `file_exists` | Document already exists on create (use `--force`) |
+| `section_not_found` | Requested section doesn't exist (except `clarified_request` which falls back) |
+| `missing_argument` | Required parameter missing (clarify without either flag) |
+| `validation_error` | Field validation failed on create |
 
 ---
 
-## Architecture
+## Integration
 
-See [standards/architecture.md](standards/architecture.md) for:
-- Declarative engine design
-- Document definition schema
-- Adding new document types
+### Producers
 
-See [standards/adding-document-types.md](standards/adding-document-types.md) for:
-- Step-by-step guide to add new types
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | request create | Create initial request document |
+| `phase-2-refine` | request clarify, request update | Add clarifications and update sections |
 
-## Related Skills
+### Consumers
 
-- `plan-marshall:manage-solution-outline` - Solution outline management (validate, read, list-deliverables)
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-3-outline` | request read | Read request to design solution |
+| `phase-4-plan` | request read | Read request for task planning context |
 
----
+## Related
 
-## Integration Points
-
-### With plan-init
-
-Plan initialization creates request document:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  request create \
-  --plan-id $PLAN_ID \
-  --title "$TITLE" \
-  --source description \
-  --body "$BODY"
-```
-
-### With phase-3-outline skill
-
-The thin agent reads the request document:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  request read \
-  --plan-id $PLAN_ID
-```
-
-Then write solution outline using `plan-marshall:manage-solution-outline` skill.
-
-### With file_ops
-
-This skill uses `file_ops` utilities (`atomic_write_file`, `base_path`) directly for file I/O. Use manage-files for non-typed documents.
+- `manage-solution-outline` — Solution outline management (validate, read, list-deliverables)
+- `manage-files` — Generic file operations for non-typed plan documents

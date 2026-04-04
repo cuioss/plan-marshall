@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, add_issue_deduped  # type: ignore[import-not-found]
 
 # Jest failure header pattern
 FAIL_PATTERN = re.compile(r'^\s*FAIL\s+(.+)$', re.MULTILINE)
@@ -61,13 +61,14 @@ def _extract_issues(content: str) -> list[Issue]:
         List of Issue dataclasses with test failures.
     """
     issues: list[Issue] = []
+    seen: set[str] = set()
     lines = content.split('\n')
     current_file = None
     current_test = None
     collecting_stack = False
     stack_lines = []
 
-    for _i, line in enumerate(lines):
+    for line in lines:
         # Check for FAIL marker
         fail_match = FAIL_PATTERN.match(line)
         if fail_match:
@@ -78,7 +79,7 @@ def _extract_issues(content: str) -> list[Issue]:
         if line.strip().startswith('●'):
             # Save previous test if collecting
             if current_test and stack_lines:
-                _add_issue(issues, current_file, current_test, stack_lines)
+                _add_issue(issues, seen, current_file, current_test, stack_lines)
                 stack_lines = []
 
             current_test = line.strip()[1:].strip()  # Remove ● prefix
@@ -95,23 +96,24 @@ def _extract_issues(content: str) -> list[Issue]:
             elif not stripped:
                 # Empty line might end the stack trace
                 if stack_lines and any('at ' in sl for sl in stack_lines) and current_test:
-                    _add_issue(issues, current_file, current_test, stack_lines)
+                    _add_issue(issues, seen, current_file, current_test, stack_lines)
                     stack_lines = []
                     collecting_stack = False
                     current_test = None
 
     # Handle final test if still collecting
     if current_test and stack_lines:
-        _add_issue(issues, current_file, current_test, stack_lines)
+        _add_issue(issues, seen, current_file, current_test, stack_lines)
 
     return issues
 
 
-def _add_issue(issues: list[Issue], file: str | None, test: str, stack_lines: list[str]) -> None:
-    """Add a test failure issue.
+def _add_issue(issues: list[Issue], seen: set[str], file: str | None, test: str, stack_lines: list[str]) -> None:
+    """Add a test failure issue with deduplication.
 
     Args:
         issues: List to append to.
+        seen: Dedup key set.
         file: Test file path.
         test: Test name.
         stack_lines: Stack trace lines.
@@ -126,15 +128,15 @@ def _add_issue(issues: list[Issue], file: str | None, test: str, stack_lines: li
 
     stack_trace = '\n'.join(stack_lines) if stack_lines else None
 
-    issues.append(
-        Issue(
-            file=file if file is not None else 'unknown',
-            line=line_num,
-            message=test,
-            severity=SEVERITY_ERROR,
-            category='test_failure',
-            stack_trace=stack_trace,
-        )
+    add_issue_deduped(
+        issues,
+        seen,
+        file=file,
+        line=line_num,
+        message=test,
+        severity=SEVERITY_ERROR,
+        category='test_failure',
+        stack_trace=stack_trace,
     )
 
 

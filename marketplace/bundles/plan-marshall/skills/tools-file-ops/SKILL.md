@@ -6,7 +6,7 @@ user-invocable: false
 
 # File Operations Base Skill
 
-**Role**: Shared Python module providing atomic file operations, metadata parsing, JSON output helpers, and base directory configuration for workflow scripts.
+**Role**: Shared Python module providing atomic file operations, metadata parsing, TOON output helpers, and base directory configuration for workflow scripts.
 
 ## Enforcement
 
@@ -79,37 +79,45 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 - **Output**: None
 - **Note**: If path looks like file, creates parent directory
 
-**JSON Output Helpers**
+**TOON Output Helpers**
 
 **6. output_success(operation, **kwargs)**
-- **Purpose**: Print JSON success output to stdout
+- **Purpose**: Print TOON success output to stdout
 - **Input**: `operation` (str), additional kwargs
-- **Output**: Prints JSON to stdout
+- **Output**: Prints TOON to stdout
 
 **7. output_error(operation, error)**
-- **Purpose**: Print JSON error output to stderr
+- **Purpose**: Print TOON error output to stderr
 - **Input**: `operation` (str), `error` (str)
-- **Output**: Prints JSON to stderr
+- **Output**: Prints TOON to stderr
+
+**Script Entry Point**
+
+**8. safe_main(main_fn)**
+- **Purpose**: Decorator for script entry points; catches unhandled exceptions and outputs TOON error
+- **Input**: `main_fn` - the main function (must return int or None)
+- **Output**: Wrapped function that calls `sys.exit()` internally
+- **Usage**: `safe_main(main)()` or `@safe_main` decorator
 
 **Metadata Functions**
 
-**8. parse_markdown_metadata(content)**
+**9. parse_markdown_metadata(content)**
 - **Purpose**: Parse key=value metadata from markdown
 - **Input**: `content` (str) - full file content
 - **Output**: `dict` - metadata key-value pairs
 - **Format**: Supports `key=value` and `key.subkey=value` (dot notation)
 
-**9. generate_markdown_metadata(data)**
+**10. generate_markdown_metadata(data)**
 - **Purpose**: Generate key=value metadata block
 - **Input**: `data` (dict) - metadata to serialize
 - **Output**: `str` - formatted metadata block
 
-**10. update_markdown_metadata(content, updates)**
+**11. update_markdown_metadata(content, updates)**
 - **Purpose**: Update specific metadata fields in markdown content
 - **Input**: `content` (str), `updates` (dict)
 - **Output**: `str` - updated content
 
-**11. get_metadata_content_split(content)**
+**12. get_metadata_content_split(content)**
 - **Purpose**: Split markdown content into metadata and body
 - **Input**: `content` (str)
 - **Output**: `tuple[str, str]` - (metadata_block, body_content)
@@ -120,8 +128,6 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 
 ```python
 #!/usr/bin/env python3
-import sys
-sys.path.insert(0, '/path/to/file-operations-base/scripts')
 from file_ops import (
     atomic_write_file,
     base_path,
@@ -162,23 +168,33 @@ if __name__ == '__main__':
 | Script | Purpose |
 |--------|---------|
 | `file_ops.py` | Core file operations module (importable) |
-| `test-file-ops.py` | Test suite for file operations |
+| `constants.py` | Shared constants: status values, phase names, filenames, certainty values, directory names |
 
 ---
 
-## Integration
-
-### With manage-lessons
+## Python Usage
 
 ```python
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'file-operations-base' / 'scripts'))
-from file_ops import atomic_write_file, base_path, output_success, output_error
+from file_ops import base_path, atomic_write_file, output_success, output_error
+from constants import STATUS_SUCCESS, FILE_STATUS, PHASES, DIR_PLANS
+
+# Resolve plan directory paths
+plan_dir = base_path('plans', plan_id)  # Returns Path to .plan/plans/{plan_id}
+artifacts = base_path('plans', plan_id, 'artifacts')
+
+# Atomic file writes (temp file + rename for crash safety)
+atomic_write_file(plan_dir / 'status.json', json.dumps(data, indent=2))
+
+# Structured TOON output
+output_success({'plan_id': plan_id, 'action': 'created'})
+output_error('file_not_found', f'Plan {plan_id} not found')
 ```
 
-### With plan-files
+## Integration
+
+The executor manages PYTHONPATH automatically, so scripts can import `file_ops` directly:
 
 ```python
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'plan-marshall' / 'skills' / 'file-operations-base' / 'scripts'))
 from file_ops import atomic_write_file, base_path, output_success, output_error
 ```
 

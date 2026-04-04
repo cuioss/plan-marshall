@@ -65,50 +65,131 @@ Fix a race condition where concurrent requests can access a session after timeou
 
 ### 1. Identify affected code paths
 
-Analyze the race condition.
+**Metadata:**
+- change_type: analysis
+- execution_mode: manual
+- domain: java
+- module: cui-authentication
+- depends: none
 
-**Affected class**: `de.cuioss.auth.session.SessionStore`
+**Profiles:**
+- implementation
 
-**Problem**:
-- Thread A checks `isExpired()` → false
-- Timeout thread marks session expired
-- Timeout thread starts cleanup
-- Thread A accesses session → NullPointerException
+**Affected files:**
+- `src/main/java/de/cuioss/auth/session/SessionStore.java`
+
+**Change per file:** Read and annotate the race window — identify the exact lines where `isExpired()` returns false, where the timeout thread calls `markExpired()` and `cleanup()`, and where `getSession()` dereferences the removed map entry.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error (no code changes yet)
+
+**Success Criteria:**
+- Race window is documented with thread A / timeout thread sequence
+- Affected lines in `SessionStore.java` are identified
 
 ### 2. Implement atomic session state check
 
-Add synchronized access to session state.
+**Metadata:**
+- change_type: bug_fix
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 1
 
-**Changes to** `SessionStore.java`:
-- Add `ReentrantReadWriteLock` for session map
-- Make `getSession()` and `invalidate()` atomic
-- Use read lock for access, write lock for invalidation
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/java/de/cuioss/auth/session/SessionStore.java`
+
+**Change per file:** Add `ReentrantReadWriteLock` field; wrap `getSession()` with read lock and `invalidate()` with write lock; introduce `SessionState` enum (`ACTIVE`, `INVALIDATED`) for logical delete before physical removal.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error
+
+**Success Criteria:**
+- `getSession()` and `invalidate()` are atomic under concurrent access
+- Read lock is used for access, write lock for invalidation
 
 ### 3. Add grace period for cleanup
 
-Delay physical removal after logical invalidation.
+**Metadata:**
+- change_type: bug_fix
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 2
 
-**Changes**:
-- Mark session as `INVALIDATED` (logical)
-- Return null for invalidated sessions
-- Remove from map after grace period (physical)
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/java/de/cuioss/auth/session/SessionStore.java`
+
+**Change per file:** Add a configurable grace period (default 5 s) between logical invalidation (`INVALIDATED` state) and physical map removal; `getSession()` returns `null` for `INVALIDATED` sessions without waiting for physical removal.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets compile`
+- Criteria: Compiles without error
+
+**Success Criteria:**
+- Sessions are logically deleted before physical removal
+- Grace period is configurable and defaults to a safe value
 
 ### 4. Write regression test
 
-Create test that reproduces the race condition.
+**Metadata:**
+- change_type: bug_fix
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 3
 
-**Test class**: `SessionStoreRaceConditionTest.java`
+**Profiles:**
+- implementation
+- module_testing
 
-**Test approach**:
-- Multiple threads accessing session
-- Concurrent timeout trigger
-- Verify no NPE, consistent behavior
+**Affected files:**
+- `src/test/java/de/cuioss/auth/session/SessionStoreRaceConditionTest.java`
+
+**Change per file:** New test class that spawns multiple reader threads concurrently with a timeout trigger thread; asserts that no `NullPointerException` is thrown and that all threads observe consistent session state.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets test`
+- Criteria: All tests pass, including the new race condition test
+
+**Success Criteria:**
+- Test reliably reproduces the race condition without the fix
+- Test passes consistently with the fix applied
+- No `NullPointerException` under concurrent load
 
 ### 5. Verify fix in integration test
 
-End-to-end test with realistic load.
+**Metadata:**
+- change_type: verification
+- execution_mode: automated
+- domain: java
+- module: cui-authentication
+- depends: 4
 
-**Test**: `SessionTimeoutIntegrationTest.java`
+**Profiles:**
+- implementation
+- module_testing
+
+**Affected files:**
+- `src/test/java/de/cuioss/auth/session/SessionTimeoutIntegrationTest.java`
+
+**Change per file:** New integration test that exercises `SessionStore` under realistic concurrent load with multiple sessions timing out; verifies no authentication failures occur during the grace period.
+
+**Verification:**
+- Command: `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify`
+- Criteria: Full verify passes including integration tests
+
+**Success Criteria:**
+- Integration test passes without errors under concurrent load
+- No regression in existing authentication behaviour
 
 ## Approach
 

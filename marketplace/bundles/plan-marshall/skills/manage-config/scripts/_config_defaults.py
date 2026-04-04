@@ -19,13 +19,14 @@ RESERVED_DOMAIN_KEYS = [
 ]
 
 # Task executors map profile -> workflow skill
-# Convention: profile X maps to plan-marshall:task-X
+# All profiles use the unified task-executor skill which handles profile dispatch internally.
+# Keys align with constants.VALID_PROFILES (source of truth for profile names)
 # These are defaults; marshall-steward auto-discovers from extension.py files
 DEFAULT_TASK_EXECUTORS = {
-    'implementation': 'plan-marshall:task-implementation',
-    'module_testing': 'plan-marshall:task-module-testing',
-    'integration_testing': 'plan-marshall:task-integration_testing',
-    'verification': 'plan-marshall:task-verification',
+    'implementation': 'plan-marshall:task-executor',
+    'module_testing': 'plan-marshall:task-executor',
+    'integration_testing': 'plan-marshall:task-executor',
+    'verification': 'plan-marshall:task-executor',
 }
 
 # Default system domain configuration

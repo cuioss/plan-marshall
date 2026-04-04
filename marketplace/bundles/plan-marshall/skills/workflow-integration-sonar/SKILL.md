@@ -1,6 +1,6 @@
 ---
 name: workflow-integration-sonar
-description: Sonar issue workflow - fetch issues, triage, and fix or suppress based on context
+description: SonarQube/SonarCloud issue workflow - fetch issues, triage, and fix or suppress based on context
 user-invocable: false
 ---
 
@@ -18,35 +18,47 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 - Never skip build verification after implementing fixes
 
 **Constraints:**
-- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Suppressions require inline comments explaining the rationale
 - Fix-vs-suppress decisions must be logged
 
-## What This Skill Provides
+## Parameters
 
-### Workflows (Absorbs 2 Agents)
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `project` | string | yes | — | SonarQube project key |
+| `pr` | string | no | auto-detect | Pull request ID |
+| `severities` | string | no | all | Filter by severity (comma-separated: BLOCKER,CRITICAL,MAJOR,MINOR,INFO) |
+| `types` | string | no | all | Filter by type (comma-separated: BUG,CODE_SMELL,VULNERABILITY) |
 
-1. **Fetch Issues Workflow** - Retrieves Sonar issues for PR
-   - Uses SonarQube MCP tool or API
-   - Replaces: sonar-issue-fetcher agent
+## Prerequisites
 
-2. **Fix Issues Workflow** - Processes and resolves issues
-   - Triages each issue for fix vs suppress
-   - Implements fixes or adds suppressions
-   - Replaces: sonar-issue-triager agent
+No external `Skill:` dependencies. Workflow 1 uses the SonarQube MCP tool directly. Script imports `triage_helpers` from `ref-toon-format` at runtime (see `ref-workflow-architecture` → "Shared Infrastructure").
 
-## When to Activate This Skill
+## Architecture
 
-- Fixing Sonar issues in PRs
-- Processing SonarQube quality gate failures
-- Implementing code fixes for violations
-- Adding justified suppressions
+```
+workflow-integration-sonar (Sonar issue workflow)
+  ├─> SonarQube MCP tool (issue fetching, status changes)
+  └─> triage_helpers (ref-toon-format) — shared triage, error handling
+```
+
+## Usage Examples
+
+```bash
+# Triage a single Sonar issue
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage \
+  --issue '{"key":"ISSUE-1","rule":"java:S1234","type":"BUG","severity":"MAJOR","file":"src/Main.java","line":42,"message":"Fix this"}'
+
+# Batch triage multiple issues
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch \
+  --issues '[{"key":"I1","rule":"java:S1234","type":"BUG","severity":"MAJOR","file":"src/Main.java","line":42,"message":"Fix this"}]'
+```
 
 ## Workflows
 
-### Workflow 1: Fetch Issues
+### Workflow 1: Fetch Issues (MCP Delegation)
 
-**Purpose:** Fetch Sonar issues for a PR or project.
+**Purpose:** Fetch Sonar issues via the SonarQube MCP tool. This workflow uses MCP directly — no script needed. The triage workflow (Workflow 2) uses `sonar.py`.
 
 **Input:**
 - **project**: SonarQube project key
@@ -56,36 +68,38 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 **Steps:**
 
-1. **Determine Context**
+1. **Determine Context** (optional — get PR number if not provided)
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
    ```
 
-2. **Fetch Issues**
-   Use MCP tool:
+2. **Fetch Issues via MCP**
+
+   Call the SonarQube MCP tool directly with the assembled parameters.
+   The tool name is configured in `marshal.json` under `sonar.mcp_tool_name`
+   (default: `mcp__sonarqube__search_sonar_issues_in_projects`). The example
+   below uses `{sonar_mcp_tool_name}` as a placeholder — resolve the actual
+   name from `marshal.json` at runtime. If the configured name fails, discover
+   available tools via MCP tool listing.
+
    ```
-   mcp__sonarqube__search_sonar_issues_in_projects(
+   {sonar_mcp_tool_name}(
      projects: ["{project_key}"],
-     pullRequestId: "{pr_number}",
-     severities: "{filter}"
+     pullRequestId: "{pr_number}",       # omit if no PR filter
+     severities: "{BLOCKER,CRITICAL}",   # omit if no severity filter
+     types: "{BUG,VULNERABILITY}"        # omit if no type filter
    )
    ```
 
-   Or use script for structure:
+3. **Structure the Response**
 
-   Script: `plan-marshall:workflow-integration-sonar`
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch --project {key} [--pr {id}]
-   ```
-
-3. **Return Structured List**
+   Parse the MCP response into a structured list for triage.
 
 **Output:**
 ```toon
 project_key: ...
 pull_request_id: ...
-issues[1]{key,type,severity,file,line,rule,message}:
+issues[N]{key,type,severity,file,line,rule,message}:
   - key: ...
     type: BUG|CODE_SMELL|VULNERABILITY
     severity: BLOCKER|CRITICAL|MAJOR|MINOR|INFO
@@ -112,24 +126,32 @@ statistics:
 1. **Get Issues**
    If not provided, use Fetch Issues workflow first.
 
-2. **Triage Each Issue**
-   For each issue:
+2. **Triage All Issues (Batch)**
+   Collect all issues into a JSON array and triage in a single call:
 
    Script: `plan-marshall:workflow-integration-sonar`
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage --issue '{json}'
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch --issues '[{issue1}, {issue2}, ...]'
    ```
 
-   Script outputs decision:
+   Script outputs all decisions at once:
    ```toon
-   issue_key: ...
-   action: fix|suppress
-   reason: ...
-   priority: critical|high|medium|low
-   suggested_implementation: ...
-   suppression_string: "// NOSONAR rule - reason"
+   results[N]:
+     - issue_key: ...
+       action: fix|suppress
+       reason: ...
+       priority: critical|high|medium|low
+       suggested_implementation: ...
+       suppression_string: "// NOSONAR rule - reason"
+   summary:
+     total: N
+     fix: N
+     suppress: N
+   status: success
    ```
+
+   For single-issue edge cases, `triage --issue '{json}'` is also available.
 
 3. **Process by Priority**
    Order: critical → high → medium → low
@@ -147,8 +169,11 @@ statistics:
    - Include rule key and reason
 
 5. **Mark Issues Resolved (Optional)**
+
+   The status-change tool name is configured in `marshal.json` under
+   `sonar.mcp_status_tool_name` (default: `mcp__sonarqube__change_sonar_issue_status`):
    ```
-   mcp__sonarqube__change_sonar_issue_status(
+   {sonar_mcp_status_tool_name}(
      key: "{issue_key}",
      status: ["accept"]  # or ["falsepositive"]
    )
@@ -173,17 +198,6 @@ status: success
 
 Script: `plan-marshall:workflow-integration-sonar` → `sonar.py`
 
-### sonar.py fetch
-
-**Purpose:** Generate MCP tool call parameters for fetching Sonar issues. Does not fetch directly — returns the MCP instruction that the caller must execute via the SonarQube MCP tool.
-
-**Usage:**
-```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar fetch --project <key> [--pr <id>] [--severities <list>]
-```
-
-**Output:** TOON with MCP instruction and expected response structure
-
 ### sonar.py triage
 
 **Purpose:** Analyze a single issue and determine fix vs suppress.
@@ -195,39 +209,59 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar t
 
 **Output:** TOON with action decision
 
+### sonar.py triage-batch
+
+**Purpose:** Triage multiple issues in a single call, reducing subprocess overhead.
+
+**Usage:**
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-sonar:sonar triage-batch --issues '[{"key":"I1", "rule":"java:S1234", ...}, ...]'
+```
+
+**Output:** TOON with results array and summary counts
+
 ## Issue Classification
 
-### Always Fix
-- BLOCKER severity
-- VULNERABILITY type
-- Security rules (java:S3649, java:S5131)
+Classification rules are data-driven — loaded from `standards/sonar-rules.json` (keys: `suppressable_rules`, `fix_suggestions`, `test_acceptable_rules`, `severity_priority`, `type_boost`). To add or update rule handling, edit the JSON file instead of the script.
 
-### Fix Preferred
-- CRITICAL severity
-- BUG type
-- Resource leaks (java:S2095)
+Key principles:
 
-### May Suppress
-- INFO severity
-- TODO comments (java:S1135) - if tracked
-- Unused fields for reflection (java:S1068)
-- Test code patterns (java:S106, java:S2699)
+- **Always fix**: VULNERABILITY, SECURITY_HOTSPOT, and BLOCKER severity (enforced by script)
+- **Fix preferred**: CRITICAL severity, BUG type, resource leaks
+- **May suppress**: Rules listed in `suppressable_rules` (with documented justification)
+- **Test exceptions**: Rules in `test_acceptable_rules` are acceptable in test files
+
+**Supported languages:** Java, JavaScript, TypeScript, Python. Unrecognized rules fall back to the Sonar issue message for triage guidance.
+
+For triage override guidance, see `ref-workflow-architecture` → "Triage Override Guidance".
 
 ## Suppression Format
 
-**Java:**
-```java
-// NOSONAR java:S1234 - reason for suppression
-```
+Generated by `sonar.py:get_suppression_string()` based on file extension and rule prefix:
 
-**JavaScript:**
-```javascript
-// NOSONAR
-```
+**Java:** `// NOSONAR java:S1234 - reason for suppression`
 
-## Integration
+**JavaScript/TypeScript:** `// NOSONAR javascript:S1234 - reason for suppression`
 
-### Related Skills
-- **workflow-integration-ci** - Often used together in PR workflows
-- **workflow-integration-git** - Commits fixes
-- **workflow-pr-doctor** - Orchestrates this skill with CI and git workflows
+**Python:** `# NOSONAR python:S1234 - reason for suppression`
+
+## Error Handling
+
+| Failure | Action |
+|---------|--------|
+| MCP tool failure | Report error. Verify SonarQube MCP server is connected and project key is correct. |
+| MCP tool returns empty | No issues found — report success with zero counts. |
+| triage failure (invalid JSON) | Log warning, skip the issue, continue processing remaining. |
+| Fix implementation failure | Report which file/line failed. Do not suppress as fallback — ask the caller. |
+| MCP status change failure | Log warning, continue — marking resolved is best-effort. |
+| Build verification failure after fixes | Report failing tests/compilation. Do not commit broken fixes. |
+
+## Standards (Load On-Demand)
+
+| Standard | When to Load |
+|----------|-------------|
+| `standards/sonar-rules.json` | Adding/updating classification rules, always-fix types, suppressable rules, fix suggestions, or suppression_syntax templates |
+
+## Related
+
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Called by: `plan-marshall:workflow-pr-doctor` (Sonar issue handling).

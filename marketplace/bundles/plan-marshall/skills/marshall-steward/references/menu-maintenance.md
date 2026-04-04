@@ -38,20 +38,20 @@ AskUserQuestion:
 
 ## Operation: All (Regenerate + Architecture + Cleanup)
 
-Execute ALL operations in sequence:
+Execute ALL operations in sequence. If any step fails, report the error and abort remaining steps.
 
 1. Execute "Operation: Regenerate Executor" (below)
 2. Execute "Operation: Regenerate Architecture" (below)
 3. Execute "Operation: Cleanup" (below)
 
-**Output**: Combined summary of all operations.
+**Output**: Combined summary of all operations (or error with step that failed).
 
 ---
 
 ## Operation: Regenerate Executor
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate-executor.py generate
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor generate
 ```
 
 The script uses subcommands (`generate`, `verify`, `drift`, `paths`, `cleanup`), not positional arguments.
@@ -71,7 +71,7 @@ success	47	.plan/execute-script.py	0
 
 ## Operation: Regenerate Architecture
 
-Re-detect project structure and extensions, preserving existing enrichment data. Unlike the Configuration path, maintenance mode defaults to keeping enrichment (no user prompt) — it's a quick refresh, not a full reconfiguration.
+Re-detect project structure and extensions, preserving existing enrichment data. Unlike the Configuration → Project Structure path (see `menu-configuration.md` § Project Structure), maintenance mode defaults to keeping enrichment (no user prompt) — it's a quick refresh, not a full reconfiguration.
 
 **Step 1: Check existing enrichment**
 
@@ -108,7 +108,7 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 Clean all directories based on retention settings from marshal.json:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup
 ```
 
 **Output (TOON)**:
@@ -145,14 +145,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config system
 ### Cleanup with Custom Retention
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean \
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup \
     --logs-days 1 --archived-days 5 --memory-days 5
 ```
 
 ### Dry Run (Preview)
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean --dry-run
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup --dry-run
 ```
 
 **NOTE**: The `.plan/temp/` directory is the default temp directory for ALL temporary files. It is covered by the existing `Write(.plan/**)` permission (avoiding permission prompts for `/tmp/`) and cleaned during maintenance.
@@ -161,37 +161,16 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:cleanup clean --
 
 ## Update Project Documentation (if needed)
 
-Check if project docs need `.plan/temp/` documentation:
-
+Run check-docs:
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:determine-mode check-docs
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-docs
 ```
 
-**Output (TOON)**:
-```toon
-status	ok
-missing_count	0
-```
-
-Or if updates needed:
-```toon
-status	needs_update
-missing_count	2
-plan_temp	CLAUDE.md
-file_ops	CLAUDE.md
-```
-
-If `status` is `needs_update`, add missing content to each listed file:
-
-**For `plan_temp`** — add to each file listed:
-```
-- Use `.plan/temp/` for ALL temporary files (covered by `Write(.plan/**)` permission - avoids permission prompts)
-```
-
-**For `file_ops`** — add to CLAUDE.md:
-```
-- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
-```
+Interpret the output:
+- `status: ok` → No action needed.
+- `status: needs_update` → Apply fixes for each missing marker:
+  - `plan_temp` → Append to listed file: `- Use .plan/temp/ for ALL temporary files (covered by Write(.plan/**) permission - avoids permission prompts)`
+  - `file_ops` → Append to CLAUDE.md: `- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead`
 
 ---
 

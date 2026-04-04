@@ -24,7 +24,7 @@ Extract: `pr_number`, `pr_url`, `state` (open/merged/closed), `head_branch`, `ba
 
 If no PR found (status: error) → skip cleanup, log:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: no PR found for current branch"
 ```
 
@@ -70,7 +70,7 @@ AskUserQuestion:
 
 **If user selects "No, skip"**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: user declined"
 ```
 → Done, return.
@@ -80,7 +80,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 If other open PRs were found using this branch as head:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup aborted: {count} other open PR(s) use branch {head_branch}"
 ```
 
@@ -104,13 +104,13 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-me
 
 Log the fallback:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: direct merge blocked by branch protection, enabled auto-merge"
 ```
 
 If auto-merge also fails → log error and abort:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: PR merge failed - {error}"
 ```
 
@@ -127,7 +127,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
 
 If CI fails → log warning but continue (PR is already merged):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: post-merge CI failed — continuing with branch cleanup"
 ```
 
@@ -159,7 +159,7 @@ git branch -d {head_branch}
 
 If `git branch -d` fails → log warning (branch may not exist locally):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist)"
 ```
 
@@ -167,13 +167,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 If checkout or pull fails → log error and abort:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: {checkout|pull} failed - {error}"
 ```
 
 ### Log Completion
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup complete: merged PR #{pr_number}, pulled latest on {base_branch}"
 ```

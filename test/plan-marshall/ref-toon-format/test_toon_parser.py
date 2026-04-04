@@ -5,7 +5,7 @@
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 
 # Import the module under test (PYTHONPATH set by conftest)
-from toon_parser import parse_toon, serialize_toon
+from toon_parser import parse_toon, parse_toon_table, serialize_toon
 
 # =============================================================================
 # Test: Basic Key-Value Parsing
@@ -437,3 +437,58 @@ url: https://example.com
     result = parse_toon(toon)
     assert result['timestamp'] == '2025-12-02T10:30:00Z'
     assert result['url'] == 'https://example.com'
+
+
+# =============================================================================
+# Test: parse_toon_table convenience function
+# =============================================================================
+
+
+def test_parse_toon_table_basic():
+    """Test extracting a table from TOON content."""
+    toon = """
+status: success
+total: 2
+users[2]{id,name,role}:
+  1\tAlice\tadmin
+  2\tBob\tuser
+"""
+    users = parse_toon_table(toon, 'users')
+    assert len(users) == 2
+    assert users[0] == {'id': 1, 'name': 'Alice', 'role': 'admin'}
+    assert users[1] == {'id': 2, 'name': 'Bob', 'role': 'user'}
+
+
+def test_parse_toon_table_missing_key():
+    """Test that missing key returns empty list."""
+    toon = 'status: success\n'
+    result = parse_toon_table(toon, 'items')
+    assert result == []
+
+
+def test_parse_toon_table_null_markers():
+    """Test null_markers converts specified values to None."""
+    toon = """
+items[2]{id,name,value}:
+  1\tAlice\t-
+  2\t~\t100
+"""
+    items = parse_toon_table(toon, 'items', null_markers={'-', '~'})
+    assert len(items) == 2
+    assert items[0]['value'] is None
+    assert items[1]['name'] is None
+    assert items[1]['value'] == 100
+
+
+def test_parse_toon_table_empty_array():
+    """Test extracting empty table."""
+    toon = 'items[0]{id,name}:\n'
+    items = parse_toon_table(toon, 'items')
+    assert items == []
+
+
+def test_parse_toon_table_non_list_key():
+    """Test that a non-list key returns empty list."""
+    toon = 'status: success\n'
+    result = parse_toon_table(toon, 'status')
+    assert result == []

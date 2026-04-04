@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gradle build operations - run, parse, find projects, search markers, check warnings.
+Gradle build operations - run, parse, find projects, search markers, check warnings, coverage report.
 
 Usage:
     gradle.py run --command-args <args> [--format toon|json] [--mode actionable|structured|errors] [options]
@@ -8,6 +8,7 @@ Usage:
     gradle.py find-project --project-name <name> | --project-path <path>
     gradle.py search-markers --source-dir <dir>
     gradle.py check-warnings --warnings <json> [--acceptable-warnings <json>]
+    gradle.py coverage-report [--project-path <path>] [--threshold <percent>]
     gradle.py --help
 
 Subcommands:
@@ -16,57 +17,42 @@ Subcommands:
     find-project    Find Gradle project path from project name
     search-markers  Search for OpenRewrite TODO markers in source files
     check-warnings  Categorize build warnings against acceptable patterns
+    coverage-report Parse JaCoCo coverage report
 """
 
-import argparse
 import sys
 
-from _gradle_cmd_check_warnings import cmd_check_warnings
-from _gradle_cmd_coverage_report import cmd_coverage_report
+from _build_check_warnings import create_check_warnings_handler
+from _build_cli import (
+    add_search_markers_subparser,
+    build_main,
+    register_standard_subparsers,
+    safe_main,
+)
+from _build_coverage_report import create_coverage_report_handler
+from _gradle_cmd_discover import discover_gradle_modules
 from _gradle_cmd_find_project import cmd_find_project
-from _gradle_cmd_parse import cmd_parse
-from _gradle_cmd_search_markers import cmd_search_markers
-
-# Import command handlers from internal modules (underscore prefix = private)
+from _gradle_cmd_parse import parse_log
 from _gradle_execute import cmd_run
+from _markers_search import cmd_search_markers
+
+# --- Tool-specific configuration inlined from former wrapper files ---
+
+cmd_coverage_report = create_coverage_report_handler(
+    search_paths=[
+        ('build/reports/jacoco/test/jacocoTestReport.xml', 'jacoco'),
+        ('build/reports/jacoco/jacocoTestReport.xml', 'jacoco'),
+        ('build/jacoco/test.xml', 'jacoco'),
+    ],
+    not_found_message='No JaCoCo XML report found. Run coverage build first.',
+)
+
+cmd_check_warnings = create_check_warnings_handler(
+    matcher='wildcard',
+)
 
 
-def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description='Gradle build operations', formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # run subcommand (primary API)
-    run_parser = subparsers.add_parser('run', help='Execute build and auto-parse on failure (primary API)')
-    run_parser.add_argument(
-        '--command-args', dest='command_args', required=True, help="Complete Gradle command arguments (e.g., ':module:build' or 'build')"
-    )
-    run_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)')
-    run_parser.add_argument(
-        '--mode',
-        choices=['actionable', 'structured', 'errors'],
-        default='actionable',
-        help='Content mode for warnings/errors',
-    )
-    run_parser.add_argument(
-        '--timeout', type=int, default=300, help='Build timeout in seconds (default: 300 = 5 min)'
-    )
-    run_parser.add_argument(
-        '--project-dir', dest='project_dir', default='.', help='Project root directory'
-    )
-    run_parser.set_defaults(func=cmd_run)
-
-    # parse subcommand
-    parse_parser = subparsers.add_parser('parse', help='Parse Gradle build output and categorize issues')
-    parse_parser.add_argument('--log', required=True, help='Path to Gradle build log file')
-    parse_parser.add_argument(
-        '--mode', choices=['default', 'errors', 'structured'], default='structured', help='Output mode'
-    )
-    parse_parser.set_defaults(func=cmd_parse)
-
-    # find-project subcommand
+def _register_find_project(subparsers):
     find_parser = subparsers.add_parser('find-project', help='Find Gradle project path from project name')
     find_group = find_parser.add_mutually_exclusive_group(required=True)
     find_group.add_argument('--project-name', help='Project name to search for')
@@ -74,30 +60,30 @@ def main():
     find_parser.add_argument('--root', default='.', help='Project root directory')
     find_parser.set_defaults(func=cmd_find_project)
 
-    # coverage-report subcommand
-    cov_parser = subparsers.add_parser('coverage-report', help='Parse JaCoCo coverage report')
-    cov_parser.add_argument('--module-path', dest='module_path', help='Module directory path')
-    cov_parser.add_argument('--report-path', dest='report_path', help='Override JaCoCo XML report path')
-    cov_parser.add_argument('--threshold', type=int, default=80, help='Coverage threshold percent (default: 80)')
-    cov_parser.set_defaults(func=cmd_coverage_report)
 
-    # search-markers subcommand
-    markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
-    markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
-    markers_parser.add_argument('--extensions', default='.java,.kt', help='Comma-separated extensions')
-    markers_parser.set_defaults(func=cmd_search_markers)
-
-    # check-warnings subcommand
-    warn_parser = subparsers.add_parser('check-warnings', help='Categorize build warnings')
-    warn_parser.add_argument('--warnings', help='JSON array of warnings')
-    warn_parser.add_argument(
-        '--acceptable-warnings', dest='acceptable_warnings', help='JSON object with acceptable patterns'
+def main() -> int:
+    """Main entry point."""
+    return build_main(
+        'Gradle build operations',
+        register_standard_subparsers(
+            run_handler=cmd_run,
+            run_args_help="Complete Gradle command arguments (e.g., ':module:build' or 'build')",
+            parse_handler=parse_log,
+            parse_help='Parse Gradle build output and categorize issues',
+            parse_extra_modes=['no-openrewrite'],
+            parse_extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
+            coverage_handler=cmd_coverage_report,
+            coverage_help='Parse JaCoCo coverage report',
+            check_warnings_handler=cmd_check_warnings,
+            discover_handler=discover_gradle_modules,
+            discover_help='Discover Gradle modules',
+            extra_register_fns=[
+                _register_find_project,
+                lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java,.kt'),
+            ],
+        ),
     )
-    warn_parser.set_defaults(func=cmd_check_warnings)
-
-    args = parser.parse_args()
-    return args.func(args)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

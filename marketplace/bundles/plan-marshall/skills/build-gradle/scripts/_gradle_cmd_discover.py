@@ -26,13 +26,17 @@ Output:
     JSON array of module objects conforming to module-discovery.md contract.
 """
 
-import argparse
-import json
 import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from extension_base import find_readme
+from _build_discover import (
+    build_module_base,
+    count_source_files,
+    discover_packages,
+    discover_sources,
+)
+from _build_shared import build_canonical_commands
 from plan_logging import log_entry
 
 # =============================================================================
@@ -44,28 +48,92 @@ BUILD_GRADLE_KTS = 'build.gradle.kts'
 SETTINGS_GRADLE = 'settings.gradle'
 SETTINGS_GRADLE_KTS = 'settings.gradle.kts'
 
-# JVM languages and their file extensions
-JVM_LANGUAGES = ['java', 'kotlin', 'groovy', 'scala']
-JVM_EXTENSIONS = {
-    'java': '*.java',
-    'kotlin': '*.kt',
-    'groovy': '*.groovy',
-    'scala': '*.scala',
-}
+# Quality task names that indicate quality tooling (used for detection only)
+QUALITY_TASKS = {'spotlessCheck', 'checkstyleMain', 'pmdMain', 'detekt', 'ktlintCheck'}
 
-# Quality task patterns that indicate quality tooling
-QUALITY_TASK_PATTERNS = {
-    'spotlessCheck': 'spotless',
-    'checkstyleMain': 'checkstyle',
-    'pmdMain': 'pmd',
-    'detekt': 'detekt',
-    'ktlintCheck': 'ktlint',
-}
+
+# =============================================================================
+# Settings File Parsing (shared with _gradle_cmd_find_project)
+# =============================================================================
+
+
+def find_settings_file(root: Path) -> Path | None:
+    """Find settings.gradle or settings.gradle.kts.
+
+    Args:
+        root: Project root directory.
+
+    Returns:
+        Path to settings file, or None.
+    """
+    for name in [SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]:
+        settings_path = root / name
+        if settings_path.exists():
+            return settings_path
+    return None
+
+
+def parse_included_projects(settings_path: Path) -> list[str]:
+    """Parse included projects from settings file.
+
+    Handles both Groovy and Kotlin DSL syntax for include() statements.
+
+    Args:
+        settings_path: Path to settings.gradle or settings.gradle.kts.
+
+    Returns:
+        List of Gradle project paths (e.g., [':core', ':services:auth']).
+    """
+    with open(settings_path, encoding='utf-8') as f:
+        content = f.read()
+    projects = []
+    for pattern in [r'include\s*\(\s*([^)]+)\s*\)', r"include\s+(['\"][^'\"]+['\"](?:\s*,\s*['\"][^'\"]+['\"])*)"]:
+        for match in re.finditer(pattern, content):
+            for quoted in re.findall(r'["\']([^"\']+)["\']', match.group(1)):
+                projects.append(quoted if quoted.startswith(':') else f':{quoted}')
+    return list(set(projects))
 
 
 # =============================================================================
 # Module Discovery
 # =============================================================================
+
+
+def _find_gradle_descriptors(project_root: str) -> list[tuple[Path, str]]:
+    """Find all Gradle build files via settings.gradle parsing.
+
+    Returns list of (module_path, relative_path) tuples. The root module
+    always comes first if it has a build file.
+
+    Args:
+        project_root: Absolute path to project root.
+
+    Returns:
+        List of (absolute_module_path, relative_path_from_root) tuples.
+    """
+    root = Path(project_root).resolve()
+    descriptors: list[tuple[Path, str]] = []
+
+    # Root module — check for build.gradle[.kts]
+    for bf in [BUILD_GRADLE_KTS, BUILD_GRADLE]:
+        if (root / bf).exists():
+            descriptors.append((root, '.'))
+            break
+
+    # Submodules from settings.gradle (reuse shared parser for consistency)
+    settings_path = find_settings_file(root)
+
+    if settings_path:
+        for project in parse_included_projects(settings_path):
+            module_name = project.lstrip(':').replace(':', '/')
+            module_path = root / module_name
+            if module_path.exists():
+                # Verify it has a build file
+                has_build = any((module_path / bf).exists() for bf in [BUILD_GRADLE_KTS, BUILD_GRADLE])
+                if has_build:
+                    descriptors.append((module_path, module_name))
+
+    return descriptors
 
 
 def discover_gradle_modules(project_root: str) -> list:
@@ -84,36 +152,17 @@ def discover_gradle_modules(project_root: str) -> list:
     modules = []
     log_entry('script', 'global', 'INFO', f'[GRADLE-DISCOVER] Starting discovery in {project_root}')
 
-    # Check for settings.gradle to determine project structure
-    settings_path = None
-    for sf in [SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]:
-        if (root / sf).exists():
-            settings_path = root / sf
-            break
-
     # Get quality tasks once for the whole project
     quality_tasks = _get_quality_tasks(root)
 
-    # Always check for root module first
-    for bf in [BUILD_GRADLE_KTS, BUILD_GRADLE]:
-        if (root / bf).exists():
-            gradle_data = _get_gradle_metadata('', root)
-            module_data = _extract_gradle_module(root, root, '', gradle_data, quality_tasks)
-            if module_data:
-                modules.append(module_data)
-            break
+    # Find all modules via settings.gradle + root build file
+    descriptors = _find_gradle_descriptors(project_root)
 
-    # Then add submodules from settings.gradle
-    if settings_path:
-        content = settings_path.read_text()
-        for match in re.finditer(r'include\s*[(\'"]+:?([^)\'\"]+)[)\'"]+', content):
-            module_name = match.group(1).replace(':', '/')
-            module_path = root / module_name
-            if module_path.exists():
-                gradle_data = _get_gradle_metadata(module_name, root)
-                module_data = _extract_gradle_module(module_path, root, module_name, gradle_data, quality_tasks)
-                if module_data:
-                    modules.append(module_data)
+    for module_path, relative_path in descriptors:
+        gradle_data = _get_gradle_metadata(relative_path if relative_path != '.' else '', root)
+        module_data = _extract_gradle_module(module_path, root, relative_path, gradle_data, quality_tasks)
+        if module_data:
+            modules.append(module_data)
 
     log_entry('script', 'global', 'INFO', f'[GRADLE-DISCOVER] Discovered {len(modules)} modules')
     return modules
@@ -125,10 +174,10 @@ def discover_gradle_modules(project_root: str) -> list:
 
 
 def _get_gradle_metadata(module_path: str, project_root: Path) -> dict | None:
-    """Get metadata using Gradle properties and dependencies commands.
+    """Get metadata using a single combined Gradle command.
 
-    Per module-discovery.md specification, runs Gradle commands
-    to extract resolved metadata rather than parsing build.gradle directly.
+    Combines properties and dependencies tasks in a single Gradle call
+    to minimize daemon startup overhead (same approach as Maven discovery).
 
     Args:
         module_path: Module path relative to root (empty string for root module)
@@ -142,35 +191,20 @@ def _get_gradle_metadata(module_path: str, project_root: Path) -> dict | None:
     # Build module prefix for Gradle task addressing
     module_prefix = f':{module_path.replace("/", ":")}' if module_path else ''
 
-    # Run properties task to get coordinates
-    props_result = execute_direct(
-        args=f'{module_prefix}:properties -q',
-        command_key='gradle:discover-properties',
+    # Run properties + dependencies in a single Gradle call
+    result = execute_direct(
+        args=f'{module_prefix}:properties {module_prefix}:dependencies --configuration compileClasspath -q',
+        command_key='gradle:discover',
         default_timeout=120,
         project_dir=str(project_root),
     )
 
-    if props_result['status'] != 'success':
+    if result['status'] != 'success':
         return None
 
-    # Read output from log file
-    log_content = Path(props_result['log_file']).read_text() if props_result.get('log_file') else ''
+    log_content = Path(result['log_file']).read_text() if result.get('log_file') else ''
     metadata = _parse_properties_output(log_content)
-
-    # Run dependencies task
-    deps_result = execute_direct(
-        args=f'{module_prefix}:dependencies --configuration compileClasspath -q',
-        command_key='gradle:discover-dependencies',
-        default_timeout=120,
-        project_dir=str(project_root),
-    )
-
-    if deps_result['status'] == 'success':
-        # Read output from log file
-        deps_log_content = Path(deps_result['log_file']).read_text() if deps_result.get('log_file') else ''
-        metadata['dependencies'] = _parse_dependencies_output(deps_log_content)
-    else:
-        metadata['dependencies'] = []
+    metadata['dependencies'] = _parse_dependencies_output(log_content)
 
     return metadata
 
@@ -205,7 +239,7 @@ def _get_quality_tasks(project_root: Path) -> list:
         match = re.match(r'^(\w+)\s+-\s+', line)
         if match:
             task_name = match.group(1)
-            if task_name in QUALITY_TASK_PATTERNS:
+            if task_name in QUALITY_TASKS:
                 tasks.append(task_name)
 
     return tasks
@@ -308,12 +342,14 @@ def _extract_gradle_module(
 ) -> dict | None:
     """Extract Gradle module with contract-compliant structure.
 
-    Uses Gradle command data when available, falls back to file system analysis.
+    Uses build_module_base() from extension-api for base module info (name,
+    paths, README), then enriches with Gradle-specific metadata. Source
+    directories, file counting, and package discovery use shared utilities.
 
     Args:
         module_path: Path to module directory
         project_root: Project root path
-        relative_path: Path relative to project root ("" for root module)
+        relative_path: Path relative to project root ("." for root module)
         gradle_data: Metadata from Gradle commands (None if commands failed)
         quality_tasks: List of detected quality task names
 
@@ -329,24 +365,33 @@ def _extract_gradle_module(
     if not build_file:
         return None
 
-    # Root module is always named "default"
-    is_root_module = not relative_path or relative_path == '.'
+    # Use shared build_module_base for consistent name/path/README resolution
+    base = build_module_base(str(project_root), str(build_file))
+    is_root_module = relative_path == '.' or not relative_path
+    rel_path_str = base.paths.module
 
-    # Get name - root is "default", submodules use Gradle data or directory name
-    if is_root_module:
-        name = 'default'
-    elif gradle_data and gradle_data.get('name'):
-        name = gradle_data['name']
-    else:
-        name = module_path.name
-        # Check for archivesBaseName override in build file
-        content = build_file.read_text()
-        match = re.search(r'archivesBaseName\s*=\s*[\'"]([^\'"]+)[\'"]', content)
-        if match:
-            name = match.group(1)
+    # Override name from Gradle data if available (non-root only)
+    name = base.name
+    if not is_root_module:
+        if gradle_data and gradle_data.get('name'):
+            name = gradle_data['name']
+        else:
+            # Check for archivesBaseName override in build file
+            content = build_file.read_text()
+            match = re.search(r'archivesBaseName\s*=\s*[\'"]([^\'"]+)[\'"]', content)
+            if match:
+                name = match.group(1)
 
-    # If Gradle commands failed, return error-only structure
+    # If Gradle commands failed, return error-only structure.
+    # This is part of the discovery contract: modules without metadata
+    # get a minimal error object so callers know the module exists.
     if not gradle_data:
+        log_entry(
+            'script',
+            'global',
+            'WARNING',
+            f'[GRADLE-DISCOVER] Module {name} - Gradle commands failed, returning error structure',
+        )
         return {
             'name': name,
             'build_systems': ['gradle'],
@@ -358,18 +403,20 @@ def _extract_gradle_module(
     description = gradle_data.get('description')
     dependencies = gradle_data.get('dependencies', [])
 
-    # Source directories
-    sources = _discover_sources(module_path)
-    source_paths = [f'{relative_path}/{s}' if relative_path else s for s in sources['main']]
-    test_paths = [f'{relative_path}/{t}' if relative_path else t for t in sources['test']]
+    # Shared source discovery (multi-language + resources)
+    sources = discover_sources(module_path)
+    prefix = relative_path if not is_root_module else ''
+    source_paths = [f'{prefix}/{s}' if prefix else s for s in sources['main']]
+    test_paths = [f'{prefix}/{t}' if prefix else t for t in sources['test']]
 
-    # README
-    readme = find_readme(str(module_path))
-    readme_path = f'{relative_path}/{readme}' if readme and relative_path else readme
+    # Packages via shared discovery (parity with Maven discovery)
+    rel = prefix if prefix else ''
+    packages = discover_packages(module_path, sources.get('main', []), rel)
+    test_packages = discover_packages(module_path, sources.get('test', []), rel)
 
-    # Stats
-    source_files = _count_source_files(module_path, sources['main'])
-    test_files = _count_source_files(module_path, sources['test'])
+    # Stats via shared counting
+    source_files = count_source_files(module_path, sources['main'])
+    test_files = count_source_files(module_path, sources['test'])
 
     # Commands
     commands = _build_commands(
@@ -384,75 +431,24 @@ def _extract_gradle_module(
         'name': name,
         'build_systems': ['gradle'],
         'paths': {
-            k: v
-            for k, v in {
-                'module': relative_path if relative_path else '.',
-                'descriptor': f'{relative_path}/{build_file.name}' if relative_path else build_file.name,
-                'sources': source_paths if source_paths else None,
-                'tests': test_paths if test_paths else None,
-                'readme': readme_path,
-            }.items()
-            if v is not None
+            'module': rel_path_str,
+            'descriptor': base.paths.descriptor,
+            'sources': source_paths if source_paths else None,
+            'tests': test_paths if test_paths else None,
+            'readme': base.paths.readme,
         },
         'metadata': {
-            k: v
-            for k, v in {
-                'artifact_id': name,
-                'group_id': group_id,
-                'packaging': 'jar',
-                'description': description,
-            }.items()
-            if v is not None
+            'artifact_id': name,
+            'group_id': group_id,
+            'packaging': 'jar',
+            'description': description,
         },
-        'packages': {},
-        'test_packages': {},
+        'packages': packages,
+        'test_packages': test_packages,
         'dependencies': dependencies,
         'stats': {'source_files': source_files, 'test_files': test_files},
         'commands': commands,
     }
-
-
-# =============================================================================
-# Source Discovery
-# =============================================================================
-
-
-def _discover_sources(module_path: Path) -> dict:
-    """Discover source directories for all JVM languages.
-
-    Checks for Java, Kotlin, Groovy, and Scala source directories.
-
-    Returns:
-        Dict with main and test source directories
-    """
-    sources: dict[str, list[str]] = {'main': [], 'test': []}
-
-    for lang in JVM_LANGUAGES:
-        main_dir = module_path / 'src' / 'main' / lang
-        test_dir = module_path / 'src' / 'test' / lang
-        if main_dir.exists():
-            sources['main'].append(f'src/main/{lang}')
-        if test_dir.exists():
-            sources['test'].append(f'src/test/{lang}')
-
-    return sources
-
-
-def _count_source_files(module_path: Path, source_dirs: list) -> int:
-    """Count JVM source files (Java, Kotlin, Groovy, Scala) in source directories."""
-    count = 0
-    for src in source_dirs:
-        src_path = module_path / src
-        if src_path.exists():
-            # Determine language from path (e.g., src/main/kotlin -> kotlin)
-            lang = Path(src).name
-            if lang in JVM_EXTENSIONS:
-                count += len(list(src_path.rglob(JVM_EXTENSIONS[lang])))
-            else:
-                # Fallback: count all known JVM files
-                for ext in JVM_EXTENSIONS.values():
-                    count += len(list(src_path.rglob(ext)))
-    return count
 
 
 # =============================================================================
@@ -478,10 +474,10 @@ def _build_commands(
         module_name: Module name or directory name
         has_sources: Whether module has source files
         has_tests: Whether module has test files
-        relative_path: Path relative to project root ("" for root module)
+        relative_path: Path relative to project root ("." or "" for root module)
         quality_tasks: List of detected quality task names
     """
-    base = 'python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run'
+    skill = 'plan-marshall:build-gradle:gradle'
 
     # For Gradle, embed module as :module:task prefix in command-args
     is_root_module = not relative_path or relative_path == '.'
@@ -491,63 +487,30 @@ def _build_commands(
         """Prefix each task with module path for submodules."""
         if not task_prefix:
             return tasks
-        # Handle multiple tasks: "clean build" -> ":module:clean :module:build"
         return ' '.join(f'{task_prefix}{t}' for t in tasks.split())
 
     # Determine quality-gate task
-    # Default to 'check' which is Gradle's standard verification task
-    # If quality plugins detected, use their check tasks
     quality_target = 'check'
     if 'spotlessCheck' in quality_tasks:
         quality_target = 'spotlessCheck check'
     elif 'checkstyleMain' in quality_tasks:
         quality_target = 'checkstyleMain check'
 
-    commands = {
-        # Always: clean (separate)
-        'clean': f'{base} --command-args "{_tasks("clean")}"',
-        # quality-gate: uses check (static analysis, linting) - NOT build
-        'quality-gate': f'{base} --command-args "{_tasks(quality_target)}"',
-        # verify: full build including tests
-        'verify': f'{base} --command-args "{_tasks("build")}"',
-        # install/deploy commands
-        'install': f'{base} --command-args "{_tasks("publishToMavenLocal")}"',
-        'clean-install': f'{base} --command-args "{_tasks("clean publishToMavenLocal")}"',
-        'package': f'{base} --command-args "{_tasks("jar")}"',
+    cmd_map: dict[str, str] = {
+        'clean': _tasks('clean'),
+        'quality-gate': _tasks(quality_target),
+        'verify': _tasks('build'),
+        'install': _tasks('publishToMavenLocal'),
+        'clean-install': _tasks('clean publishToMavenLocal'),
+        'package': _tasks('jar'),
     }
 
-    # Source-conditional: compile
     if has_sources:
-        commands['compile'] = f'{base} --command-args "{_tasks("classes")}"'
+        cmd_map['compile'] = _tasks('classes')
 
-    # Test-conditional: test-compile, module-tests
     if has_tests:
-        commands['test-compile'] = f'{base} --command-args "{_tasks("testClasses")}"'
-        commands['module-tests'] = f'{base} --command-args "{_tasks("test")}"'
+        cmd_map['test-compile'] = _tasks('testClasses')
+        cmd_map['module-tests'] = _tasks('test')
+        cmd_map['coverage'] = _tasks('test jacocoTestReport')
 
-    return commands
-
-
-# =============================================================================
-# CLI
-# =============================================================================
-
-
-def main():
-    parser = argparse.ArgumentParser(description='Gradle module discovery')
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # discover subcommand
-    discover_parser = subparsers.add_parser('discover', help='Discover Gradle modules')
-    discover_parser.add_argument('--root', required=True, help='Project root directory')
-    discover_parser.add_argument('--format', choices=['json'], default='json', help='Output format')
-
-    args = parser.parse_args()
-
-    if args.command == 'discover':
-        modules = discover_gradle_modules(args.root)
-        print(json.dumps(modules, indent=2))
-
-
-if __name__ == '__main__':
-    main()
+    return build_canonical_commands(skill, cmd_map)

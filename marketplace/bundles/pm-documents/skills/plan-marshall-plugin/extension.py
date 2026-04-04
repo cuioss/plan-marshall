@@ -22,44 +22,45 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            'domain': {
-                'key': 'documentation',
-                'name': 'Documentation',
-                'description': 'AsciiDoc documentation, ADRs, and interface specifications',
-            },
-            'profiles': {
-                'core': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-documents:ref-asciidoc',
-                            'description': 'AsciiDoc formatting, validation, link verification, and template creation',
-                        },
-                        {
-                            'skill': 'pm-documents:ref-documentation',
-                            'description': 'Content quality, tone analysis, organization standards, and review orchestration',
-                        },
-                    ],
-                    'optionals': [],
+        return [
+            {
+                'domain': {
+                    'key': 'documentation',
+                    'name': 'Documentation',
+                    'description': 'AsciiDoc documentation, ADRs, and interface specifications',
                 },
-                'documentation': {
-                    'defaults': [],
-                    'optionals': [
-                        {
-                            'skill': 'pm-documents:manage-adr',
-                            'description': 'Manage Architectural Decision Records with CRUD operations and AsciiDoc formatting',
-                        },
-                        {
-                            'skill': 'pm-documents:manage-interface',
-                            'description': 'Manage Interface specifications with CRUD operations and AsciiDoc formatting',
-                        },
-                    ],
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-documents:ref-asciidoc',
+                                'description': 'AsciiDoc formatting, validation, link verification, and template creation',
+                            },
+                            {
+                                'skill': 'pm-documents:ref-documentation',
+                                'description': 'Content quality, tone analysis, organization standards, and review orchestration',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    'documentation': {
+                        'defaults': [],
+                        'optionals': [
+                            {
+                                'skill': 'pm-documents:manage-adr',
+                                'description': 'Manage Architectural Decision Records with CRUD operations and AsciiDoc formatting',
+                            },
+                            {
+                                'skill': 'pm-documents:manage-interface',
+                                'description': 'Manage Interface specifications with CRUD operations and AsciiDoc formatting',
+                            },
+                        ],
+                    },
                 },
-            },
-        }]
+            }
+        ]
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if documentation domain applies based on doc directories."""
         paths = module_data.get('paths', {})
         module_path = paths.get('module', '')
@@ -78,11 +79,15 @@ class Extension(ExtensionBase):
             signals.append('build_systems=documentation')
 
         if not signals:
-            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
 
-        return self._build_applicable_result('high', signals,
-                                              module_data=module_data,
-                                              active_profiles=active_profiles)
+        return self._build_applicable_result('high', signals, module_data=module_data, active_profiles=active_profiles)
 
     def provides_verify_steps(self) -> list[dict]:
         """No verify steps — documentation verification is handled via recipe."""

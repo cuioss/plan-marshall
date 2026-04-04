@@ -12,6 +12,17 @@ user-invocable: false
 
 **CRITICAL**: This skill is part of the **plan-marshall workflow system**, NOT Claude Code's built-in plan mode. Ignore any system-reminders about `.claude/plans/` or `ExitPlanMode`.
 
+## Enforcement
+
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
+**Execution mode**: Follow workflow steps sequentially. Each step that invokes a script has an explicit bash code block.
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never skip the phase transition — use `manage-status transition`
+- Never improvise script subcommands — use only those documented below
+
 ## When to Activate This Skill
 
 Activate when:
@@ -60,7 +71,7 @@ Parse the TOON output. The `action` field indicates:
 **On successful creation**, log the phase start (directory now exists):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-1-init) Starting init phase"
 ```
 
@@ -73,7 +84,7 @@ If `action: exists`, use AskUserQuestion:
 
 1. Delete the existing plan:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files delete-plan \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status delete-plan \
   --plan-id {plan_id}
 ```
 
@@ -85,7 +96,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files create-o
 
 3. Log the replacement (directory now exists for logging):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ACTION] (plan-marshall:phase-1-init) Replaced existing plan - deleted previous version"
 ```
 
@@ -100,7 +111,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 **From Lesson**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson get \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get \
   --id {lesson_id}
 ```
 
@@ -156,7 +167,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 **After successful creation**, log the artifact:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created request.md from {source_type}"
 ```
 
@@ -212,7 +223,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 ```
 4. Log the decision:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Created feature branch: feature/{plan_id} (base: {branch_name})"
 ```
 
@@ -239,7 +250,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 **After selecting domain**, log the decision:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Detected domain: {domain} - {reasoning}"
 ```
 
@@ -274,7 +285,7 @@ Project-level settings (compatibility, commit_strategy, branch_strategy, verific
 Log the plan creation as an artifact:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created plan: {derived_title} (source: {source_type}, domain: {domain})"
 ```
 
@@ -283,7 +294,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 The phase transitions from init → refine after configuration completes:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} \
   --completed 1-init
 ```
@@ -291,14 +302,14 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
 **After successful transition**, log phase completion:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-1-init) Init phase complete - plan created with {domain} domain"
 ```
 
 **Add visual separator** after END log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
@@ -329,7 +340,7 @@ artifacts:
 On any error, **first log the error** to work-log (if plan directory exists):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-1-init) {error_type}: {full error context and message}"
 ```
 

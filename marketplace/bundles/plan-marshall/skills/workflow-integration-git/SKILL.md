@@ -13,32 +13,44 @@ Provides git commit workflow following conventional commits specification. Inclu
 **Execution mode**: Execute git commit workflow steps sequentially, delegating to script for artifact cleanup and commit formatting.
 
 **Prohibited actions:**
-- Never force-push or amend published commits without explicit user approval
 - Never commit secrets, credentials, or `.env` files
-- Never skip artifact cleanup step before committing
+- Never skip artifact cleanup step before committing (LLM must call detect-artifacts and act on results — the script detects but does not delete)
 
 **Constraints:**
-- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
-- Commit messages must follow conventional commits format
+- Commit messages must follow conventional commits format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples
 - Push only when explicitly requested via parameters
 
-## What This Skill Provides
+## Parameters
 
-- Artifact detection and cleanup
-- Commit message generation following conventional commits
-- Optional push to remote
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `message` | string | no | auto-generate from diff | Custom commit message |
+| `push` | bool | no | false | Push to remote after committing |
 
-### Commit Standards
+## Prerequisites
 
-- **Format:** `<type>(<scope>): <subject>`
-- **Types:** feat, fix, docs, style, refactor, perf, test, chore
-- **Quality:** imperative mood, lowercase, no period, max 50 chars
+No external `Skill:` dependencies. Script imports `triage_helpers` from `ref-toon-format` at runtime (see `ref-workflow-architecture` → "Shared Infrastructure").
 
-## When to Activate This Skill
+## Architecture
 
-- Committing changes to repository
-- Generating commit messages from diffs
-- Cleaning build artifacts before commit
+```
+workflow-integration-git (git commit workflow)
+  └─> triage_helpers (ref-toon-format) — error handling, TOON serialization
+```
+
+## Usage Examples
+
+```bash
+# Format a commit message
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
+  --type feat --scope auth --subject "add login flow"
+
+# Analyze a diff for commit suggestions
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff --file changes.diff
+
+# Detect artifacts before committing
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts
+```
 
 ## Workflow: Commit Changes
 
@@ -50,10 +62,8 @@ Provides git commit workflow following conventional commits specification. Inclu
 
 ### Steps
 
-**Step 1: Load Commit Standards**
-```
-Read standards/git-commit-standards.md
-```
+**Step 1: Verify Commit Standards**
+Use the quick reference above. For edge cases (breaking changes, multi-footer, scope guidelines), read `standards/git-commit-standards.md`.
 
 **Step 2: Check for Uncommitted Changes**
 ```bash
@@ -64,11 +74,13 @@ If no changes → Report "No changes to commit"
 
 **Step 3: Clean Artifacts**
 
-```
-Read standards/artifact-cleanup.md
+Detect artifacts using the script:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts [--root <repo-root>]
 ```
 
-Follow the detection and cleanup rules. Safe deletions are automatic; uncertain cases require user confirmation.
+The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files are excluded since they cannot be accidentally committed. For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
 
 **Step 4: Generate Commit Message**
 
@@ -77,16 +89,19 @@ If custom message provided:
 - Use provided message
 
 If no message:
-- Analyze diff using script:
+- Generate diff: `git diff --cached > /tmp/changes.diff` (or `git diff` for unstaged)
+- Analyze diff using script to get type/scope hints:
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff --file <diff-file>
+  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff --file <diff-file>
   ```
-- Generate message following standards
-
-**Multi-type priority:** fix > feat > perf > refactor > docs > style > test > chore
+- The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
+- If multiple change types are present, use the highest priority: fix > feat > perf > refactor > docs > style > test > chore > ci
+- **Scope caveat**: The script infers scope from the first source file's path structure. For changes spanning multiple modules, the detected scope may not be representative — omit scope for cross-cutting changes.
 
 **Step 5: Stage and Commit**
+
+Stage specific files relevant to the logical change (use `git status --porcelain` to review):
 ```bash
 git add <specific-files>
 git commit -m "$(cat <<'EOF'
@@ -117,19 +132,20 @@ pushed: true
 
 ## Scripts
 
-**Script**: `plan-marshall:workflow-integration-git:git-workflow`
+**Script**: `plan-marshall:workflow-integration-git:git_workflow`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message |
+| `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By NOT appended — caller adds it at `git commit` time per project convention) |
 | `analyze-diff` | `--file` | Analyze diff for commit suggestions |
+| `detect-artifacts` | `[--root]` | Scan for committable artifacts |
 
 ### format-commit
 
 Format commit message following conventional commits.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow format-commit \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
   --type feat \
   --scope http \
   --subject "add retry config" \
@@ -163,7 +179,7 @@ status: success
 Analyze diff file to suggest commit message parameters.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow analyze-diff \
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff \
   --file changes.diff
 ```
 
@@ -173,7 +189,6 @@ mode: analysis
 suggestions:
   type: feat
   scope: auth
-  subject: ~
   detected_changes[1]:
     - Significant new code added
   files_changed[1]:
@@ -181,21 +196,51 @@ suggestions:
 status: success
 ```
 
+### detect-artifacts
+
+Scan a directory for build artifacts and temporary files that should not be committed.
+Files already covered by `.gitignore` are excluded by default since they cannot be accidentally committed.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts \
+  [--root /path/to/repo] [--no-gitignore]
+```
+
+**Parameters**:
+- `--root`: Root directory to scan (default: current working directory)
+- `--no-gitignore`: Include gitignored files in results (default: respect .gitignore)
+
+**Output** (TOON):
+```toon
+root: /path/to/repo
+safe[2]:
+  - src/main/java/Example.class
+  - .DS_Store
+uncertain[1]:
+  - target/classes/Config.class
+total: 3
+status: success
+```
+
+## Error Handling
+
+| Failure | Action |
+|---------|--------|
+| No changes to commit | Report "No changes to commit" and return success (not an error). |
+| format-commit validation failure | Report warnings to caller. Do not commit with invalid message. |
+| analyze-diff on missing file | Return failure with path. Caller should generate diff first. |
+| Artifact cleanup uncertain | Ask user via `AskUserQuestion` before deleting. Never auto-delete uncertain files. |
+| git commit failure (hook rejection, conflict) | Report error with full output. Do not retry automatically. |
+| git push failure | Report error. Never force-push as fallback. |
+
 ## Standards (Load On-Demand)
 
 | Standard | When to Load |
 |----------|-------------|
-| `standards/git-commit-standards.md` | Conventional commits format, type definitions, best practices |
-| `standards/artifact-cleanup.md` | Artifact detection patterns and cleanup rules |
+| `standards/git-commit-standards.md` | Edge cases: breaking changes, multi-footer, scope guidelines, anti-patterns |
+| `standards/git-commit-config.json` | Adding/updating valid commit types, imperative mood allowlist, or length thresholds |
+| `standards/artifact-patterns.json` | Adding/updating artifact detection patterns and cleanup rules |
 
-## Critical Rules
+## Related
 
-**Artifacts:** NEVER commit `*.class`, `*.temp`, `*.backup*`
-**Permissions:** NEVER push without `push` param
-**Standards:** Follow conventional commits format, add Co-Authored-By footer
-**Safety:** Ask user if uncertain about file deletion
-
-## References
-
-- Conventional Commits: https://www.conventionalcommits.org/
-- Git Commit Best Practices: https://cbea.ms/git-commit/
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Called by: `plan-marshall:workflow-pr-doctor` (commit after fixes), `plan-marshall:phase-6-finalize` (final commit).

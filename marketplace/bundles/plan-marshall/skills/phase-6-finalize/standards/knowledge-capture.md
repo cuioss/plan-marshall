@@ -9,7 +9,7 @@ Record significant patterns discovered during implementation. Advisory only — 
 ## Execution
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:manage-memories"
 ```
 

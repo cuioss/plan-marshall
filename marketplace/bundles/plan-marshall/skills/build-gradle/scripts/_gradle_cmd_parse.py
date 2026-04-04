@@ -2,6 +2,7 @@
 """Parse subcommand for Gradle build output.
 
 Implements BuildParser protocol for unified build log parsing.
+Uses the shared ParserRegistry for consistent detection and routing.
 Internal module - use gradle.py CLI entry point instead.
 
 Usage (internal):
@@ -10,115 +11,105 @@ Usage (internal):
     issues, test_summary, build_status = parse_log("path/to/build.log")
 """
 
-import json
-import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
-from plan_logging import log_entry
+from _build_jvm_patterns import JVM_BASE_PATTERNS, override_patterns, parse_jvm_file_location
+from _build_parse import (
+    SEVERITY_ERROR,
+    SEVERITY_WARNING,
+    CategoryPatterns,
+    Issue,
+    UnitTestSummary,
+    add_issue_deduped,
+    categorize_issue,
+    collect_stack_traces,
+    extract_test_summary,
+)
+from _build_parse import (
+    detect_build_status as _detect_build_status_base,
+)
 
-# Pattern definitions for categorizing build output
-COMPILATION_PATTERNS = [
-    r'error:\s+cannot find symbol',
-    r'error:\s+incompatible types',
-    r'error:\s+illegal start',
-    r"error:\s+';' expected",
-    r'error:\s+class .* is public',
-    r'error:\s+package .* does not exist',
-    r'error:\s+method .* cannot be applied',
-    r'error:\s+unreported exception',
-    r'error:\s+variable .* might not have been initialized',
-    r'error:\s+cannot access',
-    r"Execution failed for task ':.*:compileJava'",
-    r"Execution failed for task ':.*:compileKotlin'",
-]
-TEST_FAILURE_PATTERNS = [
-    r'>\s+\d+ tests? completed, \d+ failed',
-    r'FAILED',
-    r'AssertionFailedError',
-    r'AssertionError',
-    r"Execution failed for task ':.*:test'",
-]
-DEPENDENCY_PATTERNS = [
-    r'Could not resolve',
-    r'Could not find',
-    r'Could not download',
-    r'Failed to resolve',
-    r'Cannot resolve external dependency',
-]
-JAVADOC_PATTERNS = [
-    r'warning:\s+no @param',
-    r'warning:\s+no @return',
-    r'warning:\s+missing @',
-    r'javadoc',
-    r"Execution failed for task ':.*:javadoc'",
-]
-DEPRECATION_PATTERNS = [r'\[deprecation\]', r'has been deprecated', r'is deprecated']
-UNCHECKED_PATTERNS = [r'\[unchecked\]', r'unchecked conversion', r'unchecked call']
+# Gradle-specific categorization patterns. Extends shared JVM base patterns
+# with Gradle task markers, Kotlin errors, and regex-based patterns.
+GRADLE_PATTERNS: CategoryPatterns = override_patterns(
+    JVM_BASE_PATTERNS,
+    {
+        # Override compilation_error with Gradle-specific regex patterns + Kotlin
+        'compilation_error': [
+            # Java errors (regex for Gradle's error: prefix)
+            r'error:\s+cannot find symbol',
+            r'error:\s+incompatible types',
+            r'error:\s+illegal start',
+            r"error:\s+';' expected",
+            r'error:\s+class .* is public',
+            r'error:\s+package .* does not exist',
+            r'error:\s+method .* cannot be applied',
+            r'error:\s+unreported exception',
+            r'error:\s+variable .* might not have been initialized',
+            r'error:\s+cannot access',
+            # Kotlin errors
+            r'Unresolved reference',
+            r'Type mismatch',
+            r'Smart cast to .* is impossible',
+            r'None of the following candidates is applicable',
+            r'Overload resolution ambiguity',
+            r'Val cannot be reassigned',
+            # Task failure markers
+            r"Execution failed for task ':.*:compileJava'",
+            r"Execution failed for task ':.*:compileKotlin'",
+        ],
+        'test_failure': [
+            r'>\s+\d+ tests? completed, \d+ failed',
+            r'FAILED',
+            r'AssertionFailedError',
+            r'AssertionError',
+            r"Execution failed for task ':.*:test'",
+        ],
+        'dependency_error': [
+            r'Could not resolve',
+            r'Could not find',
+            r'Could not download',
+            r'Failed to resolve',
+            r'Cannot resolve external dependency',
+        ],
+        'javadoc_warning': [
+            r'warning:\s+no @param',
+            r'warning:\s+no @return',
+            r'warning:\s+missing @',
+            'javadoc',
+            r"Execution failed for task ':.*:javadoc'",
+        ],
+        'deprecation_warning': [
+            r'\[deprecation\]',
+            'has been deprecated',
+            'is deprecated',
+        ],
+        'unchecked_warning': [
+            r'\[unchecked\]',
+            'unchecked conversion',
+            'unchecked call',
+        ],
+        # Override openrewrite_info to include Gradle-specific plugin name
+        'openrewrite_info': [
+            r'org\.openrewrite',
+            r'rewrite-gradle-plugin',
+            'rewrite:',
+        ],
+    },
+)
+
+# Categories that represent errors (not warnings). Used for severity mapping.
+_ERROR_CATEGORIES = {'compilation_error', 'test_failure', 'dependency_error'}
 
 
-def categorize_line(line: str) -> str | None:
-    """Categorize a log line by issue type."""
-    for pattern in COMPILATION_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'compilation_error'
-    for pattern in TEST_FAILURE_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'test_failure'
-    for pattern in DEPENDENCY_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'dependency_error'
-    for pattern in JAVADOC_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'javadoc_warning'
-    for pattern in DEPRECATION_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'deprecation_warning'
-    for pattern in UNCHECKED_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return 'unchecked_warning'
-    return None
+def parse_file_location(line: str) -> dict[str, str | int | None]:
+    """Extract file, line, and column from a Gradle error/warning line.
 
-
-def extract_file_location(line: str) -> tuple[str, int, int]:
-    """Extract file path, line, and column from error message."""
-    match = re.search(r'([^\s:]+\.(java|kt|groovy)):(\d+):?(\d+)?', line)
-    if match:
-        return match.group(1), int(match.group(3)), int(match.group(4)) if match.group(4) else 0
-    return '', 0, 0
-
-
-def parse_build_status(lines: list[str]) -> str:
-    """Determine overall build status from log lines."""
-    for line in reversed(lines[-50:]):
-        if 'BUILD SUCCESSFUL' in line:
-            return 'SUCCESS'
-        if 'BUILD FAILED' in line:
-            return 'FAILURE'
-    return 'UNKNOWN'
-
-
-def parse_metrics(lines: list[str]) -> dict:
-    """Extract build metrics from log."""
-    metrics = {'duration_ms': 0, 'tasks_executed': 0, 'tests_run': 0, 'tests_failed': 0}
-    for line in lines:
-        duration_match = re.search(r'BUILD (?:SUCCESSFUL|FAILED) in (?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?', line)
-        if duration_match:
-            hours, minutes, seconds = (
-                int(duration_match.group(1) or 0),
-                int(duration_match.group(2) or 0),
-                int(duration_match.group(3) or 0),
-            )
-            metrics['duration_ms'] = (hours * 3600 + minutes * 60 + seconds) * 1000
-        tasks_match = re.search(r'(\d+) actionable tasks?: (\d+) executed', line)
-        if tasks_match:
-            metrics['tasks_executed'] = int(tasks_match.group(2))
-        test_match = re.search(r'(\d+) tests? completed(?:, (\d+) failed)?(?:, (\d+) skipped)?', line)
-        if test_match:
-            metrics['tests_run'] = int(test_match.group(1))
-            metrics['tests_failed'] = int(test_match.group(2) or 0)
-    return metrics
+    Delegates to shared parse_jvm_file_location from _build_jvm_patterns.
+    Supports Java, Kotlin, Groovy, and Scala source file patterns.
+    """
+    return parse_jvm_file_location(line)
 
 
 # =============================================================================
@@ -143,210 +134,81 @@ def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None
     Raises:
         FileNotFoundError: If log file doesn't exist.
     """
-    path = Path(log_file)
-    content = path.read_text(encoding='utf-8', errors='replace')
+    content = Path(str(log_file)).read_text(encoding='utf-8', errors='replace')
     lines = content.split('\n')
 
-    issues = _extract_issues_as_dataclass(lines)
-    test_summary = _extract_test_summary_as_dataclass(lines)
-    build_status = _detect_build_status(lines)
+    issues = _extract_issues(lines)
+    test_summary = _extract_test_summary(content)
+    build_status = _detect_build_status(content)
 
     return issues, test_summary, build_status
 
 
-def _detect_build_status(lines: list[str]) -> str:
-    """Determine overall build status from log lines.
-
-    Args:
-        lines: Log file lines.
-
-    Returns:
-        "SUCCESS" or "FAILURE" (never UNKNOWN per contract).
-    """
-    for line in reversed(lines[-50:]):
-        if 'BUILD SUCCESSFUL' in line:
-            return 'SUCCESS'
-        if 'BUILD FAILED' in line:
-            return 'FAILURE'
-    # If neither found, assume failure (conservative)
-    return 'FAILURE'
+def _detect_build_status(content: str) -> str:
+    """Detect Gradle build status using shared detector."""
+    return _detect_build_status_base(
+        content,
+        success_markers=['BUILD SUCCESSFUL'],
+        failure_markers=['BUILD FAILED'],
+        default='FAILURE',
+    )
 
 
-def _extract_issues_as_dataclass(lines: list[str]) -> list[Issue]:
+def _extract_issues(lines: list[str]) -> list[Issue]:
     """Extract all issues from Gradle output as Issue dataclasses.
 
-    Args:
-        lines: Log file lines.
-
-    Returns:
-        List of Issue dataclasses with severity, file, line, message, category.
-        Deduplicates issues by key (type:file:line:message_prefix).
+    Uses shared categorize_issue with Gradle-specific patterns.
+    Deduplicates issues by key (type:file:line:message_prefix).
     """
     issues: list[Issue] = []
     seen: set[str] = set()
-    stack_lines: list[str] = []
 
     for line in lines:
         stripped = line.strip()
 
-        # Collect stack trace lines and attach to previous issue
+        # Skip stack trace lines (handled by collect_stack_traces)
         if stripped.startswith('at ') or stripped.startswith('Caused by:'):
-            stack_lines.append(stripped)
             continue
 
-        # When we hit a non-stack line, flush collected stack to last issue
-        if stack_lines and issues:
-            issues[-1].stack_trace = '\n'.join(stack_lines)
-            stack_lines = []
-
-        issue_type = categorize_line(line)
-        if not issue_type:
+        # Skip continuation lines (multi-line error messages)
+        if stripped.startswith('->') or stripped.startswith('>'):
             continue
 
-        file_path, file_line, _ = extract_file_location(line)
-        message = stripped
-
-        # Deduplication
-        dedup_key = f'{issue_type}:{file_path}:{file_line}:{message[:100]}'
-        if dedup_key in seen:
+        issue_type = categorize_issue(line, GRADLE_PATTERNS)
+        if issue_type == 'other':
             continue
-        seen.add(dedup_key)
 
-        # Map type to severity
-        severity = SEVERITY_ERROR if 'error' in issue_type else SEVERITY_WARNING
+        location = parse_file_location(line)
+        loc_file = location.get('file')
+        loc_line = location.get('line')
 
-        issues.append(
-            Issue(
-                file=file_path if file_path else None,
-                line=file_line if file_line else None,
-                message=message[:500],
-                severity=severity,
-                category=issue_type,
-            )
+        # Map category to severity — explicit set avoids false negatives
+        # (e.g., 'test_failure' doesn't contain 'error' but is an error)
+        severity = SEVERITY_ERROR if issue_type in _ERROR_CATEGORIES else SEVERITY_WARNING
+
+        add_issue_deduped(
+            issues,
+            seen,
+            file=str(loc_file) if loc_file is not None else None,
+            line=int(loc_line) if loc_line is not None else None,
+            message=stripped,
+            severity=severity,
+            category=issue_type,
         )
 
-    # Flush any remaining stack lines
-    if stack_lines and issues:
-        issues[-1].stack_trace = '\n'.join(stack_lines)
+    # Attach stack traces to issues
+    collect_stack_traces(lines, issues)
 
     return issues
 
 
-def _extract_test_summary_as_dataclass(lines: list[str]) -> UnitTestSummary | None:
-    """Extract test execution summary as UnitTestSummary dataclass.
+def _extract_test_summary(content: str) -> UnitTestSummary | None:
+    """Extract Gradle test summary using shared extractor.
 
-    Args:
-        lines: Log file lines.
-
-    Returns:
-        UnitTestSummary dataclass if tests were run, None otherwise.
-
-    Note:
-        Gradle format: "5 tests completed, 2 failed" or "5 tests completed, 2 failed, 1 skipped"
+    Gradle format: "5 tests completed, 2 failed" or "5 tests completed, 2 failed, 1 skipped"
     """
-    # Look for test completion line
-    pattern = r'(\d+) tests? completed(?:, (\d+) failed)?(?:, (\d+) skipped)?'
-
-    for line in lines:
-        match = re.search(pattern, line)
-        if match:
-            total = int(match.group(1))
-            failed = int(match.group(2) or 0)
-            skipped = int(match.group(3) or 0)
-            passed = total - failed - skipped
-
-            return UnitTestSummary(
-                passed=passed,
-                failed=failed,
-                skipped=skipped,
-                total=total,
-            )
-
-    return None
-
-
-def cmd_parse(args):
-    """Handle parse subcommand."""
-    path = Path(args.log)
-    if not path.exists():
-        log_entry('script', 'global', 'ERROR', f'[GRADLE-PARSE] Log file not found: {args.log}')
-        print(
-            json.dumps(
-                {'status': 'error', 'error': 'file_not_found', 'message': f'Log file not found: {args.log}'}, indent=2
-            )
-        )
-        return 1
-
-    with open(path, encoding='utf-8', errors='replace') as f:
-        lines = f.readlines()
-
-    issues, seen = [], set()
-    for line_num, line in enumerate(lines, 1):
-        issue_type = categorize_line(line)
-        if issue_type:
-            file_path, file_line, file_col = extract_file_location(line)
-            message = line.strip()
-            dedup_key = f'{issue_type}:{file_path}:{file_line}:{message[:100]}'
-            if dedup_key in seen:
-                continue
-            seen.add(dedup_key)
-            severity = 'ERROR' if 'error' in issue_type else 'WARNING'
-            issues.append(
-                {
-                    'type': issue_type,
-                    'file': file_path,
-                    'line': file_line,
-                    'column': file_col,
-                    'message': message[:500],
-                    'severity': severity,
-                    'log_line': line_num,
-                }
-            )
-
-    build_status = parse_build_status(lines)
-    metrics = parse_metrics(lines)
-
-    if args.mode == 'errors':
-        issues = [i for i in issues if i['severity'] == 'ERROR']
-
-    summary = {
-        'compilation_errors': sum(1 for i in issues if i['type'] == 'compilation_error'),
-        'test_failures': sum(1 for i in issues if i['type'] == 'test_failure'),
-        'javadoc_warnings': sum(1 for i in issues if i['type'] == 'javadoc_warning'),
-        'deprecation_warnings': sum(1 for i in issues if i['type'] == 'deprecation_warning'),
-        'unchecked_warnings': sum(1 for i in issues if i['type'] == 'unchecked_warning'),
-        'dependency_errors': sum(1 for i in issues if i['type'] == 'dependency_error'),
-        'total_issues': len(issues),
-    }
-
-    log_entry(
-        'script',
-        'global',
-        'INFO',
-        f'[GRADLE-PARSE] Parsed log: status={build_status}, issues={len(issues)}, tests_run={metrics["tests_run"]}',
+    return extract_test_summary(
+        content,
+        r'(\d+) tests? completed(?:, (\d+) failed)?(?:, (\d+) skipped)?',
+        group_map={'total': 1, 'failed': 2, 'skipped': 3},
     )
-
-    result = {
-        'status': 'success',
-        'data': {'build_status': build_status, 'issues': issues, 'summary': summary},
-        'metrics': metrics,
-    }
-
-    if args.mode == 'default':
-        output_lines = [
-            f'Build Status: {build_status}',
-            f'Duration: {metrics["duration_ms"]}ms',
-            f'Tasks: {metrics["tasks_executed"]} executed',
-            f'Tests: {metrics["tests_run"]} run, {metrics["tests_failed"]} failed',
-            '',
-            'Issues Summary:',
-            f'  Compilation Errors: {summary["compilation_errors"]}',
-            f'  Test Failures: {summary["test_failures"]}',
-            f'  Javadoc Warnings: {summary["javadoc_warnings"]}',
-            f'  Total: {summary["total_issues"]}',
-        ]
-        print('\n'.join(output_lines))
-        return 0
-
-    print(json.dumps(result, indent=2))
-    return 0

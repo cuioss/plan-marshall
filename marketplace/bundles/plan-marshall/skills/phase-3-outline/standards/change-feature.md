@@ -20,7 +20,7 @@ Use Glob/Grep to understand the target area:
 Log findings:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline) Feature: {component_type} in {target_location}"
 ```
 

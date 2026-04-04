@@ -44,9 +44,12 @@ SCRIPTS = {
     {{SCRIPT_MAPPINGS}}
 }
 
-# Build PYTHONPATH from all unique script directories
-# This allows scripts to import from any skill without path manipulation
-_SCRIPT_DIRS = sorted(set(str(Path(p).parent) for p in SCRIPTS.values()))
+# Build PYTHONPATH from all skill script directories and their subdirectories.
+# Includes directories discovered at generation time (covers library-only skills like
+# script-shared that have importable modules but no registered script notations).
+_SCRIPT_DIRS_FROM_MAPPINGS = sorted(set(str(Path(p).parent) for p in SCRIPTS.values()))
+_ALL_SCRIPT_DIRS = [{{EXTRA_SCRIPT_DIRS}}]
+_SCRIPT_DIRS = sorted(set(_SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_DIRS))
 _PYTHONPATH = ':'.join(_SCRIPT_DIRS)
 
 # ============================================================================
@@ -61,7 +64,7 @@ VALIDATE_TOON = False  # Set True for strict TOON output validation
 # Scripts whose successful executions are NOT logged to prevent meta-logging noise
 # (logging scripts logging themselves creates excessive noise)
 SILENT_ON_SUCCESS = frozenset([
-    'plan-marshall:manage-logging:manage-log',
+    'plan-marshall:manage-logging:manage-logging',
 ])
 
 
@@ -69,11 +72,11 @@ def should_skip_logging(notation: str, exit_code: int) -> bool:
     """
     Determine if logging should be skipped for this execution.
 
-    Logging scripts (like manage-log) are not logged when successful to avoid
+    Logging scripts (like manage-logging) are not logged when successful to avoid
     meta-logging noise. Errors are always logged regardless of script type.
 
     Args:
-        notation: Script notation (e.g., 'plan-marshall:manage-logging:manage-log')
+        notation: Script notation (e.g., 'plan-marshall:manage-logging:manage-logging')
         exit_code: Script exit code (0 = success)
 
     Returns:

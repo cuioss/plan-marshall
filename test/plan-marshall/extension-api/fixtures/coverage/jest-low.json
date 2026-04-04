@@ -1,0 +1,20 @@
+{
+  "total": {
+    "lines": { "total": 200, "covered": 100, "skipped": 0, "pct": 50 },
+    "statements": { "total": 220, "covered": 110, "skipped": 0, "pct": 50 },
+    "functions": { "total": 40, "covered": 20, "skipped": 0, "pct": 50 },
+    "branches": { "total": 50, "covered": 20, "skipped": 0, "pct": 40 }
+  },
+  "/src/components/Widget.js": {
+    "lines": { "total": 100, "covered": 40, "skipped": 0, "pct": 40 },
+    "statements": { "total": 110, "covered": 44, "skipped": 0, "pct": 40 },
+    "functions": { "total": 20, "covered": 8, "skipped": 0, "pct": 40 },
+    "branches": { "total": 25, "covered": 8, "skipped": 0, "pct": 32 }
+  },
+  "/src/services/api.js": {
+    "lines": { "total": 100, "covered": 60, "skipped": 0, "pct": 60 },
+    "statements": { "total": 110, "covered": 66, "skipped": 0, "pct": 60 },
+    "functions": { "total": 20, "covered": 12, "skipped": 0, "pct": 60 },
+    "branches": { "total": 25, "covered": 12, "skipped": 0, "pct": 48 }
+  }
+}

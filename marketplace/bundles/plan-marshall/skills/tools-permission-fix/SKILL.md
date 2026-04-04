@@ -1,12 +1,12 @@
 ---
 name: tools-permission-fix
-description: Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes.
+description: Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes, executor migration, wildcard generation.
 user-invocable: true
 ---
 
 # Permission Fix Skill
 
-**PURPOSE**: Write operations for fixing and managing Claude Code permissions.
+**PURPOSE**: Write operations for fixing and managing Claude Code permissions, including marketplace permission synchronization and executor pattern migration.
 
 **COMPLEMENTARY SKILL**: Use `plan-marshall:tools-permission-doctor` for read-only analysis before applying fixes.
 
@@ -20,14 +20,16 @@ user-invocable: true
 - Do not skip dry-run verification for bulk operations
 
 **Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix {command} {args}`
+- All commands use `python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix {command} {args}`
 - Always use `--dry-run` first to preview changes before applying
 
 ## Script Reference
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| permission-fix | `plan-marshall:tools-permission-fix:permission-fix` | Write operations for permissions |
+| permission_fix | `plan-marshall:tools-permission-fix:permission_fix` | Write operations for permissions |
+
+**Shared dependency**: Imports `permission_common` from `tools-permission-doctor/scripts/`. The executor's PYTHONPATH ensures this is resolvable.
 
 ## Operations
 
@@ -36,21 +38,21 @@ user-invocable: true
 Normalize paths, remove duplicates, sort, and add default permissions.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix apply-fixes \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-fixes \
   --settings ~/.claude/settings.json \
   --dry-run
 ```
 
-**Output (JSON)**:
-```json
-{
-  "duplicates_removed": 2,
-  "paths_fixed": 1,
-  "defaults_added": ["Edit(.plan/**)", "Write(.plan/**)"],
-  "sorted": true,
-  "changes_made": true,
-  "dry_run": true
-}
+**Output (TOON)**:
+```
+duplicates_removed: 2
+paths_fixed: 1
+defaults_added[2]:
+- Edit(.plan/**)
+- Write(.plan/**)
+sorted: true
+changes_made: true
+dry_run: true
 ```
 
 ### add - Add Permission
@@ -58,18 +60,16 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fi
 Add a single permission to settings.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix add \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix add \
   --permission "Bash(docker:*)" \
   --target project
 ```
 
-**Output (JSON)**:
-```json
-{
-  "success": true,
-  "action": "added",
-  "settings_file": "/path/to/.claude/settings.json"
-}
+**Output (TOON)**:
+```
+success: true
+action: added
+settings_file: /path/to/.claude/settings.json
 ```
 
 ### remove - Remove Permission
@@ -77,18 +77,16 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fi
 Remove a single permission from settings.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix remove \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix remove \
   --permission "Bash(docker:*)" \
   --target project
 ```
 
-**Output (JSON)**:
-```json
-{
-  "success": true,
-  "action": "removed",
-  "settings_file": "/path/to/.claude/settings.json"
-}
+**Output (TOON)**:
+```
+success: true
+action: removed
+settings_file: /path/to/.claude/settings.json
 ```
 
 ### ensure - Ensure Permissions Exist
@@ -96,20 +94,21 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fi
 Ensure multiple permissions exist (add missing, skip existing).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix ensure \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure \
   --permissions "Bash(git:*),Bash(npm:*),Bash(docker:*)" \
   --target global
 ```
 
-**Output (JSON)**:
-```json
-{
-  "success": true,
-  "added": ["Bash(docker:*)"],
-  "already_exists": ["Bash(git:*)", "Bash(npm:*)"],
-  "added_count": 1,
-  "total_permissions": 45
-}
+**Output (TOON)**:
+```
+success: true
+added[1]:
+- Bash(docker:*)
+already_exists[2]:
+- Bash(git:*)
+- Bash(npm:*)
+added_count: 1
+total_permissions: 45
 ```
 
 ### consolidate - Consolidate Timestamped Permissions
@@ -117,19 +116,20 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fi
 Replace timestamped permissions with wildcards.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix consolidate \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix consolidate \
   --settings ~/.claude/settings.json \
   --dry-run
 ```
 
-**Output (JSON)**:
-```json
-{
-  "consolidated": 5,
-  "removed": ["Read(target/output-2024-01-01.log)", "..."],
-  "wildcards_added": ["Read(target/output-*.log)"],
-  "dry_run": true
-}
+**Output (TOON)**:
+```
+consolidated: 5
+removed[2]:
+- Read(target/output-2024-01-01.log)
+- ...
+wildcards_added[1]:
+- Read(target/output-*.log)
+dry_run: true
 ```
 
 ### ensure-wildcards - Ensure Marketplace Wildcards
@@ -137,25 +137,25 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fi
 Ensure all marketplace bundle wildcards exist in settings.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix ensure-wildcards \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure-wildcards \
   --settings ~/.claude/settings.json \
   --marketplace-json marketplace/.claude-plugin/marketplace.json \
   --dry-run
 ```
 
-**Output (JSON)**:
-```json
-{
-  "added": ["Skill(new-bundle:*)", "SlashCommand(/new-bundle:*)"],
-  "already_present": 14,
-  "total": 16,
-  "dry_run": true
-}
+**Output (TOON)**:
+```
+added[2]:
+- Skill(new-bundle:*)
+- SlashCommand(/new-bundle:*)
+already_present: 14
+total: 16
+dry_run: true
 ```
 
 ## Target Selection
 
-Both `add`, `remove`, and `ensure` support `--target`:
+The `add`, `remove`, and `ensure` operations support `--target`:
 
 | Target | File |
 |--------|------|
@@ -185,13 +185,72 @@ Recommended workflow:
 | `Write(.plan/**)` | Plan file creation |
 | `Read(~/.claude/plugins/cache/**)` | Skills reference files via relative paths |
 
+## Executor Pattern Operations
+
+### generate-wildcards - Generate Permission Wildcards
+
+Generate Skill and SlashCommand wildcards from marketplace inventory.
+
+```bash
+# Read inventory from stdin
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
+  --scope marketplace --resource-types skills,commands | \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix generate-wildcards
+
+# Or from file
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix generate-wildcards \
+  --input inventory.json
+```
+
+### ensure-executor - Ensure Executor Permission
+
+Ensure the executor permission exists in settings.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure-executor \
+  --target global \
+  --dry-run
+```
+
+### cleanup-scripts - Remove Redundant Script Permissions
+
+Remove individual script path permissions (redundant with executor pattern).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix cleanup-scripts \
+  --target global \
+  --remove-broad-python \
+  --dry-run
+```
+
+### migrate-executor - Full Migration to Executor Pattern
+
+Complete migration: add executor permission + cleanup redundant permissions.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix migrate-executor \
+  --target global \
+  --remove-broad-python \
+  --dry-run
+```
+
+## Executor Permission Pattern
+
+The executor pattern uses a single permission for all marketplace scripts:
+- `Bash(python3 .plan/execute-script.py *)`
+
+This replaces individual script path permissions because the executor invokes scripts via subprocess (not checked by Claude Code permissions).
+
+### Migration Path
+1. Run `ensure-executor` to add the executor permission
+2. Run `cleanup-scripts` to remove redundant individual permissions
+3. Or run `migrate-executor` to do both in one step
+
 ## Error Handling
 
-All operations return JSON with error details:
+All operations return TOON with error details:
 
-```json
-{
-  "error": "Settings file not found: /path/to/settings.json",
-  "success": false
-}
+```
+error: Settings file not found: /path/to/settings.json
+success: false
 ```

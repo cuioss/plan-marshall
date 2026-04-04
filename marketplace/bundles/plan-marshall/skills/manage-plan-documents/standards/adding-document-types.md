@@ -1,5 +1,7 @@
 # Adding New Document Types
 
+> **Current status**: Only the `request` document type is implemented. This guide exists for future extensibility.
+
 ## Overview
 
 Adding a new document type requires **no Python code changes**. Create two files:
@@ -28,13 +30,7 @@ sections[N]{name,heading,order}:
 
 ### Field Types
 
-| Type | Description | Validation | Example |
-|------|-------------|------------|---------|
-| `string` | Single-line text | Non-empty if required | `title,string,true,` |
-| `text` | Multi-line text | Non-empty if required | `body,text,true,` |
-| `enum(a\|b\|c)` | Enumerated values | Must match one | `status,enum(draft\|final),true,` |
-| `date` | ISO timestamp | Valid ISO format | `created,date,false,` |
-| `list` | Pipe-separated values | Split on `\|` | `tags,list,false,` |
+> **Field types**: See `standards/architecture.md` for the complete field type reference.
 
 ### Example: `documents/retrospective.toon`
 

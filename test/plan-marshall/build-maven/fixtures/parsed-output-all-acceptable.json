@@ -15,8 +15,11 @@
       }
     ],
     "summary": {
-      "other_warnings": 1,
-      "total_issues": 2
+      "total_issues": 2,
+      "total_errors": 0,
+      "total_warnings": 2,
+      "other": 1,
+      "openrewrite_info": 1
     }
   },
   "metrics": {

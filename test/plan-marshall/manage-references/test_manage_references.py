@@ -14,10 +14,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-refe
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-# Alias for backward compatibility
-TestContext = PlanContext
-
-
 # =============================================================================
 # Test: Create Command
 # =============================================================================
@@ -25,7 +21,7 @@ TestContext = PlanContext
 
 def test_create_references():
     """Test creating references.json."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -35,7 +31,7 @@ def test_create_references():
 
 def test_create_with_issue_url():
     """Test creating references with issue URL."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'create',
@@ -56,7 +52,7 @@ def test_create_with_issue_url():
 
 def test_read_references():
     """Test reading references.json."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'test-plan')
         assert result.success, f'Script failed: {result.stderr}'
@@ -71,7 +67,7 @@ def test_read_references():
 
 def test_get_field():
     """Test getting a specific field."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--field', 'branch')
         assert result.success, f'Script failed: {result.stderr}'
@@ -81,7 +77,7 @@ def test_get_field():
 
 def test_set_field():
     """Test setting a specific field."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         result = run_script(
             SCRIPT_PATH, 'set', '--plan-id', 'test-plan', '--field', 'branch', '--value', 'feature/new-branch'
@@ -98,7 +94,7 @@ def test_set_field():
 
 def test_add_file():
     """Test adding a file to modified_files."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         result = run_script(SCRIPT_PATH, 'add-file', '--plan-id', 'test-plan', '--file', 'src/Main.java')
         assert result.success, f'Script failed: {result.stderr}'
@@ -114,7 +110,7 @@ def test_add_file():
 
 def test_get_context():
     """Test get-context returns all relevant references in one call."""
-    with TestContext():
+    with PlanContext():
         run_script(
             SCRIPT_PATH,
             'create',
@@ -147,7 +143,7 @@ def test_get_context():
 
 def test_get_context_empty():
     """Test get-context with minimal references."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'test-plan')
         assert result.success, f'Script failed: {result.stderr}'
@@ -157,7 +153,7 @@ def test_get_context_empty():
 
 def test_get_context_not_found():
     """Test get-context with missing plan."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
         assert not result.success, 'Expected failure for missing plan'
 
@@ -169,7 +165,7 @@ def test_get_context_not_found():
 
 def test_add_list_new_field():
     """Test adding multiple values to a new list field."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         result = run_script(
             SCRIPT_PATH,
@@ -191,7 +187,7 @@ def test_add_list_new_field():
 
 def test_add_list_existing_field():
     """Test adding values to an existing list field."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         run_script(
             SCRIPT_PATH,
@@ -221,7 +217,7 @@ def test_add_list_existing_field():
 
 def test_add_list_no_duplicates():
     """Test that add-list skips duplicate values."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         run_script(
             SCRIPT_PATH,
@@ -256,7 +252,7 @@ def test_add_list_no_duplicates():
 
 def test_set_list_comma_separated():
     """Test set-list with comma-separated values."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         result = run_script(
             SCRIPT_PATH,
@@ -277,7 +273,7 @@ def test_set_list_comma_separated():
 
 def test_set_list_replaces_existing():
     """Test that set-list replaces existing list (not appends)."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         # First add some files
         run_script(
@@ -316,7 +312,7 @@ def test_set_list_replaces_existing():
 
 def test_set_list_empty_clears():
     """Test that set-list with empty values clears the list."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         run_script(
             SCRIPT_PATH,
@@ -346,7 +342,7 @@ def test_set_list_empty_clears():
 
 def test_set_list_nonexistent_plan():
     """Test set-list on non-existent plan fails."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'set-list',
@@ -364,7 +360,7 @@ def test_set_list_nonexistent_plan():
 
 def test_set_list_returns_previous_count():
     """Test that set-list returns the previous count when replacing."""
-    with TestContext():
+    with PlanContext():
         run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test')
         run_script(
             SCRIPT_PATH,
@@ -399,7 +395,7 @@ def test_set_list_returns_previous_count():
 
 def test_create_with_single_domain():
     """Test creating references with single domain."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'create',
@@ -424,7 +420,7 @@ def test_create_with_single_domain():
 
 def test_create_with_multiple_domains():
     """Test creating references with multiple domains."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'create',
@@ -448,7 +444,7 @@ def test_create_with_multiple_domains():
 
 def test_create_without_domains():
     """Test creating references without domains (domains not set)."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'create',
@@ -466,7 +462,7 @@ def test_create_without_domains():
 
 def test_create_with_domains_and_issue_url():
     """Test creating references with both domains and issue URL."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'create',

@@ -31,7 +31,14 @@ MOCKS_DIR = Path(__file__).parent / 'mocks'
 def test_parse_successful_build():
     """Test parsing successful Maven build output."""
     result = run_script(
-        SCRIPT_PATH, 'parse', '--log', str(FIXTURES_DIR / 'sample-maven-success.log'), '--mode', 'structured'
+        SCRIPT_PATH,
+        'parse',
+        '--log',
+        str(FIXTURES_DIR / 'sample-maven-success.log'),
+        '--mode',
+        'structured',
+        '--format',
+        'json',
     )
     assert result.success, f'Script failed: {result.stderr}'
     data = result.json()
@@ -43,18 +50,25 @@ def test_parse_successful_build():
 def test_parse_compilation_errors():
     """Test parsing build with compilation errors."""
     result = run_script(
-        SCRIPT_PATH, 'parse', '--log', str(FIXTURES_DIR / 'sample-maven-failure.log'), '--mode', 'structured'
+        SCRIPT_PATH,
+        'parse',
+        '--log',
+        str(FIXTURES_DIR / 'sample-maven-failure.log'),
+        '--mode',
+        'structured',
+        '--format',
+        'json',
     )
     data = result.json()
 
     assert data['data']['build_status'] == 'FAILURE', 'Build status should be FAILURE'
-    assert data['data']['summary'].get('compilation_errors', 0) > 0, 'Should detect compilation errors'
+    assert data['data']['summary'].get('compilation_error', 0) > 0, 'Should detect compilation errors'
 
 
 def test_parse_missing_file():
     """Test missing file handling."""
     result = run_script(SCRIPT_PATH, 'parse', '--log', 'nonexistent.log', '--mode', 'structured')
-    data = result.json()
+    data = result.toon()
 
     assert data['status'] == 'error', 'Should return error status for missing file'
 
@@ -73,7 +87,7 @@ def test_search_markers_no_markers():
         java_file = src_dir / 'Test.java'
         java_file.write_text('public class Test {}')
 
-        result = run_script(SCRIPT_PATH, 'search-markers', '--source-dir', str(temp_dir / 'src'))
+        result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(temp_dir / 'src'))
         data = result.json()
 
         assert data['status'] == 'success', 'Should succeed with no markers'
@@ -91,10 +105,47 @@ def test_check_warnings_empty():
     acceptable = json.dumps({})
 
     result = run_script(SCRIPT_PATH, 'check-warnings', '--warnings', warnings, '--acceptable-warnings', acceptable)
+    data = result.toon()
+
+    assert data['status'] == 'success', 'Should succeed with no warnings'
+    assert data['total'] == 0, 'Total should be 0'
+
+
+def test_check_warnings_with_real_patterns():
+    """Test check-warnings with real warning data and acceptable patterns (H45).
+
+    Maven's handler uses filter_severity='WARNING', so warnings must have severity field.
+    Maven uses substring matching.
+    """
+    warnings = json.dumps(
+        [
+            {'message': '[deprecation] DeprecatedApi has been deprecated', 'severity': 'WARNING'},
+            {'message': '[unchecked] unchecked conversion', 'severity': 'WARNING'},
+            {'message': 'some random warning', 'severity': 'WARNING'},
+        ]
+    )
+    acceptable = json.dumps(
+        {
+            'patterns': ['[deprecation]', '[unchecked]'],
+        }
+    )
+
+    result = run_script(SCRIPT_PATH, 'check-warnings', '--warnings', warnings, '--acceptable-warnings', acceptable)
+    data = result.toon()
+
+    assert data['status'] == 'success', 'Should succeed'
+    assert data['total'] == 3, f'Should count all warnings, got: {data}'
+    assert data['acceptable'] >= 2, f'Should accept deprecation and unchecked, got: {data}'
+
+
+def test_search_markers_with_content():
+    """Test searching when markers exist in source files (H49)."""
+    markers_dir = FIXTURES_DIR / 'source-with-markers'
+    result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(markers_dir / 'src'))
     data = result.json()
 
-    assert data['success'] is True, 'Should succeed with no warnings'
-    assert data['total'] == 0, 'Total should be 0'
+    assert data['status'] == 'success', 'Should succeed'
+    assert data['data']['total_markers'] > 0, 'Should find markers in fixture files'
 
 
 # =============================================================================

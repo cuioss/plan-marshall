@@ -45,7 +45,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                                                                      │  │
-│  │  manage-architecture                                        │  │
+│  │  plan-marshall:manage-architecture                           │  │
 │  │  ════════════════════════════                                        │  │
 │  │                                                                      │  │
 │  │  Each module has skills_by_profile:                                  │  │
@@ -98,7 +98,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │    2. Extract: skills_by_profile.{profile}                           │  │
 │  │    3. Create task with profile + resolved skills                     │  │
 │  │                                                                      │  │
-│  │  TASK-001.toon (profile: implementation):                            │  │
+│  │  TASK-001.json (profile: implementation):                            │  │
 │  │    deliverable: 1                                                    │  │
 │  │    module: oauth-sheriff-core                                        │  │
 │  │    domain: java                                                      │  │
@@ -107,7 +107,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │      - pm-dev-java:java-core                                         │  │
 │  │      - pm-dev-java:java-cdi                                          │  │
 │  │                                                                      │  │
-│  │  TASK-002.toon (profile: module_testing):                            │  │
+│  │  TASK-002.json (profile: module_testing):                            │  │
 │  │    deliverable: 1                                                    │  │
 │  │    module: oauth-sheriff-core                                        │  │
 │  │    domain: java                                                      │  │
@@ -131,8 +131,6 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
-
-**Key Insight**: Skills are associated with modules via `skills_by_profile` in architecture data. Deliverables list which profiles apply (visible to user). Task-plan resolves skills from architecture for each profile, creating one task per profile (1:N mapping).
 
 ---
 
@@ -187,8 +185,8 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │   │  Step 3: Load Workflow Skill                               │    │  │
 │  │   │                                                            │    │  │
 │  │   │  Based on task.profile:                                    │    │  │
-│  │   │    implementation → plan-marshall:task-implementation    │    │  │
-│  │   │    module_testing → plan-marshall:task-module-testing    │    │  │
+│  │   │    implementation → plan-marshall:task-executor           │    │  │
+│  │   │    module_testing → plan-marshall:task-executor           │    │  │
 │  │   │                                                            │    │  │
 │  │   │  • Determines HOW to execute                               │    │  │
 │  │   │  • Applies domain skill patterns                           │    │  │
@@ -268,6 +266,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │  ├──────────────┼─────────┼────────────────────────────────────────┤│  │
 │  │  │ outline      │ outline │ Domain detection, deliverable patterns ││  │
 │  │  │ triage       │ finalize│ Finding decision-making (fix/suppress) ││  │
+│  │  │ recipe       │ outline │ Pre-defined deliverable templates      ││  │
 │  │  └──────────────┴─────────┴────────────────────────────────────────┘│  │
 │  │                                                                      │  │
 │  │  RESOLUTION:                                                         │  │
@@ -287,12 +286,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 
 ---
 
-## Related Documents
+## Related
 
-| Document | Purpose |
-|----------|---------|
-| [agents.md](agents.md) | Agent skill loading steps |
-| [phases.md](phases.md) | When each skill type is used |
-| `plan-marshall:manage-architecture` | Source of module.skills_by_profile |
-| `plan-marshall:phase-3-outline` | Where module/skills are selected |
-| `plan-marshall:extension-api` | Extension points |
+- [agents.md](agents.md) — Agent skill loading steps
+- [phases.md](phases.md) — When each skill type is used

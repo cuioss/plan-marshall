@@ -76,3 +76,5 @@ These will cause validation failure:
 | Missing `**Verification:**` section | Required section |
 | Missing `**Profiles:**` section | Required section |
 | Empty `**Profiles:**` block | Must have at least one profile |
+
+> **Complete anti-patterns**: See `standards/solution-outline-standard.md` for the full list of invalid patterns.

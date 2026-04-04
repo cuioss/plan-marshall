@@ -38,7 +38,7 @@ This provides core principles for tool usage and file operations.
 Log each assessment using this EXACT command:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments add --plan-id {plan_id} --file-path {file_path} --certainty {CERTAINTY} --confidence {CONFIDENCE} --agent ext-outline-component-agent/{component_type} --detail "{reasoning}" --evidence "{evidence}"
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment add --plan-id {plan_id} --file-path {file_path} --certainty {CERTAINTY} --confidence {CONFIDENCE} --agent ext-outline-component-agent/{component_type} --detail "{reasoning}" --evidence "{evidence}"
 ```
 
 **Parameters to fill:**
@@ -52,7 +52,7 @@ python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessme
 | `{reasoning}` | Why this decision |
 | `{evidence}` | Specific lines/sections |
 
-**CRITICAL**: Use ONLY the notation `plan-marshall:manage-assessments:manage-assessments`. Do NOT invent other notations.
+**CRITICAL**: Use ONLY the notation `plan-marshall:manage-findings:manage-findings assessment`. Do NOT invent other notations.
 
 ## Input Format
 

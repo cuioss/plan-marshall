@@ -21,7 +21,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 |---------|-------------|
 | `/marshall-steward` | Project configuration wizard for planning system |
 | `/tools-fix-intellij-diagnostics` | Retrieve and fix IDE diagnostics automatically |
-| `/tools-permission-web` | Analyze and consolidate WebFetch domain permissions |
+| `/workflow-permission-web` | Analyze and consolidate WebFetch domain permissions |
 | `/tools-sync-agents-file` | Create or update project-specific agents.md file |
 
 ### Skills (18)
@@ -29,7 +29,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 | Category | Skills |
 |----------|--------|
 | **Configuration** | `manage-config`, `run-config`, `marshall-steward` |
-| **Permissions** | `tools-permission-doctor`, `tools-permission-fix`, `tools-permission-web` |
+| **Permissions** | `tools-permission-doctor`, `tools-permission-fix`, `workflow-permission-web` |
 | **Extension API** | `extension-api`, `manage-architecture` |
 | **Utilities** | `logging`, `script-executor`, `file-operations-base` |
 | **Standards** | `general-development-rules`, `diagnostic-patterns`, `toon-usage` |
@@ -41,6 +41,10 @@ This bundle provides **core infrastructure** organized into functional areas:
 | Agent | Description |
 |-------|-------------|
 | `research-best-practices-agent` | Web research for best practices and recommendations |
+
+## Entry Points and Discoverability
+
+The primary workflow entry points are **skills**, not commands. The `plan-marshall` skill orchestrates the full plan lifecycle (create, outline, execute, finalize), and `marshall-steward` handles project configuration. Both are invoked via `Skill:` directives or by phase-agent delegation. The commands in `commands/` serve narrower, tool-specific purposes (IDE diagnostics, agent file sync). To start a planning workflow, load the `plan-marshall:plan-marshall` skill.
 
 ## Key Concepts
 

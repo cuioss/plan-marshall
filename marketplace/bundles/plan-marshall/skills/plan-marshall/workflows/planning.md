@@ -24,12 +24,12 @@ Display all plans with numbered selection, recipe option, and conditional lesson
 
 **Step 1**: Get existing plans:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle list
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list
 ```
 
 **Step 2**: Check if lessons exist:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson list
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
 ```
 Parse `total` from output. If `total > 0`, lessons are available.
 
@@ -112,7 +112,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics star
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-2-refine"
 ```
 
@@ -158,7 +158,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics star
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-3-outline"
 ```
 
@@ -171,7 +171,7 @@ The skill runs in main conversation context and CAN spawn Task agents for parall
 
 Log solution outline creation:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:plan-marshall) Created solution_outline.md - pending user review"
 ```
 
@@ -198,7 +198,7 @@ This loop runs automatically — do NOT prompt the user for Q-Gate findings unle
 
 **Step 2c**: Transition phase after outline completes AND Q-Gate is clean:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} --completed 3-outline
 ```
 
@@ -284,7 +284,7 @@ AskUserQuestion:
     ```
   - Log feedback capture:
     ```bash
-    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       decision --plan-id {plan_id} --level INFO --message "(plan-marshall:plan-marshall) User review: {count} change requests recorded to artifacts/qgate-3-outline.jsonl"
     ```
   - Re-invoke phase-3-outline skill (phase reads Q-Gate findings at Step 1)
@@ -321,13 +321,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics gene
 
 Log task plan agent invocation:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:plan-marshall) Invoked phase-agent for phase-4-plan"
 ```
 
 **Step 4b**: Transition phase after tasks created:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} --completed 4-plan
 ```
 
@@ -385,12 +385,12 @@ When a lesson is selected:
 
 ## Script API Reference
 
-Script: `plan-marshall:manage-lifecycle:manage-lifecycle`
+Script: `plan-marshall:manage-status:manage_status`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `read` | `--plan-id` | Read plan status |
-| `create` | `--plan-id --title --phases [--force]` | Initialize status.toon |
+| `create` | `--plan-id --title --phases [--force]` | Initialize status.json |
 | `set-phase` | `--plan-id --phase` | Set current phase |
 | `update-phase` | `--plan-id --phase --status` | Update phase status |
 | `progress` | `--plan-id` | Calculate plan progress |
@@ -407,7 +407,7 @@ Script: `plan-marshall:manage-lifecycle:manage-lifecycle`
 Status is stored in the plan directory:
 
 ```
-.plan/plans/{plan_id}/status.toon
+.plan/plans/{plan_id}/status.json
 ```
 
 Archived plans:

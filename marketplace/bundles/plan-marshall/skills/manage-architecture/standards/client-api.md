@@ -92,7 +92,7 @@ architecture.py graph [--full]
 **Parameters**:
 - `--full`: Include aggregator modules (pom-only parents). By default, modules with no source paths are filtered out.
 
-**Output**: See [module-graph-format.md](module-graph-format.md) for complete format specification.
+**Output**: See the "Module Graph Format" section in [architecture-persistence.md](architecture-persistence.md) for complete format specification.
 
 **Single module output**:
 ```
@@ -360,5 +360,7 @@ The primary consumer is **solution-outline** during task planning.
 ```
 
 See [architecture-persistence.md](architecture-persistence.md) for complete schema.
+
+> **Persistence details**: See `standards/architecture-persistence.md` for the underlying storage schema.
 
 Commands merge both files for output. If data does not exist, commands return error with instructions to run discovery first.

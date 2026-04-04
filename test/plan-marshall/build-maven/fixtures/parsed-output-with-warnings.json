@@ -48,11 +48,14 @@
       }
     ],
     "summary": {
-      "javadoc_warnings": 2,
-      "deprecation_warnings": 1,
-      "unchecked_warnings": 1,
-      "other_warnings": 2,
-      "total_issues": 7
+      "total_issues": 7,
+      "total_errors": 0,
+      "total_warnings": 7,
+      "javadoc_warning": 2,
+      "deprecation_warning": 1,
+      "unchecked_warning": 1,
+      "other": 2,
+      "openrewrite_info": 1
     }
   },
   "metrics": {

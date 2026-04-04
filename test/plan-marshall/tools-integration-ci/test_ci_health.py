@@ -17,7 +17,7 @@ def test_detect_success():
     """Test detect command returns valid output."""
     result = run_script(SCRIPT_PATH, 'detect')
     assert result.success, f'Script failed: {result.stderr}'
-    data = result.json()
+    data = result.toon()
     assert 'status' in data
     assert data['status'] == 'success'
     assert 'provider' in data
@@ -29,7 +29,7 @@ def test_verify_all_tools():
     """Test verify command checks all tools."""
     result = run_script(SCRIPT_PATH, 'verify')
     assert result.success, f'Script failed: {result.stderr}'
-    data = result.json()
+    data = result.toon()
     assert data['status'] == 'success'
     assert 'tools' in data
     # Should have git at minimum
@@ -41,7 +41,7 @@ def test_verify_specific_tool():
     """Test verify command for specific tool."""
     result = run_script(SCRIPT_PATH, 'verify', '--tool', 'git')
     assert result.success, f'Script failed: {result.stderr}'
-    data = result.json()
+    data = result.toon()
     assert data['status'] == 'success'
     assert 'tools' in data
     assert 'git' in data['tools']
@@ -51,7 +51,7 @@ def test_verify_unknown_tool():
     """Test verify command with unknown tool returns error."""
     result = run_script(SCRIPT_PATH, 'verify', '--tool', 'unknown_tool_xyz')
     assert not result.success, 'Expected script to fail for unknown tool'
-    data = result.json_or_error()
+    data = result.toon_or_error()
     assert 'error' in data
 
 
@@ -59,7 +59,7 @@ def test_status_success():
     """Test status command returns comprehensive output."""
     result = run_script(SCRIPT_PATH, 'status')
     assert result.success, f'Script failed: {result.stderr}'
-    data = result.json()
+    data = result.toon()
     assert data['status'] == 'success'
     assert 'provider' in data
     assert 'tools' in data
@@ -72,7 +72,7 @@ def test_persist_no_marshal_json():
     with PlanContext(plan_id='test-persist') as ctx:
         result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
         assert not result.success, 'Expected script to fail without marshal.json'
-        data = result.json_or_error()
+        data = result.toon_or_error()
         assert 'error' in data
 
 

@@ -9,7 +9,7 @@ Verify the planning system setup and diagnose issues. Run all checks and report 
 Check executor exists, is valid, and in sync with marketplace:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate-executor verify
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor verify
 ```
 
 **Output (TOON)**:
@@ -27,7 +27,7 @@ If status is `error` or executor missing: Offer to regenerate via Maintenance me
 Compare executor mappings with current marketplace state:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate-executor drift
+python3 .plan/execute-script.py plan-marshall:tools-script-executor:generate_executor drift
 ```
 
 **Output (TOON)**:
@@ -45,7 +45,7 @@ If drift detected (added/removed/changed > 0): Offer to regenerate executor.
 Check that enabled plugins have corresponding Skill/SlashCommand wildcards:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission-fix ensure-wildcards \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure-wildcards \
   --settings ~/.claude/settings.json \
   --marketplace-json marketplace/.claude-plugin/marketplace.json \
   --dry-run
@@ -77,7 +77,7 @@ If yes, run without `--dry-run`.
 Detect permissions for bundles that no longer exist:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission-doctor detect-redundant --scope both
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-redundant --scope both
 ```
 
 Report any redundant or stale permissions found.
@@ -89,7 +89,7 @@ Report any redundant or stale permissions found.
 Verify project structure knowledge base exists:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:determine-mode check-structure
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-structure
 ```
 
 **Interpret results**:
@@ -131,9 +131,9 @@ AskUserQuestion:
 
 ## Step 7: Summary
 
-Output health check summary:
+Output health check summary. Use `status: success` and `overall: HEALTHY` when all checks passed. Use `status: warning` and `overall: DEGRADED` when any check reported issues.
 
-**Healthy System**:
+**Healthy System** (all checks passed):
 ```toon
 status: success
 operation: health_check
@@ -155,7 +155,7 @@ ci:
 overall: HEALTHY
 ```
 
-**System with Issues**:
+**System with Issues** (one or more checks reported problems):
 ```toon
 status: warning
 operation: health_check

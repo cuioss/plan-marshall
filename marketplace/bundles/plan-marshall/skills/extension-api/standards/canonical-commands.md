@@ -2,6 +2,8 @@
 
 Defines the standard command names that extensions return in `discover_modules()` output.
 
+> **Authoritative source**: The `CMD_*` constants and `CANONICAL_COMMANDS` dict in `extension_base.py` are the runtime source of truth. This document provides resolution logic and human-readable descriptions.
+
 ## Purpose
 
 Canonical commands provide a **build-system-agnostic vocabulary** for common development operations. Extensions map these canonical names to build-system-specific invocations.
@@ -82,6 +84,8 @@ Only include if corresponding profile/configuration is detected:
 - `coverage` - Requires coverage tooling (JaCoCo, Istanbul, etc.)
 - `benchmark` - Requires benchmark configuration (JMH, etc.)
 
+**Note**: `CMD_BENCHMARK` aliases include `performance` — profile IDs like `performance` or `jmh` map to the `benchmark` canonical command.
+
 ### Aggregator Modules (pom-only)
 
 Modules with `metadata.packaging == "pom"` only receive:
@@ -89,7 +93,9 @@ Modules with `metadata.packaging == "pom"` only receive:
 
 They do **not** receive: `compile`, `test-compile`, `module-tests`, `verify`, `install`, `package`
 
-### Resolution Flow
+### Resolution Flow (Conceptual Pseudocode)
+
+This pseudocode illustrates the resolution logic. Each extension implements it concretely in `discover_modules()`.
 
 ```
 discover_modules():
@@ -153,6 +159,17 @@ def discover_modules(self, project_root: str) -> list:
 
 Profile classification and command generation are handled **internally** by each extension's `discover_modules()` implementation. The `PROFILE_PATTERNS` constant from `extension_base.py` provides the mapping vocabulary for classifying profile IDs to canonical command names.
 
+The resolution pseudocode above is implemented in `_build_shared.py::build_canonical_commands()`. See that function for the authoritative implementation.
+
+---
+
+## References
+
+- `extension_base.py` — `CMD_*` constants, `CANONICAL_COMMANDS` dict, `PROFILE_PATTERNS` mapping (authoritative source)
+- `_build_shared.py` — `build_canonical_commands()` implementation
+- [module-discovery.md](module-discovery.md) — How commands appear in discovery output
+- [build-execution.md](build-execution.md) — How commands are executed
+
 ### Command String Format
 
 Commands embed **all routing** in the `--command-args` parameter:
@@ -182,16 +199,6 @@ Required commands depend on module type and content:
 - `module-tests` - Required only if `stats.test_files > 0`
 
 The orchestrator validates that required commands exist in the `commands` field returned by `discover_modules()`.
-
-## Phase Descriptions
-
-| Phase | Purpose |
-|-------|---------|
-| **build** | Compile source code |
-| **test** | Execute tests |
-| **quality** | Static analysis, formatting |
-| **verify** | Complete validation |
-| **deploy** | Create/install artifacts |
 
 ## Extension-Specific Commands
 

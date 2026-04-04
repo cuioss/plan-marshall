@@ -13,78 +13,23 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Manage implementation skill defaults and optionals per domain.
 
-### list
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `list` | -- | List all configured domains |
+| `get` | `--domain` | Get full domain configuration (defaults + optionals) |
+| `get-defaults` | `--domain` | Get default skills for a domain |
+| `get-optionals` | `--domain` | Get optional skills for a domain |
+| `set` | `--domain`, `--defaults`, `--optionals`, optional `--profile` | Update domain configuration |
+| `add` | `--domain`, `--defaults` | Add a new domain |
+| `validate` | `--domain`, `--skill` | Check if a skill is valid for a domain |
+| `detect` | -- | Auto-detect domains from project files |
+| `get-extensions` | `--domain` | Get workflow skill extensions for a domain |
+| `set-extensions` | `--domain`, `--type`, `--skill` | Set a workflow skill extension |
+| `get-available` | -- | Get available domains based on detected build systems |
+| `configure` | `--domains` | Configure selected domains with templates |
 
-List all configured domains.
+### Example: set (profile-based)
 
-```bash
-manage-config skill-domains list
-```
-
-**Output:**
-```toon
-status: success
-domains[8]:
-- system
-- plugin-development
-- java-core
-- java-implementation
-- java-testing
-- javascript-core
-- javascript-implementation
-- javascript-testing
-count: 8
-```
-
-### get
-
-Get full domain configuration.
-
-```bash
-manage-config skill-domains get --domain java-core
-```
-
-**Output:**
-```toon
-status: success
-domain: java-core
-defaults[1]:
-- pm-dev-java:java-core
-optionals[3]:
-- pm-dev-java:java-null-safety
-- pm-dev-java:java-lombok
-- pm-dev-java:javadoc
-```
-
-### get-defaults
-
-Get default skills for a domain.
-
-```bash
-manage-config skill-domains get-defaults --domain java-core
-```
-
-### get-optionals
-
-Get optional skills for a domain.
-
-```bash
-manage-config skill-domains get-optionals --domain java-implementation
-```
-
-### set
-
-Update domain configuration. Supports both flat structure (backward compatible) and profile-based updates.
-
-**Flat structure (backward compatible):**
-```bash
-manage-config skill-domains set \
-  --domain java-core \
-  --defaults "pm-dev-java:java-core,pm-dev-java:java-null-safety" \
-  --optionals "pm-dev-java:java-lombok,pm-dev-java:javadoc"
-```
-
-**Profile-based update (6-phase model):**
 ```bash
 manage-config skill-domains set \
   --domain java \
@@ -93,29 +38,7 @@ manage-config skill-domains set \
   --optionals "pm-dev-java:java-cdi,pm-dev-java:java-maintenance"
 ```
 
-**Output:**
-```toon
-status: success
-domain: java
-profile: implementation
-updated:
-  defaults: ["pm-dev-java:java-core"]
-  optionals: ["pm-dev-java:java-cdi", "pm-dev-java:java-maintenance"]
-```
-
-### add
-
-Add a new domain.
-
-```bash
-manage-config skill-domains add \
-  --domain python \
-  --defaults "pm-dev-python:cui-python-core"
-```
-
-### validate
-
-Check if a skill is valid for a domain. For nested domains, validates across all profiles.
+### Example: validate
 
 ```bash
 manage-config skill-domains validate \
@@ -123,111 +46,17 @@ manage-config skill-domains validate \
   --skill pm-dev-java:java-lombok
 ```
 
-**Output:**
-```toon
-status: success
-domain: java
-skill: pm-dev-java:java-lombok
-valid: true
-in_defaults: false
-in_optionals: true
-```
+Output includes `valid`, `in_defaults`, and `in_optionals` booleans.
 
-### detect
+### Extension Types
 
-Auto-detect domains from project files and add to configuration.
+Used by `get-extensions` and `set-extensions`:
 
-```bash
-manage-config skill-domains detect
-```
-
-**Output:**
-```toon
-status: success
-detected: ["java", "javascript"]
-count: 2
-message: Detected domains: java, javascript
-```
-
-### get-extensions
-
-Get workflow skill extensions for a domain.
-
-```bash
-manage-config skill-domains get-extensions --domain java
-```
-
-**Output:**
-```toon
-status: success
-domain: java
-extensions:
-  outline: pm-dev-java:java-outline-ext
-  triage: pm-dev-java:ext-triage-java
-```
-
-### set-extensions
-
-Set a workflow skill extension for a domain.
-
-**Extension Types:**
 - `outline` - Domain-specific patterns for solution-outline phase
 - `triage` - Domain-specific finding decision logic for plan-finalize phase
 
-```bash
-manage-config skill-domains set-extensions \
-  --domain java \
-  --type outline \
-  --skill pm-dev-java:java-outline-ext
-```
+### configure Notes
 
-**Output:**
-```toon
-status: success
-domain: java
-type: outline
-skill: pm-dev-java:java-outline-ext
-```
-
-### get-available
-
-Get available domains based on detected build systems. Used by wizard integration.
-
-```bash
-manage-config skill-domains get-available
-```
-
-**Output:**
-```toon
-status: success
-detected_domains[1]:
-- key: java
-  name: Java Development
-  build_system: maven
-optional_domains[2]:
-- key: requirements
-  name: Requirements Engineering
-- key: documentation
-  name: Documentation
-```
-
-### configure
-
-Configure selected domains with templates. Always adds the system domain.
-
-```bash
-manage-config skill-domains configure --domains "java,javascript"
-```
-
-**Output:**
-```toon
-status: success
-system_domain: configured
-domains_configured: 2
-domains: java,javascript
-```
-
-**Note:** This command:
 - Always configures the `system` domain with task_executors
 - Applies domain templates for each selected domain
 - Collects verify steps from domain extensions via `provides_verify_steps()`
@@ -236,113 +65,38 @@ domains: java,javascript
 
 ## Standalone Commands (Skill Resolution)
 
-### resolve-workflow-skill-extension
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `resolve-workflow-skill-extension` | `--domain`, `--type` | Resolve domain-specific workflow skill extension (returns `null` if not found) |
+| `resolve-domain-skills` | `--domain`, `--profile` | Resolve all skills for domain + profile (core + profile skills) |
+| `get-skills-by-profile` | `--domain` | Get skills organized by profile for a domain |
+| `configure-task-executors` | -- | Auto-discover profiles and register task executors |
+| `resolve-task-executor` | `--profile` | Resolve task executor skill for a profile |
 
-Resolve domain-specific workflow skill extension. Returns null (not error) if extension doesn't exist.
+### Profiles
 
-**Extension Types:**
-- `outline` - Additional context for solution-outline phase
-- `triage` - Finding triage logic for execute (verification) and finalize phases
+Used by `resolve-domain-skills` and `resolve-task-executor`: `implementation`, `module_testing`, `integration_testing`, `quality`
 
-```bash
-manage-config resolve-workflow-skill-extension \
-  --domain java --type outline
-```
-
-**Output (extension exists):**
-```toon
-status: success
-domain: java
-type: outline
-extension: pm-dev-java:java-outline-ext
-```
-
-**Output (no extension):**
-```toon
-status: success
-domain: javascript
-type: triage
-extension: null
-```
-
-### resolve-domain-skills
-
-Resolve all skills for a domain and profile. Returns core + profile skills.
-
-**Profiles:** implementation, module_testing, integration_testing, quality
+### Example: resolve-domain-skills
 
 ```bash
 manage-config resolve-domain-skills \
   --domain java --profile implementation
 ```
 
-**Output:**
-```toon
-status: success
-domain: java
-profile: implementation
-defaults[1]:
-  - pm-dev-java:java-core
-    description: Core Java development patterns
-optionals[2]:
-  - pm-dev-java:java-cdi
-    description: CDI/Quarkus patterns
-  - pm-dev-java:java-maintenance
-    description: Code maintenance standards
-```
+Returns `defaults` and `optionals` arrays with skill references and descriptions.
 
-### get-skills-by-profile
-
-Get skills organized by profile for a domain. Loads profiles from extension.py via bundle reference.
-
-```bash
-manage-config get-skills-by-profile --domain java
-```
-
-**Output:**
-```toon
-status: success
-domain: java
-skills_by_profile:
-  implementation: ["pm-dev-java:java-core", "pm-dev-java:java-null-safety", "pm-dev-java:java-cdi"]
-  module_testing: ["pm-dev-java:java-core", "pm-dev-java:junit-core"]
-  integration_testing: ["pm-dev-java:java-core", "pm-dev-java:junit-core", "pm-dev-java:junit-integration"]
-  documentation: ["pm-dev-java:java-core", "pm-dev-java:javadoc"]
-```
-
-### configure-task-executors
-
-Auto-discover profiles from configured domains and register task executors.
-Convention: profile X maps to skill `plan-marshall:task-X`.
+### Example: configure-task-executors
 
 ```bash
 manage-config configure-task-executors
 ```
 
-**Output:**
-```toon
-status: success
-task_executors_configured: 3
-executors:
-  implementation: plan-marshall:task-implementation
-  integration_testing: plan-marshall:task-integration_testing
-  module_testing: plan-marshall:task-module-testing
-```
+Convention: profile X maps to skill `plan-marshall:task-X`.
 
-### resolve-task-executor
+### resolve-workflow-skill-extension Notes
 
-Resolve task executor skill for a given profile.
-
-```bash
-manage-config resolve-task-executor --profile implementation
-```
-
-**Output:**
-```toon
-status: success
-profile: implementation
-task_executor: plan-marshall:task-implementation
-```
+Returns `extension: null` (not error) when no extension exists for the domain/type combination.
 
 ---
 
@@ -350,27 +104,12 @@ task_executor: plan-marshall:task-implementation
 
 Manage system-level settings.
 
-### retention get
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `retention get` | -- | Get all retention settings |
+| `retention set` | `--field`, `--value` | Set a retention field |
 
-Get all retention settings.
-
-```bash
-manage-config system retention get
-```
-
-**Output:**
-```toon
-status: success
-retention:
-  logs_days: 1
-  archived_plans_days: 5
-  memory_days: 5
-  temp_on_maintenance: true
-```
-
-### retention set
-
-Set a retention field.
+### Example: retention set
 
 ```bash
 manage-config system retention set \
@@ -378,135 +117,64 @@ manage-config system retention set \
   --value 7
 ```
 
+Retention fields: `logs_days`, `archived_plans_days`, `memory_days`, `temp_on_maintenance`.
+
 ---
 
 ## Noun: plan
 
 Manage phase-specific plan configuration. Each phase has its own sub-noun.
 
-### phase-1-init get
+### Phase sub-nouns
 
-Get init phase configuration.
+| Sub-noun | Verbs | Description |
+|----------|-------|-------------|
+| `phase-1-init` | `get`, `set` | Init phase (e.g., `branch_strategy`) |
+| `phase-2-refine` | `get`, `set` | Refine phase (e.g., `compatibility`) |
+| `phase-5-execute` | `get`, `set`, `set-max-iterations`, `set-step`, `set-domain-step`, `set-domain-step-agent` | Execute phase |
+| `phase-6-finalize` | `get`, `set-max-iterations`, `set-step` | Finalize phase |
 
-```bash
-manage-config plan phase-1-init get
-```
-
-### phase-1-init set
-
-Set init phase field.
+### Basic get/set pattern
 
 ```bash
 manage-config plan phase-1-init set \
   --field branch_strategy --value feature
 ```
 
-### phase-2-refine get
-
-Get refine phase configuration.
+### phase-5-execute additional verbs
 
 ```bash
-manage-config plan phase-2-refine get
-```
-
-### phase-2-refine set
-
-Set refine phase field.
-
-```bash
-manage-config plan phase-2-refine set \
-  --field compatibility --value deprecation
-```
-
-### phase-5-execute get
-
-Get execute phase configuration.
-
-```bash
-manage-config plan phase-5-execute get
-```
-
-### phase-5-execute set
-
-Set execute phase field.
-
-```bash
-manage-config plan phase-5-execute set \
-  --field commit_strategy --value per_plan
-```
-
-### phase-5-execute get (verification settings)
-
-Get execute phase configuration including verification generic steps and domain steps.
-
-```bash
-manage-config plan phase-5-execute get
-```
-
-Optional `--field` to get a specific field:
-
-```bash
-manage-config plan phase-5-execute get --field verification_max_iterations
-```
-
-### phase-5-execute set-max-iterations
-
-Set maximum verification iterations.
-
-```bash
+# Set maximum verification iterations
 manage-config plan phase-5-execute set-max-iterations --value 10
-```
 
-### phase-5-execute set-step
-
-Enable or disable a generic boolean verification step.
-
-```bash
+# Enable/disable a generic boolean verification step
 manage-config plan phase-5-execute set-step \
   --step verification_1_quality_check --enabled false
-```
 
-### phase-5-execute set-domain-step
-
-Enable or disable a domain verification step.
-
-```bash
+# Enable/disable a domain verification step
 manage-config plan phase-5-execute set-domain-step \
   --domain java --step 1_technical_impl --enabled false
-```
 
-### phase-5-execute set-domain-step-agent
-
-Set a domain verification step's agent reference.
-
-```bash
+# Set a domain verification step's agent reference
 manage-config plan phase-5-execute set-domain-step-agent \
   --domain java --step 1_lint --agent my-bundle:my-verify-step
 ```
 
-### phase-6-finalize get
-
-Get finalize phase configuration.
+### phase-6-finalize additional verbs
 
 ```bash
-manage-config plan phase-6-finalize get
-```
-
-### phase-6-finalize set-max-iterations
-
-Set maximum finalize iterations.
-
-```bash
+# Set maximum finalize iterations
 manage-config plan phase-6-finalize set-max-iterations --value 5
-```
 
-### phase-6-finalize set-step
-
-Enable or disable a finalize step.
-
-```bash
+# Enable/disable a finalize step
 manage-config plan phase-6-finalize set-step \
   --step 2_create_pr --enabled false
+```
+
+Optional `--field` parameter on `get` to retrieve a specific field:
+
+```bash
+manage-config plan phase-5-execute get --field verification_max_iterations
 ```
 
 ---
@@ -515,73 +183,28 @@ manage-config plan phase-6-finalize set-step \
 
 Manage extension defaults (generic key-value storage for extension-set configuration).
 
-### get
+| Verb | Parameters | Description |
+|------|-----------|-------------|
+| `get` | `--key` | Get extension default value by key |
+| `set` | `--key`, `--value` | Set value (always overwrites) |
+| `set-default` | `--key`, `--value` | Set value only if key does not exist (write-once) |
+| `list` | -- | List all extension defaults |
+| `remove` | `--key` | Remove extension default by key |
 
-Get extension default value by key.
+### set-default behavior
 
-```bash
-manage-config ext-defaults get --key my_setting
-```
+When key already exists, returns `status: skipped` with `reason: key_exists` and `existing_value`.
 
-**Output:**
-```toon
-status: success
-key: my_setting
-value: my_value
-```
-
-### set
-
-Set extension default value (always overwrites).
+### Example
 
 ```bash
 manage-config ext-defaults set --key my_setting --value my_value
-```
-
-### set-default
-
-Set value only if key does not exist (write-once).
-
-```bash
-manage-config ext-defaults set-default --key my_setting --value my_value
-```
-
-**Output (key exists):**
-```toon
-status: skipped
-key: my_setting
-reason: key_exists
-existing_value: old_value
-```
-
-### list
-
-List all extension defaults.
-
-```bash
-manage-config ext-defaults list
-```
-
-**Output:**
-```toon
-status: success
-extension_defaults:
-  key1: value1
-  key2: value2
-count: 2
-```
-
-### remove
-
-Remove extension default by key.
-
-```bash
-manage-config ext-defaults remove --key my_setting
+manage-config ext-defaults set-default --key my_setting --value fallback
 ```
 
 ---
 
-## Noun: ci (additional verbs)
+## Noun: ci
 
 ### persist
 
@@ -596,14 +219,6 @@ manage-config ci persist \
   --git-present true
 ```
 
-**Output:**
-```toon
-status: success
-provider: github
-repo_url: https://github.com/org/repo
-commands_count: 2
-```
-
 ---
 
 ## init
@@ -612,13 +227,6 @@ Initialize marshal.json.
 
 ```bash
 manage-config init [--force]
-```
-
-**Output:**
-```toon
-status: success
-created: .plan/marshal.json
-build_systems_detected: 2
 ```
 
 ## Error Responses

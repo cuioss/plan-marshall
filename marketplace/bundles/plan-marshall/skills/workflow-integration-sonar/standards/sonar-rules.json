@@ -1,0 +1,85 @@
+{
+  "_note": "Rules are language-prefixed (java:, javascript:, typescript:, python:) because Sonar uses these prefixes in its rule keys. Shared rules like S1135 (TODO) appear once per supported language. The flat structure enables O(1) lookup by sonar.py without runtime prefix resolution.",
+  "_language_skill_mapping": "For fix implementation guidance: java → pm-dev-java, javascript/typescript → pm-dev-frontend, python → pm-dev-python",
+  "severity_priority": {
+    "BLOCKER": "critical",
+    "CRITICAL": "high",
+    "MAJOR": "medium",
+    "MINOR": "low",
+    "INFO": "low"
+  },
+  "type_boost": {
+    "_note": "Integer offsets applied to the base severity priority via calculate_priority(). +1 promotes one level (e.g., high→critical), -1 demotes (e.g., medium→low). 0 keeps the severity-derived priority.",
+    "VULNERABILITY": 1,
+    "SECURITY_HOTSPOT": 1,
+    "BUG": 0,
+    "CODE_SMELL": -1
+  },
+  "always_fix_types": {
+    "_note": "Issue types that must always be fixed regardless of severity or suppressable rules. Script enforces these before checking suppress eligibility.",
+    "VULNERABILITY": "VULNERABILITY must always be fixed",
+    "SECURITY_HOTSPOT": "SECURITY_HOTSPOT must always be reviewed and fixed"
+  },
+  "_rationale": {
+    "suppressable_rules": "Rules where suppression with justification is acceptable — typically code style preferences or patterns that are intentional in specific contexts (reflection, API compatibility, CLI output).",
+    "fix_suggestions": "Rule-specific fix guidance loaded at triage time. Maps Sonar rule keys to human-readable fix instructions. Unrecognized rules fall back to the Sonar issue message.",
+    "test_acceptable_rules": "Rules that are acceptable violations in test files — e.g., System.out usage in tests is common and harmless."
+  },
+  "suppressable_rules": {
+    "java:S1135": "TODO comments - tracked in issue management",
+    "java:S1068": "Unused fields - may be for reflection/serialization",
+    "java:S1172": "Unused parameters - may be for API compatibility",
+    "java:S2139": "Logger vs exception - design decision",
+    "javascript:S1135": "TODO comments - tracked in issue management",
+    "typescript:S1135": "TODO comments - tracked in issue management",
+    "javascript:S1854": "Unused assignments - may be intentional destructuring",
+    "typescript:S1854": "Unused assignments - may be intentional destructuring",
+    "javascript:S106": "console.log - acceptable in CLI/dev code",
+    "typescript:S106": "console.log - acceptable in CLI/dev code",
+    "python:S1135": "TODO comments - tracked in issue management",
+    "python:S1481": "Unused variables - may be for unpacking/convention"
+  },
+  "fix_suggestions": {
+    "java:S2095": "Wrap resource in try-with-resources block",
+    "java:S1192": "Extract duplicated string to constant",
+    "java:S3649": "Use parameterized query instead of string concatenation",
+    "java:S1068": "Remove unused field or add @SuppressWarnings with reason",
+    "java:S1135": "Complete TODO or track in issue management system",
+    "java:S106": "Replace System.out with CuiLogger",
+    "java:S1481": "Remove unused local variable",
+    "java:S1854": "Remove useless assignment",
+    "java:S1144": "Remove unused private method",
+    "java:S5131": "Sanitize user input to prevent XSS",
+    "javascript:S1192": "Extract duplicated string to constant",
+    "javascript:S3649": "Use parameterized query to prevent injection",
+    "javascript:S1481": "Remove unused local variable",
+    "javascript:S1854": "Remove useless assignment",
+    "javascript:S106": "Replace console.log with proper logging",
+    "javascript:S1135": "Complete TODO or track in issue management system",
+    "typescript:S1192": "Extract duplicated string to constant",
+    "typescript:S1481": "Remove unused local variable",
+    "typescript:S1854": "Remove useless assignment",
+    "typescript:S106": "Replace console.log with proper logging",
+    "typescript:S1135": "Complete TODO or track in issue management system",
+    "python:S1481": "Remove unused local variable",
+    "python:S1135": "Complete TODO or track in issue management system",
+    "python:S5131": "Sanitize user input to prevent injection",
+    "python:S930": "Fix function call argument count",
+    "java:S2699": "Add assertions to verify test expectations",
+    "java:S2259": "Add null check before dereferencing",
+    "java:S1118": "Add private constructor to utility class",
+    "java:S1128": "Remove unused import",
+    "java:S1186": "Add implementation or throw UnsupportedOperationException"
+  },
+  "test_acceptable_rules": [
+    "java:S106",
+    "javascript:S106",
+    "typescript:S106",
+    "python:S106"
+  ],
+  "suppression_syntax": {
+    "_note": "Language-specific suppression comment templates. {rule} and {reason} are replaced at runtime. 'default' is used for Java, JavaScript, TypeScript, and any unrecognized language.",
+    "python": "# NOSONAR {rule} - {reason}",
+    "default": "// NOSONAR {rule} - {reason}"
+  }
+}

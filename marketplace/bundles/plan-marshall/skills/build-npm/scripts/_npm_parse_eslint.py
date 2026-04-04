@@ -13,7 +13,13 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary  # type: ignore[import-not-found]
+from _build_parse import (  # type: ignore[import-not-found]
+    SEVERITY_ERROR,
+    SEVERITY_WARNING,
+    Issue,
+    UnitTestSummary,
+    add_issue_deduped,
+)
 
 # ESLint issue pattern: "  line:col  severity  message  rule-name"
 ESLINT_ISSUE_PATTERN = re.compile(r'^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)\s*$')
@@ -21,8 +27,9 @@ ESLINT_ISSUE_PATTERN = re.compile(r'^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{
 # ESLint summary pattern: "✖ N problems (N errors, N warnings)"
 ESLINT_SUMMARY_PATTERN = re.compile(r'[✖✗]\s*(\d+)\s+problems?\s+\((\d+)\s+errors?,\s+(\d+)\s+warnings?\)')
 
-# File path line pattern (starts with / or drive letter, no leading whitespace)
-FILE_PATH_PATTERN = re.compile(r'^(/[^\s:]+|[A-Z]:\\[^\s:]+)$')
+# File path line pattern (absolute or relative, no leading whitespace)
+# Matches: /abs/path, C:\windows\path, src/components/File.tsx, ./relative/path
+FILE_PATH_PATTERN = re.compile(r'^(/[^\s:]+|[A-Z]:\\[^\s:]+|\.{0,2}/[^\s:]+\.\w+)$')
 
 
 def parse_log(log_file: str | Path) -> tuple[list[Issue], UnitTestSummary | None, str]:
@@ -61,10 +68,10 @@ def _extract_issues(content: str) -> list[Issue]:
     Returns:
         List of Issue dataclasses with ESLint errors and warnings.
     """
-    issues = []
+    issues: list[Issue] = []
     lines = content.split('\n')
     current_file = None
-    seen = set()
+    seen: set[str] = set()
 
     for line in lines:
         # Check if this line is a file path
@@ -77,28 +84,20 @@ def _extract_issues(content: str) -> list[Issue]:
         issue_match = ESLINT_ISSUE_PATTERN.match(line)
         if issue_match and current_file:
             line_num = int(issue_match.group(1))
-            col = int(issue_match.group(2))
             severity_str = issue_match.group(3)
             message = issue_match.group(4).strip()
             rule = issue_match.group(5)
 
-            # Determine severity
             severity = SEVERITY_ERROR if severity_str == 'error' else SEVERITY_WARNING
 
-            # Deduplication key
-            dedup_key = f'{current_file}:{line_num}:{col}:{rule}'
-            if dedup_key in seen:
-                continue
-            seen.add(dedup_key)
-
-            issues.append(
-                Issue(
-                    file=current_file,
-                    line=line_num,
-                    message=f'{rule}: {message}',
-                    severity=severity,
-                    category='eslint',
-                )
+            add_issue_deduped(
+                issues,
+                seen,
+                file=current_file,
+                line=line_num,
+                message=f'{rule}: {message}',
+                severity=severity,
+                category='lint_error',
             )
 
     return issues

@@ -17,6 +17,9 @@ import os
 import sys
 from typing import Any
 
+from _build_cli import safe_main
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
 
@@ -242,7 +245,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         report_format = 'lcov'
 
     result = analyze_coverage(args.report, report_format, args.threshold)
-    print(json.dumps(result, indent=2))
+    print(serialize_toon(result))
 
     if result.get('status') == 'error':
         return EXIT_ERROR
@@ -277,4 +280,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

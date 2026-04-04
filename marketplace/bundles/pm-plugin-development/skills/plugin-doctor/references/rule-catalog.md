@@ -2,6 +2,8 @@
 
 Rules that plugin-doctor validates in other components. See the Enforcement block in SKILL.md for this skill's own constraints.
 
+> **Related**: For architectural principles with rationale and examples, see `plugin-architecture:architecture-rules`. This catalog lists validation rules only.
+
 ## Agent Rules
 
 **agent-task-tool-prohibited**: Agents cannot declare the Task tool (unavailable at runtime).

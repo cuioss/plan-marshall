@@ -7,7 +7,7 @@ File formats and structures for plan data storage.
 ```
 .plan/plans/{plan_id}/
 │
-├── status.toon              Phase: init
+├── status.json              Phase: init
 ├── request.md               Phase: init
 ├── references.json          Phase: init
 │
@@ -38,7 +38,7 @@ File formats and structures for plan data storage.
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │ status.toon  │  │ request.md   │  │references.json│              │
+│  │ status.json  │  │ request.md   │  │references.json│              │
 │  ├──────────────┤  ├──────────────┤  ├──────────────┤               │
 │  │ title        │  │ description  │  │ domains      │               │
 │  │ current_phase│  │ context      │  │ branch       │               │
@@ -92,16 +92,14 @@ File formats and structures for plan data storage.
 
 ---
 
----
-
-## status.toon
+## status.json
 
 Plan lifecycle status with phase tracking.
 
 ### Location
 
 ```
-.plan/plans/{plan_id}/status.toon
+.plan/plans/{plan_id}/status.json
 ```
 
 ### Format
@@ -148,8 +146,13 @@ updated: 2025-12-02T14:30:00Z
 ### Manager
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle \
-  {create|read|set-phase|update-phase|progress|transition} --plan-id {id}
+# Status operations
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  {create|read|set-phase|update-phase|progress} --plan-id {id}
+
+# Lifecycle transitions (subcommands of manage-status)
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  {transition|list|archive|route} --plan-id {id}
 ```
 
 ---
@@ -269,7 +272,7 @@ Solution design document with deliverables.
 |-------|----------|-------------|
 | `domain` | Metadata | Single domain from references.json domains |
 | `module` | Metadata | Target module name (from architecture) |
-| `change_type` | Metadata | create, modify, refactor, migrate, delete |
+| `change_type` | Metadata | One of: analysis, feature, enhancement, bug_fix, tech_debt, verification (see [change-types.md](change-types.md)) |
 | `execution_mode` | Metadata | automated, manual, mixed |
 | `depends` | Metadata | Dependencies: none, N. Title, N, M |
 | `**Profiles:**` | Block | List of profiles: implementation (always), module_testing (if applicable) |
@@ -321,7 +324,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
 
 ---
 
-## TASK-NNN-TYPE.toon
+## TASK-NNN.json
 
 Individual task files in the tasks directory.
 
@@ -442,18 +445,6 @@ STEP Status:
                  skipped
 ```
 
-### Task Types
-
-| Type | Suffix | Description |
-|------|--------|-------------|
-| Implementation | `IMPL` | New feature or enhancement |
-| Fix | `FIX` | Bug fix or issue resolution |
-| Sonar | `SONAR` | SonarQube issue fix |
-| PR Review | `PR` | Pull request feedback |
-| Lint | `LINT` | Linting/formatting fix |
-| Security | `SEC` | Security issue fix |
-| Documentation | `DOC` | Documentation update |
-
 ### Manager
 
 ```bash
@@ -550,11 +541,11 @@ Semantic work progress tracking across all phases.
 
 ```bash
 # Write entry
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level {level} --message "{message}"
 
 # Read entries
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {id} --type work [--limit N] [--phase PHASE]
 ```
 
@@ -595,11 +586,11 @@ Decision entries do NOT include a `[DECISION]` prefix since the file itself indi
 
 ```bash
 # Write decision entry
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level {level} --message "{message}"
 
 # Read decision entries
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {id} --type decision [--limit N] [--phase PHASE]
 ```
 
@@ -646,7 +637,7 @@ Technical script execution tracing (automatic).
 
 ```bash
 # Read entries (read-only, written automatically by executor)
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {id} --type script [--limit N]
 ```
 
@@ -654,60 +645,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 
 ---
 
-## Artifact Lifecycle
+## Related
 
-```
-PHASE       ARTIFACTS CREATED/UPDATED
-─────       ─────────────────────────
-
-init        ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐
-            │ status.toon │ │ request.md  │ │ references.json │
-            └─────────────┘ └─────────────┘ └─────────────────┘
-                  │               │               │
-                  ▼               ▼               ▼
-outline     ┌─────────────────────────────────────────────┐
-            │           solution_outline.md                │
-            └─────────────────────────────────────────────┘
-                                  │
-                                  ▼
-plan        ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-            │ TASK-001-... │ │ TASK-002-... │ │ TASK-003-... │
-            └──────────────┘ └──────────────┘ └──────────────┘
-                  │               │               │
-                  ▼               ▼               ▼
-execute     ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-            │ status:done  │ │ status:done  │ │ status:done  │
-            │ steps:done   │ │ steps:done   │ │ steps:done   │
-            └──────────────┘ └──────────────┘ └──────────────┘
-                                  │
-                                  ▼
-execute     ┌─────────────────────────────────────────────┐
-(verify)    │       Quality checks, build verification     │
-            │       (loops back within execute on findings)│
-            └─────────────────────────────────────────────┘
-                                  │
-                                  ▼
-finalize    ┌─────────────────────────────────────────────┐
-            │          status.toon: finalize=done          │
-            │          (git commit, PR created)            │
-            └─────────────────────────────────────────────┘
-                                  │
-                                  ▼
-archive     .plan/archived-plans/{date}-{plan_id}/
-            └── All artifacts preserved
-```
-
----
-
-## Related Documentation
-
-| Document | Purpose |
-|----------|---------|
-| [phases.md](phases.md) | 6-phase execution model |
-| [data-layer.md](data-layer.md) | manage-* skills that access these files |
-| [skill-loading.md](skill-loading.md) | How skills from tasks are loaded |
-| `plan-marshall:manage-references` | references.json operations |
-| `plan-marshall:manage-lifecycle:manage-lifecycle` | status.toon operations |
-| `plan-marshall:manage-tasks` | TASK-*.json operations |
-| `plan-marshall:manage-solution-outline` | solution_outline.md operations |
-| `plan-marshall:manage-logging` | work.log, decision.log, and script-execution.log operations |
+- [phases.md](phases.md) — 6-phase execution model (includes artifact-to-phase mapping)
+- [data-layer.md](data-layer.md) — manage-* skills overview

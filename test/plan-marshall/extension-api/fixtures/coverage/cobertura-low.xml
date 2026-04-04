@@ -1,0 +1,31 @@
+<?xml version="1.0" ?>
+<coverage version="7.4.0" timestamp="1700000000000" lines-valid="100" lines-covered="45" line-rate="0.45" branches-covered="15" branches-valid="40" branch-rate="0.375" complexity="0">
+    <packages>
+        <package name="myapp" line-rate="0.45" branch-rate="0.375" complexity="0">
+            <classes>
+                <class name="legacy.py" filename="myapp/legacy.py" line-rate="0.3" branch-rate="0.2" complexity="0">
+                    <methods>
+                        <method name="old_process" signature="" line-rate="0.0" branch-rate="0.0">
+                            <lines><line number="10" hits="0"/></lines>
+                        </method>
+                        <method name="convert" signature="" line-rate="0.5" branch-rate="0.5">
+                            <lines><line number="20" hits="3"/></lines>
+                        </method>
+                    </methods>
+                    <lines>
+                        <line number="10" hits="0"/>
+                        <line number="20" hits="3"/>
+                    </lines>
+                </class>
+                <class name="service.py" filename="myapp/service.py" line-rate="0.6" branch-rate="0.5" complexity="0">
+                    <methods>
+                        <method name="run" signature="" line-rate="0.6" branch-rate="0.5">
+                            <lines><line number="5" hits="4"/></lines>
+                        </method>
+                    </methods>
+                    <lines><line number="5" hits="4"/></lines>
+                </class>
+            </classes>
+        </package>
+    </packages>
+</coverage>

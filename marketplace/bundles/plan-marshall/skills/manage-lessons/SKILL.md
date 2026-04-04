@@ -2,41 +2,21 @@
 name: manage-lessons
 description: Manage lessons learned with global scope
 user-invocable: false
+scope: global
 ---
 
-# Lessons Learned Skill
+# Manage Lessons Skill
 
 Manage lessons learned with global scope. Stores lessons as markdown files with key=value metadata headers.
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify lesson files directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations section
-- Do not use invalid category values (only bug, improvement, anti-pattern)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson {command} {args}`
+**Skill-specific constraints:**
+- Only valid category values: `bug`, `improvement`, `anti-pattern`
 - Lessons are global-scoped (not plan-specific); no `--plan-id` parameter
 - The `from-error` command expects JSON context as `--context` argument
-
-## What This Skill Provides
-
-- Create lessons from errors or discoveries
-- Query lessons by component, category, or applied status
-- Update lesson metadata
-- Global scope (not plan-specific)
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Documenting a lesson from an error
-- Querying applicable lessons for a component
-- Marking lessons as applied
-
----
 
 ## Storage Location
 
@@ -92,20 +72,20 @@ This affects all projects using jakarta.json without explicit dependency.
 | `category` | bug, improvement, anti-pattern |
 | `applied` | Whether lesson has been applied (true/false) |
 | `created` | Creation date |
-| `bundle` | Optional bundle reference |
+| `bundle` | Optional: bundle that the lesson relates to (e.g., `pm-dev-java`). Used for filtering when applying lessons to specific bundles. |
 
 ---
 
 ## Operations
 
-Script: `plan-marshall:manage-lessons:manage-lesson`
+Script: `plan-marshall:manage-lessons:manage-lessons`
 
 ### add
 
 Create a new lesson.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component maven-build \
   --category bug \
   --title "Build fails with missing dependency" \
@@ -134,7 +114,7 @@ category: bug
 Update lesson metadata.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson update \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons update \
   --id 2025-12-02-001 \
   [--applied true|false] \
   [--component new-component] \
@@ -161,7 +141,7 @@ previous: false
 Get a single lesson.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson get \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get \
   --id 2025-12-02-001
 ```
 
@@ -184,7 +164,7 @@ content: |
 List lessons with filtering.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson list \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list \
   [--component maven-build] \
   [--category bug] \
   [--applied true|false]
@@ -218,7 +198,7 @@ lessons:
 Create lesson from error context (JSON).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson from-error \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons from-error \
   --context '{"component":"maven-build","error":"Missing dependency","solution":"Add explicit dep"}'
 ```
 
@@ -239,7 +219,7 @@ created_from: error_context
 
 ## Scripts
 
-**Script**: `plan-marshall:manage-lessons:manage-lesson`
+**Script**: `plan-marshall:manage-lessons:manage-lessons`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
@@ -248,6 +228,7 @@ created_from: error_context
 | `get` | `--id` | Get single lesson |
 | `list` | `[--component] [--category] [--applied]` | List with filtering |
 | `from-error` | `--context` | Create from JSON error context |
+| `archive` | `--id` | Mark lesson as applied and move to archived directory. Equivalent to `update --applied true` plus file relocation. |
 
 ---
 
@@ -261,12 +242,38 @@ created_from: error_context
 
 ---
 
-## Integration Points
+## Error Responses
 
-### With plan-execute
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
-When errors occur during execution, create lessons to document the issue and solution.
+| Error Code | Cause |
+|------------|-------|
+| `not_found` | Lesson ID doesn't exist (get, update, archive) |
+| `invalid_category` | Category not in: bug, improvement, anti-pattern |
+| `invalid_context` | JSON context parsing failed (from-error) |
+| `missing_required` | Required parameter missing |
 
-### With plugin-doctor
+---
 
-Apply lessons to fix recurring issues in marketplace components.
+## Integration
+
+### Producers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-5-execute` | add, from-error | Document errors and solutions during execution |
+| `phase-6-finalize` | add | Promote findings to lessons |
+| `plugin-doctor` | add | Capture recurring component issues |
+
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `plugin-apply-lessons-learned` | list, update | Apply lessons to marketplace components |
+| `phase-6-finalize` | list | Query unapplied lessons for promotion |
+
+## Related
+
+- `manage-findings` — Findings promoted to lessons at 6-finalize
+- `manage-memories` — Complementary global persistence (session context)
+- `manage-run-config` — Complementary global persistence (execution state)

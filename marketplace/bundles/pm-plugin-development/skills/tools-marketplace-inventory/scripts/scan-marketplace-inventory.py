@@ -294,13 +294,18 @@ def discover_scripts(bundle_dir: Path, bundle_name: str) -> list[dict]:
         return []
 
     scripts = []
-    # Find all .sh and .py files in scripts/ subdirectories
-    for script_file in sorted(skills_dir.rglob('scripts/*.sh')) + sorted(skills_dir.rglob('scripts/*.py')):
+    # Find all .sh and .py files in scripts/ directories and their subdirectories
+    # (e.g., scripts/build/*.py for organized script-shared skill)
+    for script_file in sorted(skills_dir.rglob('scripts/**/*.sh')) + sorted(skills_dir.rglob('scripts/**/*.py')):
         # Skip private/internal modules (underscore prefix = internal per PEP 8)
         if script_file.name.startswith('_'):
             continue
         if script_file.is_file():
-            skill_dir = script_file.parent.parent
+            # Walk up from script_file to find the skill dir (parent of 'scripts/')
+            skill_dir = script_file.parent
+            while skill_dir.name != 'scripts' and skill_dir != skills_dir:
+                skill_dir = skill_dir.parent
+            skill_dir = skill_dir.parent  # skill dir is parent of scripts/
             skill_name = skill_dir.name
 
             # Determine script type

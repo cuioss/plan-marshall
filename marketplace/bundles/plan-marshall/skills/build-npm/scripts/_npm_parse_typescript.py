@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary  # type: ignore[import-not-found]
+from _build_parse import SEVERITY_ERROR, Issue, UnitTestSummary, add_issue_deduped  # type: ignore[import-not-found]
 
 # TypeScript error pattern: path(line,col): error TSNNNN: message
 TS_ERROR_PATTERN = re.compile(r'^(.+?)\((\d+),(\d+)\):\s*(error)\s+(TS\d+):\s*(.+)$', re.MULTILINE)
@@ -57,46 +57,34 @@ def _extract_issues(content: str) -> list[Issue]:
     Returns:
         List of Issue dataclasses with TypeScript errors.
     """
-    issues = []
-    seen = set()
+    issues: list[Issue] = []
+    seen: set[str] = set()
 
     # Try primary pattern: path(line,col): error TSNNNN: message
     for match in TS_ERROR_PATTERN.finditer(content):
         file_path, line, col, severity, code, message = match.groups()
-        dedup_key = f'{file_path}:{line}:{col}:{code}'
-
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
-
-        issues.append(
-            Issue(
-                file=file_path,
-                line=int(line),
-                message=f'{code}: {message}',
-                severity=SEVERITY_ERROR,
-                category='typescript_error',
-            )
+        add_issue_deduped(
+            issues,
+            seen,
+            file=file_path,
+            line=int(line),
+            message=f'{code}: {message}',
+            severity=SEVERITY_ERROR,
+            category='compilation_error',
         )
 
     # Try alternative pattern if no matches: path:line:col - message
     if not issues:
         for match in TS_ERROR_ALT_PATTERN.finditer(content):
             file_path, line, col, severity, code, message = match.groups()
-            dedup_key = f'{file_path}:{line}:{col}:{code}'
-
-            if dedup_key in seen:
-                continue
-            seen.add(dedup_key)
-
-            issues.append(
-                Issue(
-                    file=file_path,
-                    line=int(line),
-                    message=f'{code}: {message}',
-                    severity=SEVERITY_ERROR,
-                    category='typescript_error',
-                )
+            add_issue_deduped(
+                issues,
+                seen,
+                file=file_path,
+                line=int(line),
+                message=f'{code}: {message}',
+                severity=SEVERITY_ERROR,
+                category='compilation_error',
             )
 
     return issues

@@ -12,6 +12,8 @@ user-invocable: false
 
 ## Enforcement
 
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
 **Execution mode**: Follow workflow steps sequentially, respecting config gates. Each config-gated step dispatches to a standards/ document.
 
 **Required skill load** (before any operation):
@@ -24,7 +26,7 @@ Skill: plan-marshall:tools-integration-ci
 **Prohibited actions:**
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never skip config gate checks (Steps 3-10 each have an IF gate)
-- Never skip phase transitions — use `manage-lifecycle transition`, never set status directly
+- Never skip phase transitions — use `manage-status transition`, never set status directly
 - Never improvise script subcommands — use only those documented in this skill's workflow steps
 - Never skip config-gated steps based on PR state (approval, merge status, or CI status). The ONLY valid skip condition for each step is its config gate being `false`. Standards documents have their own user confirmation gates that handle runtime state decisions.
 
@@ -123,7 +125,7 @@ The step skill can access the plan's context via manage-* scripts (references, s
 #### Log Phase Start
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Starting finalize phase"
 ```
 
@@ -146,7 +148,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ```
 3. Log:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
 ```
 
@@ -179,7 +181,7 @@ Extract the `steps` list from phase-6-finalize config. This is the ordered list 
 **After reading configuration**, log the finalize strategy decision:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Finalize strategy: commit={commit_strategy}, steps={steps_count}, branch={branch_strategy}"
 ```
 
@@ -190,7 +192,7 @@ Iterate over the `steps` list from config. For each step reference:
 ```
 FOR each step_ref in steps:
   1. Log step start:
-     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Executing step: {step_ref}"
 
   2. Determine step type:
@@ -205,7 +207,7 @@ FOR each step_ref in steps:
          Arguments: --plan-id {plan_id} --iteration {iteration}
 
   4. Log step completion:
-     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
 END FOR
 ```
@@ -217,7 +219,7 @@ END FOR
 ### Step 4: Mark Plan Complete
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} \
   --completed 6-finalize
 ```
@@ -249,12 +251,12 @@ Display the plan completion summary including core metrics:
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan completed: {steps_count} steps executed"
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
@@ -316,7 +318,7 @@ recovery: {recovery_suggestion}
 On any error, **first log the error** to work-log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) {step} failed - {error_type}: {error_context}"
 ```
 
@@ -362,18 +364,11 @@ State checks (for present steps):
 
 ---
 
-## Related Documents
+## Related
 
-| Document | Purpose |
+| Resource | Purpose |
 |----------|---------|
 | [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 6-Phase Model and Shipping Pipeline |
-
----
-
-## Related Skills
-
-| Skill | Purpose |
-|-------|---------|
 | `plan-marshall:dev-general-practices` | Bash safety rules, tool usage patterns |
 | `plan-marshall:workflow-integration-git` | Commit, push workflow |
 | `plan-marshall:tools-integration-ci` | PR operations, CI status |

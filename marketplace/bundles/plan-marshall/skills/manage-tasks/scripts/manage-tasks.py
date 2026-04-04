@@ -29,12 +29,13 @@ Add command usage (--content with \\n encoding):
 """
 
 import argparse
-import sys
 
 from _cmd_crud import cmd_add, cmd_remove, cmd_update
 from _cmd_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
-from _manage_tasks_shared import output_error
+from _tasks_core import output_error
+from file_ops import safe_main  # type: ignore[import-not-found]
+from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,12 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     # add (--content CLI argument)
     p_add = subparsers.add_parser('add', help='Add a new task (--content with \\n-encoded TOON)')
-    p_add.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_add)
     p_add.add_argument('--content', required=True, help='Task definition in TOON format (use \\n for newlines)')
 
     # update
     p_update = subparsers.add_parser('update', help='Update an existing task')
-    p_update.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_update)
     p_update.add_argument('--number', required=True, type=int, help='Task number')
     p_update.add_argument('--title', help='New title')
     p_update.add_argument('--description', help='New description')
@@ -66,46 +67,46 @@ def build_parser() -> argparse.ArgumentParser:
 
     # remove
     p_remove = subparsers.add_parser('remove', help='Remove a task')
-    p_remove.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_remove)
     p_remove.add_argument('--number', required=True, type=int, help='Task number')
 
     # list
     p_list = subparsers.add_parser('list', help='List all tasks')
-    p_list.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_list)
     p_list.add_argument(
         '--status', choices=['pending', 'in_progress', 'done', 'blocked', 'all'], default='all', help='Filter by status'
     )
     p_list.add_argument('--deliverable', type=int, help='Filter by deliverable number')
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
     p_get = subparsers.add_parser('get', help='Get a single task')
-    p_get.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_get)
     p_get.add_argument('--number', required=True, type=int, help='Task number')
 
     # next
     p_next = subparsers.add_parser('next', help='Get next pending task/step')
-    p_next.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_next)
     p_next.add_argument('--include-context', action='store_true', help='Include deliverable details in output')
     p_next.add_argument('--ignore-deps', action='store_true', help='Ignore dependency constraints')
 
     # tasks-by-domain
     p_by_domain = subparsers.add_parser('tasks-by-domain', help='List tasks filtered by domain')
-    p_by_domain.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_by_domain)
     p_by_domain.add_argument('--domain', required=True, help='Domain to filter by (e.g., java, javascript)')
 
     # tasks-by-profile
     p_by_profile = subparsers.add_parser('tasks-by-profile', help='List tasks filtered by profile')
-    p_by_profile.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_by_profile)
     p_by_profile.add_argument(
         '--profile', required=True, help='Profile to filter by (e.g., implementation, module_testing)'
     )
 
     # next-tasks
     p_next_tasks = subparsers.add_parser('next-tasks', help='Get all tasks ready for parallel execution')
-    p_next_tasks.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_next_tasks)
 
     # finalize-step (consolidates step-done and step-skip)
     p_finalize = subparsers.add_parser('finalize-step', help='Complete a step with outcome (done/skipped)')
-    p_finalize.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_finalize)
     p_finalize.add_argument('--task', required=True, type=int, help='Task number')
     p_finalize.add_argument('--step', required=True, type=int, help='Step number')
     p_finalize.add_argument('--outcome', required=True, choices=['done', 'skipped'], help='Step outcome')
@@ -113,14 +114,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     # add-step
     p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task')
-    p_add_step.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_add_step)
     p_add_step.add_argument('--task', required=True, type=int, help='Task number')
     p_add_step.add_argument('--target', required=True, help='Step target (file path or verification command)')
     p_add_step.add_argument('--after', type=int, help='Insert after this step number')
 
     # remove-step
     p_remove_step = subparsers.add_parser('remove-step', help='Remove a step from a task')
-    p_remove_step.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(p_remove_step)
     p_remove_step.add_argument('--task', required=True, type=int, help='Task number')
     p_remove_step.add_argument('--step', required=True, type=int, help='Step number')
 
@@ -144,6 +145,7 @@ COMMANDS = {
 }
 
 
+@safe_main
 def main() -> int:
     """Main entry point."""
     parser = build_parser()
@@ -162,4 +164,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

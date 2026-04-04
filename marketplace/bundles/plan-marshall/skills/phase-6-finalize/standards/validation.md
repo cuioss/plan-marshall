@@ -38,7 +38,7 @@
 ## Archive (if 7_archive == true)
 
 - Mark lesson applied BEFORE archive (if plan originated from a lesson)
-- Archive plan via manage-lifecycle archive
+- Archive plan via manage-status archive
 - Handle archive failures (missing plan directory, permissions)
 
 ## Branch Cleanup (if 8_branch_cleanup == true)
@@ -55,7 +55,7 @@
 
 ## Completion
 
-- Mark plan complete via manage-lifecycle transition
+- Mark plan complete via manage-status transition
 - Write final work-log entry
 - Return completion status with commit hash, PR URL (if created), archive and branch cleanup status
 

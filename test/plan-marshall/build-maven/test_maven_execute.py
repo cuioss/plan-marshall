@@ -1,61 +1,124 @@
 #!/usr/bin/env python3
-"""Tests for maven.py CLI - run subcommand.
+"""Tests for _maven_execute.py.
 
-Tests the Maven build execution through the public CLI interface.
+Tests the Maven execution config and factory-generated functions.
 """
 
-import subprocess
 import sys
-from pathlib import Path
+from unittest.mock import MagicMock
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-import os
+sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
+sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path
-
-# Get CLI entry point
-MAVEN_CLI = get_script_path('plan-marshall', 'build-maven', 'maven.py')
-
-
-def run_cli(*args, **kwargs):
-    """Run subprocess with marketplace PYTHONPATH."""
-    env = os.environ.copy()
-    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
-    if 'PYTHONPATH' in env:
-        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
-    env['PYTHONPATH'] = pythonpath
-    return subprocess.run(args, capture_output=True, text=True, env=env, **kwargs)
-
+from _maven_execute import _CONFIG, execute_direct  # noqa: E402
 
 # =============================================================================
-# Test: CLI interface
+# Config Tests
 # =============================================================================
 
 
-def test_cli_help():
-    """Test maven.py --help works."""
-    result = run_cli('python3', str(MAVEN_CLI), '--help')
-    assert result.returncode == 0
-    assert 'run' in result.stdout
-    assert 'parse' in result.stdout
+def test_config_tool_name():
+    """Config has correct tool name."""
+    assert _CONFIG.tool_name == 'maven'
 
 
-def test_cli_run_help():
-    """Test maven.py run --help works."""
-    result = run_cli('python3', str(MAVEN_CLI), 'run', '--help')
-    assert result.returncode == 0
-    assert '--command-args' in result.stdout
-    assert '--timeout' in result.stdout
+def test_config_wrapper_names():
+    """Config has correct wrapper names for Maven."""
+    assert _CONFIG.unix_wrapper == 'mvnw'
+    assert _CONFIG.windows_wrapper == 'mvnw.cmd'
+    assert _CONFIG.system_fallback == 'mvn'
 
 
-def test_cli_parse_help():
-    """Test maven.py parse --help works."""
-    result = run_cli('python3', str(MAVEN_CLI), 'parse', '--help')
-    assert result.returncode == 0
-    assert '--log' in result.stdout
+def test_config_default_timeout():
+    """Config has 300s default timeout (unified across all build skills)."""
+    assert _CONFIG.default_timeout == 300
+
+
+def test_config_capture_strategy():
+    """Config uses Maven log flag strategy."""
+    from _build_execute import CaptureStrategy
+
+    assert _CONFIG.capture_strategy == CaptureStrategy.TOOL_LOG_FLAG
 
 
 # =============================================================================
-# Runner
+# Command Key Function
 # =============================================================================
+
+
+def test_command_key_fn_verify():
+    """Extracts 'verify' from args."""
+    assert _CONFIG.command_key_fn('verify') == 'verify'
+
+
+def test_command_key_fn_clean_install():
+    """Extracts first goal 'clean' from multi-goal command."""
+    assert _CONFIG.command_key_fn('clean install') == 'clean'
+
+
+def test_command_key_fn_module_tests():
+    """Extracts first goal, normalizes hyphens."""
+    assert _CONFIG.command_key_fn('test -pl core') == 'test'
+
+
+def test_command_key_fn_empty():
+    """Returns 'default' for empty args."""
+    assert _CONFIG.command_key_fn('') == 'default'
+
+
+# =============================================================================
+# Scope Function
+# =============================================================================
+
+
+def test_scope_fn_default_no_pl():
+    """Scope is 'default' when no -pl argument."""
+    assert _CONFIG.scope_fn('verify') == 'default'
+
+
+def test_scope_fn_extracts_module():
+    """Extracts module name from -pl argument."""
+    assert _CONFIG.scope_fn('verify -pl core-api') == 'core-api'
+
+
+def test_scope_fn_pl_equals():
+    """Handles -pl=module form."""
+    assert _CONFIG.scope_fn('verify -pl=my-module') == 'my-module'
+
+
+# =============================================================================
+# Build Command Function
+# =============================================================================
+
+
+def test_build_command_fn():
+    """Builds command with -l flag for log file."""
+    cmd_parts, cmd_str = _CONFIG.build_command_fn('./mvnw', 'verify', '/tmp/log.log')
+    assert cmd_parts == ['./mvnw', '-l', '/tmp/log.log', 'verify']
+    assert '-l' in cmd_str
+    assert '/tmp/log.log' in cmd_str
+
+
+def test_build_command_fn_with_module():
+    """Includes module argument in command."""
+    cmd_parts, cmd_str = _CONFIG.build_command_fn('./mvnw', 'test -pl core', '/tmp/log.log')
+    assert cmd_parts == ['./mvnw', '-l', '/tmp/log.log', 'test', '-pl', 'core']
+
+
+# =============================================================================
+# Wrapper Resolution and Execution
+# =============================================================================
+
+
+def test_execute_direct_error_on_nonexistent_project(tmp_path):
+    """execute_direct returns error when running in empty directory without wrapper."""
+    # Empty tmp_path has no mvnw — if system mvn exists, it will fail on missing pom.xml
+    result = execute_direct(
+        args='verify',
+        command_key='maven:verify',
+        project_dir=str(tmp_path),
+    )
+    # Either wrapper not found (status=error, exit_code=-1) or
+    # maven runs but fails on missing pom.xml (status=error, exit_code=1)
+    assert result['status'] == 'error'
+    assert result['exit_code'] != 0

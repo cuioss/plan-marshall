@@ -12,7 +12,7 @@ Tests:
 import json
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PLAN_DIR_NAME, PlanContext, get_script_path, run_script
+from conftest import PlanContext, get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
@@ -41,12 +41,12 @@ def test_warning_add_creates_entry():
         )
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
-        assert data['success'] is True, 'Should return success'
+        data = result.toon()
+        assert data['status'] == 'success', 'Should return success'
         assert data['action'] == 'added', "Action should be 'added'"
 
         # Verify in config file
-        config_path = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
+        config_path = ctx.fixture_dir / 'run-configuration.json'
         config = json.loads(config_path.read_text())
         warnings = config['maven']['acceptable_warnings']['transitive_dependency']
         assert 'uses commons-logging via spring-core' in warnings, f'Pattern should be in config: {warnings}'
@@ -66,7 +66,7 @@ def test_warning_add_skips_duplicate():
         )
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['action'] == 'skipped', 'Should skip duplicate'
 
 
@@ -100,7 +100,7 @@ def test_warning_list_all_categories():
         result = run_script(SCRIPT_PATH, 'warning', 'list')
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert 'categories' in data, 'Should return categories'
         assert 'transitive_dependency' in data['categories'], 'Should have transitive_dependency'
         assert 'plugin_compatibility' in data['categories'], 'Should have plugin_compatibility'
@@ -118,7 +118,7 @@ def test_warning_list_single_category():
         result = run_script(SCRIPT_PATH, 'warning', 'list', '--category', 'transitive_dependency')
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert 'patterns' in data, 'Should return patterns'
         assert 'filtered pattern' in data['patterns'], f'Should contain the pattern: {data["patterns"]}'
 
@@ -131,8 +131,8 @@ def test_warning_list_empty():
         result = run_script(SCRIPT_PATH, 'warning', 'list')
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
-        assert data['success'] is True, 'Should succeed with empty list'
+        data = result.toon()
+        assert data['status'] == 'success', 'Should succeed with empty list'
 
 
 # =============================================================================
@@ -152,11 +152,11 @@ def test_warning_remove_existing():
         )
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['action'] == 'removed', "Action should be 'removed'"
 
         # Verify removed from config
-        config_path = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
+        config_path = ctx.fixture_dir / 'run-configuration.json'
         config = json.loads(config_path.read_text())
         warnings = config['maven']['acceptable_warnings']['transitive_dependency']
         assert 'to be removed' not in warnings, 'Pattern should be removed'
@@ -172,7 +172,7 @@ def test_warning_remove_nonexistent():
         )
 
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['action'] == 'skipped', 'Should skip nonexistent'
 
 
@@ -201,7 +201,7 @@ def test_warning_add_with_build_system():
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
         # Verify in npm section, not maven
-        config_path = ctx.fixture_dir / PLAN_DIR_NAME / 'run-configuration.json'
+        config_path = ctx.fixture_dir / 'run-configuration.json'
         config = json.loads(config_path.read_text())
         npm_warnings = config.get('npm', {}).get('acceptable_warnings', {}).get('transitive_dependency', [])
         assert 'npm warning' in npm_warnings, f'Should be in npm section: {config}'

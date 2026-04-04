@@ -27,13 +27,14 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from _cmd_apply import apply_single_fix, load_templates
 from _doctor_analysis import analyze_component
-from _doctor_fixes import apply_safe_fixes
 from _doctor_report import generate_report
 from _doctor_shared import (
     categorize_all_issues,
     discover_components,
     ensure_report_dir,
+    find_bundle_for_file,
     find_bundles,
     find_marketplace_root,
     get_report_dir,
@@ -42,6 +43,61 @@ from _doctor_shared import (
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 SCRIPT_DIR = Path(__file__).parent
+
+
+# =============================================================================
+# Fix application (inlined from _doctor_fixes.py)
+# =============================================================================
+
+
+def apply_safe_fixes(issues: list[dict], marketplace_root: Path, script_dir: Path, dry_run: bool = False) -> dict:
+    """Apply all safe fixes to files."""
+    applied: list[dict] = []
+    failed: list[dict] = []
+    skipped: list[dict] = []
+    results: dict = {'applied': applied, 'failed': failed, 'skipped': skipped, 'dry_run': dry_run}
+
+    templates = load_templates(script_dir)
+
+    # Group issues by file to avoid conflicts
+    by_file: dict[str, list[dict]] = {}
+    for issue in issues:
+        file_path = issue.get('file', '')
+        if file_path:
+            by_file.setdefault(file_path, []).append(issue)
+
+    for file_path, file_issues in by_file.items():
+        path = Path(file_path)
+        if not path.exists():
+            for issue in file_issues:
+                results['failed'].append({'issue': issue, 'error': f'File not found: {file_path}'})
+            continue
+
+        bundle_dir = find_bundle_for_file(path, marketplace_root)
+        if not bundle_dir:
+            for issue in file_issues:
+                results['failed'].append({'issue': issue, 'error': 'Could not determine bundle directory'})
+            continue
+
+        for issue in file_issues:
+            if dry_run:
+                results['skipped'].append({'issue': issue, 'reason': 'dry_run'})
+                continue
+
+            try:
+                rel_path = str(path.relative_to(bundle_dir))
+            except ValueError:
+                rel_path = str(path)
+
+            fix_data = {'type': issue.get('type'), 'file': rel_path, 'details': issue.get('details', {})}
+            result = apply_single_fix(fix_data, bundle_dir, templates)
+
+            if result.get('success'):
+                results['applied'].append({'issue': issue, 'result': result})
+            else:
+                results['failed'].append({'issue': issue, 'error': result.get('error', 'Unknown error')})
+
+    return results
 
 
 # =============================================================================
@@ -137,9 +193,7 @@ def cmd_analyze(args) -> int:
         return 1
 
     bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
-    component_list = collect_filtered_components(
-        bundles, parse_csv_filter(args.type), parse_csv_filter(args.name)
-    )
+    component_list = collect_filtered_components(bundles, parse_csv_filter(args.type), parse_csv_filter(args.name))
 
     all_analysis = []
     total_issues = 0
@@ -182,9 +236,7 @@ def cmd_fix(args) -> int:
         return 1
 
     bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
-    component_list = collect_filtered_components(
-        bundles, parse_csv_filter(args.type), parse_csv_filter(args.name)
-    )
+    component_list = collect_filtered_components(bundles, parse_csv_filter(args.type), parse_csv_filter(args.name))
 
     # First analyze to find issues
     all_issues = []

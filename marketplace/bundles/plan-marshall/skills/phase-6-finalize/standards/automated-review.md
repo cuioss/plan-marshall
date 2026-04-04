@@ -22,7 +22,7 @@ Read `pr_number` from the TOON output. If no PR exists, skip automated review.
 ### Load and execute automated review workflow
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:workflow-integration-ci"
 ```
 
@@ -50,7 +50,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
 
 2. Loop back to phase-5-execute (iteration + 1):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} --loop-back 5-execute
 ```
 

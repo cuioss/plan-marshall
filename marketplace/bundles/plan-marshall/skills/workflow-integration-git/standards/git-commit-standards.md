@@ -2,6 +2,19 @@
 
 Standardized git commit format following conventional commits.
 
+## Table of Contents
+
+- [Commit Message Format](#commit-message-format)
+- [Commit Types](#commit-types)
+- [Examples](#examples)
+- [Key Practices](#key-practices)
+- [Subject Line Guidelines](#subject-line-guidelines)
+- [Body Guidelines](#body-guidelines)
+- [Footer Guidelines](#footer-guidelines)
+- [Scope Guidelines](#scope-guidelines)
+- [Anti-Patterns](#anti-patterns)
+- [Verify](#verify)
+
 ## Commit Message Format
 
 ```text
@@ -14,8 +27,8 @@ Standardized git commit format following conventional commits.
 
 ### Required Components
 
-* **Type**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`
-* **Subject**: Imperative, present tense, no capital, no dot, max 50 chars
+* **Type**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
+* **Subject**: Imperative, present tense, no capital, no dot, ideal ≤50 chars (warning), absolute max 72 chars (reject)
 
 ### Optional Components
 
@@ -41,6 +54,7 @@ Standardized git commit format following conventional commits.
 * **docs**: Documentation only changes
 * **test**: Adding or correcting tests
 * **chore**: Changes to build process or auxiliary tools
+* **ci**: Changes to CI configuration files and scripts
 
 ## Examples
 
@@ -98,7 +112,7 @@ Fixes #456, #457, #458
 
 * **Clear and descriptive subjects** - Reader should understand the change without reading code
 * **Imperative mood** - Use "add feature" not "added feature" or "adds feature"
-* **Concise but complete** - 50 char subject is ideal, 72 char absolute max
+* **Concise but complete** - 50 char subject is ideal; 72 char is the absolute max (including type and scope prefix)
 * **Explain why, not what** - Body should explain motivation and context
 
 ### Reference Issues
@@ -242,4 +256,4 @@ Before committing, verify:
 
 * Conventional Commits: https://www.conventionalcommits.org/
 * Git Commit Best Practices: https://cbea.ms/git-commit/
-* Angular Commit Guidelines: https://github.com/angular/angular/blob/main/CONTRIBUTING.md#commit
+* Angular Commit Guidelines: https://github.com/angular/angular/blob/main/contributing-docs/commit-message-format.md

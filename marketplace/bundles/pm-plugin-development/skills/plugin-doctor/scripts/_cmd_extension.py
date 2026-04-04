@@ -50,7 +50,14 @@ OPTIONAL_METHODS = {
 # Moved to REQUIRED_FUNCTIONS for simplicity
 
 # Valid profile categories for get_skill_domains()
-VALID_PROFILE_CATEGORIES = ['core', 'implementation', 'testing', 'quality']
+VALID_PROFILE_CATEGORIES = [
+    'core',
+    'implementation',
+    'module_testing',
+    'integration_testing',
+    'quality',
+    'documentation',
+]
 
 # Required canonical commands for bundles that provide build systems (static mappings only)
 # NOTE: Profile-based commands (integration-tests, coverage, quality-gate, performance)
@@ -78,9 +85,12 @@ def get_marketplace_root(extension_path: Path) -> Path | None:
     return None
 
 
-def skill_exists(skill_ref: str, marketplace_root: Path) -> bool:
-    """Check if a skill reference (bundle:skill) exists."""
-    if ':' not in skill_ref:
+def skill_exists(skill_ref, marketplace_root: Path) -> bool:
+    """Check if a skill reference (bundle:skill or {skill: bundle:skill}) exists."""
+    # Handle dict format: {'skill': 'bundle:skill', 'description': '...'}
+    if isinstance(skill_ref, dict):
+        skill_ref = skill_ref.get('skill', '')
+    if not isinstance(skill_ref, str) or ':' not in skill_ref:
         return False
 
     bundle, skill = skill_ref.split(':', 1)

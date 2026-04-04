@@ -5,20 +5,20 @@ Provides load/save operations, TOON output formatting, and error handling.
 """
 
 import json
-import os
-import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
-# Plan directory name - configurable for test isolation
-_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+from constants import DIR_ARCHITECTURE, FILE_DERIVED_DATA, FILE_LLM_ENRICHED  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    get_base_dir,
+)
 
-# Data directory for architecture files (relative to project_dir argument)
-DATA_DIR = Path(_PLAN_DIR_NAME) / 'project-architecture'
+# Data sub-directory for architecture files (appended to base dir / project_dir)
+_ARCHITECTURE_SUBDIR = DIR_ARCHITECTURE
 
 # File names
-DERIVED_DATA_FILE = 'derived-data.json'
-LLM_ENRICHED_FILE = 'llm-enriched.json'
+DERIVED_DATA_FILE = FILE_DERIVED_DATA
+LLM_ENRICHED_FILE = FILE_LLM_ENRICHED
 
 
 # =============================================================================
@@ -57,7 +57,11 @@ class CommandNotFoundError(ArchitectureError):
 
 def get_data_dir(project_dir: str = '.') -> Path:
     """Get the data directory path."""
-    return Path(project_dir) / DATA_DIR
+    return Path(project_dir) / get_base_dir() / _ARCHITECTURE_SUBDIR
+
+
+# Backward-compatible alias used by tests
+DATA_DIR = get_base_dir() / _ARCHITECTURE_SUBDIR
 
 
 def get_derived_path(project_dir: str = '.') -> Path:
@@ -256,102 +260,30 @@ def merge_module_data(derived: dict[str, Any], enriched: dict[str, Any], module_
 
 
 # =============================================================================
-# TOON Output Formatting
-# =============================================================================
-
-
-def format_toon_value(value) -> str:
-    """Format a value for TOON output.
-
-    Args:
-        value: Value to format
-
-    Returns:
-        Formatted string
-    """
-    if value is None:
-        return ''
-    if isinstance(value, bool):
-        return 'true' if value else 'false'
-    if isinstance(value, list):
-        return '+'.join(str(v) for v in value)
-    return str(value)
-
-
-def print_toon_kv(key: str, value, indent: int = 0):
-    """Print a key-value pair in TOON format.
-
-    Args:
-        key: Key name
-        value: Value (can be str, int, bool, list, dict)
-        indent: Indentation level
-    """
-    prefix = '  ' * indent
-    if isinstance(value, dict):
-        print(f'{prefix}{key}:')
-        for k, v in value.items():
-            print_toon_kv(k, v, indent + 1)
-    elif isinstance(value, list) and value and isinstance(value[0], dict):
-        # List of dicts - use table format
-        print(f'{prefix}{key}[{len(value)}]:')
-        for item in value:
-            print(f'{prefix}  - {item}')
-    elif isinstance(value, list):
-        print(f'{prefix}{key}[{len(value)}]:')
-        for item in value:
-            print(f'{prefix}  - {item}')
-    else:
-        formatted = format_toon_value(value)
-        print(f'{prefix}{key}: {formatted}')
-
-
-def print_toon_table(name: str, items: list, fields: list):
-    """Print a TOON table.
-
-    Args:
-        name: Table name
-        items: List of dicts
-        fields: List of field names to include
-    """
-    field_spec = ','.join(fields)
-    print(f'{name}[{len(items)}]{{{field_spec}}}:')
-    for item in items:
-        values = [format_toon_value(item.get(f, '')) for f in fields]
-        print('\t'.join(values))
-
-
-def print_toon_list(name: str, items: list):
-    """Print a TOON list.
-
-    Args:
-        name: List name
-        items: List of values
-    """
-    print(f'{name}[{len(items)}]:')
-    for item in items:
-        print(f'  - {item}')
-
-
-# =============================================================================
 # Error Handling
 # =============================================================================
 
 
-def error_exit(message: str, context: dict[str, Any] | None = None) -> None:
-    """Print error in TOON format and exit with code 1.
+def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn':
+    """Print error in TOON format and raise ArchitectureError.
+
+    CLI-boundary helper — only call from command handlers, not library functions.
+    For library code, raise ArchitectureError or DataNotFoundError instead.
 
     Args:
         message: Error message
         context: Optional context dict with key-value pairs
+
+    Raises:
+        ArchitectureError: Always raised after printing TOON error output
     """
-    print(f'error: {message}')
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    error_data: dict[str, Any] = {'status': 'error', 'error': 'architecture_error', 'message': message}
     if context:
-        for key, value in context.items():
-            if isinstance(value, list):
-                print_toon_list(key, value)
-            else:
-                print(f'{key}: {value}')
-    sys.exit(1)
+        error_data.update(context)
+    print(serialize_toon(error_data))
+    raise ArchitectureError(message)
 
 
 def error_module_not_found(module_name: str, available: list):
@@ -361,10 +293,7 @@ def error_module_not_found(module_name: str, available: list):
         module_name: Requested module name
         available: List of available module names
     """
-    print('error: Module not found')
-    print(f'module: {module_name}')
-    print_toon_list('available', available)
-    sys.exit(1)
+    error_exit('Module not found', {'module': module_name, 'available': available})
 
 
 def error_command_not_found(module_name: str, command_name: str, available: list):
@@ -375,11 +304,7 @@ def error_command_not_found(module_name: str, command_name: str, available: list
         command_name: Requested command name
         available: List of available command names
     """
-    print('error: Command not found')
-    print(f'module: {module_name}')
-    print(f'command: {command_name}')
-    print_toon_list('available', available)
-    sys.exit(1)
+    error_exit('Command not found', {'module': module_name, 'command': command_name, 'available': available})
 
 
 def error_data_not_found(expected_file: str, resolution: str):
@@ -389,7 +314,89 @@ def error_data_not_found(expected_file: str, resolution: str):
         expected_file: Path to expected file
         resolution: How to fix
     """
-    print('error: Data not found')
-    print(f'expected_file: {expected_file}')
-    print(f'resolution: {resolution}')
-    sys.exit(1)
+    error_exit('Data not found', {'expected_file': expected_file, 'resolution': resolution})
+
+
+def require_derived_data(project_dir: str = '.') -> 'dict[str, Any]':
+    """Load derived data or exit with a structured error.
+
+    Convenience wrapper that replaces repeated try/except DataNotFoundError
+    blocks in CLI handlers.  On success it returns the loaded dict; on
+    failure it prints the standard error message and raises ArchitectureError.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        Derived data dict
+
+    Raises:
+        ArchitectureError: If derived-data.json does not exist
+    """
+    try:
+        return load_derived_data(project_dir)
+    except DataNotFoundError:
+        error_data_not_found(str(get_derived_path(project_dir)), "Run 'architecture.py discover' first")
+        raise  # unreachable – error_data_not_found raises ArchitectureError
+
+
+def handle_module_not_found(module_name: str, project_dir: str) -> int:
+    """Print module-not-found error with available modules list and return 1.
+
+    Args:
+        module_name: The requested (missing) module name
+        project_dir: Project directory path
+
+    Returns:
+        Always returns 1
+    """
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    try:
+        derived = load_derived_data(project_dir)
+        modules = get_module_names(derived)
+    except Exception:
+        modules = []
+
+    error_data: dict[str, Any] = {
+        'status': 'error',
+        'error': 'architecture_error',
+        'message': 'Module not found',
+        'module': module_name,
+        'available': modules,
+    }
+    print(serialize_toon(error_data))
+    return 1
+
+
+def print_skills_by_profile(skills_by_profile: dict) -> None:
+    """Print skills_by_profile in TOON format.
+
+    Args:
+        skills_by_profile: Dict mapping profile names to structured skill dicts
+            {"profile": {"defaults": [{"skill": "...", "description": "..."}],
+                         "optionals": [...]}}
+    """
+    print('skills_by_profile:')
+    for profile, profile_data in skills_by_profile.items():
+        print(f'  {profile}:')
+        defaults = profile_data.get('defaults', [])
+        optionals = profile_data.get('optionals', [])
+        if defaults:
+            print(f'    defaults[{len(defaults)}]{{skill,description}}:')
+            for entry in defaults:
+                if isinstance(entry, dict):
+                    skill = entry.get('skill', '')
+                    desc = entry.get('description', '')
+                    print(f'      - {skill},"{desc}"')
+                else:
+                    print(f'      - {entry}')
+        if optionals:
+            print(f'    optionals[{len(optionals)}]{{skill,description}}:')
+            for entry in optionals:
+                if isinstance(entry, dict):
+                    skill = entry.get('skill', '')
+                    desc = entry.get('description', '')
+                    print(f'      - {skill},"{desc}"')
+                else:
+                    print(f'      - {entry}')

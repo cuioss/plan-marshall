@@ -11,7 +11,7 @@ See also `standards/lessons-integration.md` for conceptual guidance on when and 
 ## Execution
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:manage-lessons"
 ```
 
@@ -22,7 +22,7 @@ Skill: plan-marshall:manage-lessons
 **Use exactly this command** to add a lesson (do not invent alternative flags):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "{bundle}:{skill}" \
   --category {bug|improvement|anti-pattern} \
   --title "{concise summary}" \

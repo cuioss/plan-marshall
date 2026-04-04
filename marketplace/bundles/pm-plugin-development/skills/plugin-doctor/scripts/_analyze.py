@@ -29,8 +29,7 @@ from _analyze_shared import (
 )
 from _analyze_structure import analyze_skill_structure, cmd_structure
 
-# Re-export API functions for backward compatibility
-# These are used by doctor_analysis.py and other scripts
+# Public API surface — used by _doctor_analysis.py and other scripts
 __all__ = [
     'analyze_markdown_file',
     'analyze_skill_structure',

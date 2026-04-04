@@ -2,6 +2,8 @@
 
 Implementation skill management with profile-based structure and workflow skill extensions.
 
+> **Operational workflows**: For skill resolution commands, adding new domains, and usage patterns, see [skill-domains-operations.md](skill-domains-operations.md).
+
 ## Purpose
 
 Skill domains configure which implementation skills are loaded when working on code in different domains. The structure supports:
@@ -9,22 +11,41 @@ Skill domains configure which implementation skills are loaded when working on c
 - **System Domain**: Contains workflow skills for the 6-phase execution model
 - **Technical Domains**: Language-specific with profiles and workflow skill extensions (java, javascript)
 
-## 7-Phase Workflow Model
+## Schema Structure
 
-The system domain contains workflow skills for the 6 execution phases:
+See `data-model.md` for the complete `skill_domains` JSON schema. The key hierarchy is:
 
-| Phase | Purpose | Workflow Skill |
-|-------|---------|----------------|
-| `1-init` | Initialize plan | `plan-marshall:phase-1-init` |
-| `2-refine` | Clarify request | `plan-marshall:phase-2-refine` |
-| `3-outline` | Create solution outline | `plan-marshall:phase-3-outline` |
-| `4-plan` | Decompose into tasks | `plan-marshall:phase-4-plan` |
-| `5-execute` | Run implementation + verification | `plan-marshall:phase-5-execute` |
-| `6-finalize` | Commit, PR | `plan-marshall:phase-6-finalize` |
+- `skill_domains.active_profiles[]` — globally active profiles
+- `skill_domains.system` — workflow skills, task executors, system-level defaults/optionals
+- `skill_domains.{domain}` — per-domain skills organized by profile with extensions
+
+## 6-Phase Workflow Model
+
+> Phase names follow the standard 6-phase model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Phase Names for the canonical definition.
+
+The system domain maps each phase to a workflow skill:
+
+| Phase | Workflow Skill |
+|-------|----------------|
+| `1-init` | `plan-marshall:phase-1-init` |
+| `2-refine` | `plan-marshall:phase-2-refine` |
+| `3-outline` | `plan-marshall:phase-3-outline` |
+| `4-plan` | `plan-marshall:phase-4-plan` |
+| `5-execute` | `plan-marshall:phase-5-execute` |
+| `6-finalize` | `plan-marshall:phase-6-finalize` |
 
 ## Structure
 
 ### System Domain Structure
+
+The `system` domain is required and contains:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `defaults` | array | No | Base skills loaded for all tasks |
+| `optionals` | array | No | Optional base skills available for selection |
+| `workflow_skills` | object | Yes | Maps 6 phases to workflow skill references |
+| `task_executors` | object | Yes | Maps profiles to task executor skills |
 
 ```json
 {
@@ -45,7 +66,46 @@ The system domain contains workflow skills for the 6 execution phases:
 }
 ```
 
+### Task Executors
+
+Task executors map profile values to the workflow skill that executes tasks of that profile:
+
+```json
+{
+  "task_executors": {
+    "implementation": "plan-marshall:task-executor",
+    "module_testing": "plan-marshall:task-executor",
+    "integration_testing": "plan-marshall:task-executor"
+  }
+}
+```
+
+| Profile | Purpose | Default Executor |
+|---------|---------|------------------|
+| `implementation` | Production code tasks | `plan-marshall:task-executor` |
+| `module_testing` | Unit/module test tasks | `plan-marshall:task-executor` |
+| `integration_testing` | Integration test tasks | `plan-marshall:task-executor` |
+
+**Extensibility**: The profile list is open for extension. To add a new profile:
+
+1. Add profile key to `skills_by_profile` in domain `extension.py`
+2. Create corresponding `plan-marshall:task-{profile}` skill
+3. Marshall-steward auto-discovers and registers in `task_executors`
+
+**Convention**: Profile `X` maps to skill `plan-marshall:task-X` by default.
+
 ### Technical Domain Structure (Profile-Based)
+
+Technical domains (java, javascript, etc.) use profile-based organization:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `workflow_skill_extensions` | object | No | Domain-specific extensions for phases |
+| `core` | object | Yes | Core skills loaded for all profiles |
+| `implementation` | object | No | Skills for execute phase (production code) |
+| `module_testing` | object | No | Skills for execute phase (unit/module tests) |
+| `integration_testing` | object | No | Skills for execute phase (integration tests) |
+| `quality` | object | No | Skills for verify phase |
 
 ```json
 {
@@ -93,12 +153,27 @@ Domain-specific extensions that augment workflow skills. Only in technical domai
 
 ### Profiles
 
-| Profile | Phase Used | Purpose |
-|---------|------------|---------|
-| `implementation` | execute (impl tasks) | Production code patterns |
-| `module_testing` | execute (unit/module test tasks) | Unit and module test patterns |
-| `integration_testing` | execute (integration test tasks) | Integration test patterns |
-| `quality` | verify | Verification, documentation standards |
+> Profiles follow the standard profile model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Profiles for the canonical definition.
+
+> **Note**: `quality` is a config profile for skill resolution. `manage-tasks` has additional task-only profiles (`verification`, `standalone`) not mapped to config skill domains — see [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) for the full profile model.
+
+### Profile Structure
+
+Each profile contains defaults and optionals:
+
+```json
+{
+  "{profile}": {
+    "defaults": ["bundle:skill"],
+    "optionals": ["bundle:skill"]
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `defaults` | array | Skills always loaded for this profile |
+| `optionals` | array | Skills available for selection |
 
 ### core
 
@@ -110,6 +185,10 @@ Foundation skills always included when the domain is selected.
   "optionals": ["pm-dev-java:java-null-safety", "pm-dev-java:java-lombok"]
 }
 ```
+
+## Profile-to-Phase Mapping
+
+> Profiles follow the standard profile model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Profiles for the canonical definition.
 
 ## System Domain
 
@@ -197,177 +276,87 @@ JavaScript/Frontend development with Jest testing.
 | defaults | (none) |
 | optionals | (none) |
 
-## Skill Resolution
+## Active Profiles (Profile Filtering)
 
-### resolve-workflow-skill Command
+Controls which profiles are emitted during architecture enrichment and skill resolution.
 
-Resolves the system workflow skill for a phase. Always returns from the `system` domain.
+### Three-Layer Resolution
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-workflow-skill --phase 3-outline
-```
+| Layer | Source | Scope | Description |
+|-------|--------|-------|-------------|
+| 1 | Extension signal detection | Per-module | `_detect_applicable_profiles()` inspects module signals |
+| 2 | `skill_domains.active_profiles` | Global | Positive list overrides detection for all modules |
+| 2b | `skill_domains.{domain}.active_profiles` | Per-domain | Overrides global for specific domain |
+| 3 | `--profiles` flag on `enrich add-domain` | Per-module | Explicit per-module override at enrichment time |
 
-**Parameters**:
+**Resolution order**: `--profiles flag` > `per-domain active_profiles` > `global active_profiles` > `signal detection` > `all defined profiles`
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `--phase` | string | Yes | Phase name (1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize) |
-
-**Output**:
-```toon
-status: success
-phase: 3-outline
-workflow_skill: plan-marshall:phase-3-outline
-```
-
-**Error Cases**:
-- System domain missing → `error: System domain not configured. Run /marshall-steward to initialize.`
-- Unknown phase → `error: Unknown phase: {phase}. Available: 1-init, 2-refine, 3-outline, 4-plan, 5-execute, 6-finalize`
-
-### resolve-workflow-skill-extension Command
-
-Resolves domain-specific workflow skill extension. Returns null (not error) if extension doesn't exist.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-workflow-skill-extension --domain java --type triage
-```
-
-**Parameters**:
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `--domain` | string | Yes | Domain name (java, javascript, etc.) |
-| `--type` | string | Yes | Extension type (outline, triage) |
-
-**Output**:
-```toon
-status: success
-domain: java
-type: triage
-extension: pm-dev-java:ext-triage-java
-```
-
-### resolve-domain-skills Command
-
-Aggregates `{domain}.core` + `{domain}.{profile}` skills with descriptions.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-domain-skills --domain java --profile implementation
-```
-
-**Output**:
-```toon
-status: success
-domain: java
-profile: implementation
-
-defaults:
-  pm-dev-java:java-core: Java patterns, conventions, null-safety
-
-optionals:
-  pm-dev-java:java-null-safety: JSpecify annotations (@NullMarked, @Nullable)
-  pm-dev-java:java-lombok: Lombok annotations (@Builder, @Value, @Delegate)
-  pm-dev-java:java-cdi: CDI patterns (@ApplicationScoped, @Inject)
-  pm-dev-java:java-maintenance: Code maintenance and refactoring patterns
-```
-
-### get-workflow-skills Command
-
-Returns all workflow skills from the system domain (6-phase model).
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  get-workflow-skills
-```
-
-**Output**:
-```toon
-status: success
-1-init: plan-marshall:phase-1-init
-2-refine: plan-marshall:phase-2-refine
-3-outline: plan-marshall:phase-3-outline
-4-plan: plan-marshall:phase-4-plan
-5-execute: plan-marshall:phase-5-execute
-6-finalize: plan-marshall:phase-6-finalize
-```
-
-### Aggregation Logic
-
-| Profile | Defaults | Optionals |
-|---------|----------|-----------|
-| `architecture` | `{domain}.core.defaults` + `{domain}.architecture.defaults` | `{domain}.core.optionals` + `{domain}.architecture.optionals` |
-| `planning` | `{domain}.core.defaults` + `{domain}.planning.defaults` | `{domain}.core.optionals` + `{domain}.planning.optionals` |
-| `implementation` | `{domain}.core.defaults` + `{domain}.implementation.defaults` | `{domain}.core.optionals` + `{domain}.implementation.optionals` |
-| `module_testing` | `{domain}.core.defaults` + `{domain}.module_testing.defaults` | `{domain}.core.optionals` + `{domain}.module_testing.optionals` |
-| `integration_testing` | `{domain}.core.defaults` + `{domain}.integration_testing.defaults` | `{domain}.core.optionals` + `{domain}.integration_testing.optionals` |
-| `quality` | `{domain}.core.defaults` + `{domain}.quality.defaults` | `{domain}.core.optionals` + `{domain}.quality.optionals` |
-
-## Usage Patterns
-
-### Get Domain Configuration
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains get --domain java
-```
-
-Returns full nested structure including workflow_skill_extensions, core, and all profiles.
-
-### Get Domain Extensions
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains get-extensions --domain java
-```
-
-Returns only the workflow_skill_extensions for the domain.
-
-### Validate Skill in Domain
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains validate --domain java --skill pm-dev-java:junit-core
-```
-
-Searches all profiles (core, implementation, testing, quality) for nested domains.
-
-## Adding New Domains
-
-### Adding a Technical Domain
+### Global Active Profiles
 
 ```json
-"python": {
-  "workflow_skill_extensions": {
-    "outline": "pm-dev-python:python-outline-ext",
-    "triage": "pm-dev-python:python-triage"
-  },
-  "core": {
-    "defaults": ["pm-dev-python:python-core"],
-    "optionals": ["pm-dev-python:python-typing"]
-  },
-  "implementation": {
-    "defaults": [],
-    "optionals": []
-  },
-  "module_testing": {
-    "defaults": ["pm-dev-python:pytest-core"],
-    "optionals": []
-  },
-  "integration_testing": {
-    "defaults": [],
-    "optionals": []
-  },
-  "quality": {
-    "defaults": [],
-    "optionals": []
+{
+  "skill_domains": {
+    "active_profiles": ["implementation", "module_testing", "quality"]
   }
 }
 ```
 
-No agent changes needed - agents work with any domain.
+When set, only these profiles are emitted for all domains. Profiles not in the list (e.g., `integration_testing`, `documentation`) are excluded.
+
+### Per-Domain Active Profiles
+
+```json
+{
+  "skill_domains": {
+    "documentation": {
+      "active_profiles": ["documentation"],
+      "bundle": "pm-documents"
+    }
+  }
+}
+```
+
+Per-domain overrides take precedence over the global setting for that domain.
+
+### CLI Management
+
+```bash
+# Show current config
+manage-config skill-domains active-profiles
+
+# Set global default
+manage-config skill-domains active-profiles set --profiles implementation,module_testing,quality
+
+# Set per-domain override
+manage-config skill-domains active-profiles set --domain documentation --profiles documentation
+
+# Remove per-domain override (falls back to global)
+manage-config skill-domains active-profiles remove --domain documentation
+
+# Remove global default (falls back to signal detection)
+manage-config skill-domains active-profiles remove
+```
+
+## Validation Rules
+
+1. **System domain required**: `skill_domains.system` must exist
+2. **Workflow skills required**: `system.workflow_skills` must have all 6 phases
+3. **Task executors required**: `system.task_executors` must exist with at least `implementation`
+4. **Profile structure**: If domain has profiles, must have at least `core`
+5. **Extension types**: Only `outline` and `triage` are valid extension types
+6. **Skill format**: All skills must be `bundle:skill` format
+
+## Reserved Keys
+
+These keys are reserved in domain configuration and cannot be used as profile names:
+
+- `workflow_skills` - System domain only
+- `task_executors` - System domain only
+- `workflow_skill_extensions` - Domain extensions
+- `active_profiles` - Profile filtering (global or per-domain)
+- `core` - Core skills for all profiles
+- `defaults` - Top-level defaults (flat structure compatibility)
+- `optionals` - Top-level optionals (flat structure compatibility)
 
 ## Best Practices
 

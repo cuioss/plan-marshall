@@ -2,6 +2,7 @@
 name: manage-solution-outline
 description: Manage solution outline documents - standards, examples, validation, and deliverable extraction
 user-invocable: false
+scope: plan
 ---
 
 # Manage Solution Outline Skill
@@ -10,56 +11,19 @@ This skill provides structure guidelines, examples, and operations for `solution
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; use Write tool for document content, then validate via script.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify solution_outline.md through the script API write path; use Write tool then validate
-- Do not invent script arguments not listed in the Scripts Used table
+**Skill-specific constraints:**
+- Use Write tool for document content, then validate via script (not the script API write path)
 - Do not skip validation after writing or updating solution content
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline {command} {args}`
 - Document creation follows the resolve-path, Write, validate pattern
 - Deliverable numbering must be sequential starting from 1
 
-## When to Load This Skill
-
-Load this skill in Step 1 when:
-- Creating a solution outline (via `phase-3-outline` skill)
-- Reviewing or updating an existing solution outline
-- Validating solution document structure
-
-**First action**: Load `plan-marshall:manage-architecture` skill for module information and architectural context.
-
-**Not needed for**: Creating tasks from deliverables (use manage-tasks skill)
-
----
-
 ## Document Structure
 
-Solution outlines have a fixed structure with required and optional sections:
+Required sections: **Summary** (2-3 sentences), **Overview** (ASCII diagram), **Deliverables** (numbered `###` sections). Optional: Approach, Dependencies, Risks and Mitigations.
 
-```markdown
-# Solution: {title}
-
-plan_id: {plan_id}
-created: {timestamp}
-compatibility: {value} — {long description}
-
-## Summary          ← REQUIRED: 2-3 sentences describing the approach
-
-## Overview         ← REQUIRED: ASCII diagram showing architecture/flow
-
-## Deliverables     ← REQUIRED: Numbered ### sections
-
-## Approach         ← OPTIONAL: Execution strategy
-
-## Dependencies     ← OPTIONAL: External requirements
-
-## Risks and Mitigations  ← OPTIONAL: Risk analysis
-```
-
-See [standards/structure.md](standards/structure.md) for detailed requirements.
+See [standards/solution-outline-standard.md](standards/solution-outline-standard.md) for the complete section specification, content guidelines, and validation rules.
 
 ---
 
@@ -91,7 +55,7 @@ Description...
 - Each deliverable should be independently achievable
 - Include location, responsibilities, or success criteria
 
-See [standards/deliverables.md](standards/deliverables.md) for reference format.
+See [standards/solution-outline-standard.md](standards/solution-outline-standard.md) for reference format.
 
 ---
 
@@ -107,7 +71,7 @@ The Overview section contains ASCII diagrams showing component relationships. Di
 | Documentation | File structure with cross-references |
 | Plugin | Integration flow with build phases |
 
-See [standards/diagrams.md](standards/diagrams.md) for patterns and examples.
+See [standards/solution-outline-standard.md](standards/solution-outline-standard.md) for patterns and examples.
 
 ---
 
@@ -126,81 +90,9 @@ Examples provide starting points for different task categories:
 
 ---
 
-## Writing the Solution Document
+## Authoring Workflow
 
-### Step 1: Load Project Architecture
-
-Load project architecture knowledge via the `plan-marshall:manage-architecture` skill:
-
-```
-Skill: plan-marshall:manage-architecture
-```
-
-Then query module information:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --name {module-name}
-```
-
-Use the returned structure for:
-
-| Section | Use For |
-|---------|---------|
-| `modules.{name}.responsibility` | Understand what each module does |
-| `modules.{name}.purpose` | Understand module classification (library, extension, etc.) |
-| `modules.{name}.key_packages` | Identify architecturally significant packages |
-| `modules.{name}.skills_by_profile` | Know which skills apply per profile |
-| `modules.{name}.tips` | Apply implementation guidance |
-| `modules.{name}.insights` | Leverage learned knowledge |
-| `internal_dependencies` | Know what depends on what |
-
-### Step 2: Analyze Request
-
-Read the request document to understand:
-- What is being requested
-- Scope and constraints
-- Success criteria
-
-### Step 3: Design Architecture
-
-Before writing, determine:
-- Components involved
-- Dependencies between components
-- Execution order
-
-### Step 4: Create Diagram
-
-Draw ASCII diagram showing:
-- New components (boxed)
-- Existing components (labeled)
-- Dependencies (arrows)
-- Package/file structure
-
-### Step 5: Write and Validate Document
-
-Use the resolve-path → Write → validate pattern:
-
-```bash
-# 1. Get target path
-python3 .plan/execute-script.py \
-  plan-marshall:manage-solution-outline:manage-solution-outline resolve-path \
-  --plan-id {plan_id}
-# Returns: path: .plan/plans/{plan_id}/solution_outline.md
-
-# 2. Write content directly (Write tool — already permitted via Write(.plan/**))
-Write({resolved_path}) with solution outline content
-
-# 3. Validate
-python3 .plan/execute-script.py \
-  plan-marshall:manage-solution-outline:manage-solution-outline write \
-  --plan-id {plan_id}
-```
-
-**Parameters**:
-- `--plan-id` (required): Plan identifier
-
-**Note**: The `write` command validates the file already on disk — it does NOT read from stdin. Checks for required sections (Summary, Overview, Deliverables) and numbered deliverable format (`### N. Title`). Returns error if validation fails.
+See [standards/authoring-guide.md](standards/authoring-guide.md) for the step-by-step workflow for writing a solution document (load architecture, analyze request, design, create diagram, write and validate).
 
 ---
 
@@ -226,6 +118,20 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ---
 
+## Error Responses
+
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
+
+| Error Code | Cause |
+|------------|-------|
+| `file_not_found` | solution_outline.md doesn't exist |
+| `document_not_found` | Same as file_not_found (used by `update` command) |
+| `parse_error` | Failed to parse document structure |
+| `validation_failed` | Missing required sections (Summary, Overview, or Deliverables), or deliverable numbering not sequential |
+| `deliverable_not_found` | Requested deliverable number doesn't exist (read with `--deliverable-number`) |
+
+See also [standards/solution-outline-standard.md](standards/solution-outline-standard.md) for deliverable validation criteria used during task planning.
+
 ## Integration
 
 **Loaded by**:
@@ -243,9 +149,9 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `resolve-path` | `--plan-id` | Get target file path for direct Write |
-| `write` | `--plan-id` | Validate solution on disk (written via Write tool) |
-| `update` | `--plan-id` | Validate updated solution on disk (written via Write tool) |
+| `resolve-path` | `--plan-id` | Get target file path (returns `path: .plan/plans/{plan_id}/solution_outline.md`) |
+| `write` | `--plan-id` | Validate newly created solution on disk; sets `action: created`. Returns `file_exists` error if file was already validated via `write` before — use `update` instead. |
+| `update` | `--plan-id` | Validate updated solution on disk; sets `action: updated`. Returns `document_not_found` if file doesn't exist — use `write` for initial creation. |
 | `validate` | `--plan-id` | Validate structure |
 | `read` | `--plan-id [--raw] [--deliverable-number N]` | Read solution or specific deliverable |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |
@@ -390,3 +296,12 @@ exists: true
 ```
 
 Returns exit code 0 if exists, 1 if not.
+
+---
+
+## Related
+
+- `manage-tasks` — Consumes deliverables from solution outline for task creation
+- `manage-architecture` — Provides module placement data used during outline creation
+- `manage-references` — Tracks affected_files identified during outline phase
+- `manage-plan-documents` — Stores the request document that drives the outline

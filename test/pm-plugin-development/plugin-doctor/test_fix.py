@@ -227,7 +227,9 @@ def test_apply_remove_unsupported_tools_field():
     """Test applying unsupported-skill-tools-field fix removes allowed-tools."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         skill_file = Path(tmp_dir) / 'SKILL.md'
-        skill_file.write_text('---\nname: test-skill\ndescription: Test\nallowed-tools: Read, Grep\nuser-invocable: true\n---\n\n# Test\n')
+        skill_file.write_text(
+            '---\nname: test-skill\ndescription: Test\nallowed-tools: Read, Grep\nuser-invocable: true\n---\n\n# Test\n'
+        )
 
         fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
@@ -244,7 +246,9 @@ def test_apply_remove_unsupported_tools_field_with_tools():
     """Test applying unsupported-skill-tools-field fix removes tools: field."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         skill_file = Path(tmp_dir) / 'SKILL.md'
-        skill_file.write_text('---\nname: test-skill\ndescription: Test\ntools: Read\nuser-invocable: true\n---\n\n# Test\n')
+        skill_file.write_text(
+            '---\nname: test-skill\ndescription: Test\ntools: Read\nuser-invocable: true\n---\n\n# Test\n'
+        )
 
         fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)

@@ -2,14 +2,14 @@
 """
 Base file operations module for workflow scripts.
 
-Provides atomic file operations, metadata parsing, JSON output helpers,
+Provides atomic file operations, metadata parsing, TOON output helpers,
 and base directory configuration for workflow files.
-Stdlib-only - no external dependencies.
 
 Usage:
     from file_ops import (
         atomic_write_file,
         ensure_directory,
+        output_toon,
         output_success,
         output_error,
         parse_markdown_metadata,
@@ -25,12 +25,103 @@ import json
 import os
 import sys
 import tempfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Default base directory for workflow files
 # Can be overridden via PLAN_BASE_DIR environment variable for testing
 _BASE_DIR = Path(os.environ.get('PLAN_BASE_DIR', '.plan'))
+
+
+def now_utc_iso() -> str:
+    """Get current UTC time as ISO 8601 string with Z suffix.
+
+    Returns:
+        ISO 8601 formatted timestamp, e.g., '2025-12-02T10:30:00Z'
+    """
+    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def parse_duration(duration_str: str) -> 'timedelta':
+    """Parse a duration string like '7d', '24h', '30m' into a timedelta.
+
+    Args:
+        duration_str: Duration string with suffix d (days), h (hours), or m (minutes)
+
+    Returns:
+        timedelta object
+
+    Raises:
+        ValueError: If format is invalid
+    """
+    import re
+    from datetime import timedelta
+
+    match = re.match(r'^(\d+)([dhm])$', duration_str.strip())
+    if not match:
+        raise ValueError(f"Invalid duration format: '{duration_str}'. Use Nd, Nh, or Nm.")
+    value = int(match.group(1))
+    unit = match.group(2)
+    if unit == 'd':
+        return timedelta(days=value)
+    if unit == 'h':
+        return timedelta(hours=value)
+    return timedelta(minutes=value)
+
+
+def format_duration(seconds: float) -> str:
+    """Format seconds into human-readable duration string.
+
+    Args:
+        seconds: Duration in seconds
+
+    Returns:
+        Formatted string like '5.2s', '3m12s', '1h5m'
+    """
+    if seconds < 60:
+        return f'{seconds:.1f}s'
+    if seconds < 3600:
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        return f'{m}m{s}s'
+    h = int(seconds // 3600)
+    m = int(seconds % 3600 // 60)
+    return f'{h}h{m}m'
+
+
+def normalize_to_repo_relative(path: str) -> str:
+    """Normalize absolute file paths to repository-relative paths.
+
+    If the path is already relative, returns it unchanged.
+    If absolute, attempts to strip the git repo root prefix.
+
+    Args:
+        path: File path (absolute or relative)
+
+    Returns:
+        Repository-relative path string
+    """
+    if not path.startswith('/'):
+        return path
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        repo_root = result.stdout.strip()
+        if path.startswith(repo_root + '/'):
+            return path[len(repo_root) + 1 :]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return path
 
 
 def get_base_dir() -> Path:
@@ -76,7 +167,7 @@ def base_path(*parts: str) -> Path:
         >>> base_path('plans', 'my-task', 'plan.md')
         PosixPath('.plan/plans/my-task/plan.md')
     """
-    return _BASE_DIR.joinpath(*parts)
+    return get_base_dir().joinpath(*parts)
 
 
 def get_temp_dir(subdir: str | None = None) -> Path:
@@ -98,6 +189,46 @@ def get_temp_dir(subdir: str | None = None) -> Path:
     if subdir:
         return temp_path / subdir
     return temp_path
+
+
+def get_plan_dir(plan_id: str) -> Path:
+    """Get the plan directory path for a given plan ID.
+
+    Args:
+        plan_id: Plan identifier
+
+    Returns:
+        Path to .plan/plans/{plan_id}/
+    """
+    return base_path('plans', plan_id)
+
+
+def read_json(path: str | Path, default: Any = None) -> Any:
+    """Read and parse a JSON file, returning default if not found.
+
+    Args:
+        path: Path to JSON file
+        default: Value to return if file doesn't exist (default: empty dict)
+
+    Returns:
+        Parsed JSON content, or default if file not found
+    """
+    if default is None:
+        default = {}
+    p = Path(path)
+    if not p.exists():
+        return default
+    return json.loads(p.read_text(encoding='utf-8'))
+
+
+def write_json(path: str | Path, data: Any) -> None:
+    """Write data as formatted JSON, creating parent dirs as needed.
+
+    Args:
+        path: Target file path
+        data: Data to serialize as JSON
+    """
+    atomic_write_file(path, json.dumps(data, indent=2))
 
 
 def atomic_write_file(path: str | Path, content: str) -> None:
@@ -155,27 +286,120 @@ def ensure_directory(path: str | Path) -> Path:
     return target_dir
 
 
+def output_toon(data: dict[str, Any]) -> None:
+    """Print TOON formatted data to stdout.
+
+    Generic TOON output helper for scripts that need to emit structured responses.
+
+    Args:
+        data: Dictionary to serialize as TOON
+    """
+    print(serialize_toon(data))
+
+
+def format_toon_value(value: Any) -> str:
+    """Format a value for TOON output.
+
+    Args:
+        value: Value to format
+
+    Returns:
+        Formatted string
+    """
+    if value is None:
+        return ''
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, list):
+        return '+'.join(str(v) for v in value)
+    return str(value)
+
+
+def print_toon_table(name: str, items: list, fields: list) -> None:
+    """Print a TOON table with tab-separated columns.
+
+    Args:
+        name: Table name
+        items: List of dicts
+        fields: List of field names to include
+    """
+    field_spec = ','.join(fields)
+    print(f'{name}[{len(items)}]{{{field_spec}}}:')
+    for item in items:
+        values = [format_toon_value(item.get(f, '')) for f in fields]
+        print('\t'.join(values))
+
+
+def print_toon_list(name: str, items: list) -> None:
+    """Print a TOON list.
+
+    Args:
+        name: List name
+        items: List of values
+    """
+    print(f'{name}[{len(items)}]:')
+    for item in items:
+        print(f'  - {item}')
+
+
+def print_toon_kv(key: str, value: Any, indent: int = 0) -> None:
+    """Print a key-value pair in TOON format.
+
+    Args:
+        key: Key name
+        value: Value (can be str, int, bool, list, dict)
+        indent: Indentation level
+    """
+    prefix = '  ' * indent
+    if isinstance(value, dict):
+        print(f'{prefix}{key}:')
+        for k, v in value.items():
+            print_toon_kv(k, v, indent + 1)
+    elif isinstance(value, list):
+        print(f'{prefix}{key}[{len(value)}]:')
+        for item in value:
+            print(f'{prefix}  - {item}')
+    else:
+        formatted = format_toon_value(value)
+        print(f'{prefix}{key}: {formatted}')
+
+
 def output_success(operation: str, **kwargs: Any) -> None:
-    """Print JSON success output to stdout.
+    """Print TOON success output to stdout.
 
     Args:
         operation: Name of the operation
         **kwargs: Additional fields to include in output
     """
-    result = {'success': True, 'operation': operation}
+    result = {'status': 'success', 'success': True, 'operation': operation}
     result.update(kwargs)
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(serialize_toon(result))
 
 
 def output_error(operation: str, error: str) -> None:
-    """Print JSON error output to stderr.
+    """Print TOON error output to stderr (canonical low-level variant).
+
+    This is the shared base implementation. Domain-specific variants exist in
+    ci_base.py, manage-memory.py, _tasks_core.py, and _documents_core.py.
+    Per manage-contract.md: prefer output_toon_error() for manage-* scripts.
+    """
+    result = {'status': 'error', 'success': False, 'operation': operation, 'error': error}
+    print(serialize_toon(result), file=sys.stderr)
+
+
+def output_toon_error(error_code: str, message: str, **kwargs: Any) -> None:
+    """Print TOON error output to stdout following the manage-* contract.
+
+    Standard error format: status=error, error=<code>, message=<msg>.
 
     Args:
-        operation: Name of the operation
-        error: Error message
+        error_code: Machine-readable error code (e.g., 'invalid_plan_id')
+        message: Human-readable error description
+        **kwargs: Additional fields to include in output
     """
-    result = {'success': False, 'operation': operation, 'error': error}
-    print(json.dumps(result, indent=2), file=sys.stderr)
+    result: dict[str, Any] = {'status': 'error', 'error': error_code, 'message': message}
+    result.update(kwargs)
+    print(serialize_toon(result))
 
 
 def parse_markdown_metadata(content: str) -> dict[str, str]:
@@ -322,22 +546,33 @@ def get_metadata_content_split(content: str) -> tuple[str, str]:
     return metadata_block, body
 
 
-if __name__ == '__main__':
-    # Quick self-test when run directly
-    print('file_ops.py - File Operations Base Module')
-    print('=' * 50)
-    print(f'\nWorkflow Base Directory: {get_base_dir()}')
-    print('\nAvailable functions:')
-    print('- get_base_dir() -> Path')
-    print('- set_base_dir(path)')
-    print('- base_path(*parts) -> Path')
-    print('- get_temp_dir(subdir?) -> Path')
-    print('- atomic_write_file(path, content)')
-    print('- ensure_directory(path)')
-    print('- output_success(operation, **kwargs)')
-    print('- output_error(operation, error)')
-    print('- parse_markdown_metadata(content)')
-    print('- generate_markdown_metadata(data)')
-    print('- update_markdown_metadata(content, updates)')
-    print('- get_metadata_content_split(content)')
-    print('\nRun test-file-ops.py for full test suite.')
+def safe_main(main_fn: Any) -> Any:
+    """Decorator for script entry points that catches unhandled exceptions.
+
+    Wraps the main function so that unhandled exceptions produce a TOON error
+    on stderr and exit with code 1, instead of printing a raw traceback.
+
+    Usage:
+        @safe_main
+        def main() -> int:
+            ...
+            return 0
+
+        if __name__ == '__main__':
+            main()  # calls sys.exit internally
+    """
+    import functools
+
+    @functools.wraps(main_fn)
+    def wrapper() -> None:
+        try:
+            sys.exit(main_fn())
+        except KeyboardInterrupt:
+            sys.exit(130)
+        except SystemExit:
+            raise
+        except Exception as e:
+            output_error('main', str(e))
+            sys.exit(1)
+
+    return wrapper

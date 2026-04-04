@@ -32,7 +32,7 @@ PLANNING_PATTERNS = [
     'manage-*',  # Management skills (manage-tasks, manage-plan-documents, etc.)
     '*-workflow',  # Workflow skills (pr-workflow, git-workflow, etc.)
     'workflow-*',  # Workflow-prefixed skills (workflow-pr-doctor, workflow-integration-ci, etc.)
-    'task-*',  # Task commands (task-standalone)
+    'task-*',  # Task execution skills (task-implementation, task-module-testing, task-verification)
     '*-task-plan',  # Task plan skills (plugin-task-plan)
     '*-solution-outline',  # Solution outline skills (plugin-solution-outline)
     '*-plan-*',  # Plan-prefixed skills (plugin-plan-implement)

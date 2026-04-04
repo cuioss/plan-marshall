@@ -5,7 +5,7 @@ Step management command handlers for manage-tasks.py.
 Contains: finalize-step, add-step, remove-step subcommands.
 """
 
-from _manage_tasks_shared import (
+from _tasks_core import (
     calculate_progress,
     find_task_file,
     format_task_file,

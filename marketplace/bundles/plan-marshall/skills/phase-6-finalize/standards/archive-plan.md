@@ -2,7 +2,7 @@
 
 Archive the completed plan to `.plan/archived-plans/`.
 
-**CRITICAL**: Archive MUST be the last step in the pipeline because it moves plan files (including status.json), which breaks `manage-lifecycle transition` and other manage-* scripts. All plan operations must complete before archive.
+**CRITICAL**: Archive MUST be the last step in the pipeline because it moves plan files (including status.json), which breaks `manage-status transition` and other manage-* scripts. All plan operations must complete before archive.
 
 ## Mark Lesson Applied (conditional)
 
@@ -23,12 +23,12 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson update \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons update \
   --id {source_id} --applied true
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Lesson {source_id} marked as applied"
 ```
 
@@ -37,11 +37,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 ## Archive
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle archive \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status archive \
   --plan-id {plan_id}
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"
 ```

@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from _fix_shared import extract_frontmatter, resolve_issue_type
+from _doctor_shared import extract_frontmatter
 
 
 def verify_frontmatter_fix(file_path: Path) -> dict:
@@ -227,7 +227,7 @@ def cmd_verify(args) -> int:
         print(json.dumps({'verified': False, 'error': f'Not a file: {args.file}'}), file=sys.stderr)
         return 1
 
-    fix_type = resolve_issue_type(args.fix_type)
+    fix_type = args.fix_type
 
     if fix_type in ('missing-frontmatter', 'missing-name-field', 'missing-description-field', 'missing-tools-field'):
         result = verify_frontmatter_fix(file_path)

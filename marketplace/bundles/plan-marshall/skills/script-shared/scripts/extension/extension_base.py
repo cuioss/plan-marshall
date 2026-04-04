@@ -1,0 +1,427 @@
+#!/usr/bin/env python3
+"""Public API for extension.py implementations.
+
+This module is the single public interface for domain bundle extensions.
+
+Provides:
+    - ExtensionBase: Abstract base class for extensions
+    - Canonical command constants (re-exported from _extension_constants):
+      CMD_*, CANONICAL_COMMANDS, PROFILE_PATTERNS, APPLICABLE_PROFILES
+
+Module discovery utilities (discover_descriptors, build_module_base, find_readme,
+count_source_files, discover_packages, discover_js_sources, discover_sources,
+ModuleBase, ModulePaths) are available via direct import from _build_discover.
+
+Usage:
+    from extension_base import ExtensionBase
+    from _build_discover import discover_descriptors, build_module_base
+
+    class Extension(ExtensionBase):
+        def get_skill_domains(self) -> list[dict]:
+            return [{"domain": {...}, "profiles": {...}}]
+
+        def discover_modules(self, project_root: str) -> list:
+            descriptors = discover_descriptors(project_root, "pom.xml")
+            modules = []
+            for desc in descriptors:
+                base = build_module_base(project_root, str(desc))
+                modules.append(base.to_dict())
+            return modules
+"""
+
+from abc import ABC, abstractmethod
+
+# Re-export build vocabulary constants from private implementation.
+# These remain available from extension_base for backward compatibility.
+from _extension_constants import (  # noqa: F401 — re-exported for backward compat
+    ALL_CANONICAL_COMMANDS,
+    CANONICAL_COMMANDS,
+    CMD_BENCHMARK,
+    CMD_CLEAN,
+    CMD_CLEAN_INSTALL,
+    CMD_COMPILE,
+    CMD_COVERAGE,
+    CMD_INSTALL,
+    CMD_INTEGRATION_TESTS,
+    CMD_MODULE_TESTS,
+    CMD_PACKAGE,
+    CMD_QUALITY_GATE,
+    CMD_TEST_COMPILE,
+    CMD_VERIFY,
+    PROFILE_PATTERNS,
+)
+from _extension_constants import (
+    APPLICABLE_PROFILES as _APPLICABLE_PROFILES,
+)
+
+
+class ExtensionBase(ABC):
+    """Abstract base class for domain bundle extensions.
+
+    Subclasses must implement:
+        - get_skill_domains: Domain metadata and skill profiles
+
+    All other methods have sensible defaults.
+    Build bundles should override discover_modules() for module discovery.
+    """
+
+    # =========================================================================
+    # Required Methods (must be implemented)
+    # =========================================================================
+
+    APPLICABLE_PROFILES = _APPLICABLE_PROFILES
+    """Profile names iterated during _build_applicable_result(). Does not include 'core'
+    which is always merged into each profile."""
+
+    @abstractmethod
+    def get_skill_domains(self) -> list[dict]:
+        """Return all skill domains this extension provides.
+
+        Returns:
+            List of domain dicts. Each dict has domain identity and
+            profile-based skill organization:
+            {
+                "domain": {
+                    "key": str,          # Unique domain identifier
+                    "name": str,         # Human-readable name
+                    "description": str   # Domain description
+                },
+                "profiles": {
+                    "core": {"defaults": [...], "optionals": [...]},
+                    "implementation": {"defaults": [...], "optionals": [...]},
+                    "module_testing": {"defaults": [...], "optionals": [...]},
+                    "quality": {"defaults": [...], "optionals": [...]},
+                    "documentation": {"defaults": [...], "optionals": [...]}  # Optional
+                }
+            }
+
+        Most extensions return a single-element list. Multi-domain extensions
+        (e.g., plan-marshall providing both 'build' and 'general-dev') return
+        multiple elements.
+
+        Skill Reference Format:
+            Each skill entry in defaults/optionals can be either:
+            - Object format (preferred): {"skill": "bundle:skill", "description": "..."}
+            - String format: "bundle:skill"
+
+        Standard Profiles:
+            - core: Skills loaded for all profiles (foundation skills)
+            - implementation: Code implementation skills
+            - module_testing: Unit/module test skills
+            - integration_testing: Integration test skills
+            - quality: Quality/lint/format skills
+
+        Cross-Domain Profile:
+            - documentation: Documentation task skills (AsciiDoc, ADRs, interfaces).
+              This profile is detected per-module during architecture enrichment
+              when module has doc/*.adoc files. It represents a separate task type
+              (like testing), not a variant of implementation.
+        """
+        pass
+
+    # =========================================================================
+    # Module Discovery Methods (override for build bundles)
+    # =========================================================================
+
+    def discover_modules(self, project_root: str) -> list:
+        """Discover all modules with complete metadata.
+
+        This is the primary API for module discovery. Returns comprehensive
+        module information including metadata, dependencies, packages, and stats.
+
+        Args:
+            project_root: Absolute path to project root.
+
+        Returns:
+            List of module dicts. See module-discovery.md for complete
+            contract including:
+            - name, build_systems (array)
+            - paths: {module, descriptor, sources, tests, readme}
+            - metadata: snake_case fields (artifact_id, group_id, parent as string)
+            - packages: object keyed by package name
+            - dependencies: strings "groupId:artifactId:scope"
+            - stats: {source_files, test_files}
+            - commands: resolved canonical command strings
+
+        Notes:
+            - Override in build bundles to provide build-system-specific discovery
+            - Default implementation returns empty list
+            - Delegate to scripts in scripts/ directory for implementation
+        """
+        return []
+
+    # =========================================================================
+    # Configuration Callback (override to set project defaults)
+    # =========================================================================
+
+    def config_defaults(self, project_root: str) -> None:  # noqa: B027
+        """Configure project-specific defaults in marshal.json.
+
+        Called during project initialization, after extension loading but
+        before workflow logic accesses configuration. This is the hook for
+        extensions to set domain-specific defaults.
+
+        Args:
+            project_root: Absolute path to project root directory.
+
+        Returns:
+            None (void method)
+
+        Contract:
+            - MUST only write values if they don't already exist
+            - MUST NOT override user-defined configuration
+            - SHOULD use direct import from _config_core module
+            - MAY skip silently if no defaults are needed
+
+        Example:
+            def config_defaults(self, project_root: str) -> None:
+                from _config_core import ext_defaults_set_default
+                # set_default returns True if set, False if key already existed
+                ext_defaults_set_default("my_bundle.skip_profiles", "itest,native", project_root)
+
+        See standards/extension-contract.md for complete documentation.
+        """
+        pass  # Default no-op implementation
+
+    # =========================================================================
+    # Workflow Extension Methods
+    # =========================================================================
+
+    def provides_triage(self) -> str | None:
+        """Return triage skill reference if available.
+
+        Returns:
+            Skill reference as 'bundle:skill' (e.g., 'pm-dev-java:ext-triage-java')
+            or None if no triage capability.
+
+        Purpose:
+            Triage skills categorize and prioritize findings during
+            the plan-finalize phase.
+        """
+        return None
+
+    def provides_outline_skill(self) -> str | None:
+        """Return the domain-specific outline skill reference, or None.
+
+        Returns:
+            Skill reference as 'bundle:skill' (e.g.,
+            'pm-plugin-development:ext-outline-workflow') or None.
+
+            The skill's standards/change-{type}.md files contain
+            domain-specific discovery, analysis, and deliverable
+            creation logic. The change_type is passed to the skill
+            for internal routing.
+
+        Purpose:
+            Loaded by the phase-3-outline skill. Provides domain-specific
+            outline instructions instead of generic plan-marshall:phase-3-outline
+            standards.
+
+        Fallback:
+            If a domain returns None, generic instructions from
+            plan-marshall:phase-3-outline/standards/change-{type}.md
+            are used.
+        """
+        return None
+
+    def provides_recipes(self) -> list[dict]:
+        """Return recipe definitions this extension provides.
+
+        Recipes are predefined, repeatable transformations that bypass
+        change-type detection and provide their own discovery, analysis,
+        and deliverable patterns.
+
+        Returns:
+            List of recipe dicts, each containing:
+            - key: str — Unique recipe identifier (e.g., 'refactor-to-profile-standards')
+            - name: str — Human-readable display name
+            - description: str — Description for recipe selection UI
+            - skill: str — Fully-qualified skill reference (e.g., 'bundle:recipe-skill')
+            - default_change_type: str — Change type for outline phase (e.g., 'tech_debt')
+            - scope: str — Scope indicator (e.g., 'codebase_wide', 'module')
+
+            Optional fields (set by user at plan creation time if omitted):
+            - profile: str — Target profile (e.g., 'implementation', 'module_testing')
+            - package_source: str — Package source (e.g., 'packages', 'test_packages')
+
+        Notes:
+            - The domain is auto-assigned from get_skill_domains() first entry
+            - The source is auto-assigned as 'extension'
+            - Default implementation returns empty list (no recipes)
+        """
+        return []
+
+    def provides_verify_steps(self) -> list[dict]:
+        """Return domain-specific verification steps for phase-5-execute.
+
+        Each step declares a verification agent that is appended to the
+        steps list in marshal.json under plan.phase-5-execute.steps during
+        project configuration.
+
+        Returns:
+            List of step dicts, each containing:
+            - name: str — Fully-qualified skill reference used in the steps list
+              (e.g., 'my-bundle:my-verify-step')
+            - skill: str — Same as name (the fully-qualified skill reference)
+            - description: str — Human-readable description for wizard presentation
+
+        Default implementation returns empty list (no domain-specific verify steps).
+        """
+        return []
+
+    def provides_finalize_steps(self) -> list[dict]:
+        """Return domain-specific finalize steps for phase-6-finalize.
+
+        Each step declares a skill that executes during the finalize pipeline.
+        Steps are discovered during project configuration and added to the
+        user's selected steps in marshal.json under plan.phase-6-finalize.steps.
+
+        Returns:
+            List of step dicts, each containing:
+            - name: str — Step identifier used in the steps list
+              (fully-qualified skill notation, e.g., 'pm-dev-java:java-post-pr')
+            - skill: str — Same as name (the fully-qualified skill reference)
+            - description: str — Human-readable description for wizard presentation
+
+        The step's skill receives --plan-id and --iteration as arguments.
+
+        Default implementation returns empty list (no domain-specific finalize steps).
+        """
+        return []
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        """Check if this domain applies to a specific module and return resolved skills.
+
+        Called during architecture enrichment to determine which skill domains
+        apply to a module and what skills they provide. Each extension decides
+        based on signals in the module's derived data and can customize which
+        skills are defaults vs optionals per module.
+
+        Args:
+            module_data: Module dict from derived-data.json containing:
+                build_systems, paths, dependencies, packages, metadata, stats
+            active_profiles: Optional positive list of profiles to include.
+                Overrides signal detection when provided (Layer 2/3).
+
+        Returns:
+            {
+                'applicable': bool,
+                'confidence': 'high' | 'medium' | 'low' | 'none',
+                'signals': list[str],
+                'additive_to': str | None,  # parent domain key (e.g., 'java')
+                'skills_by_profile': {      # only when applicable
+                    'implementation': {
+                        'defaults': [{'skill': str, 'description': str}],
+                        'optionals': [{'skill': str, 'description': str}]
+                    },
+                    ...
+                }
+            }
+
+        Default returns not applicable. Override in extensions.
+        Implementations typically call self.get_skill_domains() for base profiles,
+        then adjust defaults/optionals based on module_data signals.
+        """
+        return {
+            'applicable': False,
+            'confidence': 'none',
+            'signals': [],
+            'additive_to': None,
+            'skills_by_profile': {},
+        }
+
+    def _detect_applicable_profiles(self, profiles: dict, module_data: dict | None) -> set[str] | None:
+        """Detect which profiles are applicable based on module signals.
+
+        Returns set of applicable profile names, or None for no filtering
+        (all defined profiles are included). Override in domain extensions
+        for signal-based detection.
+
+        Args:
+            profiles: Dict of profile definitions from get_skill_domains()
+            module_data: Module dict from derived-data.json, or None
+
+        Returns:
+            Set of applicable profile names, or None for no filtering.
+        """
+        return None
+
+    def _build_applicable_result(
+        self,
+        confidence: str,
+        signals: list[str],
+        additive_to: str | None = None,
+        module_data: dict | None = None,
+        active_profiles: set[str] | None = None,
+        domain_key: str | None = None,
+    ) -> dict:
+        """Build applicable result from own get_skill_domains() profiles.
+
+        Note: Despite the underscore prefix, this is part of the public API
+        for extension implementations. All extensions call this from applies_to_module().
+
+        Merges 'core' profile into each non-core profile to produce a flat
+        skills_by_profile dict ready for consumption.
+
+        Domain selection: By default uses the first domain entry from
+        get_skill_domains(). Multi-domain extensions can pass domain_key
+        to select a specific domain (e.g., 'general-dev' instead of 'build').
+
+        Profile filtering (three-layer resolution):
+        1. active_profiles (explicit override from config or CLI) wins
+        2. _detect_applicable_profiles() (signal-based detection) if no override
+        3. All defined profiles if detection returns None
+
+        Args:
+            confidence: 'high', 'medium', or 'low'
+            signals: List of signal strings explaining why applicable
+            additive_to: Parent domain key if this is an additive domain
+            module_data: Module dict for signal-based profile detection
+            active_profiles: Explicit positive list of profiles to include
+            domain_key: Select a specific domain by key instead of using
+                the first entry. Required for multi-domain extensions.
+
+        Returns:
+            Full applies_to_module result dict with applicable=True
+        """
+        all_domains = self.get_skill_domains()
+        if domain_key:
+            domains = next(
+                (d for d in all_domains if d.get('domain', {}).get('key') == domain_key),
+                all_domains[0] if all_domains else {},
+            )
+        else:
+            domains = all_domains[0] if all_domains else {}
+        profiles = domains.get('profiles', {})
+        core = profiles.get('core', {})
+        core_defaults = core.get('defaults', [])
+        core_optionals = core.get('optionals', [])
+
+        # Determine which profiles are active (three-layer resolution)
+        profile_filter: set[str] | None
+        if active_profiles is not None:
+            profile_filter = active_profiles
+        else:
+            profile_filter = self._detect_applicable_profiles(profiles, module_data)
+
+        skills_by_profile: dict[str, dict] = {}
+        for profile_name in self.APPLICABLE_PROFILES:
+            if profile_name not in profiles:
+                continue
+            if profile_filter is not None and profile_name not in profile_filter:
+                continue
+            profile = profiles[profile_name]
+            merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
+            merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
+            if merged_defaults or merged_optionals:
+                skills_by_profile[profile_name] = {
+                    'defaults': merged_defaults,
+                    'optionals': merged_optionals,
+                }
+        return {
+            'applicable': True,
+            'confidence': confidence,
+            'signals': signals,
+            'additive_to': additive_to,
+            'skills_by_profile': skills_by_profile,
+        }

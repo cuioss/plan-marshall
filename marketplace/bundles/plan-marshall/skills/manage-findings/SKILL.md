@@ -1,26 +1,24 @@
 ---
 name: manage-findings
-description: Unified finding and Q-Gate storage with JSONL persistence for plan-scoped and phase-scoped findings
+description: Unified JSONL storage for plan-scoped findings, phase-scoped Q-Gate findings, and component assessments
 user-invocable: false
+scope: plan
 ---
 
 # Manage Findings
 
-Unified storage for plan-level findings and phase-scoped Q-Gate findings. Both share the same type taxonomy, resolution model, and severity values.
+Unified storage for plan-level findings, phase-scoped Q-Gate findings, and component assessments. Findings and Q-Gate share the same type taxonomy, resolution model, and severity values. Assessments use a separate certainty/confidence model for component evaluations.
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify findings.jsonl or qgate-*.jsonl files directly; all mutations go through the script API
-- Do not invent script arguments not listed in the CLI Commands section
-- Do not use invalid resolution values (only pending, fixed, suppressed, accepted, taken_into_account)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings {command} {args}`
+**Skill-specific constraints:**
+- Only valid resolution values: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
 - Plan findings and Q-Gate findings use different command prefixes (direct vs `qgate`)
+- Assessment commands use the `assessment` prefix
 - Q-Gate deduplication is automatic; do not add duplicate findings manually
+- Assessment confidence values must be numeric (0-100)
 
 ## Scope Distinction
 
@@ -28,8 +26,9 @@ Unified storage for plan-level findings and phase-scoped Q-Gate findings. Both s
 |-------|---------|-----------|
 | **Plan findings** | `.plan/plans/{plan_id}/artifacts/findings.jsonl` | Long-lived, promotable |
 | **Q-Gate findings** | `.plan/plans/{plan_id}/artifacts/qgate-{phase}.jsonl` | Per-phase, not promotable |
+| **Assessments** | `.plan/plans/{plan_id}/artifacts/assessments.jsonl` | Working data, read-only after outline |
 
-Plan findings are working data during plan execution. Notable findings are promoted to project-level at `6-finalize`. Q-Gate findings track per-phase verification issues.
+Plan findings are working data during plan execution. Notable findings are promoted to project-level at `6-finalize`. Q-Gate findings track per-phase verification issues. Assessments track component evaluations with certainty/confidence classifications.
 
 ## Storage Structure
 
@@ -47,26 +46,17 @@ Plan findings are working data during plan execution. Notable findings are promo
 
 ## Finding Types
 
-| Type | Origin | Default Promotion Target |
-|------|--------|--------------------------|
-| `bug` | Implementation errors | manage-lessons |
-| `improvement` | Discovered patterns | manage-lessons |
-| `anti-pattern` | Bad practices found | manage-lessons |
-| `triage` | Triage decisions | manage-lessons |
-| `tip` | Helpful hints | architecture (tips) |
-| `insight` | Deeper understanding | architecture (insights) |
-| `best-practice` | Recommended patterns | architecture (best_practices) |
-| `build-error` | Compilation failures | (any, if pattern emerges) |
-| `test-failure` | Test failures | (any, if pattern emerges) |
-| `lint-issue` | Linter warnings | (any, if pattern emerges) |
-| `sonar-issue` | Sonar findings | (any, if pattern emerges) |
-| `pr-comment` | PR review comments | (any, if pattern emerges) |
+Types: `bug`, `improvement`, `anti-pattern`, `triage`, `tip`, `insight`, `best-practice`, `build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `pr-comment`
 
-**Resolution values**: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
+Resolutions: `pending`, `fixed`, `suppressed`, `accepted`, `taken_into_account`
 
-**Severity values**: `error`, `warning`, `info`
+Severities: `error`, `warning`, `info` (default: `warning`)
+
+See [standards/jsonl-format.md](standards/jsonl-format.md) for the complete type taxonomy with promotion targets, resolution semantics, severity values, and the type selection guide.
 
 ## CLI Commands
+
+**Parser architecture**: This script uses a two-level subparser pattern. Top-level subcommands (`add`, `query`, `get`, `resolve`, `promote`) handle plan-scoped findings directly. The `qgate` subcommand introduces a second parser level with its own subcommands (`qgate add`, `qgate query`, `qgate resolve`, `qgate clear`). The `assessment` subcommand introduces a third command group (`assessment add`, `assessment query`, `assessment get`, `assessment clear`). This mirrors the three storage scopes in the CLI surface.
 
 ### Plan-Scoped Finding Commands
 
@@ -125,10 +115,48 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Sources**: `qgate` (automated verification), `user_review` (user feedback)
 
-**Deduplication**: `qgate add` deduplicates by title within each phase:
+**Deduplication**: `qgate add` deduplicates by title within each phase (case-sensitive, exact match):
 - If a finding with the same title already exists and is `pending` → returns `status: deduplicated` (no new record)
 - If a finding with the same title exists but is resolved → returns `status: reopened` (reactivated to `pending`)
 - Otherwise → creates new finding with `status: success`
+
+**Iteration**: The optional `--iteration N` parameter tracks which verification cycle produced the finding (e.g., iteration 1 = first build attempt, iteration 2 = after fixes). Useful for filtering findings from a specific cycle via `qgate query --iteration N`.
+
+**Phase 1-init**: Not included in Q-Gate phases — init creates plan infrastructure and has no verification step that would produce findings.
+
+### Assessment Commands
+
+Component evaluation storage providing structured JSONL persistence for certainty/confidence assessments from analysis agents.
+
+```bash
+# Add assessment
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  assessment add --plan-id {plan_id} --file-path {file_path} --certainty {certainty} --confidence {confidence} \
+  [--agent AGENT] [--detail DETAIL] [--evidence EVIDENCE]
+
+# Query assessments
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  assessment query --plan-id {plan_id} [--certainty C] [--min-confidence N] \
+  [--max-confidence N] [--file-pattern PATTERN]
+
+# Get single assessment
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  assessment get --plan-id {plan_id} --hash-id {hash_id}
+
+# Clear assessments (all or by agent)
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  assessment clear --plan-id {plan_id} [--agent AGENT]
+```
+
+**Certainty values**: `CERTAIN_INCLUDE`, `CERTAIN_EXCLUDE`, `UNCERTAIN`
+
+| Value | Meaning |
+|-------|---------|
+| `CERTAIN_INCLUDE` | Component is definitely in scope for the deliverable |
+| `CERTAIN_EXCLUDE` | Component is definitely NOT in scope |
+| `UNCERTAIN` | Requires further analysis to determine scope |
+
+**Certainty vs confidence**: Certainty is the classification (in/out/unknown). Confidence (0-100) measures how sure the agent is about that classification. An `UNCERTAIN` assessment with confidence 90 means the agent is highly confident the scope is ambiguous; a `CERTAIN_INCLUDE` with confidence 60 means moderate certainty it belongs.
 
 ## Output Format
 
@@ -188,3 +216,27 @@ At `6-finalize`:
      architecture enrich {type} --module {module} --{type} "{content}" --reasoning "From plan {plan_id}"
      promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to architecture
      ```
+
+**`promoted_to` values**: Either `architecture` (for tips/insights/best-practices routed to manage-architecture), or the lesson ID returned by `manage-lessons add` (the hash_id of the created lesson).
+
+**Error cases**:
+- Promoting an already-promoted finding returns `status: error, error: already_promoted`
+- If the target skill call fails, the finding is NOT marked as promoted (promote is the last step)
+
+## Error Responses
+
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
+
+| Error Code | Cause |
+|------------|-------|
+| `not_found` | Finding hash_id doesn't exist |
+| `already_promoted` | Finding was previously promoted |
+| `invalid_type` | Type not in the finding types table |
+| `invalid_resolution` | Resolution not in the valid values |
+| `invalid_phase` | Phase not in 2-refine through 6-finalize |
+
+## Related
+
+- `manage-lessons` — Promotion target for bug, improvement, anti-pattern, triage findings
+- `manage-architecture` — Promotion target for tip, insight, best-practice findings (via `enrich` commands)
+- `manage-status` — Plan lifecycle tracking complementing findings resolution

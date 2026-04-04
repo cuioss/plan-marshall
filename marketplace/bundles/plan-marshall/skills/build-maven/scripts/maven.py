@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Maven build operations - run, parse, search markers, check warnings.
+Maven build operations - run, parse, search markers, check warnings, coverage report.
 
 Usage:
     maven.py run --command-args <args> [options]
     maven.py parse --log <path> [--mode <mode>]
     maven.py search-markers --source-dir <dir>
-    maven.py check-warnings --warnings <json> [--patterns <json>]
+    maven.py check-warnings --warnings <json> [--acceptable-warnings <json>]
+    maven.py coverage-report [--project-path <path>] [--threshold <percent>]
     maven.py --help
 
 Subcommands:
@@ -14,82 +15,63 @@ Subcommands:
     parse           Parse Maven build output and categorize issues
     search-markers  Search for OpenRewrite TODO markers in source files
     check-warnings  Categorize build warnings against acceptable patterns
+    coverage-report Parse JaCoCo coverage report
 """
 
-import argparse
 import sys
 
-from _maven_cmd_check_warnings import cmd_check_warnings
-from _maven_cmd_coverage_report import cmd_coverage_report
-from _maven_cmd_parse import cmd_parse
-from _maven_cmd_search_markers import cmd_search_markers
-
-# Import command handlers from internal modules (underscore prefix = private)
+from _build_check_warnings import create_check_warnings_handler
+from _build_cli import (
+    add_search_markers_subparser,
+    build_main,
+    register_standard_subparsers,
+    safe_main,
+)
+from _build_coverage_report import create_coverage_report_handler
+from _markers_search import cmd_search_markers
+from _maven_cmd_discover import discover_maven_modules
+from _maven_cmd_parse import parse_log
 from _maven_execute import cmd_run
 
+# --- Tool-specific configuration inlined from former wrapper files ---
 
-def main():
+cmd_coverage_report = create_coverage_report_handler(
+    search_paths=[
+        ('target/site/jacoco/jacoco.xml', 'jacoco'),
+        ('target/jacoco/report.xml', 'jacoco'),
+        ('target/site/jacoco-aggregate/jacoco.xml', 'jacoco'),
+    ],
+    not_found_message='No JaCoCo XML report found. Run coverage build first.',
+)
+
+cmd_check_warnings = create_check_warnings_handler(
+    matcher='substring',
+    filter_severity='WARNING',
+)
+
+
+def main() -> int:
     """Main entry point."""
-    parser = argparse.ArgumentParser(
-        description='Maven build operations', formatter_class=argparse.RawDescriptionHelpFormatter
+    return build_main(
+        'Maven build operations',
+        register_standard_subparsers(
+            run_handler=cmd_run,
+            run_args_help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
+            parse_handler=parse_log,
+            parse_help='Parse Maven build output and categorize issues',
+            parse_extra_modes=['no-openrewrite'],
+            parse_extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
+            coverage_handler=cmd_coverage_report,
+            coverage_help='Parse JaCoCo coverage report',
+            check_warnings_handler=cmd_check_warnings,
+            discover_handler=discover_maven_modules,
+            discover_help='Discover Maven modules',
+            extra_register_fns=[
+                lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java'),
+            ],
+        ),
     )
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # run subcommand (primary API)
-    run_parser = subparsers.add_parser('run', help='Execute build and auto-parse on failure (primary API)')
-    run_parser.add_argument(
-        '--command-args', dest='command_args',
-        required=True,
-        help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
-    )
-    run_parser.add_argument(
-        '--timeout', type=int, default=300, help='Build timeout in seconds (default: 300 = 5 min)'
-    )
-    run_parser.add_argument('--format', choices=['toon', 'json'], default='toon', help='Output format (default: toon)')
-    run_parser.add_argument(
-        '--mode', choices=['actionable', 'structured', 'errors'], default='actionable', help='Output mode'
-    )
-    run_parser.add_argument(
-        '--project-dir', dest='project_dir', default='.', help='Project root directory'
-    )
-    run_parser.set_defaults(func=cmd_run)
-
-    # parse subcommand
-    parse_parser = subparsers.add_parser('parse', help='Parse Maven build output and categorize issues')
-    parse_parser.add_argument('--log', required=True, help='Path to Maven build log file')
-    parse_parser.add_argument(
-        '--mode',
-        choices=['default', 'errors', 'structured', 'no-openrewrite'],
-        default='structured',
-        help='Output mode',
-    )
-    parse_parser.set_defaults(func=cmd_parse)
-
-    # search-markers subcommand
-    markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
-    markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
-    markers_parser.add_argument('--extensions', default='.java', help='Comma-separated extensions')
-    markers_parser.set_defaults(func=cmd_search_markers)
-
-    # coverage-report subcommand
-    cov_parser = subparsers.add_parser('coverage-report', help='Parse JaCoCo coverage report')
-    cov_parser.add_argument('--module-path', dest='module_path', help='Module directory path')
-    cov_parser.add_argument('--report-path', dest='report_path', help='Override JaCoCo XML report path')
-    cov_parser.add_argument('--threshold', type=int, default=80, help='Coverage threshold percent (default: 80)')
-    cov_parser.set_defaults(func=cmd_coverage_report)
-
-    # check-warnings subcommand
-    warn_parser = subparsers.add_parser('check-warnings', help='Categorize build warnings')
-    warn_parser.add_argument('--warnings', help='JSON array of warning objects')
-    warn_parser.add_argument('--patterns', help='JSON array of acceptable patterns')
-    warn_parser.add_argument(
-        '--acceptable-warnings', dest='acceptable_warnings', help='JSON object with categorized patterns'
-    )
-    warn_parser.set_defaults(func=cmd_check_warnings)
-
-    args = parser.parse_args()
-    return args.func(args)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

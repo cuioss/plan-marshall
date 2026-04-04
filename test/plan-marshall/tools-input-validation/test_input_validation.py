@@ -14,6 +14,7 @@ from input_validation import (  # type: ignore[import-not-found]  # noqa: E402, 
     validate_enum,
     validate_plan_id,
     validate_relative_path,
+    validate_script_notation,
     validate_skill_notation,
 )
 
@@ -208,3 +209,49 @@ class TestValidateSkillNotation:
     def test_invalid_too_many_colons(self):
         with pytest.raises(ValueError, match='Invalid skill notation'):
             validate_skill_notation('a:b:c')
+
+
+# =============================================================================
+# Test: validate_script_notation
+# =============================================================================
+
+
+class TestValidateScriptNotation:
+    """Tests for script notation validation (3-part bundle:skill:script)."""
+
+    def test_valid(self):
+        assert (
+            validate_script_notation('plan-marshall:manage-files:manage-files')
+            == 'plan-marshall:manage-files:manage-files'
+        )
+
+    def test_valid_different_bundle(self):
+        assert validate_script_notation('pm-dev-java:build-maven:maven') == 'pm-dev-java:build-maven:maven'
+
+    def test_invalid_no_colon(self):
+        with pytest.raises(ValueError, match='Invalid script notation'):
+            validate_script_notation('plan-marshall')
+
+    def test_invalid_two_parts(self):
+        with pytest.raises(ValueError, match='Invalid script notation'):
+            validate_script_notation('plan-marshall:manage-files')
+
+    def test_invalid_empty(self):
+        with pytest.raises(ValueError, match='Invalid script notation'):
+            validate_script_notation('')
+
+    def test_invalid_empty_bundle(self):
+        with pytest.raises(ValueError, match='Invalid script notation'):
+            validate_script_notation(':manage-files:script')
+
+    def test_invalid_empty_skill(self):
+        with pytest.raises(ValueError, match='Invalid script notation'):
+            validate_script_notation('plan-marshall::script')
+
+    def test_invalid_empty_script(self):
+        with pytest.raises(ValueError, match='Invalid script notation'):
+            validate_script_notation('plan-marshall:manage-files:')
+
+    def test_invalid_four_parts(self):
+        with pytest.raises(ValueError, match='Invalid script notation'):
+            validate_script_notation('a:b:c:d')

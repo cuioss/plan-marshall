@@ -109,17 +109,19 @@ For `verification` profile tasks, steps contain verification commands instead of
 
 | Field | Type | Required | Purpose |
 |-------|------|----------|---------|
-| `id` | string | Yes | Unique task identifier (TASK-{SEQ}) |
+| `number` | integer | Yes | Unique task identifier — immutable after creation |
 | `title` | string | Yes | Task title for display |
+| `status` | enum | Yes | Task status (see Status Values) |
 | `domain` | string | Yes | Single domain from deliverable (java, javascript, plan-marshall-plugin-dev) |
 | `profile` | string | Yes | Workflow profile (implementation, module_testing, integration_testing) |
-| `skills` | list | Yes | Domain skills pre-resolved during task creation |
+| `skills` | list | Yes | Domain skills pre-resolved during task creation (`{bundle}:{skill}`) |
 | `deliverable` | int | Yes | Referenced deliverable number (1:1 constraint) |
-| `depends_on` | string | Yes | Task dependencies for ordering |
+| `depends_on` | string[] | Yes | Task dependencies for ordering: empty array or `TASK-N` references |
 | `origin` | string | Yes | Task origin (see Origin Field) |
 | `description` | string | Yes | Detailed task description |
-| `steps` | table | Yes | File paths to process |
+| `steps` | array | Yes | Ordered list of steps (at least one) |
 | `verification` | object | Yes | Commands and criteria |
+| `current_step` | integer | Yes | Current step number for execution |
 | `priority` | string | No | Execution priority (fix tasks) |
 | `finding` | object | No | Original finding details (fix tasks only) |
 
@@ -132,6 +134,95 @@ Tasks use sequential numbering with zero-padded format:
 | `TASK-{NNN}` | `TASK-001` | 3-digit zero-padded sequence |
 
 **Filename format**: `TASK-{NNN}.json` (e.g., `TASK-001.json`, `TASK-003.json`)
+
+## Status Values
+
+### Task Status
+
+| Value | Description |
+|-------|-------------|
+| `pending` | Task has not been started |
+| `in_progress` | Task is currently being worked on |
+| `done` | All steps completed, verification passed |
+| `blocked` | Cannot proceed due to dependency or issue |
+
+### Step Status
+
+| Value | Description |
+|-------|-------------|
+| `pending` | Step has not been started |
+| `in_progress` | Step is currently being executed |
+| `done` | Step has been completed successfully |
+| `skipped` | Step was intentionally skipped |
+
+## State Transitions
+
+### Task State Machine
+
+```
+pending ──► in_progress ──► done
+   │             │
+   │             ▼
+   └──────► blocked
+```
+
+| Current Status | Valid Transitions |
+|---------------|-------------------|
+| `pending` | `in_progress`, `blocked` |
+| `in_progress` | `done`, `blocked` |
+| `blocked` | `pending`, `in_progress` |
+| `done` | (terminal) |
+
+### Step State Machine
+
+```
+pending ──► in_progress ──► done
+   │
+   └──────► skipped
+```
+
+## Numbering Rules
+
+### Task Numbers
+
+- Assigned incrementally (next available number)
+- Numbers are **immutable** — removal creates gaps
+- References use `TASK-{n}` format (stable references)
+
+### Step Numbers
+
+- Numbered 1 to N within each task
+- Renumbered when steps are added or removed
+- Always sequential (no gaps)
+
+## Dependency Format
+
+Dependencies are stored in the `depends_on` field as an array of task references:
+
+| Value | Meaning |
+|-------|---------|
+| `"depends_on": []` | No dependencies, can start immediately |
+| `"depends_on": ["TASK-1"]` | Depends on TASK-1 completing |
+| `"depends_on": ["TASK-1", "TASK-2"]` | Depends on both TASK-1 and TASK-2 completing |
+
+### Dependency Rules
+
+- Task cannot start until all dependencies are `done`
+- Circular dependencies are invalid
+- Dependencies enable parallel execution planning
+- Task references use format `TASK-N` (e.g., `TASK-1`, `TASK-2`)
+
+### Mapping from Deliverable Dependencies
+
+Deliverables use number-based `depends:` format. Task creation (phase-4-plan) converts as follows:
+
+| Deliverable Format | Task Format |
+|-------------------|-------------|
+| `depends: none` | `"depends_on": []` |
+| `depends: 1` | `"depends_on": ["TASK-1"]` |
+| `depends: 1, 2` | `"depends_on": ["TASK-1", "TASK-2"]` |
+
+The conversion parses the number prefix from each dependency reference.
 
 ## Origin Field
 
@@ -175,24 +266,18 @@ finding:
 
 ### Domain Field
 
-The `domain` field is inherited from the deliverable:
+The `domain` field is inherited from the deliverable. Domains are arbitrary strings defined in `marshal.json`. Common examples:
 
 | Domain | Description |
 |--------|-------------|
-| `java` | Java code |
-| `javascript` | JavaScript code |
-| `plan-marshall-plugin-dev` | Marketplace plugins |
+| `java` | Production Java code |
+| `javascript` | Production JavaScript code |
+| `javascript-testing` | JavaScript test code (Jest, Cypress) |
+| `plan-marshall-plugin-dev` | Claude Code marketplace plugin development |
 
 ### Profile Field
 
-The `profile` field determines the workflow type:
-
-| Profile | Description |
-|---------|-------------|
-| `implementation` | Create/modify production code |
-| `testing` | Create/modify test code |
-| `quality` | Documentation, verification |
-| `verification` | Verification-only (no files to modify, runs commands only) |
+> Profiles follow the standard profile model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Profiles for the canonical definition.
 
 ## Skills Inheritance
 
@@ -222,7 +307,7 @@ solution-outline phase               task-plan phase                     execute
                                      │ skills:                     │
                                      │   - pm-dev-java:java-core   │
                                      │   - pm-dev-java:junit-core  │
-                                     │ depends: TASK-1             │
+                                     │ depends_on: ["TASK-1"]      │
                                      └─────────────────────────────┘
 ```
 
@@ -302,7 +387,7 @@ For each deliverable, check:
 For each deliverable, for each profile in deliverable.profiles:
 1. Resolve skills from architecture: `module.skills_by_profile.{profile}`
 2. Set `domain` from deliverable, `profile` from current iteration
-3. Copy verification from deliverable (Command + Criteria — verbatim, no resolution)
+3. Copy verification from deliverable verbatim (already resolved during outline phase)
 4. Generate steps from file lists
 5. Compute task dependencies (testing depends on implementation)
 6. Identify parallelizable tasks
@@ -417,3 +502,39 @@ steps:
 - Cannot track which files have been processed
 - "all remaining agents" is vague
 - Validation will reject this task
+
+## Verification Block
+
+The verification block defines how to verify task completion:
+
+```json
+{
+  "verification": {
+    "commands": [
+      "./gradlew test --tests *AuthController*",
+      "curl -s http://localhost:8080/auth | jq .status"
+    ],
+    "criteria": "All tests pass and endpoint responds",
+    "manual": false
+  }
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `commands` | Yes | List of shell commands to run |
+| `criteria` | Yes | Human-readable success description |
+| `manual` | No | Set to `true` if requires human verification |
+
+**Provenance**: The `commands` array is copied verbatim from the deliverable's `Verification: Command` field by phase-4-plan. Verification commands are resolved during the outline phase (phase-3-outline) — downstream phases do not re-resolve them.
+
+## Validation Rules
+
+1. At least one step is required
+2. `current_step` must be within valid step range (1 to step_count)
+3. `deliverable` must be a positive integer
+4. `skills` entries must follow `{bundle}:{skill}` format
+5. `domain` must be a valid domain value
+6. `profile` must be a valid profile value (implementation, module_testing, verification)
+7. Task `done` status requires all steps to be `done` or `skipped`
+8. Task `done` status requires verification to have passed

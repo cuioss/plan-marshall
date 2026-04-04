@@ -1,6 +1,6 @@
 ---
 name: build-python
-description: Python/pyprojectx build operations with execution and output parsing
+description: Python/pyprojectx build operations — mypy type-checking, ruff linting, pytest with Cobertura coverage, and test-directory-based module discovery
 user-invocable: false
 ---
 
@@ -10,65 +10,41 @@ Python build execution via pyprojectx (`./pw` wrapper) with output parsing for m
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+See `build-api-reference.md` § Enforcement for shared rules.
+All commands use `python3 .plan/execute-script.py plan-marshall:build-python:python_build {command} {args}`.
 
-**Prohibited actions:**
-- Do not invoke `./pw` or pytest/mypy/ruff directly; all builds go through the script API
-- Do not invent script arguments not listed in the operations table
+**Note on script naming**: Named `python_build.py` (not `python.py`) to avoid shadowing Python's module namespace. Notation: `plan-marshall:build-python:python_build`.
 
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:build-python:python_build {command} {args}`
-- Output format defaults to TOON; use `--format json` only when explicitly required
+## Scripts
 
-## Scripts Overview
+| Script | Purpose |
+|--------|---------|
+| `python_build.py` | CLI dispatcher |
+| `_python_execute.py` | Execution config via factory (uses shared `default_command_key_fn`, `default_build_command_fn`) |
+| `_python_cmd_parse.py` | Multi-parser registry for mypy, ruff, pytest |
+| `_python_cmd_discover.py` | Module discovery via test directory detection |
 
-| Script | Type | Purpose |
-|--------|------|---------|
-| `python_build.py` | CLI + Library | pyprojectx operations, `execute_direct()` |
-| `_python_cmd_coverage_report.py` | Library | Coverage report parsing (Cobertura XML → TOON) |
+## Subcommands
 
-## python_build run (Primary API)
+Supports: **run**, **parse**, **coverage-report**, **check-warnings**, **discover**.
+See `build-api-reference.md` for the full subcommand API and availability matrix.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:build-python:python_build run \
-    --command-args "<canonical-command>" \
-    [--format <toon|json>] \
-    [--mode <mode>] \
-    [--timeout <seconds>]
-```
+### Python-Specific Behavior
 
-**Parameters**:
-- `--command-args` - Canonical command to execute (required)
-- `--format` - Output format: toon (default) or json
-- `--mode` - Output mode: actionable (default), structured, errors
-- `--timeout` - Timeout in seconds (default from run-config)
+- **run**: `--command-args` takes pyprojectx commands, e.g., `"verify"`, `"module-tests core"`, `"quality-gate"`. Result includes `wrapper` field showing resolved executable path
+- **coverage-report**: Searches `coverage.xml`, `htmlcov/coverage.xml`. Generate with `pytest --cov --cov-report=xml`
+- **discover**: Modules are directories containing `test/` or `tests/` subdirectories. Metadata from `pyproject.toml` via `tomllib`. Excludes `.venv`, `venv`, `.tox`, cache directories
 
-## Error Categories
+## Parser Architecture
 
-| Category | Description |
-|----------|-------------|
-| `type_error` | mypy type errors |
-| `lint_error` | ruff violations |
-| `test_failure` | pytest test failures |
-| `import_error` | Module import errors |
+Unlike Maven/Gradle (single parser) and npm (single-match registry), Python runs **all matching parsers** and combines results. This handles pyprojectx `verify` which runs mypy + ruff + pytest in sequence, producing mixed output in a single log file.
 
-## Coverage Report
+## Module Discovery
 
-```bash
-python3 .plan/execute-script.py plan-marshall:build-python:python_build coverage-report \
-    [--project-path <path>] \
-    [--report-path <path>] \
-    [--threshold <percent>]
-```
-
-**Parameters**:
-- `--project-path` - Project directory (for auto-detection of report files)
-- `--report-path` - Override coverage XML report path (default: auto-detect)
-- `--threshold` - Coverage threshold percent (default: 80)
-
-Parses coverage.py Cobertura XML (`coverage.xml`). Generate with `pytest --cov --cov-report=xml`.
+Directories with `test/` or `tests/` subdirectories. Searches one level deep from project root, plus root itself.
 
 ## References
 
-- `plan-marshall:extension-api` - Extension API contract
-- `plan-marshall:extension-api/standards/build-execution.md` - Execution patterns and lifecycle
+- `build-api-reference.md` — Shared subcommand API, error categories, issue routing, wrapper detection
+- `build-execution.md` — Execution contract and lifecycle
+- `standards/python-impl.md` — Python/pyprojectx execution details

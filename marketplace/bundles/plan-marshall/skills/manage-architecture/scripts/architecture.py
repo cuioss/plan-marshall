@@ -5,10 +5,12 @@ Entry point for all architecture operations. Dispatches to command modules.
 """
 
 import argparse
-import sys
+
+from file_ops import safe_main  # type: ignore[import-not-found]
 
 
-def main():
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(description='Architecture analysis and enrichment operations')
     parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -160,7 +162,7 @@ def main():
 
     # enrich add-domain
     enrich_add_domain_parser = enrich_subparsers.add_parser(
-        'add-domain', help='Add a domain\'s skills to a module additively'
+        'add-domain', help="Add a domain's skills to a module additively"
     )
     enrich_add_domain_parser.add_argument('--module', required=True, help='Module name')
     enrich_add_domain_parser.add_argument('--domain', required=True, help='Domain key (e.g., java, general-dev)')
@@ -169,7 +171,8 @@ def main():
     )
     enrich_add_domain_parser.add_argument('--reasoning', help='Rationale for adding this domain')
     enrich_add_domain_parser.add_argument(
-        '--profiles', help='Comma-separated profiles to include (overrides config and detection)')
+        '--profiles', help='Comma-separated profiles to include (overrides config and detection)'
+    )
 
     # =========================================================================
     # Parse and Dispatch
@@ -248,4 +251,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main() or 0)
+    main()

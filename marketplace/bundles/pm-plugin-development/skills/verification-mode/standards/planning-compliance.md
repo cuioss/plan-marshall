@@ -39,7 +39,7 @@ Skill: pm-plugin-development:tools-analyze-script-failures
 Query the execution log for the plan:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
   --plan-id {plan_id} --type script
 ```
 
@@ -68,7 +68,7 @@ Skill: plan-marshall:extension-api
 | Completed Phase | Contract to Verify |
 |-----------------|-------------------|
 | 1-init | references.json required fields (domains) |
-| 3-outline | deliverable-contract.md |
+| 3-outline | solution-outline-standard.md |
 | 4-plan | task-contract.md |
 | 5-execute | task verification criteria |
 
@@ -93,7 +93,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --p
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
 
 # Verify work-log has entry for each task creation
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type work
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type work
 # Check output contains "[ARTIFACT]" entries for each TASK-N created
 ```
 
@@ -205,7 +205,7 @@ Examples:
 |------|-------------------|---------------------|
 | Read | `.plan/plans/{id}/status.toon` | `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {id}` |
 | Read | `.plan/plans/{id}/references.json` | `python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {id}` |
-| Read | `.plan/plans/{id}/work.log` | `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` |
+| Read | `.plan/plans/{id}/work.log` | `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {id} --type work` |
 | Read | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
 | Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {id} --number 1` |
 | Write | `.plan/plans/{id}/*` | Use appropriate manage-* create/update via execute-script.py |
@@ -228,8 +228,8 @@ The following scripts provide complete coverage:
 |------|-------------|--------------|
 | `request.md` | `plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id {id}` | `plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id {id} --title ... --source ... --body ...` |
 | `solution_outline.md` | `plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` | `resolve-path` → `Write({path})` → `manage-solution-outline write --plan-id {id}` (validate) |
-| `work.log` | `plan-marshall:manage-logging:manage-log read --plan-id {id} --type work` | `plan-marshall:manage-logging:manage-log work --plan-id {id} --level {level} --message "{message}"` |
-| `lessons-learned/*.md` | `plan-marshall:manage-lessons:manage-lesson get --id {lesson_id}` | `plan-marshall:manage-lessons:manage-lesson add` |
+| `work.log` | `plan-marshall:manage-logging:manage-logging read --plan-id {id} --type work` | `plan-marshall:manage-logging:manage-logging work --plan-id {id} --level {level} --message "{message}"` |
+| `lessons-learned/*.md` | `plan-marshall:manage-lessons:manage-lessons get --id {lesson_id}` | `plan-marshall:manage-lessons:manage-lessons add` |
 | Any plan file | `plan-marshall:manage-files:manage-files read --plan-id {id} --file {path}` | `plan-marshall:manage-files:manage-files write --plan-id {id} --file {path}` |
 
 **Detection Pattern**:
@@ -291,7 +291,7 @@ After any planning operation completes, verify work-log contains appropriate ent
 
 1. After operation completes, query work-log:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type work
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type work
    ```
 
 2. Verify most recent entry matches operation:
@@ -310,7 +310,7 @@ After any planning operation completes, verify work-log contains appropriate ent
 
 ### Work-Log Check
 ```toon
-[Output from plan-marshall:manage-logging:manage-log read]
+[Output from plan-marshall:manage-logging:manage-logging read]
 ```
 
 ### Verification Result
@@ -346,11 +346,11 @@ python3 .plan/execute-script.py {notation} {subcommand} {args...}
 |---------------------|------------------------|---------------|
 | `manage-plan-documents` | `manage-plan-document` | `plan-marshall:manage-plan-documents:manage-plan-documents` |
 | `manage-tasks` | `manage-task` | `plan-marshall:manage-tasks:manage-tasks` |
-| `manage-lessons` | `manage-lesson` | `plan-marshall:manage-lessons:manage-lesson` |
-| `manage-lifecycle` | `manage-lifecycle` | `plan-marshall:manage-lifecycle:manage-lifecycle` |
+| `manage-lessons` | `manage-lesson` | `plan-marshall:manage-lessons:manage-lessons` |
+| `manage-status` | `manage_status` | `plan-marshall:manage-status:manage_status` |
 | `manage-references` | `manage-references` | `plan-marshall:manage-references:manage-references` |
 | `manage-files` | `manage-files` | `plan-marshall:manage-files:manage-files` |
-| `logging` | `manage-log` | `plan-marshall:manage-logging:manage-log` |
+| `logging` | `manage-log` | `plan-marshall:manage-logging:manage-logging` |
 
 **Prohibited Operations** (direct script paths must use executor):
 
@@ -553,13 +553,13 @@ Actively scan execution logs to detect script issues:
 
 1. Check work.log exists and has entries:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read \
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
      --plan-id {plan_id} --type work --limit 20
    ```
 
 2. Check script-execution.log exists and scan for issues:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read \
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
      --plan-id {plan_id} --type script --limit 20
    ```
 
@@ -697,7 +697,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ### Phase 2: Solution Outline Complete
 
-**Contract Reference**: `plan-marshall:manage-solution-outline` standards/deliverable-contract.md
+**Contract Reference**: `plan-marshall:manage-solution-outline` standards/solution-outline-standard.md
 
 **Verification**:
 ```bash
@@ -734,7 +734,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 **Verification**: Check work.log for user approval entry
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read --plan-id {plan_id} --type work | grep -i "approved\|proceed"
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type work | grep -i "approved\|proceed"
 ```
 
 **Required**: User explicitly approved solution outline before task creation. Task creation without user approval is a CRITICAL violation.
@@ -934,7 +934,7 @@ Use this verification pattern after major operations:
 
 ```bash
 # Verify work.log has recent entry
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
   --plan-id {plan_id} --type work --limit 20
 
 # Verify status is consistent
@@ -958,7 +958,7 @@ After script operations complete, verify proper executor usage:
 **For plan-scoped operations** (when plan_id was provided):
 ```bash
 # Verify execution logged to plan
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log read \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
   --plan-id {plan_id} --type script --limit 20
 ```
 

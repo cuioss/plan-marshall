@@ -1,281 +1,102 @@
 # npm Implementation Standards
 
-Standards for executing npm/npx builds in JavaScript projects.
+npm-specific standards for build execution and output parsing. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`. For npm/npx detection rules and multi-parser architecture, see SKILL.md and `build-api-reference.md`.
 
 ---
 
-## Command Construction
+## Build Command Construction
 
-### npm vs npx Detection
+### Base Command
 
-Commands are automatically routed to either `npm` or `npx` based on the command:
+npm commands are routed automatically between `npm` and `npx` based on the command type. Direct tool invocations (eslint, tsc, jest, etc.) use `npx`; package script invocations use `npm`.
 
-**npx commands** (tools that should use npx):
-- `playwright` - Playwright test runner
-- `eslint` - ESLint linter
-- `prettier` - Prettier formatter
-- `stylelint` - StyleLint CSS linter
-- `tsc` - TypeScript compiler
-- `jest` - Jest test runner (when invoked directly)
-- `vitest` - Vitest test runner (when invoked directly)
+### Common Commands
 
-**npm commands** (npm scripts):
-- `run <script>` - Execute package.json script
-- `test` - Run test script
-- `install` - Install dependencies
-- `build` - Build production bundle
-
-**Examples:**
-```bash
-# These use npx automatically
-playwright test
-eslint src/
-prettier --check src/
-
-# These use npm
-run test
-run build
-test
-install
-```
-
-### Workspace Targeting
-
-For monorepo projects with npm workspaces:
-
-**Detection:**
-1. Read root `package.json`
-2. Check for `workspaces` array
-3. Validate workspace name exists
-
-**Usage:**
-```bash
-# Single workspace build
-npm run test --workspace=e-2-e-playwright
-
-# Multiple workspaces
-npm run test --workspace=pkg1 --workspace=pkg2
-```
+| Command | Purpose |
+|---------|---------|
+| `run test` | Run package.json test script |
+| `run build` | Production build |
+| `run lint` | Run configured linters |
+| `run test:ci` | CI/CD test script |
+| `npx eslint src/` | Direct ESLint invocation |
+| `npx tsc --noEmit` | Type-check without emit |
+| `npx playwright test` | E2E test execution |
 
 ---
 
-## Build Execution
+## Module Targeting
 
-### Log File Management
-
-**Log file pattern:**
-```
-.plan/temp/build-output/{scope}/npm-{timestamp}.log
-```
-
-- `{scope}`: "default" (root build) or workspace name
-- `{timestamp}`: `YYYY-MM-DD-HHMMSS` format
-
-**Examples:**
-- `.plan/temp/build-output/default/npm-2026-01-06-143022.log` - root build
-- `.plan/temp/build-output/my-workspace/npm-2026-01-06-143030.log` - workspace build
-
-**Output capture:**
-All output goes to log file, not memory (R1 compliance).
-
-### Timeout Management
-
-**Timeout units:** All timeouts use **seconds** (not milliseconds).
-
-**Default timeouts:**
-- Standard builds: 120 seconds (2 minutes)
-- E2E/Playwright tests: 180 seconds (3 minutes)
-- Lint/format: 60 seconds (1 minute)
-
-**Timeout behavior:**
-- Commands exceeding timeout return exit code 124
-- Log file contains partial output up to timeout
-- Build marked as FAILURE
-
-### Exit Code Interpretation
-
-**Exit codes:**
-- `0` - Success
-- `1` - General failure (test failures, lint errors, compilation errors)
-- `124` - Timeout
-- Other non-zero - Command-specific errors
-
----
-
-## Output Parsing
-
-### Error Categorization
-
-**compilation_error:**
-- `SyntaxError:`
-- `TypeError:`
-- `ReferenceError:`
-- `error TS\d+:` (TypeScript)
-
-**test_failure:**
-- `✘` or `✖` (Jest/Vitest markers)
-- `FAIL` messages
-- `Expected.*to.*but.*received`
-- `\d+ tests? failed`
-
-**lint_error:**
-- `eslint` messages
-- `stylelint` messages
-- `prettier` check failures
-- ESLint format: `line:col error message rule-name`
-
-**dependency_error:**
-- `Cannot find module`
-- `Module not found`
-- `npm ERR! 404`
-- `ERESOLVE` conflicts
-
-**playwright_error:**
-- `playwright` errors
-- `page.goto: Timeout`
-- `locator.click: Timeout`
-- `selector.*not found`
-
-### File Location Extraction
-
-**Supported patterns:**
-
-1. **TypeScript/ESLint style:**
-   ```
-   src/components/Button.js:15:3
-   ```
-
-2. **Webpack style:**
-   ```
-   @ ./src/components/Button.js 15:3
-   ```
-
-3. **Jest style:**
-   ```
-   at Object.<anonymous> (src/utils/helper.js:42:10)
-   ```
-
-4. **Playwright style:**
-   ```
-   tests/login.spec.js:15:5
-   ```
-
----
-
-## Working Directory
-
-### Default Behavior
-
-Commands execute from project root by default.
-
-### Custom Working Directory
+### Working Directory
 
 For projects with nested frontend directories:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:build-npm:npm execute \
-    --command "run test" \
+python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
+    --command-args "run test" \
     --working-dir frontend/
 ```
 
----
+### Workspace Targeting
 
-## Best Practices
+For monorepo workspace builds:
 
-### Build Command Selection
-
-**Test execution:**
-- Use `run test` for package.json test script
-- Use `run test:ci` for CI/CD environments
-- Use `run test:coverage` for coverage generation
-
-**Linting:**
-- Use `run lint` for configured linters
-- Use `npx eslint src/` for direct ESLint
-- Use `run format:check` for Prettier validation
-
-**Building:**
-- Use `run build` for production builds
-- Use `run dev` for development builds
-
-### Environment Configuration
-
-**Test environment:**
 ```bash
-NODE_ENV=test CI=true npm run test
-```
-
-**Production build:**
-```bash
-NODE_ENV=production npm run build
-```
-
-**E2E tests:**
-```bash
-PLAYWRIGHT_BASE_URL=http://localhost:3000 npm run test:e2e
+npm run test --workspace=packages/core
+npm run build --workspace=packages/ui
 ```
 
 ---
 
-## Script Reference
+## Quality Configuration
 
-### Primary API: npm_cmd_run.py
+npm projects typically configure quality via package.json scripts:
+
+```json
+{
+  "scripts": {
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:ci": "jest --ci --coverage",
+    "verify": "npm run lint && npm run typecheck && npm run test"
+  }
+}
+```
+
+---
+
+## CI/CD Standards
+
+```bash
+export CI=true
+export NODE_ENV=test
+```
+
+npm runs non-interactively when `CI=true` is set.
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| ERESOLVE dependency conflicts | Check peer dependency versions in package.json |
+| E404 package not found | Verify package name and registry configuration |
+| Build timeout | Increase `--timeout` or check for hanging processes |
+| Workspace not found | Verify `workspaces` field in root package.json |
+| TypeScript compilation slow | Use `--incremental` or project references |
+
+### Diagnostic Commands
+
+```bash
+npm --version
+npm ls
+npm ls --all
+npm outdated
+npm audit
+npx tsc --version
+```
+
+See SKILL.md for coverage report paths. See `build-api-reference.md` for shared build documentation.
 
 **Notation**: `plan-marshall:build-npm:npm`
-
-| Subcommand | Description |
-|------------|-------------|
-| `run` | Execute build and auto-parse on failure (primary API) |
-
-**Parameters:**
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `--targets` | Yes | - | Build targets to execute (e.g., "run test") |
-| `--workspace` | No | - | Workspace name for monorepo projects |
-| `--working-dir` | No | . | Working directory for command execution |
-| `--timeout` | No | 120 | Build timeout in seconds |
-| `--mode` | No | actionable | Output mode: actionable, structured, errors |
-| `--format` | No | toon | Output format: toon or json |
-
-**Example:**
-```bash
-python3 .plan/execute-script.py plan-marshall:build-npm:npm run \
-    --targets "run test" --timeout 180
-```
-
-### Internal Functions
-
-The `npm.py` script exposes these internal functions for use by `extension.py`:
-
-| Function | Description |
-|----------|-------------|
-| `execute_direct()` | Execute npm/npx command with adaptive timeout |
-| `detect_command_type()` | Detect npm vs npx based on command |
-| `get_bash_timeout()` | Calculate outer timeout with buffer |
-
----
-
-## Issue Routing
-
-| Issue Type | Target Command |
-|------------|----------------|
-| compilation_error | Fix via task executor |
-| test_failure | Fix via task executor |
-| lint_error | `/lint-config` |
-| dependency_error | Manual fix |
-| playwright_error | Fix via task executor |
-
----
-
-## Coverage Report Paths
-
-The coverage report parser (`_npm_cmd_coverage_report.py`) searches these paths in order:
-
-| Path | Format |
-|------|--------|
-| `coverage/coverage-summary.json` | Jest/Istanbul JSON |
-| `coverage/lcov.info` | LCOV |
-| `dist/coverage/coverage-summary.json` | Alternative JSON location |
-
-Generate with: `npx jest --coverage` or `npx vitest run --coverage`

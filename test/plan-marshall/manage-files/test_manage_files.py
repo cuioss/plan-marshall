@@ -16,10 +16,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-files', 'manage-files.py'
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-# Alias for backward compatibility
-TestContext = PlanContext
-
-
 # =============================================================================
 # Test: Write and Read
 # =============================================================================
@@ -27,7 +23,7 @@ TestContext = PlanContext
 
 def test_write_file():
     """Test writing a file."""
-    with TestContext(plan_id='file-write') as ctx:
+    with PlanContext(plan_id='file-write') as ctx:
         result = run_script(
             SCRIPT_PATH, 'write', '--plan-id', 'file-write', '--file', 'task.md', '--content', '# Task\nDo something'
         )
@@ -38,7 +34,7 @@ def test_write_file():
 
 def test_read_file():
     """Test reading a file."""
-    with TestContext(plan_id='file-read') as ctx:
+    with PlanContext(plan_id='file-read') as ctx:
         # Create file first
         (ctx.plan_dir / 'test.md').write_text('Test content')
 
@@ -48,7 +44,7 @@ def test_read_file():
 
 def test_read_nonexistent_file():
     """Test reading a file that doesn't exist."""
-    with TestContext(plan_id='file-noexist'):
+    with PlanContext(plan_id='file-noexist'):
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'file-noexist', '--file', 'missing.md')
         assert not result.success, 'Expected failure for missing file'
 
@@ -60,14 +56,14 @@ def test_read_nonexistent_file():
 
 def test_list_empty():
     """Test listing files in empty plan."""
-    with TestContext(plan_id='file-list-empty'):
+    with PlanContext(plan_id='file-list-empty'):
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'file-list-empty')
         assert result.success, f'Script failed: {result.stderr}'
 
 
 def test_list_with_files():
     """Test listing files."""
-    with TestContext(plan_id='file-list') as ctx:
+    with PlanContext(plan_id='file-list') as ctx:
         # Create some files
         (ctx.plan_dir / 'task.md').write_text('Task')
         (ctx.plan_dir / 'references.json').write_text('{"branch": "main"}')
@@ -78,7 +74,7 @@ def test_list_with_files():
 
 def test_exists_present():
     """Test checking if file exists (present)."""
-    with TestContext(plan_id='file-exists') as ctx:
+    with PlanContext(plan_id='file-exists') as ctx:
         (ctx.plan_dir / 'test.md').write_text('Test')
 
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'file-exists', '--file', 'test.md')
@@ -93,7 +89,7 @@ def test_exists_present():
 
 def test_exists_absent():
     """Test checking if file exists (absent)."""
-    with TestContext(plan_id='file-absent'):
+    with PlanContext(plan_id='file-absent'):
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'file-absent', '--file', 'missing.md')
         # Query succeeds with exists: false
         assert result.success, f'Script failed: {result.stderr}'
@@ -105,22 +101,20 @@ def test_exists_absent():
 
 
 def test_exists_invalid_plan_id():
-    """Test exists with invalid plan ID returns TOON error."""
-    with TestContext():
+    """Test exists with invalid plan ID returns TOON error on stdout and exits 1."""
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'Invalid_Plan', '--file', 'test.md')
-        # Validation errors also exit 0 with TOON error output
-        assert result.success, f'Script failed unexpectedly: {result.stderr}'
+        assert not result.success, 'Should exit 1 for validation errors'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'invalid_plan_id'
 
 
 def test_exists_invalid_file_path():
-    """Test exists with invalid file path returns TOON error."""
-    with TestContext(plan_id='file-exists'):
+    """Test exists with invalid file path returns TOON error on stdout and exits 1."""
+    with PlanContext(plan_id='file-exists'):
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'file-exists', '--file', '../escape.md')
-        # Validation errors also exit 0 with TOON error output
-        assert result.success, f'Script failed unexpectedly: {result.stderr}'
+        assert not result.success, 'Should exit 1 for validation errors'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'invalid_path'
@@ -133,7 +127,7 @@ def test_exists_invalid_file_path():
 
 def test_remove_file():
     """Test removing a file."""
-    with TestContext(plan_id='file-remove') as ctx:
+    with PlanContext(plan_id='file-remove') as ctx:
         (ctx.plan_dir / 'delete-me.md').write_text('Goodbye')
 
         result = run_script(SCRIPT_PATH, 'remove', '--plan-id', 'file-remove', '--file', 'delete-me.md')
@@ -143,7 +137,7 @@ def test_remove_file():
 
 def test_mkdir():
     """Test creating a directory."""
-    with TestContext(plan_id='file-mkdir') as ctx:
+    with PlanContext(plan_id='file-mkdir') as ctx:
         result = run_script(SCRIPT_PATH, 'mkdir', '--plan-id', 'file-mkdir', '--dir', 'requirements')
         assert result.success, f'Script failed: {result.stderr}'
         assert (ctx.plan_dir / 'requirements').is_dir()
@@ -184,7 +178,7 @@ class EmptyPlanContext:
 
     @property
     def temp_dir(self):
-        """Alias for backward compatibility."""
+        """Return the fixture directory."""
         return self.fixture_dir
 
     def plan_dir(self, plan_id):
@@ -206,7 +200,7 @@ def test_create_or_reference_new_plan():
 
 def test_create_or_reference_existing_plan():
     """Test create-or-reference returns exists for existing plan."""
-    with TestContext(plan_id='existing-plan'):
+    with PlanContext(plan_id='existing-plan'):
         result = run_script(SCRIPT_PATH, 'create-or-reference', '--plan-id', 'existing-plan')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -219,7 +213,7 @@ def test_create_or_reference_existing_with_status():
     """Test create-or-reference returns phase info when status.json exists."""
     import json
 
-    with TestContext(plan_id='status-plan') as ctx:
+    with PlanContext(plan_id='status-plan') as ctx:
         # Create status.json with phase info (domain is in references.json, not status.json)
         status_content = json.dumps({'title': 'Test Plan', 'current_phase': 'outline'})
         (ctx.plan_dir / 'status.json').write_text(status_content)
@@ -247,62 +241,19 @@ def test_create_or_reference_invalid_plan_id():
 # =============================================================================
 # Test: Delete Plan
 # =============================================================================
-
-
-def test_delete_plan_success():
-    """Test deleting an existing plan directory."""
-    with TestContext(plan_id='delete-test') as ctx:
-        # Create some files in the plan
-        (ctx.plan_dir / 'request.md').write_text('# Request')
-        (ctx.plan_dir / 'references.json').write_text('{"branch": "main"}')
-        (ctx.plan_dir / 'tasks').mkdir()
-        (ctx.plan_dir / 'tasks' / 'TASK-001.toon').write_text('title: Test')
-
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'delete-test')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['action'] == 'deleted'
-        assert data['plan_id'] == 'delete-test'
-        assert data['files_removed'] == 3  # request.md, references.json, TASK-001.toon
-        # Verify directory was deleted
-        assert not ctx.plan_dir.exists()
-
-
-def test_delete_plan_not_found():
-    """Test deleting a plan that doesn't exist."""
-    with EmptyPlanContext():
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'nonexistent-plan')
-        assert not result.success, 'Expected failure for nonexistent plan'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'plan_not_found'
-
-
-def test_delete_plan_invalid_id():
-    """Test delete-plan rejects invalid plan IDs."""
-    with EmptyPlanContext():
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'Invalid_Plan')
-        assert not result.success, 'Expected failure for invalid plan ID'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'invalid_plan_id'
-
-
-# =============================================================================
 # Test: Invalid Plan IDs
 # =============================================================================
 
 
 def test_invalid_plan_id_uppercase():
     """Test that uppercase plan IDs are rejected."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'My-Plan')
         assert not result.success, 'Expected failure for uppercase plan ID'
 
 
 def test_invalid_plan_id_underscore():
     """Test that underscore in plan IDs are rejected."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'my_plan')
         assert not result.success, 'Expected failure for underscore in plan ID'

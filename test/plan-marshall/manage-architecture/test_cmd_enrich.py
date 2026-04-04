@@ -481,7 +481,7 @@ def test_enrich_skills_by_profile_empty_optionals():
         assert stored['implementation']['optionals'] == []
 
 
-def test_enrich_skills_by_profile_mixed_format_backward_compat():
+def test_enrich_skills_by_profile_mixed_format():
     """enrich_skills_by_profile accepts structured format."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
@@ -643,7 +643,7 @@ if __name__ == '__main__':
         test_enrich_skills_by_profile_validates_skill_notation,
         test_enrich_skills_by_profile_validates_missing_description,
         test_enrich_skills_by_profile_empty_optionals,
-        test_enrich_skills_by_profile_mixed_format_backward_compat,
+        test_enrich_skills_by_profile_mixed_format,
         test_enrich_dependencies_sets_key,
         test_enrich_dependencies_with_reasoning,
         test_enrich_dependencies_sets_internal,

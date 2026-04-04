@@ -75,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics gene
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} --completed 5-execute
 ```
 
@@ -105,7 +105,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics star
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-6-finalize"
 ```
 

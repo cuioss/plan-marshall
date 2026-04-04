@@ -402,11 +402,132 @@ expected_file	.plan/project-architecture/derived-data.json
 
 ---
 
-## Related Documents
+## Orchestration Flow
+
+The `architecture.py` script acts as the thin orchestrator for project structure discovery. It delegates to the extension-api for module discovery and handles persistence to `derived-data.json`.
+
+### Orchestrator Responsibilities
+
+```
+1. Invoke extension-api discovery
+2. Receive aggregated module data
+3. Persist to derived-data.json
+4. Provide client query interface
+
+What the orchestrator does NOT do:
+- Extension loading (delegated to extension_discovery.py)
+- Module merging (delegated to _module_aggregation.py)
+- Command generation (delegated to domain extensions)
+- Build execution (separate workflow)
+```
+
+### Discovery Flow
+
+```
+architecture.py discover --project-dir /path/to/project
+                            │
+                            ▼
+  1. EXTENSION DISCOVERY (extension_discovery.py)
+     discover_applicable_extensions(project_root)
+     → Scans plugin cache for extension.py files
+     → Filters to extensions with discover_modules() method
+     → Returns: [{bundle, path, module}]
+                            │
+                            ▼
+  2. MODULE DISCOVERY (per extension)
+     For each extension:
+       modules = extension.discover_modules(project_root)
+     pm-dev-java: Finds pom.xml/build.gradle, extracts metadata
+     pm-dev-frontend: Finds package.json, npm workspace detection
+     Returns: Module dicts with paths, metadata, commands
+                            │
+                            ▼
+  3. VIRTUAL MODULE SPLITTING (_module_aggregation.py)
+     When same path discovered by multiple extensions:
+       pom.xml + package.json at ./my-module/
+     Split into virtual modules:
+       my-module-maven (build_systems: ["maven"])
+       my-module-npm   (build_systems: ["npm"])
+                            │
+                            ▼
+  4. PERSISTENCE
+     Write to: .plan/project-architecture/derived-data.json
+```
+
+### Module Aggregation Algorithm
+
+The `_module_aggregation.py` module handles splitting when multiple extensions discover the same physical path.
+
+```
+For each unique path in discovered modules:
+
+  IF only 1 module at path:
+    → Keep as-is (single technology)
+
+  IF multiple modules at path:
+    → Split into virtual modules with technology suffixes
+    → Use Maven module name as base (most canonical)
+    → Track sibling relationships
+```
+
+### Command Resolution
+
+```
+architecture.py resolve --command verify --name my-module
+                            │
+                            ▼
+  1. Load derived-data.json
+  2. Find module by name
+  3. Look up command in module.commands
+  4. Return complete command string
+
+Key principle: Commands are STORED complete, not composed at resolution.
+The caller executes the returned string directly.
+```
+
+### Workflow Integration Points
+
+```
+INIT (phase-1)
+  marshall-steward calls: architecture.py discover
+  Result: derived-data.json populated
+
+REFINE (phase-2)
+  (no architecture calls)
+
+SOLUTION OUTLINE (phase-3)
+  outline agent calls: architecture.py module --name X
+  Uses: module structure, dependencies for placement decisions
+
+TASK PLAN (phase-4)
+  task planner calls: architecture.py graph
+  Uses: topological layers for task ordering
+
+TASK EXECUTE (phase-5)
+  task executor calls: architecture.py resolve --command X --name Y
+  Executes: returned command string
+```
+
+### Enrichment Workflow Phases
+
+```
+DISCOVER → LOAD → ANALYZE → PERSIST → CLIENT
+
+1. DISCOVER: Extension API gathers raw module data
+2. LOAD: Read derived-data.json, determine domain skills from technologies
+3. ANALYZE: LLM reads docs/code to derive responsibility, purpose, key packages
+4. PERSIST: Write enrichments to llm-enriched.json
+5. CLIENT: Provide merged read access via architecture.py {verb}
+```
+
+See the manage-architecture SKILL.md for step-by-step execution instructions.
+
+---
+
+## Related
 
 | Document | Purpose |
 |----------|---------|
 | [client-api.md](client-api.md) | Client/consumer commands (merged data) |
-| [architecture-persistence.md](architecture-persistence.md) | Storage format specification |
-| [orchestrator-integration.md](orchestrator-integration.md) | Orchestrator flow and workflow phases |
+| [architecture-persistence.md](architecture-persistence.md) | Storage format, module graph format, and documentation sources |
 | `pm-dev-java:manage-maven-profiles` | Maven profile classification (loaded conditionally) |

@@ -1,43 +1,28 @@
 ---
 name: manage-status
-description: Manage status.json files with phase tracking and metadata
+description: Manage status.json files with phase tracking, metadata, and lifecycle operations
 user-invocable: false
+scope: plan
 ---
 
 # Manage Status Skill
 
-Manage status.json files with phase tracking and metadata. Handles plan status storage (JSON), phase operations, and metadata management.
+Manage status.json files with phase tracking, metadata, and lifecycle operations. Handles plan status storage (JSON), phase operations, metadata management, plan discovery, phase transitions, archiving, and routing.
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify status.json directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations table
-- Do not set invalid phase status values (only pending, in_progress, done)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status {command} {args}`
-- Phase transitions must use `set-phase` or `update-phase` commands
+**Skill-specific constraints:**
+- Only valid phase status values: `pending`, `in_progress`, `done`
+- Script uses underscore (`manage_status`) because it is imported as a Python module by other scripts
+- Phase transitions must use `set-phase`, `update-phase`, or `transition` commands
 - Metadata operations require explicit `--get` or `--set` flags
 
-## What This Skill Provides
-
-- Read/write status.json (JSON storage, TOON output)
-- Phase lifecycle management (set, update, progress)
-- Metadata key-value storage
-- Combined context retrieval
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Creating plan status during initialization
-- Updating phase progress
-- Storing or retrieving metadata (change_type, etc.)
-- Getting combined status context
-
----
+**Standards:** See [status-lifecycle.md](standards/status-lifecycle.md) for the phase state machine, plan lifecycle, and metadata conventions.
+- Do not skip phase transition validation
+- Phase transitions are sequential -- you cannot skip phases
+- Routing context is read-only; use `get-routing-context` for combined state
 
 ## Storage Location
 
@@ -80,7 +65,7 @@ JSON format for storage:
 | `title` | string | Plan title |
 | `current_phase` | string | Current active phase |
 | `phases` | list | Phase objects with name and status |
-| `metadata` | table | Arbitrary key-value metadata |
+| `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`) |
 | `created` | string | ISO timestamp of creation |
 | `updated` | string | ISO timestamp of last update |
 
@@ -113,7 +98,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status create
 **Parameters**:
 - `--plan-id` (required): Plan identifier (kebab-case)
 - `--title` (required): Plan title
-- `--phases` (required): Comma-separated phase names
+- `--phases` (required): Comma-separated phase names in execution order (e.g., `1-init,2-refine,3-outline,4-plan,5-execute,6-finalize`). Order matters — it determines progress calculation and transition sequence.
 - `--force`: Overwrite existing status.json
 
 **Output** (TOON):
@@ -198,11 +183,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status progre
 status: success
 plan_id: my-feature
 progress:
-  total_phases: 7
+  total_phases: 6
   completed_phases: 3
   current_phase: 4-plan
-  percent: 42
+  percent: 50
 ```
+
+**Progress formula**: `percent = floor(completed_phases / total_phases * 100)`. A phase counts as "completed" only when its status is `done`. Phases with status `in_progress` or `pending` are not counted.
 
 ### metadata
 
@@ -257,12 +244,160 @@ status: success
 plan_id: my-feature
 title: My Feature
 current_phase: 2-refine
-total_phases: 7
+total_phases: 6
 completed_phases: 1
 change_type: feature
 ```
 
-**Note**: Metadata fields are included at top level for convenience.
+**Note**: All metadata fields are promoted to top level for convenience (flattened from `metadata` object). The fields shown depend on what has been set via `metadata --set`.
+
+### list
+
+Discover all plans, optionally filtered by current phase.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list \
+  [--filter PHASE]
+```
+
+**Parameters**:
+- `--filter` (optional): Comma-separated phase names to filter by
+
+**Output** (TOON):
+```toon
+status: success
+total: 2
+
+plans[2]{id,current_phase,status}:
+my-feature,3-outline,in_progress
+bugfix-123,5-execute,in_progress
+```
+
+### transition
+
+Mark a phase as done and advance to next phase. Validates phase ordering.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
+  --plan-id {plan_id} \
+  --completed {phase_name}
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+completed_phase: 3-outline
+next_phase: 4-plan
+```
+
+### archive
+
+Archive a completed plan (moves to `.plan/archived-plans/YYYY-MM-DD-{plan_id}`).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status archive \
+  --plan-id {plan_id} \
+  [--dry-run]
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+archived_to: .plan/archived-plans/2026-04-02-my-feature
+```
+
+### delete-plan
+
+Delete an entire plan directory. Used when user selects "Replace" for an existing plan during plan-init.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status delete-plan \
+  --plan-id {plan_id}
+```
+
+**Output** (TOON format):
+
+On success:
+```toon
+status: success
+plan_id: my-feature
+action: deleted
+path: /path/to/.plan/plans/my-feature
+files_removed: 5
+```
+
+On error (plan not found):
+```toon
+status: error
+plan_id: my-feature
+error: plan_not_found
+message: Plan directory does not exist: /path/to/.plan/plans/my-feature
+```
+
+**Use case**: Called by plan-init when user selects "Replace" to delete existing plan before creating new one. See `plan-marshall:phase-1-init/standards/plan-overwrite.md` for the full workflow.
+
+**Warning**: This recursively deletes the entire plan directory including all subdirectories (logs, tasks, work artifacts). There is no undo.
+
+### route
+
+Get skill name for a phase.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status route \
+  --phase {phase_name}
+```
+
+**Output** (TOON):
+```toon
+status: success
+phase: 3-outline
+skill: solution-outline
+description: Create solution outline with deliverables
+```
+
+### get-routing-context
+
+Get combined routing context (phase + skill + progress in one call).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status get-routing-context \
+  --plan-id {plan_id}
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+title: Add caching layer
+current_phase: 3-outline
+skill: solution-outline
+skill_description: Create solution outline with deliverables
+total_phases: 6
+completed_phases: 2
+```
+
+### self-test
+
+Verify manage-status health (checks imports, phase routing table, directory access).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status self-test
+```
+
+**Output** (TOON):
+```toon
+status: success
+passed: 4
+failed: 0
+```
+
+---
+
+## Valid Phases & Routing
+
+Phase set, transition rules, and phase-to-skill routing are defined in [standards/status-lifecycle.md](standards/status-lifecycle.md). The standard 6-phase model (`1-init` through `6-finalize`) is sequential — the `transition` command enforces ordering.
 
 ---
 
@@ -279,40 +414,52 @@ change_type: feature
 | `progress` | `--plan-id` | Calculate progress percentage |
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
 | `get-context` | `--plan-id` | Get combined status context |
+| `list` | `[--filter PHASE]` | Discover all plans, optionally filtered by phase |
+| `transition` | `--plan-id --completed` | Mark phase done, advance to next |
+| `archive` | `--plan-id [--dry-run]` | Archive completed plan |
+| `delete-plan` | `--plan-id` | Delete entire plan directory |
+| `route` | `--phase` | Get skill name for phase |
+| `get-routing-context` | `--plan-id` | Get combined routing context |
+| `self-test` | _(none)_ | Verify manage-status health |
 
 ---
 
-## Error Handling
+## Error Responses
 
-```toon
-status: error
-plan_id: my-feature
-error: file_not_found
-message: status.json not found
-```
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
-Common errors:
-- `invalid_plan_id`: Plan ID not in kebab-case format
-- `file_not_found`: status.json doesn't exist
-- `file_exists`: status.json exists (use --force)
-- `invalid_phase`: Phase not in phases list
-- `phase_not_found`: Phase doesn't exist
-- `not_found` (exit 0): Metadata field doesn't exist (valid query result, not an error)
+| Error Code | Exit Code | Cause |
+|------------|-----------|-------|
+| `invalid_plan_id` | 1 | Plan ID not in kebab-case format |
+| `file_not_found` | 1 | status.json doesn't exist |
+| `file_exists` | 1 | status.json already exists (use `--force`) |
+| `invalid_phase` | 1 | Phase name not in the phases list (set-phase, update-phase, transition) |
+| `phase_not_found` | 1 | Phase doesn't exist in this plan's status.json phases array |
+| `unknown_phase` | 1 | Phase name not in the static valid phases set (`1-init` through `6-finalize`); only used by `route` command |
+| `plan_not_found` | 1 | Plan directory does not exist (delete-plan command) |
+| `not_found` | 1 | Plan directory not found (archive command) |
+| `not_found` | 0 | Metadata field doesn't exist — valid query result (returns `value: null`), not an error |
 
 ---
 
-## Integration Points
+## Integration
 
-### With manage-lifecycle
-
-manage-lifecycle handles phase transitions and routing; manage-status handles status storage and metadata.
+**Called by**: `plan-marshall:plan-marshall` orchestrator for phase transitions, `phase-1-init` for initial status creation, and `phase-6-finalize` for archiving.
 
 ### With phase skills
 
 Phase skills read/update status through manage-status:
 - phase-1-init: Creates status with `create`
-- phase-2-refine onwards: Uses `set-phase`, `metadata`, `get-context`
+- phase-2-refine onwards: Uses `set-phase`, `metadata`, `get-context`, `transition`
+- phase-6-finalize: Uses `archive` for completed plans
 
 ### With agents
 
 Agents use `metadata` to store change_type and other classification data.
+
+## Related
+
+- `plan-marshall` — Orchestrator that drives phase transitions
+- `phase-1-init` through `phase-6-finalize` — Phase-specific skills routed to by manage-status
+- `manage-metrics` — Augments phase tracking with timing and token data
+- `manage-config` — System configuration consumed by status operations

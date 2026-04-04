@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for await-until.py synchronous polling utility."""
+"""Unit tests for await_until.py synchronous polling utility."""
 
 import json
 import os
@@ -12,7 +12,7 @@ from pathlib import Path
 from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path, run_script
 
 # Path to the script
-SCRIPT_PATH = get_script_path('plan-marshall', 'tools-script-executor', 'await-until.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'tools-script-executor', 'await_until.py')
 
 
 # =============================================================================
@@ -139,11 +139,11 @@ def test_failure_detection():
                 sys.executable,
                 str(SCRIPT_PATH),
                 '--check-cmd',
-                "printf 'status: failure\\nerror: Build failed\\n'",
+                "printf 'status: error\\nerror: Build failed\\n'",
                 '--success-field',
                 'status=success',
                 '--failure-field',
-                'status=failure',
+                'status=error',
                 '--command-key',
                 'test:failure',
                 '--interval',
@@ -154,7 +154,7 @@ def test_failure_detection():
         assert result.returncode == 0, 'Exit code should be 0 - status is in output'
 
         parsed = parse_toon_result(result.stdout)
-        assert parsed.get('status') == 'failure', f'Expected status=failure, got {parsed.get("status")}'
+        assert parsed.get('status') == 'error', f'Expected status=error, got {parsed.get("status")}'
         assert parsed.get('polls') == '1', 'Should detect failure on first poll'
 
 
@@ -299,10 +299,10 @@ def test_default_timeout_without_history():
 def test_execution_history_updated():
     """Execution history is updated after successful poll."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Create empty run-configuration.json
+        # Create empty run-configuration.json at PLAN_BASE_DIR root
+        # (get_base_dir() returns PLAN_BASE_DIR directly, not PLAN_BASE_DIR/.plan)
         run_config = {'version': 1, 'commands': {}}
-        config_path = Path(tmpdir) / '.plan' / 'run-configuration.json'
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path = Path(tmpdir) / 'run-configuration.json'
         config_path.write_text(json.dumps(run_config))
 
         # Set PLAN_BASE_DIR so script writes to tmpdir

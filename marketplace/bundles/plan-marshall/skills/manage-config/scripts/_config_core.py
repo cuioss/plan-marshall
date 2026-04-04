@@ -6,21 +6,19 @@ and error handling used by all command modules.
 """
 
 import json
-import os
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from constants import EXIT_ERROR, EXIT_SUCCESS, FILE_MARSHAL  # type: ignore[import-not-found]
+from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
 
 # Bundle path for skill description resolution
 BUNDLES_DIR = Path(__file__).parent.parent.parent.parent.parent  # .../bundles/
 
-EXIT_SUCCESS = 0
-EXIT_ERROR = 1
-
-# File location
-PLAN_BASE_DIR = Path(os.environ.get('PLAN_BASE_DIR', '.plan'))
-MARSHAL_PATH = PLAN_BASE_DIR / 'marshal.json'
+# File location - derived from file_ops.get_base_dir() for env-var consistency
+PLAN_BASE_DIR = get_base_dir()
+MARSHAL_PATH = PLAN_BASE_DIR / FILE_MARSHAL
+# Note: uses 'run-configuration.json', distinct from constants.FILE_RUN_CONFIG ('run-config.json')
 RUN_CONFIG_PATH = PLAN_BASE_DIR / 'run-configuration.json'
 
 
@@ -47,7 +45,10 @@ def require_initialized() -> None:
 
 def load_config() -> dict:
     """Load marshal.json."""
-    config: dict = json.loads(MARSHAL_PATH.read_text(encoding='utf-8'))
+    try:
+        config: dict = json.loads(MARSHAL_PATH.read_text(encoding='utf-8'))
+    except json.JSONDecodeError as e:
+        raise ValueError(f'Invalid JSON in {MARSHAL_PATH}: {e}') from e
     return config
 
 
@@ -86,7 +87,7 @@ def save_run_config(config: dict) -> None:
 
 def output(data: dict) -> None:
     """Output TOON result to stdout."""
-    print(serialize_toon(data))
+    output_toon(data)
 
 
 def error_exit(message: str, **extra) -> int:
@@ -167,6 +168,21 @@ def get_skill_description(skill_notation: str) -> str:
         return _parse_skill_md_description(skill_path, skill_notation)
     except Exception:
         return skill_notation
+
+
+def _coerce_value(value: str) -> str | bool | int:
+    """Coerce string value to appropriate Python type.
+
+    Converts 'true'/'false' (case-insensitive) to bool and digit strings to int.
+    All other values are returned unchanged.
+    """
+    if value.lower() == 'true':
+        return True
+    elif value.lower() == 'false':
+        return False
+    elif value.isdigit():
+        return int(value)
+    return value
 
 
 def is_nested_domain(domain_config: dict) -> bool:

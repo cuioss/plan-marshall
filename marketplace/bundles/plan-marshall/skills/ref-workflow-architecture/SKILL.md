@@ -4,204 +4,86 @@ description: Centralized architecture documentation for the plan-marshall bundle
 user-invocable: false
 ---
 
-# PM-Workflow Architecture
+# Plan-Marshall Architecture
 
-**Role**: Central architecture reference for the plan-marshall bundle. Provides visual documentation of the 6-phase execution model, thin agent pattern, and data layer.
+Central architecture reference for the plan-marshall bundle. Provides documentation of the 6-phase execution model, thin agent pattern, data layer, and workflow conventions.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                         PM-WORKFLOW ARCHITECTURE                            │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                      6-PHASE EXECUTION MODEL                          │  │
-│  │                                                                       │  │
-│  │  1-init → 2-refine → 3-outline → 4-plan → 5-execute ──┐             │  │
-│  │                                                ↑        │             │  │
-│  │                                                │   [findings?]        │  │
-│  │                                                │    ↓       ↓         │  │
-│  │                                                │  yes      no         │  │
-│  │                                                │   ↓        ↓         │  │
-│  │                                           fix tasks  6-finalize       │  │
-│  │                                           (triage)   (max 3x)        │  │
-│  │                                                │      ↓       ↓       │  │
-│  │                                                │   [PR issues?]       │  │
-│  │                                                │    ↓       ↓         │  │
-│  │                                                │  yes      no         │  │
-│  │                                                │   │       ↓          │  │
-│  │                                                └───┘    COMPLETE      │  │
-│  │                                                                       │  │
-│  │  Iteration Limits: 5-execute verify (max 5x) | 6-finalize (max 3x)   │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                        THIN AGENT PATTERN                             │  │
-│  │                                                                       │  │
-│  │   Orchestrator ──▶ Agent ──▶ Skill                                    │  │
-│  │                       │         │                                     │  │
-│  │                       │         └──▶ Domain Knowledge                 │  │
-│  │                       │                                               │  │
-│  │                       └──▶ Context Isolation                          │  │
-│  │                                                                       │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                          DATA LAYER                                   │  │
-│  │                                                                       │  │
-│  │   manage-references  manage-lifecycle  manage-tasks  manage-solution  │  │
-│  │        │               │               │              │               │  │
-│  │        ▼               ▼               ▼              ▼               │  │
-│  │   references.json status.toon    TASK-*.toon   solution_outline.md   │  │
-│  │                                                                       │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Load specific standards on-demand based on what aspect you need to understand.
 
----
+## Standards Documents
 
-## Quick Navigation
-
-| Document | Focus | Key Visuals |
+| Document | Focus | Key Content |
 |----------|-------|-------------|
-| [standards/phases.md](standards/phases.md) | 6-phase model | Phase flow, transitions, outputs |
-| [standards/agents.md](standards/agents.md) | Thin agent pattern | Agent structure, skill invocation |
-| [standards/data-layer.md](standards/data-layer.md) | manage-* skills | File operations, TOON format |
-| [standards/skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills |
-| [standards/artifacts.md](standards/artifacts.md) | Plan file formats | references.json, status.toon, TASK-*.toon |
-| [standards/task-executor-routing.md](standards/task-executor-routing.md) | Task executor routing | Profile→executor mapping, extensibility |
-| `plan-marshall:extension-api` | Extension mechanism | Domain extensions for outline/triage |
-
----
+| [phases.md](standards/phases.md) | 6-phase model | Phase flow, transitions, outputs, iteration limits |
+| [agents.md](standards/agents.md) | Thin agent pattern | Agent structure, Skill: vs Task: invocation |
+| [data-layer.md](standards/data-layer.md) | manage-* skills | Inventory, dependency graph, data flow |
+| [manage-contract.md](standards/manage-contract.md) | manage-* contract | Enforcement, error codes, shared formats |
+| [skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills, domain flow through phases |
+| [artifacts.md](standards/artifacts.md) | Plan file formats | status.json, TASK-*.json, references.json, logs |
+| [task-executors.md](standards/task-executors.md) | Task executors | Profile routing, shared workflow, extensibility |
+| [change-types.md](standards/change-types.md) | Change type vocabulary | analysis, feature, enhancement, bug_fix, tech_debt, verification |
+| [glossary.md](standards/glossary.md) | Terminology definitions | plan_id, phase, profile, module, domain, deliverable, task, finding, TOON |
+| [phase-lifecycle.md](standards/phase-lifecycle.md) | Phase lifecycle patterns | Entry protocol, completion protocol, enforcement template, error convention |
+| [skill-inventory.md](standards/skill-inventory.md) | Complete skill inventory | 49 skills: registration status, categories, naming convention |
 
 ## Core Principles
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                          CORE DESIGN PRINCIPLES                             │
-│                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  1. DOMAIN-AGNOSTIC WORKFLOW                                                │
-│     ════════════════════════                                                │
-│     Workflow skills contain NO domain-specific logic.                       │
-│     Domain knowledge comes from marshal.json at runtime.                    │
-│                                                                             │
-│  2. THIN AGENT PATTERN                                                      │
-│     ═══════════════════                                                     │
-│     A single parameterized agent (plan-phase-agent) with different          │
-│     `phase` parameters results in 5 invocation modes, all sharing           │
-│     one implementation. Agents are minimal wrappers that:                   │
-│     • Resolve skills from marshal.json                                      │
-│     • Load resolved skills                                                  │
-│     • Delegate to skills for actual work                                    │
-│                                                                             │
-│  3. SINGLE SOURCE OF TRUTH                                                  │
-│     ════════════════════════                                                │
-│     Plan files (.toon, .md) are the source of truth.                        │
-│     Skills read/write via manage-* scripts only.                            │
-│                                                                             │
-│  4. SCRIPT-BASED FILE ACCESS                                                │
-│     ═════════════════════════                                               │
-│     ALL .plan/ file access goes through execute-script.py.                  │
-│     NEVER use Read/Write/Edit on .plan/ files directly.                     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+1. **Domain-agnostic workflow** — Workflow skills contain no domain-specific logic. Domain knowledge comes from marshal.json at runtime.
+2. **Thin agent pattern** — A single parameterized agent with different `phase` parameters, delegating to skills for actual work.
+3. **Single source of truth** — Plan files are the source of truth. Skills read/write via manage-* scripts only.
+4. **Script-based file access** — ALL `.plan/` file access goes through `execute-script.py`. Never use Read/Write/Edit on `.plan/` files directly.
 
----
-
-## Component Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                          COMPONENT HIERARCHY                                │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  COMMANDS (User-facing)                                              │   │
-│  │  ══════════════════════                                              │   │
-│  │  /plan-marshall  /workflow-pr-doctor                                          │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                     │                                       │
-│                                     ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  AGENTS (Single Parameterized Agent)                                 │   │
-│  │  ═══════════════════════════════════                                 │   │
-│  │  plan-phase-agent phase=1-init | 2-refine | 3-outline | 4-plan | 5-execute | 6-finalize │
-│  │  (One agent, 6 invocation modes)                                     │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                     │                                       │
-│                                     ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  WORKFLOW SKILLS (Phase Logic)                                       │   │
-│  │  ═════════════════════════════                                       │   │
-│  │  phase-1-init   phase-2-refine   phase-3-outline   phase-4-plan      │   │
-│  │  phase-5-execute   phase-6-finalize                                  │   │
-│  │  task-implementation           task-module-testing                   │   │
-│  │  git-workflow         pr-workflow                                    │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                     │                                       │
-│                                     ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  DATA LAYER (manage-* Skills)                                        │   │
-│  │  ════════════════════════════                                        │   │
-│  │  manage-references   manage-lifecycle    manage-tasks                 │   │
-│  │  manage-solution-outline                manage-plan-documents        │   │
-│  │  manage-files       manage-references                                │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                     │                                       │
-│                                     ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  PLAN FILES (.plan/plans/{plan_id}/)                                 │   │
-│  │  ═══════════════════════════════════                                 │   │
-│  │  status.toon  request.md  references.json  solution_outline.md        │   │
-│  │  TASK-001.toon  TASK-002.toon  ...                                   │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Related Skills
+## Related
 
 | Skill | Purpose |
 |-------|---------|
 | `plan-marshall:plan-marshall` | Unified user-facing entry point for plan lifecycle |
 | `plan-marshall:extension-api` | Extension points for domain customization |
-| `plan-marshall:phase-1-init` | Init phase implementation |
-| `plan-marshall:phase-2-refine` | Refine phase implementation |
-| `plan-marshall:phase-3-outline` | Outline phase implementation |
-| `plan-marshall:phase-4-plan` | Plan phase implementation |
-| `plan-marshall:phase-5-execute` | Execute phase implementation (includes verification + triage) |
-| `plan-marshall:phase-6-finalize` | Finalize phase implementation |
-| `plan-marshall:task-implementation` | Implementation profile workflow |
-| `plan-marshall:task-module-testing` | Module testing profile workflow |
+| `plan-marshall:task-executor` | Unified task executor (implementation, module_testing, verification profiles) |
+| `plan-marshall:shared-workflow-helpers` | Shared Python infrastructure for workflow scripts |
 
+## Shared Workflow Infrastructure
+
+All workflow scripts share `triage_helpers` from `shared-workflow-helpers` (`marketplace/bundles/plan-marshall/skills/shared-workflow-helpers/scripts/triage_helpers.py`). See `plan-marshall:shared-workflow-helpers` SKILL.md for the module overview.
+
+### Workflow Skill Conventions
+
+Script-bearing workflow skills follow this canonical section order (sections marked optional may be omitted when not applicable):
+
+```
+---
+name: workflow-<name>
+description: <one-line description>
+user-invocable: true|false
 ---
 
-## Standards Documents
-
-Load on-demand based on what aspect of the architecture you need to understand:
-
-```bash
-# Understanding the 6-phase model
-Read standards/phases.md
-
-# Understanding thin agent pattern
-Read standards/agents.md
-
-# Understanding data layer (manage-* skills)
-Read standards/data-layer.md
-
-# Understanding skill loading
-Read standards/skill-loading.md
-
-# Understanding plan file formats
-Read standards/artifacts.md
-
-# Understanding task executor routing
-Read standards/task-executor-routing.md
+# <Title> Skill
+## Enforcement
+## Parameters          (optional)
+## Prerequisites       (optional)
+## Workflow(s)
+## Scripts
+## Error Handling
+## Standards (Load On-Demand)
+## Related
 ```
+
+### Config Loading Convention
+
+Script-bearing workflow skills load JSON config from `standards/` using `load_skill_config(__file__, 'config-name.json')` from `triage_helpers`.
+
+### Priority Vocabulary
+
+All workflow scripts use the shared `PRIORITY_LEVELS` tuple from `triage_helpers`: `low`, `medium`, `high`, `critical`. Do not use `none` or other values.
+
+### Error Handling Patterns
+
+All workflow skills use a consistent `| Failure | Action |` table. Common patterns:
+
+| Pattern | Action |
+|---------|--------|
+| Script returns error | Report error to caller with details. Do not proceed. |
+| Triage/classification failure | Log warning, skip item, continue remaining. |
+| Push failure | Report error. Never force-push as fallback. |
+| Build verification failure | Report failing tests/compilation. Do not commit broken state. |
+| Max fix attempts reached | Report remaining issues. Do not loop further. |

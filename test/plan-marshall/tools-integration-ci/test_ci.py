@@ -16,7 +16,11 @@ def test_help_flag():
     """Test --help flag works."""
     result = run_script(SCRIPT_PATH, '--help')
     assert result.success, f'--help failed: {result.stderr}'
-    assert 'provider-agnostic' in result.stdout.lower() or 'router' in result.stdout.lower() or 'ci' in result.stdout.lower()
+    assert (
+        'provider-agnostic' in result.stdout.lower()
+        or 'router' in result.stdout.lower()
+        or 'ci' in result.stdout.lower()
+    )
 
 
 def test_no_args_fails_without_config():

@@ -329,7 +329,156 @@ The [client-api.md](client-api.md) merges both files for output:
 
 ---
 
-## Related Documents
+## Module Graph Format
+
+Output format for the `architecture graph` command. Returns module dependencies as a tree.
+
+### Purpose
+
+Provides a view of internal module dependencies for:
+- Ordering deliverables in multi-module tasks
+- Identifying dependency chains
+- Detecting circular dependencies
+
+### Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `--full` | Include aggregator modules (pom-only parents with no source paths) |
+
+By default, aggregator modules (pom packaging) are filtered out since they contain no code to implement.
+
+### Filtering Logic
+
+Modules are included in the default view if ANY of these conditions are true:
+1. **Non-pom packaging**: jar, war, nar, etc.
+2. **is_leaf flag**: Enriched data explicitly marks module as `is_leaf: true`
+3. **Leaf purpose**: Enriched data has `purpose` in ["integration-tests", "deployment", "benchmark"]
+
+This allows test modules with pom packaging (like e2e-playwright) to appear in the default view when they have the appropriate purpose set in llm-enriched.json.
+
+### Output Format
+
+**Single Module**:
+
+```
+status: success
+
+module: my-module
+```
+
+**Multi-Module (Dependency Tree)**:
+
+```
+status: success
+
+oauth-sheriff-quarkus-deployment
+  - oauth-sheriff-core
+    - oauth-sheriff-api
+  - oauth-sheriff-quarkus
+    - oauth-sheriff-core
+```
+
+The tree shows what each module depends on:
+- `oauth-sheriff-quarkus-deployment` depends on `oauth-sheriff-core` and `oauth-sheriff-quarkus`
+- `oauth-sheriff-core` depends on `oauth-sheriff-api`
+- `oauth-sheriff-quarkus` depends on `oauth-sheriff-core`
+
+### Use Cases
+
+**Ordering Deliverables**: Read the tree bottom-up for execution order:
+1. `oauth-sheriff-api` - no dependencies, execute first
+2. `oauth-sheriff-core` - depends on api
+3. `oauth-sheriff-quarkus` - depends on core
+4. `oauth-sheriff-quarkus-deployment` - depends on quarkus and core
+
+Modules at the same tree depth with no cross-dependencies can execute in parallel.
+
+**Detecting Circular Dependencies**:
+
+```
+status: success
+
+module-a
+
+warning: circular_dependencies_detected
+circular_dependencies[2]:
+  - module-b
+  - module-c
+```
+
+---
+
+## Documentation Sources
+
+Priority order for documentation sources when analyzing project architecture. Documentation sources vary by technology domain -- the examples below include Java-specific patterns where noted; other domains follow similar conventions with their native documentation formats.
+
+### Project-Level Sources
+
+Sources for understanding overall project structure and purpose.
+
+| Priority | Source | Path Pattern | Content Type |
+|----------|--------|--------------|--------------|
+| 1 | Project README | `README.md`, `README.adoc` | Project overview, getting started |
+| 2 | Architecture docs | `doc/architecture/*.adoc` | Architectural decisions, design |
+| 3 | Module overview | `doc/modules.adoc` | Module relationships |
+| 4 | ADR documents | `doc/adr/*.adoc` | Design decisions |
+
+### Module-Level Sources
+
+Sources for understanding individual module purpose and implementation.
+
+| Priority | Source | Path Pattern | Content Type |
+|----------|--------|--------------|--------------|
+| 1 | Module README | `{module}/README.md` | Module overview |
+| 2 | Package info | `{module}/src/main/java/**/package-info.java` | Package JavaDoc |
+| 3 | Main class | Entry point class(es) | Implementation patterns |
+| 4 | Test classes | `{module}/src/test/**/*Test.java` | Usage examples |
+
+### Reading Strategy
+
+**Project-Level Analysis**:
+1. Start with `README.md` - often has architecture overview
+2. Check `doc/` directory for detailed documentation
+3. Review ADRs for design decisions that affect structure
+
+**Module-Level Analysis**:
+1. Check module README first - quickest understanding
+2. Read `package-info.java` for Java modules
+3. Sample 2-3 main source files for actual patterns
+4. Check test files for usage examples
+
+### Missing Documentation Handling
+
+| Missing Source | Fallback Strategy |
+|----------------|-------------------|
+| Module README | Analyze source code directly |
+| package-info.java | Use directory structure and class names |
+| All docs | Infer from: parent module context, imports, annotations |
+
+### Content Extraction
+
+**From README Files**: Look for first paragraph (module purpose), "Overview" or "Description" section, code examples (show usage patterns).
+
+**From package-info.java** (Java-specific): Look for package-level JavaDoc comment, @see references to related packages, links to documentation.
+
+**From Source Files** (Java-specific examples, adapt for other languages): Look for class-level JavaDoc (or equivalent doc comments), framework annotations (`@Path`, `@Processor`, etc.), import statements (show dependencies), method signatures (show capabilities).
+
+### Output Integration
+
+Documentation findings feed into `llm-enriched.json`:
+
+| Documentation Finding | Target Field |
+|----------------------|--------------|
+| Module purpose statement | `modules.{name}.responsibility` |
+| Module classification | `modules.{name}.purpose` |
+| Package descriptions | `modules.{name}.key_packages.{pkg}.description` |
+| Important dependencies | `modules.{name}.key_dependencies` |
+| Framework/library usage | `modules.{name}.skills_by_profile` |
+
+---
+
+## Related
 
 | Document | Purpose |
 |----------|---------|

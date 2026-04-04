@@ -5,7 +5,7 @@ Query command handlers for manage-tasks.py.
 Contains: list, get, next, tasks-by-domain, tasks-by-profile, next-tasks subcommands.
 """
 
-from _manage_tasks_shared import (
+from _tasks_core import (
     calculate_progress,
     find_task_file,
     get_all_tasks,
@@ -17,13 +17,28 @@ from _manage_tasks_shared import (
 )
 
 
+def _build_done_set(all_tasks: list) -> set[str]:
+    """Build set of done task identifiers for dependency checking.
+
+    Includes both zero-padded (TASK-001) and non-padded (TASK-1) formats
+    to handle depends_on values stored in either format.
+    """
+    done = set()
+    for _, t in all_tasks:
+        if t.get('status') == 'done':
+            n = t['number']
+            done.add(f'TASK-{n:03d}')
+            done.add(f'TASK-{n}')
+    return done
+
+
 def cmd_list(args) -> int:
     """Handle 'list' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
     all_tasks = get_all_tasks(task_dir)
 
     # Build set of done task numbers for dependency checking
-    done_tasks = {f'TASK-{t["number"]:03d}' for _, t in all_tasks if t.get('status') == 'done'}
+    done_tasks = _build_done_set(all_tasks)
 
     # Filter by deliverable if specified
     if args.deliverable:
@@ -121,7 +136,7 @@ def cmd_next(args) -> int:
     all_tasks = get_all_tasks(task_dir)
 
     # Build set of done task numbers for dependency checking
-    done_tasks = {f'TASK-{t["number"]:03d}' for _, t in all_tasks if t.get('status') == 'done'}
+    done_tasks = _build_done_set(all_tasks)
 
     filtered_tasks = all_tasks
 
@@ -367,7 +382,7 @@ def cmd_next_tasks(args) -> int:
     all_tasks = get_all_tasks(task_dir)
 
     # Build set of done task numbers for dependency checking
-    done_tasks = {f'TASK-{t["number"]:03d}' for _, t in all_tasks if t.get('status') == 'done'}
+    done_tasks = _build_done_set(all_tasks)
 
     # Find all pending tasks with satisfied dependencies
     ready_tasks = []

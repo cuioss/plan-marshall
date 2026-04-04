@@ -2,8 +2,7 @@
 """Tests for plan-marshall build-python python_build.py.
 
 Tests the Python build operations including:
-- detect_wrapper() - Wrapper detection
-- parse_python_log() - Log parsing for errors
+- parse_log() - Log parsing for errors
 - execute_direct() - Foundation API (mocked subprocess)
 """
 
@@ -30,32 +29,17 @@ BUILD_SCRIPT = (
 
 
 def _load_python_build():
-    """Load python_build module avoiding conflicts."""
+    """Load python_build module with minimal mocking.
+
+    Only mocks plan_logging and run_config which are provided by the executor
+    at runtime but not available in test PYTHONPATH.
+    """
     spec = importlib.util.spec_from_file_location('python_build', BUILD_SCRIPT)
     module = importlib.util.module_from_spec(spec)
 
-    # Mock the cross-skill imports before loading, then restore originals
     import sys
 
     mock_modules = {
-        '_build_format': MagicMock(format_json=MagicMock(return_value='{}'), format_toon=MagicMock(return_value='')),
-        '_build_parse': MagicMock(
-            Issue=MagicMock,
-            UnitTestSummary=MagicMock,
-            filter_warnings=MagicMock(return_value=[]),
-            load_acceptable_warnings=MagicMock(return_value=[]),
-            partition_issues=MagicMock(return_value=([], [])),
-        ),
-        '_build_result': MagicMock(
-            ERROR_BUILD_FAILED='build_failed',
-            ERROR_EXECUTION_FAILED='execution_failed',
-            ERROR_LOG_FILE_FAILED='log_file_creation_failed',
-            DirectCommandResult=dict,
-            create_log_file=MagicMock(return_value='/tmp/test.log'),
-            error_result=MagicMock(return_value={}),
-            success_result=MagicMock(return_value={}),
-            timeout_result=MagicMock(return_value={}),
-        ),
         'plan_logging': MagicMock(log_entry=MagicMock()),
         'run_config': MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()),
     }
@@ -79,49 +63,55 @@ def _load_python_build():
 
 python_build = _load_python_build()
 
+# Direct imports for functions no longer re-exported through python_build
+from _python_cmd_parse import parse_log  # noqa: E402
+from _python_execute import execute_direct  # noqa: E402
 
 # =============================================================================
-# Test: detect_wrapper()
+# Test: Wrapper resolution (via _python_execute)
 # =============================================================================
 
 
-def test_detect_wrapper_finds_local_pw():
-    """detect_wrapper() returns ./pw when pw exists in project root."""
+def test_wrapper_resolution_finds_local_pw():
+    """Wrapper resolution finds ./pw when pw exists in project root."""
+    from _python_execute import _python_wrapper_resolve_fn
+
     with BuildContext() as ctx:
-        # Create ./pw wrapper
         pw = ctx.temp_dir / 'pw'
         pw.write_text('#!/bin/bash\necho "pw"')
         pw.chmod(0o755)
 
-        result = python_build.detect_wrapper(str(ctx.temp_dir))
+        result = _python_wrapper_resolve_fn(str(ctx.temp_dir))
         assert result == './pw'
 
 
-def test_detect_wrapper_falls_back_to_system_pwx():
-    """detect_wrapper() returns pwx when no local pw but pwx is in PATH."""
+def test_wrapper_resolution_falls_back_to_system_pwx():
+    """Wrapper resolution returns pwx when no local pw but pwx is in PATH."""
+    from _python_execute import _python_wrapper_resolve_fn
+
     with BuildContext() as ctx:
-        # No ./pw exists, mock shutil.which to return pwx
         with patch('shutil.which', return_value='/usr/local/bin/pwx'):
-            result = python_build.detect_wrapper(str(ctx.temp_dir))
+            result = _python_wrapper_resolve_fn(str(ctx.temp_dir))
             assert result == 'pwx'
 
 
-def test_detect_wrapper_raises_when_no_wrapper():
-    """detect_wrapper() raises FileNotFoundError when no wrapper available."""
+def test_wrapper_resolution_raises_when_no_wrapper():
+    """Wrapper resolution raises FileNotFoundError when no wrapper available."""
+    from _python_execute import _python_wrapper_resolve_fn
+
     with BuildContext() as ctx:
-        # No ./pw exists, mock shutil.which to return None
         with patch('shutil.which', return_value=None):
             with pytest.raises(FileNotFoundError, match='No pyprojectx wrapper found'):
-                python_build.detect_wrapper(str(ctx.temp_dir))
+                _python_wrapper_resolve_fn(str(ctx.temp_dir))
 
 
 # =============================================================================
-# Test: parse_python_log() - Error Parsing
+# Test: parse_log() - Error Parsing
 # =============================================================================
 
 
-def test_parse_python_log_parses_mypy_errors():
-    """parse_python_log() extracts mypy type errors."""
+def test_parse_log_parses_mypy_errors():
+    """parse_log() extracts mypy type errors."""
     log_content = """
 src/main.py:10: error: Incompatible types in assignment
 src/utils.py:25: error: Missing return statement
@@ -130,7 +120,7 @@ src/utils.py:25: error: Missing return statement
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'src/main.py'
@@ -139,8 +129,8 @@ src/utils.py:25: error: Missing return statement
         assert issues[0].category == 'type_error'
 
 
-def test_parse_python_log_parses_ruff_errors():
-    """parse_python_log() extracts ruff lint errors."""
+def test_parse_log_parses_ruff_errors():
+    """parse_log() extracts ruff lint errors."""
     log_content = """
 src/main.py:15:1: E501 Line too long (120 > 88)
 src/utils.py:30:5: F401 'os' imported but unused
@@ -149,7 +139,7 @@ src/utils.py:30:5: F401 'os' imported but unused
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'src/main.py'
@@ -158,8 +148,8 @@ src/utils.py:30:5: F401 'os' imported but unused
         assert issues[0].category == 'lint_error'
 
 
-def test_parse_python_log_parses_pytest_failures():
-    """parse_python_log() extracts pytest test failures."""
+def test_parse_log_parses_pytest_failures():
+    """parse_log() extracts pytest test failures."""
     log_content = """
 FAILED test/test_main.py::test_addition - AssertionError: assert 1 == 2
 FAILED test/test_utils.py::test_helper
@@ -168,7 +158,7 @@ FAILED test/test_utils.py::test_helper
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert len(issues) == 2
         assert issues[0].file == 'test/test_main.py'
@@ -177,8 +167,8 @@ FAILED test/test_utils.py::test_helper
         assert issues[1].file == 'test/test_utils.py'
 
 
-def test_parse_python_log_extracts_test_summary():
-    """parse_python_log() extracts pytest summary statistics."""
+def test_parse_log_extracts_test_summary():
+    """parse_log() extracts pytest summary statistics."""
     log_content = """
 ================ 40 passed, 2 failed, 1 skipped in 5.23s ================
 """
@@ -186,7 +176,7 @@ def test_parse_python_log_extracts_test_summary():
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text(log_content)
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert test_summary is not None
         assert test_summary.passed == 40
@@ -194,22 +184,22 @@ def test_parse_python_log_extracts_test_summary():
         assert test_summary.skipped == 1
 
 
-def test_parse_python_log_handles_missing_file():
-    """parse_python_log() returns empty results for missing log file."""
-    issues, test_summary, build_status = python_build.parse_python_log('/nonexistent/path.log')
+def test_parse_log_handles_missing_file():
+    """parse_log() returns empty results for missing log file."""
+    issues, test_summary, build_status = parse_log('/nonexistent/path.log')
 
     assert issues == []
     assert test_summary is None
     assert build_status == 'FAILURE'
 
 
-def test_parse_python_log_handles_empty_file():
-    """parse_python_log() returns empty results for empty log file."""
+def test_parse_log_handles_empty_file():
+    """parse_log() returns empty results for empty log file."""
     with BuildContext() as ctx:
         log_file = ctx.temp_dir / 'build.log'
         log_file.write_text('')
 
-        issues, test_summary, build_status = python_build.parse_python_log(str(log_file))
+        issues, test_summary, build_status = parse_log(str(log_file))
 
         assert issues == []
         assert test_summary is None
@@ -225,7 +215,7 @@ def test_execute_direct_returns_error_when_no_wrapper():
     with BuildContext() as ctx:
         # No ./pw and no system pwx
         with patch('shutil.which', return_value=None):
-            result = python_build.execute_direct(
+            result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
             )
 
@@ -252,9 +242,9 @@ def test_execute_direct_returns_success_on_zero_exit():
 
         with (
             patch('subprocess.run', return_value=mock_result),
-            patch.object(python_build, 'create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
+            patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
-            result = python_build.execute_direct(
+            result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
             )
 
@@ -277,9 +267,9 @@ def test_execute_direct_returns_error_on_nonzero_exit():
 
         with (
             patch('subprocess.run', return_value=mock_result),
-            patch.object(python_build, 'create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
+            patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
-            result = python_build.execute_direct(
+            result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=300, project_dir=str(ctx.temp_dir)
             )
 
@@ -300,9 +290,9 @@ def test_execute_direct_returns_timeout_on_timeout():
 
         with (
             patch('subprocess.run', side_effect=subprocess.TimeoutExpired(cmd='./pw verify', timeout=60)),
-            patch.object(python_build, 'create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
+            patch('_build_execute.create_log_file', return_value=str(ctx.temp_dir / 'test.log')),
         ):
-            result = python_build.execute_direct(
+            result = execute_direct(
                 args='verify', command_key='python:verify', default_timeout=60, project_dir=str(ctx.temp_dir)
             )
 
@@ -316,10 +306,14 @@ def test_execute_direct_returns_timeout_on_timeout():
 
 
 def test_default_timeout_is_reasonable():
-    """DEFAULT_TIMEOUT is set to a reasonable value."""
-    assert python_build.DEFAULT_TIMEOUT == 300  # 5 minutes
+    """Default timeout in execute config is set to a reasonable value."""
+    from _python_execute import _CONFIG
+
+    assert _CONFIG.default_timeout == 300  # 5 minutes, unified across all build skills
 
 
 def test_min_timeout_is_enforced():
-    """MIN_TIMEOUT prevents too-short timeouts."""
-    assert python_build.MIN_TIMEOUT == 60  # 1 minute minimum
+    """MIN_TIMEOUT is enforced globally in _build_execute."""
+    from _build_execute import MIN_TIMEOUT
+
+    assert MIN_TIMEOUT == 60  # 1 minute minimum, enforced for all build systems

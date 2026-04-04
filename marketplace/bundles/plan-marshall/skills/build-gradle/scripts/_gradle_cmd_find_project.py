@@ -1,30 +1,20 @@
 #!/usr/bin/env python3
-"""Find-project subcommand for Gradle project discovery."""
+"""Find-project subcommand for Gradle project discovery.
 
-import json
+Delegates constants and settings parsing to _gradle_cmd_discover to avoid duplication.
+"""
+
 import re
 from pathlib import Path
 
-
-def find_settings_file(root: Path) -> Path | None:
-    """Find settings.gradle or settings.gradle.kts."""
-    for name in ['settings.gradle.kts', 'settings.gradle']:
-        settings_path = root / name
-        if settings_path.exists():
-            return settings_path
-    return None
-
-
-def parse_included_projects(settings_path: Path) -> list[str]:
-    """Parse included projects from settings file."""
-    with open(settings_path, encoding='utf-8') as f:
-        content = f.read()
-    projects = []
-    for pattern in [r'include\s*\(\s*([^)]+)\s*\)', r"include\s+(['\"][^'\"]+['\"](?:\s*,\s*['\"][^'\"]+['\"])*)"]:
-        for match in re.finditer(pattern, content):
-            for quoted in re.findall(r'["\']([^"\']+)["\']', match.group(1)):
-                projects.append(quoted if quoted.startswith(':') else f':{quoted}')
-    return list(set(projects))
+from _build_discover import EXCLUDE_DIRS
+from _gradle_cmd_discover import (
+    BUILD_GRADLE,
+    BUILD_GRADLE_KTS,
+    find_settings_file,
+    parse_included_projects,
+)
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def get_root_project_name(settings_path: Path) -> str | None:
@@ -36,11 +26,11 @@ def get_root_project_name(settings_path: Path) -> str | None:
 
 
 def find_build_files(root: Path) -> list[Path]:
-    """Find all build.gradle and build.gradle.kts files."""
+    """Find all build.gradle and build.gradle.kts files, excluding non-source dirs."""
     build_files = []
-    for pattern in ['**/build.gradle', '**/build.gradle.kts']:
+    for pattern in [f'**/{BUILD_GRADLE}', f'**/{BUILD_GRADLE_KTS}']:
         for path in root.glob(pattern):
-            if not any(part.startswith('.') or part in ('build', 'target', '.gradle') for part in path.parts):
+            if not any(part.startswith('.') or part in EXCLUDE_DIRS for part in path.relative_to(root).parts):
                 build_files.append(path)
     return build_files
 
@@ -57,14 +47,18 @@ def project_path_to_gradle_notation(root: Path, project_dir: Path) -> str:
         return ':'
 
 
+def _format_output(data: dict) -> str:
+    """Format output as TOON for consistency with other build subcommands."""
+    return serialize_toon(data)
+
+
 def cmd_find_project(args):
     """Handle find-project subcommand."""
     root = Path(args.root).resolve()
     if not root.exists():
         print(
-            json.dumps(
-                {'status': 'error', 'error': 'root_not_found', 'message': f'Root directory not found: {args.root}'},
-                indent=2,
+            _format_output(
+                {'status': 'error', 'error': 'root_not_found', 'message': f'Root directory not found: {args.root}'}
             )
         )
         return 1
@@ -76,13 +70,12 @@ def cmd_find_project(args):
         full_path = root / dir_path
         if not full_path.exists():
             print(
-                json.dumps(
+                _format_output(
                     {
                         'status': 'error',
                         'error': 'path_not_found',
                         'message': f'Project path does not exist: {args.project_path}',
-                    },
-                    indent=2,
+                    }
                 )
             )
             return 1
@@ -94,13 +87,12 @@ def cmd_find_project(args):
                 break
         if not build_file:
             print(
-                json.dumps(
+                _format_output(
                     {
                         'status': 'error',
                         'error': 'no_build_file',
                         'message': f'No build.gradle(.kts) found in: {args.project_path}',
-                    },
-                    indent=2,
+                    }
                 )
             )
             return 1
@@ -108,18 +100,15 @@ def cmd_find_project(args):
         parts = dir_path.split('/')
         parent_projects = [':' + ':'.join(parts[:i]) for i in range(1, len(parts))]
         print(
-            json.dumps(
+            _format_output(
                 {
                     'status': 'success',
-                    'data': {
-                        'project_name': full_path.name,
-                        'project_path': gradle_path,
-                        'build_file': build_file,
-                        'parent_projects': parent_projects,
-                        'gradle_p_argument': f'-p {dir_path}',
-                    },
-                },
-                indent=2,
+                    'project_name': full_path.name,
+                    'project_path': gradle_path,
+                    'build_file': build_file,
+                    'parent_projects': ','.join(parent_projects) if parent_projects else '',
+                    'gradle_p_argument': f'-p {dir_path}',
+                }
             )
         )
         return 0
@@ -133,18 +122,15 @@ def cmd_find_project(args):
             candidate = root / f'build.gradle{ext}'
             if candidate.exists():
                 print(
-                    json.dumps(
+                    _format_output(
                         {
                             'status': 'success',
-                            'data': {
-                                'project_name': args.project_name,
-                                'project_path': ':',
-                                'build_file': f'build.gradle{ext}',
-                                'parent_projects': [],
-                                'gradle_p_argument': '',
-                            },
-                        },
-                        indent=2,
+                            'project_name': args.project_name,
+                            'project_path': ':',
+                            'build_file': f'build.gradle{ext}',
+                            'parent_projects': '',
+                            'gradle_p_argument': '',
+                        }
                     )
                 )
                 return 0
@@ -163,26 +149,24 @@ def cmd_find_project(args):
 
     if not matches:
         print(
-            json.dumps(
+            _format_output(
                 {
                     'status': 'error',
                     'error': 'project_not_found',
                     'message': f"No project found with name '{args.project_name}'",
-                },
-                indent=2,
+                }
             )
         )
         return 1
     if len(matches) > 1:
         print(
-            json.dumps(
+            _format_output(
                 {
                     'status': 'error',
                     'error': 'ambiguous_project_name',
                     'message': f"Multiple projects found for name '{args.project_name}'. Select one.",
-                    'choices': matches,
-                },
-                indent=2,
+                    'choices': ','.join(matches),
+                }
             )
         )
         return 1
@@ -199,18 +183,15 @@ def cmd_find_project(args):
     parts = project_path.lstrip(':').split(':')
     parent_projects = [':' + ':'.join(parts[:i]) for i in range(1, len(parts))]
     print(
-        json.dumps(
+        _format_output(
             {
                 'status': 'success',
-                'data': {
-                    'project_name': args.project_name,
-                    'project_path': project_path,
-                    'build_file': build_file,
-                    'parent_projects': parent_projects,
-                    'gradle_p_argument': f'-p {dir_path}' if dir_path else '',
-                },
-            },
-            indent=2,
+                'project_name': args.project_name,
+                'project_path': project_path,
+                'build_file': build_file,
+                'parent_projects': ','.join(parent_projects) if parent_projects else '',
+                'gradle_p_argument': f'-p {dir_path}' if dir_path else '',
+            }
         )
     )
     return 0

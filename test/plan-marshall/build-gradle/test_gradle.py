@@ -32,7 +32,14 @@ MOCKS_DIR = Path(__file__).parent / 'mocks'
 def test_parse_successful_build():
     """Test parsing successful Gradle build output."""
     result = run_script(
-        SCRIPT_PATH, 'parse', '--log', str(FIXTURES_DIR / 'sample-gradle-success.log'), '--mode', 'structured'
+        SCRIPT_PATH,
+        'parse',
+        '--log',
+        str(FIXTURES_DIR / 'sample-gradle-success.log'),
+        '--mode',
+        'structured',
+        '--format',
+        'json',
     )
     assert result.success, f'Script failed: {result.stderr}'
     data = result.json()
@@ -44,7 +51,14 @@ def test_parse_successful_build():
 def test_parse_compilation_errors():
     """Test parsing build with compilation errors."""
     result = run_script(
-        SCRIPT_PATH, 'parse', '--log', str(FIXTURES_DIR / 'sample-gradle-failure.log'), '--mode', 'structured'
+        SCRIPT_PATH,
+        'parse',
+        '--log',
+        str(FIXTURES_DIR / 'sample-gradle-failure.log'),
+        '--mode',
+        'structured',
+        '--format',
+        'json',
     )
     data = result.json()
 
@@ -54,7 +68,7 @@ def test_parse_compilation_errors():
 def test_parse_missing_file():
     """Test missing file handling."""
     result = run_script(SCRIPT_PATH, 'parse', '--log', 'nonexistent.log', '--mode', 'structured')
-    data = result.json()
+    data = result.toon()
 
     assert data['status'] == 'error', 'Should return error status for missing file'
 
@@ -65,7 +79,7 @@ def test_parse_missing_file():
 
 
 def test_find_project_by_name():
-    """Test finding project by name."""
+    """Test finding project by name (TOON output)."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         project_dir = temp_dir / 'modules' / 'auth-service'
@@ -74,17 +88,17 @@ def test_find_project_by_name():
         build_file.write_text('// Gradle build file')
 
         result = run_script(SCRIPT_PATH, 'find-project', '--project-name', 'auth-service', '--root', str(temp_dir))
-        data = result.json()
+        data = result.toon()
 
         assert data['status'] == 'success', f'Should find project: {data}'
 
 
 def test_find_project_not_found():
-    """Test finding non-existent project."""
+    """Test finding non-existent project (TOON output)."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         result = run_script(SCRIPT_PATH, 'find-project', '--project-name', 'nonexistent', '--root', str(temp_dir))
-        data = result.json()
+        data = result.toon()
 
         assert data['status'] == 'error', 'Should return error for non-existent project'
 
@@ -103,7 +117,7 @@ def test_search_markers_no_markers():
         java_file = src_dir / 'Test.java'
         java_file.write_text('public class Test {}')
 
-        result = run_script(SCRIPT_PATH, 'search-markers', '--source-dir', str(temp_dir / 'src'))
+        result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(temp_dir / 'src'))
         data = result.json()
 
         assert data['status'] == 'success', 'Should succeed with no markers'
@@ -121,10 +135,47 @@ def test_check_warnings_empty():
     acceptable = json.dumps({})
 
     result = run_script(SCRIPT_PATH, 'check-warnings', '--warnings', warnings, '--acceptable-warnings', acceptable)
+    data = result.toon()
+
+    assert data['status'] == 'success', 'Should succeed with no warnings'
+    assert data['total'] == 0, 'Total should be 0'
+
+
+def test_check_warnings_with_real_patterns():
+    """Test check-warnings with real warning data and acceptable patterns (H45).
+
+    Gradle uses wildcard matching with no severity filter.
+    Patterns must match as wildcard (* prefix/suffix for substring).
+    """
+    warnings = json.dumps(
+        [
+            {'message': '[deprecation] DeprecatedApi has been deprecated'},
+            {'message': '[unchecked] unchecked conversion'},
+            {'message': 'some random warning'},
+        ]
+    )
+    acceptable = json.dumps(
+        {
+            'patterns': ['*[deprecation]*', '*[unchecked]*'],
+        }
+    )
+
+    result = run_script(SCRIPT_PATH, 'check-warnings', '--warnings', warnings, '--acceptable-warnings', acceptable)
+    data = result.toon()
+
+    assert data['status'] == 'success', 'Should succeed'
+    assert data['total'] == 3, f'Should count all warnings, got: {data}'
+    assert data['acceptable'] >= 2, f'Should accept deprecation and unchecked, got: {data}'
+
+
+def test_search_markers_with_content():
+    """Test searching when markers exist in source files (H49)."""
+    markers_dir = FIXTURES_DIR / 'source-with-markers'
+    result = run_script(SCRIPT_PATH, 'search-markers', '--format', 'json', '--source-dir', str(markers_dir / 'src'))
     data = result.json()
 
-    assert data['success'] is True, 'Should succeed with no warnings'
-    assert data['total'] == 0, 'Total should be 0'
+    assert data['status'] == 'success', 'Should succeed'
+    assert data['data']['total_markers'] > 0, 'Should find markers in fixture files'
 
 
 # =============================================================================

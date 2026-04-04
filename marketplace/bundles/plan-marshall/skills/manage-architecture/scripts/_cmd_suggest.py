@@ -12,10 +12,11 @@ from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     get_module,
+    handle_module_not_found,
     load_derived_data,
-    print_toon_list,
-    print_toon_table,
+    require_derived_data,
 )
+from file_ops import print_toon_table  # type: ignore[import-not-found]
 
 
 # =============================================================================
@@ -115,14 +116,16 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
                 # Skip domains with no profiles (e.g., build domain)
                 if not dk_profiles and len(domain_keys) > 1:
                     continue
-                domains.append({
-                    'domain': dk,
-                    'confidence': result.get('confidence', 'unknown'),
-                    'signals': result.get('signals', []),
-                    'additive_to': result.get('additive_to'),
-                    'skill_count': skill_count,
-                    'skills_by_profile': result.get('skills_by_profile', {}),
-                })
+                domains.append(
+                    {
+                        'domain': dk,
+                        'confidence': result.get('confidence', 'unknown'),
+                        'signals': result.get('signals', []),
+                        'additive_to': result.get('additive_to'),
+                        'skill_count': skill_count,
+                        'skills_by_profile': result.get('skills_by_profile', {}),
+                    }
+                )
 
     # Second pass: filter additive domains whose parent is not applicable
     filtered_domains = []
@@ -154,34 +157,22 @@ def cmd_suggest_domains(args) -> int:
         domains = result['domains']
         items = []
         for d in domains:
-            items.append({
-                'domain': d['domain'],
-                'confidence': d['confidence'],
-                'signals': ','.join(d.get('signals', [])),
-                'additive_to': d.get('additive_to') or '',
-                'skill_count': str(d.get('skill_count', 0)),
-            })
+            items.append(
+                {
+                    'domain': d['domain'],
+                    'confidence': d['confidence'],
+                    'signals': ','.join(d.get('signals', [])),
+                    'additive_to': d.get('additive_to') or '',
+                    'skill_count': str(d.get('skill_count', 0)),
+                }
+            )
 
         print_toon_table('domains', items, ['domain', 'confidence', 'signals', 'additive_to', 'skill_count'])
         return 0
     except ModuleNotFoundInProjectError:
-        from _architecture_core import get_module_names
-
-        try:
-            derived = load_derived_data(args.project_dir)
-            modules = get_module_names(derived)
-        except Exception:
-            modules = []
-        print('error: Module not found')
-        print(f'module: {args.module}')
-        print_toon_list('available', modules)
-        return 1
+        return handle_module_not_found(args.module, args.project_dir)
     except DataNotFoundError:
-        from _architecture_core import get_derived_path
-
-        print('error: Derived data not found')
-        print(f'expected_file: {get_derived_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except Exception as e:
         print('status\terror', file=sys.stderr)

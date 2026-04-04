@@ -14,6 +14,58 @@ At runtime, they're discovered from the plugin cache:
 ~/.claude/plugins/cache/plan-marshall/{bundle}/1.0.0/skills/plan-marshall-plugin/extension.py
 ```
 
+**Note**: The skill directory name `plan-marshall-plugin` is a convention — `find_extension_path()` in `extension_discovery.py` searches this hardcoded path. All domain bundles must use this directory name for their extension to be discovered.
+
+---
+
+## Skill Directory Convention
+
+Every bundle that provides domain extensions **must** contain a `skills/plan-marshall-plugin/` directory. The `extension_discovery.py` scanner (`find_extension_path()`) looks for this exact path relative to the bundle root:
+
+```
+{bundle}/skills/plan-marshall-plugin/extension.py
+```
+
+The name `plan-marshall-plugin` is a **convention that signals "this bundle is an extension point for plan-marshall"** — it does NOT mean "a plugin for plan-marshall" or "the plan-marshall plugin." Each bundle's `plan-marshall-plugin` directory contains a different domain-specific extension (Java, Python, OCI, etc.), but the directory name is identical across all bundles so the scanner can discover them uniformly.
+
+### Directory Contents
+
+| File / Directory | Required | Purpose |
+|------------------|----------|---------|
+| `extension.py` | Yes | Implements `ExtensionBase` — the bundle's domain extension |
+| `SKILL.md` | No | Documents the extension's behavior and domain |
+| `scripts/` | No | Module discovery logic or other domain-specific scripts |
+
+### Discovery Mechanism
+
+The `find_extension_path()` function in `extension_discovery.py` resolves the extension path using two strategies:
+
+1. **Source structure**: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin/extension.py`
+2. **Cache structure** (versioned): `~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/skills/plan-marshall-plugin/extension.py`
+
+The path segment `skills/plan-marshall-plugin/extension.py` is hardcoded. Bundles that use a different directory name will not be discovered.
+
+### Bundles Implementing This Convention
+
+All 10 production bundles provide a `skills/plan-marshall-plugin/` directory:
+
+| Bundle | Domain | Description |
+|--------|--------|-------------|
+| `plan-marshall` | build, general-dev | Core infrastructure and multi-domain extension |
+| `pm-dev-java` | java | Java/Maven development patterns and module discovery |
+| `pm-dev-java-cui` | java-cui | CUI-specific Java extensions (additive to pm-dev-java) |
+| `pm-dev-frontend` | javascript | JavaScript/frontend development standards |
+| `pm-dev-frontend-cui` | javascript-cui | CUI-specific JavaScript standards (additive to pm-dev-frontend) |
+| `pm-dev-python` | python | Python development standards and build operations |
+| `pm-dev-oci` | oci-containers | OCI container standards and security |
+| `pm-documents` | documentation | AsciiDoc, ADRs, and interface specifications |
+| `pm-plugin-development` | plan-marshall-plugin-dev | Plugin creation and maintenance toolkit |
+| `pm-requirements` | requirements | Requirements engineering standards |
+
+### Why the Same Name Everywhere?
+
+A single, fixed directory name enables automatic discovery without configuration. The scanner iterates over all bundle directories and checks for `skills/plan-marshall-plugin/extension.py` — no registry, no manifest lookup, no per-bundle configuration. This makes adding a new domain extension as simple as creating the directory and implementing `ExtensionBase`.
+
 ---
 
 ## ExtensionBase Import
@@ -103,7 +155,7 @@ Each profile contains `defaults` (always loaded) and `optionals` (loaded on dema
 
 **Skill Reference Format**: Each skill entry can be either:
 - **Object format** (preferred): `{"skill": "bundle:skill", "description": "What this skill provides"}` — self-documenting, enables validation
-- **String format** (legacy): `"bundle:skill"` — compact but lacks description for downstream consumers
+- **String format**: `"bundle:skill"` — compact but lacks description for downstream consumers
 
 Object format is preferred for new extensions. Both formats are accepted by `_build_applicable_result()` and the enrichment pipeline.
 
@@ -297,19 +349,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-workflow-skill-extension --domain java --type triage
 ```
 
-#### Existing Implementations
-
-| Bundle | Domain | Triage Skill |
-|--------|--------|-------------|
-| pm-dev-java | java | `pm-dev-java:ext-triage-java` |
-| pm-dev-frontend | javascript | `pm-dev-frontend:ext-triage-js` |
-| pm-dev-python | python | `pm-dev-python:ext-triage-python` |
-| pm-dev-oci | oci-containers | `pm-dev-oci:ext-triage-oci` |
-| pm-documents | documentation | `pm-documents:ext-triage-docs` |
-| pm-requirements | requirements | `pm-requirements:ext-triage-reqs` |
-| pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-triage-plugin` |
-
-Bundles without triage (returns `None`): pm-dev-java-cui (relies on base bundle).
+See [Existing Extensions](#existing-extensions) for current implementations.
 
 ---
 
@@ -340,10 +380,7 @@ def provides_outline_skill(self) -> str | None:
 {bundle}/skills/{skill}/
 ├── SKILL.md                       # Shared workflow steps
 └── standards/
-    ├── change-feature.md          # Create new components
-    ├── change-enhancement.md      # Improve existing components
-    ├── change-bug_fix.md          # Fix component bugs
-    └── change-tech_debt.md        # Refactor/cleanup
+    └── change-types.md            # All change types (bug_fix, enhancement, feature, tech_debt)
 ```
 
 | Change Type | Description |
@@ -384,13 +421,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Returns `source: domain_specific` when a custom skill exists, or `source: generic_fallback` when using defaults.
 
-#### Existing Implementations
-
-| Bundle | Domain | Outline Skill |
-|--------|--------|--------------|
-| pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-outline-workflow` |
-
-All other domains return `None` and use the generic `plan-marshall:phase-3-outline` standards.
+See [Existing Extensions](#existing-extensions) for current implementations. All other domains return `None` and use the generic `plan-marshall:phase-3-outline` standards.
 
 ---
 
@@ -495,11 +526,7 @@ class Extension(ExtensionBase):
         ]
 ```
 
-#### Existing Implementations
-
-| Bundle | Domain | Recipe Key | Recipe Skill |
-|--------|--------|-----------|-------------|
-| plan-marshall | build | `refactor-to-profile-standards` | `plan-marshall:recipe-refactor-to-profile-standards` |
+See [Existing Extensions](#existing-extensions) for current implementations.
 
 ---
 
@@ -596,11 +623,7 @@ class Extension(ExtensionBase):
         ]
 ```
 
-#### Existing Implementations
-
-No bundles currently provide verification steps. pm-documents uses `provides_recipes()` instead (recipe `doc-verify` for documentation verification).
-
-Bundles returning `[]`: pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-documents, pm-plugin-development, pm-requirements.
+No bundles currently provide verification steps. See [Existing Extensions](#existing-extensions) for the full matrix.
 
 > **Note**: Coverage verification is handled by the built-in `default:coverage_check` step, not by an extension agent. See the dispatch table in `phase-5-execute`.
 
@@ -684,9 +707,7 @@ class Extension(ExtensionBase):
         ]
 ```
 
-#### Existing Implementations
-
-No bundles currently provide finalize steps. This is a new extension point.
+No bundles currently provide finalize steps. See [Existing Extensions](#existing-extensions) for the full matrix.
 
 ---
 
@@ -733,19 +754,6 @@ def _detect_applicable_profiles(self, profiles: dict,
     Default: None (no filtering)
     """
 ```
-
----
-
-## Build Execution Utilities (Co-Located, Not Part of Extension API)
-
-The `_build_result.py`, `_build_parse.py`, `_build_format.py`, and `_build_wrapper.py` scripts are co-located in the `extension-api/scripts/` directory for PYTHONPATH convenience but are **not** part of the extension API. They are internal utilities imported directly by build scripts (e.g., `build-maven`, `build-npm`), not through `ExtensionBase`. Extension implementers do not need to use them.
-
-They are co-located here because:
-1. The executor adds `extension-api/scripts/` to PYTHONPATH for all extensions
-2. Build scripts need these utilities and already have this path available
-3. Moving them would require a separate PYTHONPATH entry with no functional benefit
-
-See [build-execution.md](build-execution.md) for the build execution API specification.
 
 ---
 
@@ -847,7 +855,7 @@ class Extension(ExtensionBase):
 
     def discover_modules(self, project_root: str) -> list:
         # Delegate to script in scripts/ directory
-        from maven_cmd_discover import discover_maven_modules
+        from _maven_cmd_discover import discover_maven_modules
         return discover_maven_modules(project_root)
 ```
 
@@ -893,14 +901,16 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 ## Existing Extensions
 
+> **Note**: This table is a reference snapshot. For the authoritative live list, use `extension_discovery discover-all`.
+
 | Bundle | Domain Key | Triage | Outline Skill | Recipes | Verify Steps | Notes |
 |--------|------------|--------|---------------|---------|-------------|-------|
-| pm-dev-java | java | ext-triage-java | - | - | 2 (impl, test) | Base Java bundle |
+| pm-dev-java | java | ext-triage-java | - | - | - | Base Java bundle |
 | pm-dev-java-cui | java-cui | - | - | - | - | Additive to pm-dev-java |
 | pm-dev-frontend | javascript | ext-triage-js | - | - | - | |
-| pm-dev-python | python | - | - | - | - | |
+| pm-dev-python | python | ext-triage-python | - | - | - | |
 | pm-dev-oci | oci-containers | ext-triage-oci | - | - | - | |
-| pm-documents | documentation | ext-triage-docs | - | - | 1 (doc_sync) | Uses generic skills |
+| pm-documents | documentation | ext-triage-docs | - | - | - | Uses recipe for doc verification |
 | pm-requirements | requirements | ext-triage-reqs | - | - | - | |
 | pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | |
 | plan-marshall | build, general-dev | - | - | 1 (refactor-to-profile-standards) | - | Multi-domain |
@@ -924,7 +934,7 @@ This is the only abstract method because every domain must:
 1. **Declare identity** — the domain key is used throughout marshal.json
 2. **Provide skills** — skills are the primary value a domain extension contributes
 
-### Why Five Optional Hooks?
+### Why Six Optional Hooks?
 
 All six hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_verify_steps, provides_finalize_steps) follow the same extension model:
 

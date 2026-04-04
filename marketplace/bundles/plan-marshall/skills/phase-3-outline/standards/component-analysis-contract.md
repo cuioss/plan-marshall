@@ -51,7 +51,7 @@ For each file in the provided list, in order:
 2. **Analyze** the file content against the request, applying component-type-specific context
 3. **Classify** as CERTAIN_INCLUDE, CERTAIN_EXCLUDE, or UNCERTAIN
 4. **Assess confidence** (0-100)
-5. **Log** the assessment immediately via `plan-marshall:manage-assessments:manage-assessments add`
+5. **Log** the assessment immediately via `plan-marshall:manage-findings:manage-findings assessment add`
 6. **Track counts** for the final summary
 
 Each assessment MUST be logged before moving to the next file.
@@ -69,7 +69,7 @@ Each assessment MUST be logged before moving to the next file.
 Each assessment MUST be persisted via:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-assessments:manage-assessments add \
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment add \
   --plan-id {plan_id} --file-path {file_path} \
   --certainty {CERTAINTY} --confidence {CONFIDENCE} \
   --agent {agent_name}/{component_type} \
@@ -95,7 +95,7 @@ assessments_logged: {count}
 
 1. **No text output** except the final TOON summary — all reasoning goes to assessments.jsonl
 2. **Sequential processing** — log each assessment before proceeding to the next file
-3. **Script-only logging** — use `plan-marshall:manage-assessments:manage-assessments add` exclusively
+3. **Script-only logging** — use `plan-marshall:manage-findings:manage-findings assessment add` exclusively
 4. **No ad-hoc discovery** — analyze only the files provided in the input list
 5. **Read tool for component files only** — use `manage-files` scripts for `.plan/` file operations
 6. **No agent spawning** — runs as a leaf-level Task (subagent constraint)

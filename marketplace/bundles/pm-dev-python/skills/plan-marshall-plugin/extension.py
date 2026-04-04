@@ -16,66 +16,67 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            'domain': {
-                'key': 'python',
-                'name': 'Python Development',
-                'description': 'Modern Python with pyprojectx, ruff, mypy, pytest',
-            },
-            'profiles': {
-                'core': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-python:python-core',
-                            'description': 'Core Python patterns — types, data structures, error handling, naming',
-                        },
-                        {
-                            'skill': 'plan-marshall:dev-general-code-quality',
-                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
-                        },
-                    ],
-                    'optionals': [],
+        return [
+            {
+                'domain': {
+                    'key': 'python',
+                    'name': 'Python Development',
+                    'description': 'Modern Python with pyprojectx, ruff, mypy, pytest',
                 },
-                'implementation': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-python:python-core',
-                            'description': 'Core Python patterns — types, data structures, error handling, naming',
-                        },
-                        {
-                            'skill': 'plan-marshall:dev-general-code-quality',
-                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
-                        },
-                    ],
-                    'optionals': [],
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-python:python-core',
+                                'description': 'Core Python patterns — types, data structures, error handling, naming',
+                            },
+                            {
+                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    'implementation': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-python:python-core',
+                                'description': 'Core Python patterns — types, data structures, error handling, naming',
+                            },
+                            {
+                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'description': 'Language-agnostic code quality, refactoring, and documentation principles',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    'module_testing': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-python:pytest-testing',
+                                'description': 'Pytest standards — fixtures, isolation, mocking, assertions, coverage',
+                            },
+                            {
+                                'skill': 'plan-marshall:dev-general-module-testing',
+                                'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    'quality': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-python:python-core',
+                                'description': 'Core Python patterns — types, data structures, error handling, naming',
+                            },
+                        ],
+                        'optionals': [],
+                    },
                 },
-                'module_testing': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-python:pytest-testing',
-                            'description': 'Pytest standards — fixtures, isolation, mocking, assertions, coverage',
-                        },
-                        {
-                            'skill': 'plan-marshall:dev-general-module-testing',
-                            'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
-                        },
-                    ],
-                    'optionals': [],
-                },
-                'quality': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-python:python-core',
-                            'description': 'Core Python patterns — types, data structures, error handling, naming',
-                        },
-                    ],
-                    'optionals': [],
-                },
-            },
-        }]
+            }
+        ]
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if Python domain applies based on .py files in paths."""
         paths = module_data.get('paths', {})
         sources = paths.get('sources', [])
@@ -91,12 +92,18 @@ class Extension(ExtensionBase):
             signals.append(f'*.py in {",".join(py_paths[:3])}')
 
         if not signals:
-            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
 
         confidence = 'high' if 'python' in build_systems else 'medium'
-        return self._build_applicable_result(confidence, signals,
-                                              module_data=module_data,
-                                              active_profiles=active_profiles)
+        return self._build_applicable_result(
+            confidence, signals, module_data=module_data, active_profiles=active_profiles
+        )
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""

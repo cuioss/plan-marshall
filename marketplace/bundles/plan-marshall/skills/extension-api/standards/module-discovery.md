@@ -114,13 +114,21 @@ Each extension returns modules it discovered with `build_systems` field:
 }
 ```
 
+### Module Name Resolution
+
+Module names are resolved in this order:
+1. Maven `artifactId` (if available from POM metadata)
+2. npm `name` (from package.json)
+3. Directory name (last path component)
+4. For virtual modules: `{name}-{technology}` suffix (e.g., `my-module-maven`)
+
 ### Field Types
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Module name (includes technology suffix for virtual modules) |
 | `build_systems` | string[] | Single build system (e.g., `["maven"]` or `["npm"]`) |
-| `virtual_module` | object \| null | Virtual module metadata (for multi-tech directories) |
+| `virtual_module` | object \| absent | Virtual module metadata (only present for multi-tech directories; check with `if "virtual_module" in module_data`) |
 | `virtual_module.physical_path` | string | Actual directory path (shared by siblings) |
 | `virtual_module.technology` | string | Build system technology |
 | `virtual_module.sibling_modules` | string[] | Names of sibling virtual modules |
@@ -272,37 +280,7 @@ Technology-native format without prefixes:
 
 ## Implementation Pattern
 
-Use `discover_descriptors()` and `build_module_base()` from `build_discover.py` for common discovery logic, then enrich with domain-specific metadata:
-
-```python
-from extension_base import ExtensionBase
-
-
-class Extension(ExtensionBase):
-    """Domain extension with module discovery."""
-
-    def discover_modules(self, project_root: str) -> list:
-        """Discover modules in the project."""
-        from build_discover import discover_descriptors, build_module_base
-        descriptors = discover_descriptors(project_root, "pom.xml")
-
-        modules = []
-        for desc_path in descriptors:
-            base = build_module_base(project_root, desc_path)
-            modules.append({
-                "name": base.name,
-                "build_systems": ["maven"],
-                "paths": base.paths.to_dict(),
-                "metadata": {},       # Domain-specific enrichment
-                "packages": {},       # Package discovery
-                "dependencies": [],   # Dependency extraction
-                "stats": {"source_files": 0, "test_files": 0},
-                "commands": self._resolve_commands(base)
-            })
-        return modules
-```
-
-### Canonical Commands
+See the [Minimal Extension Template](../SKILL.md#minimal-extension-template) in the extension-api SKILL.md for a complete `discover_modules()` example using `discover_descriptors()` and `build_module_base()`.
 
 Each module must include a `commands` dict mapping canonical command names to executable strings. See [canonical-commands.md](canonical-commands.md) for the command vocabulary, resolution logic, and requirements.
 
@@ -357,40 +335,12 @@ Extensions providing module discovery must:
 | Bundle | Domain | Build System | Discovery Method |
 |--------|--------|-------------|-----------------|
 | pm-dev-java | java | Maven, Gradle | `maven_cmd_discover.py`, `gradle_cmd_discover.py` |
-| pm-dev-frontend | javascript | npm | Inline in `extension.py` |
+| plan-marshall | build | npm | `_npm_cmd_discover.py` (in build-npm) |
 | pm-documents | documentation | — | Directory-based (doc dirs) |
 | pm-plugin-development | plan-marshall-plugin-dev | — | Bundle-based (marketplace bundles) |
 | pm-requirements | requirements | — | Spec file discovery |
 
 Bundles returning `[]`: pm-dev-java-cui (additive, no own modules).
-
----
-
-## Design Rationale
-
-### Why Extension-Based?
-
-Module discovery is handled by extensions rather than a central scanner because:
-
-1. **Multi-technology** — each domain knows its own descriptor files and metadata format
-2. **Domain enrichment** — extensions add domain-specific metadata, packages, and dependencies
-3. **Command resolution** — extensions know how to map canonical commands to build-system-specific invocations
-
-### Why Virtual Module Splitting?
-
-Directories with multiple build systems (e.g., `pom.xml` + `package.json`) are split into virtual modules because:
-
-1. **Single build system per module** — no ambiguity in command resolution
-2. **Technology-specific skills** — each virtual module gets its own skill profile
-3. **Independent task assignment** — tasks target a single technology
-
-### Why Build Tool Commands for Discovery?
-
-Extensions use build tool commands (not direct file parsing) because:
-
-1. **Accuracy** — build tools resolve inheritance, interpolation, and dynamic values
-2. **Consistency** — same tool that builds the project provides its metadata
-3. **Completeness** — transitive dependencies, effective profiles, and computed values are included
 
 ---
 

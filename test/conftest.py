@@ -36,19 +36,12 @@ TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 # Pytest Collection Configuration
 # =============================================================================
 
-# Pre-existing issues: duplicate test file basenames cause pytest collection errors
-# These need to be renamed to unique names in a separate cleanup
+# Integration tests with unresolvable import dependencies (integration_common, extension)
 collect_ignore = [
-    # Duplicate: test_permission.py exists in tools-permission-doctor and tools-permission-fix
-    'plan-marshall/tools-permission-fix/test_permission.py',
-    # Duplicate: test_discover_modules.py exists in build-maven and build-npm
-    'plan-marshall/build-npm/test_discover_modules.py',
-    # Duplicate: test_extension.py exists in extension-api and plugin-doctor
-    'pm-plugin-development/plugin-doctor/test_extension.py',
-    # Module structure issue: integration directories without proper __init__.py
+    # Imports integration_common and pm-dev-java extension module not on PYTHONPATH
     'plan-marshall/integration/discover_modules/test_gradle_discover_modules.py',
     'plan-marshall/integration/discover_modules/test_maven_discover_modules.py',
-    # Import issue: imports from non-existent 'extension' module
+    # Imports integration_common and extension.discover_project_modules (ambiguous)
     'plan-marshall/integration/module_aggregation/test_hybrid_merge.py',
 ]
 
@@ -71,7 +64,7 @@ def _setup_marketplace_pythonpath() -> list[str]:
     """
     script_dirs = set()
 
-    # Scan marketplace for all scripts/ directories
+    # Scan marketplace for all scripts/ directories and their immediate subdirectories
     for bundle_dir in MARKETPLACE_ROOT.iterdir():
         if not bundle_dir.is_dir():
             continue
@@ -84,6 +77,11 @@ def _setup_marketplace_pythonpath() -> list[str]:
             scripts_dir = skill_dir / 'scripts'
             if scripts_dir.exists():
                 script_dirs.add(str(scripts_dir))
+                # Scan immediate subdirectories (supports organized layouts
+                # like script-shared/scripts/build/, scripts/extension/)
+                for child in scripts_dir.iterdir():
+                    if child.is_dir() and not child.name.startswith('.') and child.name != '__pycache__':
+                        script_dirs.add(str(child))
 
     # Add to sys.path (avoid duplicates)
     added = []
@@ -97,6 +95,19 @@ def _setup_marketplace_pythonpath() -> list[str]:
 
 # Set up PYTHONPATH immediately on import
 _MARKETPLACE_SCRIPT_DIRS = _setup_marketplace_pythonpath()
+
+# Pre-import cross-skill modules so that test files using
+# sys.modules.setdefault('plan_logging', MagicMock(...)) at import time
+# cannot shadow the real module for later tests.
+import plan_logging as _plan_logging  # noqa: F401, E402
+import run_config as _run_config  # noqa: F401, E402
+
+# Add test subdirectories with shared helpers to sys.path so tests can
+# import them without manual sys.path manipulation
+_TEST_HELPER_DIRS = [str(TEST_ROOT / 'plan-marshall')]
+for _helper_dir in _TEST_HELPER_DIRS:
+    if _helper_dir not in sys.path:
+        sys.path.insert(0, _helper_dir)
 
 
 # =============================================================================
@@ -124,6 +135,15 @@ class ScriptResult:
         data: dict[str, Any] = json.loads(self.stdout)
         return data
 
+    def toon(self) -> dict[str, Any]:
+        """Parse stdout as TOON. Raises ValueError if invalid."""
+        from toon_parser import parse_toon
+
+        if not self.stdout.strip():
+            raise ValueError(f'Empty stdout. stderr: {self.stderr}')
+        data: dict[str, Any] = parse_toon(self.stdout)
+        return data
+
     def json_or_error(self) -> dict[str, Any]:
         """Parse stdout as JSON, or stderr if stdout is empty."""
         if self.stdout.strip():
@@ -131,6 +151,18 @@ class ScriptResult:
             return data
         if self.stderr.strip():
             data = json.loads(self.stderr)
+            return data
+        return {'error': 'No output'}
+
+    def toon_or_error(self) -> dict[str, Any]:
+        """Parse stdout as TOON, or stderr if stdout is empty."""
+        from toon_parser import parse_toon
+
+        if self.stdout.strip():
+            data: dict[str, Any] = parse_toon(self.stdout)
+            return data
+        if self.stderr.strip():
+            data = parse_toon(self.stderr)
             return data
         return {'error': 'No output'}
 
@@ -602,9 +634,14 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
             'max_iterations': 3,
             'review_bot_buffer_seconds': 300,
             'steps': [
-                'commit_push', 'create_pr', 'automated_review',
-                'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
-                'branch_cleanup', 'archive',
+                'commit_push',
+                'create_pr',
+                'automated_review',
+                'sonar_roundtrip',
+                'knowledge_capture',
+                'lessons_capture',
+                'branch_cleanup',
+                'archive',
             ],
         },
     },

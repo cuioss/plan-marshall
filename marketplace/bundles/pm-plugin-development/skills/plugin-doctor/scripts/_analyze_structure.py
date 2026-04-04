@@ -122,7 +122,7 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
                     # Underscore prefix indicates private/internal module (Python convention)
                     if basename.startswith('_'):
                         continue
-                    # Legacy patterns (for backward compatibility)
+                    # Known naming patterns for internal modules
                     if (
                         basename.startswith('cmd_')
                         or basename.startswith('doctor_')

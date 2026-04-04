@@ -2,6 +2,7 @@
 name: manage-files
 description: Generic file I/O operations for plan directories
 user-invocable: false
+scope: plan
 ---
 
 # Manage Files Skill
@@ -10,37 +11,12 @@ Generic file operations for plan directories. Provides basic CRUD operations for
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify .plan/ files directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations section
+**Skill-specific constraints:**
 - Do not pass absolute paths or `..` traversals in `--file` arguments
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files {command} {args}`
 - File paths are always relative to the plan directory
 - plan_id must be kebab-case format
-
-## What This Skill Provides
-
-- Generic file read/write/remove operations
-- Directory listing and creation
-- File existence checking
-- Plan directory create-or-reference (atomic check/create)
-- No content validation (caller provides complete content)
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Reading or writing arbitrary files in a plan directory
-- Creating subdirectories within a plan
-- Listing plan contents
-- Checking if files exist
-
-**Note**: For typed plan documents (`request.md`, `solution_outline.md`), use `plan-marshall:manage-plan-documents` instead. For domain-specific files (references.json, status.toon), use the dedicated manage-* skills.
-
----
 
 ## Storage Location
 
@@ -48,12 +24,9 @@ Files are stored in plan directories:
 
 ```
 .plan/plans/{plan_id}/
-  request.md
-  solution_outline.md
-  references.json
-  status.toon
-  tasks/
 ```
+
+For domain-specific files within the plan directory, use the dedicated manage-* skills (see Relationship to Domain Skills below).
 
 ---
 
@@ -96,9 +69,13 @@ More content here..."
 - `--content`: Content to write (mutually exclusive with `--stdin`)
 - `--stdin`: Read content from stdin instead of `--content`
 
-**Note**: The `--content` parameter supports multiline content. Do NOT use `--stdin` with shell heredocs or cat commands.
+**Note**: The `--content` parameter supports multiline content. Do NOT use `--stdin` with shell heredocs or cat commands — the executor handles content passing; stdin is only for piped input from other scripts.
 
-**Output**: Prints "Created: {path}" to stderr, exit code 0 on success
+**Content requirement**: Content must be non-empty. Empty content produces an error (`missing_content`).
+
+**Output**: TOON with `status: success`, `action: created`/`updated`. Exit code 0 on success, 1 on error.
+
+**Side effect**: Successful writes are logged via `log_entry()` to the plan's work log.
 
 ### remove
 
@@ -122,7 +99,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files list \
   [--dir subdir]
 ```
 
-**Output**: Simple file listing, one per line
+**Output** (TOON format): File listing with `status: success` and `files` array
 
 ### exists
 
@@ -162,7 +139,7 @@ error: invalid_plan_id
 message: Invalid plan_id format: Invalid_Plan
 ```
 
-**Note**: Always exits 0 for expected outcomes. Check `status` and `exists` fields to determine result
+**Note**: Always exits 0 for both exists=true and exists=false (both are valid query results). Only exits 1 for actual errors (invalid plan_id, invalid path). Check `status` and `exists` fields to determine result.
 
 ### mkdir
 
@@ -217,36 +194,6 @@ domain: java
 
 **Use case**: Called by plan-init to atomically check/create plan directories.
 
-### delete-plan
-
-Delete an entire plan directory. Used when user selects "Replace" for an existing plan during plan-init.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files delete-plan \
-  --plan-id {plan_id}
-```
-
-**Output** (TOON format):
-
-On success:
-```toon
-status: success
-plan_id: my-feature
-action: deleted
-path: /path/to/.plan/plans/my-feature
-files_removed: 5
-```
-
-On error (plan not found):
-```toon
-status: error
-plan_id: my-feature
-error: plan_not_found
-message: Plan directory does not exist: /path/to/.plan/plans/my-feature
-```
-
-**Use case**: Called by plan-init when user selects "Replace" to delete existing plan before creating new one. See `plan-marshall:phase-1-init/standards/plan-overwrite.md` for the full workflow.
-
 ---
 
 ## Key Design Principles
@@ -255,7 +202,7 @@ message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 2. **Relative file paths** - `--file` accepts relative paths within plan dir (e.g., `requirements/REQ-001.toon`)
 3. **Generic file operations** - Not domain-specific (no parse-plan, write-config)
 4. **Plain output** - `read` returns raw content; mutations return minimal status
-5. **No validation** - Caller provides complete content; no content validation
+5. **Minimal validation** - Rejects empty content on write; no structural validation of content
 
 ---
 
@@ -264,47 +211,49 @@ message: Plan directory does not exist: /path/to/.plan/plans/my-feature
 | Check | Validation |
 |-------|------------|
 | plan_id format | kebab-case, no special chars |
-| file path | No `..`, no absolute paths |
+| file path | No `..`, no absolute paths, no leading `/` |
 | directory | Must exist (unless mkdir) |
 | content | Non-empty for write |
 
 ---
 
-## Error Handling
+## Error Responses
 
-```toon
-status: error
-plan_id: my-feature
-file: nonexistent.md
-error: file_not_found
-message: File does not exist
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
-suggestions[2]:
-- Check file name spelling
-- Use list subcommand to see available files
-```
+| Error Code | Cause |
+|------------|-------|
+| `invalid_plan_id` | plan_id contains invalid characters (must be kebab-case) |
+| `file_not_found` | File does not exist (read, remove) |
+| `missing_content` | Write called with empty or missing content |
+| `invalid_path` | Path contains `..` or absolute path components |
+| `permission_error` | File system permission denied |
 
 ---
 
-## Integration Points
+## Integration
 
-### With Domain Skills
+### Consumers
 
-Domain-specific skills (manage-references, manage-lifecycle) may use this skill for basic file operations, or import shared libraries directly.
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-1-init` | create-or-reference, write | Create plan directory and initial files |
+| `phase-3-outline` | write, read | Generic file I/O for plan artifacts |
+| `phase-5-execute` | read, write, list | File operations during task execution |
 
-### With Orchestration Skills
-
-Plan orchestration skills (plan-init, solution-outline, task-plan, plan-execute) use this skill for generic file I/O.
-
----
-
-## Relationship to Domain Skills
+### Relationship to Domain Skills
 
 | Skill | Manages | Use manage-files for |
 |-------|---------|---------------------|
 | manage-references | references.json | N/A (use manage-references) |
-| manage-lifecycle | status.toon | N/A (use manage-lifecycle) |
+| manage-status | status.json | N/A (use manage-status) |
 | manage-plan-documents | request.md | N/A (use manage-plan-documents) |
 | manage-solution-outline | solution_outline.md | N/A (use manage-solution-outline) |
 | manage-tasks | tasks/*.toon | N/A (use manage-tasks) |
 | manage-files | any other file | Generic read/write/list |
+
+## Related
+
+- `manage-plan-documents` — Typed plan document operations (request.md)
+- `manage-references` — Reference tracking for plans (references.json)
+- `manage-logging` — Logging operations that complement file I/O

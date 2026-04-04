@@ -1,8 +1,6 @@
 """Tests for sonar.py - consolidated Sonar workflow script."""
 
 import json
-import os
-import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -11,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, get_script_path  # noqa: E402
+from conftest import get_script_path, run_script  # noqa: E402
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'sonar.py')
@@ -19,58 +17,8 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'so
 
 def run_sonar_script(args: list) -> tuple:
     """Run sonar.py with args and return (stdout, stderr, returncode)."""
-    env = os.environ.copy()
-    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
-    if 'PYTHONPATH' in env:
-        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
-    env['PYTHONPATH'] = pythonpath
-    result = subprocess.run([sys.executable, str(SCRIPT_PATH)] + args, capture_output=True, text=True, env=env)
+    result = run_script(SCRIPT_PATH, *args)
     return result.stdout, result.stderr, result.returncode
-
-
-class TestSonarFetch(unittest.TestCase):
-    """Test sonar.py fetch subcommand."""
-
-    def test_fetch_with_project_only(self):
-        """Test fetch with just project key."""
-        stdout, stderr, code = run_sonar_script(['fetch', '--project', 'my-project'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertEqual(result['project_key'], 'my-project')
-        self.assertIsNone(result['pull_request_id'])
-        self.assertEqual(result['status'], 'success')
-
-    def test_fetch_with_pr(self):
-        """Test fetch with project and PR."""
-        stdout, stderr, code = run_sonar_script(['fetch', '--project', 'my-project', '--pr', '123'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertEqual(result['project_key'], 'my-project')
-        self.assertEqual(str(result['pull_request_id']), '123')
-        self.assertIn('pullRequestId', result['mcp_instruction']['parameters'])
-
-    def test_fetch_with_severities(self):
-        """Test fetch with severity filter."""
-        stdout, stderr, code = run_sonar_script(['fetch', '--project', 'my-project', '--severities', 'BLOCKER,CRITICAL'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        mcp_params = result['mcp_instruction']['parameters']
-        self.assertEqual(mcp_params['severities'], 'BLOCKER,CRITICAL')
-
-    def test_fetch_missing_project(self):
-        """Test fetch without required project arg."""
-        stdout, stderr, code = run_sonar_script(['fetch'])
-        self.assertNotEqual(code, 0)
-        self.assertIn('--project', stderr)
-
-    def test_fetch_mcp_instruction_structure(self):
-        """Test that MCP instruction is properly formatted."""
-        stdout, stderr, code = run_sonar_script(['fetch', '--project', 'test-proj', '--pr', '456'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        mcp = result['mcp_instruction']
-        self.assertEqual(mcp['tool'], 'mcp__sonarqube__search_sonar_issues_in_projects')
-        self.assertIn('test-proj', mcp['parameters']['projects'])
 
 
 class TestSonarTriage(unittest.TestCase):
@@ -151,7 +99,7 @@ class TestSonarTriage(unittest.TestCase):
         stdout, stderr, code = run_sonar_script(['triage', '--issue', 'not-valid-json'])
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'failure')
+        self.assertEqual(result['status'], 'error')
         self.assertIn('Invalid JSON', result['error'])
 
     def test_triage_missing_issue(self):
@@ -175,7 +123,266 @@ class TestSonarTriage(unittest.TestCase):
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['action'], 'fix')
-        self.assertIsNone(result.get('command_to_use'))
+        self.assertNotIn('command_to_use', result)
+
+    def test_triage_python_suppression_uses_hash_comment(self):
+        """Test triage generates Python-style suppression comment for .py files."""
+        issue = {
+            'key': 'ISSUE-PY1',
+            'type': 'CODE_SMELL',
+            'severity': 'MINOR',
+            'file': 'src/utils/helper.py',
+            'line': 10,
+            'rule': 'python:S1135',
+            'message': 'Complete TODO',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'suppress')
+        self.assertTrue(result['suppression_string'].startswith('# NOSONAR'))
+
+    def test_triage_java_suppression_uses_slash_comment(self):
+        """Test triage generates Java-style suppression comment for .java files."""
+        issue = {
+            'key': 'ISSUE-J1',
+            'type': 'CODE_SMELL',
+            'severity': 'MINOR',
+            'file': 'src/main/java/Example.java',
+            'line': 5,
+            'rule': 'java:S1135',
+            'message': 'Complete TODO',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'suppress')
+        self.assertTrue(result['suppression_string'].startswith('// NOSONAR'))
+
+    def test_triage_vulnerability_always_fix(self):
+        """Test triage always fixes VULNERABILITY regardless of suppressable rule."""
+        issue = {
+            'key': 'ISSUE-V1',
+            'type': 'VULNERABILITY',
+            'severity': 'MINOR',
+            'file': 'src/main/java/Example.java',
+            'line': 10,
+            'rule': 'java:S1135',  # Normally suppressable
+            'message': 'Vulnerability detected',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'fix')
+        self.assertIn('VULNERABILITY', result['reason'])
+
+    def test_triage_security_hotspot_always_fix(self):
+        """Test triage always fixes SECURITY_HOTSPOT."""
+        issue = {
+            'key': 'ISSUE-SH1',
+            'type': 'SECURITY_HOTSPOT',
+            'severity': 'MAJOR',
+            'file': 'src/main/java/Config.java',
+            'line': 30,
+            'rule': 'java:S4790',
+            'message': 'Weak hash algorithm',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'fix')
+        self.assertEqual(result['priority'], 'high')
+
+
+class TestSonarTriageBatch(unittest.TestCase):
+    """Test sonar.py triage-batch subcommand."""
+
+    def test_triage_batch_multiple_issues(self):
+        """Test batch triage processes multiple issues at once."""
+        issues = [
+            {
+                'key': 'B1',
+                'type': 'BUG',
+                'severity': 'MAJOR',
+                'file': 'src/A.java',
+                'line': 1,
+                'rule': 'java:S1234',
+                'message': 'Bug',
+            },
+            {
+                'key': 'B2',
+                'type': 'CODE_SMELL',
+                'severity': 'MINOR',
+                'file': 'src/B.java',
+                'line': 5,
+                'rule': 'java:S1135',
+                'message': 'TODO',
+            },
+            {
+                'key': 'B3',
+                'type': 'VULNERABILITY',
+                'severity': 'CRITICAL',
+                'file': 'src/C.java',
+                'line': 10,
+                'rule': 'java:S3649',
+                'message': 'SQL injection',
+            },
+        ]
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', json.dumps(issues)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['summary']['total'], 3)
+        self.assertEqual(result['summary']['fix'], 2)
+        self.assertEqual(result['summary']['suppress'], 1)
+
+    def test_triage_batch_empty_list(self):
+        """Test batch triage with empty list."""
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', '[]'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['summary']['total'], 0)
+
+    def test_triage_batch_invalid_json(self):
+        """Test batch triage with invalid JSON."""
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', 'not-json'])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'error')
+
+    def test_triage_batch_not_array(self):
+        """Test batch triage rejects non-array input."""
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', '{"key": "I1"}'])
+        self.assertEqual(code, 1)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('array', result['error'])
+
+
+class TestSonarRulesConfig(unittest.TestCase):
+    """Test that sonar rules are loaded from sonar-rules.json config."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Import sonar module for direct testing."""
+        from sonar import _FIX_SUGGESTIONS, _TEST_ACCEPTABLE_RULES, SUPPRESSABLE_RULES  # type: ignore[import-not-found]
+
+        cls.suppressable = SUPPRESSABLE_RULES
+        cls.fix_suggestions = _FIX_SUGGESTIONS
+        cls.test_acceptable = _TEST_ACCEPTABLE_RULES
+
+    def test_suppressable_rules_loaded(self):
+        """Test that suppressable rules are loaded from config."""
+        self.assertIn('java:S1135', self.suppressable)
+        self.assertIn('python:S1481', self.suppressable)
+        self.assertIn('javascript:S1135', self.suppressable)
+
+    def test_fix_suggestions_loaded(self):
+        """Test that fix suggestions are loaded from config."""
+        self.assertIn('java:S2095', self.fix_suggestions)
+        self.assertIn('python:S5131', self.fix_suggestions)
+        self.assertIn('javascript:S3649', self.fix_suggestions)
+
+    def test_test_acceptable_rules_loaded(self):
+        """Test that test-acceptable rules are loaded from config."""
+        self.assertIn('java:S106', self.test_acceptable)
+        # java:S2699 (missing assertions) removed — tests without assertions are a real quality gap
+        self.assertNotIn('java:S2699', self.test_acceptable)
+        self.assertIn('python:S106', self.test_acceptable)
+
+
+class TestToonContract(unittest.TestCase):
+    """Verify TOON output matches the contract documented in SKILL.md."""
+
+    def test_triage_output_contract(self):
+        """Verify triage output has all documented fields."""
+        issue = {
+            'key': 'CONTRACT-1',
+            'type': 'BUG',
+            'severity': 'MAJOR',
+            'file': 'src/Example.java',
+            'line': 42,
+            'rule': 'java:S1234',
+            'message': 'Test message',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        required_fields = {
+            'issue_key',
+            'action',
+            'reason',
+            'priority',
+            'suggested_implementation',
+            'suppression_string',
+            'status',
+        }
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+
+    def test_triage_suppress_output_contract(self):
+        """Verify suppression output includes suppression_string."""
+        issue = {
+            'key': 'CONTRACT-2',
+            'type': 'CODE_SMELL',
+            'severity': 'MINOR',
+            'file': 'src/Example.java',
+            'line': 5,
+            'rule': 'java:S1135',
+            'message': 'Complete TODO',
+        }
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['action'], 'suppress')
+        self.assertIsNotNone(result['suppression_string'])
+        self.assertIn('NOSONAR', result['suppression_string'])
+
+    def test_triage_batch_output_contract(self):
+        """Verify triage-batch output has all documented fields."""
+        issues = [
+            {
+                'key': 'B1',
+                'type': 'BUG',
+                'severity': 'MAJOR',
+                'file': 'src/A.java',
+                'line': 1,
+                'rule': 'java:S1234',
+                'message': 'Bug',
+            },
+        ]
+        stdout, _, code = run_sonar_script(['triage-batch', '--issues', json.dumps(issues)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        required_fields = {'results', 'summary', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+        # Summary sub-structure
+        summary = result['summary']
+        for field in ('total', 'fix', 'suppress'):
+            self.assertIn(field, summary, f'Missing summary.{field}')
+
+
+class TestSonarConfigLoading(unittest.TestCase):
+    """Test sonar.py config file loading edge cases."""
+
+    def test_triage_works_with_minimal_issue_fields(self):
+        """Test triage handles issue with only partial fields (defaults applied)."""
+        issue = {'key': 'MINIMAL-1'}
+        stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['action'], 'fix')
+        self.assertEqual(result['issue_key'], 'MINIMAL-1')
+
+    def test_triage_empty_issue_object(self):
+        """Test triage handles completely empty issue dict."""
+        stdout, _, code = run_sonar_script(['triage', '--issue', '{}'])
+        self.assertEqual(code, 0)
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['issue_key'], 'unknown')
 
 
 class TestSonarMain(unittest.TestCase):
@@ -191,8 +398,8 @@ class TestSonarMain(unittest.TestCase):
         stdout, stderr, code = run_sonar_script(['--help'])
         # argparse exits with 0 for help
         self.assertEqual(code, 0)
-        self.assertIn('fetch', stdout)
         self.assertIn('triage', stdout)
+        self.assertIn('triage-batch', stdout)
 
 
 if __name__ == '__main__':

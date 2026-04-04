@@ -1,6 +1,6 @@
 # Python Implementation Standards
 
-Standards for Python/pyprojectx build execution, output parsing, and issue handling.
+Python/pyprojectx-specific standards for build execution, output parsing, and issue handling. For shared standards (timeouts, warnings, log files), see `extension-api/standards/build-systems-common.md`. For canonical commands, see `build-api-reference.md`.
 
 ---
 
@@ -14,85 +14,94 @@ All Python builds use the pyprojectx wrapper from the project root:
 ./pw {command} {args}
 ```
 
-### Wrapper Detection
-
-Detection order (platform-aware):
-- Unix: `./pw` > `pwx` (on PATH)
-- Windows: `pw.bat` > `pwx` (on PATH)
-
-If no wrapper is found, a `FileNotFoundError` is raised (unlike Maven/Gradle which fall back to system commands).
-
-### Canonical Commands
-
-| Command | Purpose |
-|---------|---------|
-| `compile {module}` | Type-check and lint without running tests |
-| `test-compile {module}` | Compile tests only |
-| `module-tests {module}` | Run module test suite |
-| `quality-gate {module}` | Run quality checks (mypy + ruff) |
-| `coverage {module}` | Run tests with coverage collection |
-| `verify {module}` | Full verification (quality-gate + tests) |
-| `clean` | Remove build artifacts |
-
 Omit `{module}` to run against all modules.
 
 ---
 
-## Timeout Behavior
+## Module Targeting
 
-- **Unit**: Seconds
-- **Default**: 300 seconds (5 minutes)
-- **Minimum**: 30 seconds (enforced via `MIN_TIMEOUT`)
-- **Adaptive learning**: On successful completion, actual duration is recorded. On timeout failure, the cached timeout is doubled for the next run.
-- **Command key format**: `python:{first_subcommand}` (e.g., `python:module_tests`)
+### Single Module Build
 
----
+Use the module name as the second argument:
 
-## Output Parsing
-
-### Error Categories
-
-| Category | Source | Pattern |
-|----------|--------|---------|
-| `type_error` | mypy | `error:` in mypy output |
-| `lint_error` | ruff | Ruff violation codes (E, W, F series) |
-| `test_failure` | pytest | `FAILED` in pytest output |
-| `import_error` | Python | `ModuleNotFoundError`, `ImportError` |
-
-### Parser Detection
-
-The parser detects the tool from output content:
-- Lines containing mypy patterns → type error parsing
-- Lines containing ruff codes → lint error parsing
-- Lines containing pytest markers → test failure parsing
-
----
-
-## Acceptable Warnings
-
-Warnings can be suppressed per-project via `.plan/acceptable-warnings-python.txt`. One pattern per line. Lines starting with `#` are comments. The file is loaded from `{project_dir}/.plan/`.
-
----
-
-## Coverage Report Paths
-
-The coverage report parser searches these paths in order:
-
-| Path | Format |
-|------|--------|
-| `coverage.xml` | Cobertura XML |
-| `htmlcov/coverage.xml` | Cobertura XML (alternate location) |
-
-Generate with: `pytest --cov --cov-report=xml`
-
----
-
-## Log File Handling
-
-Build output is captured to timestamped log files:
-
-```
-.plan/temp/build-output/default/python-{YYYY-MM-DD-HHmmss}.log
+```bash
+./pw module-tests core           # Test specific module
+./pw coverage core               # Coverage for specific module
+./pw quality-gate core           # Quality checks for specific module
 ```
 
-Scope is always `default` (Python builds don't have module-scoped log files like Maven's `-pl`).
+### All Modules
+
+Omit the module argument to target all:
+
+```bash
+./pw verify                      # Full verification (all modules)
+./pw module-tests                # Test all modules
+./pw quality-gate                # Quality checks for all modules
+```
+
+---
+
+## Quality Configuration
+
+### Quality Commands
+
+| Command | Purpose |
+|---------|---------|
+| `quality-gate` | Run mypy + ruff without tests |
+| `compile` | Type-checking only (mypy) |
+| `verify` | Full verification (quality-gate + tests) |
+| `module-tests {module}` | Run tests for a specific module |
+| `coverage {module}` | Tests with coverage collection |
+
+### Tool Configuration
+
+Quality tools are configured in `pyproject.toml`:
+
+```toml
+[tool.mypy]
+strict = true
+
+[tool.ruff]
+line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+```
+
+---
+
+## CI/CD Standards
+
+```bash
+export CI=true
+export PYTHONDONTWRITEBYTECODE=1
+```
+
+Cache `.pyprojectx/` between CI runs.
+
+---
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| `FileNotFoundError` for wrapper | Ensure `./pw` or `pwx` exists |
+| mypy import errors | Check `[tool.mypy]` in `pyproject.toml` for `mypy_path` configuration |
+| ruff configuration | Verify `[tool.ruff]` in `pyproject.toml` |
+| pytest collection errors | Check for `__init__.py` in test directories |
+| Timeout on first run | pyprojectx downloads tools on first invocation |
+
+### Diagnostic Commands
+
+```bash
+python3 --version
+./pw --version
+./pw mypy --version
+./pw ruff --version
+./pw pytest --version
+```
+
+See SKILL.md for coverage report paths and parser details. See `build-api-reference.md` for shared build documentation.
+
+**Notation**: `plan-marshall:build-python:python_build`

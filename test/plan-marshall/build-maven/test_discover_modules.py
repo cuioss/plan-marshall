@@ -31,12 +31,18 @@ FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 from _maven_cmd_discover import (  # noqa: E402
     _build_commands,
     _classify_profile,
-    _filter_command_line_profiles,
-    _filter_skip_profiles,
-    _map_canonical_profiles,
     _parse_coordinates_from_maven_output,
     _parse_dependencies_from_maven_output,
     _parse_profiles_from_maven_output,
+)
+from _maven_cmd_discover import (  # noqa: E402
+    filter_command_line_profiles as _filter_command_line_profiles,
+)
+from _maven_cmd_discover import (  # noqa: E402
+    filter_skip_profiles as _filter_skip_profiles,
+)
+from _maven_cmd_discover import (  # noqa: E402
+    map_canonical_profiles as _map_canonical_profiles,
 )
 
 # =============================================================================

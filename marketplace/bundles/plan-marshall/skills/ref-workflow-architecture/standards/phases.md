@@ -1,6 +1,6 @@
 # 6-Phase Execution Model
 
-The plan-marshall bundle implements a 6-phase execution model for structured task completion.
+The plan-marshall bundle implements a 6-phase execution model for structured task completion. This document covers phase flow, transitions, and triggers. For file format details (status.json, TASK-*.json, references.json, etc.), see [artifacts.md](artifacts.md).
 
 ---
 
@@ -19,7 +19,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │       │             │              │              │                  │  │
 │  │   ┌───▼───┐    ┌────▼────┐    ┌────▼────┐   ┌────▼────┐             │  │
 │  │   │config │    │clarified│    │solution │   │ TASK-*  │             │  │
-│  │   │status │    │ request │    │outline  │   │ .toon   │             │  │
+│  │   │status │    │ request │    │outline  │   │ .json   │             │  │
 │  │   │request│    │         │    │   .md   │   │  files  │             │  │
 │  │   └───────┘    └─────────┘    └─────────┘   └─────────┘             │  │
 │  │                                                                      │  │
@@ -57,7 +57,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
 │  │  • description                   .plan/plans/{plan_id}/             │   │
-│  │  • lesson_id                       ├── status.toon                  │   │
+│  │  • lesson_id                       ├── status.json                  │   │
 │  │  • issue URL                       ├── request.md                   │   │
 │  │                                    └── references.json              │   │
 │  │                                                                     │   │
@@ -75,7 +75,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  5. Write request.md                                                        │
 │  6. Initialize references.json                                              │
 │  7. Detect domain                                                           │
-│  8. Create status.toon (6-phase model)                                      │
+│  8. Create status.json (6-phase model)                                      │
 │  9. Store domains in references.json                                        │
 │  10. Transition to 2-refine phase                                           │
 │                                                                             │
@@ -198,9 +198,9 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │  INPUT                           OUTPUT                             │   │
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
-│  │  solution_outline.md             TASK-001.toon                      │   │
-│  │    └── Deliverables              TASK-002.toon                      │   │
-│  │        ├── 1. Title              TASK-003.toon                      │   │
+│  │  solution_outline.md             TASK-001.json                      │   │
+│  │    └── Deliverables              TASK-002.json                      │   │
+│  │        ├── 1. Title              TASK-003.json                      │   │
 │  │        ├── 2. Title              ...                                │   │
 │  │        └── 3. Title                                                 │   │
 │  │                                  Each task contains:                │   │
@@ -224,7 +224,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  3. Analyze for aggregation (same domain/profile/change_type)               │
 │  4. Analyze for splits (mixed execution_mode)                               │
 │  5. Resolve skills from architecture (per profile)                          │
-│  6. Create TASK-*.toon files                                                │
+│  6. Create TASK-*.json files                                                │
 │  7. Determine execution order (parallel groups)                             │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -245,9 +245,9 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  │  INPUT                           OUTPUT                             │   │
 │  │  ═════                           ══════                             │   │
 │  │                                                                     │   │
-│  │  TASK-001.toon                   Modified project files             │   │
-│  │  TASK-002.toon                     • New files created              │   │
-│  │  TASK-003.toon                     • Existing files modified        │   │
+│  │  TASK-001.json                   Modified project files             │   │
+│  │  TASK-002.json                     • New files created              │   │
+│  │  TASK-003.json                     • Existing files modified        │   │
 │  │  ...                               • Tests added/updated            │   │
 │  │                                                                     │   │
 │  │  For each task:                  Task status updated:               │   │
@@ -259,7 +259,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  INVOCATION: Skill loaded directly in main context                             │
-│  SKILL: plan-marshall:phase-5-execute → task-implementation (or task-module-testing) │
+│  SKILL: plan-marshall:phase-5-execute → task-executor (profile-based dispatch) │
 │                                                                             │
 │  EXECUTION LOOP:                                                            │
 │  ───────────────                                                            │
@@ -348,194 +348,29 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 
 ## Phase Transitions
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                          PHASE TRANSITIONS                                  │
-│                                                                             │
-│  ┌────────┐    ┌─────────┐    ┌───────────┐    ┌────────┐                  │
-│  │ 1-INIT │───▶│2-REFINE │───▶│ 3-OUTLINE │───▶│ 4-PLAN │───▶              │
-│  └────────┘    └─────────┘    └───────────┘    └────────┘                  │
-│       │             │               │              │                        │
-│       │             │          ┌────┴────┐         │                        │
-│       │             │          │  USER   │         │                        │
-│       │             │          │ REVIEW  │         │                        │
-│       │             │          │  GATE   │         │                        │
-│       │             │          └────┬────┘         │                        │
-│       │             │               │              │                        │
-│  auto-continue  threshold met  user-approval  auto-continue                 │
-│                                                                             │
-│       ┌───────────┐   ┌───────────┐                                        │
-│   ───▶│ 5-EXECUTE │──▶│6-FINALIZE │                                        │
-│       └───────────┘   └───────────┘                                        │
-│            │  ↑              │                                              │
-│       auto-continue    pass/fail                                            │
-│            │  │              │                                              │
-│     [verify+triage]         │                                              │
-│       findings? ────────────│──────────┐                                   │
-│        (loop)               ▼          │                                   │
-│                        ┌──────────┐    │                                   │
-│                        │ COMPLETE │    │                                   │
-│                        └──────────┘    │                                   │
-│                                   5-EXECUTE                                │
-│                                  (fix tasks)                               │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+| From | To | Trigger |
+|------|-----|---------|
+| 1-init | 2-refine | Auto-continue (config/status created) |
+| 2-refine | 3-outline | Confidence >= threshold (default 95%) |
+| 3-outline | 4-plan | USER APPROVAL of solution outline |
+| 4-plan | 5-execute | Auto-continue (tasks created) |
+| 5-execute | 6-finalize | All tasks completed + verification passed |
+| 5-execute | 5-execute | Findings detected → triage + fix tasks |
+| 6-finalize | COMPLETE | Commit/PR done (or no findings) |
+| 6-finalize | 5-execute | Findings detected → create fix tasks |
 
-TRANSITION TRIGGERS:
-═══════════════════
-
-┌───────────────┬──────────────┬───────────────────────────────────────────┐
-│ From          │ To           │ Trigger                                   │
-├───────────────┼──────────────┼───────────────────────────────────────────┤
-│ 1-init        │ 2-refine     │ Auto-continue (config/status created)     │
-│ 2-refine      │ 3-outline    │ Confidence >= threshold (default 95%)     │
-│ 3-outline     │ 4-plan       │ USER APPROVAL of solution outline         │
-│ 4-plan        │ 5-execute    │ Auto-continue (tasks created)             │
-│ 5-execute     │ 6-finalize   │ All tasks completed + verification passed │
-│ 5-execute     │ 5-execute    │ Findings detected → triage + fix tasks    │
-│ 6-finalize    │ COMPLETE     │ Commit/PR done (or no findings)           │
-│ 6-finalize    │ 5-execute    │ Findings detected → create fix tasks      │
-└───────────────┴──────────────┴───────────────────────────────────────────┘
-```
+**Iteration Limits**: 5-execute verify (max 5x) | 6-finalize (max 3x)
 
 ---
 
-## Domain Flow
+## Domain and Skill Flow
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                           DOMAIN FLOW                                       │
-│                                                                             │
-│  marshal.json                                                               │
-│  ════════════                                                               │
-│  skill_domains: [java, javascript, plan-marshall-plugin-dev, ...]           │
-│                      │                                                      │
-│                      │ all possible domains (project-level)                 │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  REFINE                                                              │  │
-│  │  ══════                                                              │  │
-│  │  • Loads architecture context                                        │  │
-│  │  • Clarifies request until confidence >= threshold                   │  │
-│  │  • Maps requirements to modules                                      │  │
-│  │  • Updates request.md with clarifications                            │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ clarified_request                                    │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  OUTLINE                                                             │  │
-│  │  ═══════                                                             │  │
-│  │  • Analyzes clarified request + architecture context                 │  │
-│  │  • Selects modules → determines which profiles apply                 │  │
-│  │  • Writes domains + profiles list to deliverables                    │  │
-│  │                                                                      │  │
-│  │  Example: "Add JWT validation" → module: oauth-sheriff-core          │  │
-│  │           → profiles: [implementation, module_testing]               │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ references.json.domains                                  │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  PLAN                                                                │  │
-│  │  ════                                                                │  │
-│  │  • Reads deliverable.domain + profiles for each deliverable          │  │
-│  │  • Resolves skills from architecture (module.skills_by_profile)      │  │
-│  │  • Writes domain + profile + skills to TASK-*.toon                   │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ task.domain, task.skills                             │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  EXECUTE                                                             │  │
-│  │  ═══════                                                             │  │
-│  │  • Loads task.skills (domain knowledge)                              │  │
-│  │  • Resolves workflow skill for task.profile                          │  │
-│  │  • Applies domain patterns during implementation                     │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ references.json.domains                                  │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  EXECUTE (Verification + Triage Sub-Loop)                            │  │
-│  │  ════════════════════════════════════════                            │  │
-│  │  • After all tasks complete, runs verification steps                 │  │
-│  │  • Reads domains from references.json                                │  │
-│  │  • Loads triage extensions for each domain                           │  │
-│  │  • On findings: creates fix tasks and loops back                     │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                      │                                                      │
-│                      │ verified code                                        │
-│                      ▼                                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  FINALIZE                                                            │  │
-│  │  ════════                                                            │  │
-│  │  • Commits verified code                                             │  │
-│  │  • Pushes to remote, creates PR                                      │  │
-│  │  • Handles automated review and Sonar feedback                       │  │
-│  │  • Captures knowledge and lessons                                    │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+For the complete domain flow through phases (marshal.json → refine → outline → plan → execute → finalize), see [skill-loading.md](skill-loading.md).
 
 ---
 
-## Q-Gate Validation Agent
+## Related
 
-Q-Gate is a GENERIC AGENT TOOL that extensions call during Phase 3 (Outline) to validate assessments.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│                        Q-GATE VALIDATION AGENT                              │
-│                                                                             │
-│  TYPE: Generic agent tool (NOT a workflow step)                             │
-│  CALLED BY: Extensions during their workflow                                │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                                                                     │   │
-│  │  INPUT                           OUTPUT                             │   │
-│  │  ═════                           ══════                             │   │
-│  │                                                                     │   │
-│  │  • plan_id                       • CONFIRMED assessments            │   │
-│  │  • domains                       • FILTERED assessments             │   │
-│  │  • CERTAIN_INCLUDE assessments   • affected_files in references.json│   │
-│  │                                  • Statistics (confirmed/filtered)  │   │
-│  │                                                                     │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  STEPS:                                                                     │
-│  ──────                                                                     │
-│  1. Load domain skills (via resolve-workflow-skill)                         │
-│  2. Read clarified request (or original request)                            │
-│  3. Validate each CERTAIN_INCLUDE assessment:                               │
-│     • Output Ownership - Component documents another's output               │
-│     • Consumer vs Producer - Component consumes, not produces               │
-│     • Request Intent Match - Modification fulfills request                  │
-│     • Duplicate Detection - Not already covered                             │
-│  4. Write CONFIRMED/FILTERED assessments to assessments.jsonl               │
-│  5. Persist affected_files to references.json                               │
-│  6. Log lifecycle and return statistics                                     │
-│                                                                             │
-│  WHY GENERIC:                                                               │
-│  ───────────                                                                │
-│  • Same validation criteria across all domains                              │
-│  • Reusable by all domain extensions                                        │
-│  • Loads domain skills for context (but validation logic is generic)        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Related Documents
-
-| Document | Purpose |
-|----------|---------|
-| [agents.md](agents.md) | Thin agent pattern details |
-| [skill-loading.md](skill-loading.md) | How skills are resolved |
-| [artifacts.md](artifacts.md) | Plan file formats |
-| `plan-marshall:extension-api` | Extension points |
+- [agents.md](agents.md) — Thin agent pattern
+- [skill-loading.md](skill-loading.md) — Skill resolution
+- [artifacts.md](artifacts.md) — Plan file formats

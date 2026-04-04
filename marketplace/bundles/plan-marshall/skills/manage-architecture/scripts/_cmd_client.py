@@ -12,18 +12,17 @@ from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     error_command_not_found,
-    error_data_not_found,
     error_module_not_found,
-    get_derived_path,
     get_module,
     get_module_names,
     get_root_module,
     load_derived_data,
     load_llm_enriched_or_empty,
     merge_module_data,
-    print_toon_list,
-    print_toon_table,
+    print_skills_by_profile,
+    require_derived_data,
 )
+from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
 
 # =============================================================================
 # API Functions
@@ -457,7 +456,7 @@ def cmd_info(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except Exception as e:
         print('status\terror', file=sys.stderr)
@@ -488,7 +487,7 @@ def cmd_modules(args) -> int:
         print_toon_list('modules', modules)
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except Exception as e:
         print('status\terror', file=sys.stderr)
@@ -551,7 +550,7 @@ def cmd_graph(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except Exception as e:
         print('status: error', file=sys.stderr)
@@ -616,12 +615,14 @@ def cmd_module(args) -> int:
                 for pkg_name, pkg_data in packages.items():
                     has_info = 'true' if pkg_data.get('package_info') else 'false'
                     file_count = str(len(pkg_data.get('files', [])))
-                    pkg_items.append({
-                        'name': pkg_name,
-                        'path': pkg_data.get('path', ''),
-                        'has_package_info': has_info,
-                        'file_count': file_count,
-                    })
+                    pkg_items.append(
+                        {
+                            'name': pkg_name,
+                            'path': pkg_data.get('path', ''),
+                            'has_package_info': has_info,
+                            'file_count': file_count,
+                        }
+                    )
                 print_toon_table('packages', pkg_items, ['name', 'path', 'has_package_info', 'file_count'])
                 print()
 
@@ -630,11 +631,13 @@ def cmd_module(args) -> int:
                 test_pkg_items = []
                 for pkg_name, pkg_data in test_packages.items():
                     file_count = str(len(pkg_data.get('files', [])))
-                    test_pkg_items.append({
-                        'name': pkg_name,
-                        'path': pkg_data.get('path', ''),
-                        'file_count': file_count,
-                    })
+                    test_pkg_items.append(
+                        {
+                            'name': pkg_name,
+                            'path': pkg_data.get('path', ''),
+                            'file_count': file_count,
+                        }
+                    )
                 print_toon_table('test_packages', test_pkg_items, ['name', 'path', 'file_count'])
                 print()
 
@@ -670,29 +673,7 @@ def cmd_module(args) -> int:
         # Output skills_by_profile (structured format: {defaults: [...], optionals: [...]})
         skills_by_profile = module.get('skills_by_profile', {})
         if skills_by_profile:
-            print('skills_by_profile:')
-            for profile, profile_data in skills_by_profile.items():
-                print(f'  {profile}:')
-                defaults = profile_data.get('defaults', [])
-                optionals = profile_data.get('optionals', [])
-                if defaults:
-                    print(f'    defaults[{len(defaults)}]{{skill,description}}:')
-                    for entry in defaults:
-                        if isinstance(entry, dict):
-                            skill = entry.get('skill', '')
-                            desc = entry.get('description', '')
-                            print(f'      - {skill},"{desc}"')
-                        else:
-                            print(f'      - {entry}')
-                if optionals:
-                    print(f'    optionals[{len(optionals)}]{{skill,description}}:')
-                    for entry in optionals:
-                        if isinstance(entry, dict):
-                            skill = entry.get('skill', '')
-                            desc = entry.get('description', '')
-                            print(f'      - {skill},"{desc}"')
-                        else:
-                            print(f'      - {entry}')
+            print_skills_by_profile(skills_by_profile)
         if args.full and module.get('skills_by_profile_reasoning'):
             print(f'skills_by_profile_reasoning: {module["skills_by_profile_reasoning"]}')
         print()
@@ -704,7 +685,7 @@ def cmd_module(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
@@ -727,7 +708,7 @@ def cmd_commands(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
@@ -751,7 +732,7 @@ def cmd_resolve(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
@@ -871,7 +852,7 @@ def cmd_profiles(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except ModuleNotFoundInProjectError as e:
         modules = get_module_names(load_derived_data(args.project_dir))
@@ -902,7 +883,7 @@ def cmd_siblings(args) -> int:
 
         return 0
     except DataNotFoundError:
-        error_data_not_found(str(get_derived_path(args.project_dir)), "Run 'architecture.py discover' first")
+        require_derived_data(args.project_dir)  # prints error and exits
         return 1
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)

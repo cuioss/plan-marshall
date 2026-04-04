@@ -185,11 +185,10 @@ def test_test_summary_to_dict():
 
 def test_parse_log_file_not_found():
     """Raises FileNotFoundError for missing log file."""
-    try:
+    import pytest
+
+    with pytest.raises(FileNotFoundError):
         parse_log('/nonexistent/path/to/log.log')
-        assert False, 'Should have raised FileNotFoundError'
-    except FileNotFoundError:
-        pass  # Expected
 
 
 def test_parse_log_no_tests():
@@ -211,41 +210,3 @@ def test_parse_log_no_tests():
         assert test_summary is None
 
         Path(f.name).unlink()
-
-
-if __name__ == '__main__':
-    import traceback
-
-    tests = [
-        test_parse_log_success_returns_tuple,
-        test_parse_log_success_build_status,
-        test_parse_log_success_test_summary,
-        test_parse_log_success_issues_are_issue_objects,
-        test_parse_log_success_no_errors,
-        test_parse_log_failure_build_status,
-        test_parse_log_failure_has_errors,
-        test_parse_log_failure_error_fields,
-        test_parse_log_failure_has_warnings,
-        test_parse_log_failure_warning_category,
-        test_parse_log_failure_test_summary,
-        test_issue_to_dict,
-        test_test_summary_to_dict,
-        test_parse_log_file_not_found,
-        test_parse_log_no_tests,
-    ]
-
-    passed = 0
-    failed = 0
-
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception:
-            failed += 1
-            print(f'FAILED: {test.__name__}')
-            traceback.print_exc()
-            print()
-
-    print(f'\nResults: {passed} passed, {failed} failed')
-    sys.exit(0 if failed == 0 else 1)

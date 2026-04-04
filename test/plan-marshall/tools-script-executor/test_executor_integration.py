@@ -104,6 +104,7 @@ class ExecutorTestEnvironment:
             '{{SHARED_MODULE_DIRS}}',
             f"sys.path.insert(0, '{input_validation_dir}')" if input_validation_dir.is_dir() else '# (none in test)',
         )
+        executor_content = executor_content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
 
         self.executor_path = self.plan_dir / 'execute-script.py'
         self.executor_path.write_text(executor_content)
@@ -118,7 +119,7 @@ class ExecutorTestEnvironment:
         # Add specific scripts we want to test
         test_scripts = [
             ('plan-marshall', 'manage-references', 'manage-references.py'),
-            ('plan-marshall', 'manage-lifecycle', 'manage-lifecycle.py'),
+            ('plan-marshall', 'manage-status', 'manage_status.py'),
             ('plan-marshall', 'toon-usage', 'toon_parser.py'),
         ]
 

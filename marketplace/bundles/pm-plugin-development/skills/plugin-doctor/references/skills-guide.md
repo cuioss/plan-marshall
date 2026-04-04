@@ -2,6 +2,8 @@
 
 Skills are knowledge repositories providing standards, workflows, and reusable logic. Invoked via `Skill: bundle:skill-name`.
 
+> **Cross-references**: For skill creation workflow, see `plugin-create:skill-guide`. For progressive disclosure and relative path patterns, see `plugin-architecture:core-principles`. For skill pattern selection, see `plugin-architecture:skill-patterns`.
+
 ## Skill Directory Structure
 
 ```

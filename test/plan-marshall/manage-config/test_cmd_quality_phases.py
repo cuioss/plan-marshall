@@ -117,9 +117,7 @@ def test_execute_verify_get_field():
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-5-execute', 'get', '--field', 'verification_max_iterations'
-        )
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-5-execute', 'get', '--field', 'verification_max_iterations')
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert '5' in result.stdout
@@ -185,8 +183,12 @@ def test_finalize_set_steps():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps',
-            '--steps', 'default:commit-push,default:create-pr,default:archive-plan'
+            SCRIPT_PATH,
+            'plan',
+            'phase-6-finalize',
+            'set-steps',
+            '--steps',
+            'default:commit-push,default:create-pr,default:archive-plan',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -201,9 +203,7 @@ def test_finalize_set_steps_empty_error():
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps', '--steps', ''
-        )
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps', '--steps', '')
 
         assert 'error' in result.stdout.lower(), 'Should report error for empty steps'
 
@@ -213,10 +213,7 @@ def test_finalize_add_step():
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step',
-            '--step', 'pm-dev-java:java-post-pr'
-        )
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step', '--step', 'pm-dev-java:java-post-pr')
 
         assert result.success, f'Should succeed: {result.stderr}'
 
@@ -232,8 +229,14 @@ def test_finalize_add_step_with_position():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step',
-            '--step', 'project:finalize-step-custom', '--position', '0'
+            SCRIPT_PATH,
+            'plan',
+            'phase-6-finalize',
+            'add-step',
+            '--step',
+            'project:finalize-step-custom',
+            '--position',
+            '0',
         )
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -248,10 +251,7 @@ def test_finalize_add_step_duplicate_error():
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step',
-            '--step', 'default:commit-push'
-        )
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step', '--step', 'default:commit-push')
 
         assert 'error' in result.stdout.lower(), 'Should report error for duplicate step'
 
@@ -261,10 +261,7 @@ def test_finalize_remove_step():
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step',
-            '--step', 'default:sonar-roundtrip'
-        )
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step', '--step', 'default:sonar-roundtrip')
 
         assert result.success, f'Should succeed: {result.stderr}'
 
@@ -278,10 +275,7 @@ def test_finalize_remove_step_not_found_error():
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step',
-            '--step', 'bogus'
-        )
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step', '--step', 'bogus')
 
         assert 'error' in result.stdout.lower(), 'Should report error for missing step'
 

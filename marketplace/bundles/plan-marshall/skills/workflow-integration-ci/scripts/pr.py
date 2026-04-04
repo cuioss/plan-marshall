@@ -6,12 +6,14 @@ Uses tools-integration-ci ci router for provider abstraction.
 
 Usage:
     pr.py fetch-comments [--pr <number>] [--unresolved-only]
-    pr.py triage --comment <json>
+    pr.py triage --comment <json> [--context <code>]
+    pr.py triage-batch --comments <json-array>
     pr.py --help
 
 Subcommands:
     fetch-comments    Fetch PR review comments (GitHub or GitLab via ci router)
     triage           Triage a single PR review comment
+    triage-batch     Triage multiple PR review comments at once
 
 Examples:
     # Fetch comments for current branch's PR
@@ -22,190 +24,143 @@ Examples:
 
     # Triage a single comment
     pr.py triage --comment '{"id":"C1","body":"Please fix this","path":"src/Main.java","line":42}'
+
+    # Batch triage multiple comments
+    pr.py triage-batch --comments '[{"id":"C1","body":"Fix this"},{"id":"C2","body":"LGTM"}]'
 """
 
-import argparse
 import json
 import re
-import subprocess
 import sys
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from triage_helpers import (  # type: ignore[import-not-found]
+    ErrorCode,
+    cmd_triage_batch_handler,
+    cmd_triage_single,
+    compile_patterns_from_config,
+    create_workflow_cli,
+    load_skill_config,
+    make_error,
+    parse_json_arg,
+    print_error,
+    print_toon,
+    safe_main,
+)
 
 # ============================================================================
-# TRIAGE CONFIGURATION
+# TRIAGE CONFIGURATION (loaded from comment-patterns.json)
 # ============================================================================
 
-# Patterns for classification
-PATTERNS: dict[str, Any] = {
-    'code_change': {
-        'high': [
-            r'security',
-            r'vulnerability',
-            r'injection',
-            r'xss',
-            r'csrf',
-            r'bug',
-            r'error',
-            r'fix',
-            r'broken',
-            r'crash',
-            r'null pointer',
-            r'memory leak',
-        ],
-        'medium': [
-            r'please\s+(?:add|remove|change|fix|update)',
-            r'should\s+(?:be|have|use)',
-            r'missing',
-            r'incorrect',
-            r'wrong',
-        ],
-        'low': [r'rename', r'variable name', r'naming', r'typo', r'spelling', r'formatting', r'style'],
-    },
-    'explain': [r'why', r'explain', r'reasoning', r'rationale', r'how does', r'what is', r'can you clarify', r'\?'],
-    'ignore': [r'^lgtm', r'^approved', r'looks good', r'^nice', r'^thanks', r'\[bot\]', r'^nit:', r'^nitpick:'],
-}
+PATTERNS: dict[str, Any] = load_skill_config(__file__, 'comment-patterns.json')
+
+# Configurable thresholds (from comment-patterns.json or defaults)
+_THRESHOLDS = PATTERNS.get('thresholds', {})
+SUBSTANTIAL_COMMENT_LENGTH: int = _THRESHOLDS.get('substantial_comment_length', 100)
+CONTEXT_MATCH_MIN_LENGTH: int = _THRESHOLDS.get('context_match_min_length', 20)
+
+# Pre-compile regex patterns at load time to catch malformed patterns early
+# and avoid repeated compilation per classify_comment() call.
+_COMPILED_PATTERNS: dict[str, dict[str, list[re.Pattern]]] = {}
+for _category in ('code_change', 'explain', 'ignore'):
+    _COMPILED_PATTERNS[_category] = {}
+    for _priority, _pattern_list in PATTERNS.get(_category, {}).items():
+        _COMPILED_PATTERNS[_category][_priority] = compile_patterns_from_config(
+            _pattern_list,
+            f'comment-patterns.json [{_category}][{_priority}]',
+        )
 
 
 # ============================================================================
-# FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via ci router)
+# FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via direct import)
 # ============================================================================
 
-# CI router command prefix — the ci.py router reads ci.provider from marshal.json
-# and delegates to the correct provider script (github.py or gitlab.py)
-CI_ROUTER = 'python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci'
+# Provider resolution — imports ci.py's get_provider() to determine which
+# provider module to use, then imports the data-returning functions directly.
+# This avoids the previous subprocess chain (executor → pr.py → executor → ci.py)
+# while maintaining provider abstraction.
+#
+# Import coupling: This creates a compile-time dependency on tools-integration-ci
+# modules' internal API (get_provider(), view_pr_data(), fetch_pr_comments_data()).
+# If tools-integration-ci refactors these functions, pr.py must be updated in lockstep.
 
 
-def run_command(cmd: str, extra_args: list[str] | None = None) -> tuple[str, str, int]:
-    """Run a shell command and return stdout, stderr, return code."""
-    full_cmd = cmd
-    if extra_args:
-        full_cmd = f'{cmd} {" ".join(extra_args)}'
+def _get_provider_module():
+    """Resolve the CI provider and return the provider module.
 
+    Returns the provider module (github or gitlab), or None if not configured.
+
+    Contract: The returned module must expose these functions:
+    - view_pr_data() -> dict with 'status', 'pr_number' keys
+    - fetch_pr_comments_data(pr_number: int, unresolved_only: bool) -> dict with 'status', 'comments', 'total', 'unresolved' keys
+    If tools-integration-ci refactors these, pr.py must be updated in lockstep.
+    """
     try:
-        result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=60)
-        return result.stdout, result.stderr, result.returncode
-    except subprocess.TimeoutExpired:
-        return '', 'Command timed out', 124
-    except Exception as e:
-        return '', str(e), 1
+        from ci import get_provider  # type: ignore[import-not-found]
+    except ImportError as e:
+        print(f'WARNING: Cannot import ci module from tools-integration-ci: {e}', file=sys.stderr)
+        return None
+
+    provider = get_provider()
+    try:
+        if provider == 'github':
+            import github as mod  # type: ignore[import-not-found]
+        elif provider == 'gitlab':
+            import gitlab as mod  # type: ignore[import-not-found]
+        else:
+            return None
+    except ImportError as e:
+        print(f'WARNING: Cannot import {provider} module from tools-integration-ci: {e}', file=sys.stderr)
+        return None
+
+    # Validate contract: ensure required functions exist
+    for fn_name in ('view_pr_data', 'fetch_pr_comments_data'):
+        if not hasattr(mod, fn_name):
+            print(f'WARNING: {provider} module missing required function {fn_name}', file=sys.stderr)
+            return None
+
+    return mod
 
 
 def get_current_pr_number() -> int | None:
-    """Get PR number for current branch via ci router."""
-    stdout, stderr, returncode = run_command(f'{CI_ROUTER} pr view')
-    if returncode != 0:
+    """Get PR number for current branch via provider's view_pr_data()."""
+    mod = _get_provider_module()
+    if not mod:
         return None
 
-    # Parse pr_number from TOON output
-    for line in stdout.split('\n'):
-        if line.startswith('pr_number:'):
-            try:
-                return int(line.split(':', 1)[1].strip())
-            except ValueError:
-                return None
+    result = mod.view_pr_data()
+    if result.get('status') != 'success':
+        return None
 
-    return None
-
-
-def parse_toon_comments(toon_output: str) -> list[dict[str, Any]]:
-    """Parse TOON format comment output from tools-integration-ci.
-
-    Uses the TOON table header to map columns dynamically, so this parser
-    handles any column order and additional fields (e.g. thread_id).
-    """
-    comments: list[dict[str, Any]] = []
-    lines = toon_output.strip().split('\n')
-
-    in_comments_table = False
-    fields: list[str] = []
-    for line in lines:
-        # Detect start of comments table: comments[N]{field1,field2,...}:
-        if line.startswith('comments['):
-            in_comments_table = True
-            # Extract field names from header
-            brace_start = line.find('{')
-            brace_end = line.find('}')
-            if brace_start != -1 and brace_end != -1:
-                fields = line[brace_start + 1 : brace_end].split(',')
-            continue
-
-        # Skip non-table lines or empty lines
-        if not in_comments_table or not line.strip():
-            continue
-
-        # Strip leading whitespace (TOON table rows are indented with 2 spaces)
-        stripped = line.strip()
-
-        # Stop at next section (non-indented line that looks like a key: value)
-        if not line[0].isspace() and ':' in stripped:
-            break
-
-        # Parse tab-separated comment row using header fields
-        parts = stripped.split('\t')
-        if fields and len(parts) >= len(fields):
-            row = dict(zip(fields, parts, strict=False))
-            # Normalize known fields
-            comment: dict[str, Any] = {
-                'id': row.get('id', ''),
-                'author': row.get('author', ''),
-                'body': row.get('body', ''),
-                'path': row.get('path') if row.get('path') != '-' else None,
-                'line': int(row['line']) if row.get('line', '-') not in ('-', '') and row['line'].isdigit() else None,
-                'resolved': row.get('resolved', 'false').lower() == 'true',
-                'created_at': row.get('created_at'),
-            }
-            # Include thread_id if present
-            if 'thread_id' in row:
-                comment['thread_id'] = row['thread_id']
-            comments.append(comment)
-
-    return comments
+    pr_number = result.get('pr_number')
+    if pr_number is None or pr_number == 'unknown':
+        return None
+    try:
+        return int(pr_number)
+    except (ValueError, TypeError):
+        return None
 
 
 def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
-    """Fetch review comments for a PR using tools-integration-ci ci router."""
-    pr_comments_cmd = f'{CI_ROUTER} pr comments'
+    """Fetch review comments for a PR via provider's fetch_pr_comments_data()."""
+    mod = _get_provider_module()
+    if not mod:
+        return make_error(
+            'CI provider not configured. Run /marshall-steward first.', code=ErrorCode.PROVIDER_NOT_CONFIGURED
+        )
 
-    # Build command with arguments
-    extra_args = ['--pr-number', str(pr_number)]
-    if unresolved_only:
-        extra_args.append('--unresolved-only')
+    result = mod.fetch_pr_comments_data(pr_number, unresolved_only)
 
-    stdout, stderr, code = run_command(pr_comments_cmd, extra_args)
+    if result.get('status') != 'success':
+        return make_error(result.get('error', 'Failed to fetch PR comments'), code=ErrorCode.FETCH_FAILURE)
 
-    if code != 0:
-        return {'error': f'Failed to fetch PR comments: {stderr}', 'status': 'failure'}
-
-    # Parse TOON output
-    comments = parse_toon_comments(stdout)
-
-    # Extract metadata from TOON header
-    provider = 'unknown'
-    total = len(comments)
-    unresolved = sum(1 for c in comments if not c.get('resolved', False))
-
-    for line in stdout.split('\n'):
-        if line.startswith('provider:'):
-            provider = line.split(':', 1)[1].strip()
-        elif line.startswith('total:'):
-            try:
-                total = int(line.split(':', 1)[1].strip())
-            except ValueError:
-                pass
-        elif line.startswith('unresolved:'):
-            try:
-                unresolved = int(line.split(':', 1)[1].strip())
-            except ValueError:
-                pass
-
+    # Transform provider result into pr.py's expected format
     return {
         'pr_number': pr_number,
-        'provider': provider,
-        'comments': comments,
-        'total_comments': total,
-        'unresolved_count': unresolved,
+        'provider': result.get('provider', 'unknown'),
+        'comments': result.get('comments', []),
+        'total_comments': result.get('total', 0),
+        'unresolved_count': result.get('unresolved', 0),
         'status': 'success',
     }
 
@@ -217,17 +172,10 @@ def cmd_fetch_comments(args):
     if not pr_number:
         pr_number = get_current_pr_number()
         if not pr_number:
-            print(
-                serialize_toon(
-                    {'error': 'No PR found for current branch. Use --pr to specify.', 'status': 'failure'}
-                )
-            )
-            return 1
+            return print_error('No PR found for current branch. Use --pr to specify.', code=ErrorCode.NOT_FOUND)
 
     result = fetch_comments(pr_number, getattr(args, 'unresolved_only', False))
-    print(serialize_toon(result))
-
-    return 0 if result.get('status') == 'success' else 1
+    return print_toon(result)
 
 
 # ============================================================================
@@ -235,62 +183,142 @@ def cmd_fetch_comments(args):
 # ============================================================================
 
 
-def classify_comment(body: str) -> tuple[str, str, str]:
+CAMEL_CASE_MIN_LENGTH: int = _THRESHOLDS.get('camel_case_min_length', 4)
+
+# Pre-compiled verb patterns for suggest_implementation() — avoids
+# re-compiling regex on every call. Checked in specificity order.
+_VERB_PATTERNS: list[tuple[list[re.Pattern], str]] = [
+    ([re.compile(rf'\b{v}\b') for v in verbs], suggestion)
+    for verbs, suggestion in [
+        (['rename', 'refactor'], 'Rename/refactor as suggested'),
+        (['remove', 'delete', 'drop'], 'Remove indicated code'),
+        (['fix', 'resolve', 'correct'], 'Fix the issue indicated'),
+        (['add', 'include', 'create'], 'Add requested code/functionality'),
+        (['replace', 'swap', 'change', 'update'], 'Update code as requested'),
+        (['move', 'extract', 'split'], 'Restructure code as suggested'),
+    ]
+]
+
+
+def _looks_like_identifier(w: str) -> bool:
+    """Check if a word looks like a code identifier.
+
+    Matches words with underscores, dots, parens, or camelCase
+    (mixed upper/lower within a word, configurable min length).
+    """
+    clean = w.rstrip('.,;:)')
+    if '_' in clean or '.' in clean or '(' in clean:
+        return True
+    # camelCase: has both upper and lower, at least CAMEL_CASE_MIN_LENGTH chars
+    if len(clean) >= CAMEL_CASE_MIN_LENGTH and any(c.isupper() for c in clean[1:]) and any(c.islower() for c in clean):
+        return True
+    return False
+
+
+def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
     """Classify comment and determine action and priority.
 
-    Priority order: ignore → explain → code_change → default.
-    Explain is checked before code_change because questions containing
-    action words (e.g. "Why did you fix it this way?") should be
-    classified as questions, not code change requests.
+    Returns dict with 'action', 'priority', and 'reason' keys.
+
+    Priority order: code_change(high) → code_change(medium/low) → ignore → explain → default.
+    High-priority code changes (security, bugs) always win. Then actionable
+    requests. Ignore patterns are checked after code_change so that comments
+    like "LGTM, but please fix the typo" are classified as code_change, not
+    swallowed by the ignore match on "lgtm".
+
+    Args:
+        body: Comment body text.
+        context: Optional surrounding code context for better classification.
+            When provided, helps disambiguate comments that reference code patterns.
     """
     body_lower = body.lower()
 
-    # Check for ignore patterns first
-    for pattern in PATTERNS['ignore']:
-        if re.search(pattern, body_lower):
-            return 'ignore', 'none', 'Automated or acknowledgment comment'
-
-    # Check for explanation patterns before code_change — questions
-    # often contain action words ("fix", "change") that would otherwise
-    # match code_change patterns and cause misclassification.
-    for pattern in PATTERNS['explain']:
-        if re.search(pattern, body_lower):
-            return 'explain', 'low', 'Question or clarification request'
-
-    # Check for code change patterns with priority
+    # Check for code change patterns FIRST — actionable requests take
+    # priority over ignore/explain. This ensures "LGTM, but please fix
+    # the typo" is classified as code_change, not swallowed by ignore.
     for priority in ['high', 'medium', 'low']:
-        for pattern in PATTERNS['code_change'][priority]:
-            if re.search(pattern, body_lower):
-                return 'code_change', priority, f'Matches {priority} priority pattern: {pattern}'
+        for compiled in _COMPILED_PATTERNS['code_change'].get(priority, []):
+            if compiled.search(body_lower):
+                return {
+                    'action': 'code_change',
+                    'priority': priority,
+                    'reason': f'Matches {priority} priority pattern: {compiled.pattern}',
+                }
 
-    # Default: review comment without clear action signal
-    if len(body) > 100:
-        return 'code_change', 'low', 'Substantial review comment requires attention'
+    # Check for ignore patterns AFTER code_change — pure acknowledgments
+    # with no actionable content.
+    for priority, compiled_list in _COMPILED_PATTERNS['ignore'].items():
+        for compiled in compiled_list:
+            if compiled.search(body_lower):
+                return {'action': 'ignore', 'priority': priority, 'reason': 'Automated or acknowledgment comment'}
 
-    return 'ignore', 'none', 'Brief comment with no actionable content'
+    # Check for explanation patterns — only after ruling out code_change,
+    # so "Why did you fix it this way?" is correctly classified as explain
+    # rather than matching "fix" as code_change first (handled above) or
+    # matching "?" and missing code_change intent.
+    for priority, compiled_list in _COMPILED_PATTERNS['explain'].items():
+        for compiled in compiled_list:
+            if compiled.search(body_lower):
+                return {'action': 'explain', 'priority': priority, 'reason': 'Question or clarification request'}
+
+    # Standalone question mark — comment is a question but doesn't match
+    # explicit explain keywords. Check after code_change and explain patterns.
+    if '?' in body_lower:
+        return {'action': 'explain', 'priority': 'low', 'reason': 'Question or clarification request'}
+
+    # Context-aware classification: if code context is provided and the
+    # comment references specific code patterns, boost to code_change
+    if context and len(body) > CONTEXT_MATCH_MIN_LENGTH:
+        # Comment mentions something visible in the code context —
+        # likely a targeted review comment that needs action
+        context_lower = context.lower()
+        code_refs = [w for w in body.split() if _looks_like_identifier(w)]
+        if any(ref.lower().rstrip('.,;:)') in context_lower for ref in code_refs):
+            return {
+                'action': 'code_change',
+                'priority': 'medium',
+                'reason': 'Comment references code identifiers visible in context',
+            }
+
+    # Default: review comment without clear action signal.
+    # Longer comments (>100 chars) likely contain substantive feedback that
+    # warrants attention even without keyword matches. Short comments without
+    # recognizable patterns are typically drive-by acknowledgments.
+    if len(body) > SUBSTANTIAL_COMMENT_LENGTH:
+        return {
+            'action': 'code_change',
+            'priority': 'low',
+            'reason': f'Substantial review comment (>{SUBSTANTIAL_COMMENT_LENGTH} chars) requires attention',
+        }
+
+    return {'action': 'ignore', 'priority': 'low', 'reason': 'Brief comment with no actionable content'}
 
 
 def suggest_implementation(action: str, body: str, path: str | None, line: int | None) -> str | None:
-    """Generate implementation suggestion based on action type."""
+    """Generate implementation suggestion based on action type.
+
+    For code_change actions, extracts the most specific verb from the comment
+    body to produce a targeted suggestion. Falls back to a generic review
+    prompt when no verb is detected.
+    """
     if action == 'ignore':
         return None
 
+    location = f'{path}:{line}' if path and line is not None else (path or 'unspecified location')
+
     if action == 'explain':
-        return f'Reply to comment at {path}:{line} with explanation of design decision'
+        return f'Reply to comment at {location} with explanation of design decision'
 
-    # For code_change, try to extract specific action
+    # For code_change, extract the most specific action verb from the body.
+    # Uses word boundary matching to avoid false positives (e.g., "prefix" matching "fix").
+    # Checked in specificity order: targeted verbs first, then generic ones.
+    # Patterns are pre-compiled at module level (_VERB_PATTERNS) for performance.
     body_lower = body.lower()
+    for compiled_patterns, suggestion in _VERB_PATTERNS:
+        if any(p.search(body_lower) for p in compiled_patterns):
+            return f'{suggestion} at {location}'
 
-    if 'add' in body_lower:
-        return f'Add requested code/functionality at {path}:{line}'
-    elif 'remove' in body_lower or 'delete' in body_lower:
-        return f'Remove indicated code at {path}:{line}'
-    elif 'rename' in body_lower:
-        return f'Rename as suggested at {path}:{line}'
-    elif 'fix' in body_lower:
-        return f'Fix the issue indicated at {path}:{line}'
-    else:
-        return f'Review and address comment at {path}:{line}'
+    return f'Review and address comment at {location}'
 
 
 def triage_comment(comment: dict) -> dict:
@@ -300,18 +328,22 @@ def triage_comment(comment: dict) -> dict:
     path = comment.get('path')
     line = comment.get('line')
     author = comment.get('author', 'unknown')
+    context = comment.get('context')
 
     if not body:
         return {
             'comment_id': comment_id,
             'action': 'ignore',
             'reason': 'Empty comment body',
-            'priority': 'none',
+            'priority': 'low',
             'suggested_implementation': None,
             'status': 'success',
         }
 
-    action, priority, reason = classify_comment(body)
+    classification = classify_comment(body, context=context)
+    action = classification['action']
+    priority = classification['priority']
+    reason = classification['reason']
     suggestion = suggest_implementation(action, body, path, line)
 
     return {
@@ -320,7 +352,7 @@ def triage_comment(comment: dict) -> dict:
         'action': action,
         'reason': reason,
         'priority': priority,
-        'location': f'{path}:{line}' if path and line else None,
+        'location': f'{path}:{line}' if path and line is not None else None,
         'suggested_implementation': suggestion,
         'status': 'success',
     }
@@ -328,16 +360,19 @@ def triage_comment(comment: dict) -> dict:
 
 def cmd_triage(args):
     """Handle triage subcommand."""
-    try:
-        comment = json.loads(args.comment)
-    except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}', 'status': 'failure'}))
-        return 1
+    # Inject CLI --context into the comment JSON if provided
+    if getattr(args, 'context', None):
+        comment, rc = parse_json_arg(args.comment, '--comment')
+        if not rc and isinstance(comment, dict):
+            comment['context'] = args.context
+            return cmd_triage_single(json.dumps(comment), triage_comment)
+        # On parse failure, fall through to cmd_triage_single which reports the error
+    return cmd_triage_single(args.comment, triage_comment)
 
-    result = triage_comment(comment)
-    print(serialize_toon(result))
 
-    return 0 if result.get('status') == 'success' else 1
+def cmd_triage_batch(args):
+    """Handle triage-batch subcommand — triage multiple comments at once."""
+    return cmd_triage_batch_handler(args.comments, triage_comment, ['code_change', 'explain', 'ignore'])
 
 
 # ============================================================================
@@ -347,32 +382,43 @@ def cmd_triage(args):
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(
+    parser = create_workflow_cli(
         description='PR workflow operations',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   pr.py fetch-comments --pr 123
   pr.py triage --comment '{"id":"C1","body":"Please fix this"}'
 """,
+        subcommands=[
+            {
+                'name': 'fetch-comments',
+                'help': 'Fetch PR review comments (GitHub/GitLab)',
+                'handler': cmd_fetch_comments,
+                'args': [
+                    {'flags': ['--pr'], 'type': int, 'help': "PR number (default: current branch's PR)"},
+                    {'flags': ['--unresolved-only'], 'action': 'store_true', 'help': 'Only return unresolved comments'},
+                ],
+            },
+            {
+                'name': 'triage',
+                'help': 'Triage a single PR review comment',
+                'handler': cmd_triage,
+                'args': [
+                    {'flags': ['--comment'], 'required': True, 'help': 'JSON string with comment data'},
+                    {'flags': ['--context'], 'help': 'Surrounding code context for better classification'},
+                ],
+            },
+            {
+                'name': 'triage-batch',
+                'help': 'Triage multiple PR review comments at once',
+                'handler': cmd_triage_batch,
+                'args': [{'flags': ['--comments'], 'required': True, 'help': 'JSON array of comment objects'}],
+            },
+        ],
     )
-
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    # fetch-comments subcommand
-    fetch_parser = subparsers.add_parser('fetch-comments', help='Fetch PR review comments (GitHub/GitLab)')
-    fetch_parser.add_argument('--pr', type=int, help="PR number (default: current branch's PR)")
-    fetch_parser.add_argument('--unresolved-only', action='store_true', help='Only return unresolved comments')
-    fetch_parser.set_defaults(func=cmd_fetch_comments)
-
-    # triage subcommand
-    triage_parser = subparsers.add_parser('triage', help='Triage a single PR review comment')
-    triage_parser.add_argument('--comment', required=True, help='JSON string with comment data')
-    triage_parser.set_defaults(func=cmd_triage)
-
     args = parser.parse_args()
     return args.func(args)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(safe_main(main))

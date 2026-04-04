@@ -21,25 +21,38 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from file_ops import atomic_write_file, base_path  # type: ignore[import-not-found]
-from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from constants import FILE_WORK_METRICS, PHASES  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    atomic_write_file,
+    format_duration,
+    get_plan_dir,
+    now_utc_iso,
+    output_toon,
+    safe_main,
+)
+from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ignore[import-not-found]
 
-METRICS_FILE = 'work/metrics.toon'
+METRICS_FILE = FILE_WORK_METRICS
 METRICS_MD = 'metrics.md'
-PHASE_NAMES = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
+PHASE_NAMES = list(PHASES)
 
 
-def get_plan_dir(plan_id: str) -> Path:
-    return base_path('plans', plan_id)
+def _coerce_numeric(value: object) -> int | float | str:
+    """Try to coerce a value to int, then float, falling back to the original value."""
+    if not isinstance(value, str):
+        return value  # type: ignore[return-value]
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        pass
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        pass
+    return value
 
 
-def read_metrics(plan_id: str) -> dict:
-    metrics_path = get_plan_dir(plan_id) / METRICS_FILE
-    if not metrics_path.exists():
-        return {'phases': {}}
-    content = metrics_path.read_text(encoding='utf-8')
-    return parse_toon(content) if content.strip() else {'phases': {}}
+# get_plan_dir imported from file_ops
 
 
 def write_metrics(plan_id: str, data: dict) -> None:
@@ -107,20 +120,22 @@ def read_metrics_raw(plan_id: str) -> dict:
     return data
 
 
-def cmd_start_phase(args: argparse.Namespace) -> None:
-    plan_id = args.plan_id
+def cmd_start_phase(args: argparse.Namespace) -> int:
+    plan_id = require_valid_plan_id(args)
     phase = args.phase
 
-    if not is_valid_plan_id(plan_id):
-        print(serialize_toon({'status': 'error', 'message': f'Invalid plan_id: {plan_id}'}))
-        return
-
     if phase not in PHASE_NAMES:
-        print(serialize_toon({'status': 'error', 'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}'}))
-        return
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'invalid_phase',
+                'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+            }
+        )
+        return 1
 
     data = read_metrics_raw(plan_id)
-    now = datetime.now(UTC).isoformat()
+    now = now_utc_iso()
 
     if phase not in data['phases']:
         data['phases'][phase] = {}
@@ -130,28 +145,27 @@ def cmd_start_phase(args: argparse.Namespace) -> None:
 
     write_metrics(plan_id, data)
 
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': plan_id,
-        'phase': phase,
-        'start_time': now,
-    }))
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': plan_id,
+            'phase': phase,
+            'start_time': now,
+        }
+    )
+    return 0
 
 
-def cmd_end_phase(args: argparse.Namespace) -> None:
-    plan_id = args.plan_id
+def cmd_end_phase(args: argparse.Namespace) -> int:
+    plan_id = require_valid_plan_id(args)
     phase = args.phase
 
-    if not is_valid_plan_id(plan_id):
-        print(serialize_toon({'status': 'error', 'message': f'Invalid plan_id: {plan_id}'}))
-        return
-
     if phase not in PHASE_NAMES:
-        print(serialize_toon({'status': 'error', 'message': f'Invalid phase: {phase}'}))
-        return
+        output_toon({'status': 'error', 'error': 'invalid_phase', 'message': f'Invalid phase: {phase}'})
+        return 1
 
     data = read_metrics_raw(plan_id)
-    now = datetime.now(UTC).isoformat()
+    now = now_utc_iso()
 
     if phase not in data['phases']:
         data['phases'][phase] = {}
@@ -196,22 +210,19 @@ def cmd_end_phase(args: argparse.Namespace) -> None:
     if args.total_tokens is not None:
         result['total_tokens'] = args.total_tokens
 
-    print(serialize_toon(result))
+    output_toon(result)
+    return 0
 
 
-def cmd_generate(args: argparse.Namespace) -> None:
-    plan_id = args.plan_id
-
-    if not is_valid_plan_id(plan_id):
-        print(serialize_toon({'status': 'error', 'message': f'Invalid plan_id: {plan_id}'}))
-        return
+def cmd_generate(args: argparse.Namespace) -> int:
+    plan_id = require_valid_plan_id(args)
 
     data = read_metrics_raw(plan_id)
     phases = data.get('phases', {})
 
     if not phases:
-        print(serialize_toon({'status': 'error', 'message': 'No metrics data found'}))
-        return
+        output_toon({'status': 'error', 'error': 'no_data', 'message': 'No metrics data found'})
+        return 1
 
     # Build metrics.md content
     lines = []
@@ -235,29 +246,20 @@ def cmd_generate(args: argparse.Namespace) -> None:
             continue
         phase = phases[phase_name]
 
-        duration = phase.get('duration_seconds', 0)
-        if isinstance(duration, str):
-            try:
-                duration = float(duration)
-            except (ValueError, TypeError):
-                duration = 0.0
+        duration = _coerce_numeric(phase.get('duration_seconds', 0))
+        if not isinstance(duration, (int, float)):
+            duration = 0.0
         total_duration += duration
 
-        tokens = phase.get('total_tokens', 0)
-        if isinstance(tokens, str):
-            try:
-                tokens = int(tokens)
-            except (ValueError, TypeError):
-                tokens = 0
-        total_tokens += tokens
+        tokens = _coerce_numeric(phase.get('total_tokens', 0))
+        if not isinstance(tokens, (int, float)):
+            tokens = 0
+        total_tokens += int(tokens)
 
-        tool_uses = phase.get('tool_uses', 0)
-        if isinstance(tool_uses, str):
-            try:
-                tool_uses = int(tool_uses)
-            except (ValueError, TypeError):
-                tool_uses = 0
-        total_tool_uses += tool_uses
+        tool_uses = _coerce_numeric(phase.get('tool_uses', 0))
+        if not isinstance(tool_uses, (int, float)):
+            tool_uses = 0
+        total_tool_uses += int(tool_uses)
 
         duration_str = format_duration(duration) if duration else '-'
         tokens_str = f'{tokens:,}' if tokens else '-'
@@ -266,7 +268,9 @@ def cmd_generate(args: argparse.Namespace) -> None:
         lines.append(f'| {phase_name} | {duration_str} | {tokens_str} | {tool_uses_str} |')
 
     # Totals row
-    lines.append(f'| **Total** | **{format_duration(total_duration)}** | **{total_tokens:,}** | **{total_tool_uses}** |')
+    lines.append(
+        f'| **Total** | **{format_duration(total_duration)}** | **{total_tokens:,}** | **{total_tool_uses}** |'
+    )
     lines.append('')
 
     # Phase details
@@ -307,23 +311,22 @@ def cmd_generate(args: argparse.Namespace) -> None:
     md_path = get_plan_dir(plan_id) / METRICS_MD
     atomic_write_file(md_path, md_content)
 
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': plan_id,
-        'file': METRICS_MD,
-        'phases_recorded': len(phases),
-        'total_duration_seconds': round(total_duration, 1),
-        'total_tokens': total_tokens,
-    }))
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': plan_id,
+            'file': METRICS_MD,
+            'phases_recorded': len(phases),
+            'total_duration_seconds': round(total_duration, 1),
+            'total_tokens': total_tokens,
+        }
+    )
+    return 0
 
 
-def cmd_enrich(args: argparse.Namespace) -> None:
-    plan_id = args.plan_id
+def cmd_enrich(args: argparse.Namespace) -> int:
+    plan_id = require_valid_plan_id(args)
     session_id = args.session_id
-
-    if not is_valid_plan_id(plan_id):
-        print(serialize_toon({'status': 'error', 'message': f'Invalid plan_id: {plan_id}'}))
-        return
 
     # Find JSONL transcript file
     projects_dir = Path.home() / '.claude' / 'projects'
@@ -348,13 +351,15 @@ def cmd_enrich(args: argparse.Namespace) -> None:
                     break
 
     if not transcript_path:
-        print(serialize_toon({
-            'status': 'success',
-            'plan_id': plan_id,
-            'enriched': False,
-            'message': f'JSONL transcript not found for session {session_id}',
-        }))
-        return
+        output_toon(
+            {
+                'status': 'success',
+                'plan_id': plan_id,
+                'enriched': False,
+                'message': f'JSONL transcript not found for session {session_id}',
+            }
+        )
+        return 0
 
     # Parse JSONL for token usage
     total_input = 0
@@ -379,11 +384,14 @@ def cmd_enrich(args: argparse.Namespace) -> None:
                 except (json.JSONDecodeError, AttributeError):
                     continue
     except OSError:
-        print(serialize_toon({
-            'status': 'error',
-            'message': f'Cannot read transcript: {transcript_path}',
-        }))
-        return
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'read_failed',
+                'message': f'Cannot read transcript: {transcript_path}',
+            }
+        )
+        return 1
 
     # Update metrics with enriched data
     data = read_metrics_raw(plan_id)
@@ -391,46 +399,38 @@ def cmd_enrich(args: argparse.Namespace) -> None:
     data['session_output_tokens'] = total_output
     data['session_total_tokens'] = total_input + total_output
     data['session_message_count'] = message_count
-    data['updated'] = datetime.now(UTC).isoformat()
+    data['updated'] = now_utc_iso()
 
     write_metrics(plan_id, data)
 
-    print(serialize_toon({
-        'status': 'success',
-        'plan_id': plan_id,
-        'enriched': True,
-        'input_tokens': total_input,
-        'output_tokens': total_output,
-        'total_tokens': total_input + total_output,
-        'message_count': message_count,
-    }))
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': plan_id,
+            'enriched': True,
+            'input_tokens': total_input,
+            'output_tokens': total_output,
+            'total_tokens': total_input + total_output,
+            'message_count': message_count,
+        }
+    )
+    return 0
 
 
-def format_duration(seconds: float) -> str:
-    if seconds < 60:
-        return f'{seconds:.1f}s'
-    minutes = int(seconds // 60)
-    remaining = seconds % 60
-    if minutes < 60:
-        return f'{minutes}m {remaining:.0f}s'
-    hours = int(minutes // 60)
-    remaining_min = minutes % 60
-    return f'{hours}h {remaining_min}m'
-
-
-def main() -> None:
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(description='Plan metrics collection and reporting')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # start-phase
     sp = subparsers.add_parser('start-phase', help='Record phase start timestamp')
-    sp.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(sp)
     sp.add_argument('--phase', required=True, help='Phase name (e.g., 1-init)')
     sp.set_defaults(func=cmd_start_phase)
 
     # end-phase
     ep = subparsers.add_parser('end-phase', help='Record phase end timestamp and optional token data')
-    ep.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(ep)
     ep.add_argument('--phase', required=True, help='Phase name')
     ep.add_argument('--total-tokens', type=int, default=None, help='Total tokens from Task agent <usage>')
     ep.add_argument('--duration-ms', type=int, default=None, help='Duration in ms from Task agent <usage>')
@@ -439,17 +439,18 @@ def main() -> None:
 
     # generate
     gp = subparsers.add_parser('generate', help='Generate metrics.md from collected data')
-    gp.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(gp)
     gp.set_defaults(func=cmd_generate)
 
     # enrich
     enr = subparsers.add_parser('enrich', help='Enrich metrics from JSONL transcript')
-    enr.add_argument('--plan-id', required=True, help='Plan identifier')
+    add_plan_id_arg(enr)
     enr.add_argument('--session-id', required=True, help='Session ID for transcript lookup')
     enr.set_defaults(func=cmd_enrich)
 
     args = parser.parse_args()
-    args.func(args)
+    result: int = args.func(args)
+    return result
 
 
 if __name__ == '__main__':

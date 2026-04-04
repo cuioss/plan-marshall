@@ -48,7 +48,7 @@ def load_extension(bundle_name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    # Return Extension instance (clean slate - no backward compat functions)
+    # Return Extension instance
     if hasattr(module, 'Extension'):
         return module.Extension()
 
@@ -689,8 +689,16 @@ def test_requirements_not_applicable():
 def test_applies_to_module_result_structure():
     """All applies_to_module results have required keys."""
     required_keys = ['applicable', 'confidence', 'signals', 'additive_to', 'skills_by_profile']
-    bundles = ['pm-dev-java', 'pm-dev-frontend', 'pm-dev-java-cui', 'pm-dev-frontend-cui',
-               'plan-marshall', 'pm-plugin-development', 'pm-documents', 'pm-requirements']
+    bundles = [
+        'pm-dev-java',
+        'pm-dev-frontend',
+        'pm-dev-java-cui',
+        'pm-dev-frontend-cui',
+        'plan-marshall',
+        'pm-plugin-development',
+        'pm-documents',
+        'pm-requirements',
+    ]
 
     for bundle in bundles:
         ext = load_extension(bundle)
@@ -999,7 +1007,9 @@ def test_all_extensions_have_unique_domain_keys():
         except FileNotFoundError:
             pass  # Skip bundles without extensions
 
-    assert len(domain_keys) == 11, f'Should have 11 unique domain keys, got {len(domain_keys)}: {sorted(domain_keys.keys())}'
+    assert len(domain_keys) == 11, (
+        f'Should have 11 unique domain keys, got {len(domain_keys)}: {sorted(domain_keys.keys())}'
+    )
 
 
 def test_all_extensions_have_required_functions():

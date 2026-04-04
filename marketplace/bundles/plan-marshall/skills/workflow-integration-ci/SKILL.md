@@ -4,9 +4,9 @@ description: PR review response workflow - fetch comments, triage, and respond t
 user-invocable: false
 ---
 
-# PR Workflow Skill (Provider-Agnostic)
+# CI Integration Workflow Skill
 
-Handles PR review comment workflows - fetching comments, triaging them, and generating appropriate responses. Works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction.
+Handles PR review comment workflows — fetching comments and triaging them into action categories (code_change, explain, ignore). Provider-agnostic: works with both GitHub and GitLab via the unified `tools-integration-ci` abstraction. The script provides fetch and triage operations; the calling LLM implements responses and thread resolution.
 
 ## Enforcement
 
@@ -14,38 +14,50 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
 **Prohibited actions:**
 - Never resolve review comments without addressing the reviewer's concern
-- Never force-push or amend published commits in response to reviews
 - Never dismiss reviews without documented justification
 
 **Constraints:**
-- Each workflow step that invokes a script has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 - Review comment responses must explain the fix or provide rationale for disagreement
 - CI wait timeout must be respected with user prompt on expiry
 
-## What This Skill Provides
+## Parameters
 
-### Workflows (Absorbs 2 Agents)
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `pr` | int | no | auto-detect | PR number (auto-detects current branch's PR if omitted) |
+| `unresolved-only` | bool | no | false | Only return unresolved comments (fetch-comments) |
 
-1. **Fetch Comments Workflow** - Retrieves PR review comments
-   - Uses `tools-integration-ci` abstraction (GitHub or GitLab)
-   - Replaces: review-comment-fetcher agent
+## Prerequisites
 
-2. **Handle Review Workflow** - Processes and responds to comments
-   - Triages each comment for appropriate action
-   - Implements code changes or generates explanations
-   - Replaces: review-comment-triager agent
+```
+Skill: plan-marshall:tools-integration-ci
+```
 
-3. **Automated Review Lifecycle** - Complete CI-wait → fetch → triage → respond → resolve cycle
-   - Used by phase-6-finalize when `3_automated_review == true`
-   - Orchestrates Workflows 1 and 2 with CI wait and thread resolution
+The `tools-integration-ci` skill provides the CI router (`ci.py`, `github.py`, `gitlab.py`) for provider abstraction.
 
-## When to Activate This Skill
+## Architecture
 
-- Responding to PR review comments
-- Processing review feedback
-- Implementing reviewer-requested changes
-- Generating explanations for reviewers
-- Running automated review lifecycle during finalize phase
+```
+workflow-integration-ci (PR comment workflow)
+  ├─> tools-integration-ci (provider abstraction: GitHub/GitLab)
+  └─> triage_helpers (ref-toon-format) — shared triage, error handling
+```
+
+## Usage Examples
+
+```bash
+# Fetch comments for current branch's PR
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments
+
+# Fetch comments for specific PR
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments --pr 123
+
+# Triage a single comment
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{"id":"C1","body":"Fix this","path":"src/Main.java","line":42}'
+
+# Batch triage multiple comments
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{"id":"C1","body":"Bug here"},{"id":"C2","body":"LGTM"}]'
+```
 
 ## Workflows
 
@@ -59,30 +71,35 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
 1. **Get PR Comments via CI Integration**
 
-   Use the `pr-comments` command from marshal.json (provider-agnostic):
+   Use the workflow script (recommended — handles provider detection and output structuring):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments [--pr {number}]
+   ```
+
+   Alternatively, use the low-level CI router directly (when you only need raw comments without structuring):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments \
        --pr-number {number} [--unresolved-only]
    ```
 
-   Or use the workflow script for additional processing:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments [--pr {number}]
-   ```
-
    Output (TOON format):
    ```toon
-   status: success
-   operation: pr_comments
-   provider: github|gitlab
    pr_number: 123
-   total: N
-   unresolved: N
-
-   comments[N]{id,thread_id,author,body,path,line,resolved,created_at}:
-   c1	PRRT_abc	alice	Fix security issue	src/Auth.java	42	false	2025-01-15T10:30:00Z
+   provider: github|gitlab
+   total_comments: N
+   unresolved_count: N
+   comments:
+     - id: PRRC_abc
+       thread_id: PRRT_abc
+       author: alice
+       body: Fix security issue
+       path: src/Auth.java
+       line: 42
+       resolved: false
+       created_at: 2025-01-15T10:30:00Z
+   status: success
    ```
 
 2. **Return Comment List**
@@ -97,28 +114,46 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
 
 **Input:** PR number or comment list from Fetch workflow
 
+**GitHub GraphQL ID Format Rules:**
+
+| Operation | Parameter | ID Field | Format Example |
+|-----------|-----------|----------|----------------|
+| `thread-reply --thread-id` | Comment's `id` field | GraphQL node ID | `PRRC_kwDO...` |
+| `resolve-thread --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
+
+**NEVER use numeric IDs** — GitHub GraphQL requires global node IDs.
+
 **Steps:**
 
 1. **Get Comments**
-   If not provided, use Fetch Comments workflow first.
+   If not provided, use Fetch Comments workflow with `--unresolved-only` (resolved comments don't need action).
 
-2. **Triage Each Comment**
-   For each unresolved comment:
+2. **Triage All Comments (Batch)**
+   Collect all unresolved comments into a JSON array and triage in a single call:
 
    Script: `plan-marshall:workflow-integration-ci`
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{json}'
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{"id":"PRRC_abc","body":"Fix this bug","path":"src/Main.java","line":42,"author":"alice"},{"id":"PRRC_def","body":"LGTM","path":null,"line":null,"author":"bob"}]'
    ```
 
-   Script outputs decision:
+   Script outputs all decisions at once:
    ```toon
-   comment_id: ...
-   action: code_change|explain|ignore
-   reason: ...
-   priority: high|medium|low|none
-   suggested_implementation: ...
+   results[N]:
+     - comment_id: ...
+       action: code_change|explain|ignore
+       reason: ...
+       priority: high|medium|low
+       suggested_implementation: ...
+   summary:
+     total: N
+     code_change: N
+     explain: N
+     ignore: N
+   status: success
    ```
+
+   For single-comment edge cases, `triage --comment '{json}'` is also available.
 
 3. **Process by Action Type**
 
@@ -134,9 +169,18 @@ Handles PR review comment workflows - fetching comments, triaging them, and gene
      python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply \
          --pr-number {pr} --body "..."
      ```
+   - Resolve the thread after replying:
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
+         --pr-number {pr} --thread-id {thread_id}
+     ```
 
    **For ignore:**
-   - No action required
+   - Resolve the thread without replying (convention: pure acknowledgments like "LGTM" and bot comments do not need a response):
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
+         --pr-number {pr} --thread-id {thread_id}
+     ```
    - Log as skipped
 
 4. **Group by Priority**
@@ -156,121 +200,6 @@ files_modified[1]:
   - ...
 status: success
 ```
-
----
-
-### Workflow 3: Automated Review Lifecycle
-
-**Purpose:** Complete automated review cycle for a PR — wait for CI, fetch review comments, triage, respond, and resolve threads. Used by phase-6-finalize when `3_automated_review == true`.
-
-**Input:**
-- `plan_id` — for logging and Q-Gate findings
-- `pr_number` — PR number (from phase-6-finalize Step 4 or pr-view)
-- `review_bot_buffer_seconds` — seconds to wait after CI for review bots (from config)
-
-**Steps:**
-
-1. **Wait for CI**
-
-   Use the built-in `ci wait` command which handles polling internally:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
-     --pr-number {pr_number}
-   ```
-
-   **Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
-
-   - **`final_status: success`** → proceed to step 2
-   - **`final_status: failure`** → return `{status: ci_failure, details: ...}` for loop-back
-   - **`status: timeout`** → ask user (continue/skip/abort)
-
-2. **Buffer for Review Bots**
-
-   Wait for automated review bots (Gemini Code Assist, etc.) to post comments:
-
-   ```bash
-   sleep {review_bot_buffer_seconds}
-   ```
-
-3. **Fetch Comments**
-
-   Use Workflow 1 (Fetch Comments) with `--unresolved-only`:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-comments --pr {pr_number} --unresolved-only
-   ```
-
-4. **Triage Each Comment**
-
-   Use Workflow 2 (Handle Review) triage for each unresolved comment:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{comment_json}'
-   ```
-
-5. **Process by Action Type**
-
-   **ID format rules** (from fetch-comments output):
-   - `thread-reply --thread-id`: Use the comment's `id` field (GraphQL node ID, format: `PRRC_kwDO...`). This is the `inReplyTo` target.
-   - `resolve-thread --thread-id`: Use the `thread_id` field (GraphQL node ID, format: `PRRT_kwDO...`).
-   - NEVER use numeric IDs — GitHub GraphQL requires global node IDs.
-
-   For each triaged comment:
-
-   **code_change** (requires implementation):
-   - Persist as Q-Gate finding:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
-       qgate add --plan-id {plan_id} --phase 6-finalize --source qgate \
-       --type pr-comment --title "{comment summary}" \
-       --detail "{comment body} at {path}:{line}"
-     ```
-   - Reply acknowledging the finding:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
-         --pr-number {pr_number} --thread-id {comment_id} --body "Acknowledged — creating fix task."
-     ```
-
-   **explain** (reply with explanation):
-   - Generate explanation based on code context
-   - Reply to thread:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
-         --pr-number {pr_number} --thread-id {comment_id} --body "{explanation}"
-     ```
-   - Resolve thread:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
-         --pr-number {pr_number} --thread-id {thread_id}
-     ```
-
-   **ignore** (dismiss):
-   - Resolve thread:
-     ```bash
-     python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr resolve-thread \
-         --pr-number {pr_number} --thread-id {thread_id}
-     ```
-
-6. **Return Summary**
-
-**Output:**
-```toon
-status: success
-pr_number: {pr_number}
-ci_status: success
-comments_total: {N}
-comments_unresolved: {N}
-processed:
-  code_changes: {N}
-  explanations: {N}
-  ignored: {N}
-threads_resolved: {N}
-loop_back_needed: {true|false}
-findings_created: {N}
-```
-
-If `loop_back_needed == true`, phase-6-finalize creates fix tasks and loops back to phase-5-execute.
 
 ---
 
@@ -300,22 +229,48 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr fetch-c
 python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage --comment '{"id":"...", "body":"...", ...}'
 ```
 
+**Optional:** Pass `--context` with surrounding code to improve classification accuracy for ambiguous comments:
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage \
+    --comment '{"id":"C1", "body":"This getValue call..."}' \
+    --context "public String getValue() { return this.value; }"
+```
+
+The context is injected into the comment object's `context` field. Comments longer than 20 characters that reference identifiers found in the context are boosted from `ignore` to `code_change`. Short comments (<20 chars) skip context matching since they rarely contain meaningful code references.
+
 **Output:** TOON with action decision
+
+### pr.py triage-batch
+
+**Purpose:** Triage multiple comments in a single call, reducing subprocess overhead.
+
+**Usage:**
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-ci:pr triage-batch --comments '[{"id":"C1", "body":"..."}, ...]'
+```
+
+**Output:** TOON with results array and summary counts
 
 ## Comment Classification
 
-| Pattern | Action | Priority |
-|---------|--------|----------|
-| security, vulnerability, injection | code_change | high |
-| bug, error, fix, broken | code_change | high |
-| please add/remove/change | code_change | medium |
-| rename, variable name, typo | code_change | low |
-| why, explain, reasoning, ? | explain | low |
-| lgtm, approved, looks good | ignore | none |
+Classification patterns are data-driven — loaded from `standards/comment-patterns.json`. Classification priority: `code_change(high)` → `code_change(medium/low)` → `ignore` → `explain`, so actionable content always wins (e.g., "LGTM, but please fix the typo" → `code_change`). To add or update patterns, edit `standards/comment-patterns.json` instead of the script.
 
-## Integration
+For triage override guidance, see `ref-workflow-architecture` → "Triage Override Guidance".
 
-### Related Skills
-- **workflow-integration-sonar** - Often used together in PR workflows
-- **workflow-integration-git** - Commits changes after responses
-- **workflow-pr-doctor** - Orchestrates this skill with Sonar and git workflows
+## Error Handling
+
+| Failure | Action |
+|---------|--------|
+| fetch-comments failure | Report error to caller with stderr details. Do not proceed to triage. |
+| triage failure | Log warning, skip the comment, continue processing remaining comments. |
+| CI router failure (thread-reply, resolve-thread) | Log warning, continue — replies and resolutions are best-effort. |
+
+## Standards (Load On-Demand)
+
+| Standard | When to Load |
+|----------|-------------|
+| `standards/comment-patterns.json` | Adding/updating classification patterns or thresholds |
+
+## Related
+
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Called by: `plan-marshall:workflow-pr-doctor` (review comment handling). Related: `plan-marshall:tools-integration-ci` (provider abstraction).

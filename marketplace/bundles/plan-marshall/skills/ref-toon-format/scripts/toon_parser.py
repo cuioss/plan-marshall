@@ -7,10 +7,14 @@ encoding optimized for LLM token efficiency.
 
 Supports:
 - Simple key-value pairs (key: value)
-- Nested objects via indentation
+- Nested objects via indentation (2-space indent only)
 - Uniform arrays with headers (items[N]{field1,field2}:)
 - Comments (#)
 - Multi-line values (|)
+
+Limitations:
+- Only 2-space indentation is supported for nesting (not tabs or 4-space)
+- Percentage values (e.g., '95%') are parsed as int (lossy — '95%' becomes 95)
 
 Stdlib-only - no external dependencies.
 
@@ -22,6 +26,15 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any
+
+__version__ = '3.0'
+
+__all__ = [
+    'ToonParseError',
+    'parse_toon',
+    'parse_toon_table',
+    'serialize_toon',
+]
 
 
 class ToonParseError(Exception):
@@ -379,6 +392,43 @@ def parse_toon(content: str) -> dict[str, Any]:
         ) from e
 
 
+def parse_toon_table(content: str, key: str, *, null_markers: set[str] | None = None) -> list[dict[str, Any]]:
+    """Extract a uniform array table from TOON content.
+
+    Convenience wrapper around parse_toon() for extracting a single table
+    from TOON output. Useful when a script returns TOON with a table and
+    the caller only needs the table rows.
+
+    Args:
+        content: TOON formatted string
+        key: Key of the uniform array to extract (e.g., 'comments', 'issues')
+        null_markers: Optional set of value strings to convert to None
+                      (e.g., {'-', '~'} for tabular data where '-' means empty)
+
+    Returns:
+        List of dictionaries from the table, or empty list if key not found
+
+    Example:
+        >>> toon = '''
+        ... status: success
+        ... total: 2
+        ... users[2]{id,name,active}:
+        ... 1\\tAlice\\ttrue
+        ... 2\\t-\\tfalse
+        ... '''
+        >>> parse_toon_table(toon, 'users', null_markers={'-'})
+        [{'id': 1, 'name': None, 'active': True}, {'id': 2, 'name': None, 'active': False}]
+    """
+    parsed = parse_toon(content)
+    table = parsed.get(key, [])
+    if not isinstance(table, list):
+        return []
+    rows = [row for row in table if isinstance(row, dict)]
+    if null_markers:
+        return [{k: None if v in null_markers else v for k, v in row.items()} for row in rows]
+    return rows
+
+
 def _serialize_value(value: Any, table_separator: str = ',') -> str:
     """Serialize a Python value to TOON format.
 
@@ -403,6 +453,8 @@ def _serialize_value(value: Any, table_separator: str = ',') -> str:
             or ':' in value
             or '\n' in value
             or '"' in value
+            or value.startswith('#')
+            or value.startswith('- ')
             or value in ('true', 'false', 'null', '')
             or re.match(r'^-?\d+$', value)
             or re.match(r'^-?\d+\.\d+$', value)
@@ -494,40 +546,3 @@ def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str =
             lines.append(f'{prefix}{key}: {_serialize_value(value)}')
 
     return '\n'.join(lines)
-
-
-if __name__ == '__main__':
-    # Quick self-test
-    print('toon_parser.py - TOON Parser Module')
-    print('=' * 50)
-
-    test_toon = """
-# Example TOON document
-name: Alice
-age: 30
-active: true
-score: 95.5
-
-metadata:
-  created: 2025-12-02
-  version: 1.0
-
-roles[2]{id,name,level}:
-1,admin,10
-2,user,5
-
-tags[3]:
-- python
-- toon
-- parser
-"""
-
-    print('\nInput TOON:')
-    print(test_toon)
-
-    parsed = parse_toon(test_toon)
-    print('\nParsed Python dict:')
-    print(parsed)
-
-    print('\nRe-serialized TOON:')
-    print(serialize_toon(parsed))

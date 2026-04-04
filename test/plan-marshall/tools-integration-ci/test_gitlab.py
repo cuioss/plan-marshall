@@ -230,5 +230,6 @@ def test_pr_comments_no_body_truncation():
     with open(SCRIPT_PATH) as f:
         source = f.read()
     # The TOON output section for pr_comments should normalize but not truncate
-    assert "['body'].replace('\\t', ' ').replace('\\n', ' ')[:100]" not in source, \
+    assert "['body'].replace('\\t', ' ').replace('\\n', ' ')[:100]" not in source, (
         'Comment body is still truncated at 100 chars — remove [:100]'
+    )

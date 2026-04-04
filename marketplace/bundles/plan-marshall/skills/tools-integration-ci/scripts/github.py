@@ -50,53 +50,49 @@ Output: TOON format
 
 import argparse
 import json
-import subprocess
 import sys
-import time
-from datetime import UTC, datetime
 from typing import Any
 
+from ci_base import (  # type: ignore[import-not-found]
+    add_pr_create_args,
+    build_parser,
+    check_auth_cli,
+    compute_elapsed,
+    compute_total_elapsed,
+    dispatch,
+    make_pr_number_handler,
+    make_simple_handler,
+    output_error,
+    poll_until,
+    run_cli,
+    truncate_log_content,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+# ---------------------------------------------------------------------------
+# CLI wrappers
+# ---------------------------------------------------------------------------
 
 
 def run_gh(args: list[str], capture_json: bool = False, timeout: int = 60) -> tuple[int, str, str]:
     """Run gh CLI command and return (returncode, stdout, stderr)."""
-    cmd = ['gh'] + args
-    if capture_json:
-        cmd.extend(['--json'] if '--json' not in args else [])
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except FileNotFoundError:
-        return 127, '', 'gh CLI not found. Install from https://cli.github.com/'
-    except subprocess.TimeoutExpired:
-        return 124, '', 'Command timed out'
-    except Exception as e:
-        return 1, '', str(e)
+    return run_cli(
+        'gh',
+        args,
+        capture_json=capture_json,
+        timeout=timeout,
+        not_found_msg='gh CLI not found. Install from https://cli.github.com/',
+    )
 
 
 def check_auth() -> tuple[bool, str]:
     """Check if gh is authenticated. Returns (is_authenticated, error_message)."""
-    returncode, _, stderr = run_gh(['auth', 'status'])
-    if returncode != 0:
-        return False, "Not authenticated. Run 'gh auth login' first."
-    return True, ''
+    return check_auth_cli('gh', "Not authenticated. Run 'gh auth login' first.", run_gh)
 
 
-def output_error(operation: str, error: str, context: str = '') -> int:
-    """Output error in TOON format to stderr."""
-    print('status: error', file=sys.stderr)
-    print(f'operation: {operation}', file=sys.stderr)
-    print(f'error: {error}', file=sys.stderr)
-    if context:
-        print(f'context: {context}', file=sys.stderr)
-    return 1
+# ---------------------------------------------------------------------------
+# Provider-specific helpers
+# ---------------------------------------------------------------------------
 
 
 def get_repo_info() -> tuple[str | None, str | None]:
@@ -140,6 +136,11 @@ def run_graphql(query: str, variables: dict) -> tuple[int, dict | None, str]:
         return 1, None, f'Failed to parse GraphQL response: {stdout[:100]}'
 
 
+# ---------------------------------------------------------------------------
+# Command handlers
+# ---------------------------------------------------------------------------
+
+
 def cmd_pr_create(args: argparse.Namespace) -> int:
     """Handle 'pr create' subcommand."""
     # Check auth
@@ -180,34 +181,57 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
             pass
 
     # Output TOON
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_create',
-        'pr_number': pr_number,
-        'pr_url': pr_url,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_create',
+                'pr_number': pr_number,
+                'pr_url': pr_url,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
-def cmd_pr_view(args: argparse.Namespace) -> int:
-    """Handle 'pr view' subcommand - get PR for current branch."""
+def view_pr_data() -> dict:
+    """Fetch PR data for current branch, returning structured dict.
+
+    Returns dict with 'status' key ('success' or 'error').
+    Importable by other scripts for direct data access without subprocess.
+    """
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_view', err)
+        return {'status': 'error', 'operation': 'pr_view', 'error': err}
 
     returncode, stdout, stderr = run_gh(
-        ['pr', 'view', '--json',
-         'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision']
+        [
+            'pr',
+            'view',
+            '--json',
+            'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision',
+        ]
     )
     if returncode != 0:
-        return output_error('pr_view', 'No PR found for current branch', stderr.strip())
+        return {
+            'status': 'error',
+            'operation': 'pr_view',
+            'error': 'No PR found for current branch',
+            'context': stderr.strip(),
+        }
 
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return output_error('pr_view', 'Failed to parse gh output', stdout[:100])
+        return {
+            'status': 'error',
+            'operation': 'pr_view',
+            'error': 'Failed to parse gh output',
+            'context': stdout[:100],
+        }
 
-    print(serialize_toon({
+    return {
         'status': 'success',
         'operation': 'pr_view',
         'pr_number': data.get('number', 'unknown'),
@@ -220,7 +244,17 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
         'mergeable': data.get('mergeable', 'unknown').lower() if data.get('mergeable') else 'unknown',
         'merge_state': data.get('mergeStateStatus', 'unknown').lower() if data.get('mergeStateStatus') else 'unknown',
         'review_decision': data.get('reviewDecision', 'none').lower() if data.get('reviewDecision') else 'none',
-    }, table_separator='\t'))
+    }
+
+
+def cmd_pr_view(args: argparse.Namespace) -> int:
+    """Handle 'pr view' subcommand - get PR for current branch."""
+    result = view_pr_data()
+    if result.get('status') != 'success':
+        return output_error(
+            result.get('operation', 'pr_view'), result.get('error', 'Unknown error'), result.get('context', '')
+        )
+    print(serialize_toon(result, table_separator='\t'))
     return 0
 
 
@@ -231,9 +265,12 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
         return output_error('pr_list', err)
 
     gh_args = [
-        'pr', 'list',
-        '--json', 'number,url,title,state,headRefName,baseRefName',
-        '--state', args.state,
+        'pr',
+        'list',
+        '--json',
+        'number,url,title,state,headRefName,baseRefName',
+        '--state',
+        args.state,
     ]
     if args.head:
         gh_args.extend(['--head', args.head])
@@ -258,35 +295,28 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
         }
         for pr in prs
     ]
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_list',
-        'total': len(prs),
-        'state_filter': args.state,
-        'head_filter': args.head or '',
-        'prs': pr_list,
-    }, table_separator='\t'))
-    return 0
-
-
-def cmd_pr_reply(args: argparse.Namespace) -> int:
-    """Handle 'pr reply' subcommand - post a comment on a PR."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_reply', err)
-
-    returncode, stdout, stderr = run_gh(
-        ['pr', 'comment', str(args.pr_number), '--body', args.body]
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_list',
+                'total': len(prs),
+                'state_filter': args.state,
+                'head_filter': args.head or '',
+                'prs': pr_list,
+            },
+            table_separator='\t',
+        )
     )
-    if returncode != 0:
-        return output_error('pr_reply', f'Failed to comment on PR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_reply',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
     return 0
+
+
+cmd_pr_reply = make_pr_number_handler(
+    'pr_reply',
+    lambda args: ['pr', 'comment', str(args.pr_number), '--body', args.body],
+    run_gh,
+    check_auth,
+)
 
 
 RESOLVE_THREAD_MUTATION = """
@@ -317,11 +347,16 @@ def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
     if returncode != 0 or data is None:
         return output_error('pr_resolve_thread', f'Failed to resolve thread: {err}')
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_resolve_thread',
-        'thread_id': args.thread_id,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_resolve_thread',
+                'thread_id': args.thread_id,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -352,12 +387,17 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> int:
     if returncode != 0 or data is None:
         return output_error('pr_thread_reply', f'Failed to reply to thread: {err}')
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_thread_reply',
-        'pr_number': args.pr_number,
-        'thread_id': args.thread_id,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_thread_reply',
+                'pr_number': args.pr_number,
+                'thread_id': args.thread_id,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -389,13 +429,18 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
         }
         for r in reviews
     ]
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_reviews',
-        'pr_number': args.pr_number,
-        'review_count': len(reviews),
-        'reviews': review_list,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_reviews',
+                'pr_number': args.pr_number,
+                'review_count': len(reviews),
+                'reviews': review_list,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -426,28 +471,32 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 """
 
 
-def cmd_pr_comments(args: argparse.Namespace) -> int:
-    """Handle 'pr comments' subcommand - fetch inline code review comments."""
+def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dict:
+    """Fetch PR review comments, returning structured dict.
+
+    Returns dict with 'status' key ('success' or 'error').
+    Importable by other scripts for direct data access without subprocess.
+    """
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_comments', err)
+        return {'status': 'error', 'operation': 'pr_comments', 'error': err}
 
     # Get repo info
     owner, repo = get_repo_info()
     if not owner or not repo:
-        return output_error('pr_comments', 'Could not determine repository owner/name')
+        return {'status': 'error', 'operation': 'pr_comments', 'error': 'Could not determine repository owner/name'}
 
     # Run GraphQL query
-    returncode, data, err = run_graphql(REVIEW_THREADS_QUERY, {'owner': owner, 'repo': repo, 'pr': args.pr_number})
+    returncode, data, err = run_graphql(REVIEW_THREADS_QUERY, {'owner': owner, 'repo': repo, 'pr': pr_number})
     if returncode != 0 or data is None:
-        return output_error('pr_comments', f'GraphQL query failed: {err}')
+        return {'status': 'error', 'operation': 'pr_comments', 'error': f'GraphQL query failed: {err}'}
 
     # Extract threads
     try:
         threads = data['repository']['pullRequest']['reviewThreads']['nodes']
     except (KeyError, TypeError) as e:
-        return output_error('pr_comments', f'Failed to parse response: {e}')
+        return {'status': 'error', 'operation': 'pr_comments', 'error': f'Failed to parse response: {e}'}
 
     # Normalize comments
     comments: list[dict] = []
@@ -455,7 +504,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
         is_resolved = thread.get('isResolved', False)
 
         # Skip resolved threads if --unresolved-only
-        if args.unresolved_only and is_resolved:
+        if unresolved_only and is_resolved:
             continue
 
         path = thread.get('path', '')
@@ -478,7 +527,7 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
                 }
             )
 
-    # Output TOON
+    # Build result
     unresolved_count = sum(1 for c in comments if not c['resolved'])
     comment_list = [
         {
@@ -493,15 +542,25 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
         }
         for c in comments
     ]
-    print(serialize_toon({
+    return {
         'status': 'success',
         'operation': 'pr_comments',
         'provider': 'github',
-        'pr_number': args.pr_number,
+        'pr_number': pr_number,
         'total': len(comments),
         'unresolved': unresolved_count,
         'comments': comment_list,
-    }, table_separator='\t'))
+    }
+
+
+def cmd_pr_comments(args: argparse.Namespace) -> int:
+    """Handle 'pr comments' subcommand - fetch inline code review comments."""
+    result = fetch_pr_comments_data(args.pr_number, args.unresolved_only)
+    if result.get('status') != 'success':
+        return output_error(
+            result.get('operation', 'pr_comments'), result.get('error', 'Unknown error'), result.get('context', '')
+        )
+    print(serialize_toon(result, table_separator='\t'))
     return 0
 
 
@@ -519,12 +578,17 @@ def cmd_pr_merge(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_merge', f'Failed to merge PR {args.pr_number}', stderr.strip())
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_merge',
-        'pr_number': args.pr_number,
-        'strategy': args.strategy,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_merge',
+                'pr_number': args.pr_number,
+                'strategy': args.strategy,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -540,57 +604,38 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_auto_merge', f'Failed to enable auto-merge for PR {args.pr_number}', stderr.strip())
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_auto_merge',
-        'pr_number': args.pr_number,
-        'enabled': True,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_auto_merge',
+                'pr_number': args.pr_number,
+                'enabled': True,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
-def cmd_pr_close(args: argparse.Namespace) -> int:
-    """Handle 'pr close' subcommand - close a pull request."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_close', err)
-
-    returncode, stdout, stderr = run_gh(['pr', 'close', str(args.pr_number)])
-    if returncode != 0:
-        return output_error('pr_close', f'Failed to close PR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_close',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+cmd_pr_close = make_pr_number_handler(
+    'pr_close',
+    lambda args: ['pr', 'close', str(args.pr_number)],
+    run_gh,
+    check_auth,
+)
 
 
-def cmd_pr_ready(args: argparse.Namespace) -> int:
-    """Handle 'pr ready' subcommand - mark a draft PR as ready for review."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_ready', err)
-
-    returncode, stdout, stderr = run_gh(['pr', 'ready', str(args.pr_number)])
-    if returncode != 0:
-        return output_error('pr_ready', f'Failed to mark PR {args.pr_number} as ready', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_ready',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+cmd_pr_ready = make_pr_number_handler(
+    'pr_ready',
+    lambda args: ['pr', 'ready', str(args.pr_number)],
+    run_gh,
+    check_auth,
+)
 
 
 def cmd_pr_edit(args: argparse.Namespace) -> int:
     """Handle 'pr edit' subcommand - edit PR title and/or body."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('pr_edit', err)
-
     if not args.title and not args.body:
         return output_error('pr_edit', 'At least one of --title or --body must be provided')
 
@@ -600,16 +645,8 @@ def cmd_pr_edit(args: argparse.Namespace) -> int:
     if args.body:
         gh_args.extend(['--body', args.body])
 
-    returncode, stdout, stderr = run_gh(gh_args)
-    if returncode != 0:
-        return output_error('pr_edit', f'Failed to edit PR {args.pr_number}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_edit',
-        'pr_number': args.pr_number,
-    }, table_separator='\t'))
-    return 0
+    result: int = make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
+    return result
 
 
 def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
@@ -617,49 +654,28 @@ def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
 
     Returns (check_dicts, elapsed_sec_total).
     """
+    from datetime import UTC, datetime
+
     now = datetime.now(UTC)
-    earliest_start = None
     check_dicts: list[dict] = []
+    started_at_values: list[str | None] = []
 
     for check in checks:
-        name = check.get('name', 'unknown')
-        state = check.get('state', 'unknown')
-        bucket = check.get('bucket') or '-'
-        link = check.get('link') or '-'
-        workflow = check.get('workflow') or '-'
-
-        # Compute elapsed_sec for this check
         started_at = check.get('startedAt')
-        completed_at = check.get('completedAt')
-        elapsed_sec = 0
+        started_at_values.append(started_at)
 
-        if started_at:
-            try:
-                start_dt = datetime.fromisoformat(started_at)
-                if earliest_start is None or start_dt < earliest_start:
-                    earliest_start = start_dt
-                if completed_at:
-                    end_dt = datetime.fromisoformat(completed_at)
-                    elapsed_sec = int((end_dt - start_dt).total_seconds())
-                else:
-                    elapsed_sec = int((now - start_dt).total_seconds())
-            except (ValueError, TypeError):
-                elapsed_sec = 0
+        check_dicts.append(
+            {
+                'name': check.get('name', 'unknown'),
+                'status': check.get('state', 'unknown'),
+                'result': check.get('bucket') or '-',
+                'elapsed_sec': compute_elapsed(started_at, check.get('completedAt'), now),
+                'url': check.get('link') or '-',
+                'workflow': check.get('workflow') or '-',
+            }
+        )
 
-        check_dicts.append({
-            'name': name,
-            'status': state,
-            'result': bucket,
-            'elapsed_sec': elapsed_sec,
-            'url': link,
-            'workflow': workflow,
-        })
-
-    # Compute total elapsed from earliest start to now
-    total_elapsed = 0
-    if earliest_start:
-        total_elapsed = int((now - earliest_start).total_seconds())
-
+    total_elapsed = compute_total_elapsed(started_at_values, now)
     return check_dicts, total_elapsed
 
 
@@ -699,115 +715,101 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
     check_dicts, total_elapsed = format_checks_toon(checks)
 
     # Output TOON
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_status',
-        'pr_number': args.pr_number,
-        'overall_status': overall,
-        'check_count': len(checks),
-        'elapsed_sec': total_elapsed,
-        'checks': check_dicts,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'ci_status',
+                'pr_number': args.pr_number,
+                'overall_status': overall,
+                'check_count': len(checks),
+                'elapsed_sec': total_elapsed,
+                'checks': check_dicts,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
 def cmd_ci_wait(args: argparse.Namespace) -> int:
     """Handle 'ci wait' subcommand."""
-    # Check auth
     is_auth, err = check_auth()
     if not is_auth:
         return output_error('ci_wait', err)
 
-    start_time = time.time()
-    polls = 0
-    timeout = args.timeout
-    interval = args.interval
-    last_checks: list[dict] = []
-
-    while True:
-        polls += 1
-        elapsed = time.time() - start_time
-
-        # Check timeout
-        if elapsed >= timeout:
-            # Format checks table for timeout output
-            check_dicts, total_elapsed = format_checks_toon(last_checks) if last_checks else ([], 0)
-
-            error_data: dict[str, Any] = {
-                'status': 'error',
-                'operation': 'ci_wait',
-                'error': 'Timeout waiting for CI',
-                'pr_number': args.pr_number,
-                'duration_sec': int(elapsed),
-                'last_status': 'pending',
-            }
-            if check_dicts:
-                error_data['elapsed_sec'] = total_elapsed
-                error_data['checks'] = check_dicts
-            print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
-            return 1
-
-        # Get checks (bucket field contains pass/fail result)
+    def check_fn() -> tuple[bool, dict]:
         returncode, stdout, stderr = run_gh(
             ['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
         )
         if returncode != 0:
-            return output_error('ci_wait', f'Failed to get CI status for PR {args.pr_number}', stderr.strip())
-
-        # Parse and check status
+            return False, {'error': f'Failed to get CI status for PR {args.pr_number}', 'context': stderr.strip()}
         try:
             checks = json.loads(stdout)
         except json.JSONDecodeError:
-            return output_error('ci_wait', 'Failed to parse gh output', stdout[:100])
+            return False, {'error': 'Failed to parse gh output', 'context': stdout[:100]}
+        return True, {'checks': checks}
 
-        last_checks = checks
+    def is_complete_fn(data: dict) -> bool:
+        checks = data.get('checks', [])
+        return bool(checks) and all(c.get('bucket') != 'pending' for c in checks)
 
-        # Check if all completed (bucket != pending means completed)
-        if checks and all(c.get('bucket') != 'pending' for c in checks):
-            # Determine final status (bucket: pass, fail, skipped)
-            if all(c.get('bucket') in ('pass', 'skipped') for c in checks):
-                final_status = 'success'
-            elif any(c.get('bucket') == 'fail' for c in checks):
-                final_status = 'failure'
-            else:
-                final_status = 'mixed'
+    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
-            # Format checks table
-            check_dicts, total_elapsed = format_checks_toon(checks)
+    if 'error' in result:
+        return output_error('ci_wait', result['error'], result['last_data'].get('context', ''))
 
-            # Output TOON
-            print(serialize_toon({
+    checks = result['last_data'].get('checks', [])
+    check_dicts, total_elapsed = format_checks_toon(checks)
+
+    if result['timed_out']:
+        error_data: dict[str, Any] = {
+            'status': 'error',
+            'operation': 'ci_wait',
+            'error': 'Timeout waiting for CI',
+            'pr_number': args.pr_number,
+            'duration_sec': result['duration_sec'],
+            'last_status': 'pending',
+        }
+        if check_dicts:
+            error_data['elapsed_sec'] = total_elapsed
+            error_data['checks'] = check_dicts
+        print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
+        return 1
+
+    # Determine final status
+    if all(c.get('bucket') in ('pass', 'skipped') for c in checks):
+        final_status = 'success'
+    elif any(c.get('bucket') == 'fail' for c in checks):
+        final_status = 'failure'
+    else:
+        final_status = 'mixed'
+
+    print(
+        serialize_toon(
+            {
                 'status': 'success',
                 'operation': 'ci_wait',
                 'pr_number': args.pr_number,
                 'final_status': final_status,
-                'duration_sec': int(elapsed),
-                'polls': polls,
+                'duration_sec': result['duration_sec'],
+                'polls': result['polls'],
                 'elapsed_sec': total_elapsed,
                 'checks': check_dicts,
-            }, table_separator='\t'))
-            return 0
-
-        # Wait before next poll
-        time.sleep(interval)
-
-
-def cmd_ci_rerun(args: argparse.Namespace) -> int:
-    """Handle 'ci rerun' subcommand - rerun a workflow run."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('ci_rerun', err)
-
-    returncode, stdout, stderr = run_gh(['run', 'rerun', str(args.run_id)])
-    if returncode != 0:
-        return output_error('ci_rerun', f'Failed to rerun workflow {args.run_id}', stderr.strip())
-
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_rerun',
-        'run_id': args.run_id,
-    }, table_separator='\t'))
+            },
+            table_separator='\t',
+        )
+    )
     return 0
+
+
+cmd_ci_rerun = make_simple_handler(
+    'ci_rerun',
+    lambda args: ['run', 'rerun', str(args.run_id)],
+    run_gh,
+    check_auth,
+    result_extras=lambda args: {'run_id': args.run_id},
+)
 
 
 def cmd_ci_logs(args: argparse.Namespace) -> int:
@@ -816,24 +818,24 @@ def cmd_ci_logs(args: argparse.Namespace) -> int:
     if not is_auth:
         return output_error('ci_logs', err)
 
-    returncode, stdout, stderr = run_gh(
-        ['run', 'view', str(args.run_id), '--log-failed'], timeout=120
-    )
+    returncode, stdout, stderr = run_gh(['run', 'view', str(args.run_id), '--log-failed'], timeout=120)
     if returncode != 0:
         return output_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
 
-    # Truncate to first 200 lines
-    lines = stdout.splitlines()
-    truncated = lines[:200]
-    content = '\n'.join(truncated)
+    content, line_count = truncate_log_content(stdout)
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_logs',
-        'run_id': args.run_id,
-        'log_lines': len(truncated),
-        'content': content.replace(chr(10), '\\n'),
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'ci_logs',
+                'run_id': args.run_id,
+                'log_lines': line_count,
+                'content': content,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -866,12 +868,17 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
             pass
 
     # Output TOON
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'issue_create',
-        'issue_number': issue_number,
-        'issue_url': issue_url,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'issue_create',
+                'issue_number': issue_number,
+                'issue_url': issue_url,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -934,190 +941,60 @@ def cmd_issue_view(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_issue_close(args: argparse.Namespace) -> int:
-    """Handle 'issue close' subcommand - close an issue."""
-    is_auth, err = check_auth()
-    if not is_auth:
-        return output_error('issue_close', err)
+cmd_issue_close = make_simple_handler(
+    'issue_close',
+    lambda args: ['issue', 'close', str(args.issue)],
+    run_gh,
+    check_auth,
+    result_extras=lambda args: {'issue_number': args.issue},
+)
 
-    returncode, stdout, stderr = run_gh(['issue', 'close', str(args.issue)])
-    if returncode != 0:
-        return output_error('issue_close', f'Failed to close issue {args.issue}', stderr.strip())
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'issue_close',
-        'issue_number': args.issue,
-    }, table_separator='\t'))
-    return 0
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='GitHub operations via gh CLI')
-    subparsers = parser.add_subparsers(dest='command', required=True)
+    parser, pr_sub, ci_sub, issue_sub = build_parser('GitHub operations via gh CLI')
 
-    # pr subcommand
-    pr_parser = subparsers.add_parser('pr', help='Pull request operations')
-    pr_subparsers = pr_parser.add_subparsers(dest='pr_command', required=True)
+    # GitHub-specific parser additions
+    add_pr_create_args(pr_sub, body_required=False, body_file=True)
 
-    # pr create
-    pr_create_parser = pr_subparsers.add_parser('create', help='Create a pull request')
-    pr_create_parser.add_argument('--title', required=True, help='PR title')
-    pr_create_parser.add_argument('--body', default='', help='PR description')
-    pr_create_parser.add_argument('--body-file', help='Read PR body from file (takes precedence over --body)')
-    pr_create_parser.add_argument('--base', help='Base branch (default: repo default)')
-    pr_create_parser.add_argument('--draft', action='store_true', help='Create as draft PR')
-
-    # pr view
-    pr_subparsers.add_parser('view', help='View PR for current branch')
-
-    # pr list
-    pr_list_parser = pr_subparsers.add_parser('list', help='List pull requests')
-    pr_list_parser.add_argument('--head', help='Filter by head branch name')
-    pr_list_parser.add_argument('--state', default='open', choices=['open', 'closed', 'all'],
-                                help='Filter by state (default: open)')
-
-    # pr reply
-    pr_reply_parser = pr_subparsers.add_parser('reply', help='Reply to a PR with a comment')
-    pr_reply_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_reply_parser.add_argument('--body', required=True, help='Comment text')
-
-    # pr resolve-thread
-    pr_resolve_parser = pr_subparsers.add_parser('resolve-thread', help='Resolve a review thread')
-    pr_resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
-    pr_resolve_parser.add_argument('--thread-id', required=True, help='Review thread ID')
-
-    # pr thread-reply
-    pr_thread_reply_parser = pr_subparsers.add_parser('thread-reply', help='Reply to a review thread')
-    pr_thread_reply_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_thread_reply_parser.add_argument('--thread-id', required=True, help='Comment ID to reply to')
-    pr_thread_reply_parser.add_argument('--body', required=True, help='Reply text')
-
-    # pr reviews
-    pr_reviews_parser = pr_subparsers.add_parser('reviews', help='Get PR reviews')
-    pr_reviews_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-
-    # pr comments
-    pr_comments_parser = pr_subparsers.add_parser('comments', help='Get PR inline code comments')
-    pr_comments_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_comments_parser.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
-
-    # pr merge
-    pr_merge_parser = pr_subparsers.add_parser('merge', help='Merge a pull request')
-    pr_merge_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_merge_parser.add_argument('--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
-                                 help='Merge strategy (default: merge)')
-    pr_merge_parser.add_argument('--delete-branch', action='store_true', help='Delete branch after merge')
-
-    # pr auto-merge
-    pr_auto_merge_parser = pr_subparsers.add_parser('auto-merge', help='Enable auto-merge on a PR')
-    pr_auto_merge_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_auto_merge_parser.add_argument('--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
-                                      help='Merge strategy (default: merge)')
-
-    # pr close
-    pr_close_parser = pr_subparsers.add_parser('close', help='Close a pull request')
-    pr_close_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-
-    # pr ready
-    pr_ready_parser = pr_subparsers.add_parser('ready', help='Mark draft PR as ready for review')
-    pr_ready_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-
-    # pr edit
-    pr_edit_parser = pr_subparsers.add_parser('edit', help='Edit PR title and/or body')
-    pr_edit_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_edit_parser.add_argument('--title', help='New PR title')
-    pr_edit_parser.add_argument('--body', help='New PR body')
-
-    # ci subcommand
-    ci_parser = subparsers.add_parser('ci', help='CI operations')
-    ci_subparsers = ci_parser.add_subparsers(dest='ci_command', required=True)
-
-    # ci status
-    ci_status_parser = ci_subparsers.add_parser('status', help='Check CI status')
-    ci_status_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-
-    # ci wait
-    ci_wait_parser = ci_subparsers.add_parser('wait', help='Wait for CI to complete')
-    ci_wait_parser.add_argument('--pr-number', required=True, type=int, help='PR number')
-    ci_wait_parser.add_argument('--timeout', type=int, default=300, help='Max wait time in seconds (default: 300)')
-    ci_wait_parser.add_argument('--interval', type=int, default=30, help='Poll interval in seconds (default: 30)')
-
-    # ci rerun
-    ci_rerun_parser = ci_subparsers.add_parser('rerun', help='Rerun a workflow run')
-    ci_rerun_parser.add_argument('--run-id', required=True, help='Workflow run ID')
-
-    # ci logs
-    ci_logs_parser = ci_subparsers.add_parser('logs', help='Get failed run logs')
-    ci_logs_parser.add_argument('--run-id', required=True, help='Workflow run ID')
-
-    # issue subcommand
-    issue_parser = subparsers.add_parser('issue', help='Issue operations')
-    issue_subparsers = issue_parser.add_subparsers(dest='issue_command', required=True)
-
-    # issue create
-    issue_create_parser = issue_subparsers.add_parser('create', help='Create an issue')
-    issue_create_parser.add_argument('--title', required=True, help='Issue title')
-    issue_create_parser.add_argument('--body', required=True, help='Issue description')
-    issue_create_parser.add_argument('--labels', help='Comma-separated labels')
-
-    # issue view
-    issue_view_parser = issue_subparsers.add_parser('view', help='View issue details')
-    issue_view_parser.add_argument('--issue', required=True, help='Issue number or URL')
-
-    # issue close
-    issue_close_parser = issue_subparsers.add_parser('close', help='Close an issue')
-    issue_close_parser.add_argument('--issue', required=True, help='Issue number or URL')
+    # GitHub: --pr-number on resolve-thread is optional (accepted for API uniformity)
+    resolve_parser = pr_sub.choices.get('resolve-thread')
+    if resolve_parser:
+        resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
 
     args = parser.parse_args()
 
-    if args.command == 'pr':
-        if args.pr_command == 'create':
-            return cmd_pr_create(args)
-        elif args.pr_command == 'view':
-            return cmd_pr_view(args)
-        elif args.pr_command == 'list':
-            return cmd_pr_list(args)
-        elif args.pr_command == 'reply':
-            return cmd_pr_reply(args)
-        elif args.pr_command == 'resolve-thread':
-            return cmd_pr_resolve_thread(args)
-        elif args.pr_command == 'thread-reply':
-            return cmd_pr_thread_reply(args)
-        elif args.pr_command == 'reviews':
-            return cmd_pr_reviews(args)
-        elif args.pr_command == 'comments':
-            return cmd_pr_comments(args)
-        elif args.pr_command == 'merge':
-            return cmd_pr_merge(args)
-        elif args.pr_command == 'auto-merge':
-            return cmd_pr_auto_merge(args)
-        elif args.pr_command == 'close':
-            return cmd_pr_close(args)
-        elif args.pr_command == 'ready':
-            return cmd_pr_ready(args)
-        elif args.pr_command == 'edit':
-            return cmd_pr_edit(args)
-    elif args.command == 'ci':
-        if args.ci_command == 'status':
-            return cmd_ci_status(args)
-        elif args.ci_command == 'wait':
-            return cmd_ci_wait(args)
-        elif args.ci_command == 'rerun':
-            return cmd_ci_rerun(args)
-        elif args.ci_command == 'logs':
-            return cmd_ci_logs(args)
-    elif args.command == 'issue':
-        if args.issue_command == 'create':
-            return cmd_issue_create(args)
-        elif args.issue_command == 'view':
-            return cmd_issue_view(args)
-        elif args.issue_command == 'close':
-            return cmd_issue_close(args)
+    handlers = {
+        ('pr', 'create'): cmd_pr_create,
+        ('pr', 'view'): cmd_pr_view,
+        ('pr', 'list'): cmd_pr_list,
+        ('pr', 'reply'): cmd_pr_reply,
+        ('pr', 'resolve-thread'): cmd_pr_resolve_thread,
+        ('pr', 'thread-reply'): cmd_pr_thread_reply,
+        ('pr', 'reviews'): cmd_pr_reviews,
+        ('pr', 'comments'): cmd_pr_comments,
+        ('pr', 'merge'): cmd_pr_merge,
+        ('pr', 'auto-merge'): cmd_pr_auto_merge,
+        ('pr', 'close'): cmd_pr_close,
+        ('pr', 'ready'): cmd_pr_ready,
+        ('pr', 'edit'): cmd_pr_edit,
+        ('ci', 'status'): cmd_ci_status,
+        ('ci', 'wait'): cmd_ci_wait,
+        ('ci', 'rerun'): cmd_ci_rerun,
+        ('ci', 'logs'): cmd_ci_logs,
+        ('issue', 'create'): cmd_issue_create,
+        ('issue', 'view'): cmd_issue_view,
+        ('issue', 'close'): cmd_issue_close,
+    }
 
-    parser.print_help()
-    return 1
+    return dispatch(args, handlers, parser)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    from file_ops import safe_main  # type: ignore[import-not-found]
+
+    safe_main(main)()

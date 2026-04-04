@@ -18,7 +18,7 @@ User Request (description, lesson_id, or issue)
 │   5. Write request.md (preserves original input)    │
 │   6. Initialize references.json (branch only)       │
 │   7. Detect domain from task analysis               │
-│   8. Create status.toon with phases                 │
+│   8. Create status.json with phases                 │
 │   9. Store domains in references.json                │
 │  10. Transition phase to "refine"                   │
 │   OUTPUT: plan_id, domain, next_phase               │
@@ -36,7 +36,7 @@ User Request (description, lesson_id, or issue)
 | Writes request.md | Create tasks (that's refine phase) |
 | Initializes references.json (with domains) | Execute implementation |
 | Detects domain | Skip to execute phase |
-| Creates status.toon | |
+| Creates status.json | |
 | Transitions to refine | |
 
 ## Input Sources
@@ -110,7 +110,7 @@ AskUserQuestion:
 - Plan directory created (via manage-files create-or-reference)
 - request.md created with complete original input
 - references.json created with branch
-- status.toon created with phases
+- status.json created with phases
 - Domains stored in references.json
 - Work-log entry written
 - Phase transitioned to refine
@@ -159,7 +159,7 @@ recovery: Use resume option or provide different plan_id
 | `plan-marshall:manage-plan-documents` | Write request.md (typed document) |
 | `plan-marshall:manage-files` | Create/reference plan directory |
 | `plan-marshall:manage-references` | Initialize references |
-| `plan-marshall:manage-logging:manage-log` | Log creation |
+| `plan-marshall:manage-logging:manage-logging` | Log creation |
 | `plan-marshall:manage-lessons` | Read lesson content |
 
 ### Complete Initialization
@@ -168,7 +168,7 @@ The plan-init agent handles complete initialization:
 1. Create plan directory and request.md
 2. Initialize references.json with branch
 3. Detect domain from task analysis
-4. Create status.toon with phases
+4. Create status.json with phases
 5. Store domains in references.json
 6. Transition to refine phase
 

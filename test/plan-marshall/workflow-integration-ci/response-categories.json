@@ -56,7 +56,7 @@
     },
     {
       "pattern": "lgtm|approved|merged|bot",
-      "priority": "none",
+      "priority": "low",
       "category": "ignore"
     }
   ]

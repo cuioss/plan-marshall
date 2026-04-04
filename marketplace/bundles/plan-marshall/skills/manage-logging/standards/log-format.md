@@ -5,7 +5,7 @@ This document defines the standard log entry format used by the unified logging 
 ## Standard Entry Format
 
 ```
-[{timestamp}] [{level}] [{category}] {message}
+[{timestamp}] [{level}] [{hash}] {message}
   {field}: {value}
   ...
 ```
@@ -16,28 +16,17 @@ This document defines the standard log entry format used by the unified logging 
 |-----------|-------------|---------|
 | `timestamp` | ISO 8601 UTC timestamp | `2025-12-11T12:14:26Z` |
 | `level` | Log severity level | `INFO`, `WARN`, `ERROR` |
-| `category` | Entry categorization | `SCRIPT`, `DECISION`, `ARTIFACT` |
+| `hash` | 6-character hash computed from message content | `a3f2c1` |
 | `message` | Primary log message | `plan-marshall:manage-files add (0.15s)` |
 | `field: value` | Additional data (indented) | `phase: 1-init` |
+
+The hash provides deterministic traceability — the same message always produces the same hash, enabling cross-stage linking (analysis → resolution → Q-gate). Callers never need to compute hashes; they are generated automatically.
 
 ---
 
 ## Timestamp Format
 
-All timestamps use ISO 8601 format in UTC timezone:
-
-```
-YYYY-MM-DDTHH:MM:SSZ
-```
-
-**Examples**:
-- `2025-12-11T12:14:26Z`
-- `2025-12-11T00:00:00Z`
-
-**Rules**:
-- Always UTC (Z suffix)
-- No milliseconds (seconds precision)
-- No timezone offset notation
+> Timestamps use the standard format. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Timestamp Format.
 
 ---
 
@@ -46,7 +35,7 @@ YYYY-MM-DDTHH:MM:SSZ
 Additional data is provided as indented key-value pairs:
 
 ```
-[2025-12-11T12:14:26Z] [ERROR] [SCRIPT] plan-marshall:manage-log add (0.16s)
+[2025-12-11T12:14:26Z] [ERROR] [b7e4d9] plan-marshall:manage-logging:manage-logging add (0.16s)
   exit_code: 2
   args: add --plan-id test --phase 3-outline
   stderr: error: invalid argument
@@ -68,18 +57,18 @@ Additional data is provided as indented key-value pairs:
 ### Success Entry
 
 ```
-[2025-12-11T12:14:26Z] [INFO] [SCRIPT] {notation} {subcommand} ({duration}s)
+[2025-12-11T12:14:26Z] [INFO] [{hash}] {notation} {subcommand} ({duration}s)
 ```
 
 **Example**:
 ```
-[2025-12-11T12:14:26Z] [INFO] [SCRIPT] plan-marshall:manage-files:manage-files create-or-reference (0.19s)
+[2025-12-11T12:14:26Z] [INFO] [a3f2c1] plan-marshall:manage-files:manage-files create-or-reference (0.19s)
 ```
 
 ### Error Entry
 
 ```
-[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] {notation} {subcommand} ({duration}s)
+[2025-12-11T12:17:50Z] [ERROR] [{hash}] {notation} {subcommand} ({duration}s)
   exit_code: {code}
   args: {full_args}
   stderr: {truncated_stderr}
@@ -87,7 +76,7 @@ Additional data is provided as indented key-value pairs:
 
 **Example**:
 ```
-[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] plan-marshall:manage-log:manage-work-log add (0.16s)
+[2025-12-11T12:17:50Z] [ERROR] [b7e4d9] plan-marshall:manage-logging:manage-logging add (0.16s)
   exit_code: 2
   args: add --plan-id test --phase 3-outline --type milestone
   stderr: error: argument --type: invalid choice: 'milestone'
@@ -114,50 +103,41 @@ Additional data is provided as indented key-value pairs:
 ### Standard Entry
 
 ```
-[{timestamp}] [{level}] [{category}] {message}
-  phase: {phase}
-  [detail: {detail}]
+[{timestamp}] [{level}] [{hash}] {message}
 ```
+
+Work log messages embed the category in the message text as `[CATEGORY] (caller) description`. The third bracket position is always the auto-generated hash ID.
 
 ### Entry Types by Category
 
 #### PROGRESS
 
 ```
-[2025-12-11T11:14:30Z] [INFO] [PROGRESS] Starting 1-init phase
-  phase: 1-init
+[2025-12-11T11:14:30Z] [INFO] [c8d3e2] [PROGRESS] (plan-marshall:phase-1-init) Starting 1-init phase
 ```
 
 #### ARTIFACT
 
 ```
-[2025-12-11T11:15:24Z] [INFO] [ARTIFACT] Created plan: Migrate agent outputs to TOON
-  phase: 1-init
-  detail: Source: description, domain: plan-marshall-plugin-dev
+[2025-12-11T11:15:24Z] [INFO] [f1a9b3] [ARTIFACT] (plan-marshall:phase-1-init) Created plan: Migrate agent outputs to TOON
 ```
 
 #### ERROR
 
 ```
-[2025-12-11T11:17:50Z] [ERROR] [ERROR] Skill load failed
-  phase: 3-outline
-  detail: plugin-solution-outline skill not found in references.json
+[2025-12-11T11:17:50Z] [ERROR] [d4a1c7] [ERROR] (plan-marshall:phase-3-outline) Skill load failed
 ```
 
 #### OUTCOME
 
 ```
-[2025-12-11T11:17:55Z] [INFO] [OUTCOME] Impact analysis complete: 19 agents identified
-  phase: 3-outline
-  detail: Categories: 3 builder, 9 Java, 2 JS, 3 plan-marshall-plugin-dev, 2 workflow
+[2025-12-11T11:17:55Z] [INFO] [e5c7d4] [OUTCOME] (plan-marshall:phase-3-outline) Impact analysis complete: 19 agents identified
 ```
 
 #### FINDING
 
 ```
-[2025-12-11T11:17:48Z] [INFO] [FINDING] Affected: gradle-builder.md
-  phase: 3-outline
-  detail: Agent returns JSON output in Step 4. Should be migrated to TOON format.
+[2025-12-11T11:17:48Z] [INFO] [b2f8a3] [FINDING] (plan-marshall:phase-3-outline) Affected: gradle-builder.md
 ```
 
 ### Fields
@@ -173,27 +153,22 @@ Additional data is provided as indented key-value pairs:
 
 **File**: `decision.log`
 
-Decision entries are written to a dedicated log file. They do NOT include a `[DECISION]` category prefix since the file itself indicates the entry type.
+Decision entries are written to a dedicated log file. They do NOT include a `[DECISION]` category prefix since the file itself indicates the entry type. The format uses `(caller)` prefix in the message to identify the source skill.
 
 ### Standard Entry
 
 ```
-[{timestamp}] [{level}] {message}
-  phase: {phase}
-  [detail: {detail}]
+[{timestamp}] [{level}] [{hash}] (caller) {message}
 ```
 
 ### Examples
 
 ```
-[2025-12-11T11:14:48Z] [INFO] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
-  phase: 1-init
+[2025-12-11T11:14:48Z] [INFO] [d2e8f1] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
 ```
 
 ```
-[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
-  phase: 3-outline
-  detail: marketplace/bundles structure detected
+[2025-12-11T11:20:15Z] [INFO] [a4b6c8] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
 ```
 
 ### Fields
@@ -218,10 +193,10 @@ Decision entries are written to a dedicated log file. They do NOT include a `[DE
 
 **Header pattern**:
 ```regex
-^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\] \[(\w+)\] \[(\w+)\] (.+)$
+^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\] \[(\w+)\] \[([a-f0-9]{6})\] (.+)$
 ```
 
-**Field pattern**:
+**Field pattern** (for script execution error entries with indented fields):
 ```regex
 ^  (\w+): (.+)$
 ```
@@ -233,7 +208,7 @@ import re
 
 HEADER_PATTERN = re.compile(
     r'^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\] '
-    r'\[(\w+)\] \[(\w+)\] (.+)$'
+    r'\[(\w+)\] \[([a-f0-9]{6})\] (.+)$'
 )
 FIELD_PATTERN = re.compile(r'^  (\w+): (.+)$')
 
@@ -249,7 +224,7 @@ def parse_log_file(content: str) -> list[dict]:
             current = {
                 'timestamp': header_match.group(1),
                 'level': header_match.group(2),
-                'category': header_match.group(3),
+                'hash_id': header_match.group(3),
                 'message': header_match.group(4),
                 'fields': {}
             }

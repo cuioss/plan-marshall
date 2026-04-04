@@ -2,33 +2,23 @@
 name: manage-architecture
 description: LLM-based architectural analysis that transforms raw project data into meaningful structure
 user-invocable: false
+scope: hybrid
 ---
 
-# Analyze Project Architecture Skill
+# Manage Architecture Skill
+
+**Scope: hybrid** means this skill manages both project-level data (`.plan/project-architecture/`) and integrates with plan-scoped workflows (solution-outline, task-plan).
 
 ## Enforcement
 
-**Execution mode**: Execute all steps in sequence; only stop when all modules are enriched.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
+**Skill-specific constraints:**
+- Execute all steps in sequence; only stop when all modules are enriched
 - Do not leave `responsibility` or `key_packages` empty after enrichment
 - Do not skip `--reasoning` parameters (traceability is required)
-- Do not modify .plan/ files directly; all mutations go through the script API
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture {command} {args}`
 - Enrichment must cover every discovered module before completion
 - Discovery must run before enrichment (Step 1 before Steps 4-8)
-
----
-
-## What This Skill Provides
-
-**Discovery**: Run extension API to collect raw module data
-
-**Enrichment**: LLM analyzes documentation and code to add semantic understanding
-
-**Persistence**: Store enriched data for solution-outline consumption
 
 ---
 
@@ -140,9 +130,9 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture m
 
 ---
 
-## Step 5: Read Documentation & Determine Purpose
+## Steps 5-8: Per-Module Enrichment
 
-**For each module in the list**, execute Steps 5-8:
+**For each module in the list**, execute Steps 5-8 in order (dependencies: Step 5 feeds Steps 6-7, Step 8 runs last):
 
 Get raw discovered data for the module:
 
@@ -158,7 +148,7 @@ Read {package_info path}  # for packages with package_info
 
 If no documentation available, sample 2-3 source files from packages.
 
-Analyze to determine `purpose` value:
+Analyze to determine `purpose` value (see also `architecture-persistence.md` for full list):
 
 | Signal | Purpose Value |
 |--------|---------------|
@@ -167,6 +157,7 @@ Analyze to determine `purpose` value:
 | Build-time processor, deployment | `deployment` |
 | Main class, application entry | `runtime` |
 | packaging=pom at root | `parent` |
+| Bill of Materials POM | `bom` |
 | Only test files | `integration-tests` |
 | JMH benchmarks | `benchmark` |
 
@@ -185,7 +176,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 ## Step 7: Key Packages & Dependencies
 
-Select 2-4 architecturally significant packages per module:
+Select 2-4 architecturally significant packages per module (choose packages that represent the module's core abstractions, public API, or key implementation concerns):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
@@ -304,6 +295,9 @@ Next steps:
 | Extension API not found | Verify domain bundles installed, run `/marshall-steward` |
 | No modules discovered | Verify build files exist and domain bundle matches project |
 | Documentation not found | Analyze source code directly, note "Inferred from source analysis" |
+| Partial discovery failure | Some extensions may fail while others succeed — check which modules are missing and re-run `discover --force` after fixing the failing extension |
+| Interrupted enrichment | Safe to resume — `enrich module` overwrites per-module data; re-run Steps 5-8 for incomplete modules |
+| `manage-maven-profiles` skill unavailable | Skip Step 2 entirely; unmatched profiles will remain as NO-MATCH-FOUND in derived data |
 
 ---
 
@@ -321,13 +315,14 @@ During verification or after implementation, capture learnings:
 
 ## Deferred Loading
 
-| Reference | When to Load |
-|-----------|--------------|
-| [manage-api.md](standards/manage-api.md) | Manage commands (setup, read raw, enrich) |
-| [client-api.md](standards/client-api.md) | Client commands (merged data for consumers) |
-| [architecture-persistence.md](standards/architecture-persistence.md) | Field schemas and formats |
-| [documentation-sources.md](standards/documentation-sources.md) | Reading strategy details |
-| `pm-dev-java:manage-maven-profiles` | Maven profile classification (Step 2) |
+Load standards documents in the order listed — each builds on the previous:
+
+| # | Reference | When to Load |
+|---|-----------|--------------|
+| 1 | [manage-api.md](standards/manage-api.md) | First — covers setup, raw data, enrich commands (Steps 1-8), and orchestration flow |
+| 2 | [architecture-persistence.md](standards/architecture-persistence.md) | When you need field schemas, purpose values, skills_by_profile structure, module graph format, or documentation source priorities |
+| 3 | [client-api.md](standards/client-api.md) | When consuming enriched data (Step 9 verification, or downstream skills) |
+| 4 | `pm-dev-java:manage-maven-profiles` | Only during Step 2, only for Maven projects with unmatched profiles |
 
 ---
 
@@ -340,3 +335,9 @@ This skill is invoked by:
 Output is consumed by:
 - **solution-outline** Step 0 (module placement)
 - **task-plan** (command resolution)
+
+## Related
+
+- `manage-solution-outline` — Consumes architecture data for placement decisions
+- `manage-config` — Project-level configuration used during analysis
+- `manage-files` — Generic file operations used during discovery

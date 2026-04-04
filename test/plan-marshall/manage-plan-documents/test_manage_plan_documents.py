@@ -14,10 +14,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-# Alias for backward compatibility
-TestContext = PlanContext
-
-
 # =============================================================================
 # Test: List Types
 # =============================================================================
@@ -25,7 +21,7 @@ TestContext = PlanContext
 
 def test_list_types():
     """Test listing available document types."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'list-types')
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -43,7 +39,7 @@ def test_list_types():
 
 def test_request_create():
     """Test creating a request document."""
-    with TestContext(plan_id='request-create') as ctx:
+    with PlanContext(plan_id='request-create') as ctx:
         result = run_script(
             SCRIPT_PATH,
             'request',
@@ -68,7 +64,7 @@ def test_request_create():
 
 def test_request_create_with_context():
     """Test creating a request document with optional context."""
-    with TestContext(plan_id='request-context') as ctx:
+    with PlanContext(plan_id='request-context') as ctx:
         result = run_script(
             SCRIPT_PATH,
             'request',
@@ -95,7 +91,7 @@ def test_request_create_with_context():
 
 def test_request_create_invalid_source():
     """Test that invalid source is rejected."""
-    with TestContext(plan_id='request-invalid'):
+    with PlanContext(plan_id='request-invalid'):
         result = run_script(
             SCRIPT_PATH,
             'request',
@@ -117,7 +113,7 @@ def test_request_create_invalid_source():
 
 def test_request_create_missing_required():
     """Test that missing required field is rejected."""
-    with TestContext(plan_id='request-missing'):
+    with PlanContext(plan_id='request-missing'):
         result = run_script(
             SCRIPT_PATH,
             'request',
@@ -135,7 +131,7 @@ def test_request_create_missing_required():
 
 def test_request_read():
     """Test reading a request document."""
-    with TestContext(plan_id='request-read') as ctx:
+    with PlanContext(plan_id='request-read') as ctx:
         # Create file first
         (ctx.plan_dir / 'request.md').write_text("""# Request: Test
 
@@ -161,7 +157,7 @@ Test context
 
 def test_request_read_raw():
     """Test reading a request document in raw mode."""
-    with TestContext(plan_id='request-raw') as ctx:
+    with PlanContext(plan_id='request-raw') as ctx:
         content = '# Request: Test\n\nRaw content here'
         (ctx.plan_dir / 'request.md').write_text(content)
 
@@ -172,7 +168,7 @@ def test_request_read_raw():
 
 def test_request_read_not_found():
     """Test reading a non-existent request document."""
-    with TestContext(plan_id='request-notfound'):
+    with PlanContext(plan_id='request-notfound'):
         result = run_script(SCRIPT_PATH, 'request', 'read', '--plan-id', 'request-notfound')
         assert not result.success, 'Expected failure for missing document'
         data = parse_toon(result.stdout)
@@ -182,7 +178,7 @@ def test_request_read_not_found():
 
 def test_request_exists_present():
     """Test checking if request exists (present)."""
-    with TestContext(plan_id='request-exists') as ctx:
+    with PlanContext(plan_id='request-exists') as ctx:
         (ctx.plan_dir / 'request.md').write_text('# Request')
 
         result = run_script(SCRIPT_PATH, 'request', 'exists', '--plan-id', 'request-exists')
@@ -193,7 +189,7 @@ def test_request_exists_present():
 
 def test_request_exists_absent():
     """Test checking if request exists (absent)."""
-    with TestContext(plan_id='request-absent'):
+    with PlanContext(plan_id='request-absent'):
         result = run_script(SCRIPT_PATH, 'request', 'exists', '--plan-id', 'request-absent')
         # Exit code 1 when not found
         assert not result.success
@@ -203,7 +199,7 @@ def test_request_exists_absent():
 
 def test_request_remove():
     """Test removing a request document."""
-    with TestContext(plan_id='request-remove') as ctx:
+    with PlanContext(plan_id='request-remove') as ctx:
         (ctx.plan_dir / 'request.md').write_text('# Request')
 
         result = run_script(SCRIPT_PATH, 'request', 'remove', '--plan-id', 'request-remove')
@@ -220,7 +216,7 @@ def test_request_remove():
 
 def test_invalid_plan_id_uppercase():
     """Test that uppercase plan IDs are rejected."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'request',
@@ -241,7 +237,7 @@ def test_invalid_plan_id_uppercase():
 
 def test_invalid_plan_id_underscore():
     """Test that underscore in plan IDs are rejected."""
-    with TestContext():
+    with PlanContext():
         result = run_script(
             SCRIPT_PATH,
             'request',
@@ -265,7 +261,7 @@ def test_invalid_plan_id_underscore():
 
 def test_create_existing_fails():
     """Test that creating over existing document fails without --force."""
-    with TestContext(plan_id='exists-fail') as ctx:
+    with PlanContext(plan_id='exists-fail') as ctx:
         (ctx.plan_dir / 'request.md').write_text('# Existing')
 
         result = run_script(
@@ -288,7 +284,7 @@ def test_create_existing_fails():
 
 def test_create_existing_with_force():
     """Test that --force overwrites existing document."""
-    with TestContext(plan_id='exists-force') as ctx:
+    with PlanContext(plan_id='exists-force') as ctx:
         (ctx.plan_dir / 'request.md').write_text('# Old Content')
 
         result = run_script(
@@ -317,7 +313,7 @@ def test_create_existing_with_force():
 
 def test_unknown_document_type():
     """Test that unknown document type is handled."""
-    with TestContext():
+    with PlanContext():
         result = run_script(SCRIPT_PATH, 'unknown', 'create', '--plan-id', 'test')
         # argparse will fail before reaching our code
         assert not result.success
@@ -330,7 +326,7 @@ def test_unknown_document_type():
 
 def test_read_section_clarified_request_fallback():
     """Test that clarified_request falls back to original_input when not present."""
-    with TestContext(plan_id='fallback-test'):
+    with PlanContext(plan_id='fallback-test'):
         # Create request without clarified_request section
         result = run_script(
             SCRIPT_PATH,
@@ -367,7 +363,7 @@ def test_read_section_clarified_request_fallback():
 
 def test_read_section_clarified_request_when_present():
     """Test that clarified_request returns actual section when present."""
-    with TestContext(plan_id='clarified-present'):
+    with PlanContext(plan_id='clarified-present'):
         # Create request
         result = run_script(
             SCRIPT_PATH,

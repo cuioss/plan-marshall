@@ -26,10 +26,12 @@ import re
 import sys
 from pathlib import Path
 
-# Add extension-api scripts to path for base library imports
-EXTENSION_API_DIR = (
-    Path(__file__).parent.parent.parent.parent.parent / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
-)
+# Allow direct invocation and testing — executor sets PYTHONPATH for production.
+# Resolve extension-api scripts via relative path traversal from this script's location:
+#   scripts/ -> plan-marshall-plugin/ -> skills/ -> pm-plugin-development/ -> bundles/
+#   then into plan-marshall/skills/extension-api/scripts/
+_BUNDLES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
+EXTENSION_API_DIR = _BUNDLES_DIR / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
 if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
 

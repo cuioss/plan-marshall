@@ -2,6 +2,7 @@
 name: manage-tasks
 description: Manage implementation tasks with sequential sub-steps within a plan
 user-invocable: false
+scope: plan
 ---
 
 # Manage Tasks Skill
@@ -10,40 +11,13 @@ Manage implementation tasks with sequential sub-steps within a plan. Each task r
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse TOON output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify TASK-*.json files directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Operations table
+**Skill-specific constraints:**
 - Do not bypass dependency checking unless explicitly using `--ignore-deps`
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks {command} {args}`
 - Task numbering is sequential and immutable (TASK-001, TASK-002, etc.)
 - The `add` command reads TOON content from `--content` argument with `\n` encoding
 - Step finalization requires explicit `--outcome` (done or skipped)
-
-> **Implementation Details**: See [design-for-manage-tasks.md](/.plan/task-management/design-for-manage-tasks.md) for the complete specification including file format, all commands, parameters, and validation rules.
-
-## What This Skill Provides
-
-- Individual JSON file storage for each task (TOON output for LLM efficiency)
-- Sequential, immutable numbering (TASK-1, TASK-2, etc.)
-- Deliverable references (M:N relationship to solution_outline.md)
-- Delegation context (skill + workflow for execution)
-- Verification commands and criteria
-- Step management with status tracking
-- Simple execution loop via `next` query
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Creating or managing implementation tasks for a plan
-- Querying next actionable task/step
-- Marking steps as started/completed/skipped
-- Tracking implementation progress
-
----
 
 ## Storage Location
 
@@ -62,45 +36,20 @@ Tasks are stored in the plan directory:
 
 ## File Format (Summary)
 
-Tasks are stored as JSON and output as TOON (LLM-optimized):
-
-```json
-{
-  "number": 1,
-  "title": "Update misc agents to TOON output",
-  "status": "pending",
-  "domain": "plan-marshall-plugin-dev",
-  "profile": "implementation",
-  "origin": "plan",
-  "skills": [
-    "pm-plugin-development:plugin-maintain",
-    "pm-plugin-development:plugin-architecture"
-  ],
-  "deliverable": 1,
-  "depends_on": [],
-  "description": "Migrate miscellaneous agents from JSON to TOON output format.",
-  "steps": [
-    {"number": 1, "title": "pm-plugin-development/agents/tool-coverage-agent.md", "status": "pending"},
-    {"number": 2, "title": "pm-dev-builder/agents/gradle-builder.md", "status": "pending"},
-    {"number": 3, "title": "pm-dev-frontend/skills/javascript/SKILL.md", "status": "pending"}
-  ],
-  "verification": {
-    "commands": ["grep -L '```json' {files} | wc -l"],
-    "criteria": "No JSON blocks remain",
-    "manual": false
-  },
-  "current_step": 1
-}
-```
-
-**New Fields**:
+Tasks are stored as `TASK-{NNN}.json`. Key fields for quick reference:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `domain` | string | Task domain (arbitrary string, e.g., java, javascript, my-domain) |
-| `profile` | string | Task profile (e.g., `implementation`, `module_testing`) |
-| `skills` | list | Pre-resolved skills for task execution |
-| `origin` | string | Task origin: `plan` (from task-plan phase) or `fix` (from verify) |
+| `title` | string | Task title |
+| `status` | enum | `pending`, `in_progress`, `done`, `blocked` |
+| `domain` | string | Task domain (e.g., java, javascript) |
+| `profile` | string | Workflow profile (`implementation`, `module_testing`, `integration_testing`, `quality`, `verification`) |
+| `skills` | list | Pre-resolved domain skills (`{bundle}:{skill}` format) |
+| `origin` | string | Task origin: `plan`, `fix`, `sonar`, `pr`, `lint`, `security`, `documentation` |
+| `deliverable` | int | Referenced deliverable number (1:1 constraint) |
+| `steps` | array | Ordered file-path targets with status |
+
+See [standards/task-contract.md](standards/task-contract.md) for the complete field specification, status model, dependency format, skills inheritance, and optimization workflow.
 
 ---
 
@@ -165,10 +114,10 @@ verification:
 **Field values**:
 - `deliverable`: Single positive integer (one deliverable per task, 1:1 constraint)
 - `domain`: Domain from references.json (e.g., `java`, `javascript`, `plan-marshall-plugin-dev`)
-- `profile`: Profile key from marshal.json (e.g., `implementation`, `module_testing`)
+- `profile`: Profile key from marshal.json. Standard profiles: `implementation`, `module_testing`, `integration_testing`, `quality`, `verification`, `standalone`
 - `skills`: Array of `bundle:skill` format strings
 - `depends_on`: `none` or task references like `TASK-1, TASK-2`
-- `origin`: `plan` (from task-plan phase) or `fix` (from verify phase)
+- `origin`: `plan` (from task-plan), `fix` (from verify), `sonar`, `pr`, `lint`, `security`, or `documentation`
 
 ### List/Next Filters
 
@@ -242,7 +191,23 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ---
 
-## Integration Points
+## Integration
+
+### Producers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-4-plan` | `add` | Create tasks from deliverables |
+| `phase-5-execute` | `update`, `finalize-step` | Update task/step status during execution |
+| Q-Gate iteration | `add` | Create fix tasks from verification findings |
+
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `phase-5-execute` | `next`, `next-tasks`, `get` | Retrieve tasks for execution |
+| `phase-6-finalize` | `list` | Query task completion for PR summary |
+| Task executors | `get`, `finalize-step` | Read task details and mark steps done |
 
 ### With phase-agent (phase-4-plan)
 
@@ -279,14 +244,14 @@ Implement agents execute steps:
 
 Tasks reference deliverables from `solution_outline.md` using the `deliverable` field in stdin.
 
-**Constraint**: Each task maps to exactly **one** deliverable. No aggregation.
+**Constraint**: Each task maps to exactly **one** deliverable (the `deliverable` field is a single integer, not a list). However, one deliverable can produce multiple tasks.
 
 | Pattern | Description | Example |
 |---------|-------------|---------|
-| 1:1 | One task per deliverable | `deliverable: 1` - Task implements deliverable 1 |
-| 1:N | One deliverable, multiple profiles | TASK-1 and TASK-2 both have `deliverable: 1` |
+| Simple | One task per deliverable | TASK-1 has `deliverable: 1`, TASK-2 has `deliverable: 2` |
+| Multi-profile | One deliverable, multiple tasks | TASK-1 (implementation) and TASK-2 (module_testing) both have `deliverable: 1` |
 
-**1:N pattern**: When a deliverable has multiple profiles (implementation + module_testing), it creates multiple tasks - one per profile. Both tasks reference the same deliverable.
+**Multi-profile pattern**: When a deliverable needs both implementation and testing, phase-4-plan creates separate tasks per profile. Each task gets its own skill set and executor.
 
 ---
 
@@ -326,8 +291,38 @@ blocked_tasks[2]{number,title,waiting_for}:
 
 ---
 
-## Related Documents
+## Verification
 
-- [design-for-manage-tasks.md](/.plan/task-management/design-for-manage-tasks.md) - Complete implementation specification
-- [design-for-task-planning.md](/.plan/task-management/design-for-task-planning.md) - Task-plan agent workflows
-- [architecture.md](/.plan/task-management/architecture.md) - Core concepts
+The `verification` field is optional. When present:
+- `commands`: List of shell commands to run after implementation (copied verbatim from deliverable's Verification field by phase-4-plan)
+- `criteria`: Human-readable success criteria
+- `manual`: If `true`, verification requires human judgment (automated commands may still run but results need review)
+
+If a deliverable has no Verification section, the task is created without `verification`.
+
+---
+
+## Error Responses
+
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
+
+| Error Code | Cause |
+|------------|-------|
+| `invalid_plan_id` | plan_id format invalid |
+| `task_not_found` | Task number doesn't exist |
+| `step_not_found` | Step number doesn't exist in task |
+| `invalid_content` | TOON content parsing failed or missing required fields |
+| `missing_required` | Required field missing (title, deliverable, domain, profile, skills, steps) |
+| `circular_dependency` | Task dependency creates a cycle (detected during `next`) |
+| `invalid_outcome` | Step outcome not `done` or `skipped` |
+| `plan_dir_not_found` | Plan directory doesn't exist |
+
+---
+
+## Related
+
+- `manage-solution-outline` — Source of deliverables that tasks reference
+- `manage-status` — Plan lifecycle tracking; phase transitions gate task execution
+- `manage-config` — Skill domain resolution for task profiles
+- `manage-findings` — Q-Gate findings may trigger fix tasks during execution
+

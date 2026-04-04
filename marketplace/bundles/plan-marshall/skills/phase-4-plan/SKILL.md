@@ -10,7 +10,18 @@ user-invocable: false
 
 **Key Pattern**: Reads deliverables with metadata and profiles list from `solution_outline.md`, creates one task per deliverable per profile (1:N mapping), resolves skills from architecture based on `module` + `profile`, creates tasks with explicit skill lists. **No aggregation** - each deliverable maps to exactly one task per profile.
 
-## Contract Compliance
+## Enforcement
+
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
+**Execution mode**: Follow workflow steps sequentially. Each step that invokes a script has an explicit bash code block.
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never skip the phase transition — use `manage-status transition`
+- Never improvise script subcommands — use only those documented below
+
+### Contract Compliance
 
 **MANDATORY**: All tasks MUST follow the structure defined in the central contracts:
 
@@ -44,7 +55,7 @@ execution_order: {parallel groups}
 message: {error message if status=error}
 ```
 
-## Related Documents
+## Related
 
 | Document | Purpose |
 |----------|---------|
@@ -78,7 +89,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ```
 4. Log resolution:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-4-plan:qgate) Finding {hash_id} [{source}]: taken_into_account — {resolution_detail}"
 ```
 
@@ -89,7 +100,7 @@ If no unresolved findings: Continue with normal Steps 3..11 (first entry).
 ### Step 2: Log Phase Start
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-4-plan) Starting plan phase"
 ```
 
@@ -126,7 +137,7 @@ For each deliverable, create one task per profile in its `profiles` list:
 **Verification-Only Guard**: Before iterating profiles, check if the deliverable is verification-only (`change_type: verification` or empty `affected_files`). If so, override `D.profiles` to `[verification]` regardless of what the outline specified. Log a warning if the original profiles differed:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-4-plan) Deliverable {N} is verification-only but had profiles [{original_profiles}] — overriding to [verification]"
 ```
 
@@ -202,7 +213,7 @@ Match: YES - this is a script output change, needs output contract standards
 
 **Log skill resolution** (for each task created):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-4-plan) Resolved skills for TASK-{N} from {module}.{profile}: defaults=[{defaults}] optionals_selected=[{optionals}]"
 ```
 
@@ -220,7 +231,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
 
 **MANDATORY - Log each task creation**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created TASK-{N}: {title}"
 ```
 
@@ -269,7 +280,7 @@ All holistic verification tasks share: `profile: verification`, `deliverable: 0`
 
 **Log each holistic task creation**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-4-plan) Created holistic verification TASK-{N}: {title}"
 ```
 
@@ -316,7 +327,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 ### Log Q-Gate Result
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-4-plan:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
 ```
 
@@ -325,7 +336,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
 On ambiguous deliverable or planning issues:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "plan-marshall:phase-4-plan" \
   --category improvement \
   --title "{issue summary}" \
@@ -339,7 +350,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lesson add \
 **Transition phase**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle transition \
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
   --plan-id {plan_id} \
   --completed 4-plan
 ```
@@ -347,14 +358,14 @@ python3 .plan/execute-script.py plan-marshall:manage-lifecycle:manage-lifecycle 
 **Log phase completion**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-4-plan) Plan phase complete - {M} tasks created from {N} deliverables"
 ```
 
 **Add visual separator** after END log:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-log \
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
 
@@ -432,7 +443,7 @@ If deliverable metadata incomplete:
 - `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
 - `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X --content "...")
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
-- `plan-marshall:manage-lessons:manage-lesson` - Record lessons on issues (add)
+- `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)
 
 **Consumed By**:
 - `plan-marshall:phase-5-execute` skill - Reads tasks and executes them

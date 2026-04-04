@@ -1,87 +1,52 @@
-# TOON Format Specification Reference
+# TOON Format Specification and Patterns
 
 ## Overview
 
 **TOON (Token-Oriented Object Notation)**
-**Version**: 3.0
-**Media Type**: `text/toon`
-**File Extension**: `.toon`
-**Encoding**: UTF-8
-**License**: MIT (Open Source)
+**Media Type**: `text/toon` | **File Extension**: `.toon` | **Encoding**: UTF-8
 
-## Design Philosophy
+TOON is a compact, human-readable encoding of the JSON data model optimized for LLM token efficiency. It achieves 30-60% token reduction for uniform arrays by declaring structure once and using CSV-style rows.
 
-TOON is "a compact, human-readable encoding of the JSON data model that minimizes tokens." It achieves efficiency by:
+**Scope**: Internal plan-marshall marketplace operations only — agent-to-agent handoffs, memory persistence, inter-agent data exchange, and test fixtures.
 
-1. **Declaring structure once**: Field headers defined upfront, not repeated
-2. **Indentation over braces**: YAML-style nesting instead of `{}`
-3. **Tabular data**: CSV-style rows for uniform arrays
-4. **Explicit clarity**: `[N]` length and `{fields}` headers improve LLM parsing
+**NOT For**: API interchange (use JSON), configuration files (use YAML/JSON), deeply nested structures (>3 levels), non-uniform object shapes.
 
 ## Core Syntax
 
 ### Primitives
 
 ```toon
-# Strings (unquoted unless containing special chars)
 name: Alice
-
-# Numbers
 age: 42
 pi: 3.14159
-
-# Booleans
 active: true
 disabled: false
-
-# Null
 value: null
 ```
 
 ### Objects
 
 ```toon
-# Simple object
 user:
   id: 123
   name: Alice
   role: admin
-
-# Equivalent JSON:
-{
-  "user": {
-    "id": 123,
-    "name": "Alice",
-    "role": "admin"
-  }
-}
 ```
 
 ### Uniform Arrays (TOON's Sweet Spot)
 
 ```toon
-# Array with uniform structure
 users[3]{id,name,role}:
 1,Alice,admin
 2,Bob,user
 3,Charlie,viewer
-
-# Equivalent JSON (51 tokens):
-{
-  "users": [
-    {"id": 1, "name": "Alice", "role": "admin"},
-    {"id": 2, "name": "Bob", "role": "user"},
-    {"id": 3, "name": "Charlie", "role": "viewer"}
-  ]
-}
-
-# TOON: 24 tokens (53% reduction)
 ```
+
+Equivalent JSON (51 tokens) vs TOON (24 tokens) = 53% reduction.
 
 ### Non-Uniform Arrays
 
 ```toon
-# Array with mixed items (fallback to JSON-like)
 items[3]:
   - {id: 1, name: "Widget"}
   - {id: 2, name: "Gadget", category: "electronics"}
@@ -91,7 +56,6 @@ items[3]:
 ### Nested Structures
 
 ```toon
-# Combining uniform arrays with nesting
 organization:
   name: Acme Corp
   departments[2]{id,name,headcount}:
@@ -99,7 +63,6 @@ organization:
   2,Sales,30
   metadata:
     created: 2024-01-15
-    updated: 2025-11-26
 ```
 
 ## Syntax Elements
@@ -110,302 +73,133 @@ organization:
 | `{field1,field2}` | Field headers | `{id,name,email}` |
 | `:` | Separator after declaration | `users[2]{id,name}:` |
 | `,` | Field value separator | `1,Alice,alice@example.com` |
-| Indentation | Nesting (2 spaces or tab) | (see examples above) |
+| Indentation | Nesting (2 spaces) | (see examples above) |
 | `-` | List item marker (non-uniform) | `- item1` |
+| `\|` | Multi-line value indicator | `description: \|` |
+| `#` | Comment | `# This is a comment` |
 
 ## Advanced Features
 
-### Optional Fields
+### Optional Fields and Escaped Values
 
 ```toon
-# Some rows may have empty values
-users[3]{id,name,email,phone}:
-1,Alice,alice@example.com,555-1234
-2,Bob,bob@example.com,
-3,Charlie,charlie@example.com,555-5678
-```
-
-### Escaped Values
-
-```toon
-# Values with commas or special chars use quotes
 products[2]{id,name,description}:
 1,Widget,"Small, efficient gadget"
-2,Gadget,"Multi-purpose tool, batteries included"
+2,Gadget,
 ```
 
-### Mixed Nesting
+### Inline Uniform Values
 
 ```toon
-# Tabular data with nested metadata
-dataset:
-  metadata:
-    version: 1.0
-    source: production
-  records[1000]{timestamp,user_id,action,duration_ms}:
-  2025-11-26T10:00:00Z,42,login,145
-  2025-11-26T10:01:23Z,43,search,89
-  # ... 998 more rows
+by_severity{BLOCKER,CRITICAL,MAJOR,MINOR,INFO}: 1,1,1,1,1
+by_type{BUG,CODE_SMELL}: 2,3
 ```
 
-## Conversion Examples
-
-### Example 1: Sonar Issues
+## Conversion Example: Sonar Issues
 
 **JSON (580 tokens):**
 ```json
 {
   "project_key": "cuioss_cui-http-client",
-  "pull_request_id": "123",
   "issues": [
-    {
-      "key": "AX-001",
-      "type": "BUG",
-      "severity": "BLOCKER",
-      "file": "src/main/java/de/cuioss/http/HttpClient.java",
-      "line": 145,
-      "rule": "java:S2095",
-      "message": "Use try-with-resources or close this 'InputStream' in a 'finally' clause.",
-      "effort": "10min"
-    },
-    {
-      "key": "AX-002",
-      "type": "CODE_SMELL",
-      "severity": "MAJOR",
-      "file": "src/main/java/de/cuioss/http/HttpClient.java",
-      "line": 89,
-      "rule": "java:S1192",
-      "message": "Define a constant instead of duplicating this literal 'application/json' 4 times.",
-      "effort": "5min"
-    }
-  ],
-  "statistics": {
-    "total_issues_fetched": 2,
-    "by_severity": {
-      "BLOCKER": 1,
-      "MAJOR": 1
-    }
-  }
+    {"key": "AX-001", "type": "BUG", "severity": "BLOCKER", "file": "HttpClient.java", "line": 145, "rule": "java:S2095", "message": "Use try-with-resources"},
+    {"key": "AX-002", "type": "CODE_SMELL", "severity": "MAJOR", "file": "HttpClient.java", "line": 89, "rule": "java:S1192", "message": "Define constant"}
+  ]
 }
 ```
 
-**TOON (240 tokens - 59% reduction):**
+**TOON (240 tokens — 59% reduction):**
 ```toon
 project_key: cuioss_cui-http-client
-pull_request_id: 123
 
-issues[2]{key,type,severity,file,line,rule,message,effort}:
-AX-001,BUG,BLOCKER,src/main/java/de/cuioss/http/HttpClient.java,145,java:S2095,"Use try-with-resources or close this 'InputStream' in a 'finally' clause.",10min
-AX-002,CODE_SMELL,MAJOR,src/main/java/de/cuioss/http/HttpClient.java,89,java:S1192,"Define a constant instead of duplicating this literal 'application/json' 4 times.",5min
-
-statistics:
-  total_issues_fetched: 2
-  by_severity:
-    BLOCKER: 1
-    MAJOR: 1
+issues[2]{key,type,severity,file,line,rule,message}:
+AX-001,BUG,BLOCKER,HttpClient.java,145,java:S2095,Use try-with-resources
+AX-002,CODE_SMELL,MAJOR,HttpClient.java,89,java:S1192,Define constant
 ```
 
-### Example 2: Coverage Analysis
+## Agent Handoff Patterns
 
-**JSON (520 tokens):**
-```json
-{
-  "status": "success",
-  "data": {
-    "by_file": [
-      {
-        "file": "/src/utils/validator.js",
-        "lines": 87.5,
-        "statements": 88.89,
-        "functions": 100,
-        "branches": 80,
-        "status": "good"
-      },
-      {
-        "file": "/src/utils/formatter.js",
-        "lines": 80,
-        "statements": 80,
-        "functions": 87.5,
-        "branches": 66.67,
-        "status": "acceptable"
-      }
-    ]
-  }
-}
-```
+### Minimal Handoff (~40 tokens)
 
-**TOON (210 tokens - 60% reduction):**
 ```toon
-status: success
+from_agent: quality-agent
+to_agent: fix-agent
 
-data:
-  by_file[2]{file,lines,statements,functions,branches,status}:
-  /src/utils/validator.js,87.5,88.89,100,80,good
-  /src/utils/formatter.js,80,80,87.5,66.67,acceptable
+items[3]{file,line}:
+A.java,42
+B.java,89
+C.java,15
 ```
 
-## Implementation Support
+### Standard Handoff (~140 tokens, 50% reduction vs JSON)
 
-### Internal Module (plan-marshall)
+```toon
+from_agent: quality-agent
+to_agent: verify-agent
 
-The plan-marshall marketplace includes an internal `toon_parser.py` module for TOON serialization:
+context:
+  task: Fix code quality issues
+  files_analyzed: 15
+
+issues[2]{file,line,severity,rule,message}:
+Example.java,42,BLOCKER,S2095,Use try-with-resources
+Service.java,89,MAJOR,S1192,Define constant
+
+instructions[2]:
+- Start with BLOCKER severity
+- Run tests after fixes
+```
+
+### Receiving TOON Handoff (Agent Prompt Pattern)
+
+```
+You are receiving a handoff from {previous_agent}.
+
+The data uses TOON format:
+- Arrays: arrayName[N]{field1,field2}:
+- Rows: CSV-style values
+
+---
+{toon_data}
+---
+
+Process and {action}.
+```
+
+## Implementation
+
+### Internal Parser Module
 
 **Location**: `marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts/toon_parser.py`
 
 **Functions**:
-- `parse_toon(content: str) -> dict` - Parse TOON content to Python dict
-- `serialize_toon(data: dict, indent: int = 2) -> str` - Serialize Python dict to TOON
+- `parse_toon(content: str) -> dict` — Parse TOON content to Python dict
+- `serialize_toon(data: dict, indent: int = 2) -> str` — Serialize Python dict to TOON
+- `parse_toon_table(content: str, key: str, null_markers: set[str] | None = None) -> list[dict]` — Extract a uniform array table
 
 **Import Pattern** (from marketplace scripts):
 ```python
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 ```
 
-Note: The `type: ignore` comment is needed because PYTHONPATH is set at runtime by the executor.
+### Known Limitations
 
-### Usage Example
+- **Indentation**: Only 2-space indentation is supported (not tabs or 4-space)
+- **Percentage values**: `'95%'` is parsed as `95` (int) — lossy round-trip
+- **[N] count**: The parser does not validate that declared row count matches actual rows
 
-```python
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+## Performance Characteristics
 
-# Python dict to TOON
-data = {
-    "status": "success",
-    "users": [
-        {"id": 1, "name": "Alice", "role": "admin"},
-        {"id": 2, "name": "Bob", "role": "user"}
-    ]
-}
-
-toon_output = serialize_toon(data)
-# status: success
-# users[2]{id,name,role}:
-# 1,Alice,admin
-# 2,Bob,user
-
-print(toon_output)
-```
-
-### External Libraries
-
-For non-marketplace use cases, external implementations exist:
-
-| Language | Package | Notes |
-|----------|---------|-------|
-| TypeScript | `@toon-format/toon` (npm) | Community implementation |
-| Python | `toon-format` (PyPI) | Community implementation |
-| Go | `github.com/toon-format/toon-go` | Community implementation |
-
-**Note**: For plan-marshall marketplace scripts, always use the internal `toon_parser.py` module rather than external packages.
+| Data Type | Token Reduction vs JSON |
+|-----------|----------------------|
+| Uniform arrays | 50-60% |
+| Mixed structures | 30-40% |
+| Nested objects | 20-30% |
 
 ## Best Practices
-
-### DO Use TOON For:
-PASS Uniform arrays (database results, log entries)
-PASS LLM prompts with structured data
-PASS Agent tool outputs with repeated structure
-PASS Cost-sensitive API calls
-PASS Semi-structured data (mix of tabular + nested)
-
-### DON'T Use TOON For:
-FAIL API interchange (use JSON)
-FAIL Configuration files (use YAML/JSON)
-FAIL Deeply nested structures (>3 levels)
-FAIL Non-uniform object shapes
-FAIL Pure flat tables (use CSV instead)
-
-### Optimization Tips
 
 1. **Group by structure**: Put similar objects in uniform arrays
 2. **Flatten when possible**: Reduce nesting depth
 3. **Use short field names**: `id` not `identifier` (in headers)
 4. **Consistent ordering**: Same field order across rows
 5. **Validate structure**: Use `[N]` declarations to help LLM catch errors
-
-## Performance Characteristics
-
-### Token Efficiency
-- **Uniform arrays**: 50-60% reduction vs JSON
-- **Mixed structures**: 30-40% reduction vs JSON
-- **Nested objects**: 20-30% reduction vs JSON
-- **Non-uniform data**: May be worse than JSON
-
-### LLM Accuracy
-- **Structural validation**: 70% detection of malformed data
-- **Field extraction**: +4% accuracy vs JSON (avg)
-- **Schema clarity**: Explicit headers improve parsing
-
-### Trade-offs
-- **Overhead**: ~5-10% vs pure CSV for tabular data
-- **Parsing time**: Negligible (microseconds)
-- **Learning curve**: Moderate (familiar to JSON/CSV users)
-
-## Specification Status
-
-**Current**: Version 3.0 (Stable)
-**Governance**: Community-driven via GitHub
-**Evolution**: "The TOON format is stable, but also an idea in progress"
-
-**Change Process**:
-1. Propose via GitHub issue
-2. Community discussion
-3. Specification PR
-4. Implementation alignment
-5. Version bump if breaking
-
-## Resources
-
-- **Specification**: https://github.com/toon-format/spec
-- **Main Repository**: https://github.com/toon-format/toon
-- **Playground**: https://toon-format.github.io/playground
-- **Benchmarks**: https://github.com/toon-format/benchmarks
-- **TypeScript SDK**: https://www.npmjs.com/package/@toon-format/toon
-
-## Comparison Quick Reference
-
-| Aspect | JSON | TOON | CSV | YAML |
-|--------|------|------|-----|------|
-| **Token Efficiency** | Baseline | -40% | -70% | -15% |
-| **LLM Accuracy** | 52.3% | 73.9% | 44.3% | 54.7% |
-| **Nesting Support** | PASS Full | PASS Full | FAIL None | PASS Full |
-| **Uniform Arrays** | WARN Verbose | PASS Optimal | PASS Compact | WARN Verbose |
-| **Non-uniform Data** | PASS Good | WARN OK | FAIL Poor | PASS Good |
-| **Tooling Support** | PASS Universal | WARN Growing | PASS Universal | PASS Wide |
-| **API Compatibility** | PASS Standard | FAIL Needs conversion | FAIL Limited | WARN Some |
-| **Human Readable** | WARN OK | PASS Good | WARN OK | PASS Excellent |
-| **Schema Clarity** | FAIL Implicit | PASS Explicit | FAIL None | FAIL Implicit |
-
-## Adoption Rules
-
-Before adopting TOON in your project:
-
-- Identify data with uniform array structures
-- Measure current token usage (baseline)
-- Test TOON conversion with sample data
-- Measure token savings (should be >30%)
-- Verify LLM can parse TOON (test prompts)
-- Set up conversion layer (JSON ↔ TOON)
-- Update documentation/examples
-- Add to CI/CD if applicable
-- Monitor ecosystem maturity
-- Track actual cost savings
-
-## Future Outlook
-
-**Current State (Nov 2025)**:
-- Specification stable at v3.0
-- ~20k GitHub stars, active development
-- Growing language support
-- Increasing LLM framework adoption
-
-**Expected Evolution**:
-- More language implementations
-- Framework integrations (LangChain, etc.)
-- Editor support improvements
-- Potential native LLM training on TOON
-
-**Risks**:
-- Format evolution may introduce breaking changes
-- Ecosystem fragmentation if forks emerge
-- May be superseded by newer optimization formats
-- LLM providers could introduce native optimizations

@@ -36,7 +36,7 @@ from _config_detection import detect_domains
 # Direct imports - PYTHONPATH set by executor
 from extension_discovery import (  # type: ignore[import-not-found]
     discover_all_extensions,
-    discover_extensions,
+    discover_applicable_extensions,
 )
 
 
@@ -137,14 +137,15 @@ def discover_project_skills() -> list[dict]:
         if description == notation:
             description = skill_dir.name
 
-        skills.append({
-            'notation': notation,
-            'name': skill_dir.name,
-            'description': description,
-        })
+        skills.append(
+            {
+                'notation': notation,
+                'name': skill_dir.name,
+                'description': description,
+            }
+        )
 
     return skills
-
 
 
 def discover_available_domains(project_root: Path | None = None) -> dict:
@@ -164,7 +165,7 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
     # Get applicable bundles if project_root provided
     applicable_bundles = set()
     if project_root:
-        applicable_extensions = discover_extensions(project_root)
+        applicable_extensions = discover_applicable_extensions(project_root)
         applicable_bundles = {ext['bundle'] for ext in applicable_extensions}
 
     domains = []
@@ -379,12 +380,14 @@ def _discover_all_verify_steps() -> list[dict]:
 
     # Source 1: Built-in steps
     for step_name in BUILT_IN_VERIFY_STEPS:
-        all_steps.append({
-            'name': step_name,
-            'description': BUILT_IN_VERIFY_STEP_DESCRIPTIONS.get(step_name, step_name),
-            'type': 'built-in',
-            'source': 'built-in',
-        })
+        all_steps.append(
+            {
+                'name': step_name,
+                'description': BUILT_IN_VERIFY_STEP_DESCRIPTIONS.get(step_name, step_name),
+                'type': 'built-in',
+                'source': 'built-in',
+            }
+        )
 
     # Source 2: Project verify-step-* skills
     claude_skills = Path('.claude/skills')
@@ -403,12 +406,14 @@ def _discover_all_verify_steps() -> list[dict]:
                 description = fm_match.group(1).strip()
 
             step_ref = f'project:{skill_dir.name}'
-            all_steps.append({
-                'name': step_ref,
-                'description': description or skill_dir.name,
-                'type': 'project',
-                'source': 'project',
-            })
+            all_steps.append(
+                {
+                    'name': step_ref,
+                    'description': description or skill_dir.name,
+                    'type': 'project',
+                    'source': 'project',
+                }
+            )
 
     # Source 3: Extension provides_verify_steps()
     extensions = discover_all_extensions()
@@ -421,12 +426,14 @@ def _discover_all_verify_steps() -> list[dict]:
             if not steps:
                 continue
             for step in steps:
-                all_steps.append({
-                    'name': step.get('name', ''),
-                    'description': step.get('description', ''),
-                    'type': 'skill',
-                    'source': 'extension',
-                })
+                all_steps.append(
+                    {
+                        'name': step.get('name', ''),
+                        'description': step.get('description', ''),
+                        'type': 'skill',
+                        'source': 'extension',
+                    }
+                )
         except Exception:
             pass
 
@@ -500,7 +507,7 @@ def cmd_skill_domains(args) -> int:
                         result[profile_name] = profiles[profile_name]
             return success_exit(result)
         else:
-            # Flat structure (backward compatible)
+            # Flat structure (non-nested domain config)
             return success_exit(
                 {
                     'domain': domain,
@@ -760,10 +767,12 @@ def cmd_skill_domains(args) -> int:
 
     elif args.verb == 'discover-project':
         skills = discover_project_skills()
-        return success_exit({
-            'skills': skills,
-            'count': len(skills),
-        })
+        return success_exit(
+            {
+                'skills': skills,
+                'count': len(skills),
+            }
+        )
 
     elif args.verb == 'attach-project':
         domain = args.domain
@@ -791,11 +800,13 @@ def cmd_skill_domains(args) -> int:
         config['skill_domains'] = skill_domains
         save_config(config)
 
-        return success_exit({
-            'domain': domain,
-            'project_skills': merged,
-            'added': len(merged) - len(existing),
-        })
+        return success_exit(
+            {
+                'domain': domain,
+                'project_skills': merged,
+                'added': len(merged) - len(existing),
+            }
+        )
 
     elif args.verb == 'active-profiles':
         ap_verb = getattr(args, 'ap_verb', None)
@@ -825,10 +836,12 @@ def cmd_skill_domains(args) -> int:
                 skill_domains['active_profiles'] = profiles_list
             config['skill_domains'] = skill_domains
             save_config(config)
-            return success_exit({
-                'scope': domain or 'global',
-                'active_profiles': profiles_list,
-            })
+            return success_exit(
+                {
+                    'scope': domain or 'global',
+                    'active_profiles': profiles_list,
+                }
+            )
 
         elif ap_verb == 'remove':
             domain = getattr(args, 'domain', None)
@@ -846,514 +859,4 @@ def cmd_skill_domains(args) -> int:
     return EXIT_ERROR
 
 
-def cmd_resolve_domain_skills(args) -> int:
-    """Handle resolve-domain-skills command.
-
-    Loads profiles from extension.py via bundle reference, then aggregates
-    core + profile skills with descriptions.
-    """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-
-    domain = args.domain
-    profile = args.profile
-
-    # Validate domain exists
-    if domain not in skill_domains:
-        return error_exit(f'Unknown domain: {domain}')
-
-    domain_config = skill_domains[domain]
-
-    # Get bundle reference - required for profile resolution
-    bundle = domain_config.get('bundle')
-    if not bundle:
-        return error_exit(f"Domain '{domain}' has no bundle configured")
-
-    # Load profiles from extension.py
-    ext_data = load_profiles_from_bundle(bundle, domain)
-    profiles = ext_data.get('profiles', {})
-
-    if not profiles:
-        return error_exit(f"Bundle '{bundle}' has no profiles defined")
-
-    # Validate profile exists
-    if profile not in profiles and profile != 'core':
-        available = [k for k in profiles.keys() if k != 'core']
-        return error_exit(
-            f'Unknown profile: {profile} for domain: {domain}. Available profiles: {", ".join(available)}'
-        )
-
-    # Aggregate: core + profile skills
-    core_config = profiles.get('core', {})
-    profile_config = profiles.get(profile, {})
-
-    defaults = core_config.get('defaults', []) + profile_config.get('defaults', [])
-    optionals = core_config.get('optionals', []) + profile_config.get('optionals', [])
-
-    # Build output with descriptions
-    defaults_with_desc = _build_skill_dict_with_descriptions(defaults)
-    optionals_with_desc = _build_skill_dict_with_descriptions(optionals)
-
-    # Include project_skills if attached to this domain
-    project_skills = domain_config.get('project_skills', [])
-    project_skills_with_desc = {s: get_skill_description(s) for s in project_skills}
-
-    result: dict = {'domain': domain, 'profile': profile, 'defaults': defaults_with_desc, 'optionals': optionals_with_desc}
-    if project_skills_with_desc:
-        result['project_skills'] = project_skills_with_desc
-
-    return success_exit(result)
-
-
-def cmd_resolve_workflow_skill_extension(args) -> int:
-    """Resolve workflow skill extension for a domain and type.
-
-    Returns the extension skill from skill_domains.{domain}.workflow_skill_extensions.{type}.
-    Returns null for extension field if domain has no extension of that type.
-
-    Extension types: outline (for solution-outline phase), triage (for plan-finalize phase)
-    """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-
-    domain = args.domain
-    ext_type = args.type
-
-    # Return null extension if domain doesn't exist (not an error)
-    if domain not in skill_domains:
-        return success_exit({'domain': domain, 'type': ext_type, 'extension': None})
-
-    domain_config = skill_domains[domain]
-    extensions = domain_config.get('workflow_skill_extensions', {})
-    extension = extensions.get(ext_type)  # None if not present
-
-    return success_exit({'domain': domain, 'type': ext_type, 'extension': extension})
-
-
-def cmd_get_skills_by_profile(args) -> int:
-    """Get skills organized by profile for a domain.
-
-    Loads profiles from extension.py via bundle reference, then returns
-    skills_by_profile structure for use in architecture enrichment.
-    Each profile aggregates: core.defaults + core.optionals + profile.defaults + profile.optionals
-
-    Profiles: implementation, module_testing, integration_testing, documentation
-    """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-
-    domain = args.domain
-
-    if domain not in skill_domains:
-        return error_exit(f'Unknown domain: {domain}')
-
-    domain_config = skill_domains[domain]
-
-    # Get bundle reference - required for profile resolution
-    bundle = domain_config.get('bundle')
-    if not bundle:
-        return error_exit(f"Domain '{domain}' has no bundle configured")
-
-    # Load profiles from extension.py
-    ext_data = load_profiles_from_bundle(bundle, domain)
-    profiles = ext_data.get('profiles', {})
-
-    if not profiles:
-        return error_exit(f"Bundle '{bundle}' has no profiles defined")
-
-    # Get core skills (always included) - extract names from potentially structured entries
-    core_config = profiles.get('core', {})
-    core_defaults = _extract_skill_names(core_config.get('defaults', []))
-    core_optionals = _extract_skill_names(core_config.get('optionals', []))
-    core_all = core_defaults + core_optionals
-
-    # Resolve active_profiles from config (per-domain or global)
-    active_profiles: set[str] | None = None
-    if isinstance(domain_config, dict) and 'active_profiles' in domain_config:
-        active_profiles = set(domain_config['active_profiles'])
-    elif 'active_profiles' in skill_domains:
-        active_profiles = set(skill_domains['active_profiles'])
-
-    # Build skills_by_profile from available profiles in extension
-    skills_by_profile: dict[str, list[str]] = {}
-
-    for profile_name in ['implementation', 'module_testing', 'integration_testing', 'documentation']:
-        if profile_name not in profiles:
-            continue
-        if active_profiles is not None and profile_name not in active_profiles:
-            continue
-        profile_config = profiles[profile_name]
-        profile_defaults = _extract_skill_names(profile_config.get('defaults', []))
-        profile_optionals = _extract_skill_names(profile_config.get('optionals', []))
-
-        # Combine: core + profile skills (remove duplicates, preserve order)
-        combined: list[str] = []
-        seen: set[str] = set()
-        for skill in core_all + profile_defaults + profile_optionals:
-            if skill not in seen:
-                combined.append(skill)
-                seen.add(skill)
-
-        # For integration_testing, also include junit-integration if available
-        if profile_name == 'integration_testing':
-            for skill in profile_optionals:
-                if 'integration' in skill.lower() and skill not in seen:
-                    combined.append(skill)
-                    seen.add(skill)
-
-        skills_by_profile[profile_name] = combined
-
-    return success_exit({'domain': domain, 'skills_by_profile': skills_by_profile})
-
-
-def cmd_configure_task_executors(args) -> int:
-    """Configure task executors from discovered profiles.
-
-    Auto-discovers profiles from configured domains and registers task executors
-    using convention: profile X → skill plan-marshall:task-X
-
-    Task executors map profile values to workflow skills that execute tasks.
-    """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-
-    # Ensure system domain exists
-    if 'system' not in skill_domains:
-        return error_exit('System domain not configured. Run skill-domains configure first.')
-
-    # Discover all unique profiles from configured domains
-    # Now loads profiles from extension.py via bundle reference
-    discovered_profiles = set()
-
-    for domain_key, domain_config in skill_domains.items():
-        if domain_key == 'system':
-            continue
-        if not is_nested_domain(domain_config):
-            continue
-
-        # Load profiles from extension.py
-        bundle = domain_config.get('bundle')
-        if bundle:
-            ext_data = load_profiles_from_bundle(bundle, domain_key)
-            profiles = ext_data.get('profiles', {})
-            # Collect profile keys (exclude 'core' which is not an executable profile)
-            for key in profiles.keys():
-                if key != 'core':
-                    discovered_profiles.add(key)
-
-    # Build task_executors mapping using convention: profile X → plan-marshall:task-X
-    task_executors = {}
-    for profile in sorted(discovered_profiles):
-        # Skip quality profile - it's handled by verify phase, not task execution
-        if profile == 'quality':
-            continue
-        task_executors[profile] = f'plan-marshall:task-{profile}'
-
-    # Update system domain with task_executors
-    system_config = skill_domains['system']
-    system_config['task_executors'] = task_executors
-    skill_domains['system'] = system_config
-
-    config['skill_domains'] = skill_domains
-    save_config(config)
-
-    return success_exit(
-        {'status': 'success', 'task_executors_configured': len(task_executors), 'executors': task_executors}
-    )
-
-
-def cmd_resolve_task_executor(args) -> int:
-    """Resolve task executor skill for a given profile.
-
-    Looks up the task executor mapping in marshal.json:
-    skill_domains.system.task_executors.{profile}
-
-    Args:
-        args.profile: Profile name (e.g., 'implementation', 'module_testing')
-
-    Returns:
-        TOON output with resolved task_executor skill reference
-    """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    profile = args.profile
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-    system_config = skill_domains.get('system', {})
-    task_executors = system_config.get('task_executors', {})
-
-    if not task_executors:
-        return error_exit('No task_executors configured. Run configure-task-executors first.')
-
-    if profile not in task_executors:
-        available = sorted(task_executors.keys())
-        return error_exit(f"Unknown profile '{profile}'. Available profiles: {', '.join(available)}")
-
-    task_executor = task_executors[profile]
-
-    return success_exit({'profile': profile, 'task_executor': task_executor})
-
-
-def _discover_all_recipes() -> list[dict]:
-    """Discover all recipes at runtime from extensions and project skills.
-
-    Sources (in order):
-    1. Extension provides_recipes() — domain bundle recipes
-    2. Project recipe-* skills in .claude/skills/ — project-level recipes
-
-    Returns:
-        List of recipe dicts with domain assignment.
-    """
-    import re
-
-    all_recipes: list[dict] = []
-
-    # Source 1: Extension provides_recipes()
-    extensions = discover_all_extensions()
-    for ext in extensions:
-        module = ext.get('module')
-        if not module or not hasattr(module, 'provides_recipes'):
-            continue
-        try:
-            recipes = module.provides_recipes()
-            if not recipes:
-                continue
-            # Determine domain for these recipes
-            all_domains = module.get_skill_domains()
-            domain_key = all_domains[0].get('domain', {}).get('key', '') if all_domains else ''
-            for recipe in recipes:
-                entry = dict(recipe)
-                entry['domain'] = domain_key
-                entry['source'] = 'extension'
-                all_recipes.append(entry)
-        except Exception:
-            pass
-
-    # Source 2: Project recipe-* skills
-    claude_skills = Path('.claude/skills')
-    if claude_skills.is_dir():
-        for skill_dir in sorted(claude_skills.iterdir()):
-            if not skill_dir.is_dir() or not skill_dir.name.startswith('recipe-'):
-                continue
-            skill_md = skill_dir / 'SKILL.md'
-            if not skill_md.exists():
-                continue
-
-            content = skill_md.read_text()
-
-            # Extract frontmatter description
-            description = ''
-            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
-            if fm_match:
-                description = fm_match.group(1).strip()
-
-            # Extract recipe metadata from Input Parameters table
-            domain = ''
-            profile = ''
-            package_source = ''
-            for line in content.split('\n'):
-                if '`recipe_domain`' in line:
-                    m = re.search(r'`recipe_domain`.*?`([^`]+)`', line)
-                    if m:
-                        domain = m.group(1)
-                elif '`recipe_profile`' in line:
-                    m = re.search(r'`recipe_profile`.*?`([^`]+)`', line)
-                    if m:
-                        profile = m.group(1)
-                elif '`recipe_package_source`' in line:
-                    m = re.search(r'`recipe_package_source`.*?`([^`]+)`', line)
-                    if m:
-                        package_source = m.group(1)
-
-            if not domain:
-                continue
-
-            key = skill_dir.name[len('recipe-'):]  # recipe-plugin-compliance -> plugin-compliance
-            all_recipes.append({
-                'key': key,
-                'name': description or skill_dir.name,
-                'description': description,
-                'skill': f'project:{skill_dir.name}',
-                'default_change_type': 'tech_debt',
-                'scope': 'codebase_wide',
-                'domain': domain,
-                'profile': profile,
-                'package_source': package_source,
-                'source': 'project',
-            })
-
-    return all_recipes
-
-
-def cmd_list_recipes(args) -> int:
-    """List all available recipes discovered at runtime.
-
-    Sources: extension provides_recipes() + project recipe-* skills.
-    """
-    all_recipes = _discover_all_recipes()
-    return success_exit({'recipes': all_recipes, 'count': len(all_recipes)})
-
-
-def cmd_resolve_recipe(args) -> int:
-    """Resolve a specific recipe by key.
-
-    Discovers all recipes at runtime and finds the matching key.
-    """
-    recipe_key = args.recipe
-    all_recipes = _discover_all_recipes()
-
-    for recipe in all_recipes:
-        if recipe.get('key') == recipe_key:
-            return success_exit({
-                'recipe_key': recipe['key'],
-                'recipe_name': recipe.get('name', ''),
-                'recipe_skill': recipe.get('skill', ''),
-                'default_change_type': recipe.get('default_change_type', ''),
-                'scope': recipe.get('scope', ''),
-                'domain': recipe.get('domain', ''),
-                'profile': recipe.get('profile', ''),
-                'package_source': recipe.get('package_source', ''),
-            })
-
-    return error_exit(f"Recipe not found: {recipe_key}")
-
-
-def _discover_all_finalize_steps() -> list[dict]:
-    """Discover all finalize steps from built-in, project, and extension sources.
-
-    Sources (in order):
-    1. Built-in steps from _config_defaults.BUILT_IN_FINALIZE_STEPS
-    2. Project finalize-step-* skills in .claude/skills/
-    3. Extension provides_finalize_steps()
-
-    Returns:
-        List of step dicts with name, description, type, source.
-    """
-    import re
-
-    from _config_defaults import BUILT_IN_FINALIZE_STEP_DESCRIPTIONS, BUILT_IN_FINALIZE_STEPS
-
-    all_steps: list[dict] = []
-
-    # Source 1: Built-in steps
-    for step_name in BUILT_IN_FINALIZE_STEPS:
-        all_steps.append({
-            'name': step_name,
-            'description': BUILT_IN_FINALIZE_STEP_DESCRIPTIONS.get(step_name, step_name),
-            'type': 'built-in',
-            'source': 'built-in',
-        })
-
-    # Source 2: Project finalize-step-* skills
-    claude_skills = Path('.claude/skills')
-    if claude_skills.is_dir():
-        for skill_dir in sorted(claude_skills.iterdir()):
-            if not skill_dir.is_dir() or not skill_dir.name.startswith('finalize-step-'):
-                continue
-            skill_md = skill_dir / 'SKILL.md'
-            if not skill_md.exists():
-                continue
-
-            content = skill_md.read_text()
-            description = ''
-            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
-            if fm_match:
-                description = fm_match.group(1).strip()
-
-            step_ref = f'project:{skill_dir.name}'
-            all_steps.append({
-                'name': step_ref,
-                'description': description or skill_dir.name,
-                'type': 'project',
-                'source': 'project',
-            })
-
-    # Source 3: Extension provides_finalize_steps()
-    extensions = discover_all_extensions()
-    for ext in extensions:
-        module = ext.get('module')
-        if not module or not hasattr(module, 'provides_finalize_steps'):
-            continue
-        try:
-            steps = module.provides_finalize_steps()
-            if not steps:
-                continue
-            for step in steps:
-                all_steps.append({
-                    'name': step.get('name', step.get('skill', '')),
-                    'description': step.get('description', ''),
-                    'type': 'skill',
-                    'source': 'extension',
-                })
-        except Exception:
-            pass
-
-    return all_steps
-
-
-def cmd_list_finalize_steps(args) -> int:
-    """List all available finalize steps discovered at runtime.
-
-    Sources: built-in + project finalize-step-* skills + extension provides_finalize_steps().
-    """
-    all_steps = _discover_all_finalize_steps()
-    return success_exit({'steps': all_steps, 'count': len(all_steps)})
-
-
-def cmd_resolve_outline_skill(args) -> int:
-    """Resolve outline skill for a domain.
-
-    Resolution order:
-    1. Check skill_domains.{domain}.outline_skill
-    2. If not configured, return source=generic (no domain override)
-
-    Args:
-        args.domain: Domain key (e.g., 'plan-marshall-plugin-dev', 'java')
-
-    Returns:
-        TOON output with resolved skill reference or generic indicator
-    """
-    try:
-        require_initialized()
-    except MarshalNotInitializedError as e:
-        return error_exit(str(e))
-
-    domain = args.domain
-
-    config = load_config()
-    skill_domains = config.get('skill_domains', {})
-
-    # Check for domain-specific outline skill
-    if domain in skill_domains:
-        domain_config = skill_domains[domain]
-        outline_skill = domain_config.get('outline_skill')
-        if outline_skill:
-            return success_exit(
-                {'domain': domain, 'skill': outline_skill, 'source': 'domain_specific'}
-            )
-
-    # No domain override — generic instructions will be used
-    return success_exit({'domain': domain, 'skill': 'none', 'source': 'generic'})
+### Resolution and discovery commands in _cmd_skill_resolution.py ###

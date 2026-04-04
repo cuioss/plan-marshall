@@ -2,43 +2,21 @@
 name: manage-run-config
 description: Run configuration handling for persistent command configuration storage
 user-invocable: false
+scope: global
 ---
 
-# Run Config Skill
+# Manage Run Config Skill
 
 Run configuration handling for persistent command configuration storage.
 
 ## Enforcement
 
-**Execution mode**: Run scripts exactly as documented; parse JSON/TOON output for status and route accordingly.
+> **Base contract**: See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for shared enforcement rules, TOON output format, and error response patterns.
 
-**Prohibited actions:**
-- Do not modify run-config.json directly; all mutations go through the script API
-- Do not invent script arguments not listed in the Scripts table
+**Skill-specific constraints:**
 - Do not bypass initialization (run-config.json must exist before queries)
-
-**Constraints:**
-- All commands use `python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config {command} {args}` or `plan-marshall:manage-run-config:cleanup {args}`
 - Timeout and warning operations use the noun-verb pattern (e.g., `timeout get`, `warning add`)
-- Cleanup uses a separate script notation
-
-## What This Skill Provides
-
-- Read and update run configuration entries
-- Track command execution history
-- Manage acceptable warnings and skip lists
-- Adaptive timeout management
-- Validate run configuration format
-
-## When to Activate This Skill
-
-Activate this skill when:
-- Recording command execution results
-- Managing acceptable warnings lists
-- Managing command timeouts
-- Validating run configuration structure
-
----
+- Cleanup operations use `cleanup` and `cleanup-status` subcommands
 
 ## Run Configuration Structure
 
@@ -66,7 +44,7 @@ Activate this skill when:
 }
 ```
 
-See [references/run-config-format.md](references/run-config-format.md) for complete schema.
+See [standards/run-config-standard.md](standards/run-config-standard.md) for complete schema.
 
 ---
 
@@ -81,13 +59,16 @@ See [references/run-config-format.md](references/run-config-format.md) for compl
 | warning add | `plan-marshall:manage-run-config:run_config warning add` |
 | warning list | `plan-marshall:manage-run-config:run_config warning list` |
 | warning remove | `plan-marshall:manage-run-config:run_config warning remove` |
-| cleanup | `plan-marshall:manage-run-config:cleanup` |
+| cleanup | `plan-marshall:manage-run-config:run_config cleanup` |
+| cleanup-status | `plan-marshall:manage-run-config:run_config cleanup-status` |
 
 Script characteristics:
 - Uses Python stdlib only (json, argparse, pathlib)
-- Outputs JSON (init/validate) or TOON (timeout/cleanup) to stdout
+- All commands output TOON to stdout
 - Exit code 0 for success, 1 for errors
 - Supports `--help` flag
+
+**Calling convention**: All commands use `plan-marshall:manage-run-config:run_config {command}`. The cleanup module is integrated into `run_config` as `cleanup`/`cleanup-status` subcommands.
 
 ---
 
@@ -95,42 +76,112 @@ Script characteristics:
 
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
-| [timeout-handling.md](standards/timeout-handling.md) | Adaptive timeout management | Managing command timeouts |
-| [warning-handling.md](standards/warning-handling.md) | Acceptable warning patterns | Filtering build warnings |
-| [cleanup-operations.md](standards/cleanup-operations.md) | Directory cleanup | Cleaning old files |
+| [run-config-standard.md](standards/run-config-standard.md) | Schema, timeouts, warnings, cleanup | Full run configuration reference |
 
 ---
 
-## Quick Start
+## Operations
 
-### Initialize Configuration
+Script: `plan-marshall:manage-run-config:run_config`
+
+### init
+
+Initialize run-config.json with defaults.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config init
 ```
 
-### Validate Configuration
+### validate
+
+Validate configuration structure.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config validate
 ```
 
+### timeout get / set
+
+Manage adaptive command timeouts.
+
+```bash
+# Get current timeout for a command
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout get \
+  --command mvn-verify
+
+# Set timeout value
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config timeout set \
+  --command mvn-verify --value 300000
+```
+
+### warning add / list / remove
+
+Manage acceptable build warning patterns.
+
+```bash
+# Add an acceptable warning
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning add \
+  --category transitive_dependency --pattern "jakarta.json-api"
+
+# List warnings for a category
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning list \
+  --category transitive_dependency
+
+# Remove a warning pattern
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config warning remove \
+  --category transitive_dependency --pattern "jakarta.json-api"
+```
+
+### cleanup / cleanup-status
+
+Directory cleanup using retention settings from marshal.json.
+
+```bash
+# Check what would be cleaned up
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup-status
+
+# Run cleanup
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config cleanup
+```
+
 ---
 
-## Integration Points
+## Error Responses
 
-### With planning Bundle
-- Commands record execution history to run configuration
+> See [manage-contract.md](../ref-workflow-architecture/standards/manage-contract.md) for the standard error response format.
 
-### With lessons-learned Skill
-- Lessons learned are stored separately via `plan-marshall:manage-lessons` skill
-- Run configuration tracks execution state only
+| Error Code | Cause |
+|------------|-------|
+| `key_not_found` | Configuration key doesn't exist |
+| `invalid_value` | Value fails type validation (e.g., non-numeric timeout) |
+| `not_initialized` | run-config.json missing (run `init` first) |
+| `invalid_category` | Warning category not in: transitive_dependency, plugin_compatibility, platform_specific |
+| `marshal_not_found` | marshal.json missing (cleanup needs retention settings) |
 
 ---
 
-## References
+## Integration
 
-- `references/run-config-format.md` - Complete schema documentation
-- `standards/timeout-handling.md` - Adaptive timeout management
-- `standards/warning-handling.md` - Acceptable warning patterns
-- `standards/cleanup-operations.md` - Directory cleanup operations
+### Producers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| `marshall-steward` | init | Initialize run configuration during setup |
+| Build skills | timeout set | Update timeouts after command execution |
+| Build skills | warning add | Register acceptable warning patterns |
+
+### Consumers
+
+| Client | Operation | Purpose |
+|--------|-----------|---------|
+| Build skills | timeout get | Read timeout values for command execution |
+| Build skills | warning list | Filter build warnings against accepted patterns |
+| `manage-memories` cleanup | cleanup | Remove stale memory files using retention settings |
+
+---
+
+## Related
+
+- `manage-config` — Project-level marshal.json configuration (provides retention settings)
+- `manage-lessons` — Complementary global persistence (lessons learned)
+- `manage-memories` — Complementary global persistence (session context)

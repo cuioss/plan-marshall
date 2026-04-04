@@ -10,6 +10,7 @@ All phases read/write from config['plan'][phase_section].
 from _config_core import (
     EXIT_ERROR,
     MarshalNotInitializedError,
+    _coerce_value,
     error_exit,
     load_config,
     require_initialized,
@@ -17,33 +18,16 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import get_default_config
+from constants import PHASES  # type: ignore[import-not-found]
 
-# Valid phase sections
-PHASE_SECTIONS = {
-    'phase-1-init',
-    'phase-2-refine',
-    'phase-3-outline',
-    'phase-4-plan',
-    'phase-5-execute',
-    'phase-6-finalize',
-}
+# Valid phase sections - derived from centralized PHASES with 'phase-' prefix for marshal.json keys
+PHASE_SECTIONS = {f'phase-{p}' for p in PHASES}
 
 # Phases that use ordered steps list (set-steps, add-step, remove-step, set-max-iterations)
 LIST_STEP_PHASES = {'phase-5-execute', 'phase-6-finalize'}
 
 # Phases with simple scalar fields only
 SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan'}
-
-
-def _coerce_value(value: str) -> str | bool | int:
-    """Coerce string value to appropriate Python type."""
-    if value.lower() == 'true':
-        return True
-    elif value.lower() == 'false':
-        return False
-    elif value.isdigit():
-        return int(value)
-    return value
 
 
 def cmd_phase(args, phase_section: str) -> int:
