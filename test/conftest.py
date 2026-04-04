@@ -91,6 +91,12 @@ def _setup_marketplace_pythonpath() -> list[str]:
 # Set up PYTHONPATH immediately on import
 _MARKETPLACE_SCRIPT_DIRS = _setup_marketplace_pythonpath()
 
+# Pre-import cross-skill modules so that test files using
+# sys.modules.setdefault('plan_logging', MagicMock(...)) at import time
+# cannot shadow the real module for later tests.
+import plan_logging as _plan_logging  # noqa: F401, E402
+import run_config as _run_config  # noqa: F401, E402
+
 # Add test subdirectories with shared helpers to sys.path so tests can
 # import them without manual sys.path manipulation
 _TEST_HELPER_DIRS = [str(TEST_ROOT / 'plan-marshall')]

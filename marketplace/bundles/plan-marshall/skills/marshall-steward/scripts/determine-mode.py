@@ -125,7 +125,7 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
         for file_name in files:
             file_path = project_root / str(file_name)
             if not file_path.exists():
-                missing.append({'file': str(file_name), 'check': str(check['key']), 'reason': 'file_missing'})
+                continue  # Skip non-existent files — only check content in existing files
             else:
                 content = file_path.read_text()
                 if pattern not in content:
