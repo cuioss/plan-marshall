@@ -226,18 +226,14 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
                         warnings.append(f"Entry {i} in '{profile_name}.{section}' missing 'description' field")
                 elif isinstance(entry, str):
                     if ':' not in entry:
-                        warnings.append(
-                            f"Skill '{entry}' in '{profile_name}.{section}' missing bundle:skill notation"
-                        )
+                        warnings.append(f"Skill '{entry}' in '{profile_name}.{section}' missing bundle:skill notation")
                 else:
                     warnings.append(f"Entry {i} in '{profile_name}.{section}' must be a dict or string")
 
     return warnings
 
 
-def _resolve_active_profiles(
-    domain_key: str, project_dir: str, explicit: set[str] | None = None
-) -> set[str] | None:
+def _resolve_active_profiles(domain_key: str, project_dir: str, explicit: set[str] | None = None) -> set[str] | None:
     """Resolve active profiles from CLI flag or marshal.json config.
 
     Resolution order:
@@ -344,7 +340,7 @@ def enrich_add_domain(
             continue
 
     if target_ext is None:
-        raise ValueError(f"Domain not found: {domain_key}")
+        raise ValueError(f'Domain not found: {domain_key}')
 
     # Resolve active profiles (three-layer: CLI > config > signal detection)
     active = _resolve_active_profiles(domain_key, project_dir, profiles)
@@ -812,7 +808,11 @@ def cmd_enrich_add_domain(args) -> int:
         profiles_str = getattr(args, 'profiles', None)
         profiles = {p.strip() for p in profiles_str.split(',')} if profiles_str else None
         result = enrich_add_domain(
-            args.module, args.domain, args.project_dir, include_optionals, reasoning,
+            args.module,
+            args.domain,
+            args.project_dir,
+            include_optionals,
+            reasoning,
             profiles=profiles,
         )
         print(f'status\t{result["status"]}')

@@ -25,11 +25,16 @@ def test_assessment_add_basic():
     with PlanContext():
         result = run_script(
             SCRIPT_PATH,
-            'assessment', 'add',
-            '--plan-id', 'test-plan',
-            '--file-path', 'marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md',
-            '--certainty', 'CERTAIN_INCLUDE',
-            '--confidence', '95',
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'marketplace/bundles/pm-dev-java/skills/java-cdi/SKILL.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '95',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -43,11 +48,16 @@ def test_assessment_add_with_options():
     with PlanContext():
         result = run_script(
             SCRIPT_PATH,
-            'assessment', 'add',
-            '--plan-id', 'test-plan',
-            '--file-path', 'path/to/file.md',
-            '--certainty', 'CERTAIN_EXCLUDE',
-            '--confidence', '85',
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'path/to/file.md',
+            '--certainty',
+            'CERTAIN_EXCLUDE',
+            '--confidence',
+            '85',
             '--agent',
             'skill-analysis-agent',
             '--detail',
@@ -65,11 +75,16 @@ def test_assessment_add_uncertain():
     with PlanContext():
         result = run_script(
             SCRIPT_PATH,
-            'assessment', 'add',
-            '--plan-id', 'test-plan',
-            '--file-path', 'path/to/ambiguous.md',
-            '--certainty', 'UNCERTAIN',
-            '--confidence', '65',
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'path/to/ambiguous.md',
+            '--certainty',
+            'UNCERTAIN',
+            '--confidence',
+            '65',
             '--detail',
             'JSON found in workflow context - unclear if output spec',
         )
@@ -82,10 +97,17 @@ def test_assessment_add_invalid_certainty():
     """Test that invalid certainty is rejected."""
     with PlanContext():
         result = run_script(
-            SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan',
-            '--file-path', 'path/to/file.md',
-            '--certainty', 'INVALID',
-            '--confidence', '50'
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'path/to/file.md',
+            '--certainty',
+            'INVALID',
+            '--confidence',
+            '50',
         )
         # argparse should reject invalid choice
         assert not result.success
@@ -95,10 +117,17 @@ def test_assessment_add_invalid_confidence():
     """Test that out-of-range confidence is rejected."""
     with PlanContext():
         result = run_script(
-            SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan',
-            '--file-path', 'path/to/file.md',
-            '--certainty', 'CERTAIN_INCLUDE',
-            '--confidence', '150'
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'path/to/file.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '150',
         )
         assert not result.success
         data = parse_toon(result.stdout)
@@ -124,9 +153,45 @@ def test_assessment_query_all():
     """Test querying all assessments."""
     with PlanContext():
         # Add some assessments
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file1.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '90')
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file2.md', '--certainty', 'CERTAIN_EXCLUDE', '--confidence', '85')
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file3.md', '--certainty', 'UNCERTAIN', '--confidence', '60')
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file1.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '90',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file2.md',
+            '--certainty',
+            'CERTAIN_EXCLUDE',
+            '--confidence',
+            '85',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file3.md',
+            '--certainty',
+            'UNCERTAIN',
+            '--confidence',
+            '60',
+        )
 
         result = run_script(SCRIPT_PATH, 'assessment', 'query', '--plan-id', 'test-plan')
         assert result.success, f'Script failed: {result.stderr}'
@@ -138,11 +203,49 @@ def test_assessment_query_all():
 def test_assessment_query_by_certainty():
     """Test filtering assessments by certainty."""
     with PlanContext():
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file1.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '90')
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file2.md', '--certainty', 'CERTAIN_EXCLUDE', '--confidence', '85')
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file3.md', '--certainty', 'UNCERTAIN', '--confidence', '60')
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file1.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '90',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file2.md',
+            '--certainty',
+            'CERTAIN_EXCLUDE',
+            '--confidence',
+            '85',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file3.md',
+            '--certainty',
+            'UNCERTAIN',
+            '--confidence',
+            '60',
+        )
 
-        result = run_script(SCRIPT_PATH, 'assessment', 'query', '--plan-id', 'test-plan', '--certainty', 'CERTAIN_INCLUDE')
+        result = run_script(
+            SCRIPT_PATH, 'assessment', 'query', '--plan-id', 'test-plan', '--certainty', 'CERTAIN_INCLUDE'
+        )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
         assert data['total_count'] == 3
@@ -153,9 +256,45 @@ def test_assessment_query_by_certainty():
 def test_assessment_query_by_confidence():
     """Test filtering assessments by confidence range."""
     with PlanContext():
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file1.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '95')
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file2.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '85')
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file3.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '75')
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file1.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '95',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file2.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '85',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file3.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '75',
+        )
 
         result = run_script(SCRIPT_PATH, 'assessment', 'query', '--plan-id', 'test-plan', '--min-confidence', '80')
         assert result.success, f'Script failed: {result.stderr}'
@@ -166,10 +305,36 @@ def test_assessment_query_by_confidence():
 def test_assessment_query_file_paths_list():
     """Test that query returns file_paths list."""
     with PlanContext():
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'path/a.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '90')
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'path/b.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '90')
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'path/a.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '90',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'path/b.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '90',
+        )
 
-        result = run_script(SCRIPT_PATH, 'assessment', 'query', '--plan-id', 'test-plan', '--certainty', 'CERTAIN_INCLUDE')
+        result = run_script(
+            SCRIPT_PATH, 'assessment', 'query', '--plan-id', 'test-plan', '--certainty', 'CERTAIN_INCLUDE'
+        )
         assert result.success
         data = parse_toon(result.stdout)
         assert 'file_paths' in data
@@ -184,8 +349,32 @@ def test_assessment_query_file_paths_list():
 def test_assessment_clear_all():
     """Test clearing all assessments."""
     with PlanContext():
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file1.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '90')
-        run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file2.md', '--certainty', 'CERTAIN_EXCLUDE', '--confidence', '85')
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file1.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '90',
+        )
+        run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file2.md',
+            '--certainty',
+            'CERTAIN_EXCLUDE',
+            '--confidence',
+            '85',
+        )
 
         result = run_script(SCRIPT_PATH, 'assessment', 'clear', '--plan-id', 'test-plan')
         assert result.success, f'Script failed: {result.stderr}'
@@ -203,13 +392,49 @@ def test_assessment_clear_by_agent():
     """Test clearing assessments filtered by agent name."""
     with PlanContext():
         run_script(
-            SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file1.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '90', '--agent', 'agent-a'
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file1.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '90',
+            '--agent',
+            'agent-a',
         )
         run_script(
-            SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file2.md', '--certainty', 'CERTAIN_EXCLUDE', '--confidence', '85', '--agent', 'agent-b'
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file2.md',
+            '--certainty',
+            'CERTAIN_EXCLUDE',
+            '--confidence',
+            '85',
+            '--agent',
+            'agent-b',
         )
         run_script(
-            SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file3.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '80', '--agent', 'agent-a'
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file3.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '80',
+            '--agent',
+            'agent-a',
         )
 
         result = run_script(SCRIPT_PATH, 'assessment', 'clear', '--plan-id', 'test-plan', '--agent', 'agent-a')
@@ -243,7 +468,19 @@ def test_assessment_clear_empty():
 def test_assessment_get():
     """Test getting a specific assessment."""
     with PlanContext():
-        add_result = run_script(SCRIPT_PATH, 'assessment', 'add', '--plan-id', 'test-plan', '--file-path', 'file.md', '--certainty', 'CERTAIN_INCLUDE', '--confidence', '90')
+        add_result = run_script(
+            SCRIPT_PATH,
+            'assessment',
+            'add',
+            '--plan-id',
+            'test-plan',
+            '--file-path',
+            'file.md',
+            '--certainty',
+            'CERTAIN_INCLUDE',
+            '--confidence',
+            '90',
+        )
         add_data = parse_toon(add_result.stdout)
         hash_id = str(add_data['hash_id'])  # Ensure string for subprocess args
 

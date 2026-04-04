@@ -16,30 +16,31 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            'domain': {
-                'key': 'javascript-cui',
-                'name': 'CUI JavaScript Development',
-                'description': 'CUI-specific JavaScript project patterns for Maven integration and project structure',
-            },
-            'profiles': {
-                'core': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-frontend-cui:cui-javascript-project',
-                            'description': 'CUI JavaScript project structure, package.json configuration, and Maven integration standards',
-                        },
-                    ],
-                    'optionals': [],
+        return [
+            {
+                'domain': {
+                    'key': 'javascript-cui',
+                    'name': 'CUI JavaScript Development',
+                    'description': 'CUI-specific JavaScript project patterns for Maven integration and project structure',
                 },
-                'implementation': {'defaults': [], 'optionals': []},
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
-            },
-        }]
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-frontend-cui:cui-javascript-project',
+                                'description': 'CUI JavaScript project structure, package.json configuration, and Maven integration standards',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
+                },
+            }
+        ]
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if CUI JavaScript domain applies. Additive to 'javascript'.
 
         CUI JS modules have both npm and maven (dual build system).
@@ -49,7 +50,13 @@ class Extension(ExtensionBase):
         build_systems = module_data.get('build_systems', [])
         # CUI JS modules have both npm and maven (dual build system)
         if 'npm' not in build_systems or 'maven' not in build_systems:
-            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
 
         signals = [f'build_systems={",".join(build_systems)}']
 
@@ -65,9 +72,9 @@ class Extension(ExtensionBase):
         if frontend_maven_deps:
             signals.append('frontend-maven-plugin detected')
 
-        return self._build_applicable_result('high', signals, additive_to='javascript',
-                                              module_data=module_data,
-                                              active_profiles=active_profiles)
+        return self._build_applicable_result(
+            'high', signals, additive_to='javascript', module_data=module_data, active_profiles=active_profiles
+        )
 
     def config_defaults(self, project_root: str) -> None:
         """Configure CUI-specific Maven defaults for frontend modules.
@@ -91,9 +98,7 @@ class Extension(ExtensionBase):
 
         # CUI standard profile mappings for frontend modules
         # pre-commit → quality-gate, coverage → coverage
-        ext_defaults_set_default(
-            EXT_KEY_PROFILES_MAP, 'pre-commit:quality-gate,coverage:coverage', project_root
-        )
+        ext_defaults_set_default(EXT_KEY_PROFILES_MAP, 'pre-commit:quality-gate,coverage:coverage', project_root)
 
         # Skip internal profiles that shouldn't generate commands
         ext_defaults_set_default(

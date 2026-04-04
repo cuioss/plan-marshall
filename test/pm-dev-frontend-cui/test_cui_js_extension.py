@@ -129,8 +129,9 @@ def test_get_skill_domains_domain_description():
     """get_skill_domains() returns a non-empty domain description."""
     ext = load_frontend_cui_extension()
     domain = ext.get_skill_domains()[0]['domain']
-    assert isinstance(domain.get('description'), str) and domain['description'], \
+    assert isinstance(domain.get('description'), str) and domain['description'], (
         'Domain description must be non-empty string'
+    )
 
 
 def test_get_skill_domains_has_profiles():
@@ -154,8 +155,9 @@ def test_get_skill_domains_core_profile_has_cui_javascript_project():
         else:
             skill_refs.append(entry)
 
-    assert 'pm-dev-frontend-cui:cui-javascript-project' in skill_refs, \
+    assert 'pm-dev-frontend-cui:cui-javascript-project' in skill_refs, (
         "core.defaults must include 'pm-dev-frontend-cui:cui-javascript-project'"
+    )
 
 
 def test_get_skill_domains_profile_structure():
@@ -227,8 +229,7 @@ def test_applies_to_module_additive_to_javascript():
     """applies_to_module() returns additive_to='javascript' for applicable modules."""
     ext = load_frontend_cui_extension()
     result = ext.applies_to_module(_npm_maven_module_data())
-    assert result['additive_to'] == 'javascript', \
-        f"Expected additive_to='javascript', got '{result['additive_to']}'"
+    assert result['additive_to'] == 'javascript', f"Expected additive_to='javascript', got '{result['additive_to']}'"
 
 
 def test_applies_to_module_not_applicable_additive_to_none():
@@ -304,13 +305,12 @@ def test_config_defaults_sets_profiles_map():
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
         ext_defaults = config.get('extension_defaults', {})
 
-        assert 'build.maven.profiles.map.canonical' in ext_defaults, \
+        assert 'build.maven.profiles.map.canonical' in ext_defaults, (
             'config_defaults() must set build.maven.profiles.map.canonical'
+        )
         profiles_map = ext_defaults['build.maven.profiles.map.canonical']
-        assert 'pre-commit' in profiles_map, \
-            f"profiles.map.canonical should contain 'pre-commit', got: {profiles_map}"
-        assert 'coverage' in profiles_map, \
-            f"profiles.map.canonical should contain 'coverage', got: {profiles_map}"
+        assert 'pre-commit' in profiles_map, f"profiles.map.canonical should contain 'pre-commit', got: {profiles_map}"
+        assert 'coverage' in profiles_map, f"profiles.map.canonical should contain 'coverage', got: {profiles_map}"
 
 
 def test_config_defaults_sets_profiles_skip():
@@ -328,8 +328,7 @@ def test_config_defaults_sets_profiles_skip():
         config = json.loads(marshal_path.read_text(encoding='utf-8'))
         ext_defaults = config.get('extension_defaults', {})
 
-        assert 'build.maven.profiles.skip' in ext_defaults, \
-            'config_defaults() must set build.maven.profiles.skip'
+        assert 'build.maven.profiles.skip' in ext_defaults, 'config_defaults() must set build.maven.profiles.skip'
         skip_val = ext_defaults['build.maven.profiles.skip']
         assert skip_val, 'profiles.skip value must be non-empty'
 
@@ -354,8 +353,9 @@ def test_config_defaults_write_once_semantics():
         ext_defaults = config.get('extension_defaults', {})
 
         # write-once semantics: pre-existing value must not be overwritten
-        assert ext_defaults.get('build.maven.profiles.map.canonical') == pre_existing, \
+        assert ext_defaults.get('build.maven.profiles.map.canonical') == pre_existing, (
             'config_defaults() must not overwrite pre-existing extension_defaults values'
+        )
 
 
 # =============================================================================
@@ -367,8 +367,7 @@ def test_additive_to_javascript_when_applicable():
     """Extension is additive to 'javascript' domain, not standalone."""
     ext = load_frontend_cui_extension()
     result = ext.applies_to_module(_npm_maven_module_data())
-    assert result['additive_to'] == 'javascript', \
-        "pm-dev-frontend-cui must be additive to 'javascript'"
+    assert result['additive_to'] == 'javascript', "pm-dev-frontend-cui must be additive to 'javascript'"
 
 
 if __name__ == '__main__':
@@ -416,4 +415,5 @@ if __name__ == '__main__':
 
     print(f'\nResults: {passed} passed, {failed} failed')
     import sys
+
     sys.exit(0 if failed == 0 else 1)

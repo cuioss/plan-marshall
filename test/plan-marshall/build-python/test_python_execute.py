@@ -10,6 +10,7 @@ import pytest
 
 # Mock runtime-only modules before importing
 import sys
+
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
 
@@ -41,6 +42,7 @@ def test_config_default_timeout():
 def test_config_capture_strategy():
     """Config uses stdout redirect (not log flag)."""
     from _build_execute import CaptureStrategy
+
     assert _CONFIG.capture_strategy == CaptureStrategy.STDOUT_REDIRECT
 
 

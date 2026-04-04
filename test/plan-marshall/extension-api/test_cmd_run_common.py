@@ -9,7 +9,13 @@ from pathlib import Path
 
 # Add script paths for imports
 _SCRIPT_DIRS = [
-    Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts',
+    Path(__file__).resolve().parents[3]
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'extension-api'
+    / 'scripts',
 ]
 for d in _SCRIPT_DIRS:
     if str(d) not in sys.path:
@@ -23,8 +29,15 @@ from _build_shared import cmd_run_common  # noqa: E402
 # =============================================================================
 
 
-def _make_result(status='success', exit_code=0, duration=10, log_file='/tmp/test.log',
-                 command='./mvnw verify', error=None, timeout_used=300):
+def _make_result(
+    status='success',
+    exit_code=0,
+    duration=10,
+    log_file='/tmp/test.log',
+    command='./mvnw verify',
+    error=None,
+    timeout_used=300,
+):
     """Create a DirectCommandResult-like dict."""
     result = {
         'status': status,
@@ -47,8 +60,12 @@ def _noop_parser(log_file):
 def _error_parser(log_file):
     """Parser that returns compilation errors."""
     issues = [
-        Issue(file='src/Main.java', line=10, message='cannot find symbol', severity='error', category='compilation_error'),
-        Issue(file='src/Main.java', line=20, message='deprecated API', severity='warning', category='deprecation_warning'),
+        Issue(
+            file='src/Main.java', line=10, message='cannot find symbol', severity='error', category='compilation_error'
+        ),
+        Issue(
+            file='src/Main.java', line=20, message='deprecated API', severity='warning', category='deprecation_warning'
+        ),
     ]
     return issues, UnitTestSummary(passed=5, failed=1, skipped=0, total=6), 'FAILURE'
 
@@ -155,6 +172,7 @@ class TestCmdRunCommonBuildFailure:
 
     def test_parser_exception_still_returns_failure(self):
         """If parser raises, cmd_run_common still returns build_failed."""
+
         def broken_parser(log_file):
             raise RuntimeError('parser crashed')
 
@@ -164,6 +182,7 @@ class TestCmdRunCommonBuildFailure:
 
     def test_parser_exception_prints_error_output(self, capsys):
         """If parser raises, output still contains build_failed."""
+
         def broken_parser(log_file):
             raise RuntimeError('parser crashed')
 

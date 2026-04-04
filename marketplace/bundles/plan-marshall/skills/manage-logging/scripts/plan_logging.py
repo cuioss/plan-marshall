@@ -24,7 +24,14 @@ import time
 from datetime import date
 from pathlib import Path
 
-from constants import HASH_ID_LENGTH, VALID_LOG_LEVELS, VALID_LOG_TYPES, VALID_WORK_CATEGORIES, DIR_PLANS, DIR_LOGS  # type: ignore[import-not-found]
+from constants import (  # type: ignore[import-not-found]
+    DIR_LOGS,
+    DIR_PLANS,
+    HASH_ID_LENGTH,
+    VALID_LOG_LEVELS,
+    VALID_LOG_TYPES,
+    VALID_WORK_CATEGORIES,
+)
 from file_ops import get_base_dir  # type: ignore[import-not-found]
 from input_validation import is_valid_plan_id  # type: ignore[import-not-found]
 
@@ -68,6 +75,7 @@ def get_plans_dir() -> Path:
 def format_timestamp() -> str:
     """Get current time in ISO 8601 UTC format."""
     from file_ops import now_utc_iso
+
     return now_utc_iso()
 
 

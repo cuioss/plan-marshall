@@ -5,8 +5,6 @@ Contains build system and domain default structures used during
 project initialization and detection.
 """
 
-from constants import VALID_PROFILES  # type: ignore[import-not-found]
-
 # Reserved keys in nested domain config (not profile names)
 # bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
 # task_executors: System domain only - profile to task skill mapping

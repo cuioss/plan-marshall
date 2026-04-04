@@ -60,9 +60,9 @@ def parse_coverage_report(
 
     if passed:
         branch = overall.get('branch', 0)
-        message = f"Coverage meets threshold: {overall['line']}% line, {branch}% branch"
+        message = f'Coverage meets threshold: {overall["line"]}% line, {branch}% branch'
     else:
-        message = f"Coverage below threshold: {overall['line']}% line (threshold: {threshold}%)"
+        message = f'Coverage below threshold: {overall["line"]}% line (threshold: {threshold}%)'
 
     return {
         'status': 'success',
@@ -162,12 +162,14 @@ def _parse_jacoco(report_file: Path) -> tuple[dict[str, Any], list[dict[str, Any
                 if m_missed > 0:
                     uncovered_methods.append(m_name)
 
-            items.append({
-                'name': cls_name,
-                'line_pct': cls_pct,
-                'detail': ','.join(uncovered_methods) if uncovered_methods else '-',
-                'detail_label': 'missed_methods',
-            })
+            items.append(
+                {
+                    'name': cls_name,
+                    'line_pct': cls_pct,
+                    'detail': ','.join(uncovered_methods) if uncovered_methods else '-',
+                    'detail_label': 'missed_methods',
+                }
+            )
 
     return overall, items
 
@@ -204,13 +206,15 @@ def _parse_cobertura(report_file: Path) -> tuple[dict[str, Any], list[dict[str, 
                 if m_line_rate == 0:
                     uncovered_methods.append(method.get('name', ''))
 
-            items.append({
-                'name': cls_name,
-                'file': cls_filename,
-                'line_pct': cls_pct,
-                'detail': ','.join(uncovered_methods) if uncovered_methods else '-',
-                'detail_label': 'missed_methods',
-            })
+            items.append(
+                {
+                    'name': cls_name,
+                    'file': cls_filename,
+                    'line_pct': cls_pct,
+                    'detail': ','.join(uncovered_methods) if uncovered_methods else '-',
+                    'detail_label': 'missed_methods',
+                }
+            )
 
     return overall, items
 
@@ -234,9 +238,12 @@ def _parse_lcov(report_file: Path) -> tuple[dict[str, Any], list[dict[str, Any]]
             current_file = line[3:]
             current_data = {
                 'file': current_file,
-                'lines_found': 0, 'lines_hit': 0,
-                'functions_found': 0, 'functions_hit': 0,
-                'branches_found': 0, 'branches_hit': 0,
+                'lines_found': 0,
+                'lines_hit': 0,
+                'functions_found': 0,
+                'functions_hit': 0,
+                'branches_found': 0,
+                'branches_hit': 0,
             }
         elif line.startswith('LF:'):
             current_data['lines_found'] = int(line[3:])
@@ -274,11 +281,13 @@ def _parse_lcov(report_file: Path) -> tuple[dict[str, Any], list[dict[str, Any]]
         lh = f['lines_hit']
         bf = f['branches_found']
         bh = f['branches_hit']
-        items.append({
-            'name': f['file'],
-            'line_pct': round(lh / lf * 100, 2) if lf > 0 else 0.0,
-            'branch_pct': round(bh / bf * 100, 2) if bf > 0 else 0.0,
-        })
+        items.append(
+            {
+                'name': f['file'],
+                'line_pct': round(lh / lf * 100, 2) if lf > 0 else 0.0,
+                'branch_pct': round(bh / bf * 100, 2) if bf > 0 else 0.0,
+            }
+        )
 
     return overall, items
 
@@ -308,11 +317,13 @@ def _parse_jest_json(report_file: Path) -> tuple[dict[str, Any], list[dict[str, 
         if file_path == 'total':
             continue
         lines_data = coverage.get('lines', {})
-        items.append({
-            'name': file_path,
-            'line_pct': round(lines_data.get('pct', 0), 2),
-            'branch_pct': round(coverage.get('branches', {}).get('pct', 0), 2),
-        })
+        items.append(
+            {
+                'name': file_path,
+                'line_pct': round(lines_data.get('pct', 0), 2),
+                'branch_pct': round(coverage.get('branches', {}).get('pct', 0), 2),
+            }
+        )
 
     return overall, items
 

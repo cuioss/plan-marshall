@@ -382,10 +382,15 @@ class TestPRTriageContext(unittest.TestCase):
         result_no_ctx = parse_toon(stdout_no_ctx)
 
         # With context that contains the referenced identifier
-        stdout_ctx, _, code = run_pr_script([
-            'triage', '--comment', json.dumps(comment),
-            '--context', 'public String getValue() { return this.value; }',
-        ])
+        stdout_ctx, _, code = run_pr_script(
+            [
+                'triage',
+                '--comment',
+                json.dumps(comment),
+                '--context',
+                'public String getValue() { return this.value; }',
+            ]
+        )
         self.assertEqual(code, 0)
         result_ctx = parse_toon(stdout_ctx)
         # With context, should be classified as code_change
@@ -400,10 +405,15 @@ class TestPRTriageContext(unittest.TestCase):
             'line': None,
             'author': 'approver',
         }
-        stdout, _, code = run_pr_script([
-            'triage', '--comment', json.dumps(comment),
-            '--context', 'public void someMethod() {}',
-        ])
+        stdout, _, code = run_pr_script(
+            [
+                'triage',
+                '--comment',
+                json.dumps(comment),
+                '--context',
+                'public void someMethod() {}',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         # LGTM should still be ignore regardless of context
@@ -437,10 +447,15 @@ class TestContextShortCommentThreshold(unittest.TestCase):
             'line': 1,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script([
-            'triage', '--comment', json.dumps(comment),
-            '--context', 'public String getValue() { return this.value; }',
-        ])
+        stdout, _, code = run_pr_script(
+            [
+                'triage',
+                '--comment',
+                json.dumps(comment),
+                '--context',
+                'public String getValue() { return this.value; }',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         # Short comment (<20 chars) should NOT be boosted by context
@@ -489,7 +504,7 @@ class TestClassifyCommentDefaults(unittest.TestCase):
         comment = {
             'id': 'DEF1',
             'body': 'I think this entire approach needs to be reconsidered because the current implementation '
-                    'does not align well with the overall architecture of the project',
+            'does not align well with the overall architecture of the project',
             'path': 'src/Design.java',
             'line': 50,
             'author': 'reviewer',
@@ -609,7 +624,11 @@ class TestSuggestImplementationVerbs(unittest.TestCase):
     def test_rename_suggestion(self):
         """Rename request gets rename-specific suggestion."""
         comment = {
-            'id': 'SI1', 'body': 'Please rename this variable', 'path': 'src/A.java', 'line': 1, 'author': 'r',
+            'id': 'SI1',
+            'body': 'Please rename this variable',
+            'path': 'src/A.java',
+            'line': 1,
+            'author': 'r',
         }
         stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
         self.assertEqual(code, 0)
@@ -619,7 +638,11 @@ class TestSuggestImplementationVerbs(unittest.TestCase):
     def test_remove_suggestion(self):
         """Remove request gets remove-specific suggestion."""
         comment = {
-            'id': 'SI2', 'body': 'Please remove this unused import, it is wrong', 'path': 'src/A.java', 'line': 1, 'author': 'r',
+            'id': 'SI2',
+            'body': 'Please remove this unused import, it is wrong',
+            'path': 'src/A.java',
+            'line': 1,
+            'author': 'r',
         }
         stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
         self.assertEqual(code, 0)
@@ -630,7 +653,11 @@ class TestSuggestImplementationVerbs(unittest.TestCase):
     def test_move_suggestion(self):
         """Extract/move request gets restructure suggestion."""
         comment = {
-            'id': 'SI3', 'body': 'Please move this method into a helper class, it is missing from there', 'path': 'src/A.java', 'line': 1, 'author': 'r',
+            'id': 'SI3',
+            'body': 'Please move this method into a helper class, it is missing from there',
+            'path': 'src/A.java',
+            'line': 1,
+            'author': 'r',
         }
         stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
         self.assertEqual(code, 0)
@@ -651,11 +678,13 @@ class TestProviderContract(unittest.TestCase):
     def test_provider_module_resolver_exists(self):
         """Test that _get_provider_module function exists and is callable."""
         from pr import _get_provider_module  # type: ignore[import-not-found]
+
         self.assertTrue(callable(_get_provider_module))
 
     def test_provider_contract_functions_documented(self):
         """Test that required contract functions are listed in source."""
         from pr import _get_provider_module  # type: ignore[import-not-found]
+
         doc = _get_provider_module.__doc__ or ''
         self.assertIn('view_pr_data', doc)
         self.assertIn('fetch_pr_comments_data', doc)
@@ -663,6 +692,7 @@ class TestProviderContract(unittest.TestCase):
     def test_get_current_pr_number_handles_no_provider(self):
         """Test that get_current_pr_number returns None when provider unavailable."""
         from pr import get_current_pr_number  # type: ignore[import-not-found]
+
         # In test environment, CI provider is typically not configured
         result = get_current_pr_number()
         # Should return None gracefully, not raise
@@ -671,6 +701,7 @@ class TestProviderContract(unittest.TestCase):
     def test_fetch_comments_returns_structured_error_on_failure(self):
         """Test that fetch_comments returns structured error dict, not exception."""
         from pr import fetch_comments  # type: ignore[import-not-found]
+
         # Use an impossible PR number to trigger an error from any provider
         result = fetch_comments(999999999)
         # Should return error dict, not raise
@@ -684,6 +715,7 @@ class TestProviderContract(unittest.TestCase):
         returns the documented keys so drift is caught early.
         """
         from pr import fetch_comments  # type: ignore[import-not-found]
+
         result = fetch_comments(999999999)
         # On failure, must have status + error
         self.assertIn('status', result)
@@ -695,6 +727,7 @@ class TestProviderContract(unittest.TestCase):
     def test_classify_comment_returns_dict(self):
         """Verify classify_comment returns a dict with action/priority/reason keys."""
         from pr import classify_comment  # type: ignore[import-not-found]
+
         result = classify_comment('Please fix this bug')
         self.assertIsInstance(result, dict)
         for key in ('action', 'priority', 'reason'):

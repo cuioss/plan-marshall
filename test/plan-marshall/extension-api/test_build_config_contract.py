@@ -48,6 +48,7 @@ def test_all_configs_have_default_timeout():
 def test_all_configs_have_capture_strategy():
     """Every config specifies a capture strategy."""
     from _build_execute import CaptureStrategy
+
     for name, config in ALL_CONFIGS.items():
         assert isinstance(config.capture_strategy, CaptureStrategy), f'{name} has invalid capture_strategy'
 

@@ -15,9 +15,17 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from constants import (  # type: ignore[import-not-found]
-    VALID_TASK_ORIGINS, VALID_SOURCE_EXTENSIONS, DIR_TASKS,
+    DIR_TASKS,
+    VALID_SOURCE_EXTENSIONS,
+    VALID_TASK_ORIGINS,
 )
-from file_ops import get_plan_dir, normalize_to_repo_relative, now_utc_iso, output_toon, output_toon_error  # type: ignore[import-not-found]  # noqa: F401 - re-exported
+from file_ops import (  # type: ignore[import-not-found]  # noqa: F401 - re-exported
+    get_plan_dir,
+    normalize_to_repo_relative,
+    now_utc_iso,
+    output_toon,
+    output_toon_error,
+)
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 
 # =============================================================================

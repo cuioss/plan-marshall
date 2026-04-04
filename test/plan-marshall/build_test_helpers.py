@@ -28,8 +28,10 @@ def assert_coverage_missing_file(script_path, report_path='/nonexistent/report')
     Shared across all build tools — the behavior is identical.
     """
     result = run_script(
-        script_path, 'coverage-report',
-        '--report-path', report_path,
+        script_path,
+        'coverage-report',
+        '--report-path',
+        report_path,
     )
     assert not result.success
 
@@ -45,9 +47,12 @@ def assert_coverage_high(script_path, fixture_path, threshold=80):
     Shared across all build tools — verifies status, passed, and line coverage.
     """
     result = run_script(
-        script_path, 'coverage-report',
-        '--report-path', str(fixture_path),
-        '--threshold', str(threshold),
+        script_path,
+        'coverage-report',
+        '--report-path',
+        str(fixture_path),
+        '--threshold',
+        str(threshold),
     )
     assert result.success, f'Script failed: {result.stderr}'
 
@@ -64,9 +69,12 @@ def assert_coverage_low(script_path, fixture_path, threshold=80):
     Shared across all build tools — verifies status, passed=False, and message.
     """
     result = run_script(
-        script_path, 'coverage-report',
-        '--report-path', str(fixture_path),
-        '--threshold', str(threshold),
+        script_path,
+        'coverage-report',
+        '--report-path',
+        str(fixture_path),
+        '--threshold',
+        str(threshold),
     )
     assert not result.success
 
@@ -84,9 +92,12 @@ def assert_coverage_has_low_items(script_path, fixture_path, threshold=80):
     Returns the data dict for tool-specific assertions on item names.
     """
     result = run_script(
-        script_path, 'coverage-report',
-        '--report-path', str(fixture_path),
-        '--threshold', str(threshold),
+        script_path,
+        'coverage-report',
+        '--report-path',
+        str(fixture_path),
+        '--threshold',
+        str(threshold),
     )
     data = parse_toon(result.stdout)
     assert 'low_coverage' in data
@@ -100,9 +111,12 @@ def assert_coverage_custom_threshold(script_path, fixture_path, threshold):
     Shared across all build tools — verifies passed=True and threshold value.
     """
     result = run_script(
-        script_path, 'coverage-report',
-        '--report-path', str(fixture_path),
-        '--threshold', str(threshold),
+        script_path,
+        'coverage-report',
+        '--report-path',
+        str(fixture_path),
+        '--threshold',
+        str(threshold),
     )
     assert result.success, f'Script failed: {result.stderr}'
 

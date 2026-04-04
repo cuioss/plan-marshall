@@ -50,6 +50,7 @@ from triage_helpers import (  # type: ignore[import-not-found]
 
 _DOMAIN_CONFIG = load_skill_config(__file__, 'domain-lists.json')
 
+
 def _extract_domain_names(entries: list) -> set[str]:
     """Extract domain names from enriched objects or plain strings.
 
@@ -78,11 +79,11 @@ HIGH_REACH_DOMAINS: set[str] = _extract_domain_names(_DOMAIN_CONFIG.get('high_re
 _RED_FLAGS: list[dict[str, str]] = _DOMAIN_CONFIG.get('red_flags', [])
 _RED_FLAG_RAW_PATTERNS = [entry['pattern'] for entry in _RED_FLAGS if 'pattern' in entry]
 _RED_FLAG_COMPILED_LIST = compile_patterns_from_config(
-    _RED_FLAG_RAW_PATTERNS, 'domain-lists.json [red_flags]',
+    _RED_FLAG_RAW_PATTERNS,
+    'domain-lists.json [red_flags]',
 )
 _RED_FLAG_COMPILED: list[tuple[str, re.Pattern]] = [
-    (raw, compiled)
-    for raw, compiled in zip(_RED_FLAG_RAW_PATTERNS, _RED_FLAG_COMPILED_LIST, strict=True)
+    (raw, compiled) for raw, compiled in zip(_RED_FLAG_RAW_PATTERNS, _RED_FLAG_COMPILED_LIST, strict=True)
 ]
 
 # Pre-computed union for subdomain matching — avoids recreating per call
@@ -241,53 +242,67 @@ def generate_recommendations(
     recs: list[dict[str, str]] = []
 
     if redundant['universal_redundant']:
-        recs.append({
-            'action': 'remove',
-            'reason': 'Redundant — universal wildcard (*) covers all domains',
-            'domains': ', '.join(redundant['universal_redundant']),
-        })
+        recs.append(
+            {
+                'action': 'remove',
+                'reason': 'Redundant — universal wildcard (*) covers all domains',
+                'domains': ', '.join(redundant['universal_redundant']),
+            }
+        )
 
     if duplicates:
-        recs.append({
-            'action': 'deduplicate',
-            'reason': 'Duplicated across global and local settings',
-            'domains': ', '.join(duplicates),
-        })
+        recs.append(
+            {
+                'action': 'deduplicate',
+                'reason': 'Duplicated across global and local settings',
+                'domains': ', '.join(duplicates),
+            }
+        )
 
     if redundant['subdomain_redundant']:
-        recs.append({
-            'action': 'remove',
-            'reason': 'Subdomain already covered by parent domain',
-            'domains': ', '.join(redundant['subdomain_redundant']),
-        })
+        recs.append(
+            {
+                'action': 'remove',
+                'reason': 'Subdomain already covered by parent domain',
+                'domains': ', '.join(redundant['subdomain_redundant']),
+            }
+        )
 
     if categories['major']:
-        recs.append({
-            'action': 'move_to_global',
-            'reason': 'Major documentation domains — safe for global settings',
-            'domains': ', '.join(sorted(categories['major'])),
-        })
+        recs.append(
+            {
+                'action': 'move_to_global',
+                'reason': 'Major documentation domains — safe for global settings',
+                'domains': ', '.join(sorted(categories['major'])),
+            }
+        )
 
     if categories['high_reach']:
-        recs.append({
-            'action': 'move_to_global',
-            'reason': 'High-reach developer platforms — commonly needed across projects',
-            'domains': ', '.join(sorted(categories['high_reach'])),
-        })
+        recs.append(
+            {
+                'action': 'move_to_global',
+                'reason': 'High-reach developer platforms — commonly needed across projects',
+                'domains': ', '.join(sorted(categories['high_reach'])),
+            }
+        )
 
     if categories['suspicious']:
-        recs.append({
-            'action': 'review_for_removal',
-            'reason': 'Domain matches red flag patterns — investigate before keeping',
-            'domains': ', '.join(sorted(categories['suspicious'])),
-        })
+        recs.append(
+            {
+                'action': 'review_for_removal',
+                'reason': 'Domain matches red flag patterns — investigate before keeping',
+                'domains': ', '.join(sorted(categories['suspicious'])),
+            }
+        )
 
     if categories['unknown']:
-        recs.append({
-            'action': 'research',
-            'reason': 'Unknown domain — needs security assessment before categorizing',
-            'domains': ', '.join(sorted(categories['unknown'])),
-        })
+        recs.append(
+            {
+                'action': 'research',
+                'reason': 'Unknown domain — needs security assessment before categorizing',
+                'domains': ', '.join(sorted(categories['unknown'])),
+            }
+        )
 
     return recs
 
@@ -321,7 +336,9 @@ def cmd_analyze(args):
                 denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                return print_error(f'Invalid JSON in global settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(global_path))
+                return print_error(
+                    f'Invalid JSON in global settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(global_path)
+                )
         else:
             stats['global_missing'] = True
 
@@ -336,7 +353,9 @@ def cmd_analyze(args):
                 denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                return print_error(f'Invalid JSON in local settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(local_path))
+                return print_error(
+                    f'Invalid JSON in local settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(local_path)
+                )
         else:
             stats['local_missing'] = True
 
@@ -351,9 +370,7 @@ def cmd_analyze(args):
     recommendations = generate_recommendations(categories, duplicates, redundant)
 
     stats['duplicates_found'] = len(duplicates)
-    stats['redundant_found'] = (
-        len(redundant['universal_redundant']) + len(redundant['subdomain_redundant'])
-    )
+    stats['redundant_found'] = len(redundant['universal_redundant']) + len(redundant['subdomain_redundant'])
 
     result = {
         'global_count': len(global_domains),
@@ -443,10 +460,7 @@ def apply_recommendations(
     allow_list: list[str] = permissions.get('allow', [])
 
     # Track existing WebFetch domains
-    existing_wf = {
-        entry for entry in allow_list
-        if isinstance(entry, str) and entry.startswith('WebFetch(')
-    }
+    existing_wf = {entry for entry in allow_list if isinstance(entry, str) and entry.startswith('WebFetch(')}
     remove_entries = {f'WebFetch({d})' for d in remove_domains}
     add_entries = {f'WebFetch({d})' for d in add_domains}
 

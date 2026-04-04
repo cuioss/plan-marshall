@@ -18,7 +18,11 @@ from _status_core import (
     require_valid_plan_id,
     write_status,
 )
-from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS, PHASE_STATUS_PENDING  # type: ignore[import-not-found]
+from constants import (  # type: ignore[import-not-found]
+    PHASE_STATUS_DONE,
+    PHASE_STATUS_IN_PROGRESS,
+    PHASE_STATUS_PENDING,
+)
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 
@@ -153,12 +157,14 @@ def cmd_delete_plan(args: argparse.Namespace) -> None:
     plan_dir = get_plan_dir(args.plan_id)
 
     if not plan_dir.exists():
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'plan_not_found',
-            'message': f'Plan directory does not exist: {plan_dir}',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'plan_not_found',
+                'message': f'Plan directory does not exist: {plan_dir}',
+            }
+        )
         sys.exit(1)
 
     # Count files before deletion for audit trail
@@ -167,26 +173,32 @@ def cmd_delete_plan(args: argparse.Namespace) -> None:
     try:
         shutil.rmtree(plan_dir)
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Deleted plan ({files_removed} files)')
-        output_toon({
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'deleted',
-            'path': str(plan_dir),
-            'files_removed': files_removed,
-        })
+        output_toon(
+            {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'action': 'deleted',
+                'path': str(plan_dir),
+                'files_removed': files_removed,
+            }
+        )
     except PermissionError as e:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'permission_denied',
-            'message': f'Permission denied: {e}',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'permission_denied',
+                'message': f'Permission denied: {e}',
+            }
+        )
         sys.exit(1)
     except Exception as e:
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'delete_failed',
-            'message': f'Failed to delete plan directory: {e}',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'delete_failed',
+                'message': f'Failed to delete plan directory: {e}',
+            }
+        )
         sys.exit(1)

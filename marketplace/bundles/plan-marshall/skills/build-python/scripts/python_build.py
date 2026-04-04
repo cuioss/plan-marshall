@@ -45,17 +45,20 @@ cmd_check_warnings = create_check_warnings_handler(
 
 def main() -> int:
     """Main entry point."""
-    return build_main('Python/pyprojectx build operations', register_standard_subparsers(
-        run_handler=cmd_run,
-        run_args_help="Canonical command to execute (e.g., 'verify', 'module-tests', 'quality-gate')",
-        parse_handler=parse_log,
-        parse_help='Parse pyprojectx build output and categorize issues',
-        coverage_handler=cmd_coverage_report,
-        coverage_help='Parse coverage.py XML report',
-        check_warnings_handler=cmd_check_warnings,
-        discover_handler=discover_python_modules,
-        discover_help='Discover Python modules',
-    ))
+    return build_main(
+        'Python/pyprojectx build operations',
+        register_standard_subparsers(
+            run_handler=cmd_run,
+            run_args_help="Canonical command to execute (e.g., 'verify', 'module-tests', 'quality-gate')",
+            parse_handler=parse_log,
+            parse_help='Parse pyprojectx build output and categorize issues',
+            coverage_handler=cmd_coverage_report,
+            coverage_help='Parse coverage.py XML report',
+            check_warnings_handler=cmd_check_warnings,
+            discover_handler=discover_python_modules,
+            discover_help='Discover Python modules',
+        ),
+    )
 
 
 if __name__ == '__main__':

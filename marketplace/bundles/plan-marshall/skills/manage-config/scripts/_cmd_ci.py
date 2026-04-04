@@ -97,9 +97,7 @@ def _handle_persist(args, config: dict, ci_config: dict) -> int:
         run_config['ci'] = run_ci
         save_run_config(run_config)
 
-    return success_exit(
-        {'provider': args.provider, 'repo_url': args.repo_url}
-    )
+    return success_exit({'provider': args.provider, 'repo_url': args.repo_url})
 
 
 def cmd_ci(args) -> int:

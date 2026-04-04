@@ -64,7 +64,8 @@ def _extract_issues(content: str) -> list[Issue]:
     for match in TS_ERROR_PATTERN.finditer(content):
         file_path, line, col, severity, code, message = match.groups()
         add_issue_deduped(
-            issues, seen,
+            issues,
+            seen,
             file=file_path,
             line=int(line),
             message=f'{code}: {message}',
@@ -77,7 +78,8 @@ def _extract_issues(content: str) -> list[Issue]:
         for match in TS_ERROR_ALT_PATTERN.finditer(content):
             file_path, line, col, severity, code, message = match.groups()
             add_issue_deduped(
-                issues, seen,
+                issues,
+                seen,
                 file=file_path,
                 line=int(line),
                 message=f'{code}: {message}',

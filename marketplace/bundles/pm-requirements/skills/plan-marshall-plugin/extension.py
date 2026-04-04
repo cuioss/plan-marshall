@@ -22,25 +22,27 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            'domain': {
-                'key': 'requirements',
-                'name': 'Requirements Engineering',
-                'description': 'User stories, acceptance criteria, specifications',
-            },
-            'profiles': {
-                'core': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-requirements:requirements-authoring',
-                            'description': 'Requirements authoring standards for user stories and acceptance criteria',
-                        },
-                    ],
-                    'optionals': [],
+        return [
+            {
+                'domain': {
+                    'key': 'requirements',
+                    'name': 'Requirements Engineering',
+                    'description': 'User stories, acceptance criteria, specifications',
                 },
-                # Knowledge-only domain: no implementation, testing, or quality skills
-                'implementation': {'defaults': [], 'optionals': []},
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
-            },
-        }]
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-requirements:requirements-authoring',
+                                'description': 'Requirements authoring standards for user stories and acceptance criteria',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    # Knowledge-only domain: no implementation, testing, or quality skills
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
+                },
+            }
+        ]

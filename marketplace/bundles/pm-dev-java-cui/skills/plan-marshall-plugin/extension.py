@@ -15,29 +15,36 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            'domain': {
-                'key': 'java-cui',
-                'name': 'CUI Java Development',
-                'description': 'CUI-specific Java patterns for logging, testing, and HTTP',
-            },
-            'profiles': {
-                'core': {'defaults': ['pm-dev-java-cui:cui-logging'], 'optionals': []},
-                'implementation': {'defaults': [], 'optionals': ['pm-dev-java-cui:cui-http']},
-                'module_testing': {
-                    'defaults': [],
-                    'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-http-testing'],
+        return [
+            {
+                'domain': {
+                    'key': 'java-cui',
+                    'name': 'CUI Java Development',
+                    'description': 'CUI-specific Java patterns for logging, testing, and HTTP',
                 },
-                'quality': {'defaults': [], 'optionals': []},
-            },
-        }]
+                'profiles': {
+                    'core': {'defaults': ['pm-dev-java-cui:cui-logging'], 'optionals': []},
+                    'implementation': {'defaults': [], 'optionals': ['pm-dev-java-cui:cui-http']},
+                    'module_testing': {
+                        'defaults': [],
+                        'optionals': ['pm-dev-java-cui:cui-testing', 'pm-dev-java-cui:cui-http-testing'],
+                    },
+                    'quality': {'defaults': [], 'optionals': []},
+                },
+            }
+        ]
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if CUI Java domain applies. Additive to 'java'."""
         build_systems = module_data.get('build_systems', [])
         if 'maven' not in build_systems and 'gradle' not in build_systems:
-            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
 
         signals = [f'build_systems={",".join(build_systems)}']
 
@@ -48,9 +55,9 @@ class Extension(ExtensionBase):
         if cui_deps:
             signals.append(f'de.cuioss:* deps ({len(cui_deps)} found)')
 
-        return self._build_applicable_result('high', signals, additive_to='java',
-                                              module_data=module_data,
-                                              active_profiles=active_profiles)
+        return self._build_applicable_result(
+            'high', signals, additive_to='java', module_data=module_data, active_profiles=active_profiles
+        )
 
     def provides_recipes(self) -> list[dict]:
         """Return CUI-specific recipes."""

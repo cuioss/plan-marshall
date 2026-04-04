@@ -220,7 +220,10 @@ class TestValidateScriptNotation:
     """Tests for script notation validation (3-part bundle:skill:script)."""
 
     def test_valid(self):
-        assert validate_script_notation('plan-marshall:manage-files:manage-files') == 'plan-marshall:manage-files:manage-files'
+        assert (
+            validate_script_notation('plan-marshall:manage-files:manage-files')
+            == 'plan-marshall:manage-files:manage-files'
+        )
 
     def test_valid_different_bundle(self):
         assert validate_script_notation('pm-dev-java:build-maven:maven') == 'pm-dev-java:build-maven:maven'

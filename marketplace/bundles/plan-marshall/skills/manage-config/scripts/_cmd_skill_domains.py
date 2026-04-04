@@ -137,14 +137,15 @@ def discover_project_skills() -> list[dict]:
         if description == notation:
             description = skill_dir.name
 
-        skills.append({
-            'notation': notation,
-            'name': skill_dir.name,
-            'description': description,
-        })
+        skills.append(
+            {
+                'notation': notation,
+                'name': skill_dir.name,
+                'description': description,
+            }
+        )
 
     return skills
-
 
 
 def discover_available_domains(project_root: Path | None = None) -> dict:
@@ -379,12 +380,14 @@ def _discover_all_verify_steps() -> list[dict]:
 
     # Source 1: Built-in steps
     for step_name in BUILT_IN_VERIFY_STEPS:
-        all_steps.append({
-            'name': step_name,
-            'description': BUILT_IN_VERIFY_STEP_DESCRIPTIONS.get(step_name, step_name),
-            'type': 'built-in',
-            'source': 'built-in',
-        })
+        all_steps.append(
+            {
+                'name': step_name,
+                'description': BUILT_IN_VERIFY_STEP_DESCRIPTIONS.get(step_name, step_name),
+                'type': 'built-in',
+                'source': 'built-in',
+            }
+        )
 
     # Source 2: Project verify-step-* skills
     claude_skills = Path('.claude/skills')
@@ -403,12 +406,14 @@ def _discover_all_verify_steps() -> list[dict]:
                 description = fm_match.group(1).strip()
 
             step_ref = f'project:{skill_dir.name}'
-            all_steps.append({
-                'name': step_ref,
-                'description': description or skill_dir.name,
-                'type': 'project',
-                'source': 'project',
-            })
+            all_steps.append(
+                {
+                    'name': step_ref,
+                    'description': description or skill_dir.name,
+                    'type': 'project',
+                    'source': 'project',
+                }
+            )
 
     # Source 3: Extension provides_verify_steps()
     extensions = discover_all_extensions()
@@ -421,12 +426,14 @@ def _discover_all_verify_steps() -> list[dict]:
             if not steps:
                 continue
             for step in steps:
-                all_steps.append({
-                    'name': step.get('name', ''),
-                    'description': step.get('description', ''),
-                    'type': 'skill',
-                    'source': 'extension',
-                })
+                all_steps.append(
+                    {
+                        'name': step.get('name', ''),
+                        'description': step.get('description', ''),
+                        'type': 'skill',
+                        'source': 'extension',
+                    }
+                )
         except Exception:
             pass
 
@@ -760,10 +767,12 @@ def cmd_skill_domains(args) -> int:
 
     elif args.verb == 'discover-project':
         skills = discover_project_skills()
-        return success_exit({
-            'skills': skills,
-            'count': len(skills),
-        })
+        return success_exit(
+            {
+                'skills': skills,
+                'count': len(skills),
+            }
+        )
 
     elif args.verb == 'attach-project':
         domain = args.domain
@@ -791,11 +800,13 @@ def cmd_skill_domains(args) -> int:
         config['skill_domains'] = skill_domains
         save_config(config)
 
-        return success_exit({
-            'domain': domain,
-            'project_skills': merged,
-            'added': len(merged) - len(existing),
-        })
+        return success_exit(
+            {
+                'domain': domain,
+                'project_skills': merged,
+                'added': len(merged) - len(existing),
+            }
+        )
 
     elif args.verb == 'active-profiles':
         ap_verb = getattr(args, 'ap_verb', None)
@@ -825,10 +836,12 @@ def cmd_skill_domains(args) -> int:
                 skill_domains['active_profiles'] = profiles_list
             config['skill_domains'] = skill_domains
             save_config(config)
-            return success_exit({
-                'scope': domain or 'global',
-                'active_profiles': profiles_list,
-            })
+            return success_exit(
+                {
+                    'scope': domain or 'global',
+                    'active_profiles': profiles_list,
+                }
+            )
 
         elif ap_verb == 'remove':
             domain = getattr(args, 'domain', None)

@@ -70,7 +70,9 @@ def test_resolve_without_plugin_root():
         if state_file.exists():
             state_file.unlink()
 
-        result = run_script(SCRIPT_PATH, 'resolve', '--bundle', 'plan-marshall', '--path', 'skills/manage-tasks/SKILL.md')
+        result = run_script(
+            SCRIPT_PATH, 'resolve', '--bundle', 'plan-marshall', '--path', 'skills/manage-tasks/SKILL.md'
+        )
         # This will fail if no plugin cache, or succeed if cache exists
         assert result.returncode in (0, 1)
         if not result.success:
@@ -89,9 +91,12 @@ def test_resolve_with_existing_cache():
 
         # Now resolve a path
         result = run_script(
-            SCRIPT_PATH, 'resolve',
-            '--bundle', 'plan-marshall',
-            '--path', 'skills/manage-tasks/SKILL.md',
+            SCRIPT_PATH,
+            'resolve',
+            '--bundle',
+            'plan-marshall',
+            '--path',
+            'skills/manage-tasks/SKILL.md',
         )
         # May not find the exact path but should not crash
         assert result.returncode in (0, 1)

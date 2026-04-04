@@ -127,6 +127,7 @@ class ScriptResult:
     def toon(self) -> dict[str, Any]:
         """Parse stdout as TOON. Raises ValueError if invalid."""
         from toon_parser import parse_toon
+
         if not self.stdout.strip():
             raise ValueError(f'Empty stdout. stderr: {self.stderr}')
         data: dict[str, Any] = parse_toon(self.stdout)
@@ -145,6 +146,7 @@ class ScriptResult:
     def toon_or_error(self) -> dict[str, Any]:
         """Parse stdout as TOON, or stderr if stdout is empty."""
         from toon_parser import parse_toon
+
         if self.stdout.strip():
             data: dict[str, Any] = parse_toon(self.stdout)
             return data
@@ -621,9 +623,14 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
             'max_iterations': 3,
             'review_bot_buffer_seconds': 300,
             'steps': [
-                'commit_push', 'create_pr', 'automated_review',
-                'sonar_roundtrip', 'knowledge_capture', 'lessons_capture',
-                'branch_cleanup', 'archive',
+                'commit_push',
+                'create_pr',
+                'automated_review',
+                'sonar_roundtrip',
+                'knowledge_capture',
+                'lessons_capture',
+                'branch_cleanup',
+                'archive',
             ],
         },
     },

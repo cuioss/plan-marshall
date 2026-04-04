@@ -9,7 +9,6 @@ Provides:
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 
 from permission_common import (  # type: ignore[import-not-found]
@@ -21,7 +20,6 @@ from permission_common import (  # type: ignore[import-not-found]
     resolve_scope_to_paths,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
 
 # =============================================================================
 # detect-redundant subcommand

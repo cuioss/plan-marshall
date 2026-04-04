@@ -41,7 +41,6 @@ from extension_base import (
     discover_sources,
 )
 
-
 # =============================================================================
 # Profile Pipeline Utilities (Maven-specific — only Maven uses build profiles)
 # =============================================================================
@@ -118,6 +117,7 @@ def map_canonical_profiles(profiles: list[dict], explicit_mapping: dict[str, str
         result.append({'id': pid, 'canonical': canonical})
     return result
 
+
 # =============================================================================
 # Extension Defaults Keys (for config_defaults callback)
 # =============================================================================
@@ -174,11 +174,13 @@ def discover_maven_modules(project_root: str) -> list:
 
         # If Maven failed, return error-only structure (matches Gradle contract)
         if maven_data is None:
-            modules.append({
-                'name': base.name,
-                'build_systems': ['maven'],
-                'error': 'Unable to retrieve metadata - Maven commands failed',
-            })
+            modules.append(
+                {
+                    'name': base.name,
+                    'build_systems': ['maven'],
+                    'error': 'Unable to retrieve metadata - Maven commands failed',
+                }
+            )
             continue
 
         # Build complete module data
@@ -473,9 +475,13 @@ def _apply_profile_pipeline(raw_profiles: list, project_root: str) -> list:
     # 4. Map to canonical names
     profiles = map_canonical_profiles(profiles, explicit_mapping)
 
-    log_entry('script', 'global', 'INFO',
-              f'[PROFILE-PIPELINE] {len(raw_profiles)} raw → {len(profiles)} mapped'
-              f' (skip={skip_list or "none"}, mapping={explicit_mapping or "none"})')
+    log_entry(
+        'script',
+        'global',
+        'INFO',
+        f'[PROFILE-PIPELINE] {len(raw_profiles)} raw → {len(profiles)} mapped'
+        f' (skip={skip_list or "none"}, mapping={explicit_mapping or "none"})',
+    )
 
     return profiles
 
@@ -547,7 +553,6 @@ def _parse_dependencies_from_maven_output(log_content: str) -> list:
     return dependencies
 
 
-
 # =============================================================================
 # Commands
 # =============================================================================
@@ -613,5 +618,3 @@ def _build_commands(
                 cmd_map[canonical] = profile_args
 
     return build_canonical_commands(skill, cmd_map)
-
-

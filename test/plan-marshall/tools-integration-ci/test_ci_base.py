@@ -163,6 +163,7 @@ def test_poll_until_immediate_success():
 
 def test_poll_until_check_error():
     """Should propagate error from check_fn."""
+
     def check_fn():
         return False, {'error': 'Connection refused'}
 
@@ -176,6 +177,7 @@ def test_poll_until_check_error():
 
 def test_poll_until_timeout():
     """Should timeout when condition is never met."""
+
     def check_fn():
         return True, {'status': 'pending'}
 

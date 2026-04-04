@@ -131,9 +131,7 @@ implements: plan-marshall:extension-api/standards/outline-extension.md
 # Content
 """
         frontmatter, _ = extract_frontmatter(content)
-        assert (
-            frontmatter['implements'] == 'plan-marshall:extension-api/standards/outline-extension.md'
-        )
+        assert frontmatter['implements'] == 'plan-marshall:extension-api/standards/outline-extension.md'
 
     def test_no_frontmatter(self):
         """Test handling content without frontmatter."""

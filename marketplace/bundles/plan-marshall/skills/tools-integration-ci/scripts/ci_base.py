@@ -14,7 +14,7 @@ import argparse
 import subprocess
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 # Exit codes
@@ -22,14 +22,15 @@ EXIT_SUCCESS = 0
 EXIT_ERROR = 1
 
 # Shared defaults for CI polling operations
-DEFAULT_CI_TIMEOUT = 300   # seconds
-DEFAULT_CI_INTERVAL = 30   # seconds
+DEFAULT_CI_TIMEOUT = 300  # seconds
+DEFAULT_CI_INTERVAL = 30  # seconds
 CI_LOG_TRUNCATE_LINES = 200
 
 
 # ---------------------------------------------------------------------------
 # CLI execution
 # ---------------------------------------------------------------------------
+
 
 def run_cli(
     cli_name: str,
@@ -77,6 +78,7 @@ def run_cli(
 # Authentication
 # ---------------------------------------------------------------------------
 
+
 def check_auth_cli(
     cli_name: str,
     login_message: str,
@@ -103,6 +105,7 @@ def check_auth_cli(
 # Error output (unified TOON via serialize_toon)
 # ---------------------------------------------------------------------------
 
+
 def output_error(operation: str, error: str, context: str = '') -> int:
     """Output error in TOON format to stderr and return EXIT_ERROR."""
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -118,7 +121,10 @@ def output_error(operation: str, error: str, context: str = '') -> int:
 # Argument parser builder
 # ---------------------------------------------------------------------------
 
-def build_parser(description: str) -> tuple[
+
+def build_parser(
+    description: str,
+) -> tuple[
     argparse.ArgumentParser,
     argparse._SubParsersAction,
     argparse._SubParsersAction,
@@ -144,7 +150,9 @@ def build_parser(description: str) -> tuple[
     pr_list = pr_sub.add_parser('list', help='List pull requests')
     pr_list.add_argument('--head', help='Filter by head/source branch name')
     pr_list.add_argument(
-        '--state', default='open', choices=['open', 'closed', 'all'],
+        '--state',
+        default='open',
+        choices=['open', 'closed', 'all'],
         help='Filter by state (default: open)',
     )
 
@@ -176,7 +184,9 @@ def build_parser(description: str) -> tuple[
     pr_merge = pr_sub.add_parser('merge', help='Merge a pull request')
     pr_merge.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_merge.add_argument(
-        '--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
+        '--strategy',
+        default='merge',
+        choices=['merge', 'squash', 'rebase'],
         help='Merge strategy (default: merge)',
     )
     pr_merge.add_argument('--delete-branch', action='store_true', help='Delete branch after merge')
@@ -185,7 +195,9 @@ def build_parser(description: str) -> tuple[
     pr_auto = pr_sub.add_parser('auto-merge', help='Enable auto-merge on a PR')
     pr_auto.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_auto.add_argument(
-        '--strategy', default='merge', choices=['merge', 'squash', 'rebase'],
+        '--strategy',
+        default='merge',
+        choices=['merge', 'squash', 'rebase'],
         help='Merge strategy (default: merge)',
     )
 
@@ -286,6 +298,7 @@ def add_pr_resolve_thread_pr_number(
 # Generic handler factories for simple operations
 # ---------------------------------------------------------------------------
 
+
 def make_simple_handler(
     operation: str,
     build_args_fn: Any,
@@ -316,7 +329,7 @@ def make_simple_handler(
         cli_args = build_args_fn(args)
         returncode, stdout, stderr = run_fn(cli_args)
         if returncode != 0:
-            return output_error(operation, f'Operation failed', stderr.strip())
+            return output_error(operation, 'Operation failed', stderr.strip())
 
         result = {'status': 'success', 'operation': operation}
         if result_extras:
@@ -347,6 +360,7 @@ def make_pr_number_handler(
 # ---------------------------------------------------------------------------
 # CI check formatting (shared between GitHub and GitLab)
 # ---------------------------------------------------------------------------
+
 
 def compute_elapsed(started_at: str | None, completed_at: str | None, now: datetime) -> int:
     """Compute elapsed seconds from ISO timestamps.
@@ -380,7 +394,9 @@ def compute_total_elapsed(started_at_values: list[str | None], now: datetime) ->
     return int((now - earliest).total_seconds()) if earliest else 0
 
 
-def determine_overall_ci_status(checks: list[dict], pass_key: str, fail_key: str, pending_key: str, skip_key: str) -> str:
+def determine_overall_ci_status(
+    checks: list[dict], pass_key: str, fail_key: str, pending_key: str, skip_key: str
+) -> str:
     """Determine overall CI status from a list of check dicts.
 
     Args:
@@ -407,6 +423,7 @@ def determine_overall_ci_status(checks: list[dict], pass_key: str, fail_key: str
 # ---------------------------------------------------------------------------
 # Polling framework (shared between ci wait and await_until patterns)
 # ---------------------------------------------------------------------------
+
 
 def poll_until(
     check_fn: Any,
@@ -469,6 +486,7 @@ def poll_until(
 # ---------------------------------------------------------------------------
 # CI log truncation (shared between GitHub and GitLab)
 # ---------------------------------------------------------------------------
+
 
 def truncate_log_content(stdout: str, max_lines: int = CI_LOG_TRUNCATE_LINES) -> tuple[str, int]:
     """Truncate log output and escape for TOON.

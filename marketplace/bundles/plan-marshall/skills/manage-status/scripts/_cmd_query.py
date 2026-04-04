@@ -13,7 +13,6 @@ from _status_core import (
     log_entry,
     output_toon,
     require_status,
-    require_valid_plan_id,
     write_status,
 )
 from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS  # type: ignore[import-not-found]

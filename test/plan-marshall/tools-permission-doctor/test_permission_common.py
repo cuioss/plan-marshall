@@ -35,9 +35,7 @@ class TestLoadSettings:
 
     def test_load_valid_settings(self, tmp_path):
         settings_file = tmp_path / 'settings.json'
-        settings_file.write_text(json.dumps({
-            'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         data, error = load_settings(str(settings_file))
         assert error is None
@@ -76,9 +74,7 @@ class TestLoadSettings:
     def test_load_adds_missing_sub_keys(self, tmp_path):
         """Settings with partial permissions should get missing sub-keys added."""
         settings_file = tmp_path / 'settings.json'
-        settings_file.write_text(json.dumps({
-            'permissions': {'allow': ['Bash(git:*)']}
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)']}}))
 
         data, error = load_settings(str(settings_file))
         assert error is None
@@ -96,9 +92,7 @@ class TestLoadSettingsPath:
 
     def test_load_existing_file(self, tmp_path):
         settings_file = tmp_path / 'settings.json'
-        settings_file.write_text(json.dumps({
-            'permissions': {'allow': ['Read(*)'], 'deny': [], 'ask': []}
-        }))
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Read(*)'], 'deny': [], 'ask': []}}))
 
         data = load_settings_path(settings_file)
         assert data['permissions']['allow'] == ['Read(*)']

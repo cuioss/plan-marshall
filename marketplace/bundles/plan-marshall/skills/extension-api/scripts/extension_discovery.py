@@ -180,12 +180,13 @@ def discover_applicable_extensions(project_root: Path) -> list[dict[str, Any]]:
                     applicable.append(ext)
             except Exception as e:
                 log_entry(
-                    'script', 'global', 'WARN',
-                    f'[EXTENSION] discover_modules() failed for {ext.get("bundle", "unknown")}: {e}'
+                    'script',
+                    'global',
+                    'WARN',
+                    f'[EXTENSION] discover_modules() failed for {ext.get("bundle", "unknown")}: {e}',
                 )
 
     return applicable
-
 
 
 def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -216,9 +217,7 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
                     entry['bundle'] = ext['bundle']
                     domains.append(entry)
         except Exception as e:
-            log_entry(
-                'script', 'global', 'WARN', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}'
-            )
+            log_entry('script', 'global', 'WARN', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}')
 
     return domains
 
@@ -268,8 +267,7 @@ def get_workflow_extensions_from_extensions(extensions: list[dict[str, Any]]) ->
     return workflow_extensions
 
 
-def apply_config_defaults(project_root: Path,
-                          pre_discovered: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def apply_config_defaults(project_root: Path, pre_discovered: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Apply config_defaults() callback for applicable extensions only.
 
     Called during initialization to let extensions set project-specific

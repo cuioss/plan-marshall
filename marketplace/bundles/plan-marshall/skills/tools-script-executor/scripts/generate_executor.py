@@ -451,9 +451,9 @@ def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool =
 
     # Shared module directories (must be on sys.path before executor-level imports)
     shared_dirs = get_shared_module_dirs(base_path)
-    shared_module_lines = '\n'.join(
-        f"sys.path.insert(0, '{d}')" for d in shared_dirs
-    ) if shared_dirs else '# (none detected)'
+    shared_module_lines = (
+        '\n'.join(f"sys.path.insert(0, '{d}')" for d in shared_dirs) if shared_dirs else '# (none detected)'
+    )
 
     content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
     content = content.replace('{{LOGGING_DIR}}', logging_dir)

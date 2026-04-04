@@ -127,7 +127,8 @@ def _extract_issues(content: str) -> list[Issue]:
             message = error_msg if error_msg else test_name
 
             add_issue_deduped(
-                issues, seen,
+                issues,
+                seen,
                 file=file_path,
                 line=line_num,
                 message=message,

@@ -116,14 +116,16 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
                 # Skip domains with no profiles (e.g., build domain)
                 if not dk_profiles and len(domain_keys) > 1:
                     continue
-                domains.append({
-                    'domain': dk,
-                    'confidence': result.get('confidence', 'unknown'),
-                    'signals': result.get('signals', []),
-                    'additive_to': result.get('additive_to'),
-                    'skill_count': skill_count,
-                    'skills_by_profile': result.get('skills_by_profile', {}),
-                })
+                domains.append(
+                    {
+                        'domain': dk,
+                        'confidence': result.get('confidence', 'unknown'),
+                        'signals': result.get('signals', []),
+                        'additive_to': result.get('additive_to'),
+                        'skill_count': skill_count,
+                        'skills_by_profile': result.get('skills_by_profile', {}),
+                    }
+                )
 
     # Second pass: filter additive domains whose parent is not applicable
     filtered_domains = []
@@ -155,13 +157,15 @@ def cmd_suggest_domains(args) -> int:
         domains = result['domains']
         items = []
         for d in domains:
-            items.append({
-                'domain': d['domain'],
-                'confidence': d['confidence'],
-                'signals': ','.join(d.get('signals', [])),
-                'additive_to': d.get('additive_to') or '',
-                'skill_count': str(d.get('skill_count', 0)),
-            })
+            items.append(
+                {
+                    'domain': d['domain'],
+                    'confidence': d['confidence'],
+                    'signals': ','.join(d.get('signals', [])),
+                    'additive_to': d.get('additive_to') or '',
+                    'skill_count': str(d.get('skill_count', 0)),
+                }
+            )
 
         print_toon_table('domains', items, ['domain', 'confidence', 'signals', 'additive_to', 'skill_count'])
         return 0

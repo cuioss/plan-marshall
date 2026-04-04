@@ -78,7 +78,8 @@ def _parse_mypy(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
             category = 'type_error'
 
         add_issue_deduped(
-            issues, seen,
+            issues,
+            seen,
             file=file_path,
             line=line,
             message=message,
@@ -107,7 +108,8 @@ def _parse_ruff(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
         message = f'{match.group(3)} {match.group(4)}'
 
         add_issue_deduped(
-            issues, seen,
+            issues,
+            seen,
             file=file_path,
             line=line,
             message=message,
@@ -139,7 +141,8 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
         line_num = _find_pytest_line_number(content, file_path, test_name)
 
         add_issue_deduped(
-            issues, seen,
+            issues,
+            seen,
             file=file_path,
             line=line_num,
             message=message,
@@ -206,11 +209,13 @@ def _has_pytest_output(content: str) -> bool:
 # Registry
 # =============================================================================
 
-_REGISTRY = ParserRegistry([
-    DetectionRule('mypy', ('mypy',), _has_mypy_output, _parse_mypy),
-    DetectionRule('ruff', ('ruff',), _has_ruff_output, _parse_ruff),
-    DetectionRule('pytest', ('pytest', 'test'), _has_pytest_output, _parse_pytest),
-])
+_REGISTRY = ParserRegistry(
+    [
+        DetectionRule('mypy', ('mypy',), _has_mypy_output, _parse_mypy),
+        DetectionRule('ruff', ('ruff',), _has_ruff_output, _parse_ruff),
+        DetectionRule('pytest', ('pytest', 'test'), _has_pytest_output, _parse_pytest),
+    ]
+)
 
 
 # =============================================================================

@@ -316,6 +316,7 @@ def test_test_summary_to_dict():
 def test_parse_log_file_not_found():
     """Raises FileNotFoundError for missing log file."""
     import pytest
+
     with pytest.raises(FileNotFoundError):
         parse_typescript('/nonexistent/path/to/log.log')
 

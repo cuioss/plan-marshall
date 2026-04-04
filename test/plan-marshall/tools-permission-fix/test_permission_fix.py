@@ -455,9 +455,12 @@ class TestEnsure(ScriptTestCase):
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         result = run_script(
-            SCRIPT_PATH, 'ensure',
-            '--permissions', 'Bash(git:*),Bash(npm:*),Bash(docker:*)',
-            '--target', 'project',
+            SCRIPT_PATH,
+            'ensure',
+            '--permissions',
+            'Bash(git:*),Bash(npm:*),Bash(docker:*)',
+            '--target',
+            'project',
             cwd=self.temp_dir,
         )
         self.assert_success(result)
@@ -479,9 +482,12 @@ class TestEnsure(ScriptTestCase):
         )
 
         result = run_script(
-            SCRIPT_PATH, 'ensure',
-            '--permissions', 'Bash(git:*),Bash(npm:*)',
-            '--target', 'project',
+            SCRIPT_PATH,
+            'ensure',
+            '--permissions',
+            'Bash(git:*),Bash(npm:*)',
+            '--target',
+            'project',
             cwd=self.temp_dir,
         )
         self.assert_success(result)
@@ -497,9 +503,12 @@ class TestEnsure(ScriptTestCase):
         settings_file.write_text(json.dumps({'permissions': {'allow': [], 'deny': [], 'ask': []}}))
 
         run_script(
-            SCRIPT_PATH, 'ensure',
-            '--permissions', 'Bash(npm:*)',
-            '--target', 'project',
+            SCRIPT_PATH,
+            'ensure',
+            '--permissions',
+            'Bash(npm:*)',
+            '--target',
+            'project',
             cwd=self.temp_dir,
         )
 
@@ -608,7 +617,11 @@ class TestGenerateWildcards(ScriptTestCase):
         """Should generate SlashCommand() wildcards from inventory."""
         inventory = {
             'bundles': [
-                {'name': 'plan-marshall', 'skills': [], 'commands': [{'name': 'plan-manage'}, {'name': 'task-standalone'}]}
+                {
+                    'name': 'plan-marshall',
+                    'skills': [],
+                    'commands': [{'name': 'plan-manage'}, {'name': 'task-standalone'}],
+                }
             ]
         }
 

@@ -29,8 +29,10 @@ def create_coverage_report_handler(
     Returns:
         A cmd_coverage_report(args) -> int function ready for argparse set_defaults.
     """
+
     def cmd_coverage_report(args) -> int:
         return cmd_coverage_report_base(args, search_paths, not_found_message)
+
     return cmd_coverage_report
 
 

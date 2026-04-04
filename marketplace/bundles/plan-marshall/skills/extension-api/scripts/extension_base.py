@@ -83,8 +83,12 @@ ALL_CANONICAL_COMMANDS = [
 CANONICAL_COMMANDS = {
     CMD_INTEGRATION_TESTS: {
         'aliases': [
-            'integration-tests', 'integration-test', 'integrationTest',
-            'it', 'e2e', 'acceptance',
+            'integration-tests',
+            'integration-test',
+            'integrationTest',
+            'it',
+            'e2e',
+            'acceptance',
         ],
     },
     CMD_COVERAGE: {
@@ -92,12 +96,22 @@ CANONICAL_COMMANDS = {
     },
     CMD_BENCHMARK: {
         'aliases': [
-            'performance', 'benchmarks', 'jmh', 'perf', 'stress', 'load',
+            'performance',
+            'benchmarks',
+            'jmh',
+            'perf',
+            'stress',
+            'load',
         ],
     },
     CMD_QUALITY_GATE: {
         'aliases': [
-            'pre-commit', 'precommit', 'sonar', 'lint', 'check', 'quality',
+            'pre-commit',
+            'precommit',
+            'sonar',
+            'lint',
+            'check',
+            'quality',
         ],
     },
 }
@@ -135,8 +149,7 @@ class ExtensionBase(ABC):
     # Required Methods (must be implemented)
     # =========================================================================
 
-    APPLICABLE_PROFILES = ('implementation', 'module_testing', 'integration_testing',
-                           'quality', 'documentation')
+    APPLICABLE_PROFILES = ('implementation', 'module_testing', 'integration_testing', 'quality', 'documentation')
     """Profile names iterated during _build_applicable_result(). Does not include 'core'
     which is always merged into each profile."""
 
@@ -356,8 +369,7 @@ class ExtensionBase(ABC):
         """
         return []
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if this domain applies to a specific module and return resolved skills.
 
         Called during architecture enrichment to determine which skill domains
@@ -398,8 +410,7 @@ class ExtensionBase(ABC):
             'skills_by_profile': {},
         }
 
-    def _detect_applicable_profiles(self, profiles: dict,
-                                     module_data: dict | None) -> set[str] | None:
+    def _detect_applicable_profiles(self, profiles: dict, module_data: dict | None) -> set[str] | None:
         """Detect which profiles are applicable based on module signals.
 
         Returns set of applicable profile names, or None for no filtering
@@ -415,11 +426,15 @@ class ExtensionBase(ABC):
         """
         return None
 
-    def _build_applicable_result(self, confidence: str, signals: list[str],
-                                  additive_to: str | None = None,
-                                  module_data: dict | None = None,
-                                  active_profiles: set[str] | None = None,
-                                  domain_key: str | None = None) -> dict:
+    def _build_applicable_result(
+        self,
+        confidence: str,
+        signals: list[str],
+        additive_to: str | None = None,
+        module_data: dict | None = None,
+        active_profiles: set[str] | None = None,
+        domain_key: str | None = None,
+    ) -> dict:
         """Build applicable result from own get_skill_domains() profiles.
 
         Note: Despite the underscore prefix, this is part of the public API
@@ -490,4 +505,3 @@ class ExtensionBase(ABC):
             'additive_to': additive_to,
             'skills_by_profile': skills_by_profile,
         }
-

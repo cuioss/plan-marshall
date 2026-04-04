@@ -44,10 +44,7 @@ def build_canonical_commands(
         Dict mapping canonical name -> full executor command string.
     """
     base = f'{EXECUTOR_PREFIX} {skill_notation} run'
-    return {
-        name: f'{base} --command-args "{args}"'
-        for name, args in command_map.items()
-    }
+    return {name: f'{base} --command-args "{args}"' for name, args in command_map.items()}
 
 
 def build_chained_commands(

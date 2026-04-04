@@ -63,23 +63,26 @@ def _register_find_project(subparsers):
 
 def main() -> int:
     """Main entry point."""
-    return build_main('Gradle build operations', register_standard_subparsers(
-        run_handler=cmd_run,
-        run_args_help="Complete Gradle command arguments (e.g., ':module:build' or 'build')",
-        parse_handler=parse_log,
-        parse_help='Parse Gradle build output and categorize issues',
-        parse_extra_modes=['no-openrewrite'],
-        parse_extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
-        coverage_handler=cmd_coverage_report,
-        coverage_help='Parse JaCoCo coverage report',
-        check_warnings_handler=cmd_check_warnings,
-        discover_handler=discover_gradle_modules,
-        discover_help='Discover Gradle modules',
-        extra_register_fns=[
-            _register_find_project,
-            lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java,.kt'),
-        ],
-    ))
+    return build_main(
+        'Gradle build operations',
+        register_standard_subparsers(
+            run_handler=cmd_run,
+            run_args_help="Complete Gradle command arguments (e.g., ':module:build' or 'build')",
+            parse_handler=parse_log,
+            parse_help='Parse Gradle build output and categorize issues',
+            parse_extra_modes=['no-openrewrite'],
+            parse_extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
+            coverage_handler=cmd_coverage_report,
+            coverage_help='Parse JaCoCo coverage report',
+            check_warnings_handler=cmd_check_warnings,
+            discover_handler=discover_gradle_modules,
+            discover_help='Discover Gradle modules',
+            extra_register_fns=[
+                _register_find_project,
+                lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java,.kt'),
+            ],
+        ),
+    )
 
 
 if __name__ == '__main__':

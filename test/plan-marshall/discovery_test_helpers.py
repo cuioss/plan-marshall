@@ -27,9 +27,7 @@ def assert_valid_module(module: dict, *, build_system: str, expected_name: str |
     )
 
     if expected_name is not None:
-        assert module['name'] == expected_name, (
-            f"Expected name='{expected_name}', got '{module['name']}'"
-        )
+        assert module['name'] == expected_name, f"Expected name='{expected_name}', got '{module['name']}'"
 
     # Error modules have minimal structure
     if 'error' in module:
@@ -85,10 +83,10 @@ def assert_module_stats(module: dict, *, min_source_files: int = 0, min_test_fil
     assert 'source_files' in stats, 'Module stats missing: source_files'
     assert 'test_files' in stats, 'Module stats missing: test_files'
     assert stats['source_files'] >= min_source_files, (
-        f"Expected at least {min_source_files} source files, got {stats['source_files']}"
+        f'Expected at least {min_source_files} source files, got {stats["source_files"]}'
     )
     assert stats['test_files'] >= min_test_files, (
-        f"Expected at least {min_test_files} test files, got {stats['test_files']}"
+        f'Expected at least {min_test_files} test files, got {stats["test_files"]}'
     )
 
 
@@ -125,8 +123,8 @@ def assert_command_uses_executor(module: dict, command_name: str, *, skill_notat
     expected_prefix = f'python3 .plan/execute-script.py {skill_notation} run --command-args "'
     assert cmd.startswith(expected_prefix), (
         f"Command '{command_name}' doesn't use expected executor.\n"
-        f"Expected prefix: {expected_prefix}\n"
-        f"Got: {cmd[:len(expected_prefix) + 20]}..."
+        f'Expected prefix: {expected_prefix}\n'
+        f'Got: {cmd[: len(expected_prefix) + 20]}...'
     )
 
 

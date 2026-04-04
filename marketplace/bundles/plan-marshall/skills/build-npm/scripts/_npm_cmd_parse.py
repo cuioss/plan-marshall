@@ -43,13 +43,15 @@ def _has_eslint_output(content: str) -> bool:
 
 
 # Registry with detection rules checked in priority order.
-_REGISTRY = ParserRegistry([
-    DetectionRule('typescript', ('tsc', 'typescript'), _has_typescript_errors, parse_typescript),
-    DetectionRule('jest', ('jest',), _has_jest_output, parse_jest),
-    DetectionRule('eslint', ('eslint',), _has_eslint_output, parse_eslint),
-    DetectionRule('npm_error', (), _has_npm_error, parse_npm_errors),
-    DetectionRule('tap', (), _has_tap_markers, parse_tap),
-])
+_REGISTRY = ParserRegistry(
+    [
+        DetectionRule('typescript', ('tsc', 'typescript'), _has_typescript_errors, parse_typescript),
+        DetectionRule('jest', ('jest',), _has_jest_output, parse_jest),
+        DetectionRule('eslint', ('eslint',), _has_eslint_output, parse_eslint),
+        DetectionRule('npm_error', (), _has_npm_error, parse_npm_errors),
+        DetectionRule('tap', (), _has_tap_markers, parse_tap),
+    ]
+)
 
 
 def detect_tool_type(content: str, command: str) -> str:

@@ -6,7 +6,6 @@ used by both read-only analysis and write operations.
 """
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 

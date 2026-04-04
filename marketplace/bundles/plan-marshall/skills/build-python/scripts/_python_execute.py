@@ -10,7 +10,12 @@ Usage:
 """
 
 from _build_execute import CaptureStrategy
-from _build_execute_factory import ExecuteConfig, create_execute_handlers, default_build_command_fn, default_command_key_fn
+from _build_execute_factory import (
+    ExecuteConfig,
+    create_execute_handlers,
+    default_build_command_fn,
+    default_command_key_fn,
+)
 from _build_shared import DEFAULT_BUILD_TIMEOUT
 from _build_wrapper import detect_wrapper as _detect_wrapper
 from _python_cmd_parse import parse_log

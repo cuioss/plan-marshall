@@ -19,7 +19,6 @@ Output (JSON format):
 """
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
@@ -51,6 +50,7 @@ def run_command(cmd: list[str], cwd: str | None = None) -> tuple[int, str, str]:
     """
     if cwd is not None:
         import subprocess
+
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=10)
             return result.returncode, result.stdout, result.stderr
@@ -323,12 +323,14 @@ def cmd_persist(args: argparse.Namespace) -> int:
     if result_code != 0:
         return error_toon('Failed to persist CI config')
 
-    output_toon({
-        'status': 'success',
-        'persisted_to': 'marshal.json',
-        'provider': provider_result['provider'],
-        'repo_url': provider_result['repo_url'] or 'none',
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'persisted_to': 'marshal.json',
+            'provider': provider_result['provider'],
+            'repo_url': provider_result['repo_url'] or 'none',
+        }
+    )
 
     return 0
 

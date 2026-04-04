@@ -54,6 +54,7 @@ def test_list_empty_plans_dir():
     with PlanContext(plan_id='lifecycle-list-empty') as ctx:
         # Remove the auto-created plan dir so plans/ is empty
         import shutil
+
         shutil.rmtree(ctx.plan_dir)
 
         result = run_script(SCRIPT_PATH, 'list')
@@ -68,6 +69,7 @@ def test_list_no_plans_directory():
     with PlanContext(plan_id='lifecycle-list-nodir') as ctx:
         # Remove entire plans directory
         import shutil
+
         plans_dir = ctx.plan_dir.parent
         shutil.rmtree(plans_dir)
 
@@ -150,9 +152,12 @@ def test_transition_valid():
         _create_status(ctx, plan_id='lifecycle-trans', current_phase='1-init')
 
         result = run_script(
-            SCRIPT_PATH, 'transition',
-            '--plan-id', 'lifecycle-trans',
-            '--completed', '1-init',
+            SCRIPT_PATH,
+            'transition',
+            '--plan-id',
+            'lifecycle-trans',
+            '--completed',
+            '1-init',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -175,9 +180,12 @@ def test_transition_last_phase():
         _create_status(ctx, plan_id='lifecycle-trans-last', current_phase='6-finalize', phases=phases)
 
         result = run_script(
-            SCRIPT_PATH, 'transition',
-            '--plan-id', 'lifecycle-trans-last',
-            '--completed', '6-finalize',
+            SCRIPT_PATH,
+            'transition',
+            '--plan-id',
+            'lifecycle-trans-last',
+            '--completed',
+            '6-finalize',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -188,9 +196,12 @@ def test_transition_last_phase():
 def test_transition_invalid_plan_id():
     """Test transition fails with invalid plan ID."""
     result = run_script(
-        SCRIPT_PATH, 'transition',
-        '--plan-id', 'INVALID ID!',
-        '--completed', '1-init',
+        SCRIPT_PATH,
+        'transition',
+        '--plan-id',
+        'INVALID ID!',
+        '--completed',
+        '1-init',
     )
     assert not result.success, 'Expected failure for invalid plan ID'
 
@@ -200,9 +211,12 @@ def test_transition_nonexistent_plan():
     with PlanContext(plan_id='lifecycle-trans-noplan'):
         # No status.json created
         result = run_script(
-            SCRIPT_PATH, 'transition',
-            '--plan-id', 'lifecycle-trans-noplan',
-            '--completed', '1-init',
+            SCRIPT_PATH,
+            'transition',
+            '--plan-id',
+            'lifecycle-trans-noplan',
+            '--completed',
+            '1-init',
         )
         assert not result.success, 'Expected failure for missing status.json'
 
@@ -213,9 +227,12 @@ def test_transition_invalid_phase():
         _create_status(ctx, plan_id='lifecycle-trans-badphase')
 
         result = run_script(
-            SCRIPT_PATH, 'transition',
-            '--plan-id', 'lifecycle-trans-badphase',
-            '--completed', 'nonexistent-phase',
+            SCRIPT_PATH,
+            'transition',
+            '--plan-id',
+            'lifecycle-trans-badphase',
+            '--completed',
+            'nonexistent-phase',
         )
         assert not result.success, 'Expected failure for invalid phase'
 
@@ -231,8 +248,10 @@ def test_get_routing_context_valid():
         _create_status(ctx, plan_id='lifecycle-ctx', current_phase='3-outline', title='My Feature')
 
         result = run_script(
-            SCRIPT_PATH, 'get-routing-context',
-            '--plan-id', 'lifecycle-ctx',
+            SCRIPT_PATH,
+            'get-routing-context',
+            '--plan-id',
+            'lifecycle-ctx',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -245,8 +264,10 @@ def test_get_routing_context_valid():
 def test_get_routing_context_invalid_plan_id():
     """Test get-routing-context fails with invalid plan ID."""
     result = run_script(
-        SCRIPT_PATH, 'get-routing-context',
-        '--plan-id', '!!!bad!!!',
+        SCRIPT_PATH,
+        'get-routing-context',
+        '--plan-id',
+        '!!!bad!!!',
     )
     assert not result.success, 'Expected failure for invalid plan ID'
 
@@ -255,8 +276,10 @@ def test_get_routing_context_missing_plan():
     """Test get-routing-context fails for nonexistent plan."""
     with PlanContext(plan_id='lifecycle-ctx-missing'):
         result = run_script(
-            SCRIPT_PATH, 'get-routing-context',
-            '--plan-id', 'lifecycle-ctx-missing',
+            SCRIPT_PATH,
+            'get-routing-context',
+            '--plan-id',
+            'lifecycle-ctx-missing',
         )
         assert not result.success, 'Expected failure for missing plan'
 
@@ -272,8 +295,10 @@ def test_archive_dry_run():
         _create_status(ctx, plan_id='lifecycle-archive-dry')
 
         result = run_script(
-            SCRIPT_PATH, 'archive',
-            '--plan-id', 'lifecycle-archive-dry',
+            SCRIPT_PATH,
+            'archive',
+            '--plan-id',
+            'lifecycle-archive-dry',
             '--dry-run',
         )
         assert result.success, f'Script failed: {result.stderr}'
@@ -289,8 +314,10 @@ def test_archive_actual():
         _create_status(ctx, plan_id='lifecycle-archive-real')
 
         result = run_script(
-            SCRIPT_PATH, 'archive',
-            '--plan-id', 'lifecycle-archive-real',
+            SCRIPT_PATH,
+            'archive',
+            '--plan-id',
+            'lifecycle-archive-real',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -303,8 +330,10 @@ def test_archive_actual():
 def test_archive_invalid_plan_id():
     """Test archive fails with invalid plan ID."""
     result = run_script(
-        SCRIPT_PATH, 'archive',
-        '--plan-id', 'BAD ID!',
+        SCRIPT_PATH,
+        'archive',
+        '--plan-id',
+        'BAD ID!',
     )
     assert not result.success, 'Expected failure for invalid plan ID'
 
@@ -336,10 +365,13 @@ def test_archive_nonexistent_plan():
     with PlanContext(plan_id='lifecycle-archive-gone'):
         # Remove the plan dir
         import shutil
+
         plan_dir = Path(PlanContext(plan_id='lifecycle-archive-gone').plan_dir or '')
         # Use PlanContext but the dir was already created - remove it
         result = run_script(
-            SCRIPT_PATH, 'archive',
-            '--plan-id', 'lifecycle-archive-nope',
+            SCRIPT_PATH,
+            'archive',
+            '--plan-id',
+            'lifecycle-archive-nope',
         )
         assert not result.success, 'Expected failure for nonexistent plan'

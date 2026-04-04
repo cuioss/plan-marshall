@@ -13,11 +13,27 @@ from types import SimpleNamespace
 import pytest
 
 # Add script path for imports
-_SCRIPT_DIR = Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
+_SCRIPT_DIR = (
+    Path(__file__).resolve().parents[3]
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'extension-api'
+    / 'scripts'
+)
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 # Also add toon_parser path
-_TOON_DIR = Path(__file__).resolve().parents[3] / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
+_TOON_DIR = (
+    Path(__file__).resolve().parents[3]
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'ref-toon-format'
+    / 'scripts'
+)
 sys.path.insert(0, str(_TOON_DIR))
 
 _bcw = importlib.import_module('_build_check_warnings')
@@ -29,13 +45,13 @@ from toon_parser import parse_toon  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _warn(message: str, wtype: str = 'other', severity: str = 'WARNING') -> dict:
     """Build a minimal warning dict."""
     return {'type': wtype, 'message': message, 'severity': severity}
 
 
-def _args(warnings_json: str | None = None,
-          acceptable_json: str | None = None) -> SimpleNamespace:
+def _args(warnings_json: str | None = None, acceptable_json: str | None = None) -> SimpleNamespace:
     """Build a minimal argparse-like namespace."""
     return SimpleNamespace(
         warnings=warnings_json,
@@ -46,6 +62,7 @@ def _args(warnings_json: str | None = None,
 # ---------------------------------------------------------------------------
 # create_check_warnings_handler factory
 # ---------------------------------------------------------------------------
+
 
 class TestFactory:
     """Tests for create_check_warnings_handler()."""
@@ -87,6 +104,7 @@ class TestFactory:
 # Exit code semantics
 # ---------------------------------------------------------------------------
 
+
 class TestExitCodes:
     """Exit code 0 means no fixable/unknown, 1 otherwise."""
 
@@ -124,6 +142,7 @@ class TestExitCodes:
 # JSON input parsing
 # ---------------------------------------------------------------------------
 
+
 class TestJsonInput:
     """Tests for --warnings and --acceptable-warnings JSON parsing."""
 
@@ -157,6 +176,7 @@ class TestJsonInput:
 # No --warnings arg
 # ---------------------------------------------------------------------------
 
+
 class TestNoWarningsArg:
     """Tests for missing --warnings argument."""
 
@@ -171,6 +191,7 @@ class TestNoWarningsArg:
 # ---------------------------------------------------------------------------
 # Output structure
 # ---------------------------------------------------------------------------
+
 
 class TestOutputStructure:
     """Verify output JSON has required fields."""
@@ -194,5 +215,3 @@ class TestOutputStructure:
         assert 'categorized' in output
         assert isinstance(output['categorized'], dict)
         assert set(output['categorized'].keys()) == {'acceptable', 'fixable', 'unknown'}
-
-

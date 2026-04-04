@@ -207,8 +207,12 @@ def test_add_qgate_finding_basic():
     """Test adding a Q-Gate finding."""
     with PlanContext(plan_id='store-qgate-add'):
         result = add_qgate_finding(
-            'store-qgate-add', '5-execute', 'qgate', 'build-error',
-            'Build failure', 'Compilation failed',
+            'store-qgate-add',
+            '5-execute',
+            'qgate',
+            'build-error',
+            'Build failure',
+            'Compilation failed',
         )
         assert result['status'] == 'success'
         assert 'hash_id' in result
@@ -219,8 +223,12 @@ def test_add_qgate_finding_invalid_phase():
     """Test adding Q-Gate finding with invalid phase."""
     with PlanContext(plan_id='store-qgate-badphase'):
         result = add_qgate_finding(
-            'store-qgate-badphase', '1-init', 'qgate', 'build-error',
-            'Title', 'Detail',
+            'store-qgate-badphase',
+            '1-init',
+            'qgate',
+            'build-error',
+            'Title',
+            'Detail',
         )
         assert result['status'] == 'error'
         assert 'Invalid Q-Gate phase' in result['message']
@@ -230,8 +238,12 @@ def test_add_qgate_finding_invalid_source():
     """Test adding Q-Gate finding with invalid source."""
     with PlanContext(plan_id='store-qgate-badsrc'):
         result = add_qgate_finding(
-            'store-qgate-badsrc', '5-execute', 'invalid-source', 'build-error',
-            'Title', 'Detail',
+            'store-qgate-badsrc',
+            '5-execute',
+            'invalid-source',
+            'build-error',
+            'Title',
+            'Detail',
         )
         assert result['status'] == 'error'
         assert 'Invalid Q-Gate source' in result['message']
@@ -241,14 +253,22 @@ def test_qgate_dedup_pending():
     """Test Q-Gate deduplication for pending findings with same title."""
     with PlanContext(plan_id='store-qgate-dedup'):
         r1 = add_qgate_finding(
-            'store-qgate-dedup', '5-execute', 'qgate', 'build-error',
-            'Same title', 'Detail 1',
+            'store-qgate-dedup',
+            '5-execute',
+            'qgate',
+            'build-error',
+            'Same title',
+            'Detail 1',
         )
         assert r1['status'] == 'success'
 
         r2 = add_qgate_finding(
-            'store-qgate-dedup', '5-execute', 'qgate', 'build-error',
-            'Same title', 'Detail 2',
+            'store-qgate-dedup',
+            '5-execute',
+            'qgate',
+            'build-error',
+            'Same title',
+            'Detail 2',
         )
         assert r2['status'] == 'deduplicated'
         assert r2['hash_id'] == r1['hash_id']
@@ -258,16 +278,24 @@ def test_qgate_reopen_resolved():
     """Test Q-Gate reopens a resolved finding if re-detected."""
     with PlanContext(plan_id='store-qgate-reopen'):
         r1 = add_qgate_finding(
-            'store-qgate-reopen', '5-execute', 'qgate', 'build-error',
-            'Flaky test', 'Detail',
+            'store-qgate-reopen',
+            '5-execute',
+            'qgate',
+            'build-error',
+            'Flaky test',
+            'Detail',
         )
         # Resolve it
         resolve_qgate_finding('store-qgate-reopen', '5-execute', r1['hash_id'], 'fixed')
 
         # Re-add same title
         r2 = add_qgate_finding(
-            'store-qgate-reopen', '5-execute', 'qgate', 'build-error',
-            'Flaky test', 'New detail',
+            'store-qgate-reopen',
+            '5-execute',
+            'qgate',
+            'build-error',
+            'Flaky test',
+            'New detail',
         )
         assert r2['status'] == 'reopened'
         assert r2['hash_id'] == r1['hash_id']
@@ -277,12 +305,20 @@ def test_query_qgate_findings():
     """Test querying Q-Gate findings."""
     with PlanContext(plan_id='store-qgate-query'):
         add_qgate_finding(
-            'store-qgate-query', '5-execute', 'qgate', 'build-error',
-            'Error 1', 'Detail',
+            'store-qgate-query',
+            '5-execute',
+            'qgate',
+            'build-error',
+            'Error 1',
+            'Detail',
         )
         add_qgate_finding(
-            'store-qgate-query', '5-execute', 'user_review', 'pr-comment',
-            'Comment 1', 'Detail',
+            'store-qgate-query',
+            '5-execute',
+            'user_review',
+            'pr-comment',
+            'Comment 1',
+            'Detail',
         )
 
         # Query all
@@ -299,12 +335,20 @@ def test_resolve_qgate_finding():
     """Test resolving a Q-Gate finding."""
     with PlanContext(plan_id='store-qgate-resolve'):
         r = add_qgate_finding(
-            'store-qgate-resolve', '5-execute', 'qgate', 'test-failure',
-            'Test failure', 'Detail',
+            'store-qgate-resolve',
+            '5-execute',
+            'qgate',
+            'test-failure',
+            'Test failure',
+            'Detail',
         )
 
         result = resolve_qgate_finding(
-            'store-qgate-resolve', '5-execute', r['hash_id'], 'fixed', detail='Fixed it',
+            'store-qgate-resolve',
+            '5-execute',
+            r['hash_id'],
+            'fixed',
+            detail='Fixed it',
         )
         assert result['status'] == 'success'
         assert result['resolution'] == 'fixed'
@@ -314,12 +358,20 @@ def test_clear_qgate_findings():
     """Test clearing all Q-Gate findings for a phase."""
     with PlanContext(plan_id='store-qgate-clear'):
         add_qgate_finding(
-            'store-qgate-clear', '5-execute', 'qgate', 'build-error',
-            'Error 1', 'Detail',
+            'store-qgate-clear',
+            '5-execute',
+            'qgate',
+            'build-error',
+            'Error 1',
+            'Detail',
         )
         add_qgate_finding(
-            'store-qgate-clear', '5-execute', 'qgate', 'test-failure',
-            'Error 2', 'Detail',
+            'store-qgate-clear',
+            '5-execute',
+            'qgate',
+            'test-failure',
+            'Error 2',
+            'Detail',
         )
 
         result = clear_qgate_findings('store-qgate-clear', '5-execute')

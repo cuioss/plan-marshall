@@ -157,11 +157,7 @@ class TestSearchJavaFiles:
     def test_finds_marker_in_java_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             java_file = Path(tmp) / 'Example.java'
-            java_file.write_text(
-                'public class Example {\n'
-                '    /*~~(TODO: SomeRecipe fix this)>*/ int x;\n'
-                '}\n'
-            )
+            java_file.write_text('public class Example {\n    /*~~(TODO: SomeRecipe fix this)>*/ int x;\n}\n')
             result = search_openrewrite_markers(tmp)
             assert result['status'] == 'success'
             assert result['data']['total_markers'] == 1
@@ -170,10 +166,7 @@ class TestSearchJavaFiles:
     def test_marker_details_are_correct(self):
         with tempfile.TemporaryDirectory() as tmp:
             java_file = Path(tmp) / 'Foo.java'
-            java_file.write_text(
-                'package com.example;\n'
-                '/*~~(TODO: MyRecipe refactor needed)>*/\n'
-            )
+            java_file.write_text('package com.example;\n/*~~(TODO: MyRecipe refactor needed)>*/\n')
             result = search_openrewrite_markers(tmp)
             markers = result['data']['markers']
             assert len(markers) == 1
@@ -193,11 +186,7 @@ class TestSearchJavaFiles:
 
     def test_finds_multiple_markers_in_single_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            content = (
-                '/*~~(TODO: RecipeA)>*/\n'
-                'some code\n'
-                '/*~~(TODO: RecipeB)>*/\n'
-            )
+            content = '/*~~(TODO: RecipeA)>*/\nsome code\n/*~~(TODO: RecipeB)>*/\n'
             (Path(tmp) / 'Multi.java').write_text(content)
             result = search_openrewrite_markers(tmp)
             assert result['data']['total_markers'] == 2
@@ -318,9 +307,7 @@ class TestRecipeCategorization:
 
     def test_auto_suppress_recipe_categorized(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Log.java').write_text(
-                '/*~~(TODO: CuiLogRecordPatternRecipe check logging)>*/'
-            )
+            (Path(tmp) / 'Log.java').write_text('/*~~(TODO: CuiLogRecordPatternRecipe check logging)>*/')
             result = search_openrewrite_markers(tmp)
             marker = result['data']['markers'][0]
             assert marker['action'] == 'auto_suppress'
@@ -329,9 +316,7 @@ class TestRecipeCategorization:
 
     def test_invalid_exception_recipe_auto_suppressed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Ex.java').write_text(
-                '/*~~(TODO: InvalidExceptionUsageRecipe check pattern)>*/'
-            )
+            (Path(tmp) / 'Ex.java').write_text('/*~~(TODO: InvalidExceptionUsageRecipe check pattern)>*/')
             result = search_openrewrite_markers(tmp)
             marker = result['data']['markers'][0]
             assert marker['action'] == 'auto_suppress'
@@ -339,9 +324,7 @@ class TestRecipeCategorization:
 
     def test_unknown_recipe_requires_user_decision(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'Unk.java').write_text(
-                '/*~~(TODO: SomeUnknownRecipe needs review)>*/'
-            )
+            (Path(tmp) / 'Unk.java').write_text('/*~~(TODO: SomeUnknownRecipe needs review)>*/')
             result = search_openrewrite_markers(tmp)
             marker = result['data']['markers'][0]
             assert marker['action'] == 'ask_user'
@@ -350,8 +333,7 @@ class TestRecipeCategorization:
     def test_by_category_structure(self):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / 'Mix.java').write_text(
-                '/*~~(TODO: CuiLogRecordPatternRecipe log)>*/\n'
-                '/*~~(TODO: CustomThing check)>*/\n'
+                '/*~~(TODO: CuiLogRecordPatternRecipe log)>*/\n/*~~(TODO: CustomThing check)>*/\n'
             )
             result = search_openrewrite_markers(tmp)
             data = result['data']
@@ -372,9 +354,7 @@ class TestRecipeSummary:
     def test_recipe_summary_counts(self):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / 'A.java').write_text(
-                '/*~~(TODO: RecipeAlpha)>*/\n'
-                '/*~~(TODO: RecipeAlpha)>*/\n'
-                '/*~~(TODO: RecipeBeta)>*/\n'
+                '/*~~(TODO: RecipeAlpha)>*/\n/*~~(TODO: RecipeAlpha)>*/\n/*~~(TODO: RecipeBeta)>*/\n'
             )
             result = search_openrewrite_markers(tmp)
             summary = result['data']['recipe_summary']
@@ -397,9 +377,7 @@ class TestSuppressionComment:
 
     def test_suppression_comment_format(self):
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / 'S.java').write_text(
-                '/*~~(TODO: CuiLogRecordPatternRecipe)>*/'
-            )
+            (Path(tmp) / 'S.java').write_text('/*~~(TODO: CuiLogRecordPatternRecipe)>*/')
             result = search_openrewrite_markers(tmp)
             marker = result['data']['markers'][0]
             assert marker['suppression_comment'] == '// cui-rewrite:disable CuiLogRecordPatternRecipe'

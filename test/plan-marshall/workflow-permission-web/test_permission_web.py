@@ -150,10 +150,15 @@ class TestApplyEdgeCasesExtended(unittest.TestCase):
         """Removing a domain that doesn't exist should be a graceful no-op."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write_settings(['keep.com'], f'{tmpdir}/settings.json')
-            stdout, _, code = run_pw_script([
-                'apply', '--file', path,
-                '--remove', json.dumps(['does-not-exist.com']),
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    path,
+                    '--remove',
+                    json.dumps(['does-not-exist.com']),
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'success')
@@ -183,13 +188,17 @@ class TestAnalyze(unittest.TestCase):
             global_file = self._write_settings(
                 ['docs.oracle.com', 'github.com', 'unknown.example.com'], tmpdir + '/global'
             )
-            local_file = self._write_settings(
-                ['github.com', 'my-project-docs.com'], tmpdir + '/local'
-            )
+            local_file = self._write_settings(['github.com', 'my-project-docs.com'], tmpdir + '/local')
 
-            stdout, _, code = run_pw_script([
-                'analyze', '--global-file', global_file, '--local-file', local_file,
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'analyze',
+                    '--global-file',
+                    global_file,
+                    '--local-file',
+                    local_file,
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'success')
@@ -204,12 +213,14 @@ class TestAnalyze(unittest.TestCase):
     def test_analyze_with_universal_wildcard(self):
         """Test analysis detects universal wildcard redundancy."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            global_file = self._write_settings(
-                ['*', 'docs.oracle.com', 'github.com'], tmpdir
+            global_file = self._write_settings(['*', 'docs.oracle.com', 'github.com'], tmpdir)
+            stdout, _, code = run_pw_script(
+                [
+                    'analyze',
+                    '--global-file',
+                    global_file,
+                ]
             )
-            stdout, _, code = run_pw_script([
-                'analyze', '--global-file', global_file,
-            ])
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             # docs.oracle.com and github.com are redundant due to wildcard
@@ -217,9 +228,13 @@ class TestAnalyze(unittest.TestCase):
 
     def test_analyze_missing_file(self):
         """Test analysis handles missing files gracefully."""
-        stdout, _, code = run_pw_script([
-            'analyze', '--global-file', '/nonexistent/settings.json',
-        ])
+        stdout, _, code = run_pw_script(
+            [
+                'analyze',
+                '--global-file',
+                '/nonexistent/settings.json',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -230,9 +245,13 @@ class TestAnalyze(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write('not valid json{{{')
             f.flush()
-            stdout, _, code = run_pw_script([
-                'analyze', '--global-file', f.name,
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'analyze',
+                    '--global-file',
+                    f.name,
+                ]
+            )
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'error')
@@ -242,13 +261,17 @@ class TestAnalyze(unittest.TestCase):
         """Test that analysis generates actionable recommendations."""
         with tempfile.TemporaryDirectory() as tmpdir:
             global_file = self._write_settings([], tmpdir + '/global')
-            local_file = self._write_settings(
-                ['docs.oracle.com', 'unknown-site.xyz'], tmpdir + '/local'
-            )
+            local_file = self._write_settings(['docs.oracle.com', 'unknown-site.xyz'], tmpdir + '/local')
 
-            stdout, _, code = run_pw_script([
-                'analyze', '--global-file', global_file, '--local-file', local_file,
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'analyze',
+                    '--global-file',
+                    global_file,
+                    '--local-file',
+                    local_file,
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             # Should have at least a move_to_global rec for docs.oracle.com
@@ -298,9 +321,13 @@ class TestAnalyzeMissingLocalFile(unittest.TestCase):
 
     def test_analyze_missing_local_file(self):
         """Test analysis handles missing local file gracefully."""
-        stdout, _, code = run_pw_script([
-            'analyze', '--local-file', '/nonexistent/local-settings.json',
-        ])
+        stdout, _, code = run_pw_script(
+            [
+                'analyze',
+                '--local-file',
+                '/nonexistent/local-settings.json',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -402,9 +429,13 @@ class TestAnalyzeDenyTracking(unittest.TestCase):
                 deny=['malicious.example.com'],
                 tmpdir=tmpdir + '/global',
             )
-            stdout, _, code = run_pw_script([
-                'analyze', '--global-file', global_file,
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'analyze',
+                    '--global-file',
+                    global_file,
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'success')
@@ -426,9 +457,15 @@ class TestAnalyzeDenyTracking(unittest.TestCase):
                 deny=['blocked-local.com'],
                 tmpdir=tmpdir + '/local',
             )
-            stdout, _, code = run_pw_script([
-                'analyze', '--global-file', global_file, '--local-file', local_file,
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'analyze',
+                    '--global-file',
+                    global_file,
+                    '--local-file',
+                    local_file,
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             denied = result['denied_domains']
@@ -455,10 +492,15 @@ class TestApply(unittest.TestCase):
         """Test adding domains to a settings file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write_settings(['existing.com'], f'{tmpdir}/settings.json')
-            stdout, _, code = run_pw_script([
-                'apply', '--file', path,
-                '--add', json.dumps(['new-domain.com', 'another.org']),
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    path,
+                    '--add',
+                    json.dumps(['new-domain.com', 'another.org']),
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'success')
@@ -471,10 +513,15 @@ class TestApply(unittest.TestCase):
         """Test removing domains from a settings file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write_settings(['keep.com', 'remove-me.com'], f'{tmpdir}/settings.json')
-            stdout, _, code = run_pw_script([
-                'apply', '--file', path,
-                '--remove', json.dumps(['remove-me.com']),
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    path,
+                    '--remove',
+                    json.dumps(['remove-me.com']),
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['removed'], 1)
@@ -485,11 +532,17 @@ class TestApply(unittest.TestCase):
         """Test adding and removing in one call."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write_settings(['old.com', 'keep.com'], f'{tmpdir}/settings.json')
-            stdout, _, code = run_pw_script([
-                'apply', '--file', path,
-                '--add', json.dumps(['new.com']),
-                '--remove', json.dumps(['old.com']),
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    path,
+                    '--add',
+                    json.dumps(['new.com']),
+                    '--remove',
+                    json.dumps(['old.com']),
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['added'], 1)
@@ -501,10 +554,15 @@ class TestApply(unittest.TestCase):
         """Test that apply does not touch non-WebFetch permissions."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write_settings(['example.com'], f'{tmpdir}/settings.json')
-            run_pw_script([
-                'apply', '--file', path,
-                '--add', json.dumps(['new.com']),
-            ])
+            run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    path,
+                    '--add',
+                    json.dumps(['new.com']),
+                ]
+            )
             # Re-read and verify Bash(ls) is still there
             settings = json.loads(Path(path).read_text())
             self.assertIn('Bash(ls)', settings['permissions']['allow'])
@@ -513,20 +571,30 @@ class TestApply(unittest.TestCase):
         """Test that adding an already-existing domain doesn't duplicate."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write_settings(['exists.com'], f'{tmpdir}/settings.json')
-            stdout, _, code = run_pw_script([
-                'apply', '--file', path,
-                '--add', json.dumps(['exists.com']),
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    path,
+                    '--add',
+                    json.dumps(['exists.com']),
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['added'], 0)
 
     def test_missing_file(self):
         """Test error when file does not exist."""
-        stdout, _, code = run_pw_script([
-            'apply', '--file', '/nonexistent/settings.json',
-            '--add', json.dumps(['example.com']),
-        ])
+        stdout, _, code = run_pw_script(
+            [
+                'apply',
+                '--file',
+                '/nonexistent/settings.json',
+                '--add',
+                json.dumps(['example.com']),
+            ]
+        )
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'error')
@@ -536,9 +604,13 @@ class TestApply(unittest.TestCase):
         """Test error when neither --add nor --remove provided."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write_settings([], f'{tmpdir}/settings.json')
-            stdout, _, code = run_pw_script([
-                'apply', '--file', path,
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    path,
+                ]
+            )
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'error')
@@ -548,9 +620,15 @@ class TestApply(unittest.TestCase):
         """Test error on invalid JSON for --add."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = self._write_settings([], f'{tmpdir}/settings.json')
-            stdout, _, code = run_pw_script([
-                'apply', '--file', path, '--add', 'not-json',
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    path,
+                    '--add',
+                    'not-json',
+                ]
+            )
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
             self.assertEqual(result['error_code'], 'INVALID_INPUT')
@@ -564,11 +642,17 @@ class TestApplyAddAndRemoveSameDomain(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / 'settings.json'
             path.write_text(json.dumps({'permissions': {'allow': ['WebFetch(target.com)']}}))
-            stdout, _, code = run_pw_script([
-                'apply', '--file', str(path),
-                '--add', json.dumps(['target.com']),
-                '--remove', json.dumps(['target.com']),
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    str(path),
+                    '--add',
+                    json.dumps(['target.com']),
+                    '--remove',
+                    json.dumps(['target.com']),
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'success')
@@ -589,9 +673,15 @@ class TestAnalyzeEmptyPermissions(unittest.TestCase):
             local_path.parent.mkdir(parents=True, exist_ok=True)
             local_path.write_text('{}')
 
-            stdout, _, code = run_pw_script([
-                'analyze', '--global-file', str(global_path), '--local-file', str(local_path),
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'analyze',
+                    '--global-file',
+                    str(global_path),
+                    '--local-file',
+                    str(local_path),
+                ]
+            )
             self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'success')
@@ -621,10 +711,15 @@ class TestApplyEdgeCases(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write('not valid json{{{')
             f.flush()
-            stdout, _, code = run_pw_script([
-                'apply', '--file', f.name,
-                '--add', json.dumps(['example.com']),
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    f.name,
+                    '--add',
+                    json.dumps(['example.com']),
+                ]
+            )
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'error')
@@ -635,9 +730,15 @@ class TestApplyEdgeCases(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / 'settings.json'
             path.write_text(json.dumps({'permissions': {'allow': []}}))
-            stdout, _, code = run_pw_script([
-                'apply', '--file', str(path), '--remove', 'not-json',
-            ])
+            stdout, _, code = run_pw_script(
+                [
+                    'apply',
+                    '--file',
+                    str(path),
+                    '--remove',
+                    'not-json',
+                ]
+            )
             self.assertEqual(code, 1)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'error')

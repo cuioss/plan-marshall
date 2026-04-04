@@ -16,71 +16,78 @@ class Extension(ExtensionBase):
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
-        return [{
-            'domain': {
-                'key': 'javascript',
-                'name': 'JavaScript Development',
-                'description': 'Modern JavaScript, ESLint, Jest testing, npm builds',
-            },
-            'profiles': {
-                'core': {
-                    'defaults': [
-                        {
-                            'skill': 'pm-dev-frontend:javascript',
-                            'description': 'Core JavaScript development standards covering ES modules, modern patterns, and code quality',
-                        },
-                        {
-                            'skill': 'plan-marshall:dev-general-code-quality',
-                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
-                        },
-                    ],
-                    'optionals': [],
+        return [
+            {
+                'domain': {
+                    'key': 'javascript',
+                    'name': 'JavaScript Development',
+                    'description': 'Modern JavaScript, ESLint, Jest testing, npm builds',
                 },
-                'implementation': {
-                    'defaults': [
-                        {
-                            'skill': 'plan-marshall:dev-general-code-quality',
-                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
-                        },
-                    ],
-                    'optionals': [
-                        {
-                            'skill': 'pm-dev-frontend:lint-config',
-                            'description': 'ESLint, Prettier, and Stylelint configuration and enforcement with systematic fixing',
-                        },
-                        {
-                            'skill': 'pm-dev-frontend:css',
-                            'description': 'Modern CSS standards covering essentials, responsive design, quality practices, and tooling',
-                        },
-                    ],
+                'profiles': {
+                    'core': {
+                        'defaults': [
+                            {
+                                'skill': 'pm-dev-frontend:javascript',
+                                'description': 'Core JavaScript development standards covering ES modules, modern patterns, and code quality',
+                            },
+                            {
+                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                            },
+                        ],
+                        'optionals': [],
+                    },
+                    'implementation': {
+                        'defaults': [
+                            {
+                                'skill': 'plan-marshall:dev-general-code-quality',
+                                'description': 'Language-agnostic code quality, refactoring, and documentation principles',
+                            },
+                        ],
+                        'optionals': [
+                            {
+                                'skill': 'pm-dev-frontend:lint-config',
+                                'description': 'ESLint, Prettier, and Stylelint configuration and enforcement with systematic fixing',
+                            },
+                            {
+                                'skill': 'pm-dev-frontend:css',
+                                'description': 'Modern CSS standards covering essentials, responsive design, quality practices, and tooling',
+                            },
+                        ],
+                    },
+                    'module_testing': {
+                        'defaults': [
+                            {
+                                'skill': 'plan-marshall:dev-general-module-testing',
+                                'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                            },
+                            {
+                                'skill': 'pm-dev-frontend:jest-testing',
+                                'description': 'JavaScript unit testing with Jest, DOM testing, mocking, async patterns',
+                            },
+                        ],
+                        'optionals': [],
+                    },
                 },
-                'module_testing': {
-                    'defaults': [
-                        {
-                            'skill': 'plan-marshall:dev-general-module-testing',
-                            'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
-                        },
-                        {
-                            'skill': 'pm-dev-frontend:jest-testing',
-                            'description': 'JavaScript unit testing with Jest, DOM testing, mocking, async patterns',
-                        },
-                    ],
-                    'optionals': [],
-                },
-            },
-        }]
+            }
+        ]
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Check if JavaScript domain applies based on build systems."""
         build_systems = module_data.get('build_systems', [])
         if 'npm' not in build_systems:
-            return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None, 'skills_by_profile': {}}
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
 
         signals = ['build_systems=npm']
-        result = self._build_applicable_result('high', signals,
-                                                module_data=module_data,
-                                                active_profiles=active_profiles)
+        result = self._build_applicable_result(
+            'high', signals, module_data=module_data, active_profiles=active_profiles
+        )
 
         return result
 

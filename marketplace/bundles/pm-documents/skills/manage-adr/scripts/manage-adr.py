@@ -166,9 +166,7 @@ def cmd_create(args):
     status = args.status if args.status else 'Proposed'
     if status not in VALID_STATUSES:
         log_entry('script', 'global', 'ERROR', f'[ADR] Invalid status: {status}')
-        output_error(
-            {'operation': 'create', 'message': f'Invalid status: {status}. Valid: {VALID_STATUSES}'}
-        )
+        output_error({'operation': 'create', 'message': f'Invalid status: {status}. Valid: {VALID_STATUSES}'})
 
     content = content.replace('{{STATUS}}', status)
 
@@ -234,9 +232,7 @@ def cmd_update(args):
     if args.status:
         if args.status not in VALID_STATUSES:
             log_entry('script', 'global', 'ERROR', f'[ADR] Invalid status: {args.status}')
-            output_error(
-                {'operation': 'update', 'message': f'Invalid status: {args.status}. Valid: {VALID_STATUSES}'}
-            )
+            output_error({'operation': 'update', 'message': f'Invalid status: {args.status}. Valid: {VALID_STATUSES}'})
 
         # Update status section
         content = re.sub(
@@ -285,7 +281,9 @@ def cmd_delete(args):
     filepath.unlink()
 
     log_entry('script', 'global', 'INFO', f'[ADR] Deleted ADR-{args.number:03d}')
-    output_toon({'status': 'success', 'operation': 'delete', 'number': args.number, 'path': str(filepath), 'deleted': True})
+    output_toon(
+        {'status': 'success', 'operation': 'delete', 'number': args.number, 'path': str(filepath), 'deleted': True}
+    )
 
 
 def cmd_next_number(args):

@@ -246,9 +246,24 @@ VALID_WARNING_CATEGORIES = (
 # Valid source file extensions (used for step path validation)
 # ---------------------------------------------------------------------------
 VALID_SOURCE_EXTENSIONS = (
-    '.md', '.py', '.java', '.js', '.ts', '.tsx', '.jsx',
-    '.json', '.yaml', '.yml', '.xml', '.sh', '.bash',
-    '.properties', '.adoc', '.toon', '.html', '.css',
+    '.md',
+    '.py',
+    '.java',
+    '.js',
+    '.ts',
+    '.tsx',
+    '.jsx',
+    '.json',
+    '.yaml',
+    '.yml',
+    '.xml',
+    '.sh',
+    '.bash',
+    '.properties',
+    '.adoc',
+    '.toon',
+    '.html',
+    '.css',
 )
 
 # ---------------------------------------------------------------------------

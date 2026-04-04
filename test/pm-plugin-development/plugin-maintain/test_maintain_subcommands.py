@@ -101,9 +101,12 @@ def test_checkdup_high_duplicate():
     skill_path = FIXTURES_DIR / 'knowledge' / 'skill-with-references'
     content_file = FIXTURES_DIR / 'knowledge' / 'new-high-duplicate.md'
     result = run_script(
-        SCRIPT_PATH, 'check-duplication',
-        '--skill-path', str(skill_path),
-        '--content-file', str(content_file),
+        SCRIPT_PATH,
+        'check-duplication',
+        '--skill-path',
+        str(skill_path),
+        '--content-file',
+        str(content_file),
     )
     data = parse_toon(result.stdout)
     assert 'error' not in data
@@ -146,9 +149,12 @@ def test_checkdup_exact_duplicate_detected():
             'the similarity algorithm to detect meaningful overlap between files.\n'
         )
         result = run_script(
-            SCRIPT_PATH, 'check-duplication',
-            '--skill-path', str(skill_dir),
-            '--content-file', str(new_file),
+            SCRIPT_PATH,
+            'check-duplication',
+            '--skill-path',
+            str(skill_dir),
+            '--content-file',
+            str(new_file),
         )
         data = parse_toon(result.stdout)
         assert 'error' not in data
@@ -162,9 +168,12 @@ def test_checkdup_unique_content():
     skill_path = FIXTURES_DIR / 'knowledge' / 'skill-with-references'
     content_file = FIXTURES_DIR / 'knowledge' / 'new-unique-content.md'
     result = run_script(
-        SCRIPT_PATH, 'check-duplication',
-        '--skill-path', str(skill_path),
-        '--content-file', str(content_file),
+        SCRIPT_PATH,
+        'check-duplication',
+        '--skill-path',
+        str(skill_path),
+        '--content-file',
+        str(content_file),
     )
     data = parse_toon(result.stdout)
     assert 'error' not in data
@@ -176,9 +185,12 @@ def test_checkdup_empty_content():
     skill_path = FIXTURES_DIR / 'knowledge' / 'skill-with-references'
     content_file = FIXTURES_DIR / 'knowledge' / 'new-empty.md'
     result = run_script(
-        SCRIPT_PATH, 'check-duplication',
-        '--skill-path', str(skill_path),
-        '--content-file', str(content_file),
+        SCRIPT_PATH,
+        'check-duplication',
+        '--skill-path',
+        str(skill_path),
+        '--content-file',
+        str(content_file),
     )
     data = parse_toon(result.stdout)
     assert 'error' not in data
@@ -191,9 +203,12 @@ def test_checkdup_no_references_dir():
     skill_path = FIXTURES_DIR / 'knowledge' / 'skill-no-references'
     content_file = FIXTURES_DIR / 'knowledge' / 'new-unique-content.md'
     result = run_script(
-        SCRIPT_PATH, 'check-duplication',
-        '--skill-path', str(skill_path),
-        '--content-file', str(content_file),
+        SCRIPT_PATH,
+        'check-duplication',
+        '--skill-path',
+        str(skill_path),
+        '--content-file',
+        str(content_file),
     )
     data = parse_toon(result.stdout)
     assert 'error' not in data
@@ -205,9 +220,12 @@ def test_checkdup_nonexistent_content_file():
     """Check-duplication returns error for missing content file."""
     skill_path = FIXTURES_DIR / 'knowledge' / 'skill-with-references'
     result = run_script(
-        SCRIPT_PATH, 'check-duplication',
-        '--skill-path', str(skill_path),
-        '--content-file', '/nonexistent/file.md',
+        SCRIPT_PATH,
+        'check-duplication',
+        '--skill-path',
+        str(skill_path),
+        '--content-file',
+        '/nonexistent/file.md',
     )
     data = parse_toon(result.stdout)
     assert 'error' in data
@@ -218,13 +236,22 @@ def test_checkdup_result_has_expected_keys():
     skill_path = FIXTURES_DIR / 'knowledge' / 'skill-with-references'
     content_file = FIXTURES_DIR / 'knowledge' / 'new-unique-content.md'
     result = run_script(
-        SCRIPT_PATH, 'check-duplication',
-        '--skill-path', str(skill_path),
-        '--content-file', str(content_file),
+        SCRIPT_PATH,
+        'check-duplication',
+        '--skill-path',
+        str(skill_path),
+        '--content-file',
+        str(content_file),
     )
     data = parse_toon(result.stdout)
-    for key in ['skill_path', 'new_content_file', 'duplication_detected',
-                'duplication_percentage', 'duplicate_files', 'recommendation']:
+    for key in [
+        'skill_path',
+        'new_content_file',
+        'duplication_detected',
+        'duplication_percentage',
+        'duplicate_files',
+        'recommendation',
+    ]:
         assert key in data, f'Missing key: {key}'
 
 
@@ -311,10 +338,14 @@ def test_update_multiple_updates():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write('---\nname: test\ndescription: Old\n---\n\n# Test\n\nSome text.\n')
         f.flush()
-        updates = json.dumps({'updates': [
-            {'type': 'frontmatter', 'field': 'version', 'value': '1.0'},
-            {'type': 'append', 'text': '## Footer\n\nEnd.'},
-        ]})
+        updates = json.dumps(
+            {
+                'updates': [
+                    {'type': 'frontmatter', 'field': 'version', 'value': '1.0'},
+                    {'type': 'append', 'text': '## Footer\n\nEnd.'},
+                ]
+            }
+        )
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
         data = parse_toon(result.stdout)
         assert data['success'] is True

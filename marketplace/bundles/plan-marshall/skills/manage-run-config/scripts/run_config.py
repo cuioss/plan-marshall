@@ -23,7 +23,6 @@ from constants import VALID_WARNING_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import get_base_dir, output_toon, read_json, safe_main, write_json  # type: ignore[import-not-found]
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
-
 # Constants for timeout handling
 SAFETY_MARGIN = 1.25  # Multiplier applied to persisted values on retrieval
 HIGHER_WEIGHT = 0.80  # Weight given to higher value during update
@@ -401,26 +400,30 @@ def cmd_timeout_set(args: argparse.Namespace) -> int:
             cmd_entry['timeout_seconds'] = duration
             _write_json_file(config_path, config)
 
-            output_toon({
-                'status': 'success',
-                'command': command,
-                'timeout_seconds': duration,
-                'source': 'initial',
-            })
+            output_toon(
+                {
+                    'status': 'success',
+                    'command': command,
+                    'timeout_seconds': duration,
+                    'source': 'initial',
+                }
+            )
         else:
             # Compute weighted value favoring higher
             new_timeout = compute_weighted_timeout(existing, duration)
             cmd_entry['timeout_seconds'] = new_timeout
             _write_json_file(config_path, config)
 
-            output_toon({
-                'status': 'success',
-                'command': command,
-                'timeout_seconds': new_timeout,
-                'previous_seconds': existing,
-                'observed_seconds': duration,
-                'source': 'computed',
-            })
+            output_toon(
+                {
+                    'status': 'success',
+                    'command': command,
+                    'timeout_seconds': new_timeout,
+                    'previous_seconds': existing,
+                    'observed_seconds': duration,
+                    'source': 'computed',
+                }
+            )
 
         return 0
 

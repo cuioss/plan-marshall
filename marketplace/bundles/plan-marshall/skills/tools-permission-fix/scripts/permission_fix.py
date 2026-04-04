@@ -25,7 +25,6 @@ from typing import Any
 from permission_common import (  # type: ignore[import-not-found]
     EXIT_ERROR,
     EXIT_SUCCESS,
-    get_global_settings_path,
     get_project_settings_path_for_write,
     get_settings_path,
     load_settings,

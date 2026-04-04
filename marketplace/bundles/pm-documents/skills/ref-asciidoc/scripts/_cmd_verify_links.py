@@ -135,9 +135,7 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
                     )
                 )
             elif link.link_type == 'xref':
-                target_path = (
-                    str((Path(filepath).parent / link.target).resolve()) if link.target else filepath
-                )
+                target_path = str((Path(filepath).parent / link.target).resolve()) if link.target else filepath
                 if not Path(target_path).exists():
                     issues.append(
                         Issue(

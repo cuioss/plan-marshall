@@ -157,9 +157,7 @@ def validate_deliverable_contract(deliverable: dict) -> tuple[list[str], list[st
     affected_files = deliverable.get('affected_files', [])
     if 'module_testing' in profiles and affected_files:
         test_indicators = ('test/', 'Test.', '_test.', 'test_', '.test.', 'spec/', '/tests/')
-        has_test_files = any(
-            any(indicator in f for indicator in test_indicators) for f in affected_files
-        )
+        has_test_files = any(any(indicator in f for indicator in test_indicators) for f in affected_files)
         if not has_test_files:
             warnings.append(
                 f'D{num}: module_testing profile but no test files detected in affected files '
@@ -273,9 +271,7 @@ def cmd_list_deliverables(args) -> int:
     file_path = get_solution_path(args.plan_id)
 
     if not file_path.exists():
-        output_toon(
-            {'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'file': SOLUTION_FILE}
-        )
+        output_toon({'status': 'error', 'error': 'document_not_found', 'plan_id': args.plan_id, 'file': SOLUTION_FILE})
         return 1
 
     content = file_path.read_text(encoding='utf-8')

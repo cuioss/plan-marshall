@@ -40,6 +40,7 @@ def test_config_default_timeout():
 def test_config_capture_strategy():
     """Config uses stdout redirect."""
     from _build_execute import CaptureStrategy
+
     assert _CONFIG.capture_strategy == CaptureStrategy.STDOUT_REDIRECT
 
 

@@ -51,19 +51,22 @@ def _npm_extra_args(run_parser):
 
 def main() -> int:
     """Main entry point."""
-    return build_main('npm/npx build operations', register_standard_subparsers(
-        run_handler=cmd_run,
-        run_args_help="Complete npm command arguments (e.g., 'run test' or 'run test --workspace=pkg')",
-        run_extra_args_fn=_npm_extra_args,
-        parse_handler=parse_log,
-        parse_help='Parse npm/npx build output and categorize issues',
-        parse_needs_command=True,
-        coverage_handler=cmd_coverage_report,
-        coverage_help='Parse JavaScript coverage report',
-        check_warnings_handler=cmd_check_warnings,
-        discover_handler=discover_npm_modules,
-        discover_help='Discover npm modules',
-    ))
+    return build_main(
+        'npm/npx build operations',
+        register_standard_subparsers(
+            run_handler=cmd_run,
+            run_args_help="Complete npm command arguments (e.g., 'run test' or 'run test --workspace=pkg')",
+            run_extra_args_fn=_npm_extra_args,
+            parse_handler=parse_log,
+            parse_help='Parse npm/npx build output and categorize issues',
+            parse_needs_command=True,
+            coverage_handler=cmd_coverage_report,
+            coverage_help='Parse JavaScript coverage report',
+            check_warnings_handler=cmd_check_warnings,
+            discover_handler=discover_npm_modules,
+            discover_help='Discover npm modules',
+        ),
+    )
 
 
 if __name__ == '__main__':

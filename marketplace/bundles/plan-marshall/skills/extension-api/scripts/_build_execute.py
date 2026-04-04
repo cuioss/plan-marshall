@@ -33,7 +33,6 @@ from _build_result import DirectCommandResult, create_log_file
 from plan_logging import log_entry
 from run_config import timeout_get, timeout_set
 
-
 # Minimum timeout floor (seconds) — prevents adaptive learning from producing
 # dangerously short timeouts (e.g., a warm cache run teaching 5s that then
 # fails on a cold start).

@@ -13,7 +13,13 @@ import re
 from pathlib import Path
 
 # Cross-skill imports (PYTHONPATH set by executor)
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary, add_issue_deduped  # type: ignore[import-not-found]
+from _build_parse import (  # type: ignore[import-not-found]
+    SEVERITY_ERROR,
+    SEVERITY_WARNING,
+    Issue,
+    UnitTestSummary,
+    add_issue_deduped,
+)
 
 # ESLint issue pattern: "  line:col  severity  message  rule-name"
 ESLINT_ISSUE_PATTERN = re.compile(r'^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)\s*$')
@@ -85,7 +91,8 @@ def _extract_issues(content: str) -> list[Issue]:
             severity = SEVERITY_ERROR if severity_str == 'error' else SEVERITY_WARNING
 
             add_issue_deduped(
-                issues, seen,
+                issues,
+                seen,
                 file=current_file,
                 line=line_num,
                 message=f'{rule}: {message}',

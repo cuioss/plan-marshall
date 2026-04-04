@@ -8,8 +8,15 @@ import sys
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
-from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS, PHASES  # type: ignore[import-not-found]
-from file_ops import base_path, get_plan_dir, now_utc_iso, output_toon, read_json, write_json  # type: ignore[import-not-found]
+from constants import DIR_ARCHIVED, DIR_PLANS, FILE_STATUS  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    base_path,
+    get_plan_dir,
+    now_utc_iso,
+    output_toon,
+    read_json,
+    write_json,
+)
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 from plan_logging import log_entry  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 

@@ -101,9 +101,7 @@ def test_run_failure_returns_exit_1():
 def test_run_mode_actionable():
     """Test run with --mode actionable (default)."""
     with mock_npm_project() as temp_dir:
-        result = run_script(
-            SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'actionable', cwd=temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'actionable', cwd=temp_dir)
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
         assert 'status: success' in result.stdout
 
@@ -111,18 +109,14 @@ def test_run_mode_actionable():
 def test_run_mode_errors():
     """Test run with --mode errors."""
     with mock_npm_project() as temp_dir:
-        result = run_script(
-            SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'errors', cwd=temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'errors', cwd=temp_dir)
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
 
 def test_run_mode_structured():
     """Test run with --mode structured."""
     with mock_npm_project() as temp_dir:
-        result = run_script(
-            SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'structured', cwd=temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--mode', 'structured', cwd=temp_dir)
         assert result.returncode == 0, f'Should succeed: {result.stderr}'
 
 
@@ -134,11 +128,10 @@ def test_run_mode_structured():
 def test_run_format_json():
     """Test run with --format json produces valid JSON."""
     with mock_npm_project() as temp_dir:
-        result = run_script(
-            SCRIPT_PATH, 'run', '--command-args=--version', '--format', 'json', cwd=temp_dir
-        )
+        result = run_script(SCRIPT_PATH, 'run', '--command-args=--version', '--format', 'json', cwd=temp_dir)
         assert result.returncode == 0
         import json
+
         data = json.loads(result.stdout)
         assert data['status'] == 'success'
 

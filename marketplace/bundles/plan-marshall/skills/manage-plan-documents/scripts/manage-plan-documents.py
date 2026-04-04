@@ -15,14 +15,12 @@ Note: Solution documents are managed by the manage-solution-outline skill.
 """
 
 import argparse
-import sys
 
 from _cmd_request import cmd_clarify, cmd_create, cmd_exists, cmd_read, cmd_remove, cmd_update
 from _cmd_types import cmd_list_types
 from _documents_core import get_available_types, load_document_type
 from file_ops import safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def build_parser() -> argparse.ArgumentParser:

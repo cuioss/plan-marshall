@@ -66,7 +66,8 @@ for _category in ('code_change', 'explain', 'ignore'):
     _COMPILED_PATTERNS[_category] = {}
     for _priority, _pattern_list in PATTERNS.get(_category, {}).items():
         _COMPILED_PATTERNS[_category][_priority] = compile_patterns_from_config(
-            _pattern_list, f'comment-patterns.json [{_category}][{_priority}]',
+            _pattern_list,
+            f'comment-patterns.json [{_category}][{_priority}]',
         )
 
 
@@ -144,7 +145,9 @@ def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, A
     """Fetch review comments for a PR via provider's fetch_pr_comments_data()."""
     mod = _get_provider_module()
     if not mod:
-        return make_error('CI provider not configured. Run /marshall-steward first.', code=ErrorCode.PROVIDER_NOT_CONFIGURED)
+        return make_error(
+            'CI provider not configured. Run /marshall-steward first.', code=ErrorCode.PROVIDER_NOT_CONFIGURED
+        )
 
     result = mod.fetch_pr_comments_data(pr_number, unresolved_only)
 
@@ -236,7 +239,11 @@ def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
     for priority in ['high', 'medium', 'low']:
         for compiled in _COMPILED_PATTERNS['code_change'].get(priority, []):
             if compiled.search(body_lower):
-                return {'action': 'code_change', 'priority': priority, 'reason': f'Matches {priority} priority pattern: {compiled.pattern}'}
+                return {
+                    'action': 'code_change',
+                    'priority': priority,
+                    'reason': f'Matches {priority} priority pattern: {compiled.pattern}',
+                }
 
     # Check for ignore patterns AFTER code_change — pure acknowledgments
     # with no actionable content.
@@ -267,14 +274,22 @@ def classify_comment(body: str, context: str | None = None) -> dict[str, str]:
         context_lower = context.lower()
         code_refs = [w for w in body.split() if _looks_like_identifier(w)]
         if any(ref.lower().rstrip('.,;:)') in context_lower for ref in code_refs):
-            return {'action': 'code_change', 'priority': 'medium', 'reason': 'Comment references code identifiers visible in context'}
+            return {
+                'action': 'code_change',
+                'priority': 'medium',
+                'reason': 'Comment references code identifiers visible in context',
+            }
 
     # Default: review comment without clear action signal.
     # Longer comments (>100 chars) likely contain substantive feedback that
     # warrants attention even without keyword matches. Short comments without
     # recognizable patterns are typically drive-by acknowledgments.
     if len(body) > SUBSTANTIAL_COMMENT_LENGTH:
-        return {'action': 'code_change', 'priority': 'low', 'reason': f'Substantial review comment (>{SUBSTANTIAL_COMMENT_LENGTH} chars) requires attention'}
+        return {
+            'action': 'code_change',
+            'priority': 'low',
+            'reason': f'Substantial review comment (>{SUBSTANTIAL_COMMENT_LENGTH} chars) requires attention',
+        }
 
     return {'action': 'ignore', 'priority': 'low', 'reason': 'Brief comment with no actionable content'}
 

@@ -15,8 +15,8 @@ from _architecture_core import (  # type: ignore[import-not-found]
     DataNotFoundError,
     load_derived_data,
 )
-from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
 from _config_core import ext_defaults_get  # type: ignore[import-not-found]
+from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
 
 # Extension defaults keys for profile configuration
 EXT_KEY_PROFILES_SKIP = 'build.maven.profiles.skip'

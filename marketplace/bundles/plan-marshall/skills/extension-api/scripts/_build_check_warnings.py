@@ -28,8 +28,10 @@ def create_check_warnings_handler(
     Returns:
         A cmd_check_warnings(args) -> int function ready for argparse set_defaults.
     """
+
     def cmd_check_warnings(args) -> int:
         return cmd_check_warnings_base(args, matcher=matcher, filter_severity=filter_severity)
+
     return cmd_check_warnings
 
 

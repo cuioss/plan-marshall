@@ -21,6 +21,7 @@ def _subprocess_env() -> dict[str, str]:
     env['PYTHONPATH'] = pythonpath
     return env
 
+
 # Path to templates and scripts
 SKILL_DIR = (
     Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills/tools-script-executor'
@@ -245,7 +246,9 @@ def test_generate_script_help():
     script_path = SCRIPTS_DIR / 'generate_executor.py'
 
     if script_path.exists():
-        result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True, env=_subprocess_env())
+        result = subprocess.run(
+            ['python3', str(script_path), '--help'], capture_output=True, text=True, env=_subprocess_env()
+        )
 
         assert result.returncode == 0, f'Script failed: {result.stderr}'
         assert 'generate' in result.stdout, "Missing 'generate' subcommand in help"
@@ -256,7 +259,9 @@ def test_verify_script_help():
     script_path = SCRIPTS_DIR / 'verify-executor.py'
 
     if script_path.exists():
-        result = subprocess.run(['python3', str(script_path), '--help'], capture_output=True, text=True, env=_subprocess_env())
+        result = subprocess.run(
+            ['python3', str(script_path), '--help'], capture_output=True, text=True, env=_subprocess_env()
+        )
 
         assert result.returncode == 0, f'Script failed: {result.stderr}'
         assert 'check' in result.stdout, "Missing 'check' subcommand in help"

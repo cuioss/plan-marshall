@@ -43,7 +43,16 @@ def test_script_success():
     import re
 
     with PlanContext(plan_id='log-script-success') as ctx:
-        result = run_script(SCRIPT_PATH, 'script', '--plan-id', 'log-script-success', '--level', 'INFO', '--message', 'test:skill:script add (0.15s)')
+        result = run_script(
+            SCRIPT_PATH,
+            'script',
+            '--plan-id',
+            'log-script-success',
+            '--level',
+            'INFO',
+            '--message',
+            'test:skill:script add (0.15s)',
+        )
         assert result.success, f'Script failed: {result.stderr}'
         assert result.stdout == '', 'Expected no stdout output'
 
@@ -57,7 +66,16 @@ def test_script_success():
 def test_script_error():
     """Test script type logs ERROR entry."""
     with PlanContext(plan_id='log-script-error') as ctx:
-        result = run_script(SCRIPT_PATH, 'script', '--plan-id', 'log-script-error', '--level', 'ERROR', '--message', 'test:skill:script add failed')
+        result = run_script(
+            SCRIPT_PATH,
+            'script',
+            '--plan-id',
+            'log-script-error',
+            '--level',
+            'ERROR',
+            '--message',
+            'test:skill:script add failed',
+        )
         assert result.success, f'Script failed: {result.stderr}'
 
         log_content = read_log_file(ctx.plan_dir, 'script')
@@ -72,7 +90,16 @@ def test_script_error():
 def test_work_info():
     """Test work type logs INFO entry."""
     with PlanContext(plan_id='log-work-info') as ctx:
-        result = run_script(SCRIPT_PATH, 'work', '--plan-id', 'log-work-info', '--level', 'INFO', '--message', 'Created deliverable: auth module')
+        result = run_script(
+            SCRIPT_PATH,
+            'work',
+            '--plan-id',
+            'log-work-info',
+            '--level',
+            'INFO',
+            '--message',
+            'Created deliverable: auth module',
+        )
         assert result.success, f'Script failed: {result.stderr}'
         assert result.stdout == '', 'Expected no stdout output'
 
@@ -84,7 +111,9 @@ def test_work_info():
 def test_work_warn():
     """Test work type logs WARN entry."""
     with PlanContext(plan_id='log-work-warn') as ctx:
-        result = run_script(SCRIPT_PATH, 'work', '--plan-id', 'log-work-warn', '--level', 'WARN', '--message', 'Skipped validation step')
+        result = run_script(
+            SCRIPT_PATH, 'work', '--plan-id', 'log-work-warn', '--level', 'WARN', '--message', 'Skipped validation step'
+        )
         assert result.success, f'Script failed: {result.stderr}'
 
         log_content = read_log_file(ctx.plan_dir, 'work')
@@ -99,14 +128,18 @@ def test_work_warn():
 def test_invalid_type():
     """Test that invalid type fails."""
     with PlanContext(plan_id='log-invalid-type'):
-        result = run_script(SCRIPT_PATH, 'invalid', '--plan-id', 'log-invalid-type', '--level', 'INFO', '--message', 'Test message')
+        result = run_script(
+            SCRIPT_PATH, 'invalid', '--plan-id', 'log-invalid-type', '--level', 'INFO', '--message', 'Test message'
+        )
         assert not result.success, 'Expected failure for invalid type'
 
 
 def test_invalid_level():
     """Test that invalid level fails."""
     with PlanContext(plan_id='log-invalid-level'):
-        result = run_script(SCRIPT_PATH, 'work', '--plan-id', 'log-invalid-level', '--level', 'INVALID', '--message', 'Test message')
+        result = run_script(
+            SCRIPT_PATH, 'work', '--plan-id', 'log-invalid-level', '--level', 'INVALID', '--message', 'Test message'
+        )
         assert not result.success, 'Expected failure for invalid level'
 
 
@@ -185,7 +218,16 @@ def test_read_script_log():
     """Test read subcommand for script type logs."""
     with PlanContext(plan_id='log-read-script'):
         # Write script log entry
-        run_script(SCRIPT_PATH, 'script', '--plan-id', 'log-read-script', '--level', 'INFO', '--message', 'test:skill:script (0.1s)')
+        run_script(
+            SCRIPT_PATH,
+            'script',
+            '--plan-id',
+            'log-read-script',
+            '--level',
+            'INFO',
+            '--message',
+            'test:skill:script (0.1s)',
+        )
 
         # Read it back
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'log-read-script', '--type', 'script')
@@ -224,7 +266,9 @@ def test_separator_writes_blank_line():
     """Test separator subcommand appends a blank line to the log."""
     with PlanContext(plan_id='log-separator') as ctx:
         # Write an entry first
-        run_script(SCRIPT_PATH, 'work', '--plan-id', 'log-separator', '--level', 'INFO', '--message', 'Before separator')
+        run_script(
+            SCRIPT_PATH, 'work', '--plan-id', 'log-separator', '--level', 'INFO', '--message', 'Before separator'
+        )
 
         # Add separator
         result = run_script(SCRIPT_PATH, 'separator', '--plan-id', 'log-separator', '--type', 'work')
@@ -246,7 +290,9 @@ def test_separator_default_type():
     """Test separator defaults to work log type."""
     with PlanContext(plan_id='log-separator-default') as ctx:
         # Write an entry
-        run_script(SCRIPT_PATH, 'work', '--plan-id', 'log-separator-default', '--level', 'INFO', '--message', 'Test entry')
+        run_script(
+            SCRIPT_PATH, 'work', '--plan-id', 'log-separator-default', '--level', 'INFO', '--message', 'Test entry'
+        )
 
         # Add separator without --type (should default to work)
         result = run_script(SCRIPT_PATH, 'separator', '--plan-id', 'log-separator-default')

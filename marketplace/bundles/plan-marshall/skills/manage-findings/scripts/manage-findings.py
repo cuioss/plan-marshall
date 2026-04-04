@@ -29,8 +29,6 @@ from pathlib import Path
 # Allow direct invocation and testing — executor sets PYTHONPATH for production
 sys.path.insert(0, str(Path(__file__).parent))
 
-from file_ops import output_toon, safe_main
-from input_validation import add_plan_id_arg, add_phase_arg  # type: ignore[import-not-found]
 from _findings_core import (
     CERTAINTY_VALUES,
     FINDING_TYPES,
@@ -52,6 +50,8 @@ from _findings_core import (
     resolve_finding,
     resolve_qgate_finding,
 )
+from file_ops import output_toon, safe_main
+from input_validation import add_phase_arg, add_plan_id_arg  # type: ignore[import-not-found]
 
 
 def cmd_add(args: argparse.Namespace) -> int:
@@ -264,7 +264,9 @@ def main() -> int:
     resolve_parser = subparsers.add_parser('resolve', help='Resolve a finding')
     add_plan_id_arg(resolve_parser)
     resolve_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
-    resolve_parser.add_argument('--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status')
+    resolve_parser.add_argument(
+        '--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status'
+    )
     resolve_parser.add_argument('--detail', help='Resolution detail')
     resolve_parser.set_defaults(func=cmd_resolve)
 
@@ -306,7 +308,9 @@ def main() -> int:
     q_resolve_parser = qgate_sub.add_parser('resolve', help='Resolve a Q-Gate finding')
     add_plan_id_arg(q_resolve_parser)
     q_resolve_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
-    q_resolve_parser.add_argument('--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status')
+    q_resolve_parser.add_argument(
+        '--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status'
+    )
     add_phase_arg(q_resolve_parser, choices=QGATE_PHASES)
     q_resolve_parser.add_argument('--detail', help='Resolution detail')
     q_resolve_parser.set_defaults(func=cmd_qgate_resolve)

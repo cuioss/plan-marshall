@@ -22,7 +22,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from constants import FILE_WORK_METRICS, PHASES  # type: ignore[import-not-found]
-from file_ops import atomic_write_file, format_duration, get_plan_dir, now_utc_iso, output_toon, safe_main  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    atomic_write_file,
+    format_duration,
+    get_plan_dir,
+    now_utc_iso,
+    output_toon,
+    safe_main,
+)
 from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ignore[import-not-found]
 
 METRICS_FILE = FILE_WORK_METRICS
@@ -118,7 +125,13 @@ def cmd_start_phase(args: argparse.Namespace) -> int:
     phase = args.phase
 
     if phase not in PHASE_NAMES:
-        output_toon({'status': 'error', 'error': 'invalid_phase', 'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}'})
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'invalid_phase',
+                'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+            }
+        )
         return 1
 
     data = read_metrics_raw(plan_id)
@@ -132,12 +145,14 @@ def cmd_start_phase(args: argparse.Namespace) -> int:
 
     write_metrics(plan_id, data)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': plan_id,
-        'phase': phase,
-        'start_time': now,
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': plan_id,
+            'phase': phase,
+            'start_time': now,
+        }
+    )
     return 0
 
 
@@ -253,7 +268,9 @@ def cmd_generate(args: argparse.Namespace) -> int:
         lines.append(f'| {phase_name} | {duration_str} | {tokens_str} | {tool_uses_str} |')
 
     # Totals row
-    lines.append(f'| **Total** | **{format_duration(total_duration)}** | **{total_tokens:,}** | **{total_tool_uses}** |')
+    lines.append(
+        f'| **Total** | **{format_duration(total_duration)}** | **{total_tokens:,}** | **{total_tool_uses}** |'
+    )
     lines.append('')
 
     # Phase details
@@ -294,14 +311,16 @@ def cmd_generate(args: argparse.Namespace) -> int:
     md_path = get_plan_dir(plan_id) / METRICS_MD
     atomic_write_file(md_path, md_content)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': plan_id,
-        'file': METRICS_MD,
-        'phases_recorded': len(phases),
-        'total_duration_seconds': round(total_duration, 1),
-        'total_tokens': total_tokens,
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': plan_id,
+            'file': METRICS_MD,
+            'phases_recorded': len(phases),
+            'total_duration_seconds': round(total_duration, 1),
+            'total_tokens': total_tokens,
+        }
+    )
     return 0
 
 
@@ -332,12 +351,14 @@ def cmd_enrich(args: argparse.Namespace) -> int:
                     break
 
     if not transcript_path:
-        output_toon({
-            'status': 'success',
-            'plan_id': plan_id,
-            'enriched': False,
-            'message': f'JSONL transcript not found for session {session_id}',
-        })
+        output_toon(
+            {
+                'status': 'success',
+                'plan_id': plan_id,
+                'enriched': False,
+                'message': f'JSONL transcript not found for session {session_id}',
+            }
+        )
         return 0
 
     # Parse JSONL for token usage
@@ -363,11 +384,13 @@ def cmd_enrich(args: argparse.Namespace) -> int:
                 except (json.JSONDecodeError, AttributeError):
                     continue
     except OSError:
-        output_toon({
-            'status': 'error',
-            'error': 'read_failed',
-            'message': f'Cannot read transcript: {transcript_path}',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'error': 'read_failed',
+                'message': f'Cannot read transcript: {transcript_path}',
+            }
+        )
         return 1
 
     # Update metrics with enriched data
@@ -380,15 +403,17 @@ def cmd_enrich(args: argparse.Namespace) -> int:
 
     write_metrics(plan_id, data)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': plan_id,
-        'enriched': True,
-        'input_tokens': total_input,
-        'output_tokens': total_output,
-        'total_tokens': total_input + total_output,
-        'message_count': message_count,
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': plan_id,
+            'enriched': True,
+            'input_tokens': total_input,
+            'output_tokens': total_output,
+            'total_tokens': total_input + total_output,
+            'message_count': message_count,
+        }
+    )
     return 0
 
 

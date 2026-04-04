@@ -14,7 +14,9 @@ import sys
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path to permission_doctor.py
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-doctor' / 'scripts' / 'permission_doctor.py'
+SCRIPT_PATH = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-doctor' / 'scripts' / 'permission_doctor.py'
+)
 
 
 # =============================================================================
@@ -227,9 +229,7 @@ class TestDetectSuspicious(ScriptTestCase):
     def test_detect_broad_write_all_users(self):
         """Should flag broad write access to all users' directories."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(
-            json.dumps({'permissions': {'allow': ['Write(//Users/**)'], 'deny': [], 'ask': []}})
-        )
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(//Users/**)'], 'deny': [], 'ask': []}}))
 
         result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
         self.assert_success(result)
@@ -242,7 +242,9 @@ class TestDetectSuspicious(ScriptTestCase):
         """Normal permissions should not be flagged as suspicious."""
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(
-            json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Read(.plan/**)', 'Edit(src/**)'], 'deny': [], 'ask': []}})
+            json.dumps(
+                {'permissions': {'allow': ['Bash(git:*)', 'Read(.plan/**)', 'Edit(src/**)'], 'deny': [], 'ask': []}}
+            )
         )
 
         result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
@@ -254,9 +256,7 @@ class TestDetectSuspicious(ScriptTestCase):
     def test_detect_env_variable_access(self):
         """Should flag broad environment variable access."""
         settings_file = self.temp_dir / 'settings.json'
-        settings_file.write_text(
-            json.dumps({'permissions': {'allow': ['Bash(env:*)'], 'deny': [], 'ask': []}})
-        )
+        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(env:*)'], 'deny': [], 'ask': []}}))
 
         result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
         self.assert_success(result)

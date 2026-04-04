@@ -105,8 +105,7 @@ class Extension(ExtensionBase):
             },
         ]
 
-    def applies_to_module(self, module_data: dict,
-                          active_profiles: set[str] | None = None) -> dict:
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
         """Applicable only to modules with code build systems.
 
         Uses general-dev domain skills (not build domain, which has empty profiles).
@@ -114,12 +113,16 @@ class Extension(ExtensionBase):
         build_systems = set(module_data.get('build_systems', []))
         if not build_systems & _CODE_BUILD_SYSTEMS:
             return {
-                'applicable': False, 'confidence': 'none',
-                'signals': [], 'additive_to': None, 'skills_by_profile': {},
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
             }
 
         return self._build_applicable_result(
-            'high', ['cross-cutting'],
+            'high',
+            ['cross-cutting'],
             module_data=module_data,
             active_profiles=active_profiles,
             domain_key='general-dev',

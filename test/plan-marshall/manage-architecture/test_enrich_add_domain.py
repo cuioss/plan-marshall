@@ -165,8 +165,12 @@ def test_add_domain_include_optionals_false():
         result_all = enrich_add_domain('module-a', 'java', tmpdir, include_optionals=True)
 
     # The optionals-included version should have >= skills
-    count_defaults = sum(len(_extract_skill_names(v)) for v in result_defaults['skills_by_profile'].values() if isinstance(v, dict))
-    count_all = sum(len(_extract_skill_names(v)) for v in result_all['skills_by_profile'].values() if isinstance(v, dict))
+    count_defaults = sum(
+        len(_extract_skill_names(v)) for v in result_defaults['skills_by_profile'].values() if isinstance(v, dict)
+    )
+    count_all = sum(
+        len(_extract_skill_names(v)) for v in result_all['skills_by_profile'].values() if isinstance(v, dict)
+    )
     assert count_all >= count_defaults
 
 

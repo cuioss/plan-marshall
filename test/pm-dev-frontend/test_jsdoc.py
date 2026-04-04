@@ -81,8 +81,11 @@ def test_analyze_partial_jsdoc_detects_missing_tags():
     assert data['status'] == 'violations_found', 'Partial JSDoc should have violations'
     violations = data.get('data', {}).get('violations', [])
     violation_types = {v['type'] for v in violations}
-    assert 'missing_param_type' in violation_types or 'missing_returns' in violation_types or 'missing_jsdoc' in violation_types, \
-        'Should detect at least one type of incomplete documentation'
+    assert (
+        'missing_param_type' in violation_types
+        or 'missing_returns' in violation_types
+        or 'missing_jsdoc' in violation_types
+    ), 'Should detect at least one type of incomplete documentation'
 
 
 def test_analyze_web_component():
@@ -108,8 +111,9 @@ def test_analyze_scope_missing_excludes_syntax():
     data = parse_toon(result.stdout)
     violations = data.get('data', {}).get('violations', [])
     for v in violations:
-        assert v['type'] in ('missing_jsdoc', 'missing_class_doc', 'missing_constructor_doc'), \
+        assert v['type'] in ('missing_jsdoc', 'missing_class_doc', 'missing_constructor_doc'), (
             f"'missing' scope should not report syntax violations, got: {v['type']}"
+        )
 
 
 def test_analyze_scope_syntax_excludes_missing():
@@ -118,8 +122,9 @@ def test_analyze_scope_syntax_excludes_missing():
     data = parse_toon(result.stdout)
     violations = data.get('data', {}).get('violations', [])
     for v in violations:
-        assert v['type'] not in ('missing_jsdoc', 'missing_class_doc', 'missing_constructor_doc'), \
+        assert v['type'] not in ('missing_jsdoc', 'missing_class_doc', 'missing_constructor_doc'), (
             f"'syntax' scope should not report missing JSDoc, got: {v['type']}"
+        )
 
 
 def test_analyze_missing_file_error():
@@ -160,7 +165,7 @@ def test_analyze_violation_structure():
         assert 'line' in v, 'Violation must have line field'
         assert 'type' in v, 'Violation must have type field'
         assert 'severity' in v, 'Violation must have severity field'
-        assert v['severity'] in ('CRITICAL', 'WARNING', 'SUGGESTION'), f"Invalid severity: {v['severity']}"
+        assert v['severity'] in ('CRITICAL', 'WARNING', 'SUGGESTION'), f'Invalid severity: {v["severity"]}'
 
 
 # =============================================================================

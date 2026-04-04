@@ -18,13 +18,7 @@ from conftest import BuildContext
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 EXTENSION_FILE = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall-plugin'
-    / 'extension.py'
+    PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
 )
 
 
@@ -145,9 +139,7 @@ version = "1.0.0"
         assert 'quality-gate' in commands
 
         # Check command format
-        assert (
-            'python3 .plan/execute-script.py plan-marshall:build-python:python_build run' in commands['verify']
-        )
+        assert 'python3 .plan/execute-script.py plan-marshall:build-python:python_build run' in commands['verify']
 
 
 def test_discover_modules_maps_only_existing_aliases():

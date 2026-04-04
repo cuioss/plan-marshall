@@ -141,19 +141,27 @@ def require_valid_plan_id(args) -> str:
 
     plan_id: str = getattr(args, 'plan_id', None) or ''
     if not plan_id:
-        print(serialize_toon({
-            'status': 'error',
-            'error': 'missing_plan_id',
-            'message': 'plan_id is required',
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'error': 'missing_plan_id',
+                    'message': 'plan_id is required',
+                }
+            )
+        )
         sys.exit(1)
     if not is_valid_plan_id(plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'invalid_plan_id',
-            'message': f'Invalid plan_id format: {plan_id}',
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'plan_id': plan_id,
+                    'error': 'invalid_plan_id',
+                    'message': f'Invalid plan_id format: {plan_id}',
+                }
+            )
+        )
         sys.exit(1)
     return plan_id
 
@@ -181,24 +189,32 @@ def require_plan_file(plan_id: str, *path_parts: str) -> Path:
     from toon_parser import serialize_toon
 
     if not is_valid_plan_id(plan_id):
-        print(serialize_toon({
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': 'invalid_plan_id',
-            'message': f'Invalid plan_id format: {plan_id}',
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'plan_id': plan_id,
+                    'error': 'invalid_plan_id',
+                    'message': f'Invalid plan_id format: {plan_id}',
+                }
+            )
+        )
         sys.exit(1)
 
     target = base_path('plans', plan_id, *path_parts)
     if not target.exists():
         error_code = 'file_not_found' if path_parts else 'plan_not_found'
         file_desc = str(Path(*path_parts)) if path_parts else f'plan {plan_id}'
-        print(serialize_toon({
-            'status': 'error',
-            'plan_id': plan_id,
-            'error': error_code,
-            'message': f'Not found: {file_desc}',
-        }))
+        print(
+            serialize_toon(
+                {
+                    'status': 'error',
+                    'plan_id': plan_id,
+                    'error': error_code,
+                    'message': f'Not found: {file_desc}',
+                }
+            )
+        )
         sys.exit(1)
 
     return target
@@ -223,6 +239,7 @@ def add_phase_arg(parser, *, choices=None, required: bool = True) -> None:
     """
     if choices is None:
         from constants import PHASES  # type: ignore[import-not-found]
+
         choices = PHASES
     parser.add_argument('--phase', required=required, choices=choices, help='Phase name')
 
@@ -248,6 +265,7 @@ def add_boolean_arg(parser, name: str, *, help_text: str = '', default: bool = F
 
 
 # --- Bool companions (drop-in replacements for existing call sites) ---
+
 
 def is_valid_plan_id(plan_id: str) -> bool:
     """Check if plan_id is valid kebab-case format.

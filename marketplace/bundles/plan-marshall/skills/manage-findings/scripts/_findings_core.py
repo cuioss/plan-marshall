@@ -24,10 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from constants import (  # type: ignore[import-not-found]
-    ARCHITECTURE_TYPES,
     FINDING_SEVERITIES,
     FINDING_TYPES,
-    LESSON_TYPES,
     QGATE_PHASES,
     QGATE_SOURCES,
     VALID_CERTAINTIES,
@@ -44,7 +42,6 @@ from jsonl_store import (  # type: ignore[import-not-found]
     timestamp,
     update_jsonl,
 )
-
 
 # --- Backward-compatible aliases (imported from constants) ---
 # These names are re-exported for manage-findings.py and tests

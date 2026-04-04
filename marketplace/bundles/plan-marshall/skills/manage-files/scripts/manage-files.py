@@ -21,9 +21,12 @@ import argparse
 import sys
 
 from file_ops import atomic_write_file, get_plan_dir, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import add_plan_id_arg, is_valid_relative_path, require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_plan_id_arg,
+    is_valid_relative_path,
+    require_valid_plan_id,
+)
 from plan_logging import log_entry  # type: ignore[import-not-found]
-
 
 # get_plan_dir imported from file_ops
 
@@ -137,25 +140,29 @@ def cmd_exists(args):
     require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'file': args.file,
-            'error': 'invalid_path',
-            'message': f'Invalid file path: {args.file}',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'file': args.file,
+                'error': 'invalid_path',
+                'message': f'Invalid file path: {args.file}',
+            }
+        )
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'file': args.file,
-        'exists': file_path.exists(),
-        'path': str(file_path),
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': args.file,
+            'exists': file_path.exists(),
+            'path': str(file_path),
+        }
+    )
 
 
 def cmd_mkdir(args):
@@ -166,12 +173,14 @@ def cmd_mkdir(args):
     require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.dir):
-        output_toon({
-            'status': 'error',
-            'plan_id': args.plan_id,
-            'error': 'invalid_path',
-            'message': f'Invalid directory path: {args.dir}',
-        })
+        output_toon(
+            {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_path',
+                'message': f'Invalid directory path: {args.dir}',
+            }
+        )
         sys.exit(1)
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -180,13 +189,15 @@ def cmd_mkdir(args):
     already_exists = target_dir.exists()
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    output_toon({
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'action': 'exists' if already_exists else 'created',
-        'dir': args.dir,
-        'path': str(target_dir),
-    })
+    output_toon(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'action': 'exists' if already_exists else 'created',
+            'dir': args.dir,
+            'path': str(target_dir),
+        }
+    )
 
 
 def cmd_create_or_reference(args):

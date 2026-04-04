@@ -52,22 +52,25 @@ cmd_check_warnings = create_check_warnings_handler(
 
 def main() -> int:
     """Main entry point."""
-    return build_main('Maven build operations', register_standard_subparsers(
-        run_handler=cmd_run,
-        run_args_help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
-        parse_handler=parse_log,
-        parse_help='Parse Maven build output and categorize issues',
-        parse_extra_modes=['no-openrewrite'],
-        parse_extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
-        coverage_handler=cmd_coverage_report,
-        coverage_help='Parse JaCoCo coverage report',
-        check_warnings_handler=cmd_check_warnings,
-        discover_handler=discover_maven_modules,
-        discover_help='Discover Maven modules',
-        extra_register_fns=[
-            lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java'),
-        ],
-    ))
+    return build_main(
+        'Maven build operations',
+        register_standard_subparsers(
+            run_handler=cmd_run,
+            run_args_help="Complete Maven command arguments (e.g., 'verify -Ppre-commit -pl my-module')",
+            parse_handler=parse_log,
+            parse_help='Parse Maven build output and categorize issues',
+            parse_extra_modes=['no-openrewrite'],
+            parse_extra_filters={'no-openrewrite': lambda i: i.category != 'openrewrite_info'},
+            coverage_handler=cmd_coverage_report,
+            coverage_help='Parse JaCoCo coverage report',
+            check_warnings_handler=cmd_check_warnings,
+            discover_handler=discover_maven_modules,
+            discover_help='Discover Maven modules',
+            extra_register_fns=[
+                lambda sp: add_search_markers_subparser(sp, cmd_search_markers, default_extensions='.java'),
+            ],
+        ),
+    )
 
 
 if __name__ == '__main__':

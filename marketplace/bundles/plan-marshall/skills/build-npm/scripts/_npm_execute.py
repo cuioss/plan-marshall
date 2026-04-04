@@ -18,10 +18,20 @@ from _npm_cmd_parse import parse_log
 
 # Commands that should use npx instead of npm (direct tool invocations)
 NPX_COMMANDS = [
-    'playwright', 'eslint', 'prettier', 'stylelint',  # linters/formatters
-    'tsc', 'tsx', 'ts-node',  # TypeScript tools
-    'jest', 'vitest', 'mocha',  # test runners
-    'webpack', 'rollup', 'esbuild', 'vite',  # bundlers
+    'playwright',
+    'eslint',
+    'prettier',
+    'stylelint',  # linters/formatters
+    'tsc',
+    'tsx',
+    'ts-node',  # TypeScript tools
+    'jest',
+    'vitest',
+    'mocha',  # test runners
+    'webpack',
+    'rollup',
+    'esbuild',
+    'vite',  # bundlers
     'babel',  # transpiler
 ]
 

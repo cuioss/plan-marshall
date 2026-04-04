@@ -29,16 +29,20 @@ from _build_parse import (
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
+
 # Maven-specific categorization patterns. Extends shared JVM base patterns
 # with Maven-specific additions (substring matching by default).
-MAVEN_PATTERNS: CategoryPatterns = override_patterns(JVM_BASE_PATTERNS, {
-    # Override openrewrite_info to include Maven-specific plugin name
-    'openrewrite_info': [
-        'org.openrewrite',
-        'rewrite-maven-plugin',
-        'rewrite:',
-    ],
-})
+MAVEN_PATTERNS: CategoryPatterns = override_patterns(
+    JVM_BASE_PATTERNS,
+    {
+        # Override openrewrite_info to include Maven-specific plugin name
+        'openrewrite_info': [
+            'org.openrewrite',
+            'rewrite-maven-plugin',
+            'rewrite:',
+        ],
+    },
+)
 
 
 def parse_file_location(line: str) -> dict[str, str | int | None]:
@@ -114,7 +118,8 @@ def _extract_issues(content: str) -> list[Issue]:
             loc_line = location.get('line')
 
             add_issue_deduped(
-                issues, seen,
+                issues,
+                seen,
                 file=str(loc_file) if loc_file is not None else None,
                 line=int(loc_line) if loc_line is not None else None,
                 message=message,

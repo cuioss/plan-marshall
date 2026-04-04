@@ -143,9 +143,7 @@ def cmd_create(args):
     # Validate type
     if args.type not in VALID_TYPES:
         log_entry('script', 'global', 'ERROR', f'[IFACE] Invalid type: {args.type}')
-        output_error(
-            {'operation': 'create', 'message': f'Invalid type: {args.type}. Valid types: {VALID_TYPES}'}
-        )
+        output_error({'operation': 'create', 'message': f'Invalid type: {args.type}. Valid types: {VALID_TYPES}'})
 
     # Ensure interface directory exists
     INTERFACE_DIR.mkdir(parents=True, exist_ok=True)
@@ -160,9 +158,7 @@ def cmd_create(args):
     # Check if file already exists
     if filepath.exists():
         log_entry('script', 'global', 'ERROR', f'[IFACE] File already exists: {filepath}')
-        output_error(
-            {'operation': 'create', 'message': f'Interface file already exists: {filepath}'}
-        )
+        output_error({'operation': 'create', 'message': f'Interface file already exists: {filepath}'})
 
     # Load template
     template_path = get_template_path()

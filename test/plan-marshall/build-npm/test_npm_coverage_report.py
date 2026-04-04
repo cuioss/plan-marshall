@@ -25,9 +25,12 @@ FIXTURES_DIR = Path(__file__).parent / 'coverage'
 def test_coverage_report_json_format():
     """Test coverage-report with JSON coverage-summary (npm-specific format)."""
     result = run_script(
-        SCRIPT_PATH, 'coverage-report',
-        '--report-path', str(FIXTURES_DIR / 'coverage-summary.json'),
-        '--threshold', '80',
+        SCRIPT_PATH,
+        'coverage-report',
+        '--report-path',
+        str(FIXTURES_DIR / 'coverage-summary.json'),
+        '--threshold',
+        '80',
     )
     assert not result.success
 
@@ -52,9 +55,12 @@ def test_coverage_report_low_coverage_files():
 def test_coverage_report_lcov_format():
     """Test coverage-report with LCOV format (npm-specific)."""
     result = run_script(
-        SCRIPT_PATH, 'coverage-report',
-        '--report-path', str(FIXTURES_DIR / 'lcov.info'),
-        '--threshold', '50',
+        SCRIPT_PATH,
+        'coverage-report',
+        '--report-path',
+        str(FIXTURES_DIR / 'lcov.info'),
+        '--threshold',
+        '50',
     )
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'

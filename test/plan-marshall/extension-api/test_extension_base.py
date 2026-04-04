@@ -73,7 +73,7 @@ def test_canonical_commands_only_aliased():
     """CANONICAL_COMMANDS only contains commands with aliases."""
     for cmd_name, meta in CANONICAL_COMMANDS.items():
         assert 'aliases' in meta, f"{cmd_name} missing 'aliases'"
-        assert len(meta['aliases']) > 0, f"{cmd_name} has empty aliases"
+        assert len(meta['aliases']) > 0, f'{cmd_name} has empty aliases'
 
 
 def test_canonical_commands_expected_keys():
@@ -181,23 +181,25 @@ class ExtensionWithProfiles(ExtensionBase):
     """Extension with profiles for testing _build_applicable_result."""
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {'key': 'test-profiles'},
-            'profiles': {
-                'core': {
-                    'defaults': [{'skill': 'bundle:core-skill', 'description': 'core'}],
-                    'optionals': [{'skill': 'bundle:core-opt', 'description': 'core optional'}],
+        return [
+            {
+                'domain': {'key': 'test-profiles'},
+                'profiles': {
+                    'core': {
+                        'defaults': [{'skill': 'bundle:core-skill', 'description': 'core'}],
+                        'optionals': [{'skill': 'bundle:core-opt', 'description': 'core optional'}],
+                    },
+                    'implementation': {
+                        'defaults': [{'skill': 'bundle:impl-skill', 'description': 'impl'}],
+                        'optionals': [],
+                    },
+                    'module_testing': {
+                        'defaults': [{'skill': 'bundle:test-skill', 'description': 'test'}],
+                        'optionals': [],
+                    },
                 },
-                'implementation': {
-                    'defaults': [{'skill': 'bundle:impl-skill', 'description': 'impl'}],
-                    'optionals': [],
-                },
-                'module_testing': {
-                    'defaults': [{'skill': 'bundle:test-skill', 'description': 'test'}],
-                    'optionals': [],
-                },
-            },
-        }]
+            }
+        ]
 
 
 def test_build_applicable_result_merges_core():
@@ -234,10 +236,12 @@ class ExtensionEmptyProfiles(ExtensionBase):
     """Extension with empty profiles."""
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {'key': 'empty'},
-            'profiles': {},
-        }]
+        return [
+            {
+                'domain': {'key': 'empty'},
+                'profiles': {},
+            }
+        ]
 
 
 def test_build_applicable_result_empty_profiles():
@@ -258,42 +262,45 @@ class ExtensionWithAllProfiles(ExtensionBase):
     """Extension with all profile types for filtering tests."""
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {'key': 'test-all'},
-            'profiles': {
-                'core': {
-                    'defaults': [{'skill': 'b:core', 'description': 'core'}],
-                    'optionals': [],
+        return [
+            {
+                'domain': {'key': 'test-all'},
+                'profiles': {
+                    'core': {
+                        'defaults': [{'skill': 'b:core', 'description': 'core'}],
+                        'optionals': [],
+                    },
+                    'implementation': {
+                        'defaults': [{'skill': 'b:impl', 'description': 'impl'}],
+                        'optionals': [],
+                    },
+                    'module_testing': {
+                        'defaults': [{'skill': 'b:mtest', 'description': 'mtest'}],
+                        'optionals': [],
+                    },
+                    'integration_testing': {
+                        'defaults': [{'skill': 'b:itest', 'description': 'itest'}],
+                        'optionals': [],
+                    },
+                    'quality': {
+                        'defaults': [{'skill': 'b:quality', 'description': 'quality'}],
+                        'optionals': [],
+                    },
+                    'documentation': {
+                        'defaults': [{'skill': 'b:doc', 'description': 'doc'}],
+                        'optionals': [],
+                    },
                 },
-                'implementation': {
-                    'defaults': [{'skill': 'b:impl', 'description': 'impl'}],
-                    'optionals': [],
-                },
-                'module_testing': {
-                    'defaults': [{'skill': 'b:mtest', 'description': 'mtest'}],
-                    'optionals': [],
-                },
-                'integration_testing': {
-                    'defaults': [{'skill': 'b:itest', 'description': 'itest'}],
-                    'optionals': [],
-                },
-                'quality': {
-                    'defaults': [{'skill': 'b:quality', 'description': 'quality'}],
-                    'optionals': [],
-                },
-                'documentation': {
-                    'defaults': [{'skill': 'b:doc', 'description': 'doc'}],
-                    'optionals': [],
-                },
-            },
-        }]
+            }
+        ]
 
 
 def test_build_applicable_result_active_profiles_filters():
     """active_profiles positive list filters to only specified profiles."""
     ext = ExtensionWithAllProfiles()
     result = ext._build_applicable_result(
-        'high', ['signal'],
+        'high',
+        ['signal'],
         active_profiles={'implementation', 'module_testing', 'quality'},
     )
 
@@ -329,14 +336,16 @@ class ExtensionWithSignalDetection(ExtensionBase):
     """Extension that overrides _detect_applicable_profiles."""
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {'key': 'test-signals'},
-            'profiles': {
-                'core': {'defaults': [{'skill': 'b:core', 'description': 'core'}], 'optionals': []},
-                'implementation': {'defaults': [{'skill': 'b:impl', 'description': 'impl'}], 'optionals': []},
-                'integration_testing': {'defaults': [{'skill': 'b:it', 'description': 'it'}], 'optionals': []},
-            },
-        }]
+        return [
+            {
+                'domain': {'key': 'test-signals'},
+                'profiles': {
+                    'core': {'defaults': [{'skill': 'b:core', 'description': 'core'}], 'optionals': []},
+                    'implementation': {'defaults': [{'skill': 'b:impl', 'description': 'impl'}], 'optionals': []},
+                    'integration_testing': {'defaults': [{'skill': 'b:it', 'description': 'it'}], 'optionals': []},
+                },
+            }
+        ]
 
     def _detect_applicable_profiles(self, profiles, module_data):
         if module_data and 'integration' in module_data.get('name', ''):
@@ -348,7 +357,9 @@ def test_signal_detection_with_it_module():
     """Signal detection includes integration_testing for IT module."""
     ext = ExtensionWithSignalDetection()
     result = ext._build_applicable_result(
-        'high', ['signal'], module_data={'name': 'integration-tests'},
+        'high',
+        ['signal'],
+        module_data={'name': 'integration-tests'},
     )
     assert 'integration_testing' in result['skills_by_profile']
     assert 'implementation' in result['skills_by_profile']
@@ -358,7 +369,9 @@ def test_signal_detection_without_it_module():
     """Signal detection excludes integration_testing for non-IT module."""
     ext = ExtensionWithSignalDetection()
     result = ext._build_applicable_result(
-        'high', ['signal'], module_data={'name': 'core-lib'},
+        'high',
+        ['signal'],
+        module_data={'name': 'core-lib'},
     )
     assert 'integration_testing' not in result['skills_by_profile']
     assert 'implementation' in result['skills_by_profile']
@@ -369,7 +382,8 @@ def test_active_profiles_overrides_signal_detection():
     ext = ExtensionWithSignalDetection()
     # Module has IT signals, but active_profiles only allows implementation
     result = ext._build_applicable_result(
-        'high', ['signal'],
+        'high',
+        ['signal'],
         module_data={'name': 'integration-tests'},
         active_profiles={'implementation'},
     )

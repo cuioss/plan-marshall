@@ -37,7 +37,16 @@ from plan_logging import log_entry
 TEST_DIR_NAMES = {'test', 'tests'}
 
 # Directories to skip during module discovery (beyond EXCLUDE_DIRS)
-PYTHON_EXCLUDE_DIRS = EXCLUDE_DIRS | {'.venv', 'venv', '.tox', '.mypy_cache', '.ruff_cache', '.pytest_cache', 'dist', 'egg-info'}
+PYTHON_EXCLUDE_DIRS = EXCLUDE_DIRS | {
+    '.venv',
+    'venv',
+    '.tox',
+    '.mypy_cache',
+    '.ruff_cache',
+    '.pytest_cache',
+    'dist',
+    'egg-info',
+}
 
 
 # =============================================================================
@@ -334,5 +343,3 @@ def _build_commands(module_name: str, relative_path: str, has_tests: bool) -> di
         cmd_map['coverage'] = f'coverage{module_arg}'
 
     return build_canonical_commands(skill, cmd_map)
-
-

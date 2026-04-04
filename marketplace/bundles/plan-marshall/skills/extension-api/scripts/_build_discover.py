@@ -355,7 +355,9 @@ def discover_js_sources(module_path: str | Path) -> dict[str, list[str]]:
     return sources
 
 
-def count_source_files(module_path: str | Path, source_dirs: list[str], extra_extensions: dict[str, str] | None = None) -> int:
+def count_source_files(
+    module_path: str | Path, source_dirs: list[str], extra_extensions: dict[str, str] | None = None
+) -> int:
     """Count source files in the given source directories.
 
     Determines the language from the directory path (e.g. ``src/main/kotlin``
@@ -480,9 +482,9 @@ def discover_packages(
 
             # List direct source files (not recursive — sub-packages have their own entry)
             direct_files = sorted(
-                f.name for f in pkg_dir.iterdir()
-                if f.is_file() and f.suffix in all_suffixes
-                and f.name != 'package-info.java'
+                f.name
+                for f in pkg_dir.iterdir()
+                if f.is_file() and f.suffix in all_suffixes and f.name != 'package-info.java'
             )
             if direct_files:
                 pkg_info['files'] = direct_files

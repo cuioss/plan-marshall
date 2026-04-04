@@ -74,10 +74,18 @@ class TestParseHandoff(unittest.TestCase):
             'artifacts': {'pr_number': 100},
             'decisions': {'checks': 'all', 'auto_fix': False},
         }
-        stdout, _, code = run_doctor_script([
-            'parse-handoff', '--handoff', json.dumps(handoff),
-            '--pr', '456', '--checks', 'build', '--auto-fix',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'parse-handoff',
+                '--handoff',
+                json.dumps(handoff),
+                '--pr',
+                '456',
+                '--checks',
+                'build',
+                '--auto-fix',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         merged = result['merged']
@@ -165,10 +173,15 @@ class TestParseHandoff(unittest.TestCase):
     def test_max_fix_attempts_override(self):
         """Test that --max-fix-attempts overrides handoff."""
         handoff = {'constraints': {'max_fix_attempts': 5}}
-        stdout, _, code = run_doctor_script([
-            'parse-handoff', '--handoff', json.dumps(handoff),
-            '--max-fix-attempts', '10',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'parse-handoff',
+                '--handoff',
+                json.dumps(handoff),
+                '--max-fix-attempts',
+                '10',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['merged']['max_fix_attempts'], 10)
@@ -176,9 +189,14 @@ class TestParseHandoff(unittest.TestCase):
     def test_auto_fix_flag_without_value(self):
         """Test --auto-fix as bare flag sets True."""
         handoff = {'artifacts': {'pr_number': 1}}
-        stdout, _, code = run_doctor_script([
-            'parse-handoff', '--handoff', json.dumps(handoff), '--auto-fix',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'parse-handoff',
+                '--handoff',
+                json.dumps(handoff),
+                '--auto-fix',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertTrue(result['merged']['auto_fix'])
@@ -186,9 +204,13 @@ class TestParseHandoff(unittest.TestCase):
     def test_auto_fix_not_provided_uses_handoff(self):
         """Test that omitting --auto-fix defers to handoff value."""
         handoff = {'decisions': {'auto_fix': False}}
-        stdout, _, code = run_doctor_script([
-            'parse-handoff', '--handoff', json.dumps(handoff),
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'parse-handoff',
+                '--handoff',
+                json.dumps(handoff),
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertFalse(result['merged']['auto_fix'])
@@ -196,9 +218,13 @@ class TestParseHandoff(unittest.TestCase):
     def test_auto_fix_not_provided_defaults_false(self):
         """Test that omitting --auto-fix without handoff defaults to False."""
         handoff = {'artifacts': {'pr_number': 1}}
-        stdout, _, code = run_doctor_script([
-            'parse-handoff', '--handoff', json.dumps(handoff),
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'parse-handoff',
+                '--handoff',
+                json.dumps(handoff),
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertFalse(result['merged']['auto_fix'])
@@ -206,9 +232,14 @@ class TestParseHandoff(unittest.TestCase):
     def test_no_wait_flag_overrides_handoff(self):
         """Test that --no-wait overrides handoff wait=true."""
         handoff = {'decisions': {'wait': True}}
-        stdout, _, code = run_doctor_script([
-            'parse-handoff', '--handoff', json.dumps(handoff), '--no-wait',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'parse-handoff',
+                '--handoff',
+                json.dumps(handoff),
+                '--no-wait',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertFalse(result['merged']['wait'])
@@ -216,9 +247,13 @@ class TestParseHandoff(unittest.TestCase):
     def test_wait_defaults_true(self):
         """Test that wait defaults to True without flags."""
         handoff = {'artifacts': {'pr_number': 1}}
-        stdout, _, code = run_doctor_script([
-            'parse-handoff', '--handoff', json.dumps(handoff),
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'parse-handoff',
+                '--handoff',
+                json.dumps(handoff),
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertTrue(result['merged']['wait'])
@@ -226,9 +261,14 @@ class TestParseHandoff(unittest.TestCase):
     def test_wait_flag_overrides_handoff_false(self):
         """Test that --wait overrides handoff wait=false."""
         handoff = {'decisions': {'wait': False}}
-        stdout, _, code = run_doctor_script([
-            'parse-handoff', '--handoff', json.dumps(handoff), '--wait',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'parse-handoff',
+                '--handoff',
+                json.dumps(handoff),
+                '--wait',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertTrue(result['merged']['wait'])
@@ -239,9 +279,15 @@ class TestTrackAttempt(unittest.TestCase):
 
     def test_first_attempt_proceeds(self):
         """Test that the first attempt (current=0) should proceed."""
-        stdout, _, code = run_doctor_script([
-            'track-attempt', '--category', 'build', '--current', '0',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'track-attempt',
+                '--category',
+                'build',
+                '--current',
+                '0',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -252,9 +298,17 @@ class TestTrackAttempt(unittest.TestCase):
 
     def test_last_attempt_proceeds(self):
         """Test that the last attempt (current=2 with max=3) proceeds."""
-        stdout, _, code = run_doctor_script([
-            'track-attempt', '--category', 'sonar', '--current', '2', '--max-attempts', '3',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'track-attempt',
+                '--category',
+                'sonar',
+                '--current',
+                '2',
+                '--max-attempts',
+                '3',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertTrue(result['proceed'])
@@ -263,9 +317,17 @@ class TestTrackAttempt(unittest.TestCase):
 
     def test_exceeds_max_stops(self):
         """Test that exceeding max attempts stops."""
-        stdout, _, code = run_doctor_script([
-            'track-attempt', '--category', 'reviews', '--current', '3', '--max-attempts', '3',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'track-attempt',
+                '--category',
+                'reviews',
+                '--current',
+                '3',
+                '--max-attempts',
+                '3',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertFalse(result['proceed'])
@@ -275,9 +337,17 @@ class TestTrackAttempt(unittest.TestCase):
 
     def test_custom_max_attempts(self):
         """Test with custom max-attempts value."""
-        stdout, _, code = run_doctor_script([
-            'track-attempt', '--category', 'build', '--current', '4', '--max-attempts', '5',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'track-attempt',
+                '--category',
+                'build',
+                '--current',
+                '4',
+                '--max-attempts',
+                '5',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertTrue(result['proceed'])
@@ -286,18 +356,30 @@ class TestTrackAttempt(unittest.TestCase):
 
     def test_default_max_attempts(self):
         """Test that default max-attempts is 3."""
-        stdout, _, code = run_doctor_script([
-            'track-attempt', '--category', 'build', '--current', '0',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'track-attempt',
+                '--category',
+                'build',
+                '--current',
+                '0',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['max_attempts'], 3)
 
     def test_invalid_category(self):
         """Test that invalid category is rejected by argparse."""
-        _, stderr, code = run_doctor_script([
-            'track-attempt', '--category', 'invalid', '--current', '0',
-        ])
+        _, stderr, code = run_doctor_script(
+            [
+                'track-attempt',
+                '--category',
+                'invalid',
+                '--current',
+                '0',
+            ]
+        )
         self.assertNotEqual(code, 0)
         self.assertIn('invalid', stderr)
 
@@ -307,9 +389,13 @@ class TestDiagnose(unittest.TestCase):
 
     def test_all_pass(self):
         """Test diagnosis with no issues."""
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-status', 'success',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'success',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -322,10 +408,15 @@ class TestDiagnose(unittest.TestCase):
     def test_build_failure(self):
         """Test diagnosis with build failure."""
         failures = json.dumps([{'step': 'test', 'message': '3 tests failed'}])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-status', 'failure',
-            '--build-failures', failures,
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'failure',
+                '--build-failures',
+                failures,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['overall'], 'fail')
@@ -335,13 +426,19 @@ class TestDiagnose(unittest.TestCase):
 
     def test_review_comments(self):
         """Test diagnosis with unresolved review comments."""
-        comments = json.dumps([
-            {'priority': 'high', 'body': 'Fix this'},
-            {'priority': 'low', 'body': 'Nit'},
-        ])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--review-comments', comments,
-        ])
+        comments = json.dumps(
+            [
+                {'priority': 'high', 'body': 'Fix this'},
+                {'priority': 'low', 'body': 'Nit'},
+            ]
+        )
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--review-comments',
+                comments,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['overall'], 'fail')
@@ -351,14 +448,20 @@ class TestDiagnose(unittest.TestCase):
 
     def test_sonar_issues(self):
         """Test diagnosis with Sonar issues."""
-        issues = json.dumps([
-            {'severity': 'BLOCKER', 'rule': 'java:S1234'},
-            {'severity': 'MAJOR', 'rule': 'java:S5678'},
-            {'severity': 'MINOR', 'rule': 'java:S9012'},
-        ])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--sonar-issues', issues,
-        ])
+        issues = json.dumps(
+            [
+                {'severity': 'BLOCKER', 'rule': 'java:S1234'},
+                {'severity': 'MAJOR', 'rule': 'java:S5678'},
+                {'severity': 'MINOR', 'rule': 'java:S9012'},
+            ]
+        )
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--sonar-issues',
+                issues,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['sonar_issues'], 3)
@@ -367,13 +470,19 @@ class TestDiagnose(unittest.TestCase):
 
     def test_combined_diagnosis(self):
         """Test diagnosis with all three categories."""
-        stdout, _, code = run_doctor_script([
-            'diagnose',
-            '--build-status', 'failure',
-            '--build-failures', json.dumps([{'step': 'compile', 'message': 'error'}]),
-            '--review-comments', json.dumps([{'priority': 'medium'}]),
-            '--sonar-issues', json.dumps([{'severity': 'MAJOR'}]),
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'failure',
+                '--build-failures',
+                json.dumps([{'step': 'compile', 'message': 'error'}]),
+                '--review-comments',
+                json.dumps([{'priority': 'medium'}]),
+                '--sonar-issues',
+                json.dumps([{'severity': 'MAJOR'}]),
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['overall'], 'fail')
@@ -384,11 +493,15 @@ class TestDiagnose(unittest.TestCase):
     def test_build_pass_with_review_issues(self):
         """Test diagnosis with passing build but unresolved review comments (#52)."""
         comments = json.dumps([{'priority': 'high', 'body': 'Fix this'}])
-        stdout, _, code = run_doctor_script([
-            'diagnose',
-            '--build-status', 'success',
-            '--review-comments', comments,
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'success',
+                '--review-comments',
+                comments,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['overall'], 'fail')  # Still fail due to reviews
@@ -409,9 +522,13 @@ class TestDiagnose(unittest.TestCase):
 
     def test_invalid_json_build_failures(self):
         """Test error on invalid JSON for --build-failures."""
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-failures', 'not-json',
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-failures',
+                'not-json',
+            ]
+        )
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'error')
@@ -419,14 +536,20 @@ class TestDiagnose(unittest.TestCase):
 
     def test_sonar_severity_breakdown(self):
         """Test that Sonar diagnosis includes severity breakdown."""
-        issues = json.dumps([
-            {'severity': 'CRITICAL'},
-            {'severity': 'CRITICAL'},
-            {'severity': 'MAJOR'},
-        ])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--sonar-issues', issues,
-        ])
+        issues = json.dumps(
+            [
+                {'severity': 'CRITICAL'},
+                {'severity': 'CRITICAL'},
+                {'severity': 'MAJOR'},
+            ]
+        )
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--sonar-issues',
+                issues,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         sonar_issue = next(i for i in result['issues'] if i['category'] == 'sonar')
@@ -440,10 +563,15 @@ class TestDiagnoseBuildSeverity(unittest.TestCase):
     def test_lint_failure_is_medium(self):
         """Lint failure should be medium severity, not high."""
         failures = json.dumps([{'step': 'lint', 'message': 'ESLint errors'}])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-status', 'failure',
-            '--build-failures', failures,
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'failure',
+                '--build-failures',
+                failures,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         build_issue = next(i for i in result['issues'] if i['category'] == 'build')
@@ -452,10 +580,15 @@ class TestDiagnoseBuildSeverity(unittest.TestCase):
     def test_compile_failure_is_high(self):
         """Compile failure should be high severity."""
         failures = json.dumps([{'step': 'compile', 'message': 'Compilation error'}])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-status', 'failure',
-            '--build-failures', failures,
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'failure',
+                '--build-failures',
+                failures,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         build_issue = next(i for i in result['issues'] if i['category'] == 'build')
@@ -464,10 +597,15 @@ class TestDiagnoseBuildSeverity(unittest.TestCase):
     def test_unknown_step_defaults_to_high(self):
         """Unknown step type should default to high severity."""
         failures = json.dumps([{'step': 'unknown', 'message': 'Something failed'}])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-status', 'failure',
-            '--build-failures', failures,
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'failure',
+                '--build-failures',
+                failures,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         build_issue = next(i for i in result['issues'] if i['category'] == 'build')
@@ -480,9 +618,13 @@ class TestDiagnoseEdgeCases(unittest.TestCase):
     def test_build_status_none_with_failures_skips_build(self):
         """When build_status is None, build failures are ignored."""
         failures = json.dumps([{'step': 'test', 'message': 'fails'}])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-failures', failures,
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-failures',
+                failures,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['build_status'], 'UNKNOWN')
@@ -497,10 +639,15 @@ class TestDiagnoseInputValidation(unittest.TestCase):
     def test_diagnose_build_failures_missing_keys(self):
         """Test diagnose handles build failures without expected keys."""
         failures = json.dumps([{'unexpected_key': 'value'}])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-status', 'failure',
-            '--build-failures', failures,
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'failure',
+                '--build-failures',
+                failures,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -511,14 +658,20 @@ class TestDiagnoseInputValidation(unittest.TestCase):
 
     def test_diagnose_review_comments_non_dict_entries(self):
         """Test diagnose handles non-dict entries in review comments array."""
-        comments = json.dumps([
-            {'priority': 'high'},
-            'not-a-dict',
-            42,
-        ])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--review-comments', comments,
-        ])
+        comments = json.dumps(
+            [
+                {'priority': 'high'},
+                'not-a-dict',
+                42,
+            ]
+        )
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--review-comments',
+                comments,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -526,13 +679,19 @@ class TestDiagnoseInputValidation(unittest.TestCase):
 
     def test_diagnose_sonar_issues_non_dict_entries(self):
         """Test diagnose handles non-dict entries in sonar issues array."""
-        issues = json.dumps([
-            {'severity': 'MAJOR'},
-            'invalid-entry',
-        ])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--sonar-issues', issues,
-        ])
+        issues = json.dumps(
+            [
+                {'severity': 'MAJOR'},
+                'invalid-entry',
+            ]
+        )
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--sonar-issues',
+                issues,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')
@@ -541,10 +700,15 @@ class TestDiagnoseInputValidation(unittest.TestCase):
     def test_diagnose_build_failures_non_dict_entries(self):
         """Test diagnose handles non-dict entries in build failures array."""
         failures = json.dumps(['not-a-dict', 42])
-        stdout, _, code = run_doctor_script([
-            'diagnose', '--build-status', 'failure',
-            '--build-failures', failures,
-        ])
+        stdout, _, code = run_doctor_script(
+            [
+                'diagnose',
+                '--build-status',
+                'failure',
+                '--build-failures',
+                failures,
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'success')

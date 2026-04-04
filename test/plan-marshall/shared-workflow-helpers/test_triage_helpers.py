@@ -108,6 +108,7 @@ def test_safe_main_nonzero():
 
 def test_safe_main_exception(capsys):
     """Test safe_main catches exceptions and produces TOON error."""
+
     def boom():
         raise ValueError('test explosion')
 
@@ -318,6 +319,7 @@ def test_cmd_triage_batch_not_array(capsys):
 
 def test_cmd_triage_batch_error_handling(capsys):
     """A10: Test that per-item exceptions don't crash the batch."""
+
     def flaky_triage(item: dict) -> dict:
         if item.get('bomb'):
             raise ValueError('deliberate test explosion')
@@ -352,12 +354,14 @@ def test_create_workflow_cli_basic():
     parser = create_workflow_cli(
         description='Test CLI',
         epilog='Example: test-cli greet --name World',
-        subcommands=[{
-            'name': 'greet',
-            'help': 'Say hello',
-            'handler': my_handler,
-            'args': [{'flags': ['--name'], 'required': True, 'help': 'Name to greet'}],
-        }],
+        subcommands=[
+            {
+                'name': 'greet',
+                'help': 'Say hello',
+                'handler': my_handler,
+                'args': [{'flags': ['--name'], 'required': True, 'help': 'Name to greet'}],
+            }
+        ],
     )
     args = parser.parse_args(['greet', '--name', 'World'])
     rc = args.func(args)

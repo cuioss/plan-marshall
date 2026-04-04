@@ -135,7 +135,17 @@ class TestFormatCommit(unittest.TestCase):
     def test_imperative_allowlist_no_false_warnings(self):
         """Test that imperative allowlist words don't trigger past-tense warnings."""
         # Words ending in -ed/-ing that are valid imperative forms, not past tense/gerund
-        allowlist_samples = ['embed', 'spread', 'thread', 'overhead', 'string', 'bring', 'caching', 'hashing', 'nothing']
+        allowlist_samples = [
+            'embed',
+            'spread',
+            'thread',
+            'overhead',
+            'string',
+            'bring',
+            'caching',
+            'hashing',
+            'nothing',
+        ]
         for word in allowlist_samples:
             stdout, _, code = run_git_script(['format-commit', '--type', 'fix', '--subject', f'{word} the module'])
             self.assertEqual(code, 0, f'Failed for allowlist word: {word}')
@@ -148,10 +158,10 @@ class TestFormatCommit(unittest.TestCase):
 
     def test_body_wrapping_preserves_indentation(self):
         """Test that body wrapping preserves leading indentation for bullet lists."""
-        body = '  - This is a very long bullet point that should wrap at seventy two characters while keeping indentation'
-        stdout, _, code = run_git_script(
-            ['format-commit', '--type', 'fix', '--subject', 'fix issue', '--body', body]
+        body = (
+            '  - This is a very long bullet point that should wrap at seventy two characters while keeping indentation'
         )
+        stdout, _, code = run_git_script(['format-commit', '--type', 'fix', '--subject', 'fix issue', '--body', body])
         self.assertEqual(code, 0)
         # Verify wrapped lines start with the same indentation
         body_lines = [
@@ -401,14 +411,21 @@ class TestFormatCommitCombined(unittest.TestCase):
 
     def test_breaking_and_footer_combined(self):
         """Test commit message with both --breaking and --footer simultaneously."""
-        stdout, _, code = run_git_script([
-            'format-commit',
-            '--type', 'feat',
-            '--scope', 'api',
-            '--subject', 'change auth endpoint',
-            '--breaking', 'Old /auth endpoint removed',
-            '--footer', 'Fixes #123',
-        ])
+        stdout, _, code = run_git_script(
+            [
+                'format-commit',
+                '--type',
+                'feat',
+                '--scope',
+                'api',
+                '--subject',
+                'change auth endpoint',
+                '--breaking',
+                'Old /auth endpoint removed',
+                '--footer',
+                'Fixes #123',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertIn('feat(api)!:', result['formatted_message'])
@@ -417,15 +434,23 @@ class TestFormatCommitCombined(unittest.TestCase):
 
     def test_all_params_combined(self):
         """Test commit message with body + breaking + footer + scope."""
-        stdout, _, code = run_git_script([
-            'format-commit',
-            '--type', 'feat',
-            '--scope', 'api',
-            '--subject', 'change auth endpoint',
-            '--body', 'Migrated to OAuth 2.0 flow',
-            '--breaking', 'Old /auth endpoint removed',
-            '--footer', 'Fixes #123',
-        ])
+        stdout, _, code = run_git_script(
+            [
+                'format-commit',
+                '--type',
+                'feat',
+                '--scope',
+                'api',
+                '--subject',
+                'change auth endpoint',
+                '--body',
+                'Migrated to OAuth 2.0 flow',
+                '--breaking',
+                'Old /auth endpoint removed',
+                '--footer',
+                'Fixes #123',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertIn('feat(api)!:', result['formatted_message'])
@@ -441,9 +466,17 @@ class TestFormatCommitHeaderLength(unittest.TestCase):
         """Header exceeding 72 chars should fail validation."""
         long_scope = 'very-long-module-name'
         long_subject = 'a' * 50  # type(scope): subject → 5 + 23 + 4 + 50 = 82 chars
-        stdout, _, code = run_git_script([
-            'format-commit', '--type', 'feat', '--scope', long_scope, '--subject', long_subject,
-        ])
+        stdout, _, code = run_git_script(
+            [
+                'format-commit',
+                '--type',
+                'feat',
+                '--scope',
+                long_scope,
+                '--subject',
+                long_subject,
+            ]
+        )
         self.assertEqual(code, 1)
         result = parse_toon(stdout)
         self.assertFalse(result['validation']['valid'])
@@ -460,6 +493,7 @@ class TestDetectArtifacts(unittest.TestCase):
     def tearDown(self):
         """Clean up temporary directory."""
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _create_file(self, relpath: str) -> None:
@@ -659,7 +693,9 @@ class TestDetectArtifacts(unittest.TestCase):
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         safe_files = result['safe']
-        self.assertTrue(any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}')
+        self.assertTrue(
+            any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}'
+        )
 
 
 class TestWrapText(unittest.TestCase):
@@ -669,6 +705,7 @@ class TestWrapText(unittest.TestCase):
     def setUpClass(cls):
         """Import wrap_text for direct testing."""
         from importlib import import_module
+
         mod = import_module('git_workflow')
         cls.wrap_text = staticmethod(mod.wrap_text)
 
@@ -745,9 +782,17 @@ class TestToonContract(unittest.TestCase):
 
     def test_format_commit_output_contract(self):
         """Verify format-commit output has all documented fields."""
-        stdout, _, code = run_git_script([
-            'format-commit', '--type', 'feat', '--scope', 'auth', '--subject', 'add login',
-        ])
+        stdout, _, code = run_git_script(
+            [
+                'format-commit',
+                '--type',
+                'feat',
+                '--scope',
+                'auth',
+                '--subject',
+                'add login',
+            ]
+        )
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         # Documented fields in SKILL.md output section
@@ -795,6 +840,7 @@ class TestArtifactConfigLoading(unittest.TestCase):
     def setUpClass(cls):
         """Import git_workflow module for direct testing."""
         from git_workflow import SAFE_ARTIFACT_PATTERNS, UNCERTAIN_ARTIFACT_PATTERNS, _SKIP_DIRS  # type: ignore[import-not-found]
+
         cls.safe_patterns = SAFE_ARTIFACT_PATTERNS
         cls.uncertain_patterns = UNCERTAIN_ARTIFACT_PATTERNS
         cls.skip_dirs = _SKIP_DIRS

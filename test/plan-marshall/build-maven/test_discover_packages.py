@@ -39,9 +39,16 @@ def _create_java_package(base: Path, source_dir: str, package_path: str, files: 
 
 def test_package_with_java_files(tmp_path):
     """Package with 3 .java files includes all 3 sorted names."""
-    _create_java_package(tmp_path, 'src/main/java', 'com/example/util', [
-        'MoreStrings.java', 'CollectionBuilder.java', 'MoreCollections.java',
-    ])
+    _create_java_package(
+        tmp_path,
+        'src/main/java',
+        'com/example/util',
+        [
+            'MoreStrings.java',
+            'CollectionBuilder.java',
+            'MoreCollections.java',
+        ],
+    )
 
     packages = discover_packages(tmp_path, ['src/main/java'], '')
 
@@ -65,9 +72,15 @@ def test_subpackage_files_not_in_parent(tmp_path):
 
 def test_package_info_excluded_from_files(tmp_path):
     """package-info.java is excluded from files list but tracked in package_info."""
-    _create_java_package(tmp_path, 'src/main/java', 'com/example/core', [
-        'Service.java', 'package-info.java',
-    ])
+    _create_java_package(
+        tmp_path,
+        'src/main/java',
+        'com/example/core',
+        [
+            'Service.java',
+            'package-info.java',
+        ],
+    )
 
     packages = discover_packages(tmp_path, ['src/main/java'], '')
 
@@ -134,9 +147,15 @@ def test_multiple_packages_independent_files(tmp_path):
 
 def test_test_packages_from_test_sources(tmp_path):
     """Test packages are discovered from src/test/java."""
-    _create_java_package(tmp_path, 'src/test/java', 'com/example/util', [
-        'MoreStringsTest.java', 'CollectionBuilderTest.java',
-    ])
+    _create_java_package(
+        tmp_path,
+        'src/test/java',
+        'com/example/util',
+        [
+            'MoreStringsTest.java',
+            'CollectionBuilderTest.java',
+        ],
+    )
 
     test_pkgs = discover_packages(tmp_path, ['src/test/java'], '')
 

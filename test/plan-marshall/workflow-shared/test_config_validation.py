@@ -102,6 +102,7 @@ class TestCommentPatternsRegexValid(unittest.TestCase):
 
     def test_all_patterns_compile(self):
         import re
+
         config_path = WORKFLOW_SKILLS_DIR / 'workflow-integration-ci' / 'standards' / 'comment-patterns.json'
         data = json.loads(config_path.read_text())
 
@@ -120,6 +121,7 @@ class TestRedFlagPatternsRegexValid(unittest.TestCase):
 
     def test_all_red_flag_patterns_compile(self):
         import re
+
         config_path = WORKFLOW_SKILLS_DIR / 'workflow-permission-web' / 'standards' / 'domain-lists.json'
         data = json.loads(config_path.read_text())
 

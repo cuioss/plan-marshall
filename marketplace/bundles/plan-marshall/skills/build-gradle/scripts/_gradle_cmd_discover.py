@@ -160,9 +160,7 @@ def discover_gradle_modules(project_root: str) -> list:
     descriptors = _find_gradle_descriptors(project_root)
 
     for module_path, relative_path in descriptors:
-        gradle_data = _get_gradle_metadata(
-            relative_path if relative_path != '.' else '', root
-        )
+        gradle_data = _get_gradle_metadata(relative_path if relative_path != '.' else '', root)
         module_data = _extract_gradle_module(module_path, root, relative_path, gradle_data, quality_tasks)
         if module_data:
             modules.append(module_data)
@@ -389,8 +387,12 @@ def _extract_gradle_module(
     # This is part of the discovery contract: modules without metadata
     # get a minimal error object so callers know the module exists.
     if not gradle_data:
-        log_entry('script', 'global', 'WARNING',
-                  f'[GRADLE-DISCOVER] Module {name} - Gradle commands failed, returning error structure')
+        log_entry(
+            'script',
+            'global',
+            'WARNING',
+            f'[GRADLE-DISCOVER] Module {name} - Gradle commands failed, returning error structure',
+        )
         return {
             'name': name,
             'build_systems': ['gradle'],
@@ -513,5 +515,3 @@ def _build_commands(
         cmd_map['coverage'] = _tasks('test jacocoTestReport')
 
     return build_canonical_commands(skill, cmd_map)
-
-

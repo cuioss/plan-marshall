@@ -282,9 +282,7 @@ def main() -> int:
     p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
 
     # --- resolve-outline-skill ---
-    p_ros = subparsers.add_parser(
-        'resolve-outline-skill', help='Resolve outline skill for domain'
-    )
+    p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain')
     p_ros.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
 
     # --- list-finalize-steps ---

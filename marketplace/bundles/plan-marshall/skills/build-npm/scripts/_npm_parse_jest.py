@@ -129,7 +129,8 @@ def _add_issue(issues: list[Issue], seen: set[str], file: str | None, test: str,
     stack_trace = '\n'.join(stack_lines) if stack_lines else None
 
     add_issue_deduped(
-        issues, seen,
+        issues,
+        seen,
         file=file,
         line=line_num,
         message=test,

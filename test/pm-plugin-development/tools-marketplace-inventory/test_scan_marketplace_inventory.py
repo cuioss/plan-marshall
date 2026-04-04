@@ -444,7 +444,9 @@ def test_name_pattern_filters_agents():
 
 def test_name_pattern_multiple_patterns():
     """Test --name-pattern with multiple pipe-separated patterns."""
-    result = run_script(SCRIPT_PATH, '--direct-result', '--resource-types', 'agents', '--name-pattern', 'phase-*|detect-*')
+    result = run_script(
+        SCRIPT_PATH, '--direct-result', '--resource-types', 'agents', '--name-pattern', 'phase-*|detect-*'
+    )
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
@@ -512,7 +514,9 @@ def test_bundles_filter_multiple():
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
     bundle_names = {b['name'] for b in bundles}
-    assert bundle_names == {'plan-marshall', 'pm-dev-java'}, f'Expected plan-marshall and pm-dev-java, got {bundle_names}'
+    assert bundle_names == {'plan-marshall', 'pm-dev-java'}, (
+        f'Expected plan-marshall and pm-dev-java, got {bundle_names}'
+    )
 
 
 def test_bundles_filter_nonexistent():
@@ -1011,7 +1015,9 @@ def test_include_tests_maps_to_bundles():
         # Verify paths are from the correct test directory
         for test in tests:
             if isinstance(test, dict) and 'path' in test:
-                assert 'test/plan-marshall' in test['path'], f'Test path should be in test/plan-marshall: {test["path"]}'
+                assert 'test/plan-marshall' in test['path'], (
+                    f'Test path should be in test/plan-marshall: {test["path"]}'
+                )
 
 
 def test_include_tests_updates_statistics():

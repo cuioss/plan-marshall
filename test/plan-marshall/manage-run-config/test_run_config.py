@@ -304,6 +304,7 @@ def test_validate_format_is_run_config():
 def parse_toon_output(output: str) -> dict:
     """Parse TOON output into dict using toon_parser."""
     from toon_parser import parse_toon
+
     return parse_toon(output)
 
 

@@ -91,7 +91,9 @@ def validate_handoff(handoff: dict) -> list[str]:
     # Semantic consistency checks
     if isinstance(decisions, dict):
         if decisions.get('skip_sonar') and decisions.get('checks') == 'sonar':
-            warnings.append("Contradiction: checks='sonar' with skip_sonar=true — Sonar will be skipped despite being the only requested check")
+            warnings.append(
+                "Contradiction: checks='sonar' with skip_sonar=true — Sonar will be skipped despite being the only requested check"
+            )
 
     # Validate constraints
     constraints = handoff.get('constraints', {})
@@ -134,7 +136,8 @@ def merge_handoff_with_params(
         'skip_sonar': decisions.get('skip_sonar', False),
         'automated_review': decisions.get('automated_review', False),
         'max_fix_attempts': (
-            max_fix_attempts if max_fix_attempts is not None
+            max_fix_attempts
+            if max_fix_attempts is not None
             else constraints.get('max_fix_attempts', DEFAULT_MAX_FIX_ATTEMPTS)
         ),
         'protected_files': constraints.get('protected_files', []),
@@ -217,12 +220,14 @@ def diagnose_pr(
                 print(f'WARNING: non-dict entry in build_failures: {type(failure).__name__}', file=sys.stderr)
                 failure = {}
             step = failure.get('step', 'unknown')
-            issues.append({
-                'category': 'build',
-                'severity': BUILD_STEP_SEVERITY.get(step, 'high'),
-                'detail': failure.get('message', 'Build failure'),
-                'step': step,
-            })
+            issues.append(
+                {
+                    'category': 'build',
+                    'severity': BUILD_STEP_SEVERITY.get(step, 'high'),
+                    'detail': failure.get('message', 'Build failure'),
+                    'step': step,
+                }
+            )
         actions.append('Fix build failures before other issues')
 
     # Review diagnosis
@@ -236,12 +241,14 @@ def diagnose_pr(
             p = comment.get('priority', 'low')
             if p in priority_map:
                 priority_map[p] += 1
-        issues.append({
-            'category': 'reviews',
-            'severity': 'high' if priority_map['high'] > 0 else 'medium',
-            'detail': f'{unresolved_count} unresolved review comments',
-            'breakdown': priority_map,
-        })
+        issues.append(
+            {
+                'category': 'reviews',
+                'severity': 'high' if priority_map['high'] > 0 else 'medium',
+                'detail': f'{unresolved_count} unresolved review comments',
+                'breakdown': priority_map,
+            }
+        )
         actions.append('Address review comments by priority')
 
     # Sonar diagnosis
@@ -255,12 +262,14 @@ def diagnose_pr(
             severity_counts[sev] = severity_counts.get(sev, 0) + 1
         has_blockers = severity_counts.get('BLOCKER', 0) > 0
         has_critical = severity_counts.get('CRITICAL', 0) > 0
-        issues.append({
-            'category': 'sonar',
-            'severity': 'high' if has_blockers or has_critical else 'medium',
-            'detail': f'{sonar_count} Sonar issues',
-            'breakdown': severity_counts,
-        })
+        issues.append(
+            {
+                'category': 'sonar',
+                'severity': 'high' if has_blockers or has_critical else 'medium',
+                'detail': f'{sonar_count} Sonar issues',
+                'breakdown': severity_counts,
+            }
+        )
         actions.append('Fix Sonar issues (blockers and criticals first)')
 
     # Overall assessment
@@ -376,9 +385,19 @@ Examples:
                 'help': 'Check if a fix attempt should proceed',
                 'handler': cmd_track_attempt,
                 'args': [
-                    {'flags': ['--category'], 'required': True, 'choices': ['build', 'reviews', 'sonar'], 'help': 'Fix category'},
+                    {
+                        'flags': ['--category'],
+                        'required': True,
+                        'choices': ['build', 'reviews', 'sonar'],
+                        'help': 'Fix category',
+                    },
                     {'flags': ['--current'], 'type': int, 'required': True, 'help': 'Current attempt count (0-based)'},
-                    {'flags': ['--max-attempts'], 'type': int, 'default': DEFAULT_MAX_FIX_ATTEMPTS, 'help': 'Maximum attempts'},
+                    {
+                        'flags': ['--max-attempts'],
+                        'type': int,
+                        'default': DEFAULT_MAX_FIX_ATTEMPTS,
+                        'help': 'Maximum attempts',
+                    },
                 ],
             },
             {
@@ -401,8 +420,18 @@ Examples:
                     {'flags': ['--pr'], 'type': int, 'help': 'Override PR number'},
                     {'flags': ['--checks'], 'choices': ['build', 'reviews', 'sonar', 'all'], 'help': 'Override checks'},
                     {'flags': ['--auto-fix'], 'action': 'store_true', 'default': None, 'help': 'Override auto-fix'},
-                    {'flags': ['--wait'], 'action': 'store_true', 'default': None, 'help': 'Override wait for CI checks'},
-                    {'flags': ['--no-wait'], 'action': 'store_true', 'default': False, 'help': 'Skip waiting for CI checks'},
+                    {
+                        'flags': ['--wait'],
+                        'action': 'store_true',
+                        'default': None,
+                        'help': 'Override wait for CI checks',
+                    },
+                    {
+                        'flags': ['--no-wait'],
+                        'action': 'store_true',
+                        'default': False,
+                        'help': 'Skip waiting for CI checks',
+                    },
                     {'flags': ['--max-fix-attempts'], 'type': int, 'help': 'Override max fix attempts'},
                 ],
             },

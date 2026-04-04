@@ -200,9 +200,33 @@ class TestSonarTriageBatch(unittest.TestCase):
     def test_triage_batch_multiple_issues(self):
         """Test batch triage processes multiple issues at once."""
         issues = [
-            {'key': 'B1', 'type': 'BUG', 'severity': 'MAJOR', 'file': 'src/A.java', 'line': 1, 'rule': 'java:S1234', 'message': 'Bug'},
-            {'key': 'B2', 'type': 'CODE_SMELL', 'severity': 'MINOR', 'file': 'src/B.java', 'line': 5, 'rule': 'java:S1135', 'message': 'TODO'},
-            {'key': 'B3', 'type': 'VULNERABILITY', 'severity': 'CRITICAL', 'file': 'src/C.java', 'line': 10, 'rule': 'java:S3649', 'message': 'SQL injection'},
+            {
+                'key': 'B1',
+                'type': 'BUG',
+                'severity': 'MAJOR',
+                'file': 'src/A.java',
+                'line': 1,
+                'rule': 'java:S1234',
+                'message': 'Bug',
+            },
+            {
+                'key': 'B2',
+                'type': 'CODE_SMELL',
+                'severity': 'MINOR',
+                'file': 'src/B.java',
+                'line': 5,
+                'rule': 'java:S1135',
+                'message': 'TODO',
+            },
+            {
+                'key': 'B3',
+                'type': 'VULNERABILITY',
+                'severity': 'CRITICAL',
+                'file': 'src/C.java',
+                'line': 10,
+                'rule': 'java:S3649',
+                'message': 'SQL injection',
+            },
         ]
         stdout, _, code = run_sonar_script(['triage-batch', '--issues', json.dumps(issues)])
         self.assertEqual(code, 0)
@@ -242,6 +266,7 @@ class TestSonarRulesConfig(unittest.TestCase):
     def setUpClass(cls):
         """Import sonar module for direct testing."""
         from sonar import SUPPRESSABLE_RULES, _FIX_SUGGESTIONS, _TEST_ACCEPTABLE_RULES  # type: ignore[import-not-found]
+
         cls.suppressable = SUPPRESSABLE_RULES
         cls.fix_suggestions = _FIX_SUGGESTIONS
         cls.test_acceptable = _TEST_ACCEPTABLE_RULES
@@ -283,7 +308,15 @@ class TestToonContract(unittest.TestCase):
         stdout, _, code = run_sonar_script(['triage', '--issue', json.dumps(issue)])
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
-        required_fields = {'issue_key', 'action', 'reason', 'priority', 'suggested_implementation', 'suppression_string', 'status'}
+        required_fields = {
+            'issue_key',
+            'action',
+            'reason',
+            'priority',
+            'suggested_implementation',
+            'suppression_string',
+            'status',
+        }
         missing = required_fields - set(result.keys())
         self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
 
@@ -308,7 +341,15 @@ class TestToonContract(unittest.TestCase):
     def test_triage_batch_output_contract(self):
         """Verify triage-batch output has all documented fields."""
         issues = [
-            {'key': 'B1', 'type': 'BUG', 'severity': 'MAJOR', 'file': 'src/A.java', 'line': 1, 'rule': 'java:S1234', 'message': 'Bug'},
+            {
+                'key': 'B1',
+                'type': 'BUG',
+                'severity': 'MAJOR',
+                'file': 'src/A.java',
+                'line': 1,
+                'rule': 'java:S1234',
+                'message': 'Bug',
+            },
         ]
         stdout, _, code = run_sonar_script(['triage-batch', '--issues', json.dumps(issues)])
         self.assertEqual(code, 0)

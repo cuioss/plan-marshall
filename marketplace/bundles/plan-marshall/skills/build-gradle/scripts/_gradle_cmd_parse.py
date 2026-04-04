@@ -11,7 +11,6 @@ Usage (internal):
     issues, test_summary, build_status = parse_log("path/to/build.log")
 """
 
-import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
@@ -30,71 +29,75 @@ from _build_parse import (
 from _build_parse import (
     detect_build_status as _detect_build_status_base,
 )
+
 # Gradle-specific categorization patterns. Extends shared JVM base patterns
 # with Gradle task markers, Kotlin errors, and regex-based patterns.
-GRADLE_PATTERNS: CategoryPatterns = override_patterns(JVM_BASE_PATTERNS, {
-    # Override compilation_error with Gradle-specific regex patterns + Kotlin
-    'compilation_error': [
-        # Java errors (regex for Gradle's error: prefix)
-        r'error:\s+cannot find symbol',
-        r'error:\s+incompatible types',
-        r'error:\s+illegal start',
-        r"error:\s+';' expected",
-        r'error:\s+class .* is public',
-        r'error:\s+package .* does not exist',
-        r'error:\s+method .* cannot be applied',
-        r'error:\s+unreported exception',
-        r'error:\s+variable .* might not have been initialized',
-        r'error:\s+cannot access',
-        # Kotlin errors
-        r'Unresolved reference',
-        r'Type mismatch',
-        r'Smart cast to .* is impossible',
-        r'None of the following candidates is applicable',
-        r'Overload resolution ambiguity',
-        r"Val cannot be reassigned",
-        # Task failure markers
-        r"Execution failed for task ':.*:compileJava'",
-        r"Execution failed for task ':.*:compileKotlin'",
-    ],
-    'test_failure': [
-        r'>\s+\d+ tests? completed, \d+ failed',
-        r'FAILED',
-        r'AssertionFailedError',
-        r'AssertionError',
-        r"Execution failed for task ':.*:test'",
-    ],
-    'dependency_error': [
-        r'Could not resolve',
-        r'Could not find',
-        r'Could not download',
-        r'Failed to resolve',
-        r'Cannot resolve external dependency',
-    ],
-    'javadoc_warning': [
-        r'warning:\s+no @param',
-        r'warning:\s+no @return',
-        r'warning:\s+missing @',
-        'javadoc',
-        r"Execution failed for task ':.*:javadoc'",
-    ],
-    'deprecation_warning': [
-        r'\[deprecation\]',
-        'has been deprecated',
-        'is deprecated',
-    ],
-    'unchecked_warning': [
-        r'\[unchecked\]',
-        'unchecked conversion',
-        'unchecked call',
-    ],
-    # Override openrewrite_info to include Gradle-specific plugin name
-    'openrewrite_info': [
-        r'org\.openrewrite',
-        r'rewrite-gradle-plugin',
-        'rewrite:',
-    ],
-})
+GRADLE_PATTERNS: CategoryPatterns = override_patterns(
+    JVM_BASE_PATTERNS,
+    {
+        # Override compilation_error with Gradle-specific regex patterns + Kotlin
+        'compilation_error': [
+            # Java errors (regex for Gradle's error: prefix)
+            r'error:\s+cannot find symbol',
+            r'error:\s+incompatible types',
+            r'error:\s+illegal start',
+            r"error:\s+';' expected",
+            r'error:\s+class .* is public',
+            r'error:\s+package .* does not exist',
+            r'error:\s+method .* cannot be applied',
+            r'error:\s+unreported exception',
+            r'error:\s+variable .* might not have been initialized',
+            r'error:\s+cannot access',
+            # Kotlin errors
+            r'Unresolved reference',
+            r'Type mismatch',
+            r'Smart cast to .* is impossible',
+            r'None of the following candidates is applicable',
+            r'Overload resolution ambiguity',
+            r'Val cannot be reassigned',
+            # Task failure markers
+            r"Execution failed for task ':.*:compileJava'",
+            r"Execution failed for task ':.*:compileKotlin'",
+        ],
+        'test_failure': [
+            r'>\s+\d+ tests? completed, \d+ failed',
+            r'FAILED',
+            r'AssertionFailedError',
+            r'AssertionError',
+            r"Execution failed for task ':.*:test'",
+        ],
+        'dependency_error': [
+            r'Could not resolve',
+            r'Could not find',
+            r'Could not download',
+            r'Failed to resolve',
+            r'Cannot resolve external dependency',
+        ],
+        'javadoc_warning': [
+            r'warning:\s+no @param',
+            r'warning:\s+no @return',
+            r'warning:\s+missing @',
+            'javadoc',
+            r"Execution failed for task ':.*:javadoc'",
+        ],
+        'deprecation_warning': [
+            r'\[deprecation\]',
+            'has been deprecated',
+            'is deprecated',
+        ],
+        'unchecked_warning': [
+            r'\[unchecked\]',
+            'unchecked conversion',
+            'unchecked call',
+        ],
+        # Override openrewrite_info to include Gradle-specific plugin name
+        'openrewrite_info': [
+            r'org\.openrewrite',
+            r'rewrite-gradle-plugin',
+            'rewrite:',
+        ],
+    },
+)
 
 # Categories that represent errors (not warnings). Used for severity mapping.
 _ERROR_CATEGORIES = {'compilation_error', 'test_failure', 'dependency_error'}
@@ -184,7 +187,8 @@ def _extract_issues(lines: list[str]) -> list[Issue]:
         severity = SEVERITY_ERROR if issue_type in _ERROR_CATEGORIES else SEVERITY_WARNING
 
         add_issue_deduped(
-            issues, seen,
+            issues,
+            seen,
             file=str(loc_file) if loc_file is not None else None,
             line=int(loc_line) if loc_line is not None else None,
             message=stripped,

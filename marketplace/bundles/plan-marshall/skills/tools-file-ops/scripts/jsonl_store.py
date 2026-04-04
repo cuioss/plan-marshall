@@ -98,4 +98,5 @@ def find_by_title(path: Path, title: str) -> dict[str, Any] | None:
 def timestamp() -> str:
     """Get current ISO timestamp."""
     from file_ops import now_utc_iso
+
     return now_utc_iso()

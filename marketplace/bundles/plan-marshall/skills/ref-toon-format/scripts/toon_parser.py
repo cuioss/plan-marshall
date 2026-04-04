@@ -392,9 +392,7 @@ def parse_toon(content: str) -> dict[str, Any]:
         ) from e
 
 
-def parse_toon_table(
-    content: str, key: str, *, null_markers: set[str] | None = None
-) -> list[dict[str, Any]]:
+def parse_toon_table(content: str, key: str, *, null_markers: set[str] | None = None) -> list[dict[str, Any]]:
     """Extract a uniform array table from TOON content.
 
     Convenience wrapper around parse_toon() for extracting a single table
@@ -427,10 +425,7 @@ def parse_toon_table(
         return []
     rows = [row for row in table if isinstance(row, dict)]
     if null_markers:
-        return [
-            {k: None if v in null_markers else v for k, v in row.items()}
-            for row in rows
-        ]
+        return [{k: None if v in null_markers else v for k, v in row.items()} for row in rows]
     return rows
 
 
@@ -551,5 +546,3 @@ def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str =
             lines.append(f'{prefix}{key}: {_serialize_value(value)}')
 
     return '\n'.join(lines)
-
-

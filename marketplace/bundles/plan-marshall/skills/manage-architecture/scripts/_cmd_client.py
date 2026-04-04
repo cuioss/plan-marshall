@@ -13,7 +13,6 @@ from _architecture_core import (
     ModuleNotFoundInProjectError,
     error_command_not_found,
     error_module_not_found,
-    get_derived_path,
     get_module,
     get_module_names,
     get_root_module,
@@ -616,12 +615,14 @@ def cmd_module(args) -> int:
                 for pkg_name, pkg_data in packages.items():
                     has_info = 'true' if pkg_data.get('package_info') else 'false'
                     file_count = str(len(pkg_data.get('files', [])))
-                    pkg_items.append({
-                        'name': pkg_name,
-                        'path': pkg_data.get('path', ''),
-                        'has_package_info': has_info,
-                        'file_count': file_count,
-                    })
+                    pkg_items.append(
+                        {
+                            'name': pkg_name,
+                            'path': pkg_data.get('path', ''),
+                            'has_package_info': has_info,
+                            'file_count': file_count,
+                        }
+                    )
                 print_toon_table('packages', pkg_items, ['name', 'path', 'has_package_info', 'file_count'])
                 print()
 
@@ -630,11 +631,13 @@ def cmd_module(args) -> int:
                 test_pkg_items = []
                 for pkg_name, pkg_data in test_packages.items():
                     file_count = str(len(pkg_data.get('files', [])))
-                    test_pkg_items.append({
-                        'name': pkg_name,
-                        'path': pkg_data.get('path', ''),
-                        'file_count': file_count,
-                    })
+                    test_pkg_items.append(
+                        {
+                            'name': pkg_name,
+                            'path': pkg_data.get('path', ''),
+                            'file_count': file_count,
+                        }
+                    )
                 print_toon_table('test_packages', test_pkg_items, ['name', 'path', 'file_count'])
                 print()
 

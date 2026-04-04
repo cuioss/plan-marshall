@@ -7,7 +7,6 @@ Handles: resolve-domain-skills, resolve-workflow-skill-extension, get-skills-by-
 """
 
 import re
-import sys
 from pathlib import Path
 
 from _cmd_skill_domains import (
@@ -15,7 +14,6 @@ from _cmd_skill_domains import (
     load_profiles_from_bundle,
 )
 from _config_core import (
-    EXIT_ERROR,
     MarshalNotInitializedError,
     error_exit,
     get_skill_description,
@@ -89,7 +87,12 @@ def cmd_resolve_domain_skills(args) -> int:
     project_skills = domain_config.get('project_skills', [])
     project_skills_with_desc = {s: get_skill_description(s) for s in project_skills}
 
-    result: dict = {'domain': domain, 'profile': profile, 'defaults': defaults_with_desc, 'optionals': optionals_with_desc}
+    result: dict = {
+        'domain': domain,
+        'profile': profile,
+        'defaults': defaults_with_desc,
+        'optionals': optionals_with_desc,
+    }
     if project_skills_with_desc:
         result['project_skills'] = project_skills_with_desc
 
@@ -146,10 +149,12 @@ def cmd_get_skills_by_profile(args) -> int:
         # System domain or flat domain - return top-level defaults
         defaults = domain_config.get('defaults', [])
         optionals = domain_config.get('optionals', [])
-        return success_exit({
-            'domain': domain,
-            'skills_by_profile': {'core': defaults + optionals},
-        })
+        return success_exit(
+            {
+                'domain': domain,
+                'skills_by_profile': {'core': defaults + optionals},
+            }
+        )
 
     # Load profiles from extension.py
     ext_data = load_profiles_from_bundle(bundle, domain)
@@ -162,6 +167,7 @@ def cmd_get_skills_by_profile(args) -> int:
     core_skills = profiles.get('core', {}).get('defaults', []) + profiles.get('core', {}).get('optionals', [])
     # Extract just skill names
     from _cmd_skill_domains import _extract_skill_names
+
     core_skill_names = _extract_skill_names(core_skills)
 
     skills_by_profile: dict[str, list[str]] = {}
@@ -341,19 +347,21 @@ def _discover_all_recipes() -> list[dict]:
             if not domain:
                 continue
 
-            key = skill_dir.name[len('recipe-'):]
-            all_recipes.append({
-                'key': key,
-                'name': description or skill_dir.name,
-                'description': description,
-                'skill': f'project:{skill_dir.name}',
-                'default_change_type': 'tech_debt',
-                'scope': 'codebase_wide',
-                'domain': domain,
-                'profile': profile,
-                'package_source': package_source,
-                'source': 'project',
-            })
+            key = skill_dir.name[len('recipe-') :]
+            all_recipes.append(
+                {
+                    'key': key,
+                    'name': description or skill_dir.name,
+                    'description': description,
+                    'skill': f'project:{skill_dir.name}',
+                    'default_change_type': 'tech_debt',
+                    'scope': 'codebase_wide',
+                    'domain': domain,
+                    'profile': profile,
+                    'package_source': package_source,
+                    'source': 'project',
+                }
+            )
 
     return all_recipes
 
@@ -371,18 +379,20 @@ def cmd_resolve_recipe(args) -> int:
 
     for recipe in all_recipes:
         if recipe.get('key') == recipe_key:
-            return success_exit({
-                'recipe_key': recipe['key'],
-                'recipe_name': recipe.get('name', ''),
-                'recipe_skill': recipe.get('skill', ''),
-                'default_change_type': recipe.get('default_change_type', ''),
-                'scope': recipe.get('scope', ''),
-                'domain': recipe.get('domain', ''),
-                'profile': recipe.get('profile', ''),
-                'package_source': recipe.get('package_source', ''),
-            })
+            return success_exit(
+                {
+                    'recipe_key': recipe['key'],
+                    'recipe_name': recipe.get('name', ''),
+                    'recipe_skill': recipe.get('skill', ''),
+                    'default_change_type': recipe.get('default_change_type', ''),
+                    'scope': recipe.get('scope', ''),
+                    'domain': recipe.get('domain', ''),
+                    'profile': recipe.get('profile', ''),
+                    'package_source': recipe.get('package_source', ''),
+                }
+            )
 
-    return error_exit(f"Recipe not found: {recipe_key}")
+    return error_exit(f'Recipe not found: {recipe_key}')
 
 
 # =============================================================================
@@ -398,12 +408,14 @@ def _discover_all_finalize_steps() -> list[dict]:
 
     # Source 1: Built-in steps
     for step_name in BUILT_IN_FINALIZE_STEPS:
-        all_steps.append({
-            'name': step_name,
-            'description': BUILT_IN_FINALIZE_STEP_DESCRIPTIONS.get(step_name, step_name),
-            'type': 'built-in',
-            'source': 'built-in',
-        })
+        all_steps.append(
+            {
+                'name': step_name,
+                'description': BUILT_IN_FINALIZE_STEP_DESCRIPTIONS.get(step_name, step_name),
+                'type': 'built-in',
+                'source': 'built-in',
+            }
+        )
 
     # Source 2: Project finalize-step-* skills
     claude_skills = Path('.claude/skills')
@@ -422,12 +434,14 @@ def _discover_all_finalize_steps() -> list[dict]:
                 description = fm_match.group(1).strip()
 
             step_ref = f'project:{skill_dir.name}'
-            all_steps.append({
-                'name': step_ref,
-                'description': description or skill_dir.name,
-                'type': 'project',
-                'source': 'project',
-            })
+            all_steps.append(
+                {
+                    'name': step_ref,
+                    'description': description or skill_dir.name,
+                    'type': 'project',
+                    'source': 'project',
+                }
+            )
 
     # Source 3: Extension provides_finalize_steps()
     extensions = discover_all_extensions()
@@ -440,12 +454,14 @@ def _discover_all_finalize_steps() -> list[dict]:
             if not steps:
                 continue
             for step in steps:
-                all_steps.append({
-                    'name': step.get('name', step.get('skill', '')),
-                    'description': step.get('description', ''),
-                    'type': 'skill',
-                    'source': 'extension',
-                })
+                all_steps.append(
+                    {
+                        'name': step.get('name', step.get('skill', '')),
+                        'description': step.get('description', ''),
+                        'type': 'skill',
+                        'source': 'extension',
+                    }
+                )
         except Exception:
             pass
 
@@ -475,9 +491,7 @@ def cmd_resolve_outline_skill(args) -> int:
         domain_config = skill_domains[domain]
         outline_skill = domain_config.get('outline_skill')
         if outline_skill:
-            return success_exit(
-                {'domain': domain, 'skill': outline_skill, 'source': 'domain_specific'}
-            )
+            return success_exit({'domain': domain, 'skill': outline_skill, 'source': 'domain_specific'})
 
     # No domain override — generic instructions will be used
     return success_exit({'domain': domain, 'skill': 'none', 'source': 'generic'})

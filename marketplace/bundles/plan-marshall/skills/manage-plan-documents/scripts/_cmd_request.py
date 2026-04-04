@@ -10,7 +10,6 @@ import argparse
 
 from _documents_core import (  # type: ignore[import-not-found]
     atomic_write_file,
-    get_available_types,
     output_error,
     output_toon,
     render_template,
@@ -252,9 +251,7 @@ def cmd_clarify(doc_type: str, args) -> int:
     if clarifications:
         if has_clarifications:
             # Update existing section via cmd_update
-            args_update = argparse.Namespace(
-                plan_id=args.plan_id, section='clarifications', content=clarifications
-            )
+            args_update = argparse.Namespace(plan_id=args.plan_id, section='clarifications', content=clarifications)
             return cmd_update(doc_type, args_update)
         else:
             new_sections.append('\n## Clarifications\n')

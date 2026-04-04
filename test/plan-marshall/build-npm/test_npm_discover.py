@@ -182,9 +182,7 @@ def test_commands_workspace_scoping():
         packages_dir.mkdir()
         pkg_dir = packages_dir / 'my-pkg'
         pkg_dir.mkdir()
-        (pkg_dir / 'package.json').write_text(
-            json.dumps({'name': 'my-pkg', 'scripts': {'test': 'jest'}})
-        )
+        (pkg_dir / 'package.json').write_text(json.dumps({'name': 'my-pkg', 'scripts': {'test': 'jest'}}))
 
         modules = discover_npm_modules(str(ctx.temp_dir))
         ws_module = next(m for m in modules if m['name'] == 'my-pkg')

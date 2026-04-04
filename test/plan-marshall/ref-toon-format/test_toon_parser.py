@@ -461,7 +461,7 @@ users[2]{id,name,role}:
 
 def test_parse_toon_table_missing_key():
     """Test that missing key returns empty list."""
-    toon = "status: success\n"
+    toon = 'status: success\n'
     result = parse_toon_table(toon, 'items')
     assert result == []
 
@@ -482,13 +482,13 @@ items[2]{id,name,value}:
 
 def test_parse_toon_table_empty_array():
     """Test extracting empty table."""
-    toon = "items[0]{id,name}:\n"
+    toon = 'items[0]{id,name}:\n'
     items = parse_toon_table(toon, 'items')
     assert items == []
 
 
 def test_parse_toon_table_non_list_key():
     """Test that a non-list key returns empty list."""
-    toon = "status: success\n"
+    toon = 'status: success\n'
     result = parse_toon_table(toon, 'status')
     assert result == []

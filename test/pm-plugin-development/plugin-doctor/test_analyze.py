@@ -281,7 +281,9 @@ def test_markdown_subdoc_bloat_critical():
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
         data = result.json()
-        assert data['bloat']['classification'] == 'CRITICAL', f'Expected CRITICAL, got {data["bloat"]["classification"]}'
+        assert data['bloat']['classification'] == 'CRITICAL', (
+            f'Expected CRITICAL, got {data["bloat"]["classification"]}'
+        )
     finally:
         temp_file.unlink()
 
@@ -526,7 +528,9 @@ def test_checklist_detection_absent():
 
 def test_checklist_detection_mixed():
     """Test checklist detection counts both - [ ] and - [x] patterns."""
-    content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- [ ] Unchecked\n- [x] Checked\n- [X] Also checked\n'
+    content = (
+        '---\nname: test\ndescription: test\n---\n\n# Test\n\n- [ ] Unchecked\n- [x] Checked\n- [X] Also checked\n'
+    )
     temp_file = create_temp_file(content)
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
@@ -543,8 +547,14 @@ def test_checklist_template_exempt():
     """Test that files in /templates/ path are exempt from checklist detection."""
     # Template path: use the real pr-template.md which has checkboxes
     template_path = (
-        PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
-        / 'skills' / 'phase-6-finalize' / 'templates' / 'pr-template.md'
+        PROJECT_ROOT
+        / 'marketplace'
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'phase-6-finalize'
+        / 'templates'
+        / 'pr-template.md'
     )
     if not template_path.exists():
         return  # Skip if fixture not available

@@ -132,9 +132,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         """Should return ok when docs have all required content."""
         claude_md = self.temp_dir / 'CLAUDE.md'
         claude_md.write_text(
-            '# Project\n\n'
-            'Use `.plan/temp/` for temporary files.\n\n'
-            'For file operations use Glob, Read, Grep tools.\n'
+            '# Project\n\nUse `.plan/temp/` for temporary files.\n\nFor file operations use Glob, Read, Grep tools.\n'
         )
 
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
@@ -146,9 +144,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
     def test_needs_update_when_claude_md_missing_plan_temp(self):
         """Should detect missing plan_temp pattern in CLAUDE.md."""
         claude_md = self.temp_dir / 'CLAUDE.md'
-        claude_md.write_text(
-            '# Project\n\nFor file operations use Glob, Read, Grep tools.\n'
-        )
+        claude_md.write_text('# Project\n\nFor file operations use Glob, Read, Grep tools.\n')
 
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 

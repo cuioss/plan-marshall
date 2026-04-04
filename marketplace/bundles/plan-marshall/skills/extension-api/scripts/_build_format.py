@@ -82,12 +82,14 @@ def format_toon(result: dict) -> str:
         errors = _normalize_issues(result['errors'])
         # Ensure consistent field set for uniform array serialization
         ordered['errors'] = [
-            OrderedDict([
-                ('file', err.get('file', '-') or '-'),
-                ('line', err.get('line') if err.get('line') is not None else '-'),
-                ('message', err.get('message', '')),
-                ('category', err.get('category', '')),
-            ])
+            OrderedDict(
+                [
+                    ('file', err.get('file', '-') or '-'),
+                    ('line', err.get('line') if err.get('line') is not None else '-'),
+                    ('message', err.get('message', '')),
+                    ('category', err.get('category', '')),
+                ]
+            )
             for err in errors
         ]
 
@@ -97,32 +99,38 @@ def format_toon(result: dict) -> str:
         has_accepted = any(w.get('accepted') is not None for w in warnings)
         if has_accepted:
             ordered['warnings'] = [
-                OrderedDict([
-                    ('file', w.get('file', '-') or '-'),
-                    ('line', w.get('line') if w.get('line') is not None else '-'),
-                    ('message', w.get('message', '')),
-                    ('accepted', '[accepted]' if w.get('accepted') else ''),
-                ])
+                OrderedDict(
+                    [
+                        ('file', w.get('file', '-') or '-'),
+                        ('line', w.get('line') if w.get('line') is not None else '-'),
+                        ('message', w.get('message', '')),
+                        ('accepted', '[accepted]' if w.get('accepted') else ''),
+                    ]
+                )
                 for w in warnings
             ]
         else:
             ordered['warnings'] = [
-                OrderedDict([
-                    ('file', w.get('file', '-') or '-'),
-                    ('line', w.get('line') if w.get('line') is not None else '-'),
-                    ('message', w.get('message', '')),
-                ])
+                OrderedDict(
+                    [
+                        ('file', w.get('file', '-') or '-'),
+                        ('line', w.get('line') if w.get('line') is not None else '-'),
+                        ('message', w.get('message', '')),
+                    ]
+                )
                 for w in warnings
             ]
 
     # Tests section — normalize UnitTestSummary to dict
     if 'tests' in result and result['tests']:
         tests = _normalize_dict(result['tests'])
-        ordered['tests'] = OrderedDict([
-            ('passed', tests.get('passed', 0)),
-            ('failed', tests.get('failed', 0)),
-            ('skipped', tests.get('skipped', 0)),
-        ])
+        ordered['tests'] = OrderedDict(
+            [
+                ('passed', tests.get('passed', 0)),
+                ('failed', tests.get('failed', 0)),
+                ('skipped', tests.get('skipped', 0)),
+            ]
+        )
 
     return serialize_toon(dict(ordered))
 

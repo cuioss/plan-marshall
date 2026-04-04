@@ -52,9 +52,18 @@ VALID_TYPES: list[str] = _COMMIT_CONFIG['valid_types']
 _IMPERATIVE_ALLOWLIST: set[str] = set(_COMMIT_CONFIG.get('imperative_allowlist', []))
 _SUBJECT_MAX_LENGTH: int = _COMMIT_CONFIG.get('subject_max_length', 72)
 _SUBJECT_WARN_LENGTH: int = _COMMIT_CONFIG.get('subject_warn_length', 50)
-_MONOREPO_ROOTS: set[str] = set(_COMMIT_CONFIG.get('monorepo_roots', [
-    'packages', 'modules', 'apps', 'libs', 'services',
-]))
+_MONOREPO_ROOTS: set[str] = set(
+    _COMMIT_CONFIG.get(
+        'monorepo_roots',
+        [
+            'packages',
+            'modules',
+            'apps',
+            'libs',
+            'services',
+        ],
+    )
+)
 
 _ARTIFACT_CONFIG = load_skill_config(__file__, 'artifact-patterns.json')
 
@@ -125,9 +134,12 @@ def wrap_text(text: str, width: int) -> str:
                 lines.append(paragraph)
                 continue
             wrapped = textwrap.fill(
-                stripped, width=effective_width,
-                initial_indent='', subsequent_indent='',
-                break_long_words=False, break_on_hyphens=False,
+                stripped,
+                width=effective_width,
+                initial_indent='',
+                subsequent_indent='',
+                break_long_words=False,
+                break_on_hyphens=False,
             )
             lines.extend(indent + line for line in wrapped.split('\n'))
     return '\n'.join(lines)
@@ -244,7 +256,8 @@ def analyze_diff(diff_content: str) -> dict:
 
     # Analyze file paths — support Maven, Python, JS, and generic layouts
     src_files = [
-        f for f in files_changed
+        f
+        for f in files_changed
         if '/src/' in f or f.startswith('src/') or f.endswith(('.py', '.js', '.ts', '.jsx', '.tsx'))
     ]
     test_files = [f for f in files_changed if is_test_file(f)]
@@ -252,7 +265,9 @@ def analyze_diff(diff_content: str) -> dict:
     ci_files = [
         f
         for f in files_changed
-        if f.startswith('.github/') or f.startswith('.gitlab-ci') or f.startswith('.circleci/')
+        if f.startswith('.github/')
+        or f.startswith('.gitlab-ci')
+        or f.startswith('.circleci/')
         or f in ('Jenkinsfile', '.travis.yml', 'azure-pipelines.yml')
         or '/ci/' in f
     ]
@@ -311,15 +326,19 @@ def analyze_diff(diff_content: str) -> dict:
         if (line.startswith('+') or line.startswith('-'))
         and ('// ' in line or '# ' in line or '/* ' in line or '* ' in line)
     )
-    if re.search(bug_pattern, diff_headers, re.IGNORECASE) or re.search(
-        bug_pattern, comment_lines, re.IGNORECASE
-    ):
+    if re.search(bug_pattern, diff_headers, re.IGNORECASE) or re.search(bug_pattern, comment_lines, re.IGNORECASE):
         suggestions['type'] = 'fix'
         detected_changes.append('Bug fix patterns detected in diff context')
 
     # Performance improvement indicators — check comments for perf keywords
-    elif re.search(r'\b(perf(?:ormance)?|optimi[zs]e|benchmark|latency|throughput|cache|memoize)\b',
-                   comment_lines, re.IGNORECASE) and src_files:
+    elif (
+        re.search(
+            r'\b(perf(?:ormance)?|optimi[zs]e|benchmark|latency|throughput|cache|memoize)\b',
+            comment_lines,
+            re.IGNORECASE,
+        )
+        and src_files
+    ):
         suggestions['type'] = 'perf'
         detected_changes.append('Performance improvement patterns detected in diff context')
 
@@ -394,7 +413,10 @@ def get_gitignored_files(root: Path) -> set[str]:
     try:
         result = subprocess.run(
             ['git', 'ls-files', '--others', '--ignored', '--exclude-standard'],
-            capture_output=True, text=True, timeout=30, cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(root),
         )
         if result.returncode != 0:
             return set()
@@ -512,7 +534,13 @@ Examples:
                 'help': 'Format commit message following conventional commits',
                 'handler': cmd_format_commit,
                 'args': [
-                    {'flags': ['--type'], 'dest': 'commit_type', 'required': True, 'choices': VALID_TYPES, 'help': 'Commit type'},
+                    {
+                        'flags': ['--type'],
+                        'dest': 'commit_type',
+                        'required': True,
+                        'choices': VALID_TYPES,
+                        'help': 'Commit type',
+                    },
                     {'flags': ['--scope'], 'help': 'Commit scope'},
                     {'flags': ['--subject'], 'required': True, 'help': 'Commit subject'},
                     {'flags': ['--body'], 'help': 'Commit body'},
@@ -532,7 +560,11 @@ Examples:
                 'handler': cmd_detect_artifacts,
                 'args': [
                     {'flags': ['--root'], 'help': 'Root directory to scan (default: cwd)'},
-                    {'flags': ['--no-gitignore'], 'action': 'store_true', 'help': 'Include gitignored files in results'},
+                    {
+                        'flags': ['--no-gitignore'],
+                        'action': 'store_true',
+                        'help': 'Include gitignored files in results',
+                    },
                 ],
             },
         ],

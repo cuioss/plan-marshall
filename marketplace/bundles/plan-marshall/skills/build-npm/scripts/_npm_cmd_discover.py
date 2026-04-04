@@ -34,7 +34,6 @@ from extension_base import (
 )
 from plan_logging import log_entry
 
-
 # =============================================================================
 # Module Discovery
 # =============================================================================
@@ -318,9 +317,7 @@ def _build_commands(module_name: str, scripts: dict, relative_path: str) -> dict
 
     # verify: chained build + test if both exist, otherwise just test
     if 'build' in scripts and 'test' in scripts:
-        commands['verify'] = build_chained_commands(
-            skill, [f'run build{ws_arg}', f'run test{ws_arg}']
-        )
+        commands['verify'] = build_chained_commands(skill, [f'run build{ws_arg}', f'run test{ws_arg}'])
     elif 'test' in scripts:
         commands['verify'] = build_canonical_commands(skill, {'verify': f'run test{ws_arg}'})['verify']
 
@@ -346,5 +343,3 @@ def _load_package_json(path: Path) -> dict | None:
         return data
     except (OSError, json.JSONDecodeError):
         return None
-
-

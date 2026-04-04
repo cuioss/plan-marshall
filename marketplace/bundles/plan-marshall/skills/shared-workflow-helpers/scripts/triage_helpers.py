@@ -30,21 +30,27 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 __all__ = [
     # Error handling
-    'ErrorCode', 'make_error',
+    'ErrorCode',
+    'make_error',
     # Output helpers
-    'print_toon', 'print_error',
+    'print_toon',
+    'print_error',
     # Main wrapper
     'safe_main',
     # JSON/config loading
-    'parse_json_arg', 'load_config_file', 'load_skill_config',
+    'parse_json_arg',
+    'load_config_file',
+    'load_skill_config',
     # CLI construction
     'create_workflow_cli',
     # Priority
-    'calculate_priority', 'PRIORITY_LEVELS',
+    'calculate_priority',
+    'PRIORITY_LEVELS',
     # Test detection
     'is_test_file',
     # Triage handlers
-    'cmd_triage_single', 'cmd_triage_batch_handler',
+    'cmd_triage_single',
+    'cmd_triage_batch_handler',
     # Type definitions
     'TriageResult',
     # Regex compilation
@@ -60,8 +66,8 @@ __all__ = [
 class _TriageResultRequired(TypedDict):
     """Required fields for triage results."""
 
-    action: str       # 'code_change', 'explain', 'ignore', 'fix', 'suppress'
-    status: str       # 'success' or 'error'
+    action: str  # 'code_change', 'explain', 'ignore', 'fix', 'suppress'
+    status: str  # 'success' or 'error'
 
 
 class TriageResult(_TriageResultRequired, total=False):
@@ -171,10 +177,14 @@ def safe_main(main_fn: Callable[[], int]) -> int:
         # Let argparse --help / missing-arg exits pass through
         raise e
     except Exception as e:
-        print(serialize_toon(make_error(
-            f'Unexpected error: {e}',
-            traceback=tb_module.format_exc(),
-        )))
+        print(
+            serialize_toon(
+                make_error(
+                    f'Unexpected error: {e}',
+                    traceback=tb_module.format_exc(),
+                )
+            )
+        )
         return 1
 
 
@@ -201,9 +211,14 @@ def parse_json_arg(raw: str, field_name: str) -> tuple[Any, int]:
     try:
         return json.loads(raw), 0
     except json.JSONDecodeError as e:
-        print(serialize_toon(make_error(
-            f'Invalid {field_name} JSON: {e}', code=ErrorCode.INVALID_INPUT,
-        )))
+        print(
+            serialize_toon(
+                make_error(
+                    f'Invalid {field_name} JSON: {e}',
+                    code=ErrorCode.INVALID_INPUT,
+                )
+            )
+        )
         return None, 1
 
 
@@ -291,11 +306,19 @@ def calculate_priority(base_priority: str, boost: int = 0) -> str:
 # Consumers: sonar.py (suppression rules for test files), git_workflow.py (diff analysis).
 _TEST_DIR_SEGMENTS = ('/test/', '/tests/', '/__tests__/')
 _TEST_SUFFIXES = (
-    'Test.java', 'Tests.java', 'IT.java',           # Java (JUnit)
-    '.test.js', '.test.ts', '.test.jsx', '.test.tsx',  # JS/TS (Jest/Vitest)
-    '.spec.js', '.spec.ts', '.spec.jsx', '.spec.tsx',  # JS/TS (Jasmine/Mocha)
-    '_test.go',                                        # Go
-    '_test.py',                                        # Python (pytest)
+    'Test.java',
+    'Tests.java',
+    'IT.java',  # Java (JUnit)
+    '.test.js',
+    '.test.ts',
+    '.test.jsx',
+    '.test.tsx',  # JS/TS (Jest/Vitest)
+    '.spec.js',
+    '.spec.ts',
+    '.spec.jsx',
+    '.spec.tsx',  # JS/TS (Jasmine/Mocha)
+    '_test.go',  # Go
+    '_test.py',  # Python (pytest)
 )
 _TEST_PREFIXES = ('test_',)  # Python test files (test_foo.py)
 _TEST_DIR_PREFIXES = ('test/', 'tests/')  # Top-level test directories
@@ -381,12 +404,14 @@ def cmd_triage_batch_handler(
         except Exception as e:
             failed += 1
             item_id = item.get('id', item.get('key', 'unknown')) if isinstance(item, dict) else 'unknown'
-            results.append({
-                'item_id': item_id,
-                'action': 'error',
-                'reason': f'Triage failed: {e}',
-                'status': 'error',
-            })
+            results.append(
+                {
+                    'item_id': item_id,
+                    'action': 'error',
+                    'reason': f'Triage failed: {e}',
+                    'status': 'error',
+                }
+            )
 
     summary: dict[str, Any] = {'total': len(results), 'failed': failed}
     for category in action_categories:

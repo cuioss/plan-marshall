@@ -75,12 +75,14 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
     # Check imports
     try:
         from file_ops import base_path as _bp  # noqa: F401
+
         checks.append(('import_file_ops', True))
     except ImportError:
         checks.append(('import_file_ops', False))
 
     try:
         from toon_parser import serialize_toon as _st  # noqa: F401
+
         checks.append(('import_toon_parser', True))
     except ImportError:
         checks.append(('import_toon_parser', False))

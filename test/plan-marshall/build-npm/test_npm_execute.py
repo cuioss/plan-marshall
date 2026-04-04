@@ -7,6 +7,7 @@ Tests the npm execution config, npm/npx detection, and factory-generated functio
 from unittest.mock import MagicMock
 
 import sys
+
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=120), timeout_set=MagicMock()))
 
@@ -31,6 +32,7 @@ def test_config_default_timeout():
 def test_config_capture_strategy():
     """Config uses stdout redirect."""
     from _build_execute import CaptureStrategy
+
     assert _CONFIG.capture_strategy == CaptureStrategy.STDOUT_REDIRECT
 
 
