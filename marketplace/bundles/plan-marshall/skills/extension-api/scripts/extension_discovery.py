@@ -187,11 +187,6 @@ def discover_applicable_extensions(project_root: Path) -> list[dict[str, Any]]:
     return applicable
 
 
-# DEPRECATED: Use discover_applicable_extensions() directly.
-# Alias kept temporarily — remove after all callers are updated.
-discover_extensions = discover_applicable_extensions
-
-
 
 def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Get skill domains from extensions.
@@ -285,7 +280,7 @@ def apply_config_defaults(project_root: Path,
     Args:
         project_root: Path to the project root
         pre_discovered: Optional list of already-discovered extensions
-            (from discover_extensions()). Avoids expensive double discovery.
+            (from discover_applicable_extensions()). Avoids expensive double discovery.
 
     Returns:
         Dict with results: {
