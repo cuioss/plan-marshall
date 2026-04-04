@@ -457,7 +457,7 @@ Phase skills read/update status through manage-status:
 
 Agents use `metadata` to store change_type and other classification data.
 
-## Related Skills
+## Related
 
 - `plan-marshall` — Orchestrator that drives phase transitions
 - `phase-1-init` through `phase-6-finalize` — Phase-specific skills routed to by manage-status

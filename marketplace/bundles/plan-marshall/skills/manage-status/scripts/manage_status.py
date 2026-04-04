@@ -127,8 +127,8 @@ def main() -> int:
     self_test_parser.set_defaults(func=cmd_self_test)
 
     args = parser.parse_args()
-    args.func(args)
-    return 0
+    result = args.func(args)
+    return result if isinstance(result, int) else 0
 
 
 if __name__ == '__main__':

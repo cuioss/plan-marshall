@@ -107,7 +107,10 @@ def check_auth_cli(
 
 
 def output_error(operation: str, error: str, context: str = '') -> int:
-    """Output error in TOON format to stderr and return EXIT_ERROR."""
+    """Output error in TOON format to stderr and return EXIT_ERROR.
+
+    CI-specific variant of file_ops.output_error with context field and int return.
+    """
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
     data: dict[str, str] = {'status': 'error', 'operation': operation, 'error': error}

@@ -196,7 +196,7 @@ The `generate` command produces a markdown report with:
 
 - [data-format.md](standards/data-format.md) — Storage format for metrics.toon and metrics.md
 
-## Related Skills
+## Related
 
 - `manage-status` — Phase tracking that metrics augment
 - `manage-logging` — Work logs that complement metric data

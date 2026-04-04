@@ -22,6 +22,9 @@ Load specific standards on-demand based on what aspect you need to understand.
 | [artifacts.md](standards/artifacts.md) | Plan file formats | status.json, TASK-*.json, references.json, logs |
 | [task-executors.md](standards/task-executors.md) | Task executors | Profile routing, shared workflow, extensibility |
 | [change-types.md](standards/change-types.md) | Change type vocabulary | analysis, feature, enhancement, bug_fix, tech_debt, verification |
+| [glossary.md](standards/glossary.md) | Terminology definitions | plan_id, phase, profile, module, domain, deliverable, task, finding, TOON |
+| [phase-lifecycle.md](standards/phase-lifecycle.md) | Phase lifecycle patterns | Entry protocol, completion protocol, enforcement template, error convention |
+| [skill-inventory.md](standards/skill-inventory.md) | Complete skill inventory | 49 skills: registration status, categories, naming convention |
 
 ## Core Principles
 
@@ -30,7 +33,7 @@ Load specific standards on-demand based on what aspect you need to understand.
 3. **Single source of truth** — Plan files are the source of truth. Skills read/write via manage-* scripts only.
 4. **Script-based file access** — ALL `.plan/` file access goes through `execute-script.py`. Never use Read/Write/Edit on `.plan/` files directly.
 
-## Related Skills
+## Related
 
 | Skill | Purpose |
 |-------|---------|

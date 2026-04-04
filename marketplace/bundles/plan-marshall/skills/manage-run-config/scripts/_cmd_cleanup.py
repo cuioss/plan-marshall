@@ -9,7 +9,6 @@ to avoid process overhead for a frequently-called internal module.
 
 import json
 import shutil
-import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,23 +44,23 @@ def get_retention_settings() -> dict:
         dict with retention settings
 
     Raises:
-        SystemExit: If marshal.json doesn't exist or has no retention config
+        RuntimeError: If marshal.json doesn't exist or has no retention config
     """
     if not MARSHAL_JSON.exists():
         output_toon({'status': 'error', 'error': 'marshal.json not found. Run command /marshall-steward first'})
-        sys.exit(1)
+        raise RuntimeError('marshal.json not found')
 
     try:
         config = json.loads(MARSHAL_JSON.read_text(encoding='utf-8'))
     except json.JSONDecodeError as e:
         output_toon({'status': 'error', 'error': f'Invalid marshal.json: {e}'})
-        sys.exit(1)
+        raise RuntimeError(f'Invalid marshal.json: {e}') from e
 
     if 'system' not in config or 'retention' not in config['system']:
         output_toon(
             {'status': 'error', 'error': 'system.retention not configured. Run command /marshall-steward first'}
         )
-        sys.exit(1)
+        raise RuntimeError('system.retention not configured')
 
     retention: dict = config['system']['retention']
     return retention

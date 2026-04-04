@@ -4,7 +4,6 @@ Routing and diagnostics command handlers for manage-status: route, get-routing-c
 """
 
 import argparse
-import sys
 from typing import Any
 
 from _status_core import (
@@ -15,7 +14,7 @@ from _status_core import (
 from constants import PHASE_STATUS_DONE, PHASES  # type: ignore[import-not-found]
 
 
-def cmd_route(args: argparse.Namespace) -> None:
+def cmd_route(args: argparse.Namespace) -> int:
     """Get skill for a phase."""
     if args.phase not in PHASE_ROUTING:
         output_toon(
@@ -27,14 +26,15 @@ def cmd_route(args: argparse.Namespace) -> None:
                 'valid_phases': list(PHASE_ROUTING.keys()),
             }
         )
-        sys.exit(1)
+        return 1
 
     skill, description = PHASE_ROUTING[args.phase]
 
     output_toon({'status': 'success', 'phase': args.phase, 'skill': skill, 'description': description})
+    return 0
 
 
-def cmd_get_routing_context(args: argparse.Namespace) -> None:
+def cmd_get_routing_context(args: argparse.Namespace) -> int:
     """Get combined routing context: phase, skill, and progress in one call."""
     status = require_status(args)
 
@@ -64,9 +64,10 @@ def cmd_get_routing_context(args: argparse.Namespace) -> None:
             'phases': [{'name': p['name'], 'status': p['status']} for p in phases],
         }
     )
+    return 0
 
 
-def cmd_self_test(_args: argparse.Namespace) -> None:
+def cmd_self_test(_args: argparse.Namespace) -> int:
     """Verify manage-status health: imports, routing, and directory access."""
     from _status_core import get_plans_dir
 
@@ -110,4 +111,5 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
 
     output_toon(result)
     if failed > 0:
-        sys.exit(1)
+        return 1
+    return 0

@@ -10,6 +10,17 @@ Iterative workflow for analyzing and refining the request until requirements mee
 
 For detailed step-by-step procedures, see `standards/refine-workflow-detail.md`.
 
+## Enforcement
+
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
+**Execution mode**: Follow workflow steps sequentially. Each step that invokes a script has an explicit bash code block.
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never skip the phase transition — use `manage-status transition`
+- Never improvise script subcommands — use only those documented below
+
 ## Purpose
 
 Before creating deliverables (phase-3-outline), ensure the request is:
@@ -174,7 +185,7 @@ Transition from refine to outline with `manage-status transition --completed 2-r
 
 ---
 
-## Related Documents
+## Related
 
 - [workflow-overview.md](references/workflow-overview.md) - Visual workflow diagrams and data flow
 - [refine-workflow-detail.md](standards/refine-workflow-detail.md) - Detailed step-by-step procedures

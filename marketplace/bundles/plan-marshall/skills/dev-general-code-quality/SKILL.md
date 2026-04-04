@@ -38,7 +38,7 @@ Read: standards/documentation-principles.md
 
 Use when: Writing or reviewing public API documentation, updating docs during code changes.
 
-## Related Skills
+## Related
 
 - `pm-dev-java:java-core` — Java-specific patterns and features
 - `pm-dev-java:java-maintenance` — Java maintenance prioritization

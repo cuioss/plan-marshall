@@ -10,7 +10,18 @@ user-invocable: false
 
 **Key Pattern**: Reads deliverables with metadata and profiles list from `solution_outline.md`, creates one task per deliverable per profile (1:N mapping), resolves skills from architecture based on `module` + `profile`, creates tasks with explicit skill lists. **No aggregation** - each deliverable maps to exactly one task per profile.
 
-## Contract Compliance
+## Enforcement
+
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
+**Execution mode**: Follow workflow steps sequentially. Each step that invokes a script has an explicit bash code block.
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never skip the phase transition — use `manage-status transition`
+- Never improvise script subcommands — use only those documented below
+
+### Contract Compliance
 
 **MANDATORY**: All tasks MUST follow the structure defined in the central contracts:
 
@@ -44,7 +55,7 @@ execution_order: {parallel groups}
 message: {error message if status=error}
 ```
 
-## Related Documents
+## Related
 
 | Document | Purpose |
 |----------|---------|

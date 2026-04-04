@@ -332,7 +332,7 @@ types:
 | `phase-3-outline` | request read | Read request to design solution |
 | `phase-4-plan` | request read | Read request for task planning context |
 
-## Related Skills
+## Related
 
 - `manage-solution-outline` — Solution outline management (validate, read, list-deliverables)
 - `manage-files` — Generic file operations for non-typed plan documents

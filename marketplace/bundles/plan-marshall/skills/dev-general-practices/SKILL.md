@@ -49,7 +49,7 @@ ALL `.plan/` file access MUST go through `python3 .plan/execute-script.py`. Exce
 
 Execute ONLY the commands documented in the loaded skill's workflow. Never add discovery steps, invent arguments, or skip documented steps.
 
-## Related Skills
+## Related
 
 - `dev-general-code-quality` — Complementary quality standards (SRP, CQS, complexity)
 - `dev-general-module-testing` — Testing methodology standards (AAA pattern, coverage)

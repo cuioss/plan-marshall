@@ -12,7 +12,16 @@ user-invocable: false
 
 **Phase Handled**: execute
 
-**CRITICAL**: Use manage-* scripts via Bash for plan file updates (Edit/Write tools trigger permission prompts on `.plan/` directories).
+## Enforcement
+
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
+**Execution mode**: DUMB TASK RUNNER — locate task, execute steps, mark progress, next task. Follow workflow steps sequentially.
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — use manage-* scripts via Bash (Edit/Write tools trigger permission prompts on `.plan/` directories)
+- Never skip the phase transition — use `manage-status transition`
+- Never improvise script subcommands — use only those documented below
 
 ---
 

@@ -30,7 +30,7 @@ Read: standards/testing-coverage.md
 
 Use when: Analyzing test coverage, defining corner cases, improving coverage metrics, or boundary value analysis.
 
-## Related Skills
+## Related
 
 - `pm-dev-java:junit-core` — JUnit 5 testing patterns
 - `pm-dev-frontend:jest-testing` — Jest testing patterns

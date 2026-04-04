@@ -356,7 +356,7 @@ modified_files[3]:
 | `phase-5-execute` | get-context | Read build system for task execution |
 | `phase-6-finalize` | get-context --include-files | Read modified_files for commit scope and PR body |
 
-## Related Skills
+## Related
 
 - `manage-files` — Generic file operations for plan directories
 - `manage-plan-documents` — Typed plan document operations (request.md)

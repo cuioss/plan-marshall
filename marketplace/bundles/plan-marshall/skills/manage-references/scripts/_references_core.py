@@ -49,7 +49,7 @@ def write_references(plan_id: str, refs: dict) -> None:
 
 
 def require_references(plan_id: str) -> dict[Any, Any]:
-    """Read references, raising SystemExit with error if not found.
+    """Read references, raising RuntimeError if not found.
 
     Args:
         plan_id: Plan identifier (must already be validated).
@@ -58,10 +58,8 @@ def require_references(plan_id: str) -> dict[Any, Any]:
         References dict.
 
     Raises:
-        SystemExit: If references.json not found (error already printed).
+        RuntimeError: If references.json not found (error already printed).
     """
-    import sys
-
     refs = read_references(plan_id)
     if not refs:
         output_toon(
@@ -72,5 +70,5 @@ def require_references(plan_id: str) -> dict[Any, Any]:
                 'message': 'references.json not found',
             }
         )
-        sys.exit(1)
+        raise RuntimeError(f'references.json not found for plan {plan_id}')
     return refs

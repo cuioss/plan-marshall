@@ -4,7 +4,6 @@ Core functions for manage-status: TypedDicts, path resolution, read/write, and s
 """
 
 import json
-import sys
 from pathlib import Path
 from typing import Any, NotRequired, TypedDict, cast
 
@@ -101,12 +100,12 @@ def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
 
 
 def require_status(args) -> dict[Any, Any]:
-    """Validate plan_id and read status, exiting with TOON error if missing."""
+    """Validate plan_id and read status, raising RuntimeError if missing."""
     require_valid_plan_id(args)
     status = read_status(args.plan_id)
     if not status:
         output_toon(
             {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.json not found'}
         )
-        sys.exit(1)
+        raise RuntimeError(f'status.json not found for plan {args.plan_id}')
     return status

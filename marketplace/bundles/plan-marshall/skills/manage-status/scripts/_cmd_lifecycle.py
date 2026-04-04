@@ -5,7 +5,6 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 
 import argparse
 import shutil
-import sys
 from typing import Any
 
 from _status_core import (
@@ -26,7 +25,7 @@ from constants import (  # type: ignore[import-not-found]
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 
-def cmd_create(args: argparse.Namespace) -> None:
+def cmd_create(args: argparse.Namespace) -> int:
     """Create status.json for a new plan."""
     require_valid_plan_id(args)
 
@@ -40,7 +39,7 @@ def cmd_create(args: argparse.Namespace) -> None:
                 'message': 'status.json already exists. Use --force to overwrite.',
             }
         )
-        sys.exit(1)
+        return 1
 
     # Parse phases from comma-separated argument
     phases = [p.strip() for p in args.phases.split(',') if p.strip()]
@@ -53,7 +52,7 @@ def cmd_create(args: argparse.Namespace) -> None:
                 'message': 'At least one phase is required',
             }
         )
-        sys.exit(1)
+        return 1
 
     now = now_utc_iso()
 
@@ -78,9 +77,10 @@ def cmd_create(args: argparse.Namespace) -> None:
             'plan': {'title': args.title, 'current_phase': phases[0]},
         }
     )
+    return 0
 
 
-def cmd_transition(args: argparse.Namespace) -> None:
+def cmd_transition(args: argparse.Namespace) -> int:
     """Transition to next phase."""
     status = require_status(args)
 
@@ -96,7 +96,7 @@ def cmd_transition(args: argparse.Namespace) -> None:
                 'message': f'Invalid phase: {args.completed}',
             }
         )
-        sys.exit(1)
+        return 1
 
     completed_idx = phase_names.index(args.completed)
 
@@ -120,9 +120,10 @@ def cmd_transition(args: argparse.Namespace) -> None:
         result['message'] = 'All phases completed'
 
     output_toon(result)
+    return 0
 
 
-def cmd_archive(args: argparse.Namespace) -> None:
+def cmd_archive(args: argparse.Namespace) -> int:
     """Archive a completed plan."""
     require_valid_plan_id(args)
 
@@ -131,7 +132,7 @@ def cmd_archive(args: argparse.Namespace) -> None:
         output_toon(
             {'status': 'error', 'plan_id': args.plan_id, 'error': 'not_found', 'message': 'Plan directory not found'}
         )
-        sys.exit(1)
+        return 1
 
     date_prefix = now_utc_iso()[:10]  # YYYY-MM-DD
     archive_name = f'{date_prefix}-{args.plan_id}'
@@ -142,15 +143,16 @@ def cmd_archive(args: argparse.Namespace) -> None:
         output_toon(
             {'status': 'success', 'plan_id': args.plan_id, 'dry_run': True, 'would_archive_to': str(archive_path)}
         )
-        return
+        return 0
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))
 
     output_toon({'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)})
+    return 0
 
 
-def cmd_delete_plan(args: argparse.Namespace) -> None:
+def cmd_delete_plan(args: argparse.Namespace) -> int:
     """Delete an entire plan directory."""
     require_valid_plan_id(args)
 
@@ -165,7 +167,7 @@ def cmd_delete_plan(args: argparse.Namespace) -> None:
                 'message': f'Plan directory does not exist: {plan_dir}',
             }
         )
-        sys.exit(1)
+        return 1
 
     # Count files before deletion for audit trail
     files_removed = sum(1 for _ in plan_dir.rglob('*') if _.is_file())
@@ -182,6 +184,7 @@ def cmd_delete_plan(args: argparse.Namespace) -> None:
                 'files_removed': files_removed,
             }
         )
+        return 0
     except PermissionError as e:
         output_toon(
             {
@@ -191,7 +194,7 @@ def cmd_delete_plan(args: argparse.Namespace) -> None:
                 'message': f'Permission denied: {e}',
             }
         )
-        sys.exit(1)
+        return 1
     except Exception as e:
         output_toon(
             {
@@ -201,4 +204,4 @@ def cmd_delete_plan(args: argparse.Namespace) -> None:
                 'message': f'Failed to delete plan directory: {e}',
             }
         )
-        sys.exit(1)
+        return 1

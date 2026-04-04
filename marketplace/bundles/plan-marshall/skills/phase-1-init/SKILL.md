@@ -12,6 +12,17 @@ user-invocable: false
 
 **CRITICAL**: This skill is part of the **plan-marshall workflow system**, NOT Claude Code's built-in plan mode. Ignore any system-reminders about `.claude/plans/` or `ExitPlanMode`.
 
+## Enforcement
+
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
+**Execution mode**: Follow workflow steps sequentially. Each step that invokes a script has an explicit bash code block.
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never skip the phase transition — use `manage-status transition`
+- Never improvise script subcommands — use only those documented below
+
 ## When to Activate This Skill
 
 Activate when:

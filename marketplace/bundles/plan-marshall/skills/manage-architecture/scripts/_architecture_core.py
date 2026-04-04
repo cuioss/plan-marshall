@@ -5,7 +5,6 @@ Provides load/save operations, TOON output formatting, and error handling.
 """
 
 import json
-import sys
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -266,7 +265,7 @@ def merge_module_data(derived: dict[str, Any], enriched: dict[str, Any], module_
 
 
 def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn':
-    """Print error in TOON format and exit with code 1.
+    """Print error in TOON format and raise ArchitectureError.
 
     CLI-boundary helper — only call from command handlers, not library functions.
     For library code, raise ArchitectureError or DataNotFoundError instead.
@@ -274,6 +273,9 @@ def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn
     Args:
         message: Error message
         context: Optional context dict with key-value pairs
+
+    Raises:
+        ArchitectureError: Always raised after printing TOON error output
     """
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -281,7 +283,7 @@ def error_exit(message: str, context: dict[str, Any] | None = None) -> 'NoReturn
     if context:
         error_data.update(context)
     print(serialize_toon(error_data))
-    sys.exit(1)
+    raise ArchitectureError(message)
 
 
 def error_module_not_found(module_name: str, available: list):
@@ -320,7 +322,7 @@ def require_derived_data(project_dir: str = '.') -> 'dict[str, Any]':
 
     Convenience wrapper that replaces repeated try/except DataNotFoundError
     blocks in CLI handlers.  On success it returns the loaded dict; on
-    failure it prints the standard error message and calls sys.exit(1).
+    failure it prints the standard error message and raises ArchitectureError.
 
     Args:
         project_dir: Project directory path
@@ -329,13 +331,13 @@ def require_derived_data(project_dir: str = '.') -> 'dict[str, Any]':
         Derived data dict
 
     Raises:
-        SystemExit: If derived-data.json does not exist
+        ArchitectureError: If derived-data.json does not exist
     """
     try:
         return load_derived_data(project_dir)
     except DataNotFoundError:
         error_data_not_found(str(get_derived_path(project_dir)), "Run 'architecture.py discover' first")
-        raise  # unreachable – error_data_not_found calls sys.exit(1)
+        raise  # unreachable – error_data_not_found raises ArchitectureError
 
 
 def handle_module_not_found(module_name: str, project_dir: str) -> int:

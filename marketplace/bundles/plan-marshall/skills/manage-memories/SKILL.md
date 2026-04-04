@@ -243,7 +243,7 @@ Memory files are created during plan execution to persist session context. The `
 
 - `standards/memory-layer-format.md` - Complete memory file format documentation
 
-## Related Skills
+## Related
 
 - `manage-lessons` — Global lessons learned (complementary persistence)
 - `manage-run-config` — Runtime configuration (complementary persistence)

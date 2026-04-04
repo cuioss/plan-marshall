@@ -358,7 +358,7 @@ Script characteristics:
 
 ---
 
-## Related Skills
+## Related
 
 - `manage-architecture` — Consumes configuration for project analysis
 - `marshall-steward` — Interactive configuration wizard

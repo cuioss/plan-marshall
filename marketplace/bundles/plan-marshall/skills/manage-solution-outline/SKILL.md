@@ -299,7 +299,7 @@ Returns exit code 0 if exists, 1 if not.
 
 ---
 
-## Related Skills
+## Related
 
 - `manage-tasks` — Consumes deliverables from solution outline for task creation
 - `manage-architecture` — Provides module placement data used during outline creation

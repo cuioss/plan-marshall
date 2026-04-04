@@ -230,7 +230,7 @@ next_action	requires_attention
 
 ---
 
-## Related Documents
+## Related
 
 - [Extension API SKILL.md](../SKILL.md) — Extension points overview
 - [extension-contract.md](extension-contract.md) — ExtensionBase contract with profile definitions

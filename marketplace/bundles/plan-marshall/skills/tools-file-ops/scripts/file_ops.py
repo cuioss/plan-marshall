@@ -377,11 +377,11 @@ def output_success(operation: str, **kwargs: Any) -> None:
 
 
 def output_error(operation: str, error: str) -> None:
-    """Print TOON error output to stderr.
+    """Print TOON error output to stderr (canonical low-level variant).
 
-    Args:
-        operation: Name of the operation
-        error: Error message
+    This is the shared base implementation. Domain-specific variants exist in
+    ci_base.py, manage-memory.py, _tasks_core.py, and _documents_core.py.
+    Per manage-contract.md: prefer output_toon_error() for manage-* scripts.
     """
     result = {'status': 'error', 'success': False, 'operation': operation, 'error': error}
     print(serialize_toon(result), file=sys.stderr)

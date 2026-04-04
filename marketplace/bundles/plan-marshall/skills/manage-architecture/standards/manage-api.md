@@ -524,7 +524,7 @@ See the manage-architecture SKILL.md for step-by-step execution instructions.
 
 ---
 
-## Related Documents
+## Related
 
 | Document | Purpose |
 |----------|---------|

@@ -235,7 +235,7 @@ At `6-finalize`:
 | `invalid_resolution` | Resolution not in the valid values |
 | `invalid_phase` | Phase not in 2-refine through 6-finalize |
 
-## Related Skills
+## Related
 
 - `manage-lessons` — Promotion target for bug, improvement, anti-pattern, triage findings
 - `manage-architecture` — Promotion target for tip, insight, best-practice findings (via `enrich` commands)

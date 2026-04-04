@@ -253,7 +253,7 @@ recoverable	{true|false}
 
 ---
 
-## Related Documents
+## Related
 
 - `plan-marshall:phase-1-init/SKILL.md` - Init phase skill
 - `plan-marshall:phase-2-refine/SKILL.md` - Refine phase skill

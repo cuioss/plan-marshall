@@ -1,3 +1,6 @@
+<!-- LLM instruction template for phase-1-init Step 5.
+     plan_id is injected by manage-plan-documents script after creation, not by the LLM.
+     The script template lives in manage-plan-documents/templates/request.md. -->
 # Request: {derived_title}
 
 source: {description|lesson|issue}

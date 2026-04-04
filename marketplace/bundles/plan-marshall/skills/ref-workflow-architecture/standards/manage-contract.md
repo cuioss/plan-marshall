@@ -37,6 +37,8 @@ Recommended patterns for manage-* script implementations:
 - `_cmd_*.py` — Command group handlers (one file per logical group)
 - Entry-point script — Argument parsing and dispatch only
 
+**Boolean arguments**: Use `add_boolean_arg()` from `input_validation` when the script already imports it. Otherwise, the inline pattern `type=lambda x: x.lower() == 'true'` is acceptable for scripts that don't need the full input_validation module.
+
 **Naming conventions**:
 - `_cmd_*.py` prefix for command modules (not `_ref_cmd_*` or other prefixes)
 - `_*_core.py` for shared core module (abbreviated skill name, e.g., `_tasks_core.py`)
@@ -77,7 +79,7 @@ Two accepted SKILL.md templates exist:
 4. Operations (command reference with examples)
 5. Integration (producer/consumer tables)
 6. Error Responses
-7. Related Skills
+7. Related
 
 **Workflow pattern** (manage-architecture, manage-config):
 1. Enforcement (referencing manage-contract.md)
@@ -85,9 +87,9 @@ Two accepted SKILL.md templates exist:
 3. Workflow Steps (sequential numbered steps)
 4. Error Handling
 5. Integration
-6. Related Skills
+6. Related
 
-Both patterns require Enforcement, Integration, and Related Skills sections.
+Both patterns require Enforcement, Integration, and Related sections.
 
 ## Shared Formats
 

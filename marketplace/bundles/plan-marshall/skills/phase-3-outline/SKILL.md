@@ -10,6 +10,18 @@ user-invocable: false
 
 **Prerequisite**: Request must be refined (phase-2-refine completed) with track field set.
 
+## Enforcement
+
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
+**Execution mode**: Follow workflow steps sequentially. Each step that invokes a script has an explicit bash code block.
+
+**Prohibited actions:**
+- Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
+- Never skip the phase transition — use `manage-status transition`
+- Never improvise script subcommands — use only those documented below
+- Never fall back to simple track if complex track fails — return error
+
 ---
 
 ## Two-Track Design
@@ -326,7 +338,7 @@ qgate_pending_count: {0 if no findings}
 
 ---
 
-## Related Documents
+## Related
 
 - [architecture-diagram.md](references/architecture-diagram.md) - Change-type routing architecture (normal plans)
 - [recipe-flow.md](references/recipe-flow.md) - Recipe flow architecture (built-in and custom recipes)

@@ -180,7 +180,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 
 ---
 
-## Related Skills
+## Related
 
 - `manage-config` — Project-level marshal.json configuration (provides retention settings)
 - `manage-lessons` — Complementary global persistence (lessons learned)

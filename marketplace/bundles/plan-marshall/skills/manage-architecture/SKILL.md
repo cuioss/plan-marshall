@@ -336,7 +336,7 @@ Output is consumed by:
 - **solution-outline** Step 0 (module placement)
 - **task-plan** (command resolution)
 
-## Related Skills
+## Related
 
 - `manage-solution-outline` — Consumes architecture data for placement decisions
 - `manage-config` — Project-level configuration used during analysis

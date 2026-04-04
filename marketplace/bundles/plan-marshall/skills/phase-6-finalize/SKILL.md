@@ -12,6 +12,8 @@ user-invocable: false
 
 ## Enforcement
 
+> **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
+
 **Execution mode**: Follow workflow steps sequentially, respecting config gates. Each config-gated step dispatches to a standards/ document.
 
 **Required skill load** (before any operation):
@@ -362,18 +364,11 @@ State checks (for present steps):
 
 ---
 
-## Related Documents
+## Related
 
-| Document | Purpose |
+| Resource | Purpose |
 |----------|---------|
 | [references/workflow-overview.md](references/workflow-overview.md) | Visual diagrams: 6-Phase Model and Shipping Pipeline |
-
----
-
-## Related Skills
-
-| Skill | Purpose |
-|-------|---------|
 | `plan-marshall:dev-general-practices` | Bash safety rules, tool usage patterns |
 | `plan-marshall:workflow-integration-git` | Commit, push workflow |
 | `plan-marshall:tools-integration-ci` | PR operations, CI status |

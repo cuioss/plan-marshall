@@ -320,7 +320,7 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 | `manage-logging.py` | `plan-marshall:manage-logging:manage-logging` | CLI for logging operations (write and read) |
 | `plan_logging.py` | - | Python module (imported, not executed) |
 
-## Related Skills
+## Related
 
 - `manage-status` — Phase tracking that logging augments
 - `manage-metrics` — Metric data that complements work logs

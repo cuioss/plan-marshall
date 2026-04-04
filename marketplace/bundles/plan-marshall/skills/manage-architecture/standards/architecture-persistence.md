@@ -478,7 +478,7 @@ Documentation findings feed into `llm-enriched.json`:
 
 ---
 
-## Related Documents
+## Related
 
 | Document | Purpose |
 |----------|---------|

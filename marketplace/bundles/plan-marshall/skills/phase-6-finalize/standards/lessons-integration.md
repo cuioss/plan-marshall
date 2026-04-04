@@ -104,7 +104,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-6-finalize) Captured {count} lessons"
 ```
 
-## Related Skills
+## Related
 
 - `plan-marshall:manage-lessons` - Lessons storage and query
 - `plan-marshall:manage-memories` - Knowledge/memory capture (Step 6)

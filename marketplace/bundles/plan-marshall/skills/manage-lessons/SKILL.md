@@ -272,7 +272,7 @@ created_from: error_context
 | `plugin-apply-lessons-learned` | list, update | Apply lessons to marketplace components |
 | `phase-6-finalize` | list | Query unapplied lessons for promotion |
 
-## Related Skills
+## Related
 
 - `manage-findings` — Findings promoted to lessons at 6-finalize
 - `manage-memories` — Complementary global persistence (session context)

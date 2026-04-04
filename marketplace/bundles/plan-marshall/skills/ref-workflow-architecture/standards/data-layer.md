@@ -253,7 +253,20 @@ All manage-* skills share:
 
 ---
 
-## Related Documents
+## Path Construction Convention
+
+All plan-scoped path resolution follows a consistent pattern:
+
+- **Canonical factory**: `file_ops.get_plan_dir(plan_id)` returns `.plan/plans/{plan_id}/`
+- **Artifact paths**: Each manage-* module defines its own `get_*_path(plan_id)` function that delegates to `get_plan_dir(plan_id) / CONSTANT`
+- **Project-scoped paths**: Use `file_ops.get_base_dir()` for `.plan/` root
+- **Environment override**: `PLAN_BASE_DIR` env var overrides `.plan/` root (used in tests)
+
+Thin wrappers (e.g., `plan_logging.get_plan_base_dir()`, `_status_core.get_plans_dir()`) that delegate to file_ops are acceptable. Direct reimplementation of `PLAN_BASE_DIR` logic is avoided except in `bootstrap_plugin.py` which runs before the executor sets up PYTHONPATH.
+
+---
+
+## Related
 
 | Document | Purpose |
 |----------|---------|

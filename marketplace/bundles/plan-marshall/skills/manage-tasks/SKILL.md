@@ -319,7 +319,7 @@ If a deliverable has no Verification section, the task is created without `verif
 
 ---
 
-## Related Skills
+## Related
 
 - `manage-solution-outline` — Source of deliverables that tasks reference
 - `manage-status` — Plan lifecycle tracking; phase transitions gate task execution

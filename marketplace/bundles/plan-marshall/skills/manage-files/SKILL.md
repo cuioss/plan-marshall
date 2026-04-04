@@ -252,7 +252,7 @@ domain: java
 | manage-tasks | tasks/*.toon | N/A (use manage-tasks) |
 | manage-files | any other file | Generic read/write/list |
 
-## Related Skills
+## Related
 
 - `manage-plan-documents` — Typed plan document operations (request.md)
 - `manage-references` — Reference tracking for plans (references.json)

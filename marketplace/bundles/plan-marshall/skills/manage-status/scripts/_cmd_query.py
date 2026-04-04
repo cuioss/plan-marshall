@@ -4,7 +4,6 @@ Query command handlers for manage-status: read, progress, metadata, get-context,
 """
 
 import argparse
-import sys
 from typing import Any
 
 from _status_core import (
@@ -18,13 +17,14 @@ from _status_core import (
 from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS  # type: ignore[import-not-found]
 
 
-def cmd_read(args: argparse.Namespace) -> None:
+def cmd_read(args: argparse.Namespace) -> int:
     """Read plan status."""
     status = require_status(args)
     output_toon({'status': 'success', 'plan_id': args.plan_id, 'plan': status})
+    return 0
 
 
-def cmd_set_phase(args: argparse.Namespace) -> None:
+def cmd_set_phase(args: argparse.Namespace) -> int:
     """Set current phase."""
     status = require_status(args)
 
@@ -39,7 +39,7 @@ def cmd_set_phase(args: argparse.Namespace) -> None:
                 'valid_phases': phase_names,
             }
         )
-        sys.exit(1)
+        return 1
 
     previous = status.get('current_phase')
     status['current_phase'] = args.phase
@@ -53,9 +53,10 @@ def cmd_set_phase(args: argparse.Namespace) -> None:
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Phase: {previous} -> {args.phase}')
 
     output_toon({'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous})
+    return 0
 
 
-def cmd_update_phase(args: argparse.Namespace) -> None:
+def cmd_update_phase(args: argparse.Namespace) -> int:
     """Update a specific phase status."""
     status = require_status(args)
 
@@ -75,14 +76,15 @@ def cmd_update_phase(args: argparse.Namespace) -> None:
                 'message': f"Phase '{args.phase}' not found",
             }
         )
-        sys.exit(1)
+        return 1
 
     write_status(args.plan_id, status)
 
     output_toon({'status': 'success', 'plan_id': args.plan_id, 'phase': args.phase, 'phase_status': args.status})
+    return 0
 
 
-def cmd_progress(args: argparse.Namespace) -> None:
+def cmd_progress(args: argparse.Namespace) -> int:
     """Calculate plan progress."""
     status = require_status(args)
 
@@ -103,9 +105,10 @@ def cmd_progress(args: argparse.Namespace) -> None:
             },
         }
     )
+    return 0
 
 
-def cmd_metadata(args: argparse.Namespace) -> None:
+def cmd_metadata(args: argparse.Namespace) -> int:
     """Get or set a metadata field in status.json."""
     status = require_status(args)
 
@@ -129,6 +132,7 @@ def cmd_metadata(args: argparse.Namespace) -> None:
         if previous_value is not None:
             result['previous_value'] = previous_value
         output_toon(result)
+        return 0
 
     elif args.get:
         # Get metadata
@@ -145,7 +149,7 @@ def cmd_metadata(args: argparse.Namespace) -> None:
                     'available_fields': list(metadata.keys()),
                 }
             )
-            return
+            return 0
 
         output_toon(
             {
@@ -155,6 +159,7 @@ def cmd_metadata(args: argparse.Namespace) -> None:
                 'value': value,
             }
         )
+        return 0
 
     else:
         output_toon(
@@ -165,10 +170,10 @@ def cmd_metadata(args: argparse.Namespace) -> None:
                 'message': 'Either --get or --set is required',
             }
         )
-        sys.exit(1)
+        return 1
 
 
-def cmd_get_context(args: argparse.Namespace) -> None:
+def cmd_get_context(args: argparse.Namespace) -> int:
     """Get combined status context (phase, progress, metadata)."""
     status = require_status(args)
 
@@ -192,14 +197,15 @@ def cmd_get_context(args: argparse.Namespace) -> None:
         context[key] = value
 
     output_toon(context)
+    return 0
 
 
-def cmd_list(args: argparse.Namespace) -> None:
+def cmd_list(args: argparse.Namespace) -> int:
     """Discover all plans."""
     plans_dir = get_plans_dir()
     if not plans_dir.exists():
         output_toon({'status': 'success', 'total': 0, 'plans': []})
-        return
+        return 0
 
     plans = []
     for plan_dir in sorted(plans_dir.iterdir()):
@@ -226,3 +232,4 @@ def cmd_list(args: argparse.Namespace) -> None:
             continue
 
     output_toon({'status': 'success', 'total': len(plans), 'plans': plans})
+    return 0
