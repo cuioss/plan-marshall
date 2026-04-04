@@ -691,12 +691,13 @@ class TestProviderContract(unittest.TestCase):
 
     def test_get_current_pr_number_handles_no_provider(self):
         """Test that get_current_pr_number returns None when provider unavailable."""
+        from unittest.mock import patch
+
         from pr import get_current_pr_number  # type: ignore[import-not-found]
 
-        # In test environment, CI provider is typically not configured
-        result = get_current_pr_number()
-        # Should return None gracefully, not raise
-        self.assertIsNone(result)
+        with patch('pr._get_provider_module', return_value=None):
+            result = get_current_pr_number()
+            self.assertIsNone(result)
 
     def test_fetch_comments_returns_structured_error_on_failure(self):
         """Test that fetch_comments returns structured error dict, not exception."""
