@@ -155,10 +155,7 @@ Categorize each issue as safe or risky per `references/fix-catalog.md`. Safe fix
    Compare issue counts before and after to verify resolution.
 
 2. **Generate Summary**
-   ```
-   Read references/reporting-templates.md
-   ```
-   Use summary template with metrics.
+   Generate a cross-bundle summary report with metrics: bundles processed, total components, issues by severity (clean/warnings/critical), fixes applied (safe/risky), and per-bundle breakdown.
 
 ---
 
@@ -257,10 +254,8 @@ Loaded per workflow via Progressive Disclosure table above. Key files:
 - `rule-catalog.md` - Rule definitions for all validated rules
 - `llm-optimization-guide.md` - Cross-cutting LLM optimization patterns
 - `fix-catalog.md`, `safe-fixes-guide.md`, `risky-fixes-guide.md`, `verification-guide.md` - Fix workflow
-- `plan-marshall-plugin-validation.md` - Domain manifest validation
-- Per-component guides: `agents-guide.md`, `commands-guide.md`, `skills-guide.md`, `metadata-guide.md`, `plan-marshall-guide.md`
+- Per-component guides: `agents-guide.md`, `commands-guide.md`, `skills-guide.md`, `metadata-guide.md`, `plan-marshall-guide.md` (includes extension validation)
 - Content analysis: `content-classification-guide.md`, `content-quality-guide.md`
-- `reporting-templates.md` - Summary report templates
 
 ### Assets (assets/)
 

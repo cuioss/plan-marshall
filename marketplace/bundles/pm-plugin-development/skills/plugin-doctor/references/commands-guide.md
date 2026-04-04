@@ -4,6 +4,8 @@ Commands are user-facing orchestrators invoked via `/command-name`. They coordin
 
 **Architecture**: Command (thin wrapper, ~50-100 lines) → Skill (workflow logic) → Script (computational logic).
 
+> **Cross-references**: For command creation workflow, see `plugin-create:command-guide`. For the full thin orchestrator pattern, see `plugin-architecture:minimal-wrapper-pattern`.
+
 ## Required Structure
 
 Commands are pure Markdown (no YAML frontmatter). Required sections:

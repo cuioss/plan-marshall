@@ -45,7 +45,11 @@ entries_added	3
 python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine-mode.py check-docs
 ```
 
-Load and follow: `Read references/shared-doc-check.md`
+Interpret the output:
+- `status: ok` → No action needed, continue.
+- `status: needs_update` → Apply fixes for each missing marker:
+  - `plan_temp` → Append to listed file: `- Use .plan/temp/ for ALL temporary files (covered by Write(.plan/**) permission - avoids permission prompts)`
+  - `file_ops` → Append to CLAUDE.md: `- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead`
 
 ---
 

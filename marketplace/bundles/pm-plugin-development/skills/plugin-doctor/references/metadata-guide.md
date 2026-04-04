@@ -2,6 +2,8 @@
 
 Standards for plugin.json schema validation, component inventory, and bundle structure compliance.
 
+> **Cross-references**: For component frontmatter (YAML in agents/commands/skills), see `plugin-architecture:frontmatter-standards`. This guide covers only `plugin.json` bundle metadata.
+
 ## Overview
 
 Metadata files (plugin.json) define marketplace bundles and their components (agents, commands, skills). Proper metadata ensures components are discoverable and correctly configured.

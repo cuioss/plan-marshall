@@ -137,10 +137,10 @@ def test_core_has_workflow_skills():
     core_skills = data.get('core', {}).get('skills', [])
     skill_names = [s['name'] for s in core_skills]
 
-    # Should have task-* skills for workflow execution
-    # Note: workflow-integration-* skills exist but aren't matched by inventory patterns
+    # Should have task-executor skill for workflow execution
     task_skills = [s for s in skill_names if s.startswith('task-')]
-    assert len(task_skills) >= 2, f'Should have at least 2 task-* skills, found {len(task_skills)}'
+    assert len(task_skills) >= 1, f'Should have at least 1 task-* skill, found {len(task_skills)}'
+    assert 'task-executor' in skill_names, 'Should have task-executor skill'
 
 
 def test_core_has_user_invocable_skills():
@@ -153,7 +153,7 @@ def test_core_has_user_invocable_skills():
 
     # Commands were absorbed into skills - verify key user-facing skills exist
     skill_names = [s['name'] for s in core_skills]
-    expected_skills = ['task-standalone', 'workflow-pr-doctor', 'plan-marshall']
+    expected_skills = ['task-executor', 'workflow-pr-doctor', 'plan-marshall']
     for expected in expected_skills:
         assert expected in skill_names, f'Should have {expected} skill'
 

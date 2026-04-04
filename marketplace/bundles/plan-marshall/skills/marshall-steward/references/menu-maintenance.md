@@ -161,7 +161,16 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 
 ## Update Project Documentation (if needed)
 
-Load and follow `Read references/shared-doc-check.md`
+Run check-docs:
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine-mode check-docs
+```
+
+Interpret the output:
+- `status: ok` → No action needed.
+- `status: needs_update` → Apply fixes for each missing marker:
+  - `plan_temp` → Append to listed file: `- Use .plan/temp/ for ALL temporary files (covered by Write(.plan/**) permission - avoids permission prompts)`
+  - `file_ops` → Append to CLAUDE.md: `- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead`
 
 ---
 

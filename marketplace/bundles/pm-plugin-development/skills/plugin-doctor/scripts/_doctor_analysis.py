@@ -102,42 +102,50 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             # Check for unsupported allowed-tools field
             tools_info = required.get('tools', {})
             if tools_info.get('present'):
-                issues.append({
-                    'type': 'unsupported-skill-tools-field',
-                    'file': file_path,
-                    'severity': 'warning',
-                    'fixable': True,
-                    'description': f'Skill declares unsupported `{tools_info.get("field_type")}` field (not in plugin schema)',
-                })
+                issues.append(
+                    {
+                        'type': 'unsupported-skill-tools-field',
+                        'file': file_path,
+                        'severity': 'warning',
+                        'fixable': True,
+                        'description': f'Skill declares unsupported `{tools_info.get("field_type")}` field (not in plugin schema)',
+                    }
+                )
             # Check for misspelled user-invokable (should be user-invocable)
             if user_inv.get('misspelled') and not user_inv.get('present'):
-                issues.append({
-                    'type': 'misspelled-user-invocable',
-                    'file': file_path,
-                    'severity': 'warning',
-                    'fixable': True,
-                    'description': 'Skill uses `user-invokable` (misspelled) — should be `user-invocable`',
-                })
+                issues.append(
+                    {
+                        'type': 'misspelled-user-invocable',
+                        'file': file_path,
+                        'severity': 'warning',
+                        'fixable': True,
+                        'description': 'Skill uses `user-invokable` (misspelled) — should be `user-invocable`',
+                    }
+                )
             # Check for missing user-invocable entirely
             elif not user_inv.get('present') and not user_inv.get('misspelled'):
-                issues.append({
-                    'type': 'missing-user-invocable',
-                    'file': file_path,
-                    'severity': 'warning',
-                    'fixable': True,
-                    'description': 'Skill missing required `user-invocable` field',
-                })
+                issues.append(
+                    {
+                        'type': 'missing-user-invocable',
+                        'file': file_path,
+                        'severity': 'warning',
+                        'fixable': True,
+                        'description': 'Skill missing required `user-invocable` field',
+                    }
+                )
 
             # Check for invokable value vs content-mode mismatch
             content_mode = analysis.get('content_mode', {})
             if user_inv.get('present') and user_inv.get('value') is True and content_mode.get('is_reference'):
-                issues.append({
-                    'type': 'skill-invokable-mismatch',
-                    'file': file_path,
-                    'severity': 'warning',
-                    'fixable': True,
-                    'description': 'Skill declares REFERENCE MODE but has `user-invocable: true` — reference skills should be `false`',
-                })
+                issues.append(
+                    {
+                        'type': 'skill-invokable-mismatch',
+                        'file': file_path,
+                        'severity': 'warning',
+                        'fixable': True,
+                        'description': 'Skill declares REFERENCE MODE but has `user-invocable: true` — reference skills should be `false`',
+                    }
+                )
 
     # Check rule violations
     rules = analysis.get('rules', {})
@@ -331,32 +339,40 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
 
             issues: list[dict] = []
             if bloat_class in ('CRITICAL', 'BLOATED'):
-                issues.append({
-                    'type': 'subdoc-bloat',
-                    'classification': bloat_class,
-                    'line_count': line_count,
-                })
+                issues.append(
+                    {
+                        'type': 'subdoc-bloat',
+                        'classification': bloat_class,
+                        'line_count': line_count,
+                    }
+                )
             if has_forbidden:
-                issues.append({
-                    'type': 'subdoc-forbidden-metadata',
-                    'sections': forbidden_sections,
-                })
+                issues.append(
+                    {
+                        'type': 'subdoc-forbidden-metadata',
+                        'sections': forbidden_sections,
+                    }
+                )
 
             # Hardcoded script paths
             if re.search(r'python3 .*/scripts/|bash .*/scripts/|\{[^}]+\}/scripts/', content):
                 if not re.search(r'Skill:.*script-runner', content):
-                    issues.append({
-                        'type': 'subdoc-hardcoded-script-path',
-                    })
+                    issues.append(
+                        {
+                            'type': 'subdoc-hardcoded-script-path',
+                        }
+                    )
 
             # Checklist patterns
             checklist_info = check_checklist_patterns(content, str(md_file))
             if checklist_info['has_checklists']:
-                issues.append({
-                    'type': 'subdoc-checklist-pattern',
-                    'count': checklist_info['count'],
-                    'sections': checklist_info.get('sections', []),
-                })
+                issues.append(
+                    {
+                        'type': 'subdoc-checklist-pattern',
+                        'count': checklist_info['count'],
+                        'sections': checklist_info.get('sections', []),
+                    }
+                )
 
             if issues:
                 entry['issues'] = issues
@@ -375,40 +391,48 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
             file_path = subdoc['path']
 
             if issue['type'] == 'subdoc-bloat':
-                issues.append({
-                    'type': 'subdoc-bloat',
-                    'file': file_path,
-                    'severity': 'warning' if issue['classification'] == 'BLOATED' else 'error',
-                    'fixable': False,
-                    'classification': issue['classification'],
-                    'line_count': issue['line_count'],
-                    'description': f'Sub-document bloat ({issue["classification"]}, {issue["line_count"]} lines)',
-                })
+                issues.append(
+                    {
+                        'type': 'subdoc-bloat',
+                        'file': file_path,
+                        'severity': 'warning' if issue['classification'] == 'BLOATED' else 'error',
+                        'fixable': False,
+                        'classification': issue['classification'],
+                        'line_count': issue['line_count'],
+                        'description': f'Sub-document bloat ({issue["classification"]}, {issue["line_count"]} lines)',
+                    }
+                )
             elif issue['type'] == 'subdoc-forbidden-metadata':
-                issues.append({
-                    'type': 'subdoc-forbidden-metadata',
-                    'file': file_path,
-                    'severity': 'warning',
-                    'fixable': True,
-                    'description': f'Forbidden metadata sections: {issue["sections"]}',
-                })
+                issues.append(
+                    {
+                        'type': 'subdoc-forbidden-metadata',
+                        'file': file_path,
+                        'severity': 'warning',
+                        'fixable': True,
+                        'description': f'Forbidden metadata sections: {issue["sections"]}',
+                    }
+                )
             elif issue['type'] == 'subdoc-hardcoded-script-path':
-                issues.append({
-                    'type': 'subdoc-hardcoded-script-path',
-                    'file': file_path,
-                    'severity': 'warning',
-                    'fixable': False,
-                    'description': 'Hardcoded script path in sub-document',
-                })
+                issues.append(
+                    {
+                        'type': 'subdoc-hardcoded-script-path',
+                        'file': file_path,
+                        'severity': 'warning',
+                        'fixable': False,
+                        'description': 'Hardcoded script path in sub-document',
+                    }
+                )
             elif issue['type'] == 'subdoc-checklist-pattern':
-                issues.append({
-                    'type': 'subdoc-checklist-pattern',
-                    'file': file_path,
-                    'severity': 'warning',
-                    'fixable': True,
-                    'description': f'Checkbox patterns in sub-document ({issue["count"]} items)',
-                    'count': issue['count'],
-                    'sections': issue.get('sections', []),
-                })
+                issues.append(
+                    {
+                        'type': 'subdoc-checklist-pattern',
+                        'file': file_path,
+                        'severity': 'warning',
+                        'fixable': True,
+                        'description': f'Checkbox patterns in sub-document ({issue["count"]} items)',
+                        'count': issue['count'],
+                        'sections': issue.get('sections', []),
+                    }
+                )
 
     return issues

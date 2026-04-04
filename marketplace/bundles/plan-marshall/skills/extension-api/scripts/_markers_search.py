@@ -16,7 +16,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-from toon_parser import serialize_toon
+from toon_parser import serialize_toon  # noqa: E402
 
 # Pattern for OpenRewrite TODO markers
 MARKER_PATTERN = re.compile(r'/\*~~\(TODO:\s*(.+?)\)>\*/')

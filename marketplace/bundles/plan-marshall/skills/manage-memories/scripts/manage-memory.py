@@ -12,14 +12,23 @@ import argparse
 import json
 import re
 import warnings
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from constants import DIR_MEMORIES  # type: ignore[import-not-found]
-from file_ops import base_path, now_utc_iso, output_success as _output_success, output_toon, output_toon_error, read_json, safe_main, write_json  # type: ignore[import-not-found]
-from file_ops import parse_duration  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    base_path,
+    now_utc_iso,
+    output_toon,
+    output_toon_error,
+    parse_duration,  # type: ignore[import-not-found]
+    read_json,
+    safe_main,
+    write_json,
+)
+from file_ops import output_success as _output_success
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
@@ -62,7 +71,8 @@ def create_memory_envelope(category: str, identifier: str, content: Any, session
 
 def read_memory_file(file_path: Path) -> dict:
     """Read and parse a memory file."""
-    return read_json(file_path)
+    result: dict = read_json(file_path)
+    return result
 
 
 def write_memory_file(file_path: Path, data: dict) -> None:
@@ -153,7 +163,7 @@ def cmd_list(args) -> int:
         if args.category:
             categories = [args.category]
         else:
-            categories = CATEGORIES
+            categories = list(CATEGORIES)
 
         for category in categories:
             cat_path = MEMORY_BASE / category
@@ -253,13 +263,15 @@ def cmd_cleanup(args) -> int:
                         removed.append(str(file_path))
 
         status = 'dry_run' if dry_run else 'success'
-        output_toon({
-            'status': status,
-            'operation': 'cleanup',
-            'older_than': args.older_than,
-            'removed_count': len(removed),
-            'removed': removed,
-        })
+        output_toon(
+            {
+                'status': status,
+                'operation': 'cleanup',
+                'older_than': args.older_than,
+                'removed_count': len(removed),
+                'removed': removed,
+            }
+        )
         return 0
     except Exception as e:
         output_error('cleanup', str(e))
@@ -425,7 +437,9 @@ Examples:
     p_cleanup.add_argument(
         '--older-than', required=True, dest='older_than', help='Remove files older than (e.g., 7d, 24h)'
     )
-    p_cleanup.add_argument('--dry-run', action='store_true', dest='dry_run', help='Show what would be removed without removing')
+    p_cleanup.add_argument(
+        '--dry-run', action='store_true', dest='dry_run', help='Show what would be removed without removing'
+    )
     p_cleanup.set_defaults(func=cmd_cleanup)
 
     # validate command

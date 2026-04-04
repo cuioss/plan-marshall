@@ -68,11 +68,9 @@ RISKY_FIX_TYPES = {
     'agent-lessons-via-skill',
     'backup-file-pattern',
     'ci-rule-self-update',
-
     'subdoc-hardcoded-script-path',
     'skill-invokable-mismatch',
 }
-
 
 
 # =============================================================================

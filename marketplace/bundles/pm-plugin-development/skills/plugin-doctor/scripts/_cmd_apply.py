@@ -98,7 +98,12 @@ def apply_missing_field_fix(file_path: Path, fix: dict, templates: dict) -> dict
     if frontmatter_end == -1:
         return {'success': False, 'error': 'Invalid frontmatter structure'}
 
-    defaults = {'name': file_path.stem, 'description': '[Description needed]', 'tools': 'Read', 'user-invocable': 'false'}
+    defaults = {
+        'name': file_path.stem,
+        'description': '[Description needed]',
+        'tools': 'Read',
+        'user-invocable': 'false',
+    }
     default_value = defaults.get(field_name, '[Value needed]')
 
     new_line = f'{field_name}: {default_value}'

@@ -4,6 +4,8 @@ Agents are specialized execution units invoked via Task tool by commands. They e
 
 **Key constraints**: Cannot invoke other agents (Task unavailable at runtime). Cannot invoke commands (SlashCommand unavailable).
 
+> **Cross-references**: For agent creation workflow, see `plugin-create:agent-guide`. For architecture principles, see `plugin-architecture:execution-directive`.
+
 ## Required Frontmatter
 
 ```yaml

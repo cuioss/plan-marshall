@@ -25,7 +25,7 @@ from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
-from _build_parse import Issue, UnitTestSummary
+from _build_parse import Issue, UnitTestSummary  # noqa: E402
 
 ParserResult = tuple[list[Issue], UnitTestSummary | None, str]
 ParserFn = Callable[[str], ParserResult]
@@ -41,6 +41,7 @@ class DetectionRule(NamedTuple):
         content_check: Function to detect tool from log content, or None.
         parser: Parser function that processes the log file.
     """
+
     tool: str
     command_patterns: tuple[str, ...]
     content_check: ContentCheckFn | None

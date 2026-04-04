@@ -45,9 +45,9 @@ import sys
 
 # Direct imports from same directory (local imports)
 from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 from plan_logging import get_log_path, list_recent_work, log_entry, log_separator, read_decision_log, read_work_log
-from file_ops import output_toon, safe_main
 
 VALID_TYPES = VALID_LOG_TYPES
 VALID_LEVELS = VALID_LOG_LEVELS
@@ -126,6 +126,7 @@ def handle_write(args: argparse.Namespace) -> int | None:
     except Exception as e:
         output_toon({'status': 'error', 'error': 'write_failed', 'message': str(e)})
         return 1
+    return None
 
 
 def _add_write_args(parser: argparse.ArgumentParser) -> None:

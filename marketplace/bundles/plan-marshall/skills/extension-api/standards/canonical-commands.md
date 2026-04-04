@@ -2,6 +2,8 @@
 
 Defines the standard command names that extensions return in `discover_modules()` output.
 
+> **Authoritative source**: The `CMD_*` constants and `CANONICAL_COMMANDS` dict in `extension_base.py` are the runtime source of truth. This document provides resolution logic and human-readable descriptions.
+
 ## Purpose
 
 Canonical commands provide a **build-system-agnostic vocabulary** for common development operations. Extensions map these canonical names to build-system-specific invocations.

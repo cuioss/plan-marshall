@@ -71,10 +71,13 @@ def get_fix_suggestion(rule: str, message: str, file: str, line: int) -> str:
     return f'{suggestion} at {file}:{line}'
 
 
-_SUPPRESSION_SYNTAX: dict[str, str] = _RULES_CONFIG.get('suppression_syntax', {
-    'python': '# NOSONAR {rule} - {reason}',
-    'default': '// NOSONAR {rule} - {reason}',
-})
+_SUPPRESSION_SYNTAX: dict[str, str] = _RULES_CONFIG.get(
+    'suppression_syntax',
+    {
+        'python': '# NOSONAR {rule} - {reason}',
+        'default': '// NOSONAR {rule} - {reason}',
+    },
+)
 
 
 def get_suppression_string(rule: str, reason: str, file: str = '') -> str:
@@ -87,7 +90,9 @@ def get_suppression_string(rule: str, reason: str, file: str = '') -> str:
     lang = None
     if file.endswith('.py') or rule.startswith('python:'):
         lang = 'python'
-    template = _SUPPRESSION_SYNTAX.get(lang or 'default', _SUPPRESSION_SYNTAX.get('default', '// NOSONAR {rule} - {reason}'))
+    template = _SUPPRESSION_SYNTAX.get(
+        lang or 'default', _SUPPRESSION_SYNTAX.get('default', '// NOSONAR {rule} - {reason}')
+    )
     return template.format(rule=rule, reason=reason)
 
 
@@ -150,7 +155,7 @@ def triage_issue(issue: dict) -> dict:
             'reason': suppress_reason,
             'priority': 'low',
             'suggested_implementation': None,
-            'suppression_string': get_suppression_string(rule, suppress_reason, file),
+            'suppression_string': get_suppression_string(rule, suppress_reason or '', file),
             'status': 'success',
         }
 

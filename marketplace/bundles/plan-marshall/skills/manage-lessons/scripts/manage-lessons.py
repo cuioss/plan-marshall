@@ -20,7 +20,13 @@ from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
 from constants import DIR_ARCHIVED_LESSONS, DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
-from file_ops import atomic_write_file, base_path, output_toon, parse_markdown_metadata, safe_main  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    atomic_write_file,
+    base_path,
+    output_toon,
+    parse_markdown_metadata,
+    safe_main,
+)
 
 VALID_CATEGORIES = LESSON_CATEGORIES
 
@@ -377,7 +383,8 @@ def main() -> int:
     from_error_parser.set_defaults(func=cmd_from_error)
 
     args = parser.parse_args()
-    return args.func(args)
+    result: int = args.func(args)
+    return result
 
 
 if __name__ == '__main__':

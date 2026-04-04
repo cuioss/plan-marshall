@@ -234,3 +234,49 @@ API references in documentation sections (not workflow steps) may be acceptable 
 5. **Scan full text**: Apply PM-002
 6. **Check frontmatter**: Apply PM-005/PM-006 if `implements:` present
 7. **Report findings** with severity and fix guidance
+
+## plan-marshall-plugin Extension Validation
+
+Applies when doctoring a skill where `name` equals `plan-marshall-plugin` and contains an `extension.py` implementing the Extension API.
+
+### Validation Script
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate extension \
+  --bundle {bundle_name}
+```
+
+Extract bundle name from skill path: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin`
+
+### Required Functions
+
+| Function | Description | Fix Type |
+|----------|-------------|----------|
+| `get_skill_domains()` | Domain metadata with profiles | Safe |
+
+### Optional Functions
+
+| Function | Description | Fix Type |
+|----------|-------------|----------|
+| `discover_modules()` | Project module discovery | Safe |
+| `config_defaults()` | Project configuration defaults | Safe |
+| `provides_triage()` | Triage skill reference | Risky |
+| `provides_outline_skill()` | Domain-specific outline skill reference | Risky |
+
+### Profile Structure
+
+`get_skill_domains()` must return objects with:
+- `domain.key` — Domain identifier (kebab-case)
+- `domain.name` — Human-readable name
+- `profiles.core` — Core profile (required)
+- Each profile has `defaults` and `optionals` arrays
+
+Valid profile names: `core` (required), `implementation`, `testing`, `quality`.
+
+### Integration with doctor-skills
+
+When `skill-name` matches `plan-marshall-plugin`:
+
+1. **Standard analysis**: Run `analyze.py structure` + `analyze.py markdown` + `validate.py references`
+2. **Extension validation**: Run extension validation script (see above)
+3. **Report**: Include extension validation status, categorize as safe/risky, auto-apply safe fixes

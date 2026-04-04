@@ -54,9 +54,6 @@ import sys
 from typing import Any
 
 from ci_base import (  # type: ignore[import-not-found]
-    CI_LOG_TRUNCATE_LINES,
-    DEFAULT_CI_INTERVAL,
-    DEFAULT_CI_TIMEOUT,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
@@ -72,15 +69,16 @@ from ci_base import (  # type: ignore[import-not-found]
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
-
 # ---------------------------------------------------------------------------
 # CLI wrappers
 # ---------------------------------------------------------------------------
 
+
 def run_gh(args: list[str], capture_json: bool = False, timeout: int = 60) -> tuple[int, str, str]:
     """Run gh CLI command and return (returncode, stdout, stderr)."""
     return run_cli(
-        'gh', args,
+        'gh',
+        args,
         capture_json=capture_json,
         timeout=timeout,
         not_found_msg='gh CLI not found. Install from https://cli.github.com/',
@@ -95,6 +93,7 @@ def check_auth() -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Provider-specific helpers
 # ---------------------------------------------------------------------------
+
 
 def get_repo_info() -> tuple[str | None, str | None]:
     """Get owner and repo name from git remote URL.
@@ -141,6 +140,7 @@ def run_graphql(query: str, variables: dict) -> tuple[int, dict | None, str]:
 # Command handlers
 # ---------------------------------------------------------------------------
 
+
 def cmd_pr_create(args: argparse.Namespace) -> int:
     """Handle 'pr create' subcommand."""
     # Check auth
@@ -181,12 +181,17 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
             pass
 
     # Output TOON
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_create',
-        'pr_number': pr_number,
-        'pr_url': pr_url,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_create',
+                'pr_number': pr_number,
+                'pr_url': pr_url,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -201,16 +206,30 @@ def view_pr_data() -> dict:
         return {'status': 'error', 'operation': 'pr_view', 'error': err}
 
     returncode, stdout, stderr = run_gh(
-        ['pr', 'view', '--json',
-         'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision']
+        [
+            'pr',
+            'view',
+            '--json',
+            'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision',
+        ]
     )
     if returncode != 0:
-        return {'status': 'error', 'operation': 'pr_view', 'error': 'No PR found for current branch', 'context': stderr.strip()}
+        return {
+            'status': 'error',
+            'operation': 'pr_view',
+            'error': 'No PR found for current branch',
+            'context': stderr.strip(),
+        }
 
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return {'status': 'error', 'operation': 'pr_view', 'error': 'Failed to parse gh output', 'context': stdout[:100]}
+        return {
+            'status': 'error',
+            'operation': 'pr_view',
+            'error': 'Failed to parse gh output',
+            'context': stdout[:100],
+        }
 
     return {
         'status': 'success',
@@ -232,7 +251,9 @@ def cmd_pr_view(args: argparse.Namespace) -> int:
     """Handle 'pr view' subcommand - get PR for current branch."""
     result = view_pr_data()
     if result.get('status') != 'success':
-        return output_error(result.get('operation', 'pr_view'), result.get('error', 'Unknown error'), result.get('context', ''))
+        return output_error(
+            result.get('operation', 'pr_view'), result.get('error', 'Unknown error'), result.get('context', '')
+        )
     print(serialize_toon(result, table_separator='\t'))
     return 0
 
@@ -244,9 +265,12 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
         return output_error('pr_list', err)
 
     gh_args = [
-        'pr', 'list',
-        '--json', 'number,url,title,state,headRefName,baseRefName',
-        '--state', args.state,
+        'pr',
+        'list',
+        '--json',
+        'number,url,title,state,headRefName,baseRefName',
+        '--state',
+        args.state,
     ]
     if args.head:
         gh_args.extend(['--head', args.head])
@@ -271,14 +295,19 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
         }
         for pr in prs
     ]
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_list',
-        'total': len(prs),
-        'state_filter': args.state,
-        'head_filter': args.head or '',
-        'prs': pr_list,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_list',
+                'total': len(prs),
+                'state_filter': args.state,
+                'head_filter': args.head or '',
+                'prs': pr_list,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -318,11 +347,16 @@ def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
     if returncode != 0 or data is None:
         return output_error('pr_resolve_thread', f'Failed to resolve thread: {err}')
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_resolve_thread',
-        'thread_id': args.thread_id,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_resolve_thread',
+                'thread_id': args.thread_id,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -353,12 +387,17 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> int:
     if returncode != 0 or data is None:
         return output_error('pr_thread_reply', f'Failed to reply to thread: {err}')
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_thread_reply',
-        'pr_number': args.pr_number,
-        'thread_id': args.thread_id,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_thread_reply',
+                'pr_number': args.pr_number,
+                'thread_id': args.thread_id,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -390,13 +429,18 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
         }
         for r in reviews
     ]
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_reviews',
-        'pr_number': args.pr_number,
-        'review_count': len(reviews),
-        'reviews': review_list,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_reviews',
+                'pr_number': args.pr_number,
+                'review_count': len(reviews),
+                'reviews': review_list,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -513,7 +557,9 @@ def cmd_pr_comments(args: argparse.Namespace) -> int:
     """Handle 'pr comments' subcommand - fetch inline code review comments."""
     result = fetch_pr_comments_data(args.pr_number, args.unresolved_only)
     if result.get('status') != 'success':
-        return output_error(result.get('operation', 'pr_comments'), result.get('error', 'Unknown error'), result.get('context', ''))
+        return output_error(
+            result.get('operation', 'pr_comments'), result.get('error', 'Unknown error'), result.get('context', '')
+        )
     print(serialize_toon(result, table_separator='\t'))
     return 0
 
@@ -532,12 +578,17 @@ def cmd_pr_merge(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_merge', f'Failed to merge PR {args.pr_number}', stderr.strip())
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_merge',
-        'pr_number': args.pr_number,
-        'strategy': args.strategy,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_merge',
+                'pr_number': args.pr_number,
+                'strategy': args.strategy,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -553,12 +604,17 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
     if returncode != 0:
         return output_error('pr_auto_merge', f'Failed to enable auto-merge for PR {args.pr_number}', stderr.strip())
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'pr_auto_merge',
-        'pr_number': args.pr_number,
-        'enabled': True,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'pr_auto_merge',
+                'pr_number': args.pr_number,
+                'enabled': True,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -589,7 +645,8 @@ def cmd_pr_edit(args: argparse.Namespace) -> int:
     if args.body:
         gh_args.extend(['--body', args.body])
 
-    return make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
+    result: int = make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
+    return result
 
 
 def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
@@ -598,6 +655,7 @@ def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
     Returns (check_dicts, elapsed_sec_total).
     """
     from datetime import UTC, datetime
+
     now = datetime.now(UTC)
     check_dicts: list[dict] = []
     started_at_values: list[str | None] = []
@@ -606,14 +664,16 @@ def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
         started_at = check.get('startedAt')
         started_at_values.append(started_at)
 
-        check_dicts.append({
-            'name': check.get('name', 'unknown'),
-            'status': check.get('state', 'unknown'),
-            'result': check.get('bucket') or '-',
-            'elapsed_sec': compute_elapsed(started_at, check.get('completedAt'), now),
-            'url': check.get('link') or '-',
-            'workflow': check.get('workflow') or '-',
-        })
+        check_dicts.append(
+            {
+                'name': check.get('name', 'unknown'),
+                'status': check.get('state', 'unknown'),
+                'result': check.get('bucket') or '-',
+                'elapsed_sec': compute_elapsed(started_at, check.get('completedAt'), now),
+                'url': check.get('link') or '-',
+                'workflow': check.get('workflow') or '-',
+            }
+        )
 
     total_elapsed = compute_total_elapsed(started_at_values, now)
     return check_dicts, total_elapsed
@@ -655,15 +715,20 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
     check_dicts, total_elapsed = format_checks_toon(checks)
 
     # Output TOON
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_status',
-        'pr_number': args.pr_number,
-        'overall_status': overall,
-        'check_count': len(checks),
-        'elapsed_sec': total_elapsed,
-        'checks': check_dicts,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'ci_status',
+                'pr_number': args.pr_number,
+                'overall_status': overall,
+                'check_count': len(checks),
+                'elapsed_sec': total_elapsed,
+                'checks': check_dicts,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -720,16 +785,21 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
     else:
         final_status = 'mixed'
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_wait',
-        'pr_number': args.pr_number,
-        'final_status': final_status,
-        'duration_sec': result['duration_sec'],
-        'polls': result['polls'],
-        'elapsed_sec': total_elapsed,
-        'checks': check_dicts,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'ci_wait',
+                'pr_number': args.pr_number,
+                'final_status': final_status,
+                'duration_sec': result['duration_sec'],
+                'polls': result['polls'],
+                'elapsed_sec': total_elapsed,
+                'checks': check_dicts,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -748,21 +818,24 @@ def cmd_ci_logs(args: argparse.Namespace) -> int:
     if not is_auth:
         return output_error('ci_logs', err)
 
-    returncode, stdout, stderr = run_gh(
-        ['run', 'view', str(args.run_id), '--log-failed'], timeout=120
-    )
+    returncode, stdout, stderr = run_gh(['run', 'view', str(args.run_id), '--log-failed'], timeout=120)
     if returncode != 0:
         return output_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
 
     content, line_count = truncate_log_content(stdout)
 
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'ci_logs',
-        'run_id': args.run_id,
-        'log_lines': line_count,
-        'content': content,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'ci_logs',
+                'run_id': args.run_id,
+                'log_lines': line_count,
+                'content': content,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -795,12 +868,17 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
             pass
 
     # Output TOON
-    print(serialize_toon({
-        'status': 'success',
-        'operation': 'issue_create',
-        'issue_number': issue_number,
-        'issue_url': issue_url,
-    }, table_separator='\t'))
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'operation': 'issue_create',
+                'issue_number': issue_number,
+                'issue_url': issue_url,
+            },
+            table_separator='\t',
+        )
+    )
     return 0
 
 
@@ -875,6 +953,7 @@ cmd_issue_close = make_simple_handler(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> int:
     parser, pr_sub, ci_sub, issue_sub = build_parser('GitHub operations via gh CLI')

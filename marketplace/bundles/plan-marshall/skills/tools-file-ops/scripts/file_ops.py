@@ -25,7 +25,7 @@ import json
 import os
 import sys
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,7 @@ def parse_duration(duration_str: str) -> 'timedelta':
     """
     import re
     from datetime import timedelta
+
     match = re.match(r'^(\d+)([dhm])$', duration_str.strip())
     if not match:
         raise ValueError(f"Invalid duration format: '{duration_str}'. Use Nd, Nh, or Nm.")
@@ -107,6 +108,7 @@ def normalize_to_repo_relative(path: str) -> str:
         return path
     try:
         import subprocess
+
         result = subprocess.run(
             ['git', 'rev-parse', '--show-toplevel'],
             capture_output=True,
@@ -116,7 +118,7 @@ def normalize_to_repo_relative(path: str) -> str:
         )
         repo_root = result.stdout.strip()
         if path.startswith(repo_root + '/'):
-            return path[len(repo_root) + 1:]
+            return path[len(repo_root) + 1 :]
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     return path
@@ -574,5 +576,3 @@ def safe_main(main_fn: Any) -> Any:
             sys.exit(1)
 
     return wrapper
-
-

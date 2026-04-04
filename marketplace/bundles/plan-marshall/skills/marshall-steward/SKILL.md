@@ -202,9 +202,9 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains | Menu option 3 |
 | `shared-settings.md` | Plan phases, review gates, quality pipelines | Loaded by wizard-flow and menu-configuration |
-| `shared-doc-check.md` | Project documentation validation | Loaded by wizard-flow and menu-maintenance |
-| `output-format.md` | TOON output standards | Reference for output formatting |
 | `error-handling.md` | Error types and recovery | On error conditions |
+
+> **Note**: `shared-doc-check.md` content has been inlined into `wizard-flow.md` and `menu-maintenance.md`. For TOON output format, see `plan-marshall:ref-toon-format`.
 
 ---
 
