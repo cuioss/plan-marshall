@@ -105,7 +105,7 @@ Each profile contains `defaults` (always loaded) and `optionals` (loaded on dema
 
 **Skill Reference Format**: Each skill entry can be either:
 - **Object format** (preferred): `{"skill": "bundle:skill", "description": "What this skill provides"}` — self-documenting, enables validation
-- **String format** (legacy): `"bundle:skill"` — compact but lacks description for downstream consumers
+- **String format**: `"bundle:skill"` — compact but lacks description for downstream consumers
 
 Object format is preferred for new extensions. Both formats are accepted by `_build_applicable_result()` and the enrichment pipeline.
 

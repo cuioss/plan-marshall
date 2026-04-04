@@ -169,7 +169,7 @@ class ExtensionBase(ABC):
         Skill Reference Format:
             Each skill entry in defaults/optionals can be either:
             - Object format (preferred): {"skill": "bundle:skill", "description": "..."}
-            - String format (legacy): "bundle:skill"
+            - String format: "bundle:skill"
 
         Standard Profiles:
             - core: Skills loaded for all profiles (foundation skills)
