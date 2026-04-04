@@ -13,7 +13,6 @@ Findings addressed: F6 (TOON field ordering), F8 (config JSON validation).
 """
 
 import json
-import os
 import unittest
 from pathlib import Path
 

@@ -110,14 +110,13 @@ def test_resolve_with_existing_cache():
 def test_state_read_write():
     """Test reading and writing state file directly."""
     # Import the module functions directly since conftest sets up PYTHONPATH
-    from importlib import import_module
     import importlib.util
 
     spec = importlib.util.spec_from_file_location('bootstrap_plugin', SCRIPT_PATH)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    with PlanContext(plan_id='bootstrap-state-rw') as ctx:
+    with PlanContext(plan_id='bootstrap-state-rw') as _ctx:
         # Verify initial state is empty
         state = mod.read_state()
         assert state == {} or 'plugin_root' not in state
@@ -134,7 +133,6 @@ def test_state_read_write():
 def test_resolve_bundle_path():
     """Test resolve_bundle_path with a mock structure."""
     import importlib.util
-    import tempfile
 
     spec = importlib.util.spec_from_file_location('bootstrap_plugin', SCRIPT_PATH)
     mod = importlib.util.module_from_spec(spec)

@@ -64,7 +64,7 @@ def _setup_marketplace_pythonpath() -> list[str]:
     """
     script_dirs = set()
 
-    # Scan marketplace for all scripts/ directories
+    # Scan marketplace for all scripts/ directories and their immediate subdirectories
     for bundle_dir in MARKETPLACE_ROOT.iterdir():
         if not bundle_dir.is_dir():
             continue
@@ -77,6 +77,11 @@ def _setup_marketplace_pythonpath() -> list[str]:
             scripts_dir = skill_dir / 'scripts'
             if scripts_dir.exists():
                 script_dirs.add(str(scripts_dir))
+                # Scan immediate subdirectories (supports organized layouts
+                # like script-shared/scripts/build/, scripts/extension/)
+                for child in scripts_dir.iterdir():
+                    if child.is_dir() and not child.name.startswith('.') and child.name != '__pycache__':
+                        script_dirs.add(str(child))
 
     # Add to sys.path (avoid duplicates)
     added = []

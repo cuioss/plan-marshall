@@ -11,8 +11,9 @@ _SCRIPT_DIR = (
     / 'bundles'
     / 'plan-marshall'
     / 'skills'
-    / 'extension-api'
+    / 'script-shared'
     / 'scripts'
+    / 'build'
 )
 sys.path.insert(0, str(_SCRIPT_DIR))
 

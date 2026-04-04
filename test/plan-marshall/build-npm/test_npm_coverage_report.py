@@ -9,13 +9,13 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
-
 from build_test_helpers import (  # noqa: E402
     assert_coverage_has_low_items,
     assert_coverage_high,
     assert_coverage_missing_file,
 )
+from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+
 from conftest import get_script_path, run_script  # noqa: E402
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-npm', 'npm.py')

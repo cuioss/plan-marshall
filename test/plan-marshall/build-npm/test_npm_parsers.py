@@ -5,7 +5,6 @@ Note: These tests import internal modules directly for detailed testing.
 Public API tests should use npm.py CLI instead.
 """
 
-import sys
 import tempfile
 from pathlib import Path
 

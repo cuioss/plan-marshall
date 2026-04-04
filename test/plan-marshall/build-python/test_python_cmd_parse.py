@@ -11,11 +11,8 @@ for detailed coverage of mypy/ruff/pytest output patterns.
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from _build_parse import Issue, UnitTestSummary
 from _python_cmd_parse import parse_log
-
 
 # =============================================================================
 # mypy error parsing

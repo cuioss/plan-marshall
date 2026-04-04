@@ -9,9 +9,9 @@ from pathlib import Path
 # Import modules under test (PYTHONPATH set by conftest)
 from _build_discover import (
     EXCLUDE_DIRS,
+    README_PATTERNS,
     ModuleBase,
     ModulePaths,
-    README_PATTERNS,
     build_module_base,
     discover_descriptors,
     find_readme,

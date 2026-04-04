@@ -14,7 +14,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-
 # =============================================================================
 # Test: List Types
 # =============================================================================

@@ -16,7 +16,6 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import run_script  # noqa: E402
 
-
 # =============================================================================
 # Coverage Report Test Helpers
 # =============================================================================

@@ -3,6 +3,7 @@
 
 import json
 
+from toon_parser import parse_toon
 from triage_helpers import (
     ErrorCode,
     calculate_priority,
@@ -18,8 +19,6 @@ from triage_helpers import (
     print_toon,
     safe_main,
 )
-from toon_parser import parse_toon
-
 
 # =============================================================================
 # Test: make_error

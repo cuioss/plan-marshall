@@ -6,8 +6,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Import modules under test (PYTHONPATH set by conftest)
-from file_ops import format_toon_value
 from _architecture_core import (
     DATA_DIR,
     DataNotFoundError,
@@ -25,6 +23,9 @@ from _architecture_core import (
     save_derived_data,
     save_llm_enriched,
 )
+
+# Import modules under test (PYTHONPATH set by conftest)
+from file_ops import format_toon_value
 
 # =============================================================================
 # Tests for Path Functions

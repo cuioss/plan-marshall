@@ -10,8 +10,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 # Add script path for imports
 _SCRIPT_DIR = (
     Path(__file__).resolve().parents[3]
@@ -19,8 +17,9 @@ _SCRIPT_DIR = (
     / 'bundles'
     / 'plan-marshall'
     / 'skills'
-    / 'extension-api'
+    / 'script-shared'
     / 'scripts'
+    / 'build'
 )
 sys.path.insert(0, str(_SCRIPT_DIR))
 
@@ -39,7 +38,6 @@ sys.path.insert(0, str(_TOON_DIR))
 _bcw = importlib.import_module('_build_check_warnings')
 
 from toon_parser import parse_toon  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Helpers

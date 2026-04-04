@@ -4,18 +4,16 @@
 Tests the Python execution config and factory-generated functions.
 """
 
+# Mock runtime-only modules before importing
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Mock runtime-only modules before importing
-import sys
-
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
 
-from _python_execute import _CONFIG, execute_direct
-
+from _python_execute import _CONFIG, execute_direct  # noqa: E402
 
 # =============================================================================
 # Config Tests

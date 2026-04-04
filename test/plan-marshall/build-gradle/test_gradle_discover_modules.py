@@ -25,10 +25,10 @@ from pathlib import Path
 
 # Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import BuildContext
-
 # Shared discovery helpers (test/plan-marshall/conftest.py adds parent to sys.path)
 from discovery_test_helpers import assert_valid_module
+
+from conftest import BuildContext
 
 # Direct imports - conftest sets up PYTHONPATH
 # Import Extension class from the extension module
@@ -401,7 +401,7 @@ def test_no_duplicate_modules_with_both_build_files():
         # build_systems=['maven']. With error structs, we get up to 2 error modules.
         # The key assertion: no successful module is duplicated.
         successful = [m for m in modules if 'error' not in m]
-        error_modules = [m for m in modules if 'error' in m]
+        _ = [m for m in modules if 'error' in m]
         assert len(successful) <= 1, f'Expected at most 1 successful module, got {len(successful)}'
         # At least one module must exist (error or success)
         assert len(modules) >= 1

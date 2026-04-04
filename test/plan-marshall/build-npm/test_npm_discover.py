@@ -10,22 +10,18 @@ discovery function directly for detailed coverage.
 """
 
 import json
-import sys
-from pathlib import Path
 
-# Shared test helpers (test/plan-marshall/conftest.py adds parent to sys.path)
-from conftest import BuildContext
+# Import module under test (PYTHONPATH set by conftest)
+from _npm_cmd_discover import discover_npm_modules
 from discovery_test_helpers import (
     assert_command_uses_executor,
     assert_module_commands,
     assert_module_paths,
-    assert_module_stats,
     assert_valid_module,
 )
 
-# Import module under test (PYTHONPATH set by conftest)
-from _npm_cmd_discover import discover_npm_modules
-
+# Shared test helpers (test/plan-marshall/conftest.py adds parent to sys.path)
+from conftest import BuildContext
 
 # =============================================================================
 # Test: Single Package Discovery

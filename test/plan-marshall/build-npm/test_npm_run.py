@@ -8,7 +8,6 @@ Tests the unified run command that combines execute + parse on failure:
 - Help text
 """
 
-import shutil
 import sys
 import tempfile
 from contextlib import contextmanager

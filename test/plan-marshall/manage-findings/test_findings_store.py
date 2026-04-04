@@ -6,20 +6,11 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import PlanContext
-
 # conftest sets up PYTHONPATH so we can import the store directly
 from _findings_core import (  # type: ignore[import-not-found]
-    FINDING_TYPES,
-    QGATE_PHASES,
-    QGATE_SOURCES,
-    RESOLUTIONS,
-    SEVERITIES,
     add_finding,
     add_qgate_finding,
     clear_qgate_findings,
-    get_findings_path,
-    get_qgate_path,
     promote_finding,
     query_findings,
     query_qgate_findings,
@@ -27,6 +18,7 @@ from _findings_core import (  # type: ignore[import-not-found]
     resolve_qgate_finding,
 )
 
+from conftest import PlanContext
 
 # =============================================================================
 # Test: add_finding

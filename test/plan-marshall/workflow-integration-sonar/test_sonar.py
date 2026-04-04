@@ -265,7 +265,7 @@ class TestSonarRulesConfig(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Import sonar module for direct testing."""
-        from sonar import SUPPRESSABLE_RULES, _FIX_SUGGESTIONS, _TEST_ACCEPTABLE_RULES  # type: ignore[import-not-found]
+        from sonar import _FIX_SUGGESTIONS, _TEST_ACCEPTABLE_RULES, SUPPRESSABLE_RULES  # type: ignore[import-not-found]
 
         cls.suppressable = SUPPRESSABLE_RULES
         cls.fix_suggestions = _FIX_SUGGESTIONS

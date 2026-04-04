@@ -44,9 +44,12 @@ SCRIPTS = {
     {{SCRIPT_MAPPINGS}}
 }
 
-# Build PYTHONPATH from all unique script directories
-# This allows scripts to import from any skill without path manipulation
-_SCRIPT_DIRS = sorted(set(str(Path(p).parent) for p in SCRIPTS.values()))
+# Build PYTHONPATH from all skill script directories and their subdirectories.
+# Includes directories discovered at generation time (covers library-only skills like
+# script-shared that have importable modules but no registered script notations).
+_SCRIPT_DIRS_FROM_MAPPINGS = sorted(set(str(Path(p).parent) for p in SCRIPTS.values()))
+_ALL_SCRIPT_DIRS = [{{EXTRA_SCRIPT_DIRS}}]
+_SCRIPT_DIRS = sorted(set(_SCRIPT_DIRS_FROM_MAPPINGS + _ALL_SCRIPT_DIRS))
 _PYTHONPATH = ':'.join(_SCRIPT_DIRS)
 
 # ============================================================================

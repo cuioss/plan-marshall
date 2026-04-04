@@ -67,7 +67,6 @@ python_build = _load_python_build()
 from _python_cmd_parse import parse_log  # noqa: E402
 from _python_execute import execute_direct  # noqa: E402
 
-
 # =============================================================================
 # Test: Wrapper resolution (via _python_execute)
 # =============================================================================

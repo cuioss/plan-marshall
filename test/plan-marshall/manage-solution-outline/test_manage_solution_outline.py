@@ -18,7 +18,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manag
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-
 # Sample valid solution outline with ASCII diagram (contract-compliant)
 VALID_SOLUTION = """# Solution: JWT Validation Service
 

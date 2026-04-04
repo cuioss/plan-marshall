@@ -185,7 +185,6 @@ def get_shared_module_dirs(base_path: Path) -> list[Path]:
         'skills/tools-file-ops/scripts',
         'skills/tools-input-validation/scripts',
         'skills/ref-toon-format/scripts',
-        'skills/shared-workflow-helpers/scripts',
     ]
     dirs = []
     for subpath in shared_skills:
@@ -200,18 +199,20 @@ def get_shared_module_dirs(base_path: Path) -> list[Path]:
 # ============================================================================
 
 
-def _build_pythonpath(base_path: Path) -> str:
-    """Build PYTHONPATH from all skill script directories.
+def _collect_script_dirs(base_path: Path) -> list[str]:
+    """Collect all skill script directories from bundles.
 
-    This enables cross-skill imports for scripts called via subprocess.
+    Discovers script directories and their immediate subdirectories,
+    enabling cross-skill imports for scripts organized in subdirectory trees
+    (e.g., script-shared/scripts/build/, script-shared/scripts/extension/).
 
     Args:
         base_path: Path to bundles directory (plugin-cache or marketplace)
 
     Returns:
-        PYTHONPATH string with all skill script directories
+        List of script directory paths (parent dirs first, then subdirs)
     """
-    script_dirs = []
+    script_dirs: list[str] = []
 
     for bundle_dir in base_path.iterdir():
         if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
@@ -244,7 +245,32 @@ def _build_pythonpath(base_path: Path) -> str:
                         if scripts_dir.exists():
                             script_dirs.append(str(scripts_dir))
 
-    return os.pathsep.join(script_dirs)
+    # Second pass: scan immediate subdirectories of each script directory.
+    # This supports organized script layouts (e.g., scripts/build/, scripts/extension/).
+    subdirs: list[str] = []
+    for scripts_path in script_dirs:
+        scripts_dir = Path(scripts_path)
+        for child in scripts_dir.iterdir():
+            if child.is_dir() and not child.name.startswith('.') and not child.name == '__pycache__':
+                subdirs.append(str(child))
+
+    script_dirs.extend(subdirs)
+    return script_dirs
+
+
+def _build_pythonpath(base_path: Path) -> str:
+    """Build PYTHONPATH from all skill script directories.
+
+    This enables cross-skill imports for scripts called via subprocess.
+    Includes both script directories and their immediate subdirectories.
+
+    Args:
+        base_path: Path to bundles directory (plugin-cache or marketplace)
+
+    Returns:
+        PYTHONPATH string with all skill script directories
+    """
+    return os.pathsep.join(_collect_script_dirs(base_path))
 
 
 def discover_scripts(base_path: Path) -> dict[str, str]:
@@ -455,9 +481,17 @@ def generate_executor(mappings: dict[str, str], base_path: Path, dry_run: bool =
         '\n'.join(f"sys.path.insert(0, '{d}')" for d in shared_dirs) if shared_dirs else '# (none detected)'
     )
 
+    # Collect ALL script directories (including subdirectories of skills like script-shared
+    # that have no registered scripts but contain importable modules).
+    # These are injected as extra PYTHONPATH entries so subprocess-invoked scripts can
+    # import from organized subdirectory layouts (e.g., script-shared/scripts/build/).
+    all_script_dirs = _collect_script_dirs(base_path)
+    extra_dirs_code = ', '.join(f"'{d}'" for d in sorted({str(Path(d).resolve()) for d in all_script_dirs}))
+
     content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
     content = content.replace('{{LOGGING_DIR}}', logging_dir)
     content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
+    content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
     content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
 
     if dry_run:

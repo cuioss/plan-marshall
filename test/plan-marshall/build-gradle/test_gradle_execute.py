@@ -4,16 +4,13 @@
 Tests the Gradle execution config and factory-generated functions.
 """
 
-from unittest.mock import MagicMock, patch
-
-import pytest
 import sys
+from unittest.mock import MagicMock
 
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
 
-from _gradle_execute import _CONFIG, execute_direct
-
+from _gradle_execute import _CONFIG, execute_direct  # noqa: E402
 
 # =============================================================================
 # Config Tests

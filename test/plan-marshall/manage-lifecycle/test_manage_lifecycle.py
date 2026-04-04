@@ -15,7 +15,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage_status.p
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
 
-
 # =============================================================================
 # Helper: create a status.json with standard phase structure
 # =============================================================================
@@ -364,9 +363,8 @@ def test_archive_nonexistent_plan():
     """Test archive fails for nonexistent plan directory."""
     with PlanContext(plan_id='lifecycle-archive-gone'):
         # Remove the plan dir
-        import shutil
 
-        plan_dir = Path(PlanContext(plan_id='lifecycle-archive-gone').plan_dir or '')
+        _ = Path(PlanContext(plan_id='lifecycle-archive-gone').plan_dir or '')
         # Use PlanContext but the dir was already created - remove it
         result = run_script(
             SCRIPT_PATH,

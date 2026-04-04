@@ -9,11 +9,8 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 # Import shared infrastructure — triggers PYTHONPATH setup for cross-skill imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import ScriptTestCase  # noqa: E402
 
 from permission_common import (  # type: ignore[import-not-found]  # noqa: E402, I001
     EXIT_ERROR,

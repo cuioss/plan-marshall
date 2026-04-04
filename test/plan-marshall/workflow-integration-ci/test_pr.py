@@ -379,7 +379,7 @@ class TestPRTriageContext(unittest.TestCase):
         # Without context — short comment, no keyword match → would be ignore
         stdout_no_ctx, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
         self.assertEqual(code, 0)
-        result_no_ctx = parse_toon(stdout_no_ctx)
+        _ = parse_toon(stdout_no_ctx)
 
         # With context that contains the referenced identifier
         stdout_ctx, _, code = run_pr_script(

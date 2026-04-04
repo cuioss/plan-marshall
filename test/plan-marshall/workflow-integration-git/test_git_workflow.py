@@ -723,7 +723,7 @@ class TestWrapText(unittest.TestCase):
     def test_preserves_bullet_indentation(self):
         """Wrapped lines preserve leading indentation."""
         text = '  - ' + 'word ' * 20
-        result = self.wrap_text(text.strip(), 72)
+        _ = self.wrap_text(text.strip(), 72)
         # First line has no indent since we stripped, but indented input does
         text_indented = '  - ' + 'word ' * 20
         result_indented = self.wrap_text(text_indented, 72)
@@ -839,7 +839,11 @@ class TestArtifactConfigLoading(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Import git_workflow module for direct testing."""
-        from git_workflow import SAFE_ARTIFACT_PATTERNS, UNCERTAIN_ARTIFACT_PATTERNS, _SKIP_DIRS  # type: ignore[import-not-found]
+        from git_workflow import (  # type: ignore[import-not-found]
+            _SKIP_DIRS,
+            SAFE_ARTIFACT_PATTERNS,
+            UNCERTAIN_ARTIFACT_PATTERNS,
+        )
 
         cls.safe_patterns = SAFE_ARTIFACT_PATTERNS
         cls.uncertain_patterns = UNCERTAIN_ARTIFACT_PATTERNS

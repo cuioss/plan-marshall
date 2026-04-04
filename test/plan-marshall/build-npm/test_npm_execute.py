@@ -4,15 +4,13 @@
 Tests the npm execution config, npm/npx detection, and factory-generated functions.
 """
 
-from unittest.mock import MagicMock
-
 import sys
+from unittest.mock import MagicMock
 
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=120), timeout_set=MagicMock()))
 
-from _npm_execute import NPX_COMMANDS, _CONFIG, detect_command_type
-
+from _npm_execute import _CONFIG, NPX_COMMANDS, detect_command_type  # noqa: E402
 
 # =============================================================================
 # Config Tests

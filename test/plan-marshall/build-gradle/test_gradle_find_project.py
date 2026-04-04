@@ -4,11 +4,8 @@
 Tests project discovery from settings.gradle files and build.gradle scanning.
 """
 
-import tempfile
-from pathlib import Path
 
 import pytest
-
 from _gradle_cmd_find_project import (
     find_build_files,
     find_settings_file,

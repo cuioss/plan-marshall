@@ -14,8 +14,9 @@ _SCRIPT_DIRS = [
     / 'bundles'
     / 'plan-marshall'
     / 'skills'
-    / 'extension-api'
-    / 'scripts',
+    / 'script-shared'
+    / 'scripts'
+    / 'build',
 ]
 for d in _SCRIPT_DIRS:
     if str(d) not in sys.path:
