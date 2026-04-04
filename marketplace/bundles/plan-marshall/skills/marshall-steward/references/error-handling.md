@@ -43,7 +43,7 @@ message: Script notation not found in executor
 recovery: Regenerate executor via Maintenance menu
 ```
 
-**Resolution**: Select "Maintenance" → "Regenerate Executor" from Main Menu.
+**Resolution**: Select "Maintenance" -> "Regenerate Executor" from Main Menu.
 
 ---
 
@@ -83,3 +83,42 @@ recovery: Ensure skill invoked via /marshall-steward command
 ```
 
 **Resolution**: Use the `/marshall-steward` command to invoke this skill properly.
+
+---
+
+## Script Execution Timeout
+
+```toon
+status: error
+error: timeout
+message: Script execution exceeded timeout
+recovery: Check for infinite loops or increase timeout
+```
+
+**Resolution**: The script took too long. Check for build system hangs, network issues, or increase the timeout via `--timeout` flag.
+
+---
+
+## JSON Parse Error in Script Arguments
+
+```toon
+status: error
+error: invalid_arguments
+message: Failed to parse JSON argument
+recovery: Check argument format matches expected JSON structure
+```
+
+**Resolution**: Verify CLI arguments contain valid JSON. Check for unquoted strings or missing brackets.
+
+---
+
+## Extension Discovery Failed
+
+```toon
+status: error
+error: extension_error
+message: Extension {bundle} failed during discovery
+recovery: Check extension.py in the failing bundle
+```
+
+**Resolution**: The extension's `discover_modules()` or `get_skill_domains()` raised an error. Check the bundle's `extension.py` for bugs. Non-failing extensions continue normally.

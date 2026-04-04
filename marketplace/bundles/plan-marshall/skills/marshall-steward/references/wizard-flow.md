@@ -2,6 +2,8 @@
 
 Sequential structured setup for new projects. Execute steps in order.
 
+**Bootstrap error recovery** (Steps 1-4): If any bootstrap step fails, report the error and abort the wizard. The user must resolve the issue (e.g., file permissions, missing Python) before re-running `/marshall-steward --wizard`.
+
 ---
 
 ## Step 1: Gitignore Setup (BOOTSTRAP)
@@ -142,7 +144,7 @@ AskUserQuestion:
 
 If user selects "Use defaults" → Skip to Step 7.
 
-If user selects "Configure": Load and follow `Read references/shared-plan-phases.md`
+If user selects "Configure": Load and follow `Read references/shared-settings.md` § Plan Phase Settings
 
 ---
 
@@ -162,13 +164,13 @@ AskUserQuestion:
 
 If user selects "Use defaults" → Skip to Step 8.
 
-If user selects "Configure": Load and follow `Read references/shared-quality-pipelines.md`
+If user selects "Configure": Load and follow `Read references/shared-settings.md` § Quality Pipeline Configuration
 
 ---
 
-## Step 7d: Review Gates (Optional)
+## Step 7c: Review Gates (Optional)
 
-Load and follow `Read references/shared-review-gates.md`
+Load and follow `Read references/shared-settings.md` § Review Gates
 
 ---
 
@@ -314,7 +316,7 @@ The architecture analysis already determined which extensions are applicable by 
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture derived
 ```
 
-Look for `extensions_used` in the output - this lists bundles that found modules in the project.
+Look for `extensions_used` in the output - this lists bundles that found modules in the project. If `extensions_used` is empty (no extensions detected any modules), skip Steps 11b-11g and continue to Step 12.
 
 **Example output**:
 ```toon

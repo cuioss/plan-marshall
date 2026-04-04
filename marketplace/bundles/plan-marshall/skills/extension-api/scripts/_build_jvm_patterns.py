@@ -6,7 +6,7 @@ use for issue categorization. Tool-specific patterns are merged in by each
 parser module.
 
 Usage:
-    from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns
+    from _build_jvm_patterns import JVM_BASE_PATTERNS, override_patterns
 """
 
 import re
@@ -112,8 +112,8 @@ def parse_jvm_file_location(line: str) -> dict[str, str | int | None]:
     return result
 
 
-def merge_patterns(base: CategoryPatterns, overrides: CategoryPatterns) -> CategoryPatterns:
-    """Merge tool-specific patterns into base patterns.
+def override_patterns(base: CategoryPatterns, overrides: CategoryPatterns) -> CategoryPatterns:
+    """Override base patterns with tool-specific patterns.
 
     For each category:
     - If category exists in both, the override list REPLACES the base list
@@ -126,7 +126,7 @@ def merge_patterns(base: CategoryPatterns, overrides: CategoryPatterns) -> Categ
         overrides: Tool-specific overrides or additions.
 
     Returns:
-        Merged CategoryPatterns dict.
+        New CategoryPatterns dict with overrides applied.
     """
     merged = dict(base)
     merged.update(overrides)

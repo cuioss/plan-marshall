@@ -26,8 +26,11 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 from _build_execute import BuildCommandFn, CaptureStrategy, ScopeFn, execute_direct_base
 from _build_result import DirectCommandResult
@@ -89,7 +92,7 @@ class ExecuteConfig:
     """Default timeout in seconds if no learned value exists."""
 
     extra_result_fields: dict = field(default_factory=dict)
-    """Static extra fields for all results. Currently unused — prefer extra_result_fn for dynamic fields."""
+    """Static extra fields added to all results. For per-invocation dynamic fields, use extra_result_fn."""
 
     wrapper_resolve_fn: Callable[[str], str] | None = None
     """Custom wrapper resolution: (project_dir) -> wrapper path.
@@ -189,6 +192,8 @@ def create_execute_handlers(
                     if '=' in env_pair:
                         key, value = env_pair.split('=', 1)
                         env_vars[key] = value
+                    else:
+                        logger.warning('Skipping malformed env var (missing =): %s', env_pair)
 
         # Optional working_dir support
         working_dir = getattr(args, 'working_dir', None) if config.supports_working_dir else None

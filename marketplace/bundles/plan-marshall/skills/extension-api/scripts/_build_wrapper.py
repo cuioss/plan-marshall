@@ -31,6 +31,8 @@ def detect_wrapper(
 
     Returns:
         Path to wrapper or system command, None if not found.
+        On Unix: returns './wrapper' (relative, standard convention).
+        On Windows: returns absolute path (required for subprocess).
     """
     root = Path(project_dir).resolve()
 

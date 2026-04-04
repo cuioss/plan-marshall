@@ -44,7 +44,8 @@ import sys
 from pathlib import Path
 
 # Content checks applied to project documentation files.
-# Each check has a key, the files it applies to, and a marker pattern.
+# Each check has a key, the files it applies to, and a substring marker
+# to search for (plain string match, not regex).
 CONTENT_CHECKS: list[dict[str, str | list[str]]] = [
     {
         'key': 'plan_temp',
@@ -123,10 +124,12 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
         assert isinstance(files, list)
         for file_name in files:
             file_path = project_root / str(file_name)
-            if file_path.exists():
+            if not file_path.exists():
+                missing.append({'file': str(file_name), 'check': str(check['key']), 'reason': 'file_missing'})
+            else:
                 content = file_path.read_text()
                 if pattern not in content:
-                    missing.append({'file': str(file_name), 'check': str(check['key'])})
+                    missing.append({'file': str(file_name), 'check': str(check['key']), 'reason': 'content_missing'})
 
     if missing:
         return 'needs_update', missing

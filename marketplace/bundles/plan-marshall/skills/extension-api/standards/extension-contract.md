@@ -854,6 +854,8 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 ## Existing Extensions
 
+> **Note**: This table is a reference snapshot. For the authoritative live list, use `extension_discovery discover-all`.
+
 | Bundle | Domain Key | Triage | Outline Skill | Recipes | Verify Steps | Notes |
 |--------|------------|--------|---------------|---------|-------------|-------|
 | pm-dev-java | java | ext-triage-java | - | - | - | Base Java bundle |

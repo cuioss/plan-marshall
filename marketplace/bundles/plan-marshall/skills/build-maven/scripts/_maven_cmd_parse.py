@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns, parse_jvm_file_location
+from _build_jvm_patterns import JVM_BASE_PATTERNS, override_patterns, parse_jvm_file_location
 from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
@@ -31,7 +31,7 @@ from _build_parse import (
 )
 # Maven-specific categorization patterns. Extends shared JVM base patterns
 # with Maven-specific additions (substring matching by default).
-MAVEN_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
+MAVEN_PATTERNS: CategoryPatterns = override_patterns(JVM_BASE_PATTERNS, {
     # Override openrewrite_info to include Maven-specific plugin name
     'openrewrite_info': [
         'org.openrewrite',

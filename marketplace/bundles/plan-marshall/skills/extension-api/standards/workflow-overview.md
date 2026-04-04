@@ -25,7 +25,7 @@ Contract specification for the 6-phase workflow execution model.
 | 2-refine | 3-outline | Confidence threshold reached |
 | 3-outline | 4-plan | User approval of solution outline |
 | 4-plan | 5-execute | Auto-continue (unless `stop-after=4-plan`) |
-| 5-execute | 6-finalize | All tasks completed + verification passed |
+| 5-execute | 6-finalize | All tasks completed + verification passed (no remaining findings or all findings triaged) |
 | 5-execute | 5-execute | Findings detected → triage + create fix tasks |
 | 6-finalize | COMPLETE | Commit/PR done (or no findings) |
 | 6-finalize | 5-execute | Findings detected → create fix tasks |

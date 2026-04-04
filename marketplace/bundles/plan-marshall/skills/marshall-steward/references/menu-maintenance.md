@@ -38,13 +38,13 @@ AskUserQuestion:
 
 ## Operation: All (Regenerate + Architecture + Cleanup)
 
-Execute ALL operations in sequence:
+Execute ALL operations in sequence. If any step fails, report the error and abort remaining steps.
 
 1. Execute "Operation: Regenerate Executor" (below)
 2. Execute "Operation: Regenerate Architecture" (below)
 3. Execute "Operation: Cleanup" (below)
 
-**Output**: Combined summary of all operations.
+**Output**: Combined summary of all operations (or error with step that failed).
 
 ---
 
@@ -71,7 +71,7 @@ success	47	.plan/execute-script.py	0
 
 ## Operation: Regenerate Architecture
 
-Re-detect project structure and extensions, preserving existing enrichment data. Unlike the Configuration path, maintenance mode defaults to keeping enrichment (no user prompt) — it's a quick refresh, not a full reconfiguration.
+Re-detect project structure and extensions, preserving existing enrichment data. Unlike the Configuration → Project Structure path (see `menu-configuration.md` § Project Structure), maintenance mode defaults to keeping enrichment (no user prompt) — it's a quick refresh, not a full reconfiguration.
 
 **Step 1: Check existing enrichment**
 

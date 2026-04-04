@@ -4,32 +4,24 @@ Check if project docs need required content and apply fixes.
 
 ---
 
+## Step 1: Run check-docs
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:marshall-steward:determine-mode check-docs
 ```
 
-**Output (TOON)**:
-```toon
-status	ok
-missing_count	0
-```
+## Step 2: Interpret output
 
-Or if updates needed:
-```toon
-status	needs_update
-missing_count	2
-plan_temp	CLAUDE.md
-file_ops	CLAUDE.md
-```
+- `status: ok` → No action needed, continue.
+- `status: needs_update` → Apply fixes below for each missing marker listed in the output.
 
-If `status` is `needs_update`, add missing content to each listed file:
+## Step 3: Apply fixes (if needed)
 
-**For `plan_temp`** — add to each file listed:
-```
-- Use `.plan/temp/` for ALL temporary files (covered by `Write(.plan/**)` permission - avoids permission prompts)
-```
+The output lists missing content markers by key. For each:
 
-**For `file_ops`** — add to CLAUDE.md (e.g. in a "Development Notes" or equivalent section):
-```
-- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
-```
+| Key | Target File | Content to Append |
+|-----|-------------|-------------------|
+| `plan_temp` | Listed file (typically CLAUDE.md) | `- Use .plan/temp/ for ALL temporary files (covered by Write(.plan/**) permission - avoids permission prompts)` |
+| `file_ops` | CLAUDE.md | `- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead` |
+
+Append the content to an appropriate section (e.g., "Development Notes") in the target file. If no such section exists, create one.

@@ -53,6 +53,10 @@ class DirectCommandResult(TypedDict, total=False):
     layer used by build system extensions (maven_execute.py, gradle_execute.py,
     npm_execute.py).
 
+    Note: total=False because optional fields vary by build system. Required
+    fields are enforced at runtime via validate_result() and REQUIRED_FIELDS,
+    not via the type system. This avoids needing Python 3.11+ NotRequired.
+
     Required fields (always present):
         status: Execution outcome.
         exit_code: Process exit code (-1 for timeout/execution failure).
@@ -316,7 +320,7 @@ def validate_result(result: dict) -> tuple[bool, list]:
         ['command', 'duration_seconds', 'exit_code', 'log_file']
     """
     if not isinstance(result, dict):
-        return False, list(REQUIRED_FIELDS)
+        return False, sorted(REQUIRED_FIELDS)
 
-    missing = [field for field in REQUIRED_FIELDS if field not in result]
-    return len(missing) == 0, sorted(missing)
+    missing = sorted(field for field in REQUIRED_FIELDS if field not in result)
+    return len(missing) == 0, missing

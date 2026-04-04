@@ -428,7 +428,7 @@ architecture.py discover --project-dir /path/to/project
                             │
                             ▼
   1. EXTENSION DISCOVERY (extension_discovery.py)
-     discover_extensions(project_root)
+     discover_applicable_extensions(project_root)
      → Scans plugin cache for extension.py files
      → Filters to extensions with discover_modules() method
      → Returns: [{bundle, path, module}]

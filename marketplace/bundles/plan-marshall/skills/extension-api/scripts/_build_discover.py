@@ -303,9 +303,12 @@ def discover_sources(module_path: str | Path) -> dict[str, list[str]]:
 def discover_js_sources(module_path: str | Path) -> dict[str, list[str]]:
     """Discover source directories for JavaScript/TypeScript projects.
 
-    Unlike JVM projects which use src/main/{lang}, JS projects use
-    flat directories like src/, lib/, app/. Test directories include
-    test/, tests/, __tests__/, spec/.
+    JS projects typically use flat directories like src/, lib/, app/.
+    Test directories include test/, tests/, __tests__/, spec/.
+
+    Also detects JVM-style source layout for hybrid projects (e.g., Maven + npm
+    in the same directory) so that source stats remain accurate even though
+    virtual module splitting handles build-system separation at a higher level.
 
     Args:
         module_path: Absolute path to module directory.

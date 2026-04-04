@@ -114,13 +114,21 @@ Each extension returns modules it discovered with `build_systems` field:
 }
 ```
 
+### Module Name Resolution
+
+Module names are resolved in this order:
+1. Maven `artifactId` (if available from POM metadata)
+2. npm `name` (from package.json)
+3. Directory name (last path component)
+4. For virtual modules: `{name}-{technology}` suffix (e.g., `my-module-maven`)
+
 ### Field Types
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | Module name (includes technology suffix for virtual modules) |
 | `build_systems` | string[] | Single build system (e.g., `["maven"]` or `["npm"]`) |
-| `virtual_module` | object \| null | Virtual module metadata (for multi-tech directories) |
+| `virtual_module` | object \| absent | Virtual module metadata (only present for multi-tech directories; check with `if "virtual_module" in module_data`) |
 | `virtual_module.physical_path` | string | Actual directory path (shared by siblings) |
 | `virtual_module.technology` | string | Build system technology |
 | `virtual_module.sibling_modules` | string[] | Names of sibling virtual modules |

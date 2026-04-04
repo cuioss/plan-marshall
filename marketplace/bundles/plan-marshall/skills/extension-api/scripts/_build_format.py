@@ -8,6 +8,9 @@ Uses serialize_toon from toon_parser (ref-toon-format) as the canonical
 TOON serializer. This module normalizes build-specific data structures
 (Issue objects, UnitTestSummary) before delegating to serialize_toon.
 
+Convention: None values in issue fields are rendered as '-' (dash) in
+formatted output for readability (e.g., missing file or line number).
+
 Usage:
     from build_format import format_toon, format_json
 

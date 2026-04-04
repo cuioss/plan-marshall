@@ -30,8 +30,8 @@ from abc import ABC, abstractmethod
 # Re-export module discovery utilities from private implementation.
 # These form the public API for extension.py implementations.
 # Internal constants (EXCLUDE_DIRS, JVM_EXTENSIONS, JVM_LANGUAGES, README_PATTERNS)
-# are NOT re-exported — import from _build_discover directly if needed.
-from _build_discover import (  # noqa: F401
+# are available via direct import from _build_discover if needed.
+from _build_discover import (  # noqa: F401 — re-exported as public API
     ModuleBase,
     ModulePaths,
     build_module_base,
@@ -420,7 +420,10 @@ class ExtensionBase(ABC):
                                   module_data: dict | None = None,
                                   active_profiles: set[str] | None = None,
                                   domain_key: str | None = None) -> dict:
-        """Helper: build applicable result from own get_skill_domains() profiles.
+        """Build applicable result from own get_skill_domains() profiles.
+
+        Note: Despite the underscore prefix, this is part of the public API
+        for extension implementations. All extensions call this from applies_to_module().
 
         Merges 'core' profile into each non-core profile to produce a flat
         skills_by_profile dict ready for consumption.

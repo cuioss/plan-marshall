@@ -51,6 +51,17 @@ extension-api/
 │   ├── _build_parse.py             # Issue structures, warning filtering (co-located build utility)
 │   ├── _build_format.py            # TOON and JSON output formatting (co-located build utility)
 │   ├── _build_wrapper.py           # Build tool wrapper detection (co-located build utility)
+│   ├── _build_commands.py          # Canonical command string generation (co-located build utility)
+│   ├── _build_execute.py           # Subprocess execution, timeout learning (co-located build utility)
+│   ├── _build_execute_factory.py   # Factory for build-system-specific handlers (co-located build utility)
+│   ├── _build_shared.py            # Shared CLI helpers, cmd_run_common (co-located build utility)
+│   ├── _build_check_warnings.py    # Warning categorization factory (co-located build utility)
+│   ├── _build_coverage_report.py   # Coverage report parsing factory (co-located build utility)
+│   ├── _build_jvm_patterns.py      # Shared JVM error patterns (co-located build utility)
+│   ├── _build_parser_registry.py   # Multi-parser registry (co-located build utility)
+│   ├── _coverage_parse.py          # Format-agnostic coverage parsing (co-located build utility)
+│   ├── _markers_search.py          # OpenRewrite TODO marker search (co-located build utility)
+│   ├── _warnings_classify.py       # Warning categorization with matchers (co-located build utility)
 │   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
     ├── extension-contract.md       # Extension API contract (all methods, hooks, validation)
@@ -171,6 +182,12 @@ These are co-located here for PYTHONPATH convenience but are NOT part of the ext
 | `_build_wrapper.py` | Library | Build tool wrapper detection |
 | `_build_coverage_report.py` | Library | Coverage report parsing with factory |
 | `_build_check_warnings.py` | Library | Warning categorization with factory |
+| `_build_commands.py` | Library | Canonical command string generation |
+| `_build_jvm_patterns.py` | Library | Shared JVM error/warning category patterns |
+| `_build_parser_registry.py` | Library | Registry-based multi-parser for build output |
+| `_coverage_parse.py` | Library | Format-agnostic coverage report parsing (JaCoCo, Cobertura, LCOV, Jest) |
+| `_markers_search.py` | Library | OpenRewrite TODO marker search |
+| `_warnings_classify.py` | Library | Warning categorization with pluggable matchers |
 
 ### CLI Commands
 

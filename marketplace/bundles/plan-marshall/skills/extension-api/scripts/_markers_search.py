@@ -9,9 +9,12 @@ search_openrewrite_markers() with tool-specific defaults.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections import defaultdict
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from toon_parser import serialize_toon
 
@@ -83,7 +86,8 @@ def search_openrewrite_markers(
                 continue
             try:
                 content = file_path.read_text(encoding='utf-8')
-            except (OSError, UnicodeDecodeError):
+            except (OSError, UnicodeDecodeError) as e:
+                logger.debug('Skipping file %s: %s', file_path, e)
                 continue
             for line_num, line in enumerate(content.split('\n'), start=1):
                 for match in MARKER_PATTERN.finditer(line):

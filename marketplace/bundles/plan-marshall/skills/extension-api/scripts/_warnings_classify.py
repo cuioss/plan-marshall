@@ -14,7 +14,10 @@ The two systems serve different pipeline phases:
 
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 # Warning types that are always considered fixable
 ALWAYS_FIXABLE_TYPES = ['javadoc_warning', 'compilation_error', 'deprecation_warning', 'unchecked_warning']
@@ -43,7 +46,14 @@ def _match_substring(message: str, pattern: str) -> bool:
 
 
 def _match_wildcard(message: str, pattern: str) -> bool:
-    """Wildcard matching + regex for ^-prefixed patterns (Gradle style)."""
+    """Wildcard matching + regex for ^-prefixed patterns (Gradle style).
+
+    Supports three wildcard forms (plain string matching, no regex):
+    - 'prefix*' — startswith match
+    - '*suffix' — endswith match
+    - '*infix*' — substring (contains) match
+    And explicit regex via '^'-prefixed patterns.
+    """
     if message == pattern:
         return True
     if pattern.endswith('*') and not pattern.startswith('*') and message.startswith(pattern[:-1]):
@@ -57,7 +67,7 @@ def _match_wildcard(message: str, pattern: str) -> bool:
             if re.match(pattern, message):
                 return True
         except re.error:
-            pass
+            logger.debug('Invalid regex in wildcard pattern: %s', pattern)
     return False
 
 
@@ -66,6 +76,7 @@ def _match_regex(message: str, pattern: str) -> bool:
     try:
         return bool(re.search(pattern, message))
     except re.error:
+        logger.debug('Invalid regex pattern: %s', pattern)
         return False
 
 

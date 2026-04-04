@@ -187,7 +187,8 @@ def discover_applicable_extensions(project_root: Path) -> list[dict[str, Any]]:
     return applicable
 
 
-# Backward-compatible alias — callers may use either name
+# DEPRECATED: Use discover_applicable_extensions() directly.
+# Alias kept temporarily — remove after all callers are updated.
 discover_extensions = discover_applicable_extensions
 
 
@@ -341,8 +342,11 @@ def apply_config_defaults(project_root: Path,
 def discover_project_modules(project_root: Path) -> dict[str, Any]:
     """Discover all modules and split multi-technology paths into virtual modules.
 
-    Thin wrapper around _module_aggregation.discover_project_modules().
-    See that module for the complete return structure documentation.
+    Delegates to _module_aggregation.discover_project_modules() which:
+    - Calls discover_modules() on each applicable extension
+    - Splits directories with multiple build systems into virtual modules
+      (e.g., a dir with both pom.xml and package.json becomes two modules)
+    - Returns a deduplicated, sorted module dict
 
     Args:
         project_root: Path to project root

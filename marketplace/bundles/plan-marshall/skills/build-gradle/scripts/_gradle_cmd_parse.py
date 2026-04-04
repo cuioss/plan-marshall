@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_jvm_patterns import JVM_BASE_PATTERNS, merge_patterns, parse_jvm_file_location
+from _build_jvm_patterns import JVM_BASE_PATTERNS, override_patterns, parse_jvm_file_location
 from _build_parse import (
     SEVERITY_ERROR,
     SEVERITY_WARNING,
@@ -32,7 +32,7 @@ from _build_parse import (
 )
 # Gradle-specific categorization patterns. Extends shared JVM base patterns
 # with Gradle task markers, Kotlin errors, and regex-based patterns.
-GRADLE_PATTERNS: CategoryPatterns = merge_patterns(JVM_BASE_PATTERNS, {
+GRADLE_PATTERNS: CategoryPatterns = override_patterns(JVM_BASE_PATTERNS, {
     # Override compilation_error with Gradle-specific regex patterns + Kotlin
     'compilation_error': [
         # Java errors (regex for Gradle's error: prefix)

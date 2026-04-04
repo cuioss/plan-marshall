@@ -189,7 +189,7 @@ When routing indicates to load a reference:
 ```
 Read references/{file}.md
 ```
-Then execute the workflow described in that file.
+Then execute the workflow described in that file. Each reference file is loaded in full when its menu path is chosen — only one reference is active at a time.
 
 ---
 
@@ -201,6 +201,8 @@ Then execute the workflow described in that file.
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains | Menu option 3 |
+| `shared-settings.md` | Plan phases, review gates, quality pipelines | Loaded by wizard-flow and menu-configuration |
+| `shared-doc-check.md` | Project documentation validation | Loaded by wizard-flow and menu-maintenance |
 | `output-format.md` | TOON output standards | Reference for output formatting |
 | `error-handling.md` | Error types and recovery | On error conditions |
 

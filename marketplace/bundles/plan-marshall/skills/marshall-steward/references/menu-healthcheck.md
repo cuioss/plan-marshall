@@ -131,9 +131,9 @@ AskUserQuestion:
 
 ## Step 7: Summary
 
-Output health check summary:
+Output health check summary. Use `status: success` and `overall: HEALTHY` when all checks passed. Use `status: warning` and `overall: DEGRADED` when any check reported issues.
 
-**Healthy System**:
+**Healthy System** (all checks passed):
 ```toon
 status: success
 operation: health_check
@@ -155,7 +155,7 @@ ci:
 overall: HEALTHY
 ```
 
-**System with Issues**:
+**System with Issues** (one or more checks reported problems):
 ```toon
 status: warning
 operation: health_check

@@ -36,7 +36,7 @@ from _config_detection import detect_domains
 # Direct imports - PYTHONPATH set by executor
 from extension_discovery import (  # type: ignore[import-not-found]
     discover_all_extensions,
-    discover_extensions,
+    discover_applicable_extensions,
 )
 
 
@@ -164,7 +164,7 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
     # Get applicable bundles if project_root provided
     applicable_bundles = set()
     if project_root:
-        applicable_extensions = discover_extensions(project_root)
+        applicable_extensions = discover_applicable_extensions(project_root)
         applicable_bundles = {ext['bundle'] for ext in applicable_extensions}
 
     domains = []

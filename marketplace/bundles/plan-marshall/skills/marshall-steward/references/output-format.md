@@ -1,6 +1,6 @@
 # Output Format Standards
 
-All operations return TOON format for structured parsing.
+All operations return TOON format for structured parsing. For full TOON syntax specification, see `plan-marshall:ref-toon-format`.
 
 ---
 

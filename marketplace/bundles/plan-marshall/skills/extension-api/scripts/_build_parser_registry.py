@@ -18,9 +18,12 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
+
+logger = logging.getLogger(__name__)
 
 from _build_parse import Issue, UnitTestSummary
 
@@ -108,7 +111,8 @@ class ParserRegistry:
                 issues, test_summary, build_status = rule.parser(str(log_file))
                 if issues:
                     return issues, test_summary, build_status
-            except (ValueError, KeyError, IndexError, AttributeError, OSError):
+            except (ValueError, KeyError, IndexError, AttributeError, OSError) as e:
+                logger.debug('Parser %s failed for %s: %s', rule.tool, log_file, e)
                 continue
 
         return [], None, 'FAILURE'
@@ -129,7 +133,8 @@ class ParserRegistry:
         """
         try:
             content = Path(log_file).read_text(encoding='utf-8', errors='replace')
-        except OSError:
+        except OSError as e:
+            logger.warning('Failed to read log file %s: %s', log_file, e)
             return [], None, 'FAILURE'
 
         all_issues: list[Issue] = []

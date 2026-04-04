@@ -163,8 +163,8 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
 
     # Sort paths so "." (root module) comes first, then alphabetically
     def path_sort_key(path: str) -> tuple:
-        """Sort key: root module first, then alphabetically."""
-        if path == '.' or path == '':
+        """Sort key: root module first (. or empty), then alphabetically."""
+        if path in ('.', ''):
             return (0, '')  # Root module always first
         return (1, path.lower())
 

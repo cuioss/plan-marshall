@@ -108,6 +108,8 @@ Domain-specific profile skills CAN:
 2. **Use domain-specific verification** - Different commands
 3. **Apply domain patterns** - Coding standards, idioms
 
+**Error handling**: If a profile skill reference in marshal.json points to a non-existent skill, resolution falls back to the system default (`plan-marshall:task-executor`) with `fallback=true`. The invalid reference is logged as a warning.
+
 ---
 
 ## Profile Execution Contract

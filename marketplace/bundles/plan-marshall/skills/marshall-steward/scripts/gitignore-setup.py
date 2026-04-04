@@ -68,9 +68,11 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
 
         for line in lines:
             stripped = line.strip()
-            # Accept both .plan/* (correct) and .plan/ or .plan (legacy)
-            if stripped in ('.plan/*', '.plan/', '.plan'):
+            # Accept both .plan/* (correct) and .plan/ or .plan (legacy formats)
+            if stripped == '.plan/*':
                 has_plan_dir = True
+            elif stripped in ('.plan/', '.plan'):
+                has_plan_dir = True  # Legacy format — will be updated to .plan/*
             if stripped == GITIGNORE_MARSHAL_EXCEPTION:
                 has_marshal_exception = True
             if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:

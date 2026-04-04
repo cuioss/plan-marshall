@@ -224,7 +224,7 @@ def execute_direct_base(
             'timeout_used_seconds': timeout_seconds,
             'log_file': log_file,
             'command': command_str,
-            'error': f'{tool_name.capitalize()} wrapper not found: {wrapper}',
+            'error': f'{tool_name} wrapper not found: {wrapper}',
             **extras,
         }
 

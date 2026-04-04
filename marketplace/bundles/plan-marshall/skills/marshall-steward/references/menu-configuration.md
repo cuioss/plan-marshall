@@ -36,7 +36,7 @@ AskUserQuestion:
       description: "Auto-continue between phases or pause for review"
       value: "review-gates"
     - label: "Full Reconfigure"
-      description: "Run first-run wizard again"
+      description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
       value: "wizard"
 ```
 
@@ -49,13 +49,13 @@ AskUserQuestion:
 | quality-pipelines | Execute "Configuration: Quality Pipelines" below |
 | review-gates | Execute "Configuration: Review Gates" below |
 | structure | Execute "Configuration: Project Structure" below |
-| wizard | Load and execute: `Read references/wizard-flow.md` |
+| wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
 
 ---
 
 ## Configuration: Plan Phase Settings
 
-Load and follow `Read references/shared-plan-phases.md`
+Load and follow `Read references/shared-settings.md` § Plan Phase Settings
 
 The menu additionally supports configuring **confidence_threshold** for phase 2 (not in wizard defaults):
 
@@ -104,7 +104,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get
 ```
 
-Display current gate values, then load and follow `Read references/shared-review-gates.md`
+Display current gate values, then load and follow `Read references/shared-settings.md` § Review Gates
 
 ---
 
@@ -121,7 +121,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get
 ```
 
-Load and follow `Read references/shared-quality-pipelines.md`
+Load and follow `Read references/shared-settings.md` § Quality Pipeline Configuration
 
 ---
 
