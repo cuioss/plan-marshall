@@ -21,13 +21,13 @@ Subcommands:
 import sys
 
 from _build_check_warnings import create_check_warnings_handler
-from _build_coverage_report import create_coverage_report_handler
-from _build_shared import (
+from _build_cli import (
     add_search_markers_subparser,
     build_main,
     register_standard_subparsers,
     safe_main,
 )
+from _build_coverage_report import create_coverage_report_handler
 from _markers_search import cmd_search_markers
 from _maven_cmd_discover import discover_maven_modules
 from _maven_cmd_parse import parse_log

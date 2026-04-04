@@ -163,7 +163,7 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 
 Run check-docs:
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:determine-mode check-docs
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-docs
 ```
 
 Interpret the output:

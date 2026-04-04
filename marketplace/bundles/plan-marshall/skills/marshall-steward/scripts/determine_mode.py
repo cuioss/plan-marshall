@@ -13,9 +13,9 @@ direct CLI access for the wizard flow and first-run bootstrap (before the
 executor exists).
 
 Usage:
-    python3 determine-mode.py mode
-    python3 determine-mode.py check-docs
-    python3 determine-mode.py check-structure
+    python3 determine_mode.py mode
+    python3 determine_mode.py check-docs
+    python3 determine_mode.py check-structure
 
 Output (TOON format):
     mode subcommand:

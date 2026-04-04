@@ -1,6 +1,6 @@
 # Doctor PM-Workflow Workflow
 
-Follows the common workflow pattern (see SKILL.md). Reference guide: `plan-marshall-guide.md`.
+Follows the common workflow pattern (see plugin-doctor SKILL.md). Reference guide: `../references/plan-marshall-guide.md`.
 
 ## Trigger
 
@@ -15,7 +15,7 @@ Execute this workflow when:
 
 ## PM-Workflow Validation Rules
 
-For each component, check against `plan-marshall-guide.md`:
+For each component, check against `../references/plan-marshall-guide.md`:
 
 ### pm-implicit-script-call (PM-001)
 
@@ -31,7 +31,7 @@ For each component, check against `plan-marshall-guide.md`:
 ### pm-wrong-plan-parameter (PM-003) / pm-missing-plan-parameter (PM-004)
 
 - Extract script name from each `execute-script.py` call
-- Check parameter against matrix in plan-marshall-guide.md
+- Check parameter against matrix in `../references/plan-marshall-guide.md`
 - Flag PM-003 if wrong parameter used
 - Flag PM-004 if required plan parameter missing
 

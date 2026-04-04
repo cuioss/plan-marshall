@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for the gitignore-setup.py script.
+Tests for the gitignore_setup.py script.
 
 Tests .gitignore configuration for the planning system:
 - Creates new .gitignore if not present
@@ -12,16 +12,16 @@ Tests .gitignore configuration for the planning system:
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
-# Script path to gitignore-setup.py
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'gitignore-setup.py'
+# Script path to gitignore_setup.py
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'gitignore_setup.py'
 
 
 class TestGitignoreSetupCreate(ScriptTestCase):
-    """Test gitignore-setup.py creating new .gitignore."""
+    """Test gitignore_setup.py creating new .gitignore."""
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'gitignore-setup.py'
+    script = 'gitignore_setup.py'
 
     def test_creates_gitignore_when_missing(self):
         """Should create new .gitignore with planning entries."""
@@ -43,11 +43,11 @@ class TestGitignoreSetupCreate(ScriptTestCase):
 
 
 class TestGitignoreSetupUpdate(ScriptTestCase):
-    """Test gitignore-setup.py updating existing .gitignore."""
+    """Test gitignore_setup.py updating existing .gitignore."""
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'gitignore-setup.py'
+    script = 'gitignore_setup.py'
 
     def test_updates_existing_gitignore(self):
         """Should add planning entries to existing .gitignore."""
@@ -85,11 +85,11 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
 
 
 class TestGitignoreSetupUnchanged(ScriptTestCase):
-    """Test gitignore-setup.py when no changes needed."""
+    """Test gitignore_setup.py when no changes needed."""
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'gitignore-setup.py'
+    script = 'gitignore_setup.py'
 
     def test_unchanged_when_all_entries_exist(self):
         """Should report unchanged when all entries already present."""
@@ -115,11 +115,11 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
 
 
 class TestGitignoreSetupDryRun(ScriptTestCase):
-    """Test gitignore-setup.py dry-run mode."""
+    """Test gitignore_setup.py dry-run mode."""
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'gitignore-setup.py'
+    script = 'gitignore_setup.py'
 
     def test_dry_run_does_not_create_file(self):
         """Dry-run should not create .gitignore."""
@@ -150,11 +150,11 @@ class TestGitignoreSetupDryRun(ScriptTestCase):
 
 
 class TestGitignoreSetupEdgeCases(ScriptTestCase):
-    """Test gitignore-setup.py edge cases."""
+    """Test gitignore_setup.py edge cases."""
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'gitignore-setup.py'
+    script = 'gitignore_setup.py'
 
     def test_nonexistent_project_root_fails(self):
         """Should fail when project root doesn't exist."""

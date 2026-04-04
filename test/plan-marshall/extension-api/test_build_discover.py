@@ -7,10 +7,11 @@ from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 # Import modules under test (PYTHONPATH set by conftest)
-from _build_discover import EXCLUDE_DIRS, README_PATTERNS
-from extension_base import (
+from _build_discover import (
+    EXCLUDE_DIRS,
     ModuleBase,
     ModulePaths,
+    README_PATTERNS,
     build_module_base,
     discover_descriptors,
     find_readme,

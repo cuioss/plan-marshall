@@ -4,8 +4,8 @@
 import sys
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-# Import modules under test (PYTHONPATH set by conftest)
-from extension_base import (
+# Import constants from canonical source
+from _extension_constants import (
     ALL_CANONICAL_COMMANDS,
     CANONICAL_COMMANDS,
     CMD_BENCHMARK,
@@ -21,8 +21,10 @@ from extension_base import (
     CMD_TEST_COMPILE,
     CMD_VERIFY,
     PROFILE_PATTERNS,
-    ExtensionBase,
 )
+
+# Import ExtensionBase from its own module
+from extension_base import ExtensionBase
 
 # =============================================================================
 # Tests for CMD_* Constants

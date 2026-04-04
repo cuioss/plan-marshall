@@ -2,15 +2,19 @@
 """Public API for extension.py implementations.
 
 This module is the single public interface for domain bundle extensions.
-All extension needs are available through this module.
 
 Provides:
     - ExtensionBase: Abstract base class for extensions
-    - Module discovery utilities: discover_descriptors, build_module_base, find_readme
-    - Canonical command constants: CMD_*, CANONICAL_COMMANDS, PROFILE_PATTERNS
+    - Canonical command constants (re-exported from _extension_constants):
+      CMD_*, CANONICAL_COMMANDS, PROFILE_PATTERNS, APPLICABLE_PROFILES
+
+Module discovery utilities (discover_descriptors, build_module_base, find_readme,
+count_source_files, discover_packages, discover_js_sources, discover_sources,
+ModuleBase, ModulePaths) are available via direct import from _build_discover.
 
 Usage:
-    from extension_base import ExtensionBase, discover_descriptors, build_module_base
+    from extension_base import ExtensionBase
+    from _build_discover import discover_descriptors, build_module_base
 
     class Extension(ExtensionBase):
         def get_skill_domains(self) -> list[dict]:
@@ -27,112 +31,28 @@ Usage:
 
 from abc import ABC, abstractmethod
 
-# Re-export module discovery utilities from private implementation.
-# These form the public API for extension.py implementations.
-# Internal constants (EXCLUDE_DIRS, JVM_EXTENSIONS, JVM_LANGUAGES, README_PATTERNS)
-# are available via direct import from _build_discover if needed.
-from _build_discover import (  # noqa: F401 — re-exported as public API
-    ModuleBase,
-    ModulePaths,
-    build_module_base,
-    count_source_files,
-    discover_descriptors,
-    discover_js_sources,
-    discover_packages,
-    discover_sources,
-    find_readme,
-)
-
-# =============================================================================
-# Canonical Command Constants
-# =============================================================================
-
-CMD_CLEAN = 'clean'
-CMD_COMPILE = 'compile'
-CMD_TEST_COMPILE = 'test-compile'
-CMD_MODULE_TESTS = 'module-tests'
-CMD_INTEGRATION_TESTS = 'integration-tests'
-CMD_COVERAGE = 'coverage'
-CMD_BENCHMARK = 'benchmark'
-CMD_QUALITY_GATE = 'quality-gate'
-CMD_VERIFY = 'verify'
-CMD_INSTALL = 'install'
-CMD_CLEAN_INSTALL = 'clean-install'
-CMD_PACKAGE = 'package'
-
-ALL_CANONICAL_COMMANDS = [
-    CMD_CLEAN,
-    CMD_COMPILE,
-    CMD_TEST_COMPILE,
-    CMD_MODULE_TESTS,
-    CMD_INTEGRATION_TESTS,
-    CMD_COVERAGE,
+# Re-export build vocabulary constants from private implementation.
+# These remain available from extension_base for backward compatibility.
+from _extension_constants import (  # noqa: F401 — re-exported for backward compat
+    ALL_CANONICAL_COMMANDS,
+    CANONICAL_COMMANDS,
     CMD_BENCHMARK,
-    CMD_QUALITY_GATE,
-    CMD_VERIFY,
-    CMD_INSTALL,
+    CMD_CLEAN,
     CMD_CLEAN_INSTALL,
+    CMD_COMPILE,
+    CMD_COVERAGE,
+    CMD_INSTALL,
+    CMD_INTEGRATION_TESTS,
+    CMD_MODULE_TESTS,
     CMD_PACKAGE,
-]
-
-
-# =============================================================================
-# Canonical Command Metadata
-# =============================================================================
-
-CANONICAL_COMMANDS = {
-    CMD_INTEGRATION_TESTS: {
-        'aliases': [
-            'integration-tests',
-            'integration-test',
-            'integrationTest',
-            'it',
-            'e2e',
-            'acceptance',
-        ],
-    },
-    CMD_COVERAGE: {
-        'aliases': ['coverage', 'jacoco'],
-    },
-    CMD_BENCHMARK: {
-        'aliases': [
-            'performance',
-            'benchmarks',
-            'jmh',
-            'perf',
-            'stress',
-            'load',
-        ],
-    },
-    CMD_QUALITY_GATE: {
-        'aliases': [
-            'pre-commit',
-            'precommit',
-            'sonar',
-            'lint',
-            'check',
-            'quality',
-        ],
-    },
-}
-
-
-# =============================================================================
-# Profile Classification Patterns (derived from CANONICAL_COMMANDS aliases)
-# =============================================================================
-
-
-def _build_profile_patterns() -> dict[str, str]:
-    """Build PROFILE_PATTERNS from CANONICAL_COMMANDS aliases."""
-    patterns: dict[str, str] = {}
-    for cmd, meta in CANONICAL_COMMANDS.items():
-        aliases: list[str] = meta.get('aliases', [])  # type: ignore[assignment]
-        for alias in aliases:
-            patterns[alias] = cmd
-    return patterns
-
-
-PROFILE_PATTERNS = _build_profile_patterns()
+    CMD_QUALITY_GATE,
+    CMD_TEST_COMPILE,
+    CMD_VERIFY,
+    PROFILE_PATTERNS,
+)
+from _extension_constants import (
+    APPLICABLE_PROFILES as _APPLICABLE_PROFILES,
+)
 
 
 class ExtensionBase(ABC):
@@ -149,7 +69,7 @@ class ExtensionBase(ABC):
     # Required Methods (must be implemented)
     # =========================================================================
 
-    APPLICABLE_PROFILES = ('implementation', 'module_testing', 'integration_testing', 'quality', 'documentation')
+    APPLICABLE_PROFILES = _APPLICABLE_PROFILES
     """Profile names iterated during _build_applicable_result(). Does not include 'core'
     which is always merged into each profile."""
 
@@ -237,8 +157,8 @@ class ExtensionBase(ABC):
     def config_defaults(self, project_root: str) -> None:  # noqa: B027
         """Configure project-specific defaults in marshal.json.
 
-        Called by marshall-steward during initialization, after extension loading
-        but before workflow logic accesses configuration. This is the hook for
+        Called during project initialization, after extension loading but
+        before workflow logic accesses configuration. This is the hook for
         extensions to set domain-specific defaults.
 
         Args:
@@ -336,7 +256,7 @@ class ExtensionBase(ABC):
 
         Each step declares a verification agent that is appended to the
         steps list in marshal.json under plan.phase-5-execute.steps during
-        project configuration via /marshall-steward.
+        project configuration.
 
         Returns:
             List of step dicts, each containing:
@@ -353,8 +273,8 @@ class ExtensionBase(ABC):
         """Return domain-specific finalize steps for phase-6-finalize.
 
         Each step declares a skill that executes during the finalize pipeline.
-        Steps are discovered by marshall-steward and added to the user's
-        selected steps in marshal.json under plan.phase-6-finalize.steps.
+        Steps are discovered during project configuration and added to the
+        user's selected steps in marshal.json under plan.phase-6-finalize.steps.
 
         Returns:
             List of step dicts, each containing:

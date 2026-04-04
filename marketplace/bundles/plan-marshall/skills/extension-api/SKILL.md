@@ -50,9 +50,7 @@ extension-api/
 │   ├── _build_result.py            # Log file creation, result construction, validation (co-located build utility)
 │   ├── _build_parse.py             # Issue structures, warning filtering (co-located build utility)
 │   ├── _build_format.py            # TOON and JSON output formatting (co-located build utility)
-│   ├── _build_wrapper.py           # Build tool wrapper detection (co-located build utility)
-│   ├── _build_commands.py          # Canonical command string generation (co-located build utility)
-│   ├── _build_execute.py           # Subprocess execution, timeout learning (co-located build utility)
+│   ├── _build_execute.py           # Subprocess execution, timeout learning, wrapper detection (co-located build utility)
 │   ├── _build_execute_factory.py   # Factory for build-system-specific handlers (co-located build utility)
 │   ├── _build_shared.py            # Shared CLI helpers, cmd_run_common (co-located build utility)
 │   ├── _build_check_warnings.py    # Warning categorization factory (co-located build utility)
@@ -178,11 +176,9 @@ These are co-located here for PYTHONPATH convenience but are NOT part of the ext
 | `_build_result.py` | Library | Log file creation, result dict construction |
 | `_build_parse.py` | Library | Issue structures, warning filtering |
 | `_build_format.py` | Library | TOON and JSON output formatting |
-| `_build_shared.py` | Library | cmd_run_common(), bash timeout helpers |
-| `_build_wrapper.py` | Library | Build tool wrapper detection |
+| `_build_shared.py` | Library | cmd_run_common(), bash timeout helpers, canonical command generation |
 | `_build_coverage_report.py` | Library | Coverage report parsing with factory |
 | `_build_check_warnings.py` | Library | Warning categorization with factory |
-| `_build_commands.py` | Library | Canonical command string generation |
 | `_build_jvm_patterns.py` | Library | Shared JVM error/warning category patterns |
 | `_build_parser_registry.py` | Library | Registry-based multi-parser for build output |
 | `_coverage_parse.py` | Library | Format-agnostic coverage report parsing (JaCoCo, Cobertura, LCOV, Jest) |

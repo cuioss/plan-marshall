@@ -107,14 +107,14 @@ def test_build_command_fn_with_module():
 
 def test_wrapper_resolve_raises_when_missing(tmp_path):
     """Raises FileNotFoundError when no wrapper found."""
-    with patch('_build_wrapper.shutil.which', return_value=None):
+    with patch('_build_execute.shutil.which', return_value=None):
         with pytest.raises(FileNotFoundError, match='No pyprojectx wrapper found'):
             _CONFIG.wrapper_resolve_fn(str(tmp_path))
 
 
 def test_execute_direct_error_on_missing_wrapper(tmp_path):
     """execute_direct returns error result when wrapper not found."""
-    with patch('_build_wrapper.shutil.which', return_value=None):
+    with patch('_build_execute.shutil.which', return_value=None):
         result = execute_direct(
             args='verify',
             command_key='python:verify',

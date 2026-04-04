@@ -9,8 +9,8 @@ severity filter, and pattern handling; the input/output logic is identical.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 
+from _build_shared import create_subcommand_handler  # noqa: F401 -- re-export for backward compat
 from _warnings_classify import categorize_warnings  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -18,21 +18,18 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 def create_check_warnings_handler(
     matcher: str = 'substring',
     filter_severity: str | None = None,
-) -> Callable:
+):
     """Factory: create a tool-specific check-warnings subcommand handler.
 
-    Args:
-        matcher: Pattern matcher type ('substring', 'wildcard', 'regex').
-        filter_severity: If set, only warnings with this severity are processed.
-
-    Returns:
-        A cmd_check_warnings(args) -> int function ready for argparse set_defaults.
+    Thin wrapper around create_subcommand_handler for backward compatibility.
+    New code should use create_subcommand_handler(cmd_check_warnings_base, ...)
+    directly.
     """
-
-    def cmd_check_warnings(args) -> int:
-        return cmd_check_warnings_base(args, matcher=matcher, filter_severity=filter_severity)
-
-    return cmd_check_warnings
+    return create_subcommand_handler(
+        cmd_check_warnings_base,
+        matcher=matcher,
+        filter_severity=filter_severity,
+    )
 
 
 def cmd_check_warnings_base(

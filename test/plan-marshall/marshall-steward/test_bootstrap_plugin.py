@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for bootstrap-plugin.py script."""
+"""Tests for bootstrap_plugin.py script."""
 
 import sys
 from pathlib import Path
@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script
 
 # Get script path
-SCRIPT_PATH = get_script_path('plan-marshall', 'marshall-steward', 'bootstrap-plugin.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'marshall-steward', 'bootstrap_plugin.py')
 
 
 # =============================================================================

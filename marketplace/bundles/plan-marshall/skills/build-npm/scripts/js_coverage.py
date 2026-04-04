@@ -17,7 +17,7 @@ import os
 import sys
 from typing import Any
 
-from _build_shared import safe_main
+from _build_cli import safe_main
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 EXIT_SUCCESS = 0

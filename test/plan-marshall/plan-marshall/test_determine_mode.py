@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for the determine-mode.py script.
+Tests for the determine_mode.py script.
 
 Tests both subcommands:
 - mode: Determine wizard vs menu mode based on existing files
@@ -10,8 +10,8 @@ Tests both subcommands:
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
-# Script path to determine-mode.py
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine-mode.py'
+# Script path to determine_mode.py
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine_mode.py'
 
 
 class TestModeSubcommand(ScriptTestCase):
@@ -19,7 +19,7 @@ class TestModeSubcommand(ScriptTestCase):
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'determine-mode.py'
+    script = 'determine_mode.py'
 
     def test_wizard_mode_when_executor_missing(self):
         """Should return wizard mode when executor is missing."""
@@ -118,7 +118,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'determine-mode.py'
+    script = 'determine_mode.py'
 
     def test_ok_when_no_docs_exist(self):
         """Should return ok when no documentation files exist."""
@@ -252,7 +252,7 @@ class TestSubcommandRequired(ScriptTestCase):
 
     bundle = 'plan-marshall'
     skill = 'marshall-steward'
-    script = 'determine-mode.py'
+    script = 'determine_mode.py'
 
     def test_error_without_subcommand(self):
         """Should error when no subcommand is provided."""

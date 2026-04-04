@@ -23,13 +23,13 @@ Subcommands:
 import sys
 
 from _build_check_warnings import create_check_warnings_handler
-from _build_coverage_report import create_coverage_report_handler
-from _build_shared import (
+from _build_cli import (
     add_search_markers_subparser,
     build_main,
     register_standard_subparsers,
     safe_main,
 )
+from _build_coverage_report import create_coverage_report_handler
 from _gradle_cmd_discover import discover_gradle_modules
 from _gradle_cmd_find_project import cmd_find_project
 from _gradle_cmd_parse import parse_log

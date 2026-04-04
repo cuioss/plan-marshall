@@ -29,17 +29,16 @@ Output:
 import re
 from pathlib import Path
 
-from _build_commands import build_canonical_commands
-
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from extension_base import (
-    PROFILE_PATTERNS,
+from _build_discover import (
     build_module_base,
     count_source_files,
     discover_descriptors,
     discover_packages,
     discover_sources,
 )
+from _build_shared import build_canonical_commands
+from _extension_constants import PROFILE_PATTERNS
 
 # =============================================================================
 # Profile Pipeline Utilities (Maven-specific — only Maven uses build profiles)

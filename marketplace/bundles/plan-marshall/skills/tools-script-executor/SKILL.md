@@ -187,7 +187,7 @@ When `.plan/execute-script.py` doesn't exist yet (first run), use the bootstrap 
 Check `.plan/marshall-state.toon` for cached `plugin_root`, or detect it:
 
 ```bash
-python3 ~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap-plugin.py get-root
+python3 ~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap_plugin.py get-root
 ```
 
 Output:

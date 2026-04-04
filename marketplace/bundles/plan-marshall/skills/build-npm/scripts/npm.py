@@ -18,12 +18,12 @@ Subcommands:
 import sys
 
 from _build_check_warnings import create_check_warnings_handler
-from _build_coverage_report import create_coverage_report_handler
-from _build_shared import (
+from _build_cli import (
     build_main,
     register_standard_subparsers,
     safe_main,
 )
+from _build_coverage_report import create_coverage_report_handler
 from _npm_cmd_discover import discover_npm_modules
 from _npm_cmd_parse import parse_log
 from _npm_execute import cmd_run

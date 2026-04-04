@@ -5,13 +5,13 @@ Extracts the common cmd_coverage_report() flow that was duplicated across
 build-maven, build-gradle, build-npm, and build-python. Each skill provides
 its own search paths and error message; the logic is identical.
 
-Use create_coverage_report_handler() to build a tool-specific handler from config.
+Use create_subcommand_handler(cmd_coverage_report_base, ...) to build a
+tool-specific handler from config.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
+from _build_shared import create_subcommand_handler  # noqa: F401 -- re-export for backward compat
 from _coverage_parse import find_report, parse_coverage_report  # type: ignore[import-not-found]
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -19,21 +19,18 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]
 def create_coverage_report_handler(
     search_paths: list[tuple[str, str]],
     not_found_message: str = 'No coverage report found. Run coverage build first.',
-) -> Callable:
+):
     """Factory: create a tool-specific coverage-report subcommand handler.
 
-    Args:
-        search_paths: Ordered list of (relative_path, format_hint) tuples.
-        not_found_message: Error message when no report is found.
-
-    Returns:
-        A cmd_coverage_report(args) -> int function ready for argparse set_defaults.
+    Thin wrapper around create_subcommand_handler for backward compatibility.
+    New code should use create_subcommand_handler(cmd_coverage_report_base, ...)
+    directly.
     """
-
-    def cmd_coverage_report(args) -> int:
-        return cmd_coverage_report_base(args, search_paths, not_found_message)
-
-    return cmd_coverage_report
+    return create_subcommand_handler(
+        cmd_coverage_report_base,
+        search_paths=search_paths,
+        not_found_message=not_found_message,
+    )
 
 
 def cmd_coverage_report_base(

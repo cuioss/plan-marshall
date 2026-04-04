@@ -78,9 +78,9 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| determine-mode | `plan-marshall:marshall-steward:determine-mode` | Determine wizard vs menu mode |
-| gitignore-setup | `plan-marshall:marshall-steward:gitignore-setup` | Configure .gitignore for .plan/ |
-| bootstrap-plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/marshall-state.toon` |
+| determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode |
+| gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
+| bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/marshall-state.toon` |
 
 ### Delegated Scripts (require executor)
 
@@ -100,7 +100,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 
 The `/marshall-steward` command must set `${PLUGIN_ROOT}` before loading this skill:
 
-1. Run `bootstrap-plugin.py get-root` (direct Python call with glob) to detect plugin root
+1. Run `bootstrap_plugin.py get-root` (direct Python call with glob) to detect plugin root
 2. Set `${PLUGIN_ROOT}` to the returned path
 3. The plugin root is cached in `.plan/marshall-state.toon` for subsequent calls
 
@@ -113,7 +113,7 @@ Determine whether to run wizard or menu based on existing files.
 **BOOTSTRAP**: Since execute-script.py may not exist yet, use DIRECT Python call with glob:
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine-mode.py mode
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py mode
 ```
 
 **Output (TOON)**:
@@ -132,7 +132,7 @@ reason	executor_missing
 
 ### Check for `--wizard` Flag
 
-If `--wizard` flag provided, force wizard regardless of determine-mode result:
+If `--wizard` flag provided, force wizard regardless of determine_mode result:
 ```
 Read references/wizard-flow.md
 ```
@@ -201,7 +201,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains | Menu option 3 |
-| `shared-settings.md` | Plan phases, review gates, quality pipelines | Loaded by wizard-flow and menu-configuration |
+| `shared-settings.md` | **DEPRECATED** — Plan phases, review gates, quality pipelines now delegate to `manage-config` | Retained for transition reference only |
 | `error-handling.md` | Error types and recovery | On error conditions |
 
 > **Note**: `shared-doc-check.md` content has been inlined into `wizard-flow.md` and `menu-maintenance.md`. For TOON output format, see `plan-marshall:ref-toon-format`.

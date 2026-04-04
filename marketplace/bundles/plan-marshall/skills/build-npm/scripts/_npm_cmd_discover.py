@@ -23,15 +23,15 @@ import json
 import re
 from pathlib import Path
 
-from _build_commands import build_canonical_commands, build_chained_commands
-
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
-from _build_discover import JS_EXTENSIONS, discover_js_sources
-from extension_base import (
+from _build_discover import (
+    JS_EXTENSIONS,
     build_module_base,
     count_source_files,
+    discover_js_sources,
     discover_packages,
 )
+from _build_shared import build_canonical_commands, build_chained_commands
 from plan_logging import log_entry
 
 # =============================================================================

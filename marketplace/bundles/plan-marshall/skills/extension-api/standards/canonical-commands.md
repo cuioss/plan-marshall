@@ -159,14 +159,14 @@ def discover_modules(self, project_root: str) -> list:
 
 Profile classification and command generation are handled **internally** by each extension's `discover_modules()` implementation. The `PROFILE_PATTERNS` constant from `extension_base.py` provides the mapping vocabulary for classifying profile IDs to canonical command names.
 
-The resolution pseudocode above is implemented in `_build_commands.py::build_canonical_commands()`. See that function for the authoritative implementation.
+The resolution pseudocode above is implemented in `_build_shared.py::build_canonical_commands()`. See that function for the authoritative implementation.
 
 ---
 
 ## References
 
 - `extension_base.py` — `CMD_*` constants, `CANONICAL_COMMANDS` dict, `PROFILE_PATTERNS` mapping (authoritative source)
-- `_build_commands.py` — `build_canonical_commands()` implementation
+- `_build_shared.py` — `build_canonical_commands()` implementation
 - [module-discovery.md](module-discovery.md) — How commands appear in discovery output
 - [build-execution.md](build-execution.md) — How commands are executed
 

@@ -55,31 +55,42 @@ AskUserQuestion:
 
 ## Configuration: Plan Phase Settings
 
-Load and follow `Read references/shared-settings.md` § Plan Phase Settings
+Configure plan phase settings using manage-config. Show current values first:
 
-The menu additionally supports configuring **confidence_threshold** for phase 2 (not in wizard defaults):
-
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init get
+```
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine get
 ```
-
-**confidence_threshold**:
-```
-AskUserQuestion:
-  question: "Confidence threshold for request refinement?"
-  header: "Threshold"
-  options:
-    - label: "95 (Recommended)"
-      description: "95% confidence required before proceeding to outline"
-    - label: "90"
-      description: "Lower threshold, fewer refinement iterations"
-    - label: "100"
-      description: "Full confidence required"
-  multiSelect: false
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute get
 ```
 
-Apply:
+Display current values, then ask user which settings to change:
+
+**Branch strategy** (phase-1-init): `feature` (recommended) or `direct`
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field branch_strategy --value {direct|feature}
+```
+
+**Backward compatibility** (phase-2-refine): `breaking` (recommended), `deprecation`, or `smart_and_ask`
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
+```
+
+**Commit strategy** (phase-5-execute): `per_deliverable` (recommended), `per_plan`, or `none`
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
+```
+
+**Confidence threshold** (phase-2-refine, menu-only): `95` (recommended), `90`, or `100`
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field confidence_threshold --value {95|90|100}
@@ -89,7 +100,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Configuration: Review Gates
 
-Show current values first, then load shared reference:
+Show current values first:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -104,13 +115,30 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get
 ```
 
-Display current gate values, then load and follow `Read references/shared-settings.md` § Review Gates
+Display current gate values, then ask user which transitions should auto-continue (multi-select):
+- "Plan without asking" → outline to planning
+- "Execute without asking" → planning to execution
+- "Finalize without asking" → execution to finalize
+
+Apply each selection via manage-config:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline set --field plan_without_asking --value {true|false}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-4-plan set --field execute_without_asking --value {true|false}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field finalize_without_asking --value {true|false}
+```
 
 ---
 
 ## Configuration: Quality Pipelines
 
-Show current config first, then load shared reference:
+Show current config first:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -121,7 +149,35 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get
 ```
 
-Load and follow `Read references/shared-settings.md` § Quality Pipeline Configuration
+Display current values, then configure pipelines using manage-config:
+
+**Verification steps** (phase-5-execute): Discover available steps, present as multi-select, apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
+```
+
+**Finalize steps** (phase-6-finalize): Discover available steps, present as multi-select, apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
+```
+
+**Max iterations**: Ask user for verification iterations (default 5) and finalize iterations (default 3):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set-max-iterations --value {5|3|10}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set-max-iterations --value {3|1|5}
+```
 
 ---
 

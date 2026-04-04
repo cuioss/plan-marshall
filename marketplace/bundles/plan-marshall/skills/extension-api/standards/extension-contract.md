@@ -18,6 +18,56 @@ At runtime, they're discovered from the plugin cache:
 
 ---
 
+## Skill Directory Convention
+
+Every bundle that provides domain extensions **must** contain a `skills/plan-marshall-plugin/` directory. The `extension_discovery.py` scanner (`find_extension_path()`) looks for this exact path relative to the bundle root:
+
+```
+{bundle}/skills/plan-marshall-plugin/extension.py
+```
+
+The name `plan-marshall-plugin` is a **convention that signals "this bundle is an extension point for plan-marshall"** — it does NOT mean "a plugin for plan-marshall" or "the plan-marshall plugin." Each bundle's `plan-marshall-plugin` directory contains a different domain-specific extension (Java, Python, OCI, etc.), but the directory name is identical across all bundles so the scanner can discover them uniformly.
+
+### Directory Contents
+
+| File / Directory | Required | Purpose |
+|------------------|----------|---------|
+| `extension.py` | Yes | Implements `ExtensionBase` — the bundle's domain extension |
+| `SKILL.md` | No | Documents the extension's behavior and domain |
+| `scripts/` | No | Module discovery logic or other domain-specific scripts |
+
+### Discovery Mechanism
+
+The `find_extension_path()` function in `extension_discovery.py` resolves the extension path using two strategies:
+
+1. **Source structure**: `marketplace/bundles/{bundle}/skills/plan-marshall-plugin/extension.py`
+2. **Cache structure** (versioned): `~/.claude/plugins/cache/plan-marshall/{bundle}/{version}/skills/plan-marshall-plugin/extension.py`
+
+The path segment `skills/plan-marshall-plugin/extension.py` is hardcoded. Bundles that use a different directory name will not be discovered.
+
+### Bundles Implementing This Convention
+
+All 10 production bundles provide a `skills/plan-marshall-plugin/` directory:
+
+| Bundle | Domain | Description |
+|--------|--------|-------------|
+| `plan-marshall` | build, general-dev | Core infrastructure and multi-domain extension |
+| `pm-dev-java` | java | Java/Maven development patterns and module discovery |
+| `pm-dev-java-cui` | java-cui | CUI-specific Java extensions (additive to pm-dev-java) |
+| `pm-dev-frontend` | javascript | JavaScript/frontend development standards |
+| `pm-dev-frontend-cui` | javascript-cui | CUI-specific JavaScript standards (additive to pm-dev-frontend) |
+| `pm-dev-python` | python | Python development standards and build operations |
+| `pm-dev-oci` | oci-containers | OCI container standards and security |
+| `pm-documents` | documentation | AsciiDoc, ADRs, and interface specifications |
+| `pm-plugin-development` | plan-marshall-plugin-dev | Plugin creation and maintenance toolkit |
+| `pm-requirements` | requirements | Requirements engineering standards |
+
+### Why the Same Name Everywhere?
+
+A single, fixed directory name enables automatic discovery without configuration. The scanner iterates over all bundle directories and checks for `skills/plan-marshall-plugin/extension.py` — no registry, no manifest lookup, no per-bundle configuration. This makes adding a new domain extension as simple as creating the directory and implementing `ExtensionBase`.
+
+---
+
 ## ExtensionBase Import
 
 All extensions must import and inherit from `ExtensionBase`:
@@ -330,10 +380,7 @@ def provides_outline_skill(self) -> str | None:
 {bundle}/skills/{skill}/
 ├── SKILL.md                       # Shared workflow steps
 └── standards/
-    ├── change-feature.md          # Create new components
-    ├── change-enhancement.md      # Improve existing components
-    ├── change-bug_fix.md          # Fix component bugs
-    └── change-tech_debt.md        # Refactor/cleanup
+    └── change-types.md            # All change types (bug_fix, enhancement, feature, tech_debt)
 ```
 
 | Change Type | Description |

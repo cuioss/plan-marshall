@@ -11,8 +11,8 @@ marshal.json — bootstrap state is needed before the executor/config system is
 available, so it uses its own lightweight caching mechanism.
 
 Usage:
-    python3 bootstrap-plugin.py get-root [--refresh]
-    python3 bootstrap-plugin.py resolve --bundle <bundle> --path <path>
+    python3 bootstrap_plugin.py get-root [--refresh]
+    python3 bootstrap_plugin.py resolve --bundle <bundle> --path <path>
 
 Subcommands:
     get-root    Return the plugin root path (detects if needed)

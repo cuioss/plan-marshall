@@ -6,7 +6,7 @@ user-invocable: false
 
 # Plugin Development Outline Workflow
 
-Shared workflow steps for plugin development outline, loaded by the `phase-3-outline` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-{type}.md`.
+Shared workflow steps for plugin development outline, loaded by the `phase-3-outline` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-types.md` (consolidated document with sections for each type: bug_fix, enhancement, feature, tech_debt).
 
 ## Step 1: Load Foundational Practices
 

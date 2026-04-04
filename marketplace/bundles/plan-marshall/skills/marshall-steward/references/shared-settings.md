@@ -1,6 +1,10 @@
 # Shared: Configuration Settings
 
-Reusable configuration workflows for plan phases, review gates, and quality pipelines. Used by both wizard-flow and menu-configuration.
+> **DEPRECATED**: Configuration options are now managed by `plan-marshall:manage-config`.
+> This file is retained for reference during the transition period.
+> Wizard-flow.md and menu-configuration.md now delegate to manage-config script calls.
+
+Reusable configuration workflows for plan phases, review gates, and quality pipelines. Previously used by both wizard-flow and menu-configuration.
 
 ---
 

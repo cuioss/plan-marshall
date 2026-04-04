@@ -27,6 +27,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from _warnings_classify import pattern_match
+
 # Plan directory configuration for test isolation
 _PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
@@ -182,9 +184,10 @@ def load_acceptable_warnings(project_dir: str, build_system: str) -> list[str]:
 def is_warning_accepted(warning: Issue, patterns: list[str]) -> bool:
     """Check if a warning matches an acceptable pattern.
 
-    Supports two matching modes:
-    - Substring matching: pattern is checked as substring of message
-    - Regex matching: patterns starting with ^ are treated as regex
+    Delegates to pattern_match() from _warnings_classify for the actual
+    matching logic.  Uses 'substring' mode which supports:
+    - Substring matching: pattern is checked as case-insensitive substring of message
+    - Regex fallback: patterns are also tried as case-insensitive regex
 
     Args:
         warning: The warning Issue to check.
@@ -204,22 +207,7 @@ def is_warning_accepted(warning: Issue, patterns: list[str]) -> bool:
         return False
 
     message = warning.message
-
-    for pattern in patterns:
-        if pattern.startswith('^'):
-            # Regex pattern
-            try:
-                if re.match(pattern, message, re.IGNORECASE):
-                    return True
-            except re.error:
-                # Invalid regex, skip
-                continue
-        else:
-            # Substring match (case-insensitive)
-            if pattern.lower() in message.lower():
-                return True
-
-    return False
+    return any(pattern_match(message, p, 'substring') for p in patterns)
 
 
 def filter_warnings(warnings: list[Issue], patterns: list[str], mode: str = MODE_ACTIONABLE) -> list[Issue]:

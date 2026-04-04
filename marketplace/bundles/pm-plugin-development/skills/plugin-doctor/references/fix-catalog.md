@@ -419,7 +419,7 @@ Risky fixes require user confirmation because they involve judgment calls or may
 
 **Fix Strategy**:
 - Swap `--plan-id` to `--trace-plan-id` or vice versa
-- Consult parameter matrix in plan-marshall-guide.md
+- Consult parameter matrix in `plan-marshall:plan-marshall-plugin/references/plan-marshall-guide.md`
 
 **Why Safe** (when pattern is clear):
 - Mechanical swap based on known script requirements

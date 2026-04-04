@@ -33,9 +33,9 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 from _build_execute import BuildCommandFn, CaptureStrategy, ScopeFn, execute_direct_base  # noqa: E402
+from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_result import DirectCommandResult  # noqa: E402
 from _build_shared import cmd_run_common  # noqa: E402
-from _build_wrapper import detect_wrapper as _detect_wrapper  # noqa: E402
 
 
 def default_command_key_fn(command_args: str) -> str:

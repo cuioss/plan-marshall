@@ -28,9 +28,15 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         tomllib = None  # type: ignore[assignment]
 
-from _build_commands import build_canonical_commands
-from _build_discover import EXCLUDE_DIRS, PY_EXTENSIONS, count_source_files, discover_packages
-from extension_base import build_module_base, find_readme
+from _build_discover import (
+    EXCLUDE_DIRS,
+    PY_EXTENSIONS,
+    build_module_base,
+    count_source_files,
+    discover_packages,
+    find_readme,
+)
+from _build_shared import build_canonical_commands
 from plan_logging import log_entry
 
 # Directories that indicate a test module

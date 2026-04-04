@@ -13,7 +13,7 @@ Configure `.gitignore` for `.plan/` directory with tracked file exceptions.
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore-setup.py
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore_setup.py
 ```
 
 **Output (TOON)**:
@@ -42,7 +42,7 @@ entries_added	3
 **BOOTSTRAP**: Use DIRECT Python call (executor not yet available):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine-mode.py check-docs
+python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py check-docs
 ```
 
 Interpret the output:
@@ -148,7 +148,25 @@ AskUserQuestion:
 
 If user selects "Use defaults" → Skip to Step 7.
 
-If user selects "Configure": Load and follow `Read references/shared-settings.md` § Plan Phase Settings
+If user selects "Configure", use manage-config to set each plan phase field interactively:
+
+**Branch strategy** (phase-1-init): Ask user for `feature` (recommended) or `direct`, then apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field branch_strategy --value {direct|feature}
+```
+
+**Backward compatibility** (phase-2-refine): Ask user for `breaking` (recommended), `deprecation`, or `smart_and_ask`, then apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
+```
+
+**Commit strategy** (phase-5-execute): Ask user for `per_deliverable` (recommended), `per_plan`, or `none`, then apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
+```
 
 ---
 
@@ -168,13 +186,62 @@ AskUserQuestion:
 
 If user selects "Use defaults" → Skip to Step 8.
 
-If user selects "Configure": Load and follow `Read references/shared-settings.md` § Quality Pipeline Configuration
+If user selects "Configure", use manage-config to configure pipelines:
+
+**Discover and set verification steps** (phase-5-execute):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
+```
+Present discovered steps as multi-select, then apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
+```
+
+**Discover and set finalize steps** (phase-6-finalize):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
+```
+Present discovered steps as multi-select, then apply:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
+```
+
+**Max iterations**: Ask user for verification iterations (default 5) and finalize iterations (default 3):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set-max-iterations --value {5|3|10}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set-max-iterations --value {3|1|5}
+```
 
 ---
 
 ## Step 7c: Review Gates (Optional)
 
-Load and follow `Read references/shared-settings.md` § Review Gates
+Configure whether phase transitions pause for user review or auto-continue. Default: all transitions pause.
+
+Ask user which transitions should auto-continue (multi-select):
+- "Plan without asking" → outline (phase 3) to planning (phase 4)
+- "Execute without asking" → planning (phase 4) to execution (phase 5)
+- "Finalize without asking" → execution (phase 5) to finalize (phase 6)
+
+Apply each selection via manage-config:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-3-outline set --field plan_without_asking --value {true|false}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-4-plan set --field execute_without_asking --value {true|false}
+```
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field finalize_without_asking --value {true|false}
+```
 
 ---
 

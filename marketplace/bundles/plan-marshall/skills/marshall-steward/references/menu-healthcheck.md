@@ -89,7 +89,7 @@ Report any redundant or stale permissions found.
 Verify project structure knowledge base exists:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:determine-mode check-structure
+python3 .plan/execute-script.py plan-marshall:marshall-steward:determine_mode check-structure
 ```
 
 **Interpret results**:

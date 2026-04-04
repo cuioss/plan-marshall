@@ -7,7 +7,7 @@ Uses .plan/* (not .plan/) to allow exceptions - .plan/ ignores the entire
 directory making exceptions impossible.
 
 Usage:
-    python3 gitignore-setup.py [--dry-run]
+    python3 gitignore_setup.py [--dry-run]
 
 Options:
     --dry-run              Show what would be done without making changes

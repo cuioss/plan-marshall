@@ -1,12 +1,14 @@
 # Script Standards
 
-Standards for marketplace scripts covering documentation requirements, shell scripts, and architectural rule enforcement.
+Supplementary script standards covering SKILL.md documentation requirements, shell scripts, and architectural rule enforcement.
 
 For Python implementation patterns, testing, output contracts, and cross-skill integration, load the dedicated skill:
 
 ```
 Skill: pm-plugin-development:plugin-script-architecture
 ```
+
+That skill is the single source of truth for Python script development. This document covers only the topics not addressed there.
 
 ## Documentation Requirements in SKILL.md
 
@@ -39,29 +41,6 @@ All scripts MUST be documented in SKILL.md.
   status: success
   field1: value
   field2: 123
-  ```
-```
-
-### Example Documentation
-
-**Real Example** (from plugin-doctor SKILL.md):
-```markdown
-### Scripts (in scripts/)
-
-**1. analyze.py**: Analyzes file structure, frontmatter, bloat, Rule 6/7/Pattern 22 violations
-- **Input**: file path, component type (agent|command|skill)
-- **Output**: TOON with structural analysis
-- **Usage**:
-  ```bash
-  python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:analyze markdown --file {file_path} --type agent
-  ```
-
-**2. validate.py references**: Python script for reference pre-filtering and extraction
-- **Input**: file path
-- **Output**: TOON with detected references and pre-filter statistics
-- **Usage**:
-  ```bash
-  python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate references --file {file_path}
   ```
 ```
 

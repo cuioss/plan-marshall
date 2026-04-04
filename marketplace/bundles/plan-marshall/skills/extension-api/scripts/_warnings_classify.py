@@ -32,10 +32,41 @@ ACCEPTABLE_TYPES = ['openrewrite_info']
 UNKNOWN_TYPES = ['other', 'other_warnings']
 
 
-def _match_substring(message: str, pattern: str) -> bool:
+def pattern_match(message: str, pattern: str, mode: str = 'substring') -> bool:
+    """Unified pattern matching — the single place that knows how to match patterns.
+
+    Supports three modes:
+    - 'substring': Case-insensitive substring match with regex fallback.
+      Strips leading '[WARNING] ' prefix from patterns before matching.
+    - 'wildcard': Exact, prefix*, *suffix, *infix* matching with ^-regex support.
+    - 'regex': Pure regex search.
+
+    For the 'substring' mode used by is_warning_accepted() in _build_parse:
+    patterns starting with '^' are treated as regex (re.match, case-insensitive),
+    all others use case-insensitive substring matching with regex fallback.
+
+    Args:
+        message: The warning message to match against.
+        pattern: The pattern string.
+        mode: Matching mode — 'substring', 'wildcard', or 'regex'.
+
+    Returns:
+        True if message matches pattern, False otherwise.
+    """
+    if mode == 'substring':
+        return _do_substring(message, pattern)
+    if mode == 'wildcard':
+        return _do_wildcard(message, pattern)
+    if mode == 'regex':
+        return _do_regex(message, pattern)
+    # Unknown mode falls back to substring
+    return _do_substring(message, pattern)
+
+
+def _do_substring(message: str, pattern: str) -> bool:
     """Substring matching + case-insensitive regex fallback (Maven style)."""
     clean = pattern[9:].strip() if pattern.startswith('[WARNING]') else pattern
-    if clean in message:
+    if clean.lower() in message.lower():
         return True
     try:
         if re.search(clean, message, re.IGNORECASE):
@@ -45,7 +76,7 @@ def _match_substring(message: str, pattern: str) -> bool:
     return False
 
 
-def _match_wildcard(message: str, pattern: str) -> bool:
+def _do_wildcard(message: str, pattern: str) -> bool:
     """Wildcard matching + regex for ^-prefixed patterns (Gradle style).
 
     Supports three wildcard forms (plain string matching, no regex):
@@ -71,13 +102,28 @@ def _match_wildcard(message: str, pattern: str) -> bool:
     return False
 
 
-def _match_regex(message: str, pattern: str) -> bool:
+def _do_regex(message: str, pattern: str) -> bool:
     """Pure regex matching."""
     try:
         return bool(re.search(pattern, message))
     except re.error:
         logger.debug('Invalid regex pattern: %s', pattern)
         return False
+
+
+def _match_substring(message: str, pattern: str) -> bool:
+    """Substring matching — delegates to pattern_match()."""
+    return pattern_match(message, pattern, 'substring')
+
+
+def _match_wildcard(message: str, pattern: str) -> bool:
+    """Wildcard matching — delegates to pattern_match()."""
+    return pattern_match(message, pattern, 'wildcard')
+
+
+def _match_regex(message: str, pattern: str) -> bool:
+    """Regex matching — delegates to pattern_match()."""
+    return pattern_match(message, pattern, 'regex')
 
 
 _MATCHERS = {
