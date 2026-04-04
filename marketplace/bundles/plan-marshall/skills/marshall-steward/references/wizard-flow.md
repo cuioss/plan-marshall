@@ -37,39 +37,13 @@ entries_added	3
 
 ## Step 2: Update Project Documentation (BOOTSTRAP)
 
-Check if project docs need required content:
-
 **BOOTSTRAP**: Use DIRECT Python call (executor not yet available):
 
 ```bash
 python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine-mode.py check-docs
 ```
 
-**Output (TOON)**:
-```toon
-status	ok
-missing_count	0
-```
-
-Or if updates needed:
-```toon
-status	needs_update
-missing_count	2
-plan_temp	CLAUDE.md
-file_ops	CLAUDE.md
-```
-
-If `status` is `needs_update`, add missing content to each listed file:
-
-**For `plan_temp`** — add to each file listed:
-```
-- Use `.plan/temp/` for ALL temporary files (covered by `Write(.plan/**)` permission - avoids permission prompts)
-```
-
-**For `file_ops`** — add to CLAUDE.md (e.g. in a "Development Notes" or equivalent section):
-```
-- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
-```
+Load and follow: `Read references/shared-doc-check.md`
 
 ---
 
@@ -123,13 +97,6 @@ The script auto-detects the plugin cache location and generates `.plan/execute-s
 python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
 ```
 
-**Ensure executor permission** (prevents permission prompts when using executor):
-```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py ensure \
-  --permissions "Bash(python3 .plan/execute-script.py *)" \
-  --target project
-```
-
 **Output**: "Executor ready with N script mappings"
 
 **NOTE**: From this point on, all script calls use: `python3 .plan/execute-script.py {notation} ...`
@@ -161,8 +128,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 ## Step 6: Plan Phase Settings (Optional)
 
-Configure plan phase settings for branching, compatibility, and commit strategy.
-
 ```
 AskUserQuestion:
   question: "Configure plan phase settings for this project?"
@@ -177,75 +142,11 @@ AskUserQuestion:
 
 If user selects "Use defaults" → Skip to Step 7.
 
-If user selects "Configure":
-
-```
-AskUserQuestion:
-  question: "Branch strategy for plan execution?"
-  header: "Branching"
-  options:
-    - label: "Feature branch (Recommended)"
-      description: "Create feature branch per plan"
-    - label: "Direct"
-      description: "Work on current branch"
-  multiSelect: false
-```
-
-Apply selection:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-1-init set --field branch_strategy --value {direct|feature}
-```
-
-```
-AskUserQuestion:
-  question: "Backward compatibility approach during plan execution?"
-  header: "Compat"
-  options:
-    - label: "Breaking (Recommended)"
-      description: "Clean-slate approach, no deprecation nor transitionary comments"
-    - label: "Deprecation"
-      description: "Add deprecation markers to old code, provide migration path"
-    - label: "Smart and ask"
-      description: "Assess impact and ask user when backward compatibility is uncertain"
-  multiSelect: false
-```
-
-Maps to values: `breaking`, `deprecation`, `smart_and_ask`
-
-Apply selection:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
-```
-
-```
-AskUserQuestion:
-  question: "Commit strategy during plan execution?"
-  header: "Commits"
-  options:
-    - label: "Per deliverable (Recommended)"
-      description: "Commit after all tasks for each deliverable complete (impl + tests)"
-    - label: "Per plan"
-      description: "Single commit of all changes at finalize"
-    - label: "None"
-      description: "No automatic commits"
-  multiSelect: false
-```
-
-Maps to values: `per_deliverable`, `per_plan`, `none`
-
-Apply selection:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
-```
+If user selects "Configure": Load and follow `Read references/shared-plan-phases.md`
 
 ---
 
 ## Step 7: Quality Pipeline Configuration (Optional)
-
-Configure verification (phase 5 sub-loop) and finalize (phase 6-finalize) pipeline settings.
 
 ```
 AskUserQuestion:
@@ -261,162 +162,13 @@ AskUserQuestion:
 
 If user selects "Use defaults" → Skip to Step 8.
 
-If user selects "Configure":
-
-### Step 7a: Configure Verification Steps
-
-Generic boolean steps:
-
-```
-AskUserQuestion:
-  questions:
-    - question: "Which generic verification steps to include?"
-      header: "Verify Steps"
-      multiSelect: true
-      options:
-        - label: "1_quality_check (Recommended)"
-          description: "Build quality gate using canonical commands"
-        - label: "2_build_verify (Recommended)"
-          description: "Build verification using canonical commands"
-```
-
-Apply: for each deselected step:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-step --step {step_name} --enabled false
-```
-
-**Domain verification steps** are auto-populated from extensions during Step 11 (skill domain configuration). Each domain bundle declares its verification steps via `provides_verify_steps()` in `extension.py`.
-
-### Step 7b: Select Finalize Steps
-
-Discover available finalize steps from three sources:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  list-finalize-steps
-```
-
-This returns all discoverable steps from:
-1. **Built-in steps**: Hard-coded in `_config_defaults.BUILT_IN_FINALIZE_STEPS` with descriptions
-2. **Project steps**: Discovered from `.claude/skills/finalize-step-*` directories
-3. **Extension steps**: Discovered via `provides_finalize_steps()` on domain extensions
-
-Present the merged list as a multi-select. If total steps exceed 4, use paging (4 options per page with "More..." option).
-
-```
-AskUserQuestion:
-  questions:
-    - question: "Which finalize steps to include?"
-      header: "Finalize Steps"
-      multiSelect: true
-      options:
-        # Built-in steps (from list-finalize-steps output):
-        - label: "commit_push (Recommended)"
-          description: "Commit and push changes"
-        - label: "create_pr"
-          description: "Create pull request"
-        - label: "automated_review"
-          description: "CI automated review"
-        - label: "sonar_roundtrip"
-          description: "Sonar analysis roundtrip"
-        # Page 2 (if paging needed):
-        - label: "knowledge_capture (Recommended)"
-          description: "Capture learnings to memory"
-        - label: "lessons_capture (Recommended)"
-          description: "Record lessons learned"
-        - label: "branch_cleanup"
-          description: "Merge PR (with --delete-branch) and pull latest"
-        - label: "archive"
-          description: "Archive the completed plan"
-        # Extension/project steps (dynamic, from list-finalize-steps):
-        # - label: "{step_name}"
-        #   description: "{step_description}"
-```
-
-Apply: write the selected steps as an ordered list:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
-```
-
-### Step 7c: Max Iterations
-
-```
-AskUserQuestion:
-  questions:
-    - question: "Max iterations for verification (phase 5 sub-loop)?"
-      header: "Verify Iters"
-      multiSelect: false
-      options:
-        - label: "5 (Recommended)"
-          description: "Standard retry limit for quality checks"
-        - label: "3"
-          description: "Fewer retries, faster completion"
-        - label: "10"
-          description: "More retries for complex projects"
-    - question: "Max iterations for finalize phase (phase 6-finalize)?"
-      header: "Finalize Iters"
-      multiSelect: false
-      options:
-        - label: "3 (Recommended)"
-          description: "Standard retry limit for commit/PR/CI"
-        - label: "1"
-          description: "Single attempt, fail fast"
-        - label: "5"
-          description: "More retries for CI roundtrips"
-```
-
-Apply selections:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-max-iterations --value {5|3|10}
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set-max-iterations --value {3|1|5}
-```
+If user selects "Configure": Load and follow `Read references/shared-quality-pipelines.md`
 
 ---
 
 ## Step 7d: Review Gates (Optional)
 
-Configure whether phase transitions pause for user review or auto-continue.
-
-```
-AskUserQuestion:
-  question: "Which phase transitions should auto-continue without pausing for review?"
-  header: "Review Gates"
-  multiSelect: true
-  options:
-    - label: "Plan without asking"
-      description: "Auto-continue from outline (phase 3) to planning (phase 4)"
-    - label: "Execute without asking"
-      description: "Auto-continue from planning (phase 4) to execution (phase 5)"
-    - label: "Finalize without asking"
-      description: "Auto-continue from execution (phase 5) to finalize (phase 6)"
-```
-
-Default: none selected (conservative — all transitions pause for review).
-
-Apply: for each selected gate:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-3-outline set --field plan_without_asking --value true
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-4-plan set --field execute_without_asking --value true
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field finalize_without_asking --value true
-```
-
-If no gates selected → skip (defaults are already `false`).
+Load and follow `Read references/shared-review-gates.md`
 
 ---
 

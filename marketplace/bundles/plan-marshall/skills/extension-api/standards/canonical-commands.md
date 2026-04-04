@@ -91,7 +91,9 @@ Modules with `metadata.packaging == "pom"` only receive:
 
 They do **not** receive: `compile`, `test-compile`, `module-tests`, `verify`, `install`, `package`
 
-### Resolution Flow
+### Resolution Flow (Conceptual Pseudocode)
+
+This pseudocode illustrates the resolution logic. Each extension implements it concretely in `discover_modules()`.
 
 ```
 discover_modules():
@@ -184,16 +186,6 @@ Required commands depend on module type and content:
 - `module-tests` - Required only if `stats.test_files > 0`
 
 The orchestrator validates that required commands exist in the `commands` field returned by `discover_modules()`.
-
-## Phase Descriptions
-
-| Phase | Purpose |
-|-------|---------|
-| **build** | Compile source code |
-| **test** | Execute tests |
-| **quality** | Static analysis, formatting |
-| **verify** | Complete validation |
-| **deploy** | Create/install artifacts |
 
 ## Extension-Specific Commands
 

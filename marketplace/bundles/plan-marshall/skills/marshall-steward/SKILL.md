@@ -74,24 +74,35 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 
 ## Scripts
 
+### Own Scripts (bootstrap-capable, run before executor exists)
+
 | Script | Notation | Purpose |
 |--------|----------|---------|
 | determine-mode | `plan-marshall:marshall-steward:determine-mode` | Determine wizard vs menu mode |
 | gitignore-setup | `plan-marshall:marshall-steward:gitignore-setup` | Configure .gitignore for .plan/ |
-| run_config cleanup | `plan-marshall:manage-run-config:run_config` | Clean temp, logs, archived-plans, memory (cleanup/cleanup-status subcommands) |
-| ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection (delegated to tools-integration-ci) |
-| manage-config | `plan-marshall:manage-config:manage-config` | Project-level marshal.json CRUD |
-| scan-marketplace-inventory | `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory` | Script discovery (requires pm-plugin-development bundle) |
-| tools-permission-doctor | `plan-marshall:tools-permission-doctor:permission_doctor` | Permission analysis |
-| tools-permission-fix | `plan-marshall:tools-permission-fix:permission_fix` | Permission fixes |
+| bootstrap-plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/marshall-state.toon` |
+
+### Delegated Scripts (require executor)
+
+| Script | Notation | Purpose |
+|--------|----------|---------|
 | generate-executor | `plan-marshall:tools-script-executor:generate_executor` | Executor generation |
+| manage-config | `plan-marshall:manage-config:manage-config` | Project-level marshal.json CRUD |
+| run_config | `plan-marshall:manage-run-config:run_config` | Clean temp, logs, archived-plans, memory |
+| ci_health | `plan-marshall:tools-integration-ci:ci_health` | CI provider detection |
+| permission_doctor | `plan-marshall:tools-permission-doctor:permission_doctor` | Permission analysis |
+| permission_fix | `plan-marshall:tools-permission-fix:permission_fix` | Permission fixes |
+| extension_discovery | `plan-marshall:extension-api:extension_discovery` | Extension config defaults |
 
 ---
 
 ## Prerequisites
 
-This skill requires `${PLUGIN_ROOT}` to be set by the invoking command (e.g., `/marshall-steward`).
-The plugin root is detected via `bootstrap-plugin.py` and cached in `.plan/marshall-state.toon`.
+The `/marshall-steward` command must set `${PLUGIN_ROOT}` before loading this skill:
+
+1. Run `bootstrap-plugin.py get-root` (direct Python call with glob) to detect plugin root
+2. Set `${PLUGIN_ROOT}` to the returned path
+3. The plugin root is cached in `.plan/marshall-state.toon` for subsequent calls
 
 ---
 

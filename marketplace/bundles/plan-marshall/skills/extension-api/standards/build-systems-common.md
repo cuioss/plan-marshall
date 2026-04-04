@@ -6,36 +6,9 @@ Standards shared across all build systems (Maven, Gradle, npm, Python). Tool-spe
 
 ## Timeout Management
 
-### Timeout Calculation
+See [build-execution.md](build-execution.md) § R3 for the complete timeout learning algorithm and Python API.
 
-```
-timeout = last_successful_duration * 1.25
-```
-
-### Default Timeouts
-
-| Parameter | Value |
-|-----------|-------|
-| Default timeout | 300 seconds (5 minutes) |
-| Minimum timeout | 60 seconds |
-| Maximum timeout | 1800 seconds (30 minutes) |
-| Discovery timeout | 120 seconds |
-
-**Note**: All timeouts use **seconds** (not milliseconds). The build script API accepts `--timeout` in seconds.
-
-### Adaptive Learning
-
-- On successful completion, actual duration is recorded
-- On timeout failure, the cached timeout is doubled for the next run (capped at 1800s)
-- Command key format varies per build system (e.g., `maven:verify`, `python:module_tests`)
-
-### Timeout Behavior
-
-On timeout:
-1. Kill build process
-2. Return exit code -1 (with status `timeout`)
-3. Log file contains partial output up to timeout
-4. Build marked as FAILURE
+**Quick reference**: Default 300s, minimum 60s, maximum 1800s, discovery 120s. All timeouts in seconds. Adaptive learning uses `last_duration × 1.25` with weighted averaging.
 
 ---
 
@@ -138,46 +111,13 @@ See [canonical-commands.md](canonical-commands.md) for the complete canonical co
 
 ## Script API
 
-All build skills share a common subcommand structure (with tool-specific variations documented in each skill):
-
-| Subcommand | Purpose | Available In |
-|------------|---------|--------------|
-| `run` | Execute build and auto-parse on failure (primary API) | All |
-| `parse` | Parse build output from log file | All |
-| `coverage-report` | Parse coverage report | All |
-| `check-warnings` | Categorize warnings against acceptable patterns | All |
-| `discover` | Discover modules with metadata | All |
-| `search-markers` | Search OpenRewrite TODO markers | Maven, Gradle |
-| `find-project` | Find subproject path from name | Gradle only |
-
-### Common run Parameters
-
-| Parameter | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `--command-args` | Yes | — | Tool-specific command arguments |
-| `--timeout` | No | 300 | Build timeout in seconds |
-| `--mode` | No | actionable | Output mode: actionable, structured, errors |
-| `--format` | No | toon | Output format: toon or json |
+See [build-api-reference.md](build-api-reference.md) for the complete subcommand documentation including parameters, output formats, and tool-specific variations.
 
 ---
 
 ## Issue Routing
 
-Issues are categorized and routed to appropriate fix strategies:
-
-| Category | Description | Build Systems |
-|----------|-------------|---------------|
-| `compilation_error` | Compile-time errors | Maven, Gradle, npm |
-| `test_failure` | Test assertion failures | All |
-| `dependency_error` | Dependency resolution issues | Maven, Gradle, npm |
-| `lint_error` | Linter violations | npm, Python |
-| `type_error` | Type-check errors | Python |
-| `javadoc_warning` | Documentation issues | Maven, Gradle |
-| `deprecation_warning` | Deprecated API usage | Maven, Gradle |
-| `unchecked_warning` | Unchecked type conversions | Maven, Gradle |
-| `openrewrite_info` | OpenRewrite plugin output | Maven, Gradle |
-| `playwright_error` | Browser automation failures | npm |
-| `import_error` | Module import errors | Python |
+See [build-api-reference.md](build-api-reference.md) § Error Categories for the complete category list per build system and skill routing table.
 
 ---
 

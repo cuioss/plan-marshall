@@ -115,11 +115,9 @@ Build systems may include additional context for diagnostics.
 | `wrapper` | string | Maven, Python | Wrapper path used (e.g., `./mvnw`, `./pw`) |
 | `command_type` | string | npm | Execution type: `npm` or `npx` |
 
-#### Dynamic Result Fields (Factory API)
+#### Dynamic Result Fields (Implementation Detail)
 
-Build systems using `ExecuteConfig` from `_build_execute_factory.py` can inject additional fields into every result via:
-- `extra_result_fields`: Static dict merged into all results
-- `extra_result_fn`: Callable `(args, wrapper) -> dict` for per-invocation dynamic fields (e.g., npm uses this to add `command_type`)
+Build systems using the factory API can inject additional fields into results. See `_build_execute_factory.py::ExecuteConfig` for `extra_result_fields` and `extra_result_fn` parameters.
 
 ## Requirements
 
@@ -565,12 +563,7 @@ if result['status'] == 'error':
 
 ## Error Handling
 
-| Status | Exit Code | Meaning |
-|--------|-----------|---------|
-| `success` | 0 | Build completed successfully |
-| `error` | 1+ | Build failed (check log file) |
-| `error` | -1 | Execution failed (wrapper not found, etc.) |
-| `timeout` | -1 | Build exceeded timeout |
+See [Exit Code Semantics](#exit-code-semantics) above for the status/exit-code mapping.
 
 ## Compliance
 

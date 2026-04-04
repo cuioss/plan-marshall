@@ -418,15 +418,16 @@ class ExtensionBase(ABC):
     def _build_applicable_result(self, confidence: str, signals: list[str],
                                   additive_to: str | None = None,
                                   module_data: dict | None = None,
-                                  active_profiles: set[str] | None = None) -> dict:
+                                  active_profiles: set[str] | None = None,
+                                  domain_key: str | None = None) -> dict:
         """Helper: build applicable result from own get_skill_domains() profiles.
-
-        Note: Uses first domain entry only. Designed for single-domain extensions.
-        Multi-domain extensions (e.g., plan-marshall) should implement applies_to_module
-        directly with explicit domain selection.
 
         Merges 'core' profile into each non-core profile to produce a flat
         skills_by_profile dict ready for consumption.
+
+        Domain selection: By default uses the first domain entry from
+        get_skill_domains(). Multi-domain extensions can pass domain_key
+        to select a specific domain (e.g., 'general-dev' instead of 'build').
 
         Profile filtering (three-layer resolution):
         1. active_profiles (explicit override from config or CLI) wins
@@ -439,12 +440,20 @@ class ExtensionBase(ABC):
             additive_to: Parent domain key if this is an additive domain
             module_data: Module dict for signal-based profile detection
             active_profiles: Explicit positive list of profiles to include
+            domain_key: Select a specific domain by key instead of using
+                the first entry. Required for multi-domain extensions.
 
         Returns:
             Full applies_to_module result dict with applicable=True
         """
         all_domains = self.get_skill_domains()
-        domains = all_domains[0] if all_domains else {}
+        if domain_key:
+            domains = next(
+                (d for d in all_domains if d.get('domain', {}).get('key') == domain_key),
+                all_domains[0] if all_domains else {},
+            )
+        else:
+            domains = all_domains[0] if all_domains else {}
         profiles = domains.get('profiles', {})
         core = profiles.get('core', {})
         core_defaults = core.get('defaults', [])

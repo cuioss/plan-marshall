@@ -143,8 +143,6 @@ For understanding the complete system architecture, reference these documents:
 | [profiles.md](standards/profiles.md) | Profile override mechanism + contracts | Understanding/overriding profile skills |
 | [workflow-overview.md](standards/workflow-overview.md) | 6-phase workflow + user review gate | Understanding phase transitions and contracts |
 
-**Note**: These documents define the target architecture. Implementation may be in progress.
-
 ---
 
 ## Scripts
@@ -232,7 +230,7 @@ from _build_parse import (
 
 ## Canonical Command Constants
 
-Import from `extension_base` for type-safe command references:
+Import `CMD_*` constants from `extension_base` for type-safe command references:
 
 ```python
 from extension_base import (
@@ -253,24 +251,9 @@ from extension_base import (
 )
 ```
 
-| Constant | Value | Required | Description |
-|----------|-------|----------|-------------|
-| `CMD_CLEAN` | `clean` | No | Remove build artifacts |
-| `CMD_QUALITY_GATE` | `quality-gate` | Yes | Static analysis, linting |
-| `CMD_VERIFY` | `verify` | Yes* | Full verification (*non-pom modules) |
-| `CMD_MODULE_TESTS` | `module-tests` | Conditional | Unit tests (if tests exist) |
-| `CMD_COMPILE` | `compile` | No | Compile production sources |
-| `CMD_TEST_COMPILE` | `test-compile` | No | Compile test sources |
-| `CMD_INTEGRATION_TESTS` | `integration-tests` | No | Integration tests |
-| `CMD_COVERAGE` | `coverage` | No | Coverage measurement |
-| `CMD_BENCHMARK` | `benchmark` | No | Benchmark/performance tests |
-| `CMD_INSTALL` | `install` | No | Install to local repository |
-| `CMD_CLEAN_INSTALL` | `clean-install` | No | Clean and install combined |
-| `CMD_PACKAGE` | `package` | No | Create deployable artifact |
+Required commands: `quality-gate` (all modules), `verify` (non-pom), `module-tests` (if tests exist). `clean` is always separate — other commands do NOT include clean goal.
 
-**Note**: `clean` is a separate command. Other commands do NOT include clean goal.
-
-See [canonical-commands.md](standards/canonical-commands.md) for command resolution logic.
+See [canonical-commands.md](standards/canonical-commands.md) for the complete vocabulary, resolution logic, and requirements.
 
 ---
 

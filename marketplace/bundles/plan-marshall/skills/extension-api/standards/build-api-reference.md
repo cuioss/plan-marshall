@@ -348,16 +348,16 @@ Build errors are routed to domain-specific skills for resolution guidance:
 
 ## Wrapper Detection
 
-| Build System | Detection Order | Fallback Behavior |
-|-------------|----------------|-------------------|
-| Maven | `./mvnw` → `mvn` (on PATH) | Falls back to system `mvn` |
-| Gradle | `./gradlew` → `gradle` (on PATH) | Falls back to system `gradle` |
-| npm | System `npm` (no wrapper) | `npm` always available; `npx` used for direct tool invocations |
-| Python | `./pw` → `pw.bat` → `pwx` (on PATH) | Raises `FileNotFoundError` — no system fallback since pyprojectx is project-specific |
+See [build-execution.md](build-execution.md) § R2 for wrapper preference requirements.
 
-**npm/npx routing**: Commands are automatically routed based on a built-in list of known CLI tools. Script invocations (`run test`, `run build`) use `npm`; direct tool invocations (eslint, jest, tsc, prettier, webpack, etc.) use `npx`.
+| Build System | Detection Order | Fallback |
+|-------------|----------------|----------|
+| Maven | `./mvnw` → `mvn` | System `mvn` |
+| Gradle | `./gradlew` → `gradle` | System `gradle` |
+| npm | System `npm` | Always available; `npx` for direct tool invocations |
+| Python | `./pw` → `pw.bat` → `pwx` | `FileNotFoundError` (no system fallback) |
 
-**Shared factory defaults**: The execution factory (`_build_execute_factory.py`) provides `default_command_key_fn()` (extracts first token, normalizes to underscores) and `default_build_command_fn()` (assembles `[wrapper] + args.split()` for STDOUT_REDIRECT tools). Maven, npm, and Python use the default command key function; Gradle overrides it to handle `:module:task` notation. Python uses the default build command function; others override for tool-specific flags.
+**npm/npx routing**: Script invocations (`run test`, `run build`) use `npm`; direct tool invocations (eslint, jest, tsc, prettier, etc.) use `npx`.
 
 ---
 

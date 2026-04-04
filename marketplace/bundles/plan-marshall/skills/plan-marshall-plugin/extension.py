@@ -110,8 +110,6 @@ class Extension(ExtensionBase):
         """Applicable only to modules with code build systems.
 
         Uses general-dev domain skills (not build domain, which has empty profiles).
-        Delegates profile merging to _build_applicable_result() but overrides
-        domain source to use _general_dev_domain() instead of get_skill_domains()[0].
         """
         build_systems = set(module_data.get('build_systems', []))
         if not build_systems & _CODE_BUILD_SYSTEMS:
@@ -120,38 +118,12 @@ class Extension(ExtensionBase):
                 'signals': [], 'additive_to': None, 'skills_by_profile': {},
             }
 
-        # _build_applicable_result uses get_skill_domains()[0] which is the 'build'
-        # domain with empty profiles. We need general-dev profiles, so we build
-        # the result manually using the same pattern but from _general_dev_domain().
-        domains = self._general_dev_domain()
-        profiles = domains.get('profiles', {})
-        core = profiles.get('core', {})
-        core_defaults = core.get('defaults', [])
-        core_optionals = core.get('optionals', [])
-
-        profile_filter = active_profiles
-
-        skills_by_profile: dict[str, dict] = {}
-        for profile_name in self.APPLICABLE_PROFILES:
-            if profile_name not in profiles:
-                continue
-            if profile_filter is not None and profile_name not in profile_filter:
-                continue
-            profile = profiles[profile_name]
-            merged_defaults = list(core_defaults) + list(profile.get('defaults', []))
-            merged_optionals = list(core_optionals) + list(profile.get('optionals', []))
-            if merged_defaults or merged_optionals:
-                skills_by_profile[profile_name] = {
-                    'defaults': merged_defaults,
-                    'optionals': merged_optionals,
-                }
-        return {
-            'applicable': True,
-            'confidence': 'high',
-            'signals': ['cross-cutting'],
-            'additive_to': None,
-            'skills_by_profile': skills_by_profile,
-        }
+        return self._build_applicable_result(
+            'high', ['cross-cutting'],
+            module_data=module_data,
+            active_profiles=active_profiles,
+            domain_key='general-dev',
+        )
 
     # =========================================================================
     # discover_modules() - Consolidated build system discovery

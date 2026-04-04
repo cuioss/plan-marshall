@@ -299,19 +299,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-workflow-skill-extension --domain java --type triage
 ```
 
-#### Existing Implementations
-
-| Bundle | Domain | Triage Skill |
-|--------|--------|-------------|
-| pm-dev-java | java | `pm-dev-java:ext-triage-java` |
-| pm-dev-frontend | javascript | `pm-dev-frontend:ext-triage-js` |
-| pm-dev-python | python | `pm-dev-python:ext-triage-python` |
-| pm-dev-oci | oci-containers | `pm-dev-oci:ext-triage-oci` |
-| pm-documents | documentation | `pm-documents:ext-triage-docs` |
-| pm-requirements | requirements | `pm-requirements:ext-triage-reqs` |
-| pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-triage-plugin` |
-
-Bundles without triage (returns `None`): pm-dev-java-cui (relies on base bundle).
+See [Existing Extensions](#existing-extensions) for current implementations.
 
 ---
 
@@ -386,13 +374,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Returns `source: domain_specific` when a custom skill exists, or `source: generic_fallback` when using defaults.
 
-#### Existing Implementations
-
-| Bundle | Domain | Outline Skill |
-|--------|--------|--------------|
-| pm-plugin-development | plan-marshall-plugin-dev | `pm-plugin-development:ext-outline-workflow` |
-
-All other domains return `None` and use the generic `plan-marshall:phase-3-outline` standards.
+See [Existing Extensions](#existing-extensions) for current implementations. All other domains return `None` and use the generic `plan-marshall:phase-3-outline` standards.
 
 ---
 
@@ -497,11 +479,7 @@ class Extension(ExtensionBase):
         ]
 ```
 
-#### Existing Implementations
-
-| Bundle | Domain | Recipe Key | Recipe Skill |
-|--------|--------|-----------|-------------|
-| plan-marshall | build | `refactor-to-profile-standards` | `plan-marshall:recipe-refactor-to-profile-standards` |
+See [Existing Extensions](#existing-extensions) for current implementations.
 
 ---
 
@@ -598,11 +576,7 @@ class Extension(ExtensionBase):
         ]
 ```
 
-#### Existing Implementations
-
-No bundles currently provide verification steps. pm-documents uses `provides_recipes()` instead (recipe `doc-verify` for documentation verification).
-
-Bundles returning `[]`: pm-dev-java, pm-dev-frontend, pm-dev-java-cui, pm-documents, pm-plugin-development, pm-requirements.
+No bundles currently provide verification steps. See [Existing Extensions](#existing-extensions) for the full matrix.
 
 > **Note**: Coverage verification is handled by the built-in `default:coverage_check` step, not by an extension agent. See the dispatch table in `phase-5-execute`.
 
@@ -686,9 +660,7 @@ class Extension(ExtensionBase):
         ]
 ```
 
-#### Existing Implementations
-
-No bundles currently provide finalize steps.
+No bundles currently provide finalize steps. See [Existing Extensions](#existing-extensions) for the full matrix.
 
 ---
 
@@ -735,19 +707,6 @@ def _detect_applicable_profiles(self, profiles: dict,
     Default: None (no filtering)
     """
 ```
-
----
-
-## Build Execution Utilities (Co-Located, Not Part of Extension API)
-
-The `_build_result.py`, `_build_parse.py`, `_build_format.py`, and `_build_wrapper.py` scripts are co-located in the `extension-api/scripts/` directory for PYTHONPATH convenience but are **not** part of the extension API. They are internal utilities imported directly by build scripts (e.g., `build-maven`, `build-npm`), not through `ExtensionBase`. Extension implementers do not need to use them.
-
-They are co-located here because:
-1. The executor adds `extension-api/scripts/` to PYTHONPATH for all extensions
-2. Build scripts need these utilities and already have this path available
-3. Moving them would require a separate PYTHONPATH entry with no functional benefit
-
-See [build-execution.md](build-execution.md) for the build execution API specification.
 
 ---
 
@@ -849,7 +808,7 @@ class Extension(ExtensionBase):
 
     def discover_modules(self, project_root: str) -> list:
         # Delegate to script in scripts/ directory
-        from maven_cmd_discover import discover_maven_modules
+        from _maven_cmd_discover import discover_maven_modules
         return discover_maven_modules(project_root)
 ```
 
@@ -926,7 +885,7 @@ This is the only abstract method because every domain must:
 1. **Declare identity** — the domain key is used throughout marshal.json
 2. **Provide skills** — skills are the primary value a domain extension contributes
 
-### Why Five Optional Hooks?
+### Why Six Optional Hooks?
 
 All six hooks (config_defaults, provides_triage, provides_outline_skill, provides_recipes, provides_verify_steps, provides_finalize_steps) follow the same extension model:
 

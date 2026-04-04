@@ -22,18 +22,22 @@ user-invocable: false
 
 ---
 
-Consolidates module discovery for all build systems (Maven, Gradle, npm, Python) into a single extension point. Build execution scripts live in sibling skill directories (`build-maven`, `build-gradle`, `build-npm`, `build-python`).
+Consolidates module discovery for all build systems (Maven, Gradle, npm, Python) into a single extension point. Also provides the `general-dev` domain with cross-cutting development skills. Build execution scripts live in sibling skill directories (`build-maven`, `build-gradle`, `build-npm`, `build-python`).
+
+See [extension-contract.md](../extension-api/standards/extension-contract.md) for the complete ExtensionBase contract.
 
 ## Extension API
 
 | Function | Purpose |
 |----------|---------|
-| `get_skill_domains()` | Returns domain key `build` with empty profiles |
+| `get_skill_domains()` | Returns `build` domain (empty profiles) + `general-dev` domain (cross-cutting dev skills) |
 | `discover_modules(project_root)` | Discover modules across Maven, Gradle, npm, and Python |
+| `provides_recipes()` | Returns `refactor-to-profile-standards` recipe |
+| `applies_to_module(module_data)` | Applies general-dev skills to modules with code build systems |
 
 ## Discovery Flow
 
-The extension scans the project root for build system markers to determine which build systems are present:
+The extension scans the project root for build system markers:
 
 | Marker File | Build System |
 |-------------|-------------|
@@ -42,41 +46,11 @@ The extension scans the project root for build system markers to determine which
 | `package.json` | npm |
 | `pyproject.toml` | Python (pyprojectx) |
 
-Each detected build system delegates to its corresponding discovery script, which parses the build descriptor to extract module names and paths. Results from all build systems are collected and, when multiple build systems coexist at the same path, split into separate virtual modules with technology suffixes (e.g., `my-module-maven`, `my-module-npm`).
-
-When multiple build systems coexist in the same project (e.g., Maven for backend and npm for frontend), the extension merges all discovered modules into a single flat list.
+Each detected build system delegates to its corresponding discovery script. Results from all build systems are collected and, when multiple build systems coexist at the same path, split into separate virtual modules with technology suffixes (e.g., `my-module-maven`, `my-module-npm`).
 
 ## Discovery Delegation
 
 - Maven: `build-maven/scripts/_maven_cmd_discover.py`
 - Gradle: `build-gradle/scripts/_gradle_cmd_discover.py`
-- npm: Uses `extension_base.discover_descriptors()` + npm commands via `build-npm/scripts/npm.py`
-- Python: Parses `pyproject.toml` for pyprojectx aliases
-
-## TOON Output Example
-
-```toon
-status	success
-build_systems	maven,npm
-total_modules	5
-
-modules[5]{name,build_system,path}:
-core,maven,modules/core
-api,maven,modules/api
-web,npm,packages/web
-shared,npm,packages/shared
-tools,npm,packages/tools
-```
-
-## Related Skills
-
-- `extension-api` — Loads this extension for build detection
-- `build-maven`, `build-gradle`, `build-npm`, `build-python` — Delegated discovery scripts
-- `manage-architecture` — Consumes discovery results for project analysis
-- `marshall-steward` — Uses discovery for project setup
-
-## Integration
-
-This extension is discovered by:
-- `extension-api` - Build system detection and command generation
-- `marshall-steward` - Project setup wizard
+- npm: `build-npm/scripts/_npm_cmd_discover.py`
+- Python: `build-python/scripts/_python_cmd_discover.py`

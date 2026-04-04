@@ -35,10 +35,15 @@ Profile skill resolution checks for a domain-specific override first, then falls
 
 ## Profiles
 
-| Profile | Purpose | System Default |
-|---------|---------|----------------|
-| `implementation` | Create/modify production code | `plan-marshall:task-executor` |
-| `module_testing` | Create/modify test code | `plan-marshall:task-executor` |
+These are the profiles defined in `ExtensionBase.APPLICABLE_PROFILES`. Extensions declare skills per profile in `get_skill_domains()`. The `core` profile is special — it's always merged into other profiles and not listed here.
+
+| Profile | Purpose | System Default | Detection |
+|---------|---------|----------------|-----------|
+| `implementation` | Create/modify production code | `plan-marshall:task-executor` | Always included |
+| `module_testing` | Create/modify test code | `plan-marshall:task-executor` | Always included |
+| `integration_testing` | Integration tests (containers, external services) | `plan-marshall:task-executor` | Signal-based (e.g., Failsafe plugin, testcontainers deps) |
+| `quality` | Documentation standards, code quality | `plan-marshall:task-executor` | Always included |
+| `documentation` | Documentation-specific tasks (AsciiDoc, ADRs) | `plan-marshall:task-executor` | Signal-based (module has `doc/*.adoc` files) |
 
 ---
 
@@ -105,11 +110,9 @@ Domain-specific profile skills CAN:
 
 ---
 
-## Implementation Profile Contract
+## Profile Execution Contract
 
-**System Default**: `plan-marshall:task-executor`
-
-**Purpose**: Task execution skills accept standardized input (plan_id, task_number), resolve the workflow skill based on domain and profile, load domain skills via two-tier loading, iterate through steps, track progress, and return structured output.
+All profiles share the same execution contract. The system default for all profiles is `plan-marshall:task-executor`.
 
 **Invocation**: Phase `5-execute` via `plan-phase-agent plan_id={plan_id} phase=5-execute task_number={task_number}`
 
@@ -129,34 +132,15 @@ Domain-specific profile skills CAN:
 
 The `task.skills` array is populated during the task-plan phase. Execute phase loads skills directly from the task without calling resolution APIs.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Task Skill Loading (No Resolution Needed)                    │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  TASK-001.json                                               │
-│  ┌──────────────────────────────────────────────┐            │
-│  │ "domain": "java"                             │            │
-│  │ "profile": "implementation"                  │            │
-│  │ "skills": [                                  │            │
-│  │   "pm-dev-java:java-core",     <- Pre-resolved│            │
-│  │   "pm-dev-java:java-cdi"       <- Pre-resolved│            │
-│  │ ]                                            │            │
-│  └──────────────────────────────────────────────┘            │
-│                         │                                    │
-│                         ▼                                    │
-│  Agent loads each skill directly                             │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
-
 ### Profile Mapping
 
-| Task Profile | Resolve Phase | Description |
-|--------------|---------------|-------------|
-| `implementation` | `implementation` | Create/modify production code |
-| `module_testing` | `module_testing` | Create/modify test code |
-| `quality` | `quality` | Documentation, standards |
+| Task Profile | Description |
+|--------------|-------------|
+| `implementation` | Create/modify production code |
+| `module_testing` | Create/modify test code |
+| `integration_testing` | Create/modify integration tests |
+| `quality` | Documentation, code quality standards |
+| `documentation` | Documentation-specific tasks |
 
 ### Workflow Skill Responsibilities
 
@@ -168,6 +152,16 @@ The workflow skill autonomously:
 4. **Tracks progress**: Via finalize-step
 5. **Tracks file changes**: For finalize phase verification
 6. **Returns structured output**: TOON status with summary
+
+### Profile-Specific Concerns
+
+| Profile | Additional Responsibilities |
+|---------|---------------------------|
+| `implementation` | Follow domain coding patterns and standards |
+| `module_testing` | Follow domain test framework patterns; verify tests pass; track coverage |
+| `integration_testing` | Manage external service dependencies; use domain IT patterns |
+| `quality` | Apply documentation and quality standards |
+| `documentation` | Follow AsciiDoc/documentation formatting standards |
 
 ### Return Structure
 
@@ -222,127 +216,6 @@ next_action	requires_attention
 
 ---
 
-## Module Testing Profile Contract
-
-**System Default**: `plan-marshall:task-executor`
-
-**Purpose**: Testing profile skills create and modify test code following domain-specific testing patterns and frameworks.
-
-### When Used
-
-Tasks with `profile: module_testing` are routed to the module testing profile:
-
-```toon
-id	TASK-002
-title	Add unit tests for UserService
-domain	java
-profile	module_testing
-skills:
-  - pm-dev-java:junit-core
-  - pm-dev-java:cui-testing
-deliverable	2
-```
-
-### Resolution Example
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-workflow-skill --domain java --phase module_testing
-```
-
-Domain override: `workflow_skill=pm-dev-java:java-module-testing, fallback=false`
-System fallback: `workflow_skill=plan-marshall:task-executor, fallback=true`
-
-### Input Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan_id` | string | Yes | Plan identifier |
-| `task_number` | number | Yes | Task to execute |
-
-### Skill Loading
-
-| Tier | Source | Purpose |
-|------|--------|---------|
-| **Tier 1** | Agent frontmatter | System skills (architecture, rules) |
-| **Tier 2** | `task.skills` array | Testing framework skills |
-
-### Responsibilities
-
-The testing workflow skill:
-
-1. **Reads task**: Via manage-tasks get
-2. **Loads testing skills**: From task.skills array
-3. **Creates test files**: Following domain testing patterns
-4. **Verifies tests pass**: Runs test command
-5. **Tracks progress**: Via finalize-step
-6. **Tracks file changes**: For finalize phase verification
-7. **Returns structured output**: TOON status with summary
-
-### Testing-Specific Concerns
-
-| Aspect | Guidance |
-|--------|----------|
-| Test structure | Follow domain testing framework patterns (JUnit, Jest, etc.) |
-| Test naming | Descriptive names following domain conventions |
-| Assertions | Use domain-appropriate assertion libraries |
-| Coverage | Track coverage if domain supports it |
-| Isolation | Ensure tests are independent and repeatable |
-
-### Return Structure
-
-**Success**:
-```toon
-status	success
-plan_id	{plan_id}
-task_number	{task_number}
-
-execution_summary:
-  steps_completed: {N}
-  steps_total: {M}
-  files_modified[N]:
-    - {test_path1}
-    - {test_path2}
-
-verification:
-  passed: true
-  command: "{test command used}"
-  tests_passed: {count}
-
-next_action	task_complete
-```
-
-**Error**:
-```toon
-status	error
-plan_id	{plan_id}
-task_number	{task_number}
-
-execution_summary:
-  steps_completed: {N}
-  steps_failed: {M}
-
-failure:
-  step: {step_number}
-  file: "{test file path}"
-  error: "{error message}"
-  recoverable: true|false
-
-next_action	requires_attention
-```
-
-### Validation Rules
-
-| Rule | Description |
-|------|-------------|
-| Input required | Both plan_id and task_number required |
-| Status required | Output must include status field |
-| Summary required | Output must include execution_summary |
-| Tests must pass | Verification command must succeed |
-| Files tracked | All test file modifications tracked |
-
----
-
 ## When to Override
 
 | Scenario | Override? | Rationale |
@@ -357,6 +230,6 @@ next_action	requires_attention
 
 ## Related Documents
 
-- [Extension API SKILL.md](../SKILL.md) - Extension points overview
-- [skill-loading.md](../../ref-workflow-architecture/standards/skill-loading.md) - Two-tier skill loading diagrams
-- [task-contract.md](../../manage-tasks/standards/task-contract.md) - Task structure with domain, profile, skills
+- [Extension API SKILL.md](../SKILL.md) — Extension points overview
+- [extension-contract.md](extension-contract.md) — ExtensionBase contract with profile definitions
+- [workflow-overview.md](workflow-overview.md) — 6-phase workflow and phase transitions

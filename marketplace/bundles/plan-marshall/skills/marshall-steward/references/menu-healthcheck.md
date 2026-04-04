@@ -45,7 +45,7 @@ If drift detected (added/removed/changed > 0): Offer to regenerate executor.
 Check that enabled plugins have corresponding Skill/SlashCommand wildcards:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-permission_fix:permission_fix ensure-wildcards \
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure-wildcards \
   --settings ~/.claude/settings.json \
   --marketplace-json marketplace/.claude-plugin/marketplace.json \
   --dry-run

@@ -11,7 +11,6 @@ Sub-menu for skill domains and project structure configuration.
 - [Configuration: Quality Pipelines](#configuration-quality-pipelines)
 - [Configuration: Skill Domains](#configuration-skill-domains)
 - [Configuration: Project Structure](#configuration-project-structure)
-- [Thin Agent Architecture](#thin-agent-architecture)
 
 ---
 
@@ -56,51 +55,9 @@ AskUserQuestion:
 
 ## Configuration: Plan Phase Settings
 
-Manage phase-specific settings distributed across init, execute, and other phases.
+Load and follow `Read references/shared-plan-phases.md`
 
-### Step 1: Select Phase to Configure
-
-```
-AskUserQuestion:
-  question: "Which phase settings to configure?"
-  header: "Phase"
-  options:
-    - label: "Init (phase 1)"
-      description: "Branch strategy"
-    - label: "Refine (phase 2)"
-      description: "Confidence threshold, compatibility"
-    - label: "Execute (phase 5)"
-      description: "Commit strategy"
-  multiSelect: false
-```
-
-### Phase 1 - Init Settings
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-1-init get
-```
-
-**branch_strategy**:
-```
-AskUserQuestion:
-  question: "Branch strategy for plan execution?"
-  header: "Branching"
-  options:
-    - label: "Feature branch"
-      description: "Create feature branch per plan"
-    - label: "Direct"
-      description: "Work on current branch"
-  multiSelect: false
-```
-
-Apply:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-1-init set --field branch_strategy --value {direct|feature}
-```
-
-### Phase 2 - Refine Settings
+The menu additionally supports configuring **confidence_threshold** for phase 2 (not in wizard defaults):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -128,273 +85,43 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field confidence_threshold --value {95|90|100}
 ```
 
-**compatibility**:
-```
-AskUserQuestion:
-  question: "Backward compatibility approach during plan execution?"
-  header: "Compat"
-  options:
-    - label: "Breaking (Recommended)"
-      description: "Clean-slate approach, no deprecation nor transitionary comments"
-    - label: "Deprecation"
-      description: "Add deprecation markers to old code, provide migration path"
-    - label: "Smart and ask"
-      description: "Assess impact and ask user when backward compatibility is uncertain"
-  multiSelect: false
-```
-
-Maps to values: `breaking`, `deprecation`, `smart_and_ask`
-
-Apply:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
-```
-
-### Phase 5 - Execute Settings
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get
-```
-
-**commit_strategy**:
-```
-AskUserQuestion:
-  question: "Commit strategy during plan execution?"
-  header: "Commits"
-  options:
-    - label: "Per deliverable (Recommended)"
-      description: "Commit after all tasks for each deliverable complete (impl + tests)"
-    - label: "Per plan"
-      description: "Single commit of all changes at finalize"
-    - label: "None"
-      description: "No automatic commits"
-  multiSelect: false
-```
-
-Maps to values: `per_deliverable`, `per_plan`, `none`
-
-Apply:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
-```
-
 ---
 
 ## Configuration: Review Gates
 
-Control whether phase transitions pause for user review or auto-continue. Each gate belongs to a different phase config but they form a logical group.
-
-### Step 1: Show Current Values
+Show current values first, then load shared reference:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-3-outline get
 ```
-
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-4-plan get
 ```
-
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get
 ```
 
-Display current review gate values:
-- `plan_without_asking` (from phase-3-outline) — skip review of solution outline before planning
-- `execute_without_asking` (from phase-4-plan) — skip review of task plan before execution
-- `finalize_without_asking` (from phase-5-execute) — skip review of execution results before finalize
-
-### Step 2: Select Gates to Toggle
-
-```
-AskUserQuestion:
-  question: "Which phase transitions should auto-continue without pausing for review?"
-  header: "Review Gates"
-  multiSelect: true
-  options:
-    - label: "Plan without asking"
-      description: "Auto-continue from outline (phase 3) to planning (phase 4)"
-    - label: "Execute without asking"
-      description: "Auto-continue from planning (phase 4) to execution (phase 5)"
-    - label: "Finalize without asking"
-      description: "Auto-continue from execution (phase 5) to finalize (phase 6)"
-```
-
-### Step 3: Apply Selected Changes
-
-For each selected gate, set to `true`. For each deselected gate, set to `false`.
-
-**plan_without_asking**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-3-outline set --field plan_without_asking --value {true|false}
-```
-
-**execute_without_asking**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-4-plan set --field execute_without_asking --value {true|false}
-```
-
-**finalize_without_asking**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set --field finalize_without_asking --value {true|false}
-```
+Display current gate values, then load and follow `Read references/shared-review-gates.md`
 
 ---
 
 ## Configuration: Quality Pipelines
 
-Manage verification (phase 5 sub-loop) and finalize (phase 7) pipeline settings.
-
-### Step 1: Show Current Pipeline Config
+Show current config first, then load shared reference:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute get
 ```
-
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get
 ```
 
-### Step 2: Select What to Configure
-
-```
-AskUserQuestion:
-  question: "What to configure?"
-  header: "Pipeline"
-  options:
-    - label: "Verification steps"
-      description: "Toggle generic and domain verification steps"
-    - label: "Finalize steps"
-      description: "Toggle finalize steps"
-    - label: "Max iterations"
-      description: "Set retry limits for verification and finalize"
-  multiSelect: false
-```
-
-### Step 3a: Configure Verification Steps
-
-Generic boolean steps:
-
-```
-Discover available verify steps from all sources:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  list-verify-steps
-```
-
-Present the merged list (built-in + extension steps) as a multi-select:
-
-```
-AskUserQuestion:
-  question: "Which verification steps to include?"
-  header: "Verify Steps"
-  multiSelect: true
-  options:
-    # Dynamic from list-verify-steps output:
-    - label: "quality_check"
-      description: "Run quality-gate build command"
-    - label: "build_verify"
-      description: "Run full test suite"
-    # Plus any extension steps from discovery
-```
-
-Apply: write the selected steps as an ordered list:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
-```
-
-### Step 3b: Configure Finalize Steps
-
-Discover available finalize steps from all sources:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  list-finalize-steps
-```
-
-Present the merged list (built-in + project + extension steps) as a multi-select. Use paging if total exceeds 4 options.
-
-```
-AskUserQuestion:
-  question: "Which finalize steps to include?"
-  header: "Finalize Steps"
-  multiSelect: true
-  options:
-    # Dynamic from list-finalize-steps output:
-    - label: "commit_push"
-      description: "Commit and push changes"
-    - label: "create_pr"
-      description: "Create pull request"
-    - label: "automated_review"
-      description: "CI automated review"
-    - label: "sonar_roundtrip"
-      description: "Sonar analysis roundtrip"
-    - label: "knowledge_capture"
-      description: "Capture learnings to memory"
-    - label: "lessons_capture"
-      description: "Record lessons learned"
-    - label: "branch_cleanup"
-      description: "Merge PR (with --delete-branch) and pull latest"
-    - label: "archive"
-      description: "Archive the completed plan"
-    # Plus any project/extension steps from discovery
-```
-
-Apply: write the selected steps as an ordered list:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
-```
-
-### Step 3c: Set Max Iterations
-
-```
-AskUserQuestion:
-  questions:
-    - question: "Max iterations for verification phase?"
-      header: "Verify Iters"
-      multiSelect: false
-      options:
-        - label: "5 (Default)"
-          description: "Standard retry limit for quality checks"
-        - label: "3"
-          description: "Fewer retries, faster completion"
-        - label: "10"
-          description: "More retries for complex projects"
-    - question: "Max iterations for finalize phase?"
-      header: "Finalize Iters"
-      multiSelect: false
-      options:
-        - label: "3 (Default)"
-          description: "Standard retry limit for commit/PR/CI"
-        - label: "1"
-          description: "Single attempt, fail fast"
-        - label: "5"
-          description: "More retries for CI roundtrips"
-```
-
-Apply:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-max-iterations --value {5|3|10}
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set-max-iterations --value {3|1|5}
-```
+Load and follow `Read references/shared-quality-pipelines.md`
 
 ---
 
@@ -649,10 +376,6 @@ If user chooses "Refine", use the "Edit Module" operation flow.
 This regenerates `.plan/project-architecture/derived-data.json` from current build file definitions.
 
 ---
-
-### Thin Agent Architecture
-
-> For the full 7-phase architecture model, see [workflow-overview.md](../../../extension-api/standards/workflow-overview.md). This section covers configuration options only.
 
 ---
 
