@@ -6,7 +6,6 @@ from typing import Any
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 EXIT_SUCCESS = 0
-EXIT_ERROR = 1
 
 
 def parse_frontmatter(content: str) -> tuple[dict | None, str]:

@@ -34,7 +34,6 @@ from _cmd_skill_resolution import (
 )
 
 # Direct imports - PYTHONPATH set by executor
-from _config_core import EXIT_ERROR
 from file_ops import output_toon, safe_main
 
 
@@ -93,7 +92,7 @@ def main() -> int:
 
     if args.command is None:
         parser.print_help()
-        return EXIT_ERROR
+        return 2
 
     # Route to handler - reuse args object since handlers read named attributes
     # The handlers use args.domain, args.profile, etc. which are set by argparse
@@ -117,7 +116,7 @@ def main() -> int:
         return 0
 
     parser.print_help()
-    return EXIT_ERROR
+    return 2
 
 
 if __name__ == '__main__':

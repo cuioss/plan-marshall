@@ -12,14 +12,12 @@ This module uses only stdlib imports -- no serialize_toon dependency
 
 import argparse
 import subprocess
-import sys
 import time
 from datetime import datetime
 from typing import Any
 
 # Exit codes
 EXIT_SUCCESS = 0
-EXIT_ERROR = 1
 
 # Shared defaults for CI polling operations
 DEFAULT_CI_TIMEOUT = 300  # seconds
@@ -120,15 +118,16 @@ def make_error(operation: str, error: str, context: str = '') -> dict:
 
 # Keep output_error as a backwards-compatible alias used by ci.py router
 def output_error(operation: str, error: str, context: str = '') -> int:
-    """Output error in TOON format to stderr and return EXIT_ERROR.
+    """Output error in TOON format to stdout and return EXIT_SUCCESS.
 
     Legacy wrapper -- new code should use make_error() and return the dict.
+    Three-tier model: Exit 0 for expected errors (status:error in TOON output).
     """
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
     data = make_error(operation, error, context)
-    print(serialize_toon(data), file=sys.stderr)
-    return EXIT_ERROR
+    print(serialize_toon(data))
+    return EXIT_SUCCESS
 
 
 # ---------------------------------------------------------------------------

@@ -90,15 +90,18 @@ sys.exit(0)  # Exit 0 - status is in output
 ### Script Execution Error (exit 1)
 
 ```python
-import sys
+from toon_parser import serialize_toon
 
-# Real error - script cannot execute properly
-# Example: required file missing, permission denied, crash
+# Expected error - report via TOON status:error, exit 0
+# Example: required file missing, invalid input
 try:
     config = load_required_config()
 except FileNotFoundError:
-    print("error: Required config file not found", file=sys.stderr)
-    sys.exit(1)  # Exit 1 - script couldn't run
+    print(serialize_toon({"status": "error", "error": "Required config file not found"}))
+    sys.exit(0)  # Exit 0 - expected error reported via TOON
+
+# Exit 1 is reserved for @safe_main crash handler only
+# Exit 2 is for argparse validation (missing subcommand)
 ```
 
 ## Error Message Format

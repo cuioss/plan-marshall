@@ -287,7 +287,7 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
 
     if not inventory_script.exists():
         print(f'Error: Inventory script not found: {inventory_script}', file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     # Determine scope based on path
     scope = 'marketplace' if 'marketplace' in str(base_path) else 'plugin-cache'
@@ -319,7 +319,7 @@ def discover_scripts(base_path: Path) -> dict[str, str]:
 
     if result.returncode != 0:
         print(f'Error running inventory scan: {result.stderr}', file=sys.stderr)
-        sys.exit(1)
+        sys.exit(2)
 
     inventory = json.loads(result.stdout)
 

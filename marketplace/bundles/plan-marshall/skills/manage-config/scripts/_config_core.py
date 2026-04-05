@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from constants import EXIT_ERROR, FILE_MARSHAL  # type: ignore[import-not-found]  # noqa: F401 - EXIT_ERROR re-exported
+from constants import FILE_MARSHAL  # type: ignore[import-not-found]
 from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
 
 # Bundle path for skill description resolution

@@ -37,7 +37,6 @@ from _cmd_skill_resolution import (
 from _cmd_system_plan import cmd_plan, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
-from _config_core import EXIT_ERROR
 from file_ops import output_toon, safe_main
 
 
@@ -295,34 +294,34 @@ def main() -> int:
 
     if args.noun is None:
         parser.print_help()
-        return EXIT_ERROR
+        return 2
 
     # Route to handler
     result = None
     if args.noun == 'skill-domains':
         if not args.verb:
             p_sd.print_help()
-            return EXIT_ERROR
+            return 2
         result = cmd_skill_domains(args)
     elif args.noun == 'system':
         if not args.sub_noun or not args.verb:
             p_sys.print_help()
-            return EXIT_ERROR
+            return 2
         result = cmd_system(args)
     elif args.noun == 'plan':
         if not args.sub_noun or not args.verb:
             p_plan.print_help()
-            return EXIT_ERROR
+            return 2
         result = cmd_plan(args)
     elif args.noun == 'ci':
         if not args.verb:
             p_ci.print_help()
-            return EXIT_ERROR
+            return 2
         result = cmd_ci(args)
     elif args.noun == 'ext-defaults':
         if not args.verb:
             p_ext.print_help()
-            return EXIT_ERROR
+            return 2
         result = cmd_ext_defaults(args)
     elif args.noun == 'init':
         result = cmd_init(args)
@@ -348,7 +347,7 @@ def main() -> int:
         result = cmd_list_verify_steps(args)
     else:
         parser.print_help()
-        return EXIT_ERROR
+        return 2
 
     output_toon(result)
     return 0

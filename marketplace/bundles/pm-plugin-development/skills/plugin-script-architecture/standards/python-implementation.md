@@ -157,15 +157,13 @@ def cmd_get(args):
     """Handle 'get' subcommand."""
     plan_path = Path(f".plan/plans/{args.plan_id}")
 
-    # Validate plan exists
+    # Validate plan exists — return error dict, exit 0 (expected error)
     if not plan_path.exists():
-        print(json.dumps({"error": f"Plan not found: {args.plan_id}"}), file=sys.stderr)
-        sys.exit(1)
+        return {"status": "error", "error": f"Plan not found: {args.plan_id}"}
 
-    # Validate key format
+    # Validate key format — return error dict, exit 0 (expected error)
     if not re.match(r'^[a-z][a-z0-9_]*$', args.key):
-        print(json.dumps({"error": f"Invalid key format: {args.key}"}), file=sys.stderr)
-        sys.exit(1)
+        return {"status": "error", "error": f"Invalid key format: {args.key}"}
 
     # ... implementation
 ```
@@ -292,7 +290,6 @@ Command modules import shared utilities from config_core:
 
 ```python
 from config_core import (
-    EXIT_ERROR,
     MarshalNotInitializedError,
     require_initialized,
     load_config,

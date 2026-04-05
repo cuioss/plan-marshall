@@ -11,7 +11,6 @@ from typing import Any
 
 # Exit codes
 EXIT_SUCCESS = 0
-EXIT_ERROR = 1
 
 
 def load_settings(path: str | None) -> tuple[dict, str | None]:

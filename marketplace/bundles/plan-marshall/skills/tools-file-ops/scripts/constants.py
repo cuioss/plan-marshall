@@ -176,7 +176,6 @@ DIR_TEMP = 'temp'
 # Exit codes
 # ---------------------------------------------------------------------------
 EXIT_SUCCESS = 0
-EXIT_ERROR = 1
 
 # ---------------------------------------------------------------------------
 # Task statuses (extend phase statuses with 'blocked')
