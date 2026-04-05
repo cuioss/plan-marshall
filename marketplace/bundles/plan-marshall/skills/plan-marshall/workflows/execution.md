@@ -66,10 +66,13 @@ For each task:
 
 After all tasks complete, transition and check auto-continue:
 
-**Metrics**: Record phase end (aggregate token data from task agents executed during this phase):
+**Metrics**: During the task loop, maintain a running sum of `total_tokens`, `tool_uses`, and `duration_ms` from each task agent's `<usage>` tag. After all tasks complete, pass the aggregated totals to `end-phase`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 5-execute
+  --plan-id {plan_id} --phase 5-execute \
+  --total-tokens {sum of total_tokens from all task agent <usage> tags} \
+  --tool-uses {sum of tool_uses from all task agent <usage> tags} \
+  --duration-ms {sum of duration_ms from all task agent <usage> tags}
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
   --plan-id {plan_id}
 ```
@@ -126,13 +129,16 @@ Handles:
 - Archive plan (move to `.plan/archived-plans/`)
 - Mark lesson applied (if plan originated from a lesson)
 
-**Metrics**: After finalize completes, record phase end, optionally enrich, then generate the final report once:
+**Metrics**: After finalize completes, record phase end with aggregated token data from any agent-dispatched steps (see phase-6-finalize SKILL.md for which steps run as agents):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 6-finalize
+  --plan-id {plan_id} --phase 6-finalize \
+  --total-tokens {sum of total_tokens from agent-dispatched step <usage> tags} \
+  --tool-uses {sum of tool_uses from agent-dispatched step <usage> tags} \
+  --duration-ms {sum of duration_ms from agent-dispatched step <usage> tags}
 ```
 
-**Optional JSONL enrichment** (if session ID is available from environment):
+**JSONL enrichment** — captures main-context token usage for phases without agents (2-refine, 6-finalize) and supplements agent-tracked phases with any main-context overhead. The session ID is the current Claude Code conversation ID:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
   --plan-id {plan_id} --session-id {session_id}

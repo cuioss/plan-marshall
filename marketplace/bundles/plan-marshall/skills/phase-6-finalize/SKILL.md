@@ -189,6 +189,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Iterate over the `steps` list from config. For each step reference:
 
+**Agent-suitable built-in steps** (self-contained, no user interaction):
+- `create-pr`, `automated-review`, `sonar-roundtrip`, `knowledge-capture`, `lessons-capture`
+
+**Inline-only built-in steps** (require user interaction or sequential dependency):
+- `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `archive-plan` (must be last, moves plan files)
+
+**Token aggregation**: Initialize `phase_total_tokens = 0`, `phase_tool_uses = 0`, `phase_duration_ms = 0` before the loop. After each agent-dispatched step completes, add its `<usage>` tag values to the running sums.
+
 ```
 FOR each step_ref in steps:
   1. Log step start:
@@ -201,7 +209,11 @@ FOR each step_ref in steps:
      - ELSE IF step_ref contains ":" -> SKILL type
 
   3. Dispatch:
-     - BUILT-IN: Strip `default:` prefix, read the standards document from dispatch table and follow all steps
+     - BUILT-IN (agent-suitable: create-pr, automated-review, sonar-roundtrip, knowledge-capture, lessons-capture):
+       Run as Task agent — read the standards document and execute all steps within the agent context.
+       After agent completes, add <usage> tag values to phase running sums.
+     - BUILT-IN (inline-only: commit-push, branch-cleanup, archive-plan):
+       Read the standards document from dispatch table and follow all steps in main context.
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
          Arguments: --plan-id {plan_id} --iteration {iteration}
