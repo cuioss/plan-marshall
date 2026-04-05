@@ -32,9 +32,10 @@ Environment:
 
 import argparse
 import os
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
+
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 # Default plugin name to search for
 PLUGIN_NAME = 'plan-marshall'
@@ -201,6 +202,7 @@ def cmd_resolve(args: argparse.Namespace) -> dict:
         return {'status': 'error', 'error': f'Path not found: {args.bundle}/{args.path}'}
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Bootstrap script for plugin root detection')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -222,14 +224,11 @@ def main() -> int:
         result = cmd_resolve(args)
     else:
         parser.print_help()
-        return 1
+        return 0
 
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
-    is_error = result.get('status') != 'success'
-    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
-    return 1 if is_error else 0
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()
