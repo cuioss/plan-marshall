@@ -14,8 +14,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script
 
-# Get script path
-SCRIPT_PATH = get_script_path('plan-marshall', 'marshall-steward', 'bootstrap_plugin.py')
+# Get script path — use base directory for all steward scripts
+_SCRIPTS_DIR = Path(get_script_path('plan-marshall', 'marshall-steward', 'bootstrap_plugin.py')).parent
+SCRIPT_PATH = _SCRIPTS_DIR / 'bootstrap_plugin.py'
 
 # Tier 2 direct import via importlib
 _spec = importlib.util.spec_from_file_location('bootstrap_plugin', SCRIPT_PATH)
@@ -116,8 +117,7 @@ def test_bootstrap_plugin_imports_without_executor_pythonpath():
 
 def test_determine_mode_imports_without_executor_pythonpath():
     """determine_mode.py must resolve its own imports without executor PYTHONPATH."""
-    from conftest import MARKETPLACE_ROOT
-    script = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'determine_mode.py'
+    script = _SCRIPTS_DIR / 'determine_mode.py'
     result = _run_without_marketplace_pythonpath(script, 'mode')
     assert result.returncode in (0, 1), (
         f'determine_mode.py failed without PYTHONPATH:\n{result.stderr}'
@@ -129,8 +129,7 @@ def test_determine_mode_imports_without_executor_pythonpath():
 
 def test_gitignore_setup_imports_without_executor_pythonpath():
     """gitignore_setup.py must resolve its own imports without executor PYTHONPATH."""
-    from conftest import MARKETPLACE_ROOT
-    script = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts' / 'gitignore_setup.py'
+    script = _SCRIPTS_DIR / 'gitignore_setup.py'
     result = _run_without_marketplace_pythonpath(script, '--dry-run')
     assert result.returncode == 0, (
         f'gitignore_setup.py failed without PYTHONPATH:\n{result.stderr}'
