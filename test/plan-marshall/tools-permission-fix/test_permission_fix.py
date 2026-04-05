@@ -784,3 +784,29 @@ def test_migrate_executor_help():
     """migrate-executor subcommand should have help."""
     result = run_script(SCRIPT_PATH, 'migrate-executor', '--help')
     assert result.returncode == 0
+
+
+# =============================================================================
+# Bootstrap isolation test -- verify script works WITHOUT executor PYTHONPATH
+# =============================================================================
+
+
+def test_permission_fix_imports_without_executor_pythonpath():
+    """permission_fix.py must resolve its own imports without executor PYTHONPATH.
+
+    This script is called directly during wizard Step 3 (before executor exists)
+    to ensure the executor permission. It must self-resolve its dependencies.
+    """
+    import os
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env.pop('PYTHONPATH', None)
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), '--help'],
+        capture_output=True, text=True, env=env, timeout=30,
+    )
+    assert result.returncode == 0, (
+        f'permission_fix.py failed without PYTHONPATH:\n{result.stderr}'
+    )
