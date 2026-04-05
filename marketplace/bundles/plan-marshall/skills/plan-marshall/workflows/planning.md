@@ -81,11 +81,7 @@ Task: plan-marshall:phase-agent
   Output: plan_id, domains array
 ```
 
-**Metrics**: After agent completes and `plan_id` is known, record phase start and end with token data from `<usage>` tag:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
-  --plan-id {plan_id} --phase 1-init
-```
+**Metrics**: After agent completes and `plan_id` is known, record phase metrics with token data from `<usage>` tag:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
   --plan-id {plan_id} --phase 1-init \
