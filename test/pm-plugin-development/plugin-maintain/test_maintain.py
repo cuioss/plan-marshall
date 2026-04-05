@@ -18,11 +18,31 @@ from conftest import get_script_path, run_script
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-maintain', 'maintain.py')
 
-# Direct imports for Tier 2 testing
-from _cmd_analyze import cmd_analyze  # noqa: E402
-from _cmd_check_duplication import cmd_check_duplication  # noqa: E402
-from _cmd_readme import cmd_readme  # noqa: E402
-from _cmd_update import cmd_update  # noqa: E402
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-maintain' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_analyze_mod = _load_module('_cmd_analyze', '_cmd_analyze.py')
+_cmd_check_duplication_mod = _load_module('_cmd_check_duplication', '_cmd_check_duplication.py')
+_cmd_readme_mod = _load_module('_cmd_readme', '_cmd_readme.py')
+_cmd_update_mod = _load_module('_cmd_update', '_cmd_update.py')
+
+cmd_analyze = _cmd_analyze_mod.cmd_analyze
+cmd_check_duplication = _cmd_check_duplication_mod.cmd_check_duplication
+cmd_readme = _cmd_readme_mod.cmd_readme
+cmd_update = _cmd_update_mod.cmd_update
 
 # =============================================================================
 # CLI plumbing tests (Tier 3 - subprocess)

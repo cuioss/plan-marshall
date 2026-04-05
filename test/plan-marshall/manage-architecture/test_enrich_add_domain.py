@@ -1,15 +1,33 @@
 #!/usr/bin/env python3
 """Tests for enrich_add_domain() API function in _cmd_enrich.py."""
 
+import importlib.util
+import sys
 import tempfile
+from pathlib import Path
 
-from _architecture_core import (
-    ModuleNotFoundInProjectError,
-    load_llm_enriched,
-    save_derived_data,
-    save_llm_enriched,
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
 )
-from _cmd_enrich import enrich_add_domain
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
+_cmd_enrich = _load_module('_cmd_enrich', '_cmd_enrich.py')
+
+ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
+load_llm_enriched = _architecture_core.load_llm_enriched
+save_derived_data = _architecture_core.save_derived_data
+save_llm_enriched = _architecture_core.save_llm_enriched
+enrich_add_domain = _cmd_enrich.enrich_add_domain
 
 # =============================================================================
 # Helper Functions

@@ -1,21 +1,34 @@
 #!/usr/bin/env python3
 """Tests for module discovery utilities (via extension_base public API)."""
 
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
 import sys
 import tempfile
 from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-# Import modules under test (PYTHONPATH set by conftest)
-from _build_discover import (
-    EXCLUDE_DIRS,
-    README_PATTERNS,
-    ModuleBase,
-    ModulePaths,
-    build_module_base,
-    discover_descriptors,
-    find_readme,
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'extension'
 )
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_build_discover_mod = _load_module('_build_discover', '_build_discover.py')
+
+EXCLUDE_DIRS = _build_discover_mod.EXCLUDE_DIRS
+README_PATTERNS = _build_discover_mod.README_PATTERNS
+ModuleBase = _build_discover_mod.ModuleBase
+ModulePaths = _build_discover_mod.ModulePaths
+build_module_base = _build_discover_mod.build_module_base
+discover_descriptors = _build_discover_mod.discover_descriptors
+find_readme = _build_discover_mod.find_readme
 
 
 def test_readme_patterns_defined():

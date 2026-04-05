@@ -6,15 +6,34 @@ Tests init command variants including force overwrite and error handling.
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
+import importlib.util
 import json
+import sys
 from argparse import Namespace
+from pathlib import Path
 
-# Tier 2 direct imports
-from _cmd_init import cmd_init
 from test_helpers import SCRIPT_PATH, create_marshal_json, patch_config_paths
 
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_init_mod = _load_module('_cmd_init', '_cmd_init.py')
+
+cmd_init = _cmd_init_mod.cmd_init
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PlanContext, run_script
+from conftest import PlanContext, run_script  # noqa: E402
 
 # =============================================================================
 # Init Command Tests (Tier 2 - direct import)

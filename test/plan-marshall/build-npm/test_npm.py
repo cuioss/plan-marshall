@@ -6,14 +6,36 @@ command type detection, timeout handling, and command execution.
 """
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+from pathlib import Path
+
 from conftest import BuildContext, get_script_path
 
 # Get script path
 SCRIPT_PATH = get_script_path('plan-marshall', 'build-npm', 'npm.py')
 
-# Import modules under test (PYTHONPATH set by conftest)
+# Import modules under test - cross-skill (PYTHONPATH set by conftest)
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
 from _build_shared import get_bash_timeout  # noqa: E402
-from _npm_execute import detect_command_type, execute_direct  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-npm' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_npm_execute_mod = _load_module('_npm_execute', '_npm_execute.py')
+
+detect_command_type = _npm_execute_mod.detect_command_type
+execute_direct = _npm_execute_mod.execute_direct
 
 # =============================================================================
 # Test: API functions (via import)

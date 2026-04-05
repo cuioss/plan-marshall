@@ -1,30 +1,43 @@
 #!/usr/bin/env python3
 """Tests for build_result.py module."""
 
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
 import sys
 import tempfile
 from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-# Import modules under test (PYTHONPATH set by conftest)
-from _build_result import (
-    ERROR_BUILD_FAILED,
-    ERROR_EXECUTION_FAILED,
-    ERROR_LOG_FILE_FAILED,
-    ERROR_TIMEOUT,
-    ERROR_WRAPPER_NOT_FOUND,
-    REQUIRED_FIELDS,
-    STATUS_ERROR,
-    STATUS_SUCCESS,
-    STATUS_TIMEOUT,
-    TIMESTAMP_FORMAT,
-    _get_log_base_dir,
-    create_log_file,
-    error_result,
-    success_result,
-    timeout_result,
-    validate_result,
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build'
 )
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_build_result_mod = _load_module('_build_result', '_build_result.py')
+
+ERROR_BUILD_FAILED = _build_result_mod.ERROR_BUILD_FAILED
+ERROR_EXECUTION_FAILED = _build_result_mod.ERROR_EXECUTION_FAILED
+ERROR_LOG_FILE_FAILED = _build_result_mod.ERROR_LOG_FILE_FAILED
+ERROR_TIMEOUT = _build_result_mod.ERROR_TIMEOUT
+ERROR_WRAPPER_NOT_FOUND = _build_result_mod.ERROR_WRAPPER_NOT_FOUND
+REQUIRED_FIELDS = _build_result_mod.REQUIRED_FIELDS
+STATUS_ERROR = _build_result_mod.STATUS_ERROR
+STATUS_SUCCESS = _build_result_mod.STATUS_SUCCESS
+STATUS_TIMEOUT = _build_result_mod.STATUS_TIMEOUT
+TIMESTAMP_FORMAT = _build_result_mod.TIMESTAMP_FORMAT
+_get_log_base_dir = _build_result_mod._get_log_base_dir
+create_log_file = _build_result_mod.create_log_file
+error_result = _build_result_mod.error_result
+success_result = _build_result_mod.success_result
+timeout_result = _build_result_mod.timeout_result
+validate_result = _build_result_mod.validate_result
 
 
 def test_log_base_dir():

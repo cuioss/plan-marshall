@@ -12,20 +12,37 @@ as first argument (not an argparse Namespace), requiring full index construction
 that the CLI main() handles.
 """
 
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
 import json
+from pathlib import Path
 
-from _dep_detection import (  # type: ignore[import-not-found]
-    ComponentId,
-    DependencyType,
-    detect_implements,
-    detect_python_imports,
-    detect_script_notations,
-    detect_skill_references,
-    extract_frontmatter,
-)
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'tools-marketplace-inventory' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_dep_detection_mod = _load_module('_dep_detection', '_dep_detection.py')
+
+ComponentId = _dep_detection_mod.ComponentId
+DependencyType = _dep_detection_mod.DependencyType
+detect_implements = _dep_detection_mod.detect_implements
+detect_python_imports = _dep_detection_mod.detect_python_imports
+detect_script_notations = _dep_detection_mod.detect_script_notations
+detect_skill_references = _dep_detection_mod.detect_skill_references
+extract_frontmatter = _dep_detection_mod.extract_frontmatter
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'tools-marketplace-inventory', 'resolve-dependencies.py')

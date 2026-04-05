@@ -8,14 +8,34 @@ by calling list-recipes and resolve-recipe against live extensions.
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
+import importlib.util
+import sys
 from argparse import Namespace
+from pathlib import Path
 
-# Tier 2 direct imports
-from _cmd_skill_resolution import cmd_list_recipes, cmd_resolve_recipe
 from test_helpers import SCRIPT_PATH
 
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
+
+cmd_list_recipes = _cmd_skill_resolution.cmd_list_recipes
+cmd_resolve_recipe = _cmd_skill_resolution.cmd_resolve_recipe
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PlanContext, run_script
+from conftest import PlanContext, run_script  # noqa: E402
 
 # =============================================================================
 # list-recipes Tests (Tier 2 - direct import)

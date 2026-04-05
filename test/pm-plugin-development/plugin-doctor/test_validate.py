@@ -18,9 +18,27 @@ from conftest import get_script_path, run_script
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_validate.py')
 
-# Direct imports for Tier 2 testing
-from _cmd_inventory import cmd_inventory  # noqa: E402
-from _cmd_references import cmd_references  # noqa: E402
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_inventory_mod = _load_module('_cmd_inventory', '_cmd_inventory.py')
+_cmd_references_mod = _load_module('_cmd_references', '_cmd_references.py')
+
+cmd_inventory = _cmd_inventory_mod.cmd_inventory
+cmd_references = _cmd_references_mod.cmd_references
 
 # =============================================================================
 # CLI plumbing tests (Tier 3 - subprocess)

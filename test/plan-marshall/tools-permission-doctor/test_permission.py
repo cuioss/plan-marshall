@@ -13,6 +13,8 @@ Tier 3 (subprocess) retained for CLI plumbing and --scope tests.
 import json
 from argparse import Namespace
 
+from permission_doctor import cmd_detect_redundant, cmd_detect_suspicious  # type: ignore[import-not-found]
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
@@ -20,9 +22,6 @@ from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-doctor' / 'scripts' / 'permission_doctor.py'
 )
-
-# Tier 2 direct imports
-from permission_doctor import cmd_detect_redundant, cmd_detect_suspicious  # type: ignore[import-not-found]  # noqa: E402
 
 # =============================================================================
 # Tier 2: Direct import tests for detect-redundant

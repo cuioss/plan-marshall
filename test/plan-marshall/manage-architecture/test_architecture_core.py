@@ -1,31 +1,45 @@
 #!/usr/bin/env python3
 """Tests for _architecture_core.py module."""
 
+import importlib.util
 import json
 import sys
 import tempfile
 from pathlib import Path
 
-from _architecture_core import (
-    DATA_DIR,
-    DataNotFoundError,
-    ModuleNotFoundInProjectError,
-    get_data_dir,
-    get_derived_path,
-    get_enriched_path,
-    get_module,
-    get_module_names,
-    get_root_module,
-    load_derived_data,
-    load_llm_enriched,
-    load_llm_enriched_or_empty,
-    merge_module_data,
-    save_derived_data,
-    save_llm_enriched,
+from file_ops import format_toon_value
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
 )
 
-# Import modules under test (PYTHONPATH set by conftest)
-from file_ops import format_toon_value
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
+
+DATA_DIR = _architecture_core.DATA_DIR
+DataNotFoundError = _architecture_core.DataNotFoundError
+ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
+get_data_dir = _architecture_core.get_data_dir
+get_derived_path = _architecture_core.get_derived_path
+get_enriched_path = _architecture_core.get_enriched_path
+get_module = _architecture_core.get_module
+get_module_names = _architecture_core.get_module_names
+get_root_module = _architecture_core.get_root_module
+load_derived_data = _architecture_core.load_derived_data
+load_llm_enriched = _architecture_core.load_llm_enriched
+load_llm_enriched_or_empty = _architecture_core.load_llm_enriched_or_empty
+merge_module_data = _architecture_core.merge_module_data
+save_derived_data = _architecture_core.save_derived_data
+save_llm_enriched = _architecture_core.save_llm_enriched
 
 # =============================================================================
 # Tests for Path Functions

@@ -7,16 +7,40 @@ API is actually consistent across Maven, Gradle, npm, and Python.
 """
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 # Mock runtime-only modules before importing configs
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
 
-from _gradle_execute import _CONFIG as GRADLE_CONFIG  # noqa: E402
-from _maven_execute import _CONFIG as MAVEN_CONFIG  # noqa: E402
-from _npm_execute import _CONFIG as NPM_CONFIG  # noqa: E402
-from _python_execute import _CONFIG as PYTHON_CONFIG  # noqa: E402
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
+_BUNDLES_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
+)
+
+
+def _load_module(name, filename, skill):
+    spec = importlib.util.spec_from_file_location(
+        name, _BUNDLES_DIR / skill / 'scripts' / filename
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_gradle_execute_mod = _load_module('_gradle_execute', '_gradle_execute.py', 'build-gradle')
+_maven_execute_mod = _load_module('_maven_execute', '_maven_execute.py', 'build-maven')
+_npm_execute_mod = _load_module('_npm_execute', '_npm_execute.py', 'build-npm')
+_python_execute_mod = _load_module('_python_execute', '_python_execute.py', 'build-python')
+
+GRADLE_CONFIG = _gradle_execute_mod._CONFIG
+MAVEN_CONFIG = _maven_execute_mod._CONFIG
+NPM_CONFIG = _npm_execute_mod._CONFIG
+PYTHON_CONFIG = _python_execute_mod._CONFIG
 
 ALL_CONFIGS = {
     'maven': MAVEN_CONFIG,

@@ -14,8 +14,25 @@ from conftest import get_script_path, run_script
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_validate.py')
 
-# Direct import for Tier 2 testing
-from _cmd_extension import cmd_extension  # noqa: E402
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_extension_mod = _load_module('_cmd_extension', '_cmd_extension.py')
+
+cmd_extension = _cmd_extension_mod.cmd_extension
 
 
 def create_valid_extension(ext_path: Path) -> None:

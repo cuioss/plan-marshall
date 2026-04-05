@@ -27,23 +27,32 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
-# Direct imports - conftest sets up PYTHONPATH
-from _maven_cmd_discover import (  # noqa: E402
-    _build_commands,
-    _classify_profile,
-    _parse_coordinates_from_maven_output,
-    _parse_dependencies_from_maven_output,
-    _parse_profiles_from_maven_output,
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-maven' / 'scripts'
 )
-from _maven_cmd_discover import (  # noqa: E402
-    filter_command_line_profiles as _filter_command_line_profiles,
-)
-from _maven_cmd_discover import (  # noqa: E402
-    filter_skip_profiles as _filter_skip_profiles,
-)
-from _maven_cmd_discover import (  # noqa: E402
-    map_canonical_profiles as _map_canonical_profiles,
-)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_maven_cmd_discover_mod = _load_module('_maven_cmd_discover', '_maven_cmd_discover.py')
+
+_build_commands = _maven_cmd_discover_mod._build_commands
+_classify_profile = _maven_cmd_discover_mod._classify_profile
+_parse_coordinates_from_maven_output = _maven_cmd_discover_mod._parse_coordinates_from_maven_output
+_parse_dependencies_from_maven_output = _maven_cmd_discover_mod._parse_dependencies_from_maven_output
+_parse_profiles_from_maven_output = _maven_cmd_discover_mod._parse_profiles_from_maven_output
+_filter_command_line_profiles = _maven_cmd_discover_mod.filter_command_line_profiles
+_filter_skip_profiles = _maven_cmd_discover_mod.filter_skip_profiles
+_map_canonical_profiles = _maven_cmd_discover_mod.map_canonical_profiles
 
 # =============================================================================
 # Fixtures

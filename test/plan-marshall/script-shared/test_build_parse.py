@@ -1,27 +1,40 @@
 #!/usr/bin/env python3
 """Tests for build_parse.py module."""
 
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
 import json
 import sys
 import tempfile
 from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-# Import modules under test (PYTHONPATH set by conftest)
-from _build_parse import (
-    MODE_ACTIONABLE,
-    MODE_ERRORS,
-    MODE_STRUCTURED,
-    SEVERITY_ERROR,
-    SEVERITY_WARNING,
-    Issue,
-    UnitTestSummary,
-    filter_warnings,
-    generate_summary_from_issues,
-    is_warning_accepted,
-    load_acceptable_warnings,
-    partition_issues,
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build'
 )
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_build_parse_mod = _load_module('_build_parse', '_build_parse.py')
+
+MODE_ACTIONABLE = _build_parse_mod.MODE_ACTIONABLE
+MODE_ERRORS = _build_parse_mod.MODE_ERRORS
+MODE_STRUCTURED = _build_parse_mod.MODE_STRUCTURED
+SEVERITY_ERROR = _build_parse_mod.SEVERITY_ERROR
+SEVERITY_WARNING = _build_parse_mod.SEVERITY_WARNING
+Issue = _build_parse_mod.Issue
+UnitTestSummary = _build_parse_mod.UnitTestSummary
+filter_warnings = _build_parse_mod.filter_warnings
+generate_summary_from_issues = _build_parse_mod.generate_summary_from_issues
+is_warning_accepted = _build_parse_mod.is_warning_accepted
+load_acceptable_warnings = _build_parse_mod.load_acceptable_warnings
+partition_issues = _build_parse_mod.partition_issues
 
 
 def test_severity_constants():
