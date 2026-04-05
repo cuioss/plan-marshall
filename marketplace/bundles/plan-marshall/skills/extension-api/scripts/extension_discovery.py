@@ -59,8 +59,12 @@ def get_marketplace_bundles_path() -> Path:
 
 
 def get_extension_api_scripts_path() -> Path:
-    """Get path to extension-api scripts directory."""
-    return Path(__file__).parent
+    """Get path to extension scripts directory (where extension_base.py lives).
+
+    Extension base classes live in script-shared/scripts/extension/ while this
+    discovery script lives in extension-api/scripts/. Resolve relative to __file__.
+    """
+    return Path(__file__).resolve().parent.parent.parent / 'script-shared' / 'scripts' / 'extension'
 
 
 def load_extension_module(extension_path: Path, bundle_name: str):
