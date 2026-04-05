@@ -33,6 +33,8 @@
       "review_bot_buffer_seconds": 300,
       "steps": [
         "default:commit-push",
+        "default:create-pr",
+        "default:automated-review",
         "default:knowledge-capture",
         "default:lessons-capture",
         "default:branch-cleanup",
