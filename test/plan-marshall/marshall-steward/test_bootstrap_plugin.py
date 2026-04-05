@@ -47,11 +47,11 @@ def test_get_root_with_refresh():
 def test_get_root_caches_result():
     """Test that get-root caches the result in marshall-state.toon."""
     with PlanContext(plan_id='bootstrap-cache') as ctx:
-        # Run get-root (may succeed or fail based on plugin cache)
         result = run_script(SCRIPT_PATH, 'get-root')
+        assert result.returncode == 0
 
-        if result.success:
-            # If it succeeded, verify the state file was created
+        # Only verify cache when operation found the plugin root
+        if 'status: success' in result.stdout:
             state_file = ctx.fixture_dir / 'marshall-state.toon'
             assert state_file.exists(), 'State file should be created after successful get-root'
             content = state_file.read_text()
@@ -99,8 +99,8 @@ def test_resolve_with_existing_cache():
             '--path',
             'skills/manage-tasks/SKILL.md',
         )
-        # May not find the exact path but should not crash
-        assert result.returncode in (0, 1)
+        # Always exit 0 — check TOON status for operation result
+        assert result.returncode == 0
 
 
 # =============================================================================
