@@ -32,9 +32,10 @@ Environment:
 
 import argparse
 import os
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
+
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 # Default plugin name to search for
 PLUGIN_NAME = 'plan-marshall'
@@ -176,38 +177,32 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
     return None
 
 
-def cmd_get_root(args: argparse.Namespace) -> int:
+def cmd_get_root(args: argparse.Namespace) -> dict:
     """Handle the 'get-root' subcommand."""
     plugin_root, source = get_plugin_root(refresh=args.refresh)
 
     if plugin_root:
-        print(f'plugin_root\t{plugin_root}')
-        print(f'source\t{source}')
-        return 0
+        return {'status': 'success', 'plugin_root': str(plugin_root), 'source': source}
     else:
-        print('error\tPlugin root not found')
-        print('hint\tEnsure plan-marshall plugin is installed via Claude Code')
-        return 1
+        return {'status': 'error', 'error': 'Plugin root not found', 'hint': 'Ensure plan-marshall plugin is installed via Claude Code'}
 
 
-def cmd_resolve(args: argparse.Namespace) -> int:
+def cmd_resolve(args: argparse.Namespace) -> dict:
     """Handle the 'resolve' subcommand."""
     plugin_root, _ = get_plugin_root()
 
     if not plugin_root:
-        print('error\tPlugin root not found')
-        return 1
+        return {'status': 'error', 'error': 'Plugin root not found'}
 
     resolved = resolve_bundle_path(plugin_root, args.bundle, args.path)
 
     if resolved:
-        print(f'resolved_path\t{resolved}')
-        return 0
+        return {'status': 'success', 'resolved_path': str(resolved)}
     else:
-        print(f'error\tPath not found: {args.bundle}/{args.path}')
-        return 1
+        return {'status': 'error', 'error': f'Path not found: {args.bundle}/{args.path}'}
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Bootstrap script for plugin root detection')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -224,13 +219,16 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == 'get-root':
-        return cmd_get_root(args)
+        result = cmd_get_root(args)
     elif args.command == 'resolve':
-        return cmd_resolve(args)
+        result = cmd_resolve(args)
     else:
         parser.print_help()
-        return 1
+        return 0
+
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

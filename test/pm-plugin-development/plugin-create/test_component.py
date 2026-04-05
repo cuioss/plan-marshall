@@ -151,7 +151,7 @@ def test_generate_empty_tools_error():
 def test_validate_valid_agent():
     """Test validate valid agent validation."""
     result = run_script(SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'valid-agent.md'), '--type', 'agent')
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is True, 'Valid agent validation'
 
 
@@ -160,7 +160,7 @@ def test_validate_agent_no_model():
     result = run_script(
         SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'valid-agent-no-model.md'), '--type', 'agent'
     )
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is True, 'Valid agent without model'
 
 
@@ -169,7 +169,7 @@ def test_validate_agent_prohibited_task_tool():
     result = run_script(
         SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-agent-task-tool.md'), '--type', 'agent'
     )
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is False, 'Agent with prohibited Task tool should be invalid'
 
 
@@ -178,7 +178,7 @@ def test_validate_agent_self_invocation():
     result = run_script(
         SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-agent-self-invoke.md'), '--type', 'agent'
     )
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is False, 'Agent with self-invocation should be invalid'
 
 
@@ -187,14 +187,14 @@ def test_validate_agent_missing_frontmatter():
     result = run_script(
         SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-agent-no-frontmatter.md'), '--type', 'agent'
     )
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is False, 'Agent missing frontmatter should be invalid'
 
 
 def test_validate_valid_command():
     """Test validate valid command validation."""
     result = run_script(SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'valid-command.md'), '--type', 'command')
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is True, 'Valid command validation'
 
 
@@ -203,14 +203,14 @@ def test_validate_command_missing_workflow():
     result = run_script(
         SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-command-missing-section.md'), '--type', 'command'
     )
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is False, 'Command missing WORKFLOW should be invalid'
 
 
 def test_validate_valid_skill():
     """Test validate valid skill validation."""
     result = run_script(SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'valid-skill.md'), '--type', 'skill')
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is True, 'Valid skill validation'
 
 
@@ -219,7 +219,7 @@ def test_validate_skill_bad_frontmatter():
     result = run_script(
         SCRIPT_PATH, 'validate', '--file', str(FIXTURES_DIR / 'invalid-skill-bad-frontmatter.md'), '--type', 'skill'
     )
-    data = result.json()
+    data = result.toon()
     assert data.get('valid') is False, 'Skill with bad frontmatter should be invalid'
 
 

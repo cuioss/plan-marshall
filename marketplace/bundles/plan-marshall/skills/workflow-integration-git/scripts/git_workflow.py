@@ -38,8 +38,7 @@ from triage_helpers import (  # type: ignore[import-not-found]
     create_workflow_cli,
     is_test_file,
     load_skill_config,
-    print_error,
-    print_toon,
+    make_error,
     safe_main,
 )
 
@@ -231,7 +230,7 @@ def cmd_format_commit(args):
         'status': 'success' if is_valid else 'error',
     }
 
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -387,12 +386,12 @@ def cmd_analyze_diff(args):
     """Handle analyze-diff subcommand."""
     path = Path(args.file)
     if not path.exists():
-        return print_error(f'File not found: {args.file}', code=ErrorCode.NOT_FOUND)
+        return make_error(f'File not found: {args.file}', code=ErrorCode.NOT_FOUND)
 
     diff_content = path.read_text()
     suggestions = analyze_diff(diff_content)
 
-    return print_toon({'mode': 'analysis', 'suggestions': suggestions, 'status': 'success'})
+    return {'mode': 'analysis', 'suggestions': suggestions, 'status': 'success'}
 
 
 # ============================================================================
@@ -505,12 +504,12 @@ def cmd_detect_artifacts(args):
     root = Path(args.root) if args.root else Path.cwd()
 
     if not root.is_dir():
-        return print_error(f'Directory not found: {root}', code=ErrorCode.NOT_FOUND)
+        return make_error(f'Directory not found: {root}', code=ErrorCode.NOT_FOUND)
 
     result = scan_artifacts(root, respect_gitignore=not args.no_gitignore)
     result['root'] = str(root)
     result['status'] = 'success'
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -570,7 +569,9 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    return args.func(args)
+    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+
+    return _output_toon(args.func(args))
 
 
 if __name__ == '__main__':

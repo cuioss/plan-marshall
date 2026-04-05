@@ -7,14 +7,6 @@ from pathlib import Path
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_ERROR = 2
-
-# Color codes
-GREEN = '\033[0;32m'
-NC = '\033[0m'
-
 
 def fix_lists(content: str) -> tuple[str, int]:
     """Fix list formatting by adding blank lines before lists."""
@@ -83,18 +75,18 @@ def fix_whitespace(content: str) -> tuple[str, int]:
     return content, 1 if content != original else 0
 
 
-def cmd_format(args):
+def cmd_format(args) -> dict:
     """Handle format subcommand."""
     target_path = Path(args.path)
 
     if not target_path.exists():
-        print(f"Error: Path '{target_path}' does not exist")
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'path_not_found', 'message': f"Path '{target_path}' does not exist"}
 
     files_processed = 0
     files_modified = 0
     issues_fixed = 0
     fix_types = args.fix_types if args.fix_types else ['all']
+    modified_files = []
 
     def process_file(file_path: Path):
         nonlocal files_processed, files_modified, issues_fixed
@@ -119,7 +111,7 @@ def cmd_format(args):
             if not args.no_backup:
                 shutil.copy2(file_path, file_path.with_suffix(file_path.suffix + '.bak'))
             file_path.write_text(content, encoding='utf-8')
-            print(f'{GREEN}Fixed: {file_path}{NC}')
+            modified_files.append(str(file_path))
 
     if target_path.is_file():
         if target_path.suffix == '.adoc':
@@ -133,5 +125,10 @@ def cmd_format(args):
             'script', 'global', 'INFO', f'[DOCS-FORMAT] Formatted {files_modified} files, fixed {issues_fixed} issues'
         )
 
-    print(f'\nSummary: {files_processed} processed, {files_modified} modified, {issues_fixed} issues fixed')
-    return EXIT_SUCCESS
+    return {
+        'status': 'success',
+        'files_processed': files_processed,
+        'files_modified': files_modified,
+        'issues_fixed': issues_fixed,
+        'modified_files': modified_files,
+    }

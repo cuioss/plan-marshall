@@ -14,7 +14,6 @@ Output: JSON to stdout.
 """
 
 import argparse
-import sys
 
 from _analyze_coverage import analyze_tool_coverage, cmd_coverage
 from _analyze_crossfile import DEFAULT_SIMILARITY_THRESHOLD, cmd_cross_file
@@ -28,6 +27,7 @@ from _analyze_shared import (
     extract_frontmatter,
 )
 from _analyze_structure import analyze_skill_structure, cmd_structure
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 # Public API surface — used by _doctor_analysis.py and other scripts
 __all__ = [
@@ -39,7 +39,8 @@ __all__ = [
 ]
 
 
-def main():
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plugin component analysis tools',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -101,8 +102,10 @@ Examples:
         parser.print_help()
         return 1
 
-    return args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

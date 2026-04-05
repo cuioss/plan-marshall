@@ -33,7 +33,6 @@ from triage_helpers import (  # type: ignore[import-not-found]
     load_skill_config,
     make_error,
     parse_json_arg,
-    print_toon,
     safe_main,
 )
 
@@ -180,7 +179,7 @@ def check_attempt(category: str, current: int, max_attempts: int) -> dict[str, A
 def cmd_track_attempt(args):
     """Handle track-attempt subcommand."""
     result = check_attempt(args.category, args.current, args.max_attempts)
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -314,7 +313,7 @@ def cmd_diagnose(args):
         review_comments=review_comments,
         sonar_issues=sonar_issues,
     )
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -329,7 +328,7 @@ def cmd_parse_handoff(args):
         return rc
 
     if not isinstance(handoff, dict):
-        return print_toon(make_error('Handoff must be a JSON object', code=ErrorCode.INVALID_INPUT))
+        return make_error('Handoff must be a JSON object', code=ErrorCode.INVALID_INPUT)
 
     # Validate
     warnings = validate_handoff(handoff)
@@ -360,7 +359,7 @@ def cmd_parse_handoff(args):
         'status': 'success',
     }
 
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -438,7 +437,9 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    return args.func(args)
+    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+
+    return _output_toon(args.func(args))
 
 
 if __name__ == '__main__':

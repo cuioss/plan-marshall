@@ -43,8 +43,6 @@ from triage_helpers import (  # type: ignore[import-not-found]
     load_skill_config,
     make_error,
     parse_json_arg,
-    print_error,
-    print_toon,
     safe_main,
 )
 
@@ -172,10 +170,10 @@ def cmd_fetch_comments(args):
     if not pr_number:
         pr_number = get_current_pr_number()
         if not pr_number:
-            return print_error('No PR found for current branch. Use --pr to specify.', code=ErrorCode.NOT_FOUND)
+            return make_error('No PR found for current branch. Use --pr to specify.', code=ErrorCode.NOT_FOUND)
 
     result = fetch_comments(pr_number, getattr(args, 'unresolved_only', False))
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -417,7 +415,9 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    return args.func(args)
+    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+
+    return _output_toon(args.func(args))
 
 
 if __name__ == '__main__':

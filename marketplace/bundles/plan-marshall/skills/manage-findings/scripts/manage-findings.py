@@ -54,9 +54,9 @@ from file_ops import output_toon, safe_main
 from input_validation import add_phase_arg, add_plan_id_arg  # type: ignore[import-not-found]
 
 
-def cmd_add(args: argparse.Namespace) -> int:
+def cmd_add(args: argparse.Namespace) -> dict:
     """Handle: add"""
-    result = add_finding(
+    return add_finding(
         plan_id=args.plan_id,
         finding_type=args.type,
         title=args.title,
@@ -68,63 +68,53 @@ def cmd_add(args: argparse.Namespace) -> int:
         rule=args.rule,
         severity=args.severity,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_query(args: argparse.Namespace) -> int:
+def cmd_query(args: argparse.Namespace) -> dict:
     """Handle: query"""
     promoted = None
     if args.promoted is not None:
         promoted = args.promoted.lower() in ('true', '1', 'yes')
 
-    result = query_findings(
+    return query_findings(
         plan_id=args.plan_id,
         finding_type=args.type,
         resolution=args.resolution,
         promoted=promoted,
         file_pattern=args.file_pattern,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_get(args: argparse.Namespace) -> int:
+def cmd_get(args: argparse.Namespace) -> dict:
     """Handle: get"""
     result = get_finding(args.plan_id, args.hash_id)
     if result:
-        output_toon(result)
-        return 0 if result.get('status') == 'success' else 1
-    output_toon({'status': 'error', 'message': f'Finding not found: {args.hash_id}'})
-    return 1
+        return result
+    return {'status': 'error', 'message': f'Finding not found: {args.hash_id}'}
 
 
-def cmd_resolve(args: argparse.Namespace) -> int:
+def cmd_resolve(args: argparse.Namespace) -> dict:
     """Handle: resolve"""
-    result = resolve_finding(
+    return resolve_finding(
         plan_id=args.plan_id,
         hash_id=args.hash_id,
         resolution=args.resolution,
         detail=args.detail,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_promote(args: argparse.Namespace) -> int:
+def cmd_promote(args: argparse.Namespace) -> dict:
     """Handle: promote"""
-    result = promote_finding(
+    return promote_finding(
         plan_id=args.plan_id,
         hash_id=args.hash_id,
         promoted_to=args.promoted_to,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_qgate_add(args: argparse.Namespace) -> int:
+def cmd_qgate_add(args: argparse.Namespace) -> dict:
     """Handle: qgate add"""
-    result = add_qgate_finding(
+    return add_qgate_finding(
         plan_id=args.plan_id,
         phase=args.phase,
         source=args.source,
@@ -136,49 +126,41 @@ def cmd_qgate_add(args: argparse.Namespace) -> int:
         severity=args.severity,
         iteration=args.iteration,
     )
-    output_toon(result)
-    return 0 if result.get('status') in ('success', 'deduplicated', 'reopened') else 1
 
 
-def cmd_qgate_query(args: argparse.Namespace) -> int:
+def cmd_qgate_query(args: argparse.Namespace) -> dict:
     """Handle: qgate query"""
-    result = query_qgate_findings(
+    return query_qgate_findings(
         plan_id=args.plan_id,
         phase=args.phase,
         resolution=args.resolution,
         source=args.source,
         iteration=args.iteration,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_qgate_resolve(args: argparse.Namespace) -> int:
+def cmd_qgate_resolve(args: argparse.Namespace) -> dict:
     """Handle: qgate resolve"""
-    result = resolve_qgate_finding(
+    return resolve_qgate_finding(
         plan_id=args.plan_id,
         phase=args.phase,
         hash_id=args.hash_id,
         resolution=args.resolution,
         detail=args.detail,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_qgate_clear(args: argparse.Namespace) -> int:
+def cmd_qgate_clear(args: argparse.Namespace) -> dict:
     """Handle: qgate clear"""
-    result = clear_qgate_findings(
+    return clear_qgate_findings(
         plan_id=args.plan_id,
         phase=args.phase,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_assessment_add(args: argparse.Namespace) -> int:
+def cmd_assessment_add(args: argparse.Namespace) -> dict:
     """Handle: assessment add"""
-    result = add_assessment(
+    return add_assessment(
         plan_id=args.plan_id,
         file_path=args.file_path,
         certainty=args.certainty,
@@ -187,38 +169,30 @@ def cmd_assessment_add(args: argparse.Namespace) -> int:
         detail=args.detail,
         evidence=args.evidence,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_assessment_query(args: argparse.Namespace) -> int:
+def cmd_assessment_query(args: argparse.Namespace) -> dict:
     """Handle: assessment query"""
-    result = query_assessments(
+    return query_assessments(
         plan_id=args.plan_id,
         certainty=args.certainty,
         min_confidence=args.min_confidence,
         max_confidence=args.max_confidence,
         file_pattern=args.file_pattern,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
-def cmd_assessment_get(args: argparse.Namespace) -> int:
+def cmd_assessment_get(args: argparse.Namespace) -> dict:
     """Handle: assessment get"""
-    result = get_assessment(args.plan_id, args.hash_id)
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
+    return get_assessment(args.plan_id, args.hash_id)
 
 
-def cmd_assessment_clear(args: argparse.Namespace) -> int:
+def cmd_assessment_clear(args: argparse.Namespace) -> dict:
     """Handle: assessment clear"""
-    result = clear_assessments(
+    return clear_assessments(
         plan_id=args.plan_id,
         agent=args.agent,
     )
-    output_toon(result)
-    return 0 if result.get('status') == 'success' else 1
 
 
 @safe_main
@@ -360,8 +334,9 @@ def main() -> int:
     args = parser.parse_args()
 
     if hasattr(args, 'func'):
-        result: int = args.func(args)
-        return result
+        result = args.func(args)
+        output_toon(result)
+        return 0
 
     parser.print_help()
     return 1

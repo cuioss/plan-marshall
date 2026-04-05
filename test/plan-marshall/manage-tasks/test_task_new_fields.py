@@ -253,7 +253,8 @@ steps:
   - Step 1"""
         result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
 
-        assert result.returncode != 0
+        assert result.returncode == 0
+        assert 'status: error' in result.stdout
         assert 'skill' in result.stdout.lower() or 'bundle:skill' in result.stdout.lower()
     finally:
         cleanup(temp_dir)
@@ -484,7 +485,8 @@ def test_update_fails_with_invalid_skills():
             SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--skills', 'invalid-no-colon'
         )
 
-        assert result.returncode != 0
+        assert result.returncode == 0
+        assert 'status: error' in result.stdout
         assert 'skill' in result.stdout.lower() or 'bundle:skill' in result.stdout.lower()
     finally:
         cleanup(temp_dir)

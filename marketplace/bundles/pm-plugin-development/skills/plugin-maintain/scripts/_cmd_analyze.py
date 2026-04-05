@@ -4,7 +4,7 @@
 import re
 from pathlib import Path
 
-from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_toon, parse_frontmatter
+from _maintain_shared import parse_frontmatter
 
 
 def detect_component_type(path: Path) -> str:
@@ -222,8 +222,8 @@ def analyze_component(component_path: str) -> dict:
     }
 
 
-def cmd_analyze(args) -> int:
+def cmd_analyze(args) -> dict:
     """Handle analyze subcommand."""
     result = analyze_component(args.component)
-    output_toon(result)
-    return EXIT_SUCCESS if 'error' not in result else EXIT_ERROR
+    result['status'] = 'success' if 'error' not in result else 'error'
+    return result

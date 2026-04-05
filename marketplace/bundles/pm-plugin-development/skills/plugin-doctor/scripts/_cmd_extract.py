@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Extract subcommand for extracting fixable issues from diagnosis."""
 
-import json
-
 from _doctor_shared import FIXABLE_ISSUE_TYPES, read_json_input
 
 
@@ -30,28 +28,23 @@ def extract_fixable_issues(diagnosis: dict) -> dict:
     }
 
 
-def cmd_extract(args) -> int:
+def cmd_extract(args) -> dict:
     """Extract fixable issues from diagnosis JSON."""
     data, error = read_json_input(args.input)
 
     if error:
-        result = {'error': error, 'fixable_issues': [], 'total_count': 0}
-        print(json.dumps(result, indent=2))
-        return 1
+        return {'status': 'error', 'error': 'invalid_input', 'message': error, 'fixable_issues': [], 'total_count': 0}
 
     if not data:
-        result = {
+        return {
+            'status': 'success',
             'fixable_issues': [],
             'total_count': 0,
             'source_bundle': 'unknown',
             'original_total': 0,
             'filtered_count': 0,
-            'error': None,
         }
-        print(json.dumps(result, indent=2))
-        return 0
 
     result = extract_fixable_issues(data)
-    result['error'] = None
-    print(json.dumps(result, indent=2))
-    return 0
+    result['status'] = 'success'
+    return result

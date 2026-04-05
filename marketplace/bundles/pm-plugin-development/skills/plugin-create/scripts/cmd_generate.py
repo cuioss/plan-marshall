@@ -2,7 +2,6 @@
 """Generate subcommand for creating YAML frontmatter."""
 
 import json
-import sys
 
 
 def generate_agent_frontmatter(answers):
@@ -64,18 +63,20 @@ def format_frontmatter(frontmatter_dict):
     return f'---\n{yaml_content}\n---'
 
 
-def cmd_generate(args) -> int:
+def cmd_generate(args) -> dict:
     """Generate YAML frontmatter for marketplace component."""
     try:
         answers = json.loads(args.config)
     except json.JSONDecodeError as e:
-        print(f'Error: Invalid JSON - {str(e)}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'invalid_json', 'message': f'Invalid JSON - {str(e)}'}
 
     # Validate component type
     if args.type not in ['agent', 'command', 'skill']:
-        print(f"Error: Invalid component type '{args.type}'. Must be 'agent', 'command', or 'skill'", file=sys.stderr)
-        return 1
+        return {
+            'status': 'error',
+            'error': 'invalid_type',
+            'message': f"Invalid component type '{args.type}'. Must be 'agent', 'command', or 'skill'",
+        }
 
     # Generate frontmatter based on type
     try:
@@ -86,9 +87,7 @@ def cmd_generate(args) -> int:
         elif args.type == 'skill':
             frontmatter_dict = generate_skill_frontmatter(answers)
     except ValueError as e:
-        print(str(e), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'generation_failed', 'message': str(e)}
 
     # Format as YAML with delimiters
-    print(format_frontmatter(frontmatter_dict))
-    return 0
+    return {'status': 'success', 'frontmatter': format_frontmatter(frontmatter_dict)}

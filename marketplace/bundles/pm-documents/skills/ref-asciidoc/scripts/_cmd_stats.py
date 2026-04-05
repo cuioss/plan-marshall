@@ -1,18 +1,9 @@
 #!/usr/bin/env python3
 """Stats subcommand for documentation statistics."""
 
-import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_ERROR = 2
-
-# Color codes
-BLUE = '\033[0;34m'
-NC = '\033[0m'
 
 
 def format_size(size: int) -> str:
@@ -66,17 +57,25 @@ def analyze_file_stats(file_path: Path) -> dict:
     return stats
 
 
-def cmd_stats(args):
+def cmd_stats(args) -> dict:
     """Handle stats subcommand."""
     target_dir = Path(args.directory)
 
     if not target_dir.is_dir():
-        print(f"Error: Directory '{target_dir}' does not exist")
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'dir_not_found', 'message': f"Directory '{target_dir}' does not exist"}
 
     file_stats = []
     dir_stats = {}
-    totals = {'lines': 0, 'words': 0, 'sections': 0, 'xrefs': 0, 'images': 0, 'code_blocks': 0, 'tables': 0, 'lists': 0}
+    totals = {
+        'lines': 0,
+        'words': 0,
+        'sections': 0,
+        'xrefs': 0,
+        'images': 0,
+        'code_blocks': 0,
+        'tables': 0,
+        'lists': 0,
+    }
 
     for file_path in sorted(target_dir.rglob('*.adoc')):
         stats = analyze_file_stats(file_path)
@@ -95,31 +94,23 @@ def cmd_stats(args):
 
     total_files = len(file_stats)
 
-    if args.format == 'json':
-        output = {
-            'metadata': {
-                'directory': str(target_dir),
-                'generated': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
-                'total_files': total_files,
+    result = {
+        'status': 'success',
+        'metadata': {
+            'directory': str(target_dir),
+            'generated': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'total_files': total_files,
+        },
+        'summary': {
+            **totals,
+            'averages': {
+                'lines_per_file': totals['lines'] // total_files if total_files else 0,
+                'words_per_file': totals['words'] // total_files if total_files else 0,
             },
-            'summary': {
-                **totals,
-                'averages': {
-                    'lines_per_file': totals['lines'] // total_files if total_files else 0,
-                    'words_per_file': totals['words'] // total_files if total_files else 0,
-                },
-            },
-            'directories': dir_stats,
-        }
-        if args.details:
-            output['files'] = {s['file']: {k: v for k, v in s.items() if k != 'file'} for s in file_stats}
-        print(json.dumps(output, indent=2))
-    else:
-        print(f'{BLUE}Documentation Statistics{NC}')
-        print('=' * 30)
-        print(f'Directory: {target_dir}')
-        print(f'Total files: {total_files}')
-        print(f'Total lines: {totals["lines"]:,}')
-        print(f'Total words: {totals["words"]:,}')
+        },
+        'directories': dir_stats,
+    }
+    if args.details:
+        result['files'] = {s['file']: {k: v for k, v in s.items() if k != 'file'} for s in file_stats}
 
-    return EXIT_SUCCESS
+    return result

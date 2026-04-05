@@ -3,15 +3,10 @@
 
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_ERROR = 2
 
 # Marketing language patterns
 MARKETING_PATTERNS = [
@@ -64,13 +59,12 @@ def analyze_content_line(line: str, line_number: int, file_path: str) -> list[di
     return issues
 
 
-def cmd_review(args):
+def cmd_review(args) -> dict:
     """Handle review subcommand."""
     if not args.file and not args.directory:
-        print('Error: --file or --directory required', file=sys.stderr)
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'missing_args', 'message': '--file or --directory required'}
 
-    results = []
+    results: list[dict[str, Any]] = []
     paths = (
         [Path(args.file)] if args.file else list(Path(args.directory).glob('**/*.adoc' if args.recursive else '*.adoc'))
     )
@@ -106,16 +100,13 @@ def cmd_review(args):
             f'[DOCS-REVIEW] Found {len(all_issues)} issues ({tone_count} tone, {completeness_count} completeness)',
         )
 
-    output = {
+    result = {
         'status': 'success',
         'data': {'files_analyzed': len(results), 'total_issues': len(all_issues), 'issues': all_issues},
         'metrics': {'tone_issues': tone_count, 'completeness_issues': completeness_count},
     }
 
-    output_json = json.dumps(output, indent=2)
     if args.output:
-        Path(args.output).write_text(output_json)
-    else:
-        print(output_json)
+        Path(args.output).write_text(json.dumps(result, indent=2))
 
-    return EXIT_SUCCESS
+    return result

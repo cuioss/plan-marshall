@@ -5,24 +5,21 @@ Handles: info, modules, graph, module, commands, resolve
 These commands merge derived + enriched data for consumer output.
 """
 
-import sys
 from typing import Any
 
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
-    error_command_not_found,
-    error_module_not_found,
+    error_result_command_not_found,
+    error_result_module_not_found,
     get_module,
     get_module_names,
     get_root_module,
     load_derived_data,
     load_llm_enriched_or_empty,
     merge_module_data,
-    print_skills_by_profile,
-    require_derived_data,
+    require_derived_data_result,
 )
-from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
 
 # =============================================================================
 # API Functions
@@ -386,8 +383,8 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
 
     Resolution order:
     1. Try command at specified module
-    2. If not found AND module is not the root module → try at root module
-    3. If still not found → raise ValueError
+    2. If not found AND module is not the root module -> try at root module
+    3. If still not found -> raise ValueError
 
     Args:
         command_name: Command name to resolve
@@ -436,375 +433,106 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
 # =============================================================================
 
 
-def cmd_info(args) -> int:
+def _extract_profile_keys(skills_by_profile: dict) -> set[str]:
+    """Extract profile keys from skills_by_profile structure."""
+    return set(skills_by_profile.keys())
+
+
+def cmd_info(args) -> dict:
     """CLI handler for info command."""
     try:
         info = get_project_info(args.project_dir)
-
-        # Output project info
-        print('project:')
-        print(f'  name: {info["project"]["name"]}')
-        print(f'  description: {info["project"]["description"]}')
-        print()
-
-        # Output technologies
-        print_toon_list('technologies', info['technologies'])
-        print()
-
-        # Output modules table
-        print_toon_table('modules', info['modules'], ['name', 'path', 'purpose'])
-
-        return 0
+        return {'status': 'success', **info}
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_modules(args) -> int:
+def cmd_modules(args) -> dict:
     """CLI handler for modules command."""
     try:
         command_filter = getattr(args, 'filter_command', None)
         physical_path_filter = getattr(args, 'physical_path', None)
 
         if command_filter:
-            # Filter modules by command availability
             modules = get_modules_with_command(command_filter, args.project_dir)
-            print(f'command: {command_filter}')
-            print()
+            return {'status': 'success', 'command': command_filter, 'modules': modules}
         elif physical_path_filter:
-            # Filter modules by physical path (for virtual modules)
             modules = get_modules_by_physical_path(physical_path_filter, args.project_dir)
-            print(f'physical_path: {physical_path_filter}')
-            print()
+            return {'status': 'success', 'physical_path': physical_path_filter, 'modules': modules}
         else:
-            # List all modules
             modules = get_modules_list(args.project_dir)
-
-        print_toon_list('modules', modules)
-        return 0
+            return {'status': 'success', 'modules': modules}
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_graph(args) -> int:
+def cmd_graph(args) -> dict:
     """CLI handler for graph command."""
     try:
         result = get_module_graph(args.project_dir, args.full)
-        nodes = result['nodes']
-        edges = result['edges']
-
-        print('status: success')
-        print()
-
-        # Single module: just print the name
-        if len(nodes) == 1:
-            print(f'module: {nodes[0]["name"]}')
-            return 0
-
-        # Build dependency lookup: what does each module depend on
-        dependencies: dict[str, list[str]] = {n['name']: [] for n in nodes}
-        for edge in edges:
-            # edge['from'] depends on edge['to']
-            dependencies[edge['to']].append(edge['from'])
-
-        # Print each leaf module with its dependency tree
-        leaves = result['leaves']
-        printed = set()
-
-        def print_deps(module_name: str, indent: int = 0):
-            """Print module and its dependencies with indentation."""
-            prefix = '  ' * indent
-            if indent > 0:
-                print(f'{prefix}- {module_name}')
-            else:
-                print(module_name)
-
-            if module_name in printed:
-                return
-            printed.add(module_name)
-
-            # Get what this module depends on
-            deps = sorted(dependencies.get(module_name, []))
-            for dep in deps:
-                print_deps(dep, indent + 1)
-
-        for i, leaf in enumerate(sorted(leaves)):
-            if i > 0:
-                print()
-            print_deps(leaf)
-
-        # Circular dependencies warning
-        if result.get('circular_dependencies'):
-            print()
-            print('warning: circular_dependencies_detected')
-            print_toon_list('circular_dependencies', result['circular_dependencies'])
-
-        return 0
+        return {'status': 'success', **result}
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except Exception as e:
-        print('status: error', file=sys.stderr)
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_module(args) -> int:
+def cmd_module(args) -> dict:
     """CLI handler for module command."""
     try:
         derived = load_derived_data(args.project_dir)
         module_name = args.name or get_root_module(derived)
-
         module = get_module_info(module_name, args.full, args.project_dir)
-
-        # Output module info
-        print('module:')
-        print(f'  name: {module.get("name", module_name)}')
-        if module.get('responsibility'):
-            print(f'  responsibility: {module["responsibility"]}')
-        if args.full and module.get('responsibility_reasoning'):
-            print(f'  responsibility_reasoning: {module["responsibility_reasoning"]}')
-        if module.get('purpose'):
-            print(f'  purpose: {module["purpose"]}')
-        if args.full and module.get('purpose_reasoning'):
-            print(f'  purpose_reasoning: {module["purpose_reasoning"]}')
-        paths = module.get('paths', {})
-        print(f'  path: {paths.get("module", "")}')
-        print()
-
-        # Output paths
-        print('paths:')
-        sources = paths.get('sources', [])
-        if sources:
-            print(f'  sources[{len(sources)}]:')
-            for s in sources:
-                print(f'    - {s}')
-        tests = paths.get('tests', [])
-        if tests:
-            print(f'  tests[{len(tests)}]:')
-            for t in tests:
-                print(f'    - {t}')
-        if paths.get('descriptor'):
-            print(f'  descriptor: {paths["descriptor"]}')
-        print()
-
-        # Output key_packages
-        key_packages = module.get('key_packages', {})
-        if key_packages:
-            pkg_items = []
-            for pkg_name, pkg_data in key_packages.items():
-                desc = pkg_data.get('description', '') if isinstance(pkg_data, dict) else ''
-                pkg_items.append({'name': pkg_name, 'description': desc})
-            print_toon_table('key_packages', pkg_items, ['name', 'description'])
-            print()
-
-        # Full mode: all packages
-        if args.full:
-            packages = module.get('packages', {})
-            if packages:
-                pkg_items = []
-                for pkg_name, pkg_data in packages.items():
-                    has_info = 'true' if pkg_data.get('package_info') else 'false'
-                    file_count = str(len(pkg_data.get('files', [])))
-                    pkg_items.append(
-                        {
-                            'name': pkg_name,
-                            'path': pkg_data.get('path', ''),
-                            'has_package_info': has_info,
-                            'file_count': file_count,
-                        }
-                    )
-                print_toon_table('packages', pkg_items, ['name', 'path', 'has_package_info', 'file_count'])
-                print()
-
-            test_packages = module.get('test_packages', {})
-            if test_packages:
-                test_pkg_items = []
-                for pkg_name, pkg_data in test_packages.items():
-                    file_count = str(len(pkg_data.get('files', [])))
-                    test_pkg_items.append(
-                        {
-                            'name': pkg_name,
-                            'path': pkg_data.get('path', ''),
-                            'file_count': file_count,
-                        }
-                    )
-                print_toon_table('test_packages', test_pkg_items, ['name', 'path', 'file_count'])
-                print()
-
-        # Output key_dependencies
-        key_deps = module.get('key_dependencies', [])
-        if key_deps:
-            print_toon_list('key_dependencies', key_deps)
-        if args.full and module.get('key_dependencies_reasoning'):
-            print(f'key_dependencies_reasoning: {module["key_dependencies_reasoning"]}')
-        print()
-
-        # Full mode: all dependencies
-        if args.full:
-            deps = module.get('dependencies', [])
-            if deps:
-                dep_items = []
-                for dep in deps[:30]:  # Limit display
-                    parts = dep.split(':')
-                    if len(parts) >= 3:
-                        dep_items.append(
-                            {'artifact': f'{parts[0]}:{parts[1]}', 'scope': parts[2] if len(parts) > 2 else ''}
-                        )
-                print_toon_table('dependencies', dep_items, ['artifact', 'scope'])
-                if len(deps) > 30:
-                    print(f'  ... and {len(deps) - 30} more')
-                print()
-
-        # Output internal_dependencies
-        internal_deps = module.get('internal_dependencies', [])
-        print_toon_list('internal_dependencies', internal_deps)
-        print()
-
-        # Output skills_by_profile (structured format: {defaults: [...], optionals: [...]})
-        skills_by_profile = module.get('skills_by_profile', {})
-        if skills_by_profile:
-            print_skills_by_profile(skills_by_profile)
-        if args.full and module.get('skills_by_profile_reasoning'):
-            print(f'skills_by_profile_reasoning: {module["skills_by_profile_reasoning"]}')
-        print()
-
-        # Output commands
-        commands = module.get('commands', {})
-        if commands:
-            print_toon_list('commands', list(commands.keys()))
-
-        return 0
+        return {'status': 'success', 'module': module}
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
-        error_module_not_found(args.name, modules)
-        return 1
+        return error_result_module_not_found(args.name, modules)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_commands(args) -> int:
+def cmd_commands(args) -> dict:
     """CLI handler for commands command."""
     try:
         result = get_module_commands(args.name, args.project_dir)
-
-        print(f'module: {result["module"]}')
-        print()
-        print_toon_table('commands', result['commands'], ['name', 'description'])
-
-        return 0
+        return {'status': 'success', **result}
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
-        error_module_not_found(args.name, modules)
-        return 1
+        return error_result_module_not_found(args.name, modules)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_resolve(args) -> int:
+def cmd_resolve(args) -> dict:
     """CLI handler for resolve command."""
     try:
         result = resolve_command(args.resolve_command, args.name, args.project_dir)
-
-        print(f'module: {result["module"]}')
-        print(f'command: {result["command"]}')
-        print(f'executable: {result["executable"]}')
-        print(f'resolution_level: {result["resolution_level"]}')
-
-        return 0
+        return {'status': 'success', **result}
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
-        error_module_not_found(args.name, modules)
-        return 1
+        return error_result_module_not_found(args.name, modules)
     except ValueError:
         # Command not found
         derived = load_derived_data(args.project_dir)
         resolved_module: str = args.name or get_root_module(derived) or ''
         module = get_module(derived, resolved_module)
         commands = list(module.get('commands', {}).keys())
-        error_command_not_found(resolved_module, args.resolve_command, commands)
-        return 1
+        return error_result_command_not_found(resolved_module, args.resolve_command, commands)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def _extract_profile_keys(skills_by_profile: dict) -> set[str]:
-    """Extract profile keys from skills_by_profile structure.
-
-    Args:
-        skills_by_profile: Dict mapping profile names to structured dicts
-            {"profile": {"defaults": [...], "optionals": [...]}}
-
-    Returns:
-        Set of profile key names
-    """
-    return set(skills_by_profile.keys())
-
-
-def _flatten_skills_by_profile(skills_by_profile: dict, include_optionals: bool = False) -> dict[str, list[str]]:
-    """Flatten skills_by_profile to simple profile->skill_list mapping.
-
-    Extracts skill name strings from the structured format. Defaults only
-    unless include_optionals is True.
-
-    Args:
-        skills_by_profile: Dict mapping profile names to structured dicts
-            {"profile": {"defaults": [...], "optionals": [...]}}
-        include_optionals: Whether to include optional skills (default: False)
-
-    Returns:
-        Dict mapping profile names to flat skill name lists
-    """
-    result: dict[str, list[str]] = {}
-    for profile_name, profile_data in skills_by_profile.items():
-        skills: list[str] = []
-        defaults = profile_data.get('defaults', [])
-        for entry in defaults:
-            if isinstance(entry, dict):
-                skill = entry.get('skill', '')
-                if skill:
-                    skills.append(skill)
-            elif isinstance(entry, str):
-                skills.append(entry)
-
-        if include_optionals:
-            optionals = profile_data.get('optionals', [])
-            for entry in optionals:
-                if isinstance(entry, dict):
-                    skill = entry.get('skill', '')
-                    if skill:
-                        skills.append(skill)
-                elif isinstance(entry, str):
-                    skills.append(entry)
-        result[profile_name] = skills
-    return result
-
-
-def cmd_profiles(args) -> int:
+def cmd_profiles(args) -> dict:
     """CLI handler for profiles command.
 
     Extract unique profile keys from skills_by_profile for given modules.
@@ -838,33 +566,22 @@ def cmd_profiles(args) -> int:
                 modules_analyzed.append(module_name)
                 profiles.update(_extract_profile_keys(skills_by_profile))
 
-        # Output in TOON format
-        print('status: success')
-        print(f'count: {len(profiles)}')
-        print()
-        print(f'profiles[{len(profiles)}]:')
-        for profile in sorted(profiles):
-            print(f'  - {profile}')
-        print()
-        print(f'modules_analyzed[{len(modules_analyzed)}]:')
-        for module in sorted(modules_analyzed):
-            print(f'  - {module}')
-
-        return 0
+        return {
+            'status': 'success',
+            'count': len(profiles),
+            'profiles': sorted(profiles),
+            'modules_analyzed': sorted(modules_analyzed),
+        }
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError as e:
         modules = get_module_names(load_derived_data(args.project_dir))
-        error_module_not_found(str(e), modules)
-        return 1
+        return error_result_module_not_found(str(e), modules)
     except Exception as e:
-        print('status: error', file=sys.stderr)
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_siblings(args) -> int:
+def cmd_siblings(args) -> dict:
     """CLI handler for siblings command.
 
     Find sibling virtual modules for a given module.
@@ -872,24 +589,20 @@ def cmd_siblings(args) -> int:
     try:
         siblings = get_sibling_modules(args.name, args.project_dir)
 
-        print(f'module: {args.name}')
-        print()
+        result: dict[str, Any] = {
+            'status': 'success',
+            'module': args.name,
+            'siblings': siblings,
+        }
 
-        if siblings:
-            print_toon_list('siblings', siblings)
-        else:
-            print('siblings: []')
-            print('note: Module is not a virtual module or has no siblings')
+        if not siblings:
+            result['note'] = 'Module is not a virtual module or has no siblings'
 
-        return 0
+        return result
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
-        error_module_not_found(args.name, modules)
-        return 1
+        return error_result_module_not_found(args.name, modules)
     except Exception as e:
-        print('status: error', file=sys.stderr)
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}

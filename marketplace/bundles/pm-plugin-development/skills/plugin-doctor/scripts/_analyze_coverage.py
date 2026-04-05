@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Tool coverage analysis subcommand."""
 
-import json
 import re
-import sys
 from pathlib import Path
 
 from _analyze_shared import extract_frontmatter
@@ -117,23 +115,21 @@ def analyze_tool_coverage(file_path: Path) -> dict:
     }
 
 
-def cmd_coverage(args) -> int:
+def cmd_coverage(args) -> dict:
     """Analyze tool coverage in file."""
     file_path = Path(args.file)
 
     if not file_path.exists():
-        print(json.dumps({'error': f'File not found: {args.file}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {args.file}'}
 
     if not file_path.is_file():
-        print(json.dumps({'error': f'Not a file: {args.file}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_a_file', 'message': f'Not a file: {args.file}'}
 
     result = analyze_tool_coverage(file_path)
 
     if 'error' in result:
-        print(json.dumps(result), file=sys.stderr)
-        return 1
+        result['status'] = 'error'
+        return result
 
-    print(json.dumps(result, indent=2))
-    return 0
+    result['status'] = 'success'
+    return result

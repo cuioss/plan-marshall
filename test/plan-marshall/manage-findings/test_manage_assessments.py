@@ -128,7 +128,6 @@ def test_assessment_add_invalid_confidence():
             '--confidence',
             '150',
         )
-        assert not result.success
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
 
@@ -495,4 +494,5 @@ def test_assessment_get_not_found():
     """Test getting non-existent assessment."""
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'assessment', 'get', '--plan-id', 'test-plan', '--hash-id', 'nonexistent')
-        assert not result.success
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'error'

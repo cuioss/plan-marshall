@@ -369,6 +369,56 @@ def handle_module_not_found(module_name: str, project_dir: str) -> int:
     return 1
 
 
+def error_result_module_not_found(module_name: str, available: list) -> dict:
+    """Return module not found error dict."""
+    return {
+        'status': 'error',
+        'error': 'architecture_error',
+        'message': 'Module not found',
+        'module': module_name,
+        'available': available,
+    }
+
+
+def error_result_command_not_found(module_name: str, command_name: str, available: list) -> dict:
+    """Return command not found error dict."""
+    return {
+        'status': 'error',
+        'error': 'architecture_error',
+        'message': 'Command not found',
+        'module': module_name,
+        'command': command_name,
+        'available': available,
+    }
+
+
+def require_derived_data_result(project_dir: str = '.') -> dict:
+    """Return derived data not found error dict."""
+    return {
+        'status': 'error',
+        'error': 'data_not_found',
+        'expected_file': str(get_derived_path(project_dir)),
+        'resolution': "Run 'architecture.py discover' first",
+    }
+
+
+def handle_module_not_found_result(module_name: str, project_dir: str) -> dict:
+    """Return module-not-found error dict with available modules list."""
+    try:
+        derived = load_derived_data(project_dir)
+        modules = get_module_names(derived)
+    except Exception:
+        modules = []
+
+    return {
+        'status': 'error',
+        'error': 'architecture_error',
+        'message': 'Module not found',
+        'module': module_name,
+        'available': modules,
+    }
+
+
 def print_skills_by_profile(skills_by_profile: dict) -> None:
     """Print skills_by_profile in TOON format.
 

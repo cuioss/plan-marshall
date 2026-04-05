@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Markdown analysis subcommand."""
 
-import json
 import re
-import sys
 from pathlib import Path
 
 from _analyze_shared import check_yaml_validity, detect_component_type, extract_frontmatter
@@ -513,23 +511,21 @@ def analyze_markdown_file(file_path: Path, component_type: str) -> dict:
     }
 
 
-def cmd_markdown(args) -> int:
+def cmd_markdown(args) -> dict:
     """Analyze markdown file structure and compliance."""
     file_path = Path(args.file)
 
     if not file_path.exists():
-        print(json.dumps({'error': f'File not found: {args.file}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {args.file}'}
 
     if not file_path.is_file():
-        print(json.dumps({'error': f'Not a file: {args.file}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_a_file', 'message': f'Not a file: {args.file}'}
 
     result = analyze_markdown_file(file_path, args.type)
 
     if 'error' in result:
-        print(json.dumps(result), file=sys.stderr)
-        return 1
+        result['status'] = 'error'
+        return result
 
-    print(json.dumps(result, indent=2))
-    return 0
+    result['status'] = 'success'
+    return result

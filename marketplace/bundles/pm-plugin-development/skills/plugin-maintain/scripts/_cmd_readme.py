@@ -5,8 +5,6 @@ import json
 import re
 from pathlib import Path
 
-from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_toon
-
 
 def extract_description(file_path: Path) -> str:
     """Extract description from YAML frontmatter."""
@@ -127,26 +125,31 @@ def generate_readme_content(bundle_name: str, commands: list[dict], agents: list
     return '\n'.join(lines)
 
 
-def cmd_readme(args) -> int:
+def cmd_readme(args) -> dict:
     """Handle readme subcommand."""
     bundle_path = Path(args.bundle_path)
 
     # Validate path
     if not bundle_path.exists():
-        output_toon({'error': f'Bundle directory not found: {args.bundle_path}'})
-        return EXIT_ERROR
+        return {
+            'status': 'error',
+            'error': 'not_found',
+            'message': f'Bundle directory not found: {args.bundle_path}',
+        }
 
     if not bundle_path.is_dir():
-        output_toon({'error': f'Not a directory: {args.bundle_path}'})
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'not_directory', 'message': f'Not a directory: {args.bundle_path}'}
 
     # Check for plugin.json (both standard and legacy locations)
     plugin_json = bundle_path / '.claude-plugin' / 'plugin.json'
     if not plugin_json.exists():
         plugin_json = bundle_path / 'plugin.json'
     if not plugin_json.exists():
-        output_toon({'error': f'Missing plugin.json in bundle: {args.bundle_path}'})
-        return EXIT_ERROR
+        return {
+            'status': 'error',
+            'error': 'missing_plugin_json',
+            'message': f'Missing plugin.json in bundle: {args.bundle_path}',
+        }
 
     # Get bundle name
     bundle_name = get_bundle_name(bundle_path)
@@ -160,7 +163,8 @@ def cmd_readme(args) -> int:
     readme_content = generate_readme_content(bundle_name, commands, agents, skills)
 
     # Build result
-    result = {
+    return {
+        'status': 'success',
         'bundle_path': str(bundle_path),
         'bundle_name': bundle_name,
         'readme_generated': True,
@@ -170,6 +174,3 @@ def cmd_readme(args) -> int:
         'agents': agents,
         'skills': skills,
     }
-
-    output_toon(result)
-    return EXIT_SUCCESS

@@ -12,7 +12,6 @@ from _tasks_core import (
     get_deliverable_context,
     get_tasks_dir,
     output_error,
-    output_toon,
     parse_task_file,
 )
 
@@ -32,7 +31,7 @@ def _build_done_set(all_tasks: list) -> set[str]:
     return done
 
 
-def cmd_list(args) -> int:
+def cmd_list(args) -> dict:
     """Handle 'list' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
     all_tasks = get_all_tasks(task_dir)
@@ -76,7 +75,7 @@ def cmd_list(args) -> int:
             }
         )
 
-    result = {
+    return {
         'status': 'success',
         'plan_id': args.plan_id,
         'counts': {
@@ -89,48 +88,41 @@ def cmd_list(args) -> int:
         'tasks_table': table,
     }
 
-    output_toon(result)
-    return 0
 
-
-def cmd_get(args) -> int:
+def cmd_get(args) -> dict:
     """Handle 'get' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
     filepath = find_task_file(task_dir, args.number)
     if not filepath:
-        output_error(f'Task TASK-{args.number} not found')
-        return 1
+        return output_error(f'Task TASK-{args.number} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'file': filepath.name,
-            'task': {
-                'number': task['number'],
-                'title': task['title'],
-                'domain': task.get('domain'),
-                'profile': task.get('profile'),
-                'skills': task.get('skills', []),
-                'origin': task.get('origin', 'plan'),
-                'deliverable': task.get('deliverable', 0),
-                'depends_on': task.get('depends_on', []),
-                'status': task['status'],
-                'current_step': task.get('current_step', 1),
-                'description': task.get('description', ''),
-                'steps': task.get('steps', []),
-                'verification': task.get('verification', {}),
-            },
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': filepath.name,
+        'task': {
+            'number': task['number'],
+            'title': task['title'],
+            'domain': task.get('domain'),
+            'profile': task.get('profile'),
+            'skills': task.get('skills', []),
+            'origin': task.get('origin', 'plan'),
+            'deliverable': task.get('deliverable', 0),
+            'depends_on': task.get('depends_on', []),
+            'status': task['status'],
+            'current_step': task.get('current_step', 1),
+            'description': task.get('description', ''),
+            'steps': task.get('steps', []),
+            'verification': task.get('verification', {}),
+        },
+    }
 
 
-def cmd_next(args) -> int:
+def cmd_next(args) -> dict:
     """Handle 'next' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
     all_tasks = get_all_tasks(task_dir)
@@ -176,35 +168,30 @@ def cmd_next(args) -> int:
 
     if not next_task:
         if blocked_tasks:
-            output_toon(
-                {
-                    'status': 'success',
-                    'plan_id': args.plan_id,
-                    'next': None,
-                    'blocked_tasks': blocked_tasks,
-                    'context': {
-                        'total_tasks': total_tasks,
-                        'completed_tasks': completed_tasks,
-                        'in_progress': in_progress_count,
-                        'blocked_by_deps': len(blocked_tasks),
-                        'message': 'Waiting for in-progress tasks to complete',
-                    },
-                }
-            )
+            return {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'next': None,
+                'blocked_tasks': blocked_tasks,
+                'context': {
+                    'total_tasks': total_tasks,
+                    'completed_tasks': completed_tasks,
+                    'in_progress': in_progress_count,
+                    'blocked_by_deps': len(blocked_tasks),
+                    'message': 'Waiting for in-progress tasks to complete',
+                },
+            }
         else:
-            output_toon(
-                {
-                    'status': 'success',
-                    'plan_id': args.plan_id,
-                    'next': None,
-                    'context': {
-                        'total_tasks': total_tasks,
-                        'completed_tasks': completed_tasks,
-                        'message': 'All tasks completed',
-                    },
-                }
-            )
-        return 0
+            return {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'next': None,
+                'context': {
+                    'total_tasks': total_tasks,
+                    'completed_tasks': completed_tasks,
+                    'message': 'All tasks completed',
+                },
+            }
 
     # Find next pending step in this task
     steps = next_task.get('steps', [])
@@ -222,19 +209,16 @@ def cmd_next(args) -> int:
     remaining_steps = len(steps) - completed_steps
 
     if not next_step:
-        output_toon(
-            {
-                'status': 'success',
-                'plan_id': args.plan_id,
-                'next': None,
-                'context': {
-                    'total_tasks': total_tasks,
-                    'completed_tasks': completed_tasks,
-                    'message': 'All tasks completed',
-                },
-            }
-        )
-        return 0
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'next': None,
+            'context': {
+                'total_tasks': total_tasks,
+                'completed_tasks': completed_tasks,
+                'message': 'All tasks completed',
+            },
+        }
 
     # Build base result
     result = {
@@ -266,11 +250,10 @@ def cmd_next(args) -> int:
             deliverable_context = get_deliverable_context(deliverable)
             result['next'].update(deliverable_context)
 
-    output_toon(result)
-    return 0
+    return result
 
 
-def cmd_tasks_by_domain(args) -> int:
+def cmd_tasks_by_domain(args) -> dict:
     """Handle 'tasks-by-domain' subcommand.
 
     Returns tasks filtered by domain.
@@ -303,25 +286,22 @@ def cmd_tasks_by_domain(args) -> int:
     done_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'done')
     blocked = sum(1 for _, t in filtered_tasks if t.get('status') == 'blocked')
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'domain_filter': domain,
-            'counts': {
-                'total': len(filtered_tasks),
-                'pending': pending,
-                'in_progress': in_progress,
-                'done': done_count,
-                'blocked': blocked,
-            },
-            'tasks_table': table,
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'domain_filter': domain,
+        'counts': {
+            'total': len(filtered_tasks),
+            'pending': pending,
+            'in_progress': in_progress,
+            'done': done_count,
+            'blocked': blocked,
+        },
+        'tasks_table': table,
+    }
 
 
-def cmd_tasks_by_profile(args) -> int:
+def cmd_tasks_by_profile(args) -> dict:
     """Handle 'tasks-by-profile' subcommand.
 
     Returns tasks filtered by profile.
@@ -354,25 +334,22 @@ def cmd_tasks_by_profile(args) -> int:
     done_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'done')
     blocked = sum(1 for _, t in filtered_tasks if t.get('status') == 'blocked')
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'profile_filter': profile,
-            'counts': {
-                'total': len(filtered_tasks),
-                'pending': pending,
-                'in_progress': in_progress,
-                'done': done_count,
-                'blocked': blocked,
-            },
-            'tasks_table': table,
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'profile_filter': profile,
+        'counts': {
+            'total': len(filtered_tasks),
+            'pending': pending,
+            'in_progress': in_progress,
+            'done': done_count,
+            'blocked': blocked,
+        },
+        'tasks_table': table,
+    }
 
 
-def cmd_next_tasks(args) -> int:
+def cmd_next_tasks(args) -> dict:
     """Handle 'next-tasks' subcommand.
 
     Returns all tasks that are ready for parallel execution
@@ -429,16 +406,13 @@ def cmd_next_tasks(args) -> int:
                 }
             )
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'ready_count': len(ready_tasks),
-            'in_progress_count': len(in_progress_tasks),
-            'blocked_count': len(blocked_tasks),
-            'ready_tasks': ready_tasks,
-            'in_progress_tasks': in_progress_tasks,
-            'blocked_tasks': blocked_tasks,
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'ready_count': len(ready_tasks),
+        'in_progress_count': len(in_progress_tasks),
+        'blocked_count': len(blocked_tasks),
+        'ready_tasks': ready_tasks,
+        'in_progress_tasks': in_progress_tasks,
+        'blocked_tasks': blocked_tasks,
+    }

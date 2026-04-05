@@ -4,24 +4,22 @@
 Handles: discover, init, derived, derived-module
 """
 
-import sys
 from pathlib import Path
 
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
-    error_module_not_found,
+    error_result_module_not_found,
     get_derived_path,
     get_enriched_path,
     get_module,
     get_module_names,
     load_derived_data,
     load_llm_enriched,
-    require_derived_data,
+    require_derived_data_result,
     save_derived_data,
     save_llm_enriched,
 )
-from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
 
 # =============================================================================
 # API Functions
@@ -171,184 +169,42 @@ def list_modules(project_dir: str = '.') -> list:
 # =============================================================================
 
 
-def cmd_discover(args) -> int:
+def cmd_discover(args) -> dict:
     """CLI handler for discover command."""
     try:
-        result = api_discover(args.project_dir, args.force)
-
-        print(f'status\t{result["status"]}')
-        if result['status'] == 'success':
-            print(f'modules_discovered\t{result["modules_discovered"]}')
-            print(f'output_file\t{result["output_file"]}')
-        elif result['status'] == 'exists':
-            print(f'file\t{result["file"]}')
-            print(f'message\t{result.get("message", "")}')
-        else:
-            print(f'error\t{result.get("error", "Unknown error")}')
-            return 1
-
-        return 0
+        return api_discover(args.project_dir, args.force)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_init(args) -> int:
+def cmd_init(args) -> dict:
     """CLI handler for init command."""
     try:
-        result = api_init(args.project_dir, args.check, args.force)
-
-        print(f'status\t{result["status"]}')
-        if result['status'] == 'success':
-            print(f'modules_initialized\t{result["modules_initialized"]}')
-            print(f'output_file\t{result["output_file"]}')
-        elif result['status'] == 'exists':
-            print(f'file\t{result["file"]}')
-            if 'modules_enriched' in result:
-                print(f'modules_enriched\t{result["modules_enriched"]}')
-            if 'message' in result:
-                print(f'message\t{result["message"]}')
-        elif result['status'] == 'missing':
-            print(f'file\t{result["file"]}')
-        else:
-            print(f'error\t{result.get("error", "Unknown error")}')
-            return 1
-
-        return 0
+        return api_init(args.project_dir, args.check, args.force)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_derived(args) -> int:
+def cmd_derived(args) -> dict:
     """CLI handler for derived command."""
     try:
         derived = api_get_derived(args.project_dir)
-
-        # Output project info
-        project = derived.get('project', {})
-        print('project:')
-        print(f'  name: {project.get("name", "")}')
-        print()
-
-        # Output modules table
-        modules = derived.get('modules', {})
-        items = []
-        for name, data in modules.items():
-            paths = data.get('paths', {})
-            metadata = data.get('metadata', {})
-            build_systems = data.get('build_systems', [])
-            items.append(
-                {
-                    'name': name,
-                    'path': paths.get('module', ''),
-                    'build_systems': '+'.join(build_systems) if build_systems else '',
-                    'readme': paths.get('readme', ''),
-                    'description': metadata.get('description', ''),
-                }
-            )
-
-        print_toon_table('modules', items, ['name', 'path', 'build_systems', 'readme', 'description'])
-
-        return 0
+        return {'status': 'success', **derived}
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_derived_module(args) -> int:
+def cmd_derived_module(args) -> dict:
     """CLI handler for derived-module command."""
     try:
-        derived = load_derived_data(args.project_dir)
-        module = get_module(derived, args.name)
-
-        # Output module info
-        print('module:')
-        print(f'  name: {module.get("name", args.name)}')
-        paths = module.get('paths', {})
-        print(f'  path: {paths.get("module", "")}')
-        build_systems = module.get('build_systems', [])
-        print(f'  build_systems: {"+".join(build_systems) if build_systems else ""}')
-        print()
-
-        # Output paths
-        print('paths:')
-        if paths.get('readme'):
-            print(f'  readme: {paths["readme"]}')
-        if paths.get('descriptor'):
-            print(f'  descriptor: {paths["descriptor"]}')
-        sources = paths.get('sources', [])
-        if sources:
-            print(f'  sources[{len(sources)}]:')
-            for s in sources:
-                print(f'    - {s}')
-        tests = paths.get('tests', [])
-        if tests:
-            print(f'  tests[{len(tests)}]:')
-            for t in tests:
-                print(f'    - {t}')
-        print()
-
-        # Output metadata
-        metadata = module.get('metadata', {})
-        if metadata:
-            print('metadata:')
-            for key, value in metadata.items():
-                if value and not isinstance(value, (list, dict)):
-                    print(f'  {key}: {value}')
-            print()
-
-        # Output packages table
-        packages = module.get('packages', {})
-        if packages:
-            pkg_items = []
-            for pkg_name, pkg_data in packages.items():
-                pkg_items.append(
-                    {
-                        'name': pkg_name,
-                        'path': pkg_data.get('path', ''),
-                        'package_info': pkg_data.get('package_info', ''),
-                    }
-                )
-            print_toon_table('packages', pkg_items, ['name', 'path', 'package_info'])
-            print()
-
-        # Output dependencies
-        deps = module.get('dependencies', [])
-        if deps:
-            print_toon_list('dependencies', deps[:20])  # Limit to 20 for readability
-            if len(deps) > 20:
-                print(f'  ... and {len(deps) - 20} more')
-            print()
-
-        # Output stats
-        stats = module.get('stats', {})
-        if stats:
-            print('stats:')
-            for key, value in stats.items():
-                print(f'  {key}: {value}')
-            print()
-
-        # Output commands
-        commands = module.get('commands', {})
-        if commands:
-            print_toon_list('commands', list(commands.keys()))
-
-        return 0
+        module = api_get_derived_module(args.name, args.project_dir)
+        return {'status': 'success', 'module_name': args.name, 'module': module}
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_module_names(load_derived_data(args.project_dir))
-        error_module_not_found(args.name, modules)
-        return 1
+        return error_result_module_not_found(args.name, modules)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}

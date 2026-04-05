@@ -17,11 +17,10 @@ Output format: TOON to stdout
 
 import argparse
 import re
-import sys
 from pathlib import Path
 
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Interface directory relative to project root
 INTERFACE_DIR = Path('doc/interfaces')
@@ -44,18 +43,6 @@ TEMPLATE_DEFAULTS = {
     '{{PROVIDERS}}': '// List providing systems',
     '{{REFERENCES}}': '// Add references',
 }
-
-
-def output_toon(data: dict):
-    """Output TOON format to stdout."""
-    print(serialize_toon(data))
-
-
-def output_error(data: dict):
-    """Output TOON error to stdout and exit with code 1."""
-    data['status'] = 'error'
-    print(serialize_toon(data))
-    sys.exit(1)
 
 
 def get_template_path() -> Path:
@@ -122,11 +109,10 @@ def parse_interface_file(filepath: Path) -> dict:
     }
 
 
-def cmd_list(args):
+def cmd_list(args) -> dict:
     """List all interfaces."""
     if not INTERFACE_DIR.exists():
-        output_toon({'status': 'success', 'operation': 'list', 'count': 0, 'interfaces': []})
-        return
+        return {'status': 'success', 'operation': 'list', 'count': 0, 'interfaces': []}
 
     interfaces = []
     for filepath in sorted(INTERFACE_DIR.glob('*.adoc')):
@@ -135,15 +121,20 @@ def cmd_list(args):
             continue
         interfaces.append(iface)
 
-    output_toon({'status': 'success', 'operation': 'list', 'count': len(interfaces), 'interfaces': interfaces})
+    return {'status': 'success', 'operation': 'list', 'count': len(interfaces), 'interfaces': interfaces}
 
 
-def cmd_create(args):
+def cmd_create(args) -> dict:
     """Create new interface."""
     # Validate type
     if args.type not in VALID_TYPES:
         log_entry('script', 'global', 'ERROR', f'[IFACE] Invalid type: {args.type}')
-        output_error({'operation': 'create', 'message': f'Invalid type: {args.type}. Valid types: {VALID_TYPES}'})
+        return {
+            'status': 'error',
+            'error': 'invalid_type',
+            'operation': 'create',
+            'message': f'Invalid type: {args.type}. Valid types: {VALID_TYPES}',
+        }
 
     # Ensure interface directory exists
     INTERFACE_DIR.mkdir(parents=True, exist_ok=True)
@@ -158,13 +149,23 @@ def cmd_create(args):
     # Check if file already exists
     if filepath.exists():
         log_entry('script', 'global', 'ERROR', f'[IFACE] File already exists: {filepath}')
-        output_error({'operation': 'create', 'message': f'Interface file already exists: {filepath}'})
+        return {
+            'status': 'error',
+            'error': 'file_exists',
+            'operation': 'create',
+            'message': f'Interface file already exists: {filepath}',
+        }
 
     # Load template
     template_path = get_template_path()
     if not template_path.exists():
         log_entry('script', 'global', 'ERROR', f'[IFACE] Template not found: {template_path}')
-        output_error({'operation': 'create', 'message': f'Template not found: {template_path}'})
+        return {
+            'status': 'error',
+            'error': 'template_not_found',
+            'operation': 'create',
+            'message': f'Template not found: {template_path}',
+        }
 
     template_content = template_path.read_text()
 
@@ -181,29 +182,37 @@ def cmd_create(args):
     filepath.write_text(content)
 
     log_entry('script', 'global', 'INFO', f'[IFACE] Created INTER-{number:03d}: {args.title}')
-    output_toon(
-        {
-            'status': 'success',
-            'operation': 'create',
-            'number': number,
-            'path': str(filepath),
-            'title': args.title,
-            'type': args.type,
-        }
-    )
+    return {
+        'status': 'success',
+        'operation': 'create',
+        'number': number,
+        'path': str(filepath),
+        'title': args.title,
+        'type': args.type,
+    }
 
 
-def cmd_read(args):
+def cmd_read(args) -> dict:
     """Read interface content."""
     if not INTERFACE_DIR.exists():
-        output_error({'operation': 'read', 'message': 'Interface directory does not exist'})
+        return {
+            'status': 'error',
+            'error': 'dir_not_found',
+            'operation': 'read',
+            'message': 'Interface directory does not exist',
+        }
 
     # Find interface by number
     pattern = f'{args.number:03d}-*.adoc'
     matches = list(INTERFACE_DIR.glob(pattern))
 
     if not matches:
-        output_error({'operation': 'read', 'message': f'Interface {args.number} not found'})
+        return {
+            'status': 'error',
+            'error': 'not_found',
+            'operation': 'read',
+            'message': f'Interface {args.number} not found',
+        }
 
     filepath = matches[0]
     iface = parse_interface_file(filepath)
@@ -211,14 +220,19 @@ def cmd_read(args):
     iface['status'] = 'success'
     iface['operation'] = 'read'
 
-    output_toon(iface)
+    return iface
 
 
-def cmd_update(args):
+def cmd_update(args) -> dict:
     """Update interface field."""
     if not INTERFACE_DIR.exists():
         log_entry('script', 'global', 'ERROR', '[IFACE] Directory does not exist')
-        output_error({'operation': 'update', 'message': 'Interface directory does not exist'})
+        return {
+            'status': 'error',
+            'error': 'dir_not_found',
+            'operation': 'update',
+            'message': 'Interface directory does not exist',
+        }
 
     # Find interface by number
     pattern = f'{args.number:03d}-*.adoc'
@@ -226,7 +240,12 @@ def cmd_update(args):
 
     if not matches:
         log_entry('script', 'global', 'ERROR', f'[IFACE] Interface {args.number} not found')
-        output_error({'operation': 'update', 'message': f'Interface {args.number} not found'})
+        return {
+            'status': 'error',
+            'error': 'not_found',
+            'operation': 'update',
+            'message': f'Interface {args.number} not found',
+        }
 
     filepath = matches[0]
     content = filepath.read_text()
@@ -247,9 +266,12 @@ def cmd_update(args):
 
         if args.field.lower() not in field_map:
             log_entry('script', 'global', 'ERROR', f'[IFACE] Unknown field: {args.field}')
-            output_error(
-                {'operation': 'update', 'message': f'Unknown field: {args.field}. Valid: {list(field_map.keys())}'}
-            )
+            return {
+                'status': 'error',
+                'error': 'unknown_field',
+                'operation': 'update',
+                'message': f'Unknown field: {args.field}. Valid: {list(field_map.keys())}',
+            }
 
         section = field_map[args.field.lower()]
         # Update section content
@@ -269,25 +291,33 @@ def cmd_update(args):
         'INFO',
         f'[IFACE] Updated INTER-{args.number:03d} field={args.field if args.field else "none"}',
     )
-    output_toon(
-        {
-            'status': 'success',
-            'operation': 'update',
-            'number': args.number,
-            'path': str(filepath),
-            'field': args.field if args.field else 'none',
-        }
-    )
+    return {
+        'status': 'success',
+        'operation': 'update',
+        'number': args.number,
+        'path': str(filepath),
+        'field': args.field if args.field else 'none',
+    }
 
 
-def cmd_delete(args):
+def cmd_delete(args) -> dict:
     """Delete interface."""
     if not args.force:
-        output_error({'operation': 'delete', 'message': 'Use --force to confirm deletion'})
+        return {
+            'status': 'error',
+            'error': 'force_required',
+            'operation': 'delete',
+            'message': 'Use --force to confirm deletion',
+        }
 
     if not INTERFACE_DIR.exists():
         log_entry('script', 'global', 'ERROR', '[IFACE] Directory does not exist')
-        output_error({'operation': 'delete', 'message': 'Interface directory does not exist'})
+        return {
+            'status': 'error',
+            'error': 'dir_not_found',
+            'operation': 'delete',
+            'message': 'Interface directory does not exist',
+        }
 
     # Find interface by number
     pattern = f'{args.number:03d}-*.adoc'
@@ -295,29 +325,33 @@ def cmd_delete(args):
 
     if not matches:
         log_entry('script', 'global', 'ERROR', f'[IFACE] Interface {args.number} not found')
-        output_error({'operation': 'delete', 'message': f'Interface {args.number} not found'})
+        return {
+            'status': 'error',
+            'error': 'not_found',
+            'operation': 'delete',
+            'message': f'Interface {args.number} not found',
+        }
 
     filepath = matches[0]
     filepath.unlink()
 
     log_entry('script', 'global', 'INFO', f'[IFACE] Deleted INTER-{args.number:03d}')
-    output_toon(
-        {
-            'status': 'success',
-            'operation': 'delete',
-            'number': args.number,
-            'path': str(filepath),
-            'deleted': True,
-        }
-    )
+    return {
+        'status': 'success',
+        'operation': 'delete',
+        'number': args.number,
+        'path': str(filepath),
+        'deleted': True,
+    }
 
 
-def cmd_next_number(args):
+def cmd_next_number(args) -> dict:
     """Get next available interface number."""
     number = get_next_number()
-    output_toon({'status': 'success', 'operation': 'next-number', 'next_number': number})
+    return {'status': 'success', 'operation': 'next-number', 'next_number': number}
 
 
+@safe_main
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -381,7 +415,9 @@ Examples:
     next_parser.set_defaults(func=cmd_next_number)
 
     args = parser.parse_args()
-    args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':

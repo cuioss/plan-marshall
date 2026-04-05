@@ -683,7 +683,7 @@ def check_paths_exist(mappings: dict[str, str]) -> tuple[list, list]:
 # ============================================================================
 
 
-def cmd_generate(args):
+def cmd_generate(args) -> dict:
     """Generate executor with embedded script mappings."""
     # Resolve base path
     try:
@@ -691,8 +691,7 @@ def cmd_generate(args):
         context = 'marketplace' if args.marketplace else 'auto-detected'
         print(f'Using context: {context} ({base_path})')
     except FileNotFoundError as e:
-        print(f'Error: {e}', file=sys.stderr)
-        sys.exit(1)
+        return {'status': 'error', 'error': str(e)}
 
     # Discover marketplace scripts
     print('Discovering marketplace scripts...')
@@ -724,11 +723,11 @@ def cmd_generate(args):
     # Generate executor (uses logging skill from plan-marshall/logging)
     print('Generating executor...')
     if not generate_executor(mappings, base_path, dry_run=args.dry_run):
-        sys.exit(1)
+        return {'status': 'error', 'error': 'Failed to generate executor'}
 
     if args.dry_run:
         print('\nDry run complete. No files written.')
-        return
+        return {'status': 'success', 'scripts_discovered': len(mappings), 'dry_run': True}
 
     # Cleanup old logs
     logs_cleaned = cleanup_old_logs()
@@ -739,31 +738,29 @@ def cmd_generate(args):
     checksum = compute_checksum(mappings)
     update_state(len(mappings), checksum, logs_cleaned)
 
-    # Output summary in TOON format
-    print('\nstatus\tscripts_discovered\texecutor_generated\tlogs_cleaned')
-    print(f'success\t{len(mappings)}\t{EXECUTOR_PATH}\t{logs_cleaned}')
+    return {
+        'status': 'success',
+        'scripts_discovered': len(mappings),
+        'executor_generated': str(EXECUTOR_PATH),
+        'logs_cleaned': logs_cleaned,
+    }
 
 
-def cmd_verify(args):
+def cmd_verify(args) -> dict:
     """Verify existing executor."""
     valid, count = verify_executor()
     if valid:
-        print('\nstatus\tscript_count')
-        print(f'ok\t{count}')
-        sys.exit(0)
+        return {'status': 'success', 'script_count': count}
     else:
-        print('\nstatus\tissues')
-        print('error\tVerification failed')
-        sys.exit(1)
+        return {'status': 'error', 'error': 'Verification failed'}
 
 
-def cmd_drift(args):
+def cmd_drift(args) -> dict:
     """Compare executor mappings with current bundles state."""
     executor_mappings = get_executor_mappings()
 
     if not executor_mappings:
-        print('Error: Could not read executor mappings', file=sys.stderr)
-        sys.exit(1)
+        return {'status': 'error', 'error': 'Could not read executor mappings'}
 
     # Resolve base path
     try:
@@ -771,8 +768,7 @@ def cmd_drift(args):
         context = 'marketplace' if args.marketplace else 'auto-detected'
         print(f'Using context: {context} ({base_path})')
     except FileNotFoundError as e:
-        print(f'Error: {e}', file=sys.stderr)
-        sys.exit(1)
+        return {'status': 'error', 'error': str(e)}
 
     # Get current bundles state using discover_scripts()
     try:
@@ -793,65 +789,40 @@ def cmd_drift(args):
         if executor_mappings[notation] != current_mappings.get(notation):
             changed.append(notation)
 
-    # Report
-    print(f'Executor scripts: {len(executor_mappings)}')
-    print(f'Bundles scripts: {len(current_mappings)}')
-
-    if added:
-        print(f'\nAdded in bundles ({len(added)}):')
-        for n in sorted(added):
-            print(f'  + {n}')
-
-    if removed:
-        print(f'\nRemoved from bundles ({len(removed)}):')
-        for n in sorted(removed):
-            print(f'  - {n}')
-
-    if changed:
-        print(f'\nPath changed ({len(changed)}):')
-        for n in sorted(changed):
-            print(f'  ~ {n}')
-
-    if added or removed or changed:
-        print('\nstatus\tadded\tremoved\tchanged')
-        print(f'drift\t{len(added)}\t{len(removed)}\t{len(changed)}')
-    else:
-        print('\nstatus\tadded\tremoved\tchanged')
-        print('ok\t0\t0\t0')
-    sys.exit(0)  # Status modeled in output, not exit code
+    drift_status = 'drift' if (added or removed or changed) else 'ok'
+    return {
+        'status': 'success',
+        'drift_status': drift_status,
+        'executor_scripts': len(executor_mappings),
+        'bundles_scripts': len(current_mappings),
+        'added': len(added),
+        'removed': len(removed),
+        'changed': len(changed),
+    }
 
 
-def cmd_paths(args):
+def cmd_paths(args) -> dict:
     """Verify all mapped paths exist."""
     mappings = get_executor_mappings()
 
     if not mappings:
-        print('Error: Could not read executor mappings', file=sys.stderr)
-        sys.exit(1)
+        return {'status': 'error', 'error': 'Could not read executor mappings'}
 
     existing, missing = check_paths_exist(mappings)
 
-    print(f'Total mappings: {len(mappings)}')
-    print(f'Existing: {len(existing)}')
-    print(f'Missing: {len(missing)}')
-
-    if missing:
-        print('\nMissing scripts:')
-        for notation, path in missing:
-            print(f'  {notation} -> {path}')
-
-        print('\nstatus\texisting\tmissing')
-        print(f'missing\t{len(existing)}\t{len(missing)}')
-    else:
-        print('\nstatus\texisting\tmissing')
-        print(f'ok\t{len(existing)}\t0')
-    sys.exit(0)  # Status modeled in output, not exit code
+    return {
+        'status': 'success',
+        'paths_status': 'missing' if missing else 'ok',
+        'total': len(mappings),
+        'existing': len(existing),
+        'missing': len(missing),
+    }
 
 
-def cmd_cleanup(args):
+def cmd_cleanup(args) -> dict:
     """Clean up old global logs."""
     deleted = cleanup_old_logs(max_age_days=args.max_age_days)
-    print(f'Deleted {deleted} old log files')
+    return {'status': 'success', 'deleted': deleted}
 
 
 # ============================================================================
@@ -859,7 +830,7 @@ def cmd_cleanup(args):
 # ============================================================================
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Generate execute-script.py with embedded script mappings',
         epilog='By default uses plugin-cache context. Use --marketplace for development.',
@@ -896,7 +867,13 @@ def main():
     cleanup_parser.set_defaults(func=cmd_cleanup)
 
     args = parser.parse_args()
-    args.func(args)
+    result = args.func(args)
+
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    is_error = result.get('status') != 'success'
+    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
+    return 1 if is_error else 0
 
 
 if __name__ == '__main__':

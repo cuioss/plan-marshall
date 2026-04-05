@@ -5,7 +5,6 @@ Handles: enrich project, module, package, skills, dependencies, tip, insight, be
 These commands write to llm-enriched.json.
 """
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -14,13 +13,11 @@ from _architecture_core import (
     ModuleNotFoundInProjectError,
     get_enriched_path,
     get_module_names,
-    handle_module_not_found,
+    handle_module_not_found_result,
     load_derived_data,
     load_llm_enriched,
-    print_skills_by_profile,
     save_llm_enriched,
 )
-from file_ops import print_toon_list  # type: ignore[import-not-found]
 
 # =============================================================================
 # API Functions
@@ -170,14 +167,7 @@ def enrich_package(
 
 
 def _extract_skill_names_from_profile(profile_data: dict) -> list[str]:
-    """Extract skill names from a profile's structured format.
-
-    Args:
-        profile_data: Dict with defaults/optionals sections
-
-    Returns:
-        List of skill names
-    """
+    """Extract skill names from a profile's structured format."""
     skills = []
     for section in ['defaults', 'optionals']:
         entries = profile_data.get(section, [])
@@ -192,17 +182,7 @@ def _extract_skill_names_from_profile(profile_data: dict) -> list[str]:
 
 
 def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
-    """Validate the skills_by_profile structure.
-
-    Expected format:
-    {"profile": {"defaults": [{"skill": "...", "description": "..."}], "optionals": [...]}}
-
-    Args:
-        skills_by_profile: Dict mapping profile names to structured skill dicts
-
-    Returns:
-        List of warning messages (empty if valid)
-    """
+    """Validate the skills_by_profile structure."""
     warnings: list[str] = []
 
     for profile_name, profile_data in skills_by_profile.items():
@@ -234,14 +214,7 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict) -> list[str]:
 
 
 def _resolve_active_profiles(domain_key: str, project_dir: str, explicit: set[str] | None = None) -> set[str] | None:
-    """Resolve active profiles from CLI flag or marshal.json config.
-
-    Resolution order:
-    1. explicit (--profiles CLI flag) wins
-    2. marshal.json skill_domains.{domain}.active_profiles (per-domain)
-    3. marshal.json skill_domains.active_profiles (global default)
-    4. None (fall through to signal detection in extension)
-    """
+    """Resolve active profiles from CLI flag or marshal.json config."""
     if explicit is not None:
         return explicit
 
@@ -281,27 +254,7 @@ def enrich_add_domain(
     reasoning: str | None = None,
     profiles: set[str] | None = None,
 ) -> dict:
-    """Add a domain's skills to a module's skills_by_profile additively.
-
-    Loads the domain's extension, calls applies_to_module() to get resolved
-    skills, then merges them into the module's existing skills_by_profile.
-
-    Args:
-        module_name: Module name
-        domain_key: Domain key (e.g., 'java', 'general-dev')
-        project_dir: Project directory path
-        include_optionals: Whether to include optional skills
-        reasoning: Rationale for adding this domain
-        profiles: Explicit profile set (overrides config and detection)
-
-    Returns:
-        Dict with status, module, domain, profiles_updated, and skills_by_profile
-
-    Raises:
-        ModuleNotFoundInProjectError: If module not found
-        DataNotFoundError: If data files not found
-        ValueError: If domain is 'system' or not found
-    """
+    """Add a domain's skills to a module's skills_by_profile additively."""
     if domain_key == 'system':
         raise ValueError("Cannot add 'system' domain to modules")
 
@@ -325,7 +278,6 @@ def enrich_add_domain(
         if not ext_module:
             continue
         try:
-            # Check all domains from this extension
             all_domains = ext_module.get_skill_domains()
             for sd in all_domains:
                 if sd.get('domain', {}).get('key') == domain_key:
@@ -416,19 +368,7 @@ def enrich_add_domain(
 def enrich_skills_by_profile(
     module_name: str, skills_by_profile: dict, project_dir: str = '.', reasoning: str | None = None
 ) -> dict:
-    """Update skills organized by profile.
-
-    Format: {"profile": {"defaults": [{"skill": "...", "description": "..."}], "optionals": [...]}}
-
-    Args:
-        module_name: Module name
-        skills_by_profile: Dict mapping profile names to structured dicts
-        project_dir: Project directory path
-        reasoning: Selection rationale
-
-    Returns:
-        Dict with status, module, skills_by_profile, and optional warnings
-    """
+    """Update skills organized by profile."""
     # Validate module exists
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
@@ -467,18 +407,7 @@ def enrich_dependencies(
     project_dir: str = '.',
     reasoning: str | None = None,
 ) -> dict:
-    """Update key and internal dependencies.
-
-    Args:
-        module_name: Module name
-        key_deps: List of key external dependencies
-        internal_deps: List of internal module dependencies
-        project_dir: Project directory path
-        reasoning: Filtering rationale for key dependencies
-
-    Returns:
-        Dict with status, module, and updated dependencies
-    """
+    """Update key and internal dependencies."""
     # Validate module exists
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
@@ -511,59 +440,22 @@ def enrich_dependencies(
 
 
 def enrich_tip(module_name: str, tip: str, project_dir: str = '.') -> dict:
-    """Add implementation tip to a module.
-
-    Args:
-        module_name: Module name
-        tip: Implementation tip
-        project_dir: Project directory path
-
-    Returns:
-        Dict with status, module, and tips list
-    """
+    """Add implementation tip to a module."""
     return _append_to_list(module_name, 'tips', tip, project_dir)
 
 
 def enrich_insight(module_name: str, insight: str, project_dir: str = '.') -> dict:
-    """Add learned insight to a module.
-
-    Args:
-        module_name: Module name
-        insight: Learned insight from implementation
-        project_dir: Project directory path
-
-    Returns:
-        Dict with status, module, and insights list
-    """
+    """Add learned insight to a module."""
     return _append_to_list(module_name, 'insights', insight, project_dir)
 
 
 def enrich_best_practice(module_name: str, practice: str, project_dir: str = '.') -> dict:
-    """Add best practice to a module.
-
-    Args:
-        module_name: Module name
-        practice: Established best practice
-        project_dir: Project directory path
-
-    Returns:
-        Dict with status, module, and best_practices list
-    """
+    """Add best practice to a module."""
     return _append_to_list(module_name, 'best_practices', practice, project_dir)
 
 
 def _append_to_list(module_name: str, field: str, value: str, project_dir: str = '.') -> dict:
-    """Append value to a list field in module enrichment.
-
-    Args:
-        module_name: Module name
-        field: Field name (tips, insights, best_practices)
-        value: Value to append
-        project_dir: Project directory path
-
-    Returns:
-        Dict with status, module, and field list
-    """
+    """Append value to a list field in module enrichment."""
     # Validate module exists
     derived = load_derived_data(project_dir)
     modules = get_module_names(derived)
@@ -593,32 +485,35 @@ def _append_to_list(module_name: str, field: str, value: str, project_dir: str =
 # =============================================================================
 
 
-def cmd_enrich_project(args) -> int:
+def _enrichment_not_found_result(project_dir: str) -> dict:
+    """Return enrichment data not found error dict."""
+    return {
+        'status': 'error',
+        'error': 'data_not_found',
+        'message': 'Enrichment data not found',
+        'expected_file': str(get_enriched_path(project_dir)),
+        'resolution': "Run 'architecture.py init' first",
+    }
+
+
+def cmd_enrich_project(args) -> dict:
     """CLI handler for enrich project command."""
     try:
         reasoning = getattr(args, 'reasoning', None)
-        result = enrich_project(args.description, args.project_dir, reasoning)
-        print(f'status\t{result["status"]}')
-        print(f'updated\t{result["updated"]}')
-        return 0
+        return enrich_project(args.description, args.project_dir, reasoning)
     except DataNotFoundError:
-        print('error: Enrichment data not found')
-        print(f'expected_file: {get_enriched_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py init' first")
-        return 1
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_module(args) -> int:
+def cmd_enrich_module(args) -> dict:
     """CLI handler for enrich module command."""
     try:
         reasoning = getattr(args, 'reasoning', None)
         responsibility_reasoning = getattr(args, 'responsibility_reasoning', None)
         purpose_reasoning = getattr(args, 'purpose_reasoning', None)
-        result = enrich_module(
+        return enrich_module(
             args.name,
             args.responsibility,
             args.purpose,
@@ -627,51 +522,30 @@ def cmd_enrich_module(args) -> int:
             responsibility_reasoning,
             purpose_reasoning,
         )
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-        print_toon_list('updated', result['updated'])
-        return 0
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.name, args.project_dir)
+        return handle_module_not_found_result(args.name, args.project_dir)
     except DataNotFoundError:
-        print('error: Enrichment data not found')
-        print(f'expected_file: {get_enriched_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py init' first")
-        return 1
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_package(args) -> int:
+def cmd_enrich_package(args) -> dict:
     """CLI handler for enrich package command."""
     try:
         components = None
         if hasattr(args, 'components') and args.components:
             components = [c.strip() for c in args.components.split(',')]
-        result = enrich_package(args.module, args.package, args.description, args.project_dir, components)
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-        print(f'package\t{result["package"]}')
-        print(f'action\t{result["action"]}')
-        if 'components' in result:
-            print_toon_list('components', result['components'])
-        return 0
+        return enrich_package(args.module, args.package, args.description, args.project_dir, components)
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        print('error: Enrichment data not found')
-        print(f'expected_file: {get_enriched_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py init' first")
-        return 1
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_skills_by_profile(args) -> int:
+def cmd_enrich_skills_by_profile(args) -> dict:
     """CLI handler for enrich skills-by-profile command."""
     import json
 
@@ -679,33 +553,18 @@ def cmd_enrich_skills_by_profile(args) -> int:
         # Parse JSON input
         skills_by_profile = json.loads(args.skills_json)
         reasoning = getattr(args, 'reasoning', None)
-        result = enrich_skills_by_profile(args.module, skills_by_profile, args.project_dir, reasoning)
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-        # Output skills_by_profile
-        print_skills_by_profile(result['skills_by_profile'])
-        if result.get('warnings'):
-            print()
-            print_toon_list('warnings', result['warnings'])
-        return 0
+        return enrich_skills_by_profile(args.module, skills_by_profile, args.project_dir, reasoning)
     except json.JSONDecodeError as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\tInvalid JSON: {e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': f'Invalid JSON: {e}'}
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        print('error: Enrichment data not found')
-        print(f'expected_file: {get_enriched_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py init' first")
-        return 1
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_dependencies(args) -> int:
+def cmd_enrich_dependencies(args) -> dict:
     """CLI handler for enrich dependencies command."""
     try:
         key_deps = None
@@ -716,98 +575,59 @@ def cmd_enrich_dependencies(args) -> int:
             internal_deps = [d.strip() for d in args.internal.split(',')]
         reasoning = getattr(args, 'reasoning', None)
 
-        result = enrich_dependencies(args.module, key_deps, internal_deps, args.project_dir, reasoning)
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-        if 'key_dependencies' in result:
-            print_toon_list('key_dependencies', result['key_dependencies'])
-        if 'internal_dependencies' in result:
-            print_toon_list('internal_dependencies', result['internal_dependencies'])
-        return 0
+        return enrich_dependencies(args.module, key_deps, internal_deps, args.project_dir, reasoning)
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        print('error: Enrichment data not found')
-        print(f'expected_file: {get_enriched_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py init' first")
-        return 1
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_tip(args) -> int:
+def cmd_enrich_tip(args) -> dict:
     """CLI handler for enrich tip command."""
     try:
-        result = enrich_tip(args.module, args.tip, args.project_dir)
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-        print_toon_list('tips', result['tips'])
-        return 0
+        return enrich_tip(args.module, args.tip, args.project_dir)
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        print('error: Enrichment data not found')
-        print(f'expected_file: {get_enriched_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py init' first")
-        return 1
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_insight(args) -> int:
+def cmd_enrich_insight(args) -> dict:
     """CLI handler for enrich insight command."""
     try:
-        result = enrich_insight(args.module, args.insight, args.project_dir)
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-        print_toon_list('insights', result['insights'])
-        return 0
+        return enrich_insight(args.module, args.insight, args.project_dir)
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        print('error: Enrichment data not found')
-        print(f'expected_file: {get_enriched_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py init' first")
-        return 1
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_best_practice(args) -> int:
+def cmd_enrich_best_practice(args) -> dict:
     """CLI handler for enrich best-practice command."""
     try:
-        result = enrich_best_practice(args.module, args.practice, args.project_dir)
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-        print_toon_list('best_practices', result['best_practices'])
-        return 0
+        return enrich_best_practice(args.module, args.practice, args.project_dir)
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        print('error: Enrichment data not found')
-        print(f'expected_file: {get_enriched_path(args.project_dir)}')
-        print("resolution: Run 'architecture.py init' first")
-        return 1
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_enrich_add_domain(args) -> int:
+def cmd_enrich_add_domain(args) -> dict:
     """CLI handler for enrich add-domain command."""
     try:
         include_optionals = getattr(args, 'include_optionals', False)
         reasoning = getattr(args, 'reasoning', None)
         profiles_str = getattr(args, 'profiles', None)
         profiles = {p.strip() for p in profiles_str.split(',')} if profiles_str else None
-        result = enrich_add_domain(
+        return enrich_add_domain(
             args.module,
             args.domain,
             args.project_dir,
@@ -815,18 +635,9 @@ def cmd_enrich_add_domain(args) -> int:
             reasoning,
             profiles=profiles,
         )
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-        print(f'domain\t{result["domain"]}')
-        print_toon_list('profiles_updated', result['profiles_updated'])
-        print_skills_by_profile(result['skills_by_profile'])
-        return 0
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found_result(args.module, args.project_dir)
     except (DataNotFoundError, ValueError) as e:
-        print(f'error\t{e}')
-        return 1
+        return {'status': 'error', 'error': str(e)}
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}

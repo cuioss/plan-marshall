@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Categorize subcommand for categorizing fixes as safe or risky."""
 
-import json
-
 from _doctor_shared import RISKY_FIX_TYPES, SAFE_FIX_TYPES, read_json_input
 
 
@@ -40,29 +38,28 @@ def categorize_issues(extracted: dict) -> dict:
     }
 
 
-def cmd_categorize(args) -> int:
+def cmd_categorize(args) -> dict:
     """Categorize fixable issues as safe or risky."""
     data, error = read_json_input(args.input)
 
     if error:
-        result = {
-            'error': error,
+        return {
+            'status': 'error',
+            'error': 'invalid_input',
+            'message': error,
             'safe': [],
             'risky': [],
             'summary': {'safe_count': 0, 'risky_count': 0, 'total_count': 0},
         }
-        print(json.dumps(result, indent=2))
-        return 1
 
     if not data:
-        empty_result: dict = {
+        return {
+            'status': 'success',
             'safe': [],
             'risky': [],
             'summary': {'safe_count': 0, 'risky_count': 0, 'total_count': 0},
         }
-        print(json.dumps(empty_result, indent=2))
-        return 0
 
     result = categorize_issues(data)
-    print(json.dumps(result, indent=2))
-    return 0
+    result['status'] = 'success'
+    return result

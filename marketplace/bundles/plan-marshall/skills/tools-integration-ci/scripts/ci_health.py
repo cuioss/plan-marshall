@@ -171,45 +171,29 @@ def determine_overall_health(provider: str, tools: dict) -> str:
     return 'healthy'
 
 
-def output_toon(data: dict) -> None:
-    """Output TOON to stdout."""
-    print(serialize_toon(data))
-
-
-def error_toon(message: str, **extra) -> int:
-    """Output error TOON to stderr and return error exit code."""
-    print(serialize_toon({'status': 'error', 'error': message, **extra}), file=sys.stderr)
-    return 1
-
-
-def cmd_detect(args: argparse.Namespace) -> int:
+def cmd_detect(args: argparse.Namespace) -> dict:
     """Handle the 'detect' subcommand."""
     result = detect_provider()
-    output_toon(
-        {
-            'status': 'success',
-            'provider': result['provider'],
-            'repo_url': result['repo_url'],
-            'confidence': result['confidence'],
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'provider': result['provider'],
+        'repo_url': result['repo_url'],
+        'confidence': result['confidence'],
+    }
 
 
-def cmd_verify(args: argparse.Namespace) -> int:
+def cmd_verify(args: argparse.Namespace) -> dict:
     """Handle the 'verify' subcommand."""
     if args.tool:
         # Verify specific tool
         if args.tool not in TOOLS:
-            return error_toon(f'Unknown tool: {args.tool}', known_tools=list(TOOLS.keys()))
+            return {'status': 'error', 'error': f'Unknown tool: {args.tool}', 'known_tools': list(TOOLS.keys())}
         tool_result = verify_tool(args.tool)
-        output_toon(
-            {
-                'status': 'success',
-                'tools': {args.tool: tool_result},
-                'all_required_available': tool_result['installed'] and tool_result['authenticated'],
-            }
-        )
+        return {
+            'status': 'success',
+            'tools': {args.tool: tool_result},
+            'all_required_available': tool_result['installed'] and tool_result['authenticated'],
+        }
     else:
         # Verify all tools
         tools_result = {}
@@ -220,17 +204,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
                 if not tools_result[tool]['installed'] or not tools_result[tool]['authenticated']:
                     all_available = False
 
-        output_toon(
-            {
-                'status': 'success',
-                'tools': tools_result,
-                'all_required_available': all_available,
-            }
-        )
-    return 0
+        return {
+            'status': 'success',
+            'tools': tools_result,
+            'all_required_available': all_available,
+        }
 
 
-def cmd_status(args: argparse.Namespace) -> int:
+def cmd_status(args: argparse.Namespace) -> dict:
     """Handle the 'status' subcommand."""
     # Detect provider
     provider_result = detect_provider()
@@ -251,24 +232,21 @@ def cmd_status(args: argparse.Namespace) -> int:
     # Determine overall health
     overall = determine_overall_health(provider_result['provider'], tools_result)
 
-    output_toon(
-        {
-            'status': 'success',
-            'provider': {
-                'name': provider_result['provider'],
-                'repo_url': provider_result['repo_url'],
-                'confidence': provider_result['confidence'],
-            },
-            'tools': tools_result,
-            'required_tool': required_tool,
-            'required_tool_ready': required_tool_ready,
-            'overall': overall,
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'provider': {
+            'name': provider_result['provider'],
+            'repo_url': provider_result['repo_url'],
+            'confidence': provider_result['confidence'],
+        },
+        'tools': tools_result,
+        'required_tool': required_tool,
+        'required_tool_ready': required_tool_ready,
+        'overall': overall,
+    }
 
 
-def cmd_persist(args: argparse.Namespace) -> int:
+def cmd_persist(args: argparse.Namespace) -> dict:
     """Handle the 'persist' subcommand.
 
     Delegates to manage-config ci persist for centralized marshal.json writes.
@@ -277,7 +255,7 @@ def cmd_persist(args: argparse.Namespace) -> int:
     marshal_path = plan_dir / 'marshal.json'
 
     if not marshal_path.exists():
-        return error_toon(f'marshal.json not found at {marshal_path}. Run /marshall-steward first.')
+        return {'status': 'error', 'error': f'marshal.json not found at {marshal_path}. Run /marshall-steward first.'}
 
     # Detect provider
     provider_result = detect_provider()
@@ -321,18 +299,14 @@ def cmd_persist(args: argparse.Namespace) -> int:
     ci_config = config.get('ci', {})
     result_code = _handle_persist(persist_args, config, ci_config)
     if result_code != 0:
-        return error_toon('Failed to persist CI config')
+        return {'status': 'error', 'error': 'Failed to persist CI config'}
 
-    output_toon(
-        {
-            'status': 'success',
-            'persisted_to': 'marshal.json',
-            'provider': provider_result['provider'],
-            'repo_url': provider_result['repo_url'] or 'none',
-        }
-    )
-
-    return 0
+    return {
+        'status': 'success',
+        'persisted_to': 'marshal.json',
+        'provider': provider_result['provider'],
+        'repo_url': provider_result['repo_url'] or 'none',
+    }
 
 
 def main() -> int:
@@ -366,7 +340,10 @@ def main() -> int:
 
     handler = handlers.get(args.command)
     if handler:
-        return handler(args)
+        result = handler(args)
+        is_error = result.get('status') != 'success'
+        print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
+        return 1 if is_error else 0
 
     parser.print_help()
     return 1

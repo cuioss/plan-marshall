@@ -46,7 +46,9 @@ def test_read_nonexistent_file():
     """Test reading a file that doesn't exist."""
     with PlanContext(plan_id='file-noexist'):
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'file-noexist', '--file', 'missing.md')
-        assert not result.success, 'Expected failure for missing file'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'error', 'Expected error status for missing file'
+        assert data['error'] == 'file_not_found'
 
 
 # =============================================================================
@@ -111,10 +113,9 @@ def test_exists_invalid_plan_id():
 
 
 def test_exists_invalid_file_path():
-    """Test exists with invalid file path returns TOON error on stdout and exits 1."""
+    """Test exists with invalid file path returns TOON error on stdout."""
     with PlanContext(plan_id='file-exists'):
         result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'file-exists', '--file', '../escape.md')
-        assert not result.success, 'Should exit 1 for validation errors'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'invalid_path'

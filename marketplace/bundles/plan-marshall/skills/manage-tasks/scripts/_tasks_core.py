@@ -23,8 +23,6 @@ from file_ops import (  # type: ignore[import-not-found]  # noqa: F401 - re-expo
     get_plan_dir,
     normalize_to_repo_relative,
     now_utc_iso,
-    output_toon,
-    output_toon_error,
 )
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]  # noqa: F401 - re-exported
 
@@ -470,12 +468,9 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
     return result
 
 
-# output_toon imported from file_ops and re-exported
-
-
-def output_error(message: str, error_code: str = 'error') -> None:
-    """Print TOON error output. Delegates to file_ops.output_toon_error."""
-    output_toon_error(error_code, message)
+def output_error(message: str, error_code: str = 'error') -> dict:
+    """Build error result dict."""
+    return {'status': 'error', 'error': error_code, 'message': message}
 
 
 def get_deliverable_context(deliverable: int) -> dict:

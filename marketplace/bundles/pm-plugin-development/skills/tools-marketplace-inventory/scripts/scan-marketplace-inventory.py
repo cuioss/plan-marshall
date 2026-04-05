@@ -46,6 +46,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from file_ops import safe_main  # type: ignore[import-not-found]
+
 # Note: toon_parser not needed - using custom serialize_inventory_toon for hierarchical output
 
 # Constants
@@ -781,7 +783,8 @@ def write_file_output(output: dict, output_dir: Path, custom_output: str = '', f
     return output_file, '\n'.join(summary_lines)
 
 
-def main():
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(description='Scan marketplace directories and return structured inventory')
     parser.add_argument(
         '--scope',
@@ -974,4 +977,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

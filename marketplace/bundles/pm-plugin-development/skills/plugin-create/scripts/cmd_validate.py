@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Validate subcommand for validating marketplace component structure."""
 
-import json
 import re
 
 
@@ -283,7 +282,7 @@ def validate_skill_content(content):
     return errors, warnings
 
 
-def cmd_validate(args) -> int:
+def cmd_validate(args) -> dict:
     """Validate marketplace component structure."""
     errors: list[dict] = []
     warnings: list[dict] = []
@@ -293,21 +292,19 @@ def cmd_validate(args) -> int:
         with open(args.file, encoding='utf-8') as f:
             content = f.read()
     except FileNotFoundError:
-        result = {
+        return {
+            'status': 'error',
             'valid': False,
             'errors': [{'type': 'file_not_found', 'message': f'File not found: {args.file}'}],
             'warnings': [],
         }
-        print(json.dumps(result, indent=2))
-        return 1
     except Exception as e:
-        result = {
+        return {
+            'status': 'error',
             'valid': False,
             'errors': [{'type': 'read_error', 'message': f'Error reading file: {str(e)}'}],
             'warnings': [],
         }
-        print(json.dumps(result, indent=2))
-        return 1
 
     # Extract and validate frontmatter
     frontmatter, error = extract_frontmatter(content)
@@ -329,9 +326,7 @@ def cmd_validate(args) -> int:
                     'message': f"Invalid component type: {args.type}. Must be 'agent', 'command', or 'skill'",
                 }
             )
-            result = {'valid': False, 'errors': errors, 'warnings': warnings}
-            print(json.dumps(result, indent=2))
-            return 1
+            return {'status': 'error', 'valid': False, 'errors': errors, 'warnings': warnings}
 
         errors.extend(fm_errors)
         warnings.extend(fm_warnings)
@@ -352,6 +347,4 @@ def cmd_validate(args) -> int:
     # Determine validity
     valid = len(errors) == 0
 
-    result = {'valid': valid, 'errors': errors, 'warnings': warnings}
-    print(json.dumps(result, indent=2))
-    return 0 if valid else 1
+    return {'status': 'success' if valid else 'error', 'valid': valid, 'errors': errors, 'warnings': warnings}

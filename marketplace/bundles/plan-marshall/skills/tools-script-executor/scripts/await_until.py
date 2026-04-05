@@ -25,7 +25,7 @@ def match(parsed, pattern):
 
 
 def finish(status, start, polls, command_key, error=None):
-    """Save timeout and output result."""
+    """Save timeout and build result dict."""
     duration = int(time.time() - start)
     timeout_set(command_key, duration)
 
@@ -33,11 +33,10 @@ def finish(status, start, polls, command_key, error=None):
     if error:
         output['error'] = error
 
-    print(serialize_toon(output))
-    sys.exit(0)  # Status modeled in output, not exit code
+    return output
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description='Poll until condition is satisfied')
     parser.add_argument('--check-cmd', required=True)
     parser.add_argument('--success-field', required=True)
@@ -49,6 +48,7 @@ def main():
     timeout = timeout_get(args.command_key, DEFAULT_TIMEOUT)
     start = time.time()
     polls = 0
+    output = None
 
     while time.time() - start < timeout:
         polls += 1
@@ -58,19 +58,26 @@ def main():
             time.sleep(args.interval)
             continue
         except OSError as e:
-            finish('error', start, polls, args.command_key, f'Check command failed: {e}')
+            output = finish('error', start, polls, args.command_key, f'Check command failed: {e}')
+            break
 
         if result.returncode == 0:
             parsed = parse_toon(result.stdout)
             if args.failure_field and match(parsed, args.failure_field):
-                finish('error', start, polls, args.command_key, 'Permanent failure')
+                output = finish('error', start, polls, args.command_key, 'Permanent failure')
+                break
             if match(parsed, args.success_field):
-                finish('success', start, polls, args.command_key)
+                output = finish('success', start, polls, args.command_key)
+                break
 
         time.sleep(args.interval)
 
-    finish('timeout', start, polls, args.command_key, f'Timeout after {timeout}s')
+    if output is None:
+        output = finish('timeout', start, polls, args.command_key, f'Timeout after {timeout}s')
+
+    print(serialize_toon(output))
+    return 0  # Status modeled in output, not exit code
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

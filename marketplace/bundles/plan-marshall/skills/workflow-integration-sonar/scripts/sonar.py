@@ -214,7 +214,9 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    return args.func(args)
+    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+
+    return _output_toon(args.func(args))
 
 
 if __name__ == '__main__':

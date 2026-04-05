@@ -67,7 +67,7 @@ def test_analyze_nonexistent_file_returns_error():
     result = run_script(SCRIPT_PATH, 'analyze', '--component', '/nonexistent/component.md')
     data = parse_toon(result.stdout)
     assert 'error' in data
-    assert result.returncode != 0
+    assert data.get('status') == 'error'
 
 
 def test_analyze_empty_component():
@@ -374,7 +374,7 @@ def test_update_invalid_json():
         result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', 'not-json')
         data = parse_toon(result.stdout)
         assert 'error' in data
-        assert result.returncode != 0
+        assert data.get('status') == 'error'
         Path(f.name).unlink()
 
 
@@ -477,7 +477,7 @@ def test_readme_nonexistent_bundle():
     result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', '/nonexistent/bundle')
     data = parse_toon(result.stdout)
     assert 'error' in data
-    assert result.returncode != 0
+    assert data.get('status') == 'error'
 
 
 def test_readme_directory_without_plugin_json():
@@ -485,8 +485,8 @@ def test_readme_directory_without_plugin_json():
     with tempfile.TemporaryDirectory() as tmpdir:
         result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', tmpdir)
         data = parse_toon(result.stdout)
-        assert 'error' in data
-        assert 'plugin.json' in data['error']
+        assert data.get('status') == 'error'
+        assert 'plugin.json' in data.get('message', '') or 'plugin_json' in data.get('error', '')
 
 
 def test_readme_includes_installation_section():

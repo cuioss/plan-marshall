@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Skill structure analysis subcommand."""
 
-import json
 import re
-import sys
 from pathlib import Path
 
 from _analyze_shared import check_yaml_validity, extract_frontmatter, remove_code_blocks
@@ -142,18 +140,16 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
     }
 
 
-def cmd_structure(args) -> int:
+def cmd_structure(args) -> dict:
     """Analyze skill directory structure."""
     skill_dir = Path(args.directory)
 
     if not skill_dir.exists():
-        print(json.dumps({'error': f'Directory not found: {args.directory}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_found', 'message': f'Directory not found: {args.directory}'}
 
     if not skill_dir.is_dir():
-        print(json.dumps({'error': f'Not a directory: {args.directory}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_directory', 'message': f'Not a directory: {args.directory}'}
 
     result = analyze_skill_structure(skill_dir)
-    print(json.dumps(result, indent=2))
-    return 0
+    result['status'] = 'success'
+    return result

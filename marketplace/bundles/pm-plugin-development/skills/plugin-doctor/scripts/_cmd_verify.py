@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Verify subcommand for verifying that fixes were successfully applied."""
 
-import json
 import re
-import sys
 from pathlib import Path
 
 from _doctor_shared import extract_frontmatter
@@ -215,17 +213,25 @@ def verify_generic(file_path: Path, fix_type: str) -> dict:
     return {'verified': True, 'issue_resolved': None, 'details': 'Manual verification recommended'}
 
 
-def cmd_verify(args) -> int:
+def cmd_verify(args) -> dict:
     """Verify that a fix was successfully applied."""
     file_path = Path(args.file)
 
     if not file_path.exists():
-        print(json.dumps({'verified': False, 'error': f'File not found: {args.file}'}), file=sys.stderr)
-        return 1
+        return {
+            'status': 'error',
+            'error': 'file_not_found',
+            'message': f'File not found: {args.file}',
+            'verified': False,
+        }
 
     if not file_path.is_file():
-        print(json.dumps({'verified': False, 'error': f'Not a file: {args.file}'}), file=sys.stderr)
-        return 1
+        return {
+            'status': 'error',
+            'error': 'not_a_file',
+            'message': f'Not a file: {args.file}',
+            'verified': False,
+        }
 
     fix_type = args.fix_type
 
@@ -250,5 +256,5 @@ def cmd_verify(args) -> int:
     else:
         result = verify_generic(file_path, fix_type)
 
-    print(json.dumps(result, indent=2))
-    return 0
+    result['status'] = 'success'
+    return result

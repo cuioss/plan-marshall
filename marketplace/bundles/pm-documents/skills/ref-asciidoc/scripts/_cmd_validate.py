@@ -2,18 +2,12 @@
 """Validate subcommand for AsciiDoc compliance checking."""
 
 import fnmatch
-import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_NON_COMPLIANT = 1
-EXIT_ERROR = 2
 
 # Required attributes for AsciiDoc files
 REQUIRED_ATTRS = [
@@ -124,16 +118,12 @@ def check_file_compliance(file_path: Path) -> dict[str, Any]:
     return result
 
 
-def cmd_validate(args: Any) -> int:
+def cmd_validate(args: Any) -> dict:
     """Handle validate subcommand."""
     check_path = Path(args.path)
 
     if not check_path.exists():
-        if args.format == 'json':
-            print(json.dumps({'error': 'Path not found', 'path': str(check_path)}))
-        else:
-            print(f"Error: Path '{check_path}' does not exist.")
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'path_not_found', 'message': f"Path '{check_path}' does not exist"}
 
     results: list[dict[str, Any]] = []
     if check_path.is_file():
@@ -160,20 +150,14 @@ def cmd_validate(args: Any) -> int:
             'script',
             'global',
             'INFO',
-            f'[DOCS-VALIDATE] Found {summary["non_compliant_files"]} non-compliant files ({summary["total_errors"]} errors, {summary["total_warnings"]} warnings)',
+            f'[DOCS-VALIDATE] Found {summary["non_compliant_files"]} non-compliant files'
+            f' ({summary["total_errors"]} errors, {summary["total_warnings"]} warnings)',
         )
 
-    if args.format == 'json':
-        output = {
-            'directory': str(check_path),
-            'timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'summary': summary,
-            'files': [r for r in results if not r['compliant']],
-        }
-        print(json.dumps(output, indent=2))
-    else:
-        print(
-            f'Summary: {summary["total_files"]} files, {summary["non_compliant_files"]} non-compliant, {summary["total_errors"]} errors, {summary["total_warnings"]} warnings'
-        )
-
-    return EXIT_NON_COMPLIANT if summary['total_errors'] > 0 or summary['total_warnings'] > 0 else EXIT_SUCCESS
+    return {
+        'status': 'success' if summary['total_errors'] == 0 and summary['total_warnings'] == 0 else 'non_compliant',
+        'directory': str(check_path),
+        'timestamp': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'summary': summary,
+        'files': [r for r in results if not r['compliant']],
+    }

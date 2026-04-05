@@ -45,6 +45,7 @@ from _dep_index import (  # type: ignore[import-not-found]
     build_dependency_index,
     get_base_path,
 )
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 # Try to import toon_parser, fall back to simple serialization
 try:
@@ -318,6 +319,7 @@ def cmd_validate(
     return result
 
 
+@safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Resolve dependencies between marketplace components')
     parser.add_argument(
@@ -396,12 +398,13 @@ def main() -> int:
         return 1
 
     # Output result
-    output = serialize_output(result, args.format)
-    print(output)
-
-    # Return error code if status is error
-    return 1 if result.get('status') == 'error' else 0
+    if args.format == 'json':
+        output = serialize_output(result, args.format)
+        print(output)
+    else:
+        output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

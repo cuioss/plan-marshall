@@ -16,13 +16,14 @@ Usage:
 """
 
 import argparse
-import sys
 
 from cmd_generate import cmd_generate
 from cmd_validate import cmd_validate
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 
-def main():
+@safe_main
+def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description='Marketplace component creation utilities',
@@ -69,8 +70,10 @@ Examples:
         parser.print_help()
         return 1
 
-    return args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

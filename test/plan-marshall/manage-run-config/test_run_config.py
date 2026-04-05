@@ -317,8 +317,8 @@ def test_timeout_get_default_when_no_persisted():
         result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'ci:pr_checks', '--default', '300')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # Plain number output
-        assert result.stdout.strip() == '300'
+        data = result.toon()
+        assert data['timeout_seconds'] == 300
 
 
 def test_timeout_get_with_safety_margin():
@@ -334,8 +334,9 @@ def test_timeout_get_with_safety_margin():
         result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'ci:pr_checks', '--default', '300')
 
         assert result.success, f'Should succeed: {result.stderr}'
-        # 240 * 1.25 = 300 (plain number output)
-        assert result.stdout.strip() == '300'
+        data = result.toon()
+        # 240 * 1.25 = 300
+        assert data['timeout_seconds'] == 300
 
 
 def test_timeout_get_enforces_minimum_on_persisted():
@@ -358,8 +359,9 @@ def test_timeout_get_enforces_minimum_on_persisted():
         result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'maven:discover', '--default', '60')
 
         assert result.success, f'Should succeed: {result.stderr}'
+        data = result.toon()
         # 15 * 1.25 = 18.75 -> 18, but minimum is 120
-        assert result.stdout.strip() == '120'
+        assert data['timeout_seconds'] == 120
 
 
 def test_timeout_get_enforces_minimum_on_default():
@@ -373,8 +375,9 @@ def test_timeout_get_enforces_minimum_on_default():
         )  # Very low default
 
         assert result.success, f'Should succeed: {result.stderr}'
+        data = result.toon()
         # Default 30 is below minimum 120
-        assert result.stdout.strip() == '120'
+        assert data['timeout_seconds'] == 120
 
 
 def test_timeout_set_initial_value():
@@ -809,7 +812,7 @@ def test_cleanup_missing_marshal_json_via_unified():
 
         result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
         assert not result.success, 'Should fail without marshal.json'
-        assert 'marshal.json not found' in result.stdout
+        assert 'marshal.json not found' in result.stderr
 
 
 def test_cleanup_help():

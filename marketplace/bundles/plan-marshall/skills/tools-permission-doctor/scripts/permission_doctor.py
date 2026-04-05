@@ -9,6 +9,7 @@ Provides:
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 from permission_common import (  # type: ignore[import-not-found]
@@ -90,7 +91,7 @@ def is_covered_by_wildcard(specific: str, broader: str) -> bool:
     return False
 
 
-def cmd_detect_redundant(args) -> int:
+def cmd_detect_redundant(args) -> dict:
     """Handle detect-redundant subcommand."""
     # Resolve paths from --scope or explicit args
     if args.scope:
@@ -101,13 +102,11 @@ def cmd_detect_redundant(args) -> int:
 
     global_settings, global_error = load_settings(global_path)
     if global_error:
-        print(serialize_toon({'error': global_error, 'global_exists': False}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': global_error, 'global_exists': False}
 
     local_settings, local_error = load_settings(local_path)
     if local_error:
-        print(serialize_toon({'error': local_error, 'local_exists': False}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': local_error, 'local_exists': False}
 
     global_allow = set(global_settings.get('permissions', {}).get('allow', []))
     local_allow = local_settings.get('permissions', {}).get('allow', [])
@@ -166,9 +165,9 @@ def cmd_detect_redundant(args) -> int:
         'local_exists': True,
         'global_path': global_path,
         'local_path': local_path,
+        'status': 'success',
     }
-    print(serialize_toon(result))
-    return EXIT_SUCCESS
+    return result
 
 
 # =============================================================================
@@ -336,7 +335,7 @@ def check_permission(permission: str) -> dict | None:
     return None
 
 
-def cmd_detect_suspicious(args) -> int:
+def cmd_detect_suspicious(args) -> dict:
     """Handle detect-suspicious subcommand."""
     # Resolve path from --scope or explicit --settings
     if args.scope:
@@ -349,8 +348,7 @@ def cmd_detect_suspicious(args) -> int:
 
     settings, error = load_settings(settings_path)
     if error:
-        print(serialize_toon({'error': error}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': error}
 
     approved_permissions = load_approved_permissions(args.approved_file)
     allow_list = settings.get('permissions', {}).get('allow', [])
@@ -387,8 +385,8 @@ def cmd_detect_suspicious(args) -> int:
     if args.approved_file:
         result['approved_file'] = args.approved_file
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS
+    result['status'] = 'success'
+    return result
 
 
 # =============================================================================
@@ -426,7 +424,10 @@ def main():
         parser.print_help()
         return EXIT_ERROR
 
-    return args.func(args)
+    result = args.func(args)
+    is_error = result.get('status') != 'success'
+    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
+    return EXIT_ERROR if is_error else EXIT_SUCCESS
 
 
 if __name__ == '__main__':

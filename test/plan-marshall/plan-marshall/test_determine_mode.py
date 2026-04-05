@@ -32,8 +32,8 @@ class TestModeSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'mode', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('mode\twizard', result.stdout)
-        self.assertIn('reason\texecutor_missing', result.stdout)
+        self.assertIn('mode: wizard', result.stdout)
+        self.assertIn('reason: executor_missing', result.stdout)
 
     def test_wizard_mode_when_marshal_missing(self):
         """Should return wizard mode when marshal.json is missing."""
@@ -46,8 +46,8 @@ class TestModeSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'mode', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('mode\twizard', result.stdout)
-        self.assertIn('reason\tmarshal_missing', result.stdout)
+        self.assertIn('mode: wizard', result.stdout)
+        self.assertIn('reason: marshal_missing', result.stdout)
 
     def test_wizard_mode_when_both_missing(self):
         """Should return wizard mode when both are missing."""
@@ -59,8 +59,8 @@ class TestModeSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'mode', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('mode\twizard', result.stdout)
-        self.assertIn('reason\texecutor_missing', result.stdout)
+        self.assertIn('mode: wizard', result.stdout)
+        self.assertIn('reason: executor_missing', result.stdout)
 
     def test_menu_mode_when_both_exist(self):
         """Should return menu mode when both exist."""
@@ -74,8 +74,8 @@ class TestModeSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'mode', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('mode\tmenu', result.stdout)
-        self.assertIn('reason\tboth_exist', result.stdout)
+        self.assertIn('mode: menu', result.stdout)
+        self.assertIn('reason: both_exist', result.stdout)
 
     def test_default_plan_dir(self):
         """Should use .plan as default directory."""
@@ -83,7 +83,7 @@ class TestModeSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'mode', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('mode\twizard', result.stdout)
+        self.assertIn('mode: wizard', result.stdout)
 
     def test_nonexistent_plan_dir(self):
         """Should return wizard mode for non-existent plan directory."""
@@ -92,11 +92,11 @@ class TestModeSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'mode', '--plan-dir', str(nonexistent_dir))
 
         self.assert_success(result)
-        self.assertIn('mode\twizard', result.stdout)
-        self.assertIn('reason\texecutor_missing', result.stdout)
+        self.assertIn('mode: wizard', result.stdout)
+        self.assertIn('reason: executor_missing', result.stdout)
 
     def test_toon_output_format(self):
-        """Output should be valid TOON format (tab-separated key-value pairs)."""
+        """Output should be valid TOON format (colon-space key-value pairs)."""
         plan_dir = self.temp_dir / '.plan'
         plan_dir.mkdir(parents=True)
 
@@ -105,12 +105,12 @@ class TestModeSubcommand(ScriptTestCase):
         self.assert_success(result)
 
         lines = result.stdout.strip().split('\n')
-        self.assertEqual(len(lines), 2)
+        # status, mode, reason = 3 lines
+        self.assertEqual(len(lines), 3)
 
-        # Each line should be tab-separated key-value
+        # Each line should be colon-space separated key-value (TOON format)
         for line in lines:
-            parts = line.split('\t')
-            self.assertEqual(len(parts), 2, f'Line should have exactly 2 parts: {line}')
+            self.assertIn(': ', line, f'Line should contain colon-space separator: {line}')
 
 
 class TestCheckDocsSubcommand(ScriptTestCase):
@@ -125,8 +125,8 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('status\tok', result.stdout)
-        self.assertIn('missing_count\t0', result.stdout)
+        self.assertIn('check_status: ok', result.stdout)
+        self.assertIn('missing_count: 0', result.stdout)
 
     def test_ok_when_docs_have_all_patterns(self):
         """Should return ok when docs have all required content."""
@@ -138,8 +138,8 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('status\tok', result.stdout)
-        self.assertIn('missing_count\t0', result.stdout)
+        self.assertIn('check_status: ok', result.stdout)
+        self.assertIn('missing_count: 0', result.stdout)
 
     def test_needs_update_when_claude_md_missing_plan_temp(self):
         """Should detect missing plan_temp pattern in CLAUDE.md."""
@@ -149,8 +149,8 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('status\tneeds_update', result.stdout)
-        self.assertIn('plan_temp\tCLAUDE.md', result.stdout)
+        self.assertIn('check_status: needs_update', result.stdout)
+        self.assertIn('plan_temp: CLAUDE.md', result.stdout)
 
     def test_needs_update_when_claude_md_missing_file_ops(self):
         """Should detect missing file_ops pattern in CLAUDE.md."""
@@ -160,8 +160,8 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('status\tneeds_update', result.stdout)
-        self.assertIn('file_ops\tCLAUDE.md', result.stdout)
+        self.assertIn('check_status: needs_update', result.stdout)
+        self.assertIn('file_ops: CLAUDE.md', result.stdout)
 
     def test_needs_update_when_agents_md_missing_plan_temp(self):
         """Should detect missing plan_temp in agents.md."""
@@ -171,8 +171,8 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('status\tneeds_update', result.stdout)
-        self.assertIn('plan_temp\tagents.md', result.stdout)
+        self.assertIn('check_status: needs_update', result.stdout)
+        self.assertIn('plan_temp: agents.md', result.stdout)
 
     def test_needs_update_when_both_missing_all(self):
         """Should list all missing checks across both files."""
@@ -182,11 +182,11 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('status\tneeds_update', result.stdout)
+        self.assertIn('check_status: needs_update', result.stdout)
         # plan_temp missing from both files
-        self.assertIn('plan_temp\tCLAUDE.md,agents.md', result.stdout)
+        self.assertIn('CLAUDE.md,agents.md', result.stdout)
         # file_ops missing from CLAUDE.md
-        self.assertIn('file_ops\tCLAUDE.md', result.stdout)
+        self.assertIn('file_ops: CLAUDE.md', result.stdout)
 
     def test_file_ops_not_checked_for_agents_md(self):
         """file_ops should only be checked for CLAUDE.md, not agents.md."""
@@ -197,7 +197,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
 
         self.assert_success(result)
         # agents.md passes (has plan_temp), and file_ops only checks CLAUDE.md
-        self.assertIn('status\tok', result.stdout)
+        self.assertIn('check_status: ok', result.stdout)
 
     def test_mixed_files_one_ok_one_missing(self):
         """Should only list files that need updating."""
@@ -210,16 +210,16 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('status\tneeds_update', result.stdout)
-        self.assertIn('missing_count\t1', result.stdout)
-        self.assertIn('plan_temp\tagents.md', result.stdout)
+        self.assertIn('check_status: needs_update', result.stdout)
+        self.assertIn('missing_count: 1', result.stdout)
+        self.assertIn('plan_temp: agents.md', result.stdout)
 
     def test_default_project_root(self):
         """Should use current directory as default project root."""
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('status\tok', result.stdout)
+        self.assertIn('check_status: ok', result.stdout)
 
     def test_toon_output_format(self):
         """Output should be valid TOON format."""
@@ -230,10 +230,9 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         lines = result.stdout.strip().split('\n')
         self.assertGreaterEqual(len(lines), 2)
 
-        # Each line should be tab-separated key-value
+        # Each line should be colon-space separated key-value (TOON format)
         for line in lines:
-            parts = line.split('\t')
-            self.assertEqual(len(parts), 2, f'Line should have exactly 2 parts: {line}')
+            self.assertIn(': ', line, f'Line should contain colon-space separator: {line}')
 
     def test_missing_count_reflects_total_entries(self):
         """missing_count should reflect total number of missing check entries."""
@@ -244,7 +243,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         result = run_script(SCRIPT_PATH, 'check-docs', cwd=self.temp_dir)
 
         self.assert_success(result)
-        self.assertIn('missing_count\t3', result.stdout)
+        self.assertIn('missing_count: 3', result.stdout)
 
 
 class TestSubcommandRequired(ScriptTestCase):

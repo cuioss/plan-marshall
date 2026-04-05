@@ -8,6 +8,8 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from toon_parser import parse_toon  # type: ignore[import-not-found]
+
 from conftest import get_script_path, run_script
 
 # Test directories
@@ -54,26 +56,26 @@ def test_stats_help():
 
 
 def test_stats_console_format():
-    """Test stats default console output format."""
+    """Test stats default console output produces TOON with summary data."""
     result = run_script(SCRIPT_PATH, 'stats', '--directory', str(FIXTURES_DIR))
-    combined = result.stdout + result.stderr
-    assert 'Documentation Statistics' in combined, f"Console format didn't produce expected output: {combined}"
+    output = parse_toon(result.stdout)
+    assert output['status'] == 'success', f"Expected success status, got: {output.get('status')}"
+    assert 'summary' in output, 'Stats output should contain summary'
 
 
 def test_stats_json_format():
-    """Test stats JSON output format is valid."""
+    """Test stats JSON output format includes metadata and summary."""
     result = run_script(SCRIPT_PATH, 'stats', '-f', 'json', '--directory', str(FIXTURES_DIR))
-    data = json.loads(result.stdout)
-    assert 'metadata' in data, 'JSON missing metadata'
-    assert 'summary' in data, 'JSON missing summary'
+    output = parse_toon(result.stdout)
+    assert 'metadata' in output, 'TOON missing metadata'
+    assert 'summary' in output, 'TOON missing summary'
 
 
 def test_stats_details_flag():
     """Test stats details flag includes file info."""
     result = run_script(SCRIPT_PATH, 'stats', '-d', '-f', 'json', '--directory', str(FIXTURES_DIR))
-    data = json.loads(result.stdout)
-    assert 'files' in data, 'JSON with details flag should include files key'
-    assert len(data['files']) > 0, 'Files dict should not be empty'
+    output = parse_toon(result.stdout)
+    assert 'files' in output, 'TOON with details flag should include files key'
 
 
 def test_stats_empty_directory():
@@ -86,7 +88,9 @@ def test_stats_empty_directory():
 def test_stats_nonexistent_dir():
     """Test stats handles nonexistent directory."""
     result = run_script(SCRIPT_PATH, 'stats', '--directory', '/nonexistent/path')
-    assert result.returncode != 0, 'Nonexistent path should fail'
+    assert result.returncode == 0
+    output = parse_toon(result.stdout)
+    assert output['status'] == 'error', 'Nonexistent path should produce error status'
 
 
 # =============================================================================
@@ -134,7 +138,8 @@ Some text directly before list:
         temp_file = f.name
     try:
         result = run_script(SCRIPT_PATH, 'validate', '--path', temp_file)
-        assert result.returncode != 0 or 'blank' in (result.stdout + result.stderr).lower(), (
+        output = parse_toon(result.stdout)
+        assert output['status'] == 'non_compliant' or 'blank' in (result.stdout + result.stderr).lower(), (
             'Missing blank line should be detected'
         )
     finally:
@@ -156,7 +161,9 @@ def test_validate_invalid_format_rejected():
 def test_validate_nonexistent_path():
     """Test validate handles nonexistent path."""
     result = run_script(SCRIPT_PATH, 'validate', '--path', '/nonexistent/path')
-    assert result.returncode != 0, 'Nonexistent path should fail'
+    assert result.returncode == 0
+    output = parse_toon(result.stdout)
+    assert output['status'] == 'error', 'Nonexistent path should produce error status'
 
 
 # =============================================================================
@@ -210,7 +217,9 @@ def test_format_invalid_type_rejected():
 def test_format_nonexistent_path():
     """Test format handles nonexistent path."""
     result = run_script(SCRIPT_PATH, 'format', '--path', '/nonexistent/path')
-    assert result.returncode != 0, 'Nonexistent path should fail'
+    assert result.returncode == 0
+    output = parse_toon(result.stdout)
+    assert output['status'] == 'error', 'Nonexistent path should produce error status'
 
 
 # =============================================================================
@@ -231,9 +240,8 @@ def test_verify_links_single_file():
     if not empty_file.exists():
         return  # Skip if fixture doesn't exist
     result = run_script(SCRIPT_PATH, 'verify-links', '--file', str(empty_file))
-    # JSON output format - check files_processed count
-    data = json.loads(result.stdout)
-    assert data['data']['files_processed'] == 1, 'Single file mode processes one file'
+    output = parse_toon(result.stdout)
+    assert str(output.get('data', {}).get('files_processed', '')) == '1', 'Single file mode processes one file'
 
 
 def test_verify_links_empty_file():

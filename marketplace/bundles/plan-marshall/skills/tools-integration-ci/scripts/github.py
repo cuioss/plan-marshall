@@ -60,9 +60,9 @@ from ci_base import (  # type: ignore[import-not-found]
     compute_elapsed,
     compute_total_elapsed,
     dispatch,
+    make_error,
     make_pr_number_handler,
     make_simple_handler,
-    output_error,
     poll_until,
     run_cli,
     truncate_log_content,
@@ -141,12 +141,12 @@ def run_graphql(query: str, variables: dict) -> tuple[int, dict | None, str]:
 # ---------------------------------------------------------------------------
 
 
-def cmd_pr_create(args: argparse.Namespace) -> int:
+def cmd_pr_create(args: argparse.Namespace) -> dict:
     """Handle 'pr create' subcommand."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_create', err)
+        return make_error('pr_create', err)
 
     # Resolve body: --body-file takes precedence over --body
     body = args.body or ''
@@ -155,7 +155,7 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
             with open(args.body_file) as f:
                 body = f.read()
         except OSError as e:
-            return output_error('pr_create', f'Failed to read body file: {e}')
+            return make_error('pr_create', f'Failed to read body file: {e}')
 
     # Build command
     gh_args = ['pr', 'create', '--title', args.title, '--body', body]
@@ -167,7 +167,7 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
     # Execute
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return output_error('pr_create', 'Failed to create PR', stderr.strip())
+        return make_error('pr_create', 'Failed to create PR', stderr.strip())
 
     # Parse the URL from output (gh pr create outputs the URL)
     pr_url = stdout.strip()
@@ -180,19 +180,12 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
         except (IndexError, ValueError):
             pass
 
-    # Output TOON
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_create',
-                'pr_number': pr_number,
-                'pr_url': pr_url,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_create',
+        'pr_number': pr_number,
+        'pr_url': pr_url,
+    }
 
 
 def view_pr_data() -> dict:
@@ -247,22 +240,16 @@ def view_pr_data() -> dict:
     }
 
 
-def cmd_pr_view(args: argparse.Namespace) -> int:
+def cmd_pr_view(args: argparse.Namespace) -> dict:
     """Handle 'pr view' subcommand - get PR for current branch."""
-    result = view_pr_data()
-    if result.get('status') != 'success':
-        return output_error(
-            result.get('operation', 'pr_view'), result.get('error', 'Unknown error'), result.get('context', '')
-        )
-    print(serialize_toon(result, table_separator='\t'))
-    return 0
+    return view_pr_data()
 
 
-def cmd_pr_list(args: argparse.Namespace) -> int:
+def cmd_pr_list(args: argparse.Namespace) -> dict:
     """Handle 'pr list' subcommand - list pull requests with optional filters."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_list', err)
+        return make_error('pr_list', err)
 
     gh_args = [
         'pr',
@@ -277,12 +264,12 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
 
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return output_error('pr_list', 'Failed to list PRs', stderr.strip())
+        return make_error('pr_list', 'Failed to list PRs', stderr.strip())
 
     try:
         prs = json.loads(stdout)
     except json.JSONDecodeError:
-        return output_error('pr_list', 'Failed to parse gh output', stdout[:100])
+        return make_error('pr_list', 'Failed to parse gh output', stdout[:100])
 
     pr_list = [
         {
@@ -295,20 +282,14 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
         }
         for pr in prs
     ]
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_list',
-                'total': len(prs),
-                'state_filter': args.state,
-                'head_filter': args.head or '',
-                'prs': pr_list,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_list',
+        'total': len(prs),
+        'state_filter': args.state,
+        'head_filter': args.head or '',
+        'prs': pr_list,
+    }
 
 
 cmd_pr_reply = make_pr_number_handler(
@@ -337,90 +318,77 @@ mutation($prId: ID!, $body: String!, $inReplyTo: ID!) {
 """
 
 
-def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
+def cmd_pr_resolve_thread(args: argparse.Namespace) -> dict:
     """Handle 'pr resolve-thread' subcommand - resolve a review thread."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_resolve_thread', err)
+        return make_error('pr_resolve_thread', err)
 
     returncode, data, err = run_graphql(RESOLVE_THREAD_MUTATION, {'threadId': args.thread_id})
     if returncode != 0 or data is None:
-        return output_error('pr_resolve_thread', f'Failed to resolve thread: {err}')
+        return make_error('pr_resolve_thread', f'Failed to resolve thread: {err}')
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_resolve_thread',
-                'thread_id': args.thread_id,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_resolve_thread',
+        'thread_id': args.thread_id,
+    }
 
 
-def cmd_pr_thread_reply(args: argparse.Namespace) -> int:
+def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     """Handle 'pr thread-reply' subcommand - reply to a specific review thread."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_thread_reply', err)
+        return make_error('pr_thread_reply', err)
 
     # Get PR node ID (GraphQL requires it)
     returncode, stdout, stderr = run_gh(['pr', 'view', str(args.pr_number), '--json', 'id'])
     if returncode != 0:
-        return output_error('pr_thread_reply', f'Failed to get PR {args.pr_number}', stderr.strip())
+        return make_error('pr_thread_reply', f'Failed to get PR {args.pr_number}', stderr.strip())
 
     try:
         pr_data = json.loads(stdout)
         pr_id = pr_data.get('id', '')
     except json.JSONDecodeError:
-        return output_error('pr_thread_reply', 'Failed to parse PR data', stdout[:100])
+        return make_error('pr_thread_reply', 'Failed to parse PR data', stdout[:100])
 
     if not pr_id:
-        return output_error('pr_thread_reply', 'Could not determine PR node ID')
+        return make_error('pr_thread_reply', 'Could not determine PR node ID')
 
     returncode, data, err = run_graphql(
         THREAD_REPLY_MUTATION,
         {'prId': pr_id, 'body': args.body, 'inReplyTo': args.thread_id},
     )
     if returncode != 0 or data is None:
-        return output_error('pr_thread_reply', f'Failed to reply to thread: {err}')
+        return make_error('pr_thread_reply', f'Failed to reply to thread: {err}')
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_thread_reply',
-                'pr_number': args.pr_number,
-                'thread_id': args.thread_id,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_thread_reply',
+        'pr_number': args.pr_number,
+        'thread_id': args.thread_id,
+    }
 
 
-def cmd_pr_reviews(args: argparse.Namespace) -> int:
+def cmd_pr_reviews(args: argparse.Namespace) -> dict:
     """Handle 'pr reviews' subcommand."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_reviews', err)
+        return make_error('pr_reviews', err)
 
     # Get reviews
     returncode, stdout, stderr = run_gh(['pr', 'view', str(args.pr_number), '--json', 'reviews'])
     if returncode != 0:
-        return output_error('pr_reviews', f'Failed to get reviews for PR {args.pr_number}', stderr.strip())
+        return make_error('pr_reviews', f'Failed to get reviews for PR {args.pr_number}', stderr.strip())
 
     # Parse JSON
     try:
         data = json.loads(stdout)
         reviews = data.get('reviews', [])
     except json.JSONDecodeError:
-        return output_error('pr_reviews', 'Failed to parse gh output', stdout[:100])
+        return make_error('pr_reviews', 'Failed to parse gh output', stdout[:100])
 
-    # Output TOON
     review_list = [
         {
             'user': r.get('author', {}).get('login', 'unknown'),
@@ -429,19 +397,13 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
         }
         for r in reviews
     ]
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_reviews',
-                'pr_number': args.pr_number,
-                'review_count': len(reviews),
-                'reviews': review_list,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_reviews',
+        'pr_number': args.pr_number,
+        'review_count': len(reviews),
+        'reviews': review_list,
+    }
 
 
 # GraphQL query for PR review threads (inline code comments)
@@ -553,22 +515,16 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     }
 
 
-def cmd_pr_comments(args: argparse.Namespace) -> int:
+def cmd_pr_comments(args: argparse.Namespace) -> dict:
     """Handle 'pr comments' subcommand - fetch inline code review comments."""
-    result = fetch_pr_comments_data(args.pr_number, args.unresolved_only)
-    if result.get('status') != 'success':
-        return output_error(
-            result.get('operation', 'pr_comments'), result.get('error', 'Unknown error'), result.get('context', '')
-        )
-    print(serialize_toon(result, table_separator='\t'))
-    return 0
+    return fetch_pr_comments_data(args.pr_number, args.unresolved_only)
 
 
-def cmd_pr_merge(args: argparse.Namespace) -> int:
+def cmd_pr_merge(args: argparse.Namespace) -> dict:
     """Handle 'pr merge' subcommand - merge a pull request."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_merge', err)
+        return make_error('pr_merge', err)
 
     gh_args = ['pr', 'merge', str(args.pr_number), f'--{args.strategy}']
     if args.delete_branch:
@@ -576,46 +532,34 @@ def cmd_pr_merge(args: argparse.Namespace) -> int:
 
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return output_error('pr_merge', f'Failed to merge PR {args.pr_number}', stderr.strip())
+        return make_error('pr_merge', f'Failed to merge PR {args.pr_number}', stderr.strip())
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_merge',
-                'pr_number': args.pr_number,
-                'strategy': args.strategy,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_merge',
+        'pr_number': args.pr_number,
+        'strategy': args.strategy,
+    }
 
 
-def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
+def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     """Handle 'pr auto-merge' subcommand - enable auto-merge on a pull request."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_auto_merge', err)
+        return make_error('pr_auto_merge', err)
 
     gh_args = ['pr', 'merge', str(args.pr_number), '--auto', f'--{args.strategy}']
 
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return output_error('pr_auto_merge', f'Failed to enable auto-merge for PR {args.pr_number}', stderr.strip())
+        return make_error('pr_auto_merge', f'Failed to enable auto-merge for PR {args.pr_number}', stderr.strip())
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_auto_merge',
-                'pr_number': args.pr_number,
-                'enabled': True,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_auto_merge',
+        'pr_number': args.pr_number,
+        'enabled': True,
+    }
 
 
 cmd_pr_close = make_pr_number_handler(
@@ -634,10 +578,10 @@ cmd_pr_ready = make_pr_number_handler(
 )
 
 
-def cmd_pr_edit(args: argparse.Namespace) -> int:
+def cmd_pr_edit(args: argparse.Namespace) -> dict:
     """Handle 'pr edit' subcommand - edit PR title and/or body."""
     if not args.title and not args.body:
-        return output_error('pr_edit', 'At least one of --title or --body must be provided')
+        return make_error('pr_edit', 'At least one of --title or --body must be provided')
 
     gh_args = ['pr', 'edit', str(args.pr_number)]
     if args.title:
@@ -645,7 +589,7 @@ def cmd_pr_edit(args: argparse.Namespace) -> int:
     if args.body:
         gh_args.extend(['--body', args.body])
 
-    result: int = make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
+    result: dict = make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
     return result
 
 
@@ -679,25 +623,25 @@ def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
     return check_dicts, total_elapsed
 
 
-def cmd_ci_status(args: argparse.Namespace) -> int:
+def cmd_ci_status(args: argparse.Namespace) -> dict:
     """Handle 'ci status' subcommand."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('ci_status', err)
+        return make_error('ci_status', err)
 
     # Get checks (bucket field contains pass/fail result)
     returncode, stdout, stderr = run_gh(
         ['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
     )
     if returncode != 0:
-        return output_error('ci_status', f'Failed to get CI status for PR {args.pr_number}', stderr.strip())
+        return make_error('ci_status', f'Failed to get CI status for PR {args.pr_number}', stderr.strip())
 
     # Parse JSON
     try:
         checks = json.loads(stdout)
     except json.JSONDecodeError:
-        return output_error('ci_status', 'Failed to parse gh output', stdout[:100])
+        return make_error('ci_status', 'Failed to parse gh output', stdout[:100])
 
     # Determine overall status (bucket: pass, fail, pending, skipped)
     if not checks:
@@ -714,29 +658,22 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
     # Format checks table
     check_dicts, total_elapsed = format_checks_toon(checks)
 
-    # Output TOON
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'ci_status',
-                'pr_number': args.pr_number,
-                'overall_status': overall,
-                'check_count': len(checks),
-                'elapsed_sec': total_elapsed,
-                'checks': check_dicts,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'ci_status',
+        'pr_number': args.pr_number,
+        'overall_status': overall,
+        'check_count': len(checks),
+        'elapsed_sec': total_elapsed,
+        'checks': check_dicts,
+    }
 
 
-def cmd_ci_wait(args: argparse.Namespace) -> int:
+def cmd_ci_wait(args: argparse.Namespace) -> dict:
     """Handle 'ci wait' subcommand."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('ci_wait', err)
+        return make_error('ci_wait', err)
 
     def check_fn() -> tuple[bool, dict]:
         returncode, stdout, stderr = run_gh(
@@ -757,7 +694,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
     result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
     if 'error' in result:
-        return output_error('ci_wait', result['error'], result['last_data'].get('context', ''))
+        return make_error('ci_wait', result['error'], result['last_data'].get('context', ''))
 
     checks = result['last_data'].get('checks', [])
     check_dicts, total_elapsed = format_checks_toon(checks)
@@ -774,8 +711,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
         if check_dicts:
             error_data['elapsed_sec'] = total_elapsed
             error_data['checks'] = check_dicts
-        print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
-        return 1
+        return error_data
 
     # Determine final status
     if all(c.get('bucket') in ('pass', 'skipped') for c in checks):
@@ -785,22 +721,16 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
     else:
         final_status = 'mixed'
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'ci_wait',
-                'pr_number': args.pr_number,
-                'final_status': final_status,
-                'duration_sec': result['duration_sec'],
-                'polls': result['polls'],
-                'elapsed_sec': total_elapsed,
-                'checks': check_dicts,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'ci_wait',
+        'pr_number': args.pr_number,
+        'final_status': final_status,
+        'duration_sec': result['duration_sec'],
+        'polls': result['polls'],
+        'elapsed_sec': total_elapsed,
+        'checks': check_dicts,
+    }
 
 
 cmd_ci_rerun = make_simple_handler(
@@ -812,39 +742,33 @@ cmd_ci_rerun = make_simple_handler(
 )
 
 
-def cmd_ci_logs(args: argparse.Namespace) -> int:
+def cmd_ci_logs(args: argparse.Namespace) -> dict:
     """Handle 'ci logs' subcommand - get failed run logs."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('ci_logs', err)
+        return make_error('ci_logs', err)
 
     returncode, stdout, stderr = run_gh(['run', 'view', str(args.run_id), '--log-failed'], timeout=120)
     if returncode != 0:
-        return output_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
+        return make_error('ci_logs', f'Failed to get logs for run {args.run_id}', stderr.strip())
 
     content, line_count = truncate_log_content(stdout)
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'ci_logs',
-                'run_id': args.run_id,
-                'log_lines': line_count,
-                'content': content,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'ci_logs',
+        'run_id': args.run_id,
+        'log_lines': line_count,
+        'content': content,
+    }
 
 
-def cmd_issue_create(args: argparse.Namespace) -> int:
+def cmd_issue_create(args: argparse.Namespace) -> dict:
     """Handle 'issue create' subcommand."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('issue_create', err)
+        return make_error('issue_create', err)
 
     # Build command
     gh_args = ['issue', 'create', '--title', args.title, '--body', args.body]
@@ -854,7 +778,7 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
     # Execute
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return output_error('issue_create', 'Failed to create issue', stderr.strip())
+        return make_error('issue_create', 'Failed to create issue', stderr.strip())
 
     # Parse the URL from output
     issue_url = stdout.strip()
@@ -867,27 +791,20 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
         except (IndexError, ValueError):
             pass
 
-    # Output TOON
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'issue_create',
-                'issue_number': issue_number,
-                'issue_url': issue_url,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'issue_create',
+        'issue_number': issue_number,
+        'issue_url': issue_url,
+    }
 
 
-def cmd_issue_view(args: argparse.Namespace) -> int:
+def cmd_issue_view(args: argparse.Namespace) -> dict:
     """Handle 'issue view' subcommand."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('issue_view', err)
+        return make_error('issue_view', err)
 
     # Get issue details - request all relevant fields
     gh_args = [
@@ -900,13 +817,13 @@ def cmd_issue_view(args: argparse.Namespace) -> int:
 
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return output_error('issue_view', f'Failed to view issue {args.issue}', stderr.strip())
+        return make_error('issue_view', f'Failed to view issue {args.issue}', stderr.strip())
 
     # Parse JSON
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return output_error('issue_view', 'Failed to parse gh output', stdout[:100])
+        return make_error('issue_view', 'Failed to parse gh output', stdout[:100])
 
     # Build output dict conditionally
     result = {
@@ -937,8 +854,7 @@ def cmd_issue_view(args: argparse.Namespace) -> int:
     if milestone:
         result['milestone'] = milestone.get('title', '')
 
-    print(serialize_toon(result, table_separator='\t'))
-    return 0
+    return result
 
 
 cmd_issue_close = make_simple_handler(
@@ -991,7 +907,10 @@ def main() -> int:
         ('issue', 'close'): cmd_issue_close,
     }
 
-    return dispatch(args, handlers, parser)
+    result = dispatch(args, handlers, parser)
+    is_error = result.get('status') != 'success'
+    print(serialize_toon(result, table_separator='\t'), file=sys.stderr if is_error else sys.stdout)
+    return 1 if is_error else 0
 
 
 if __name__ == '__main__':

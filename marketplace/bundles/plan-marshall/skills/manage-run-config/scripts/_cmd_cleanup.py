@@ -15,7 +15,7 @@ from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
 from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES, DIR_TEMP, FILE_MARSHAL  # type: ignore[import-not-found]
-from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
+from file_ops import get_base_dir  # type: ignore[import-not-found]
 
 # Configuration - delegate to file_ops for consistent path resolution
 PLAN_BASE_DIR = get_base_dir()
@@ -47,20 +47,15 @@ def get_retention_settings() -> dict:
         RuntimeError: If marshal.json doesn't exist or has no retention config
     """
     if not MARSHAL_JSON.exists():
-        output_toon({'status': 'error', 'error': 'marshal.json not found. Run command /marshall-steward first'})
-        raise RuntimeError('marshal.json not found')
+        raise RuntimeError('marshal.json not found. Run command /marshall-steward first')
 
     try:
         config = json.loads(MARSHAL_JSON.read_text(encoding='utf-8'))
     except json.JSONDecodeError as e:
-        output_toon({'status': 'error', 'error': f'Invalid marshal.json: {e}'})
         raise RuntimeError(f'Invalid marshal.json: {e}') from e
 
     if 'system' not in config or 'retention' not in config['system']:
-        output_toon(
-            {'status': 'error', 'error': 'system.retention not configured. Run command /marshall-steward first'}
-        )
-        raise RuntimeError('system.retention not configured')
+        raise RuntimeError('system.retention not configured. Run command /marshall-steward first')
 
     retention: dict = config['system']['retention']
     return retention
@@ -309,7 +304,7 @@ def get_status() -> dict:
     }
 
 
-def cmd_clean(args) -> int:
+def cmd_clean(args) -> dict:
     """Execute cleanup based on retention settings."""
     retention = get_retention_settings()
     target = args.target
@@ -345,7 +340,7 @@ def cmd_clean(args) -> int:
     status = 'dry_run' if dry_run else 'success'
     total_bytes = stats.temp_bytes + stats.logs_bytes + stats.archived_plans_bytes + stats.memory_bytes
 
-    result = {
+    return {
         'status': status,
         'target': target,
         'temp_files': stats.temp_files,
@@ -359,15 +354,12 @@ def cmd_clean(args) -> int:
         'total_bytes_freed': total_bytes,
     }
 
-    output_toon(result)
-    return 0
 
-
-def cmd_status(args) -> int:
+def cmd_status(args) -> dict:
     """Show cleanup status."""
     status = get_status()
 
-    result = {
+    return {
         'status': 'ok',
         'retention_logs_days': status['retention']['logs_days'],
         'retention_archived_plans_days': status['retention']['archived_plans_days'],
@@ -385,6 +377,3 @@ def cmd_status(args) -> int:
         'memory_old': status['memory']['old'],
         'memory_old_bytes': status['memory']['old_bytes'],
     }
-
-    output_toon(result)
-    return 0

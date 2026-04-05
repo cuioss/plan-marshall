@@ -5,19 +5,16 @@ Handles: suggest-domains
 Thin orchestrator that delegates domain applicability to extension.py implementations.
 """
 
-import sys  # noqa: I001
 from typing import Any
 
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     get_module,
-    handle_module_not_found,
+    handle_module_not_found_result,
     load_derived_data,
-    require_derived_data,
+    require_derived_data_result,
 )
-from file_ops import print_toon_table  # type: ignore[import-not-found]
-
 
 # =============================================================================
 # API Functions
@@ -35,20 +32,7 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
         project_dir: Project directory path
 
     Returns:
-        Dict with status, module, and list of applicable domains:
-        {
-            'status': 'success',
-            'module': str,
-            'domains': [
-                {
-                    'domain': str,
-                    'confidence': str,
-                    'signals': list[str],
-                    'additive_to': str | None,
-                    'skill_count': int,
-                }
-            ]
-        }
+        Dict with status, module, and list of applicable domains
 
     Raises:
         ModuleNotFoundInProjectError: If module not found
@@ -147,34 +131,13 @@ def suggest_domains(module_name: str, project_dir: str = '.') -> dict[str, Any]:
 # =============================================================================
 
 
-def cmd_suggest_domains(args) -> int:
+def cmd_suggest_domains(args) -> dict:
     """CLI handler for suggest-domains command."""
     try:
-        result = suggest_domains(args.module, args.project_dir)
-        print(f'status\t{result["status"]}')
-        print(f'module\t{result["module"]}')
-
-        domains = result['domains']
-        items = []
-        for d in domains:
-            items.append(
-                {
-                    'domain': d['domain'],
-                    'confidence': d['confidence'],
-                    'signals': ','.join(d.get('signals', [])),
-                    'additive_to': d.get('additive_to') or '',
-                    'skill_count': str(d.get('skill_count', 0)),
-                }
-            )
-
-        print_toon_table('domains', items, ['domain', 'confidence', 'signals', 'additive_to', 'skill_count'])
-        return 0
+        return suggest_domains(args.module, args.project_dir)
     except ModuleNotFoundInProjectError:
-        return handle_module_not_found(args.module, args.project_dir)
+        return handle_module_not_found_result(args.module, args.project_dir)
     except DataNotFoundError:
-        require_derived_data(args.project_dir)  # prints error and exits
-        return 1
+        return require_derived_data_result(args.project_dir)
     except Exception as e:
-        print('status\terror', file=sys.stderr)
-        print(f'error\t{e}', file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': str(e)}

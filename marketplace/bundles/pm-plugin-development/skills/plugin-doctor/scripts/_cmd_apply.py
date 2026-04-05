@@ -405,29 +405,28 @@ def apply_single_fix(fix: dict, bundle_dir: Path, templates: dict) -> dict:
         }
 
 
-def cmd_apply(args) -> int:
+def cmd_apply(args) -> dict:
     """Apply a single fix to a component file."""
     data, error = read_json_input(args.fix)
 
     if error:
-        result = {'success': False, 'error': error}
-        print(json.dumps(result, indent=2))
-        return 1
+        return {'status': 'error', 'error': 'invalid_input', 'message': error, 'success': False}
 
     bundle_path = Path(args.bundle_dir)
     if not bundle_path.exists():
-        result = {'success': False, 'error': f'Bundle directory not found: {args.bundle_dir}'}
-        print(json.dumps(result, indent=2))
-        return 1
+        return {
+            'status': 'error',
+            'error': 'not_found',
+            'message': f'Bundle directory not found: {args.bundle_dir}',
+            'success': False,
+        }
 
     script_dir = Path(__file__).parent
     templates = load_templates(script_dir)
 
     if data is None:
-        result = {'success': False, 'error': 'No fix data provided'}
-        print(json.dumps(result, indent=2))
-        return 1
+        return {'status': 'error', 'error': 'no_data', 'message': 'No fix data provided', 'success': False}
 
     result = apply_single_fix(data, bundle_path, templates)
-    print(json.dumps(result, indent=2))
-    return 0 if result.get('success') else 1
+    result['status'] = 'success' if result.get('success') else 'error'
+    return result

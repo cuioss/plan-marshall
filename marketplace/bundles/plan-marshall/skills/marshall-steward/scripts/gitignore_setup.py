@@ -159,17 +159,14 @@ def main() -> int:
     project_root = Path(args.project_root)
 
     if not project_root.exists():
-        print(
-            serialize_toon({'status': 'error', 'error': 'project_root_not_found', 'path': str(project_root)}),
-            file=sys.stderr,
-        )
-        return 1
+        result = {'status': 'error', 'error': 'project_root_not_found', 'path': str(project_root)}
+    else:
+        result = setup_gitignore(project_root, args.dry_run)
+        result.setdefault('status', 'success')
 
-    result = setup_gitignore(project_root, args.dry_run)
-
-    print(serialize_toon(result))
-
-    return 0
+    is_error = result.get('status') == 'error'
+    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
+    return 1 if is_error else 0
 
 
 if __name__ == '__main__':

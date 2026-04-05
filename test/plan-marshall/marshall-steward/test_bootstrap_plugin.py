@@ -25,7 +25,8 @@ def test_get_root_detects_plugin():
     if not cache_dir.exists():
         # Skip gracefully if no plugin cache installed
         result = run_script(SCRIPT_PATH, 'get-root')
-        assert not result.success, 'Expected failure when no plugin cache exists'
+        assert result.success, 'Expected exit 0 with error status in TOON'
+        assert 'status: error' in result.stdout
         assert 'not found' in result.stdout.lower() or 'error' in result.stdout.lower()
         return
 
@@ -38,19 +39,19 @@ def test_get_root_with_refresh():
     """Test get-root --refresh forces re-detection."""
     with PlanContext(plan_id='bootstrap-refresh'):
         result = run_script(SCRIPT_PATH, 'get-root', '--refresh')
-        # May succeed or fail depending on whether plugin cache exists
+        # May succeed or return error in TOON - both exit 0
         # The important thing is it does not crash
-        assert result.returncode in (0, 1)
+        assert result.returncode == 0
 
 
 def test_get_root_caches_result():
     """Test that get-root caches the result in marshall-state.toon."""
     with PlanContext(plan_id='bootstrap-cache') as ctx:
-        # Run get-root (may succeed or fail based on plugin cache)
         result = run_script(SCRIPT_PATH, 'get-root')
+        assert result.returncode == 0
 
-        if result.success:
-            # If it succeeded, verify the state file was created
+        # Only verify cache when operation found the plugin root
+        if 'status: success' in result.stdout:
             state_file = ctx.fixture_dir / 'marshall-state.toon'
             assert state_file.exists(), 'State file should be created after successful get-root'
             content = state_file.read_text()
@@ -73,9 +74,9 @@ def test_resolve_without_plugin_root():
         result = run_script(
             SCRIPT_PATH, 'resolve', '--bundle', 'plan-marshall', '--path', 'skills/manage-tasks/SKILL.md'
         )
-        # This will fail if no plugin cache, or succeed if cache exists
-        assert result.returncode in (0, 1)
-        if not result.success:
+        # Expected errors now exit 0 with status: error in TOON
+        assert result.returncode == 0
+        if 'status: error' in result.stdout:
             assert 'error' in result.stdout.lower() or 'not found' in result.stdout.lower()
 
 
@@ -98,8 +99,8 @@ def test_resolve_with_existing_cache():
             '--path',
             'skills/manage-tasks/SKILL.md',
         )
-        # May not find the exact path but should not crash
-        assert result.returncode in (0, 1)
+        # Always exit 0 — check TOON status for operation result
+        assert result.returncode == 0
 
 
 # =============================================================================

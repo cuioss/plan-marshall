@@ -69,7 +69,7 @@ def test_references_valid_file():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'references', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data is not None, 'Should return valid JSON'
 
         Path(f.name).unlink()
@@ -125,7 +125,7 @@ def test_inventory_real_skill():
         return  # Skip if not found
 
     result = run_script(SCRIPT_PATH, 'inventory', '--skill-path', str(skill_dir))
-    data = result.json()
+    data = result.toon()
     assert data is not None, 'Should return valid JSON'
     assert 'files' in data or 'inventory' in data or 'skill_path' in data, 'Should have inventory data'
 

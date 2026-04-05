@@ -22,13 +22,11 @@ from file_ops import (  # type: ignore[import-not-found]
     base_path,
     now_utc_iso,
     output_toon,
-    output_toon_error,
     parse_duration,  # type: ignore[import-not-found]
     read_json,
     safe_main,
     write_json,
 )
-from file_ops import output_success as _output_success
 from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
 
 # Suppress deprecation warnings in output
@@ -99,18 +97,17 @@ def get_file_info(file_path: Path) -> dict:
     }
 
 
-def output_success(operation: str, **kwargs) -> None:
-    """Output success result as TOON to stdout."""
-    _output_success(operation, **kwargs)
+def build_success(operation: str, **kwargs) -> dict:
+    """Build success result dict."""
+    return {'status': 'success', 'success': True, 'operation': operation, **kwargs}
 
 
-def output_error(operation: str, error: str) -> int:
-    """Output error result as TOON and return 1."""
-    output_toon_error(operation, error)
-    return 1
+def build_error(operation: str, error: str) -> dict:
+    """Build error result dict."""
+    return {'status': 'error', 'error': operation, 'message': error}
 
 
-def cmd_save(args) -> int:
+def cmd_save(args) -> dict:
     """Save content to memory file."""
     try:
         content = json.loads(args.content)
@@ -127,35 +124,29 @@ def cmd_save(args) -> int:
 
         write_memory_file(file_path, data)
 
-        output_success('save', path=str(file_path), category=args.category, identifier=identifier)
-        return 0
+        return build_success('save', path=str(file_path), category=args.category, identifier=identifier)
     except json.JSONDecodeError as e:
-        output_error('save', f'Invalid JSON content: {e}')
-        return 1
+        return build_error('save', f'Invalid JSON content: {e}')
     except Exception as e:
-        output_error('save', str(e))
-        return 1
+        return build_error('save', str(e))
 
 
-def cmd_load(args) -> int:
+def cmd_load(args) -> dict:
     """Load content from memory file."""
     try:
         file_path = get_memory_path(args.category, args.identifier)
 
         if not file_path.exists():
-            output_error('load', f'File not found: {file_path}')
-            return 1
+            return build_error('load', f'File not found: {file_path}')
 
         data = read_memory_file(file_path)
 
-        output_success('load', path=str(file_path), meta=data.get('meta', {}), content=data.get('content', {}))
-        return 0
+        return build_success('load', path=str(file_path), meta=data.get('meta', {}), content=data.get('content', {}))
     except Exception as e:
-        output_error('load', str(e))
-        return 1
+        return build_error('load', str(e))
 
 
-def cmd_list(args) -> int:
+def cmd_list(args) -> dict:
     """List memory files in category."""
     try:
         files = []
@@ -192,14 +183,12 @@ def cmd_list(args) -> int:
         # Sort by created date, newest first
         files.sort(key=lambda x: x.get('created', ''), reverse=True)
 
-        output_success('list', category=args.category, count=len(files), files=files)
-        return 0
+        return build_success('list', category=args.category, count=len(files), files=files)
     except Exception as e:
-        output_error('list', str(e))
-        return 1
+        return build_error('list', str(e))
 
 
-def cmd_query(args) -> int:
+def cmd_query(args) -> dict:
     """Find memory files matching pattern."""
     try:
         # Convert glob pattern to regex
@@ -222,14 +211,12 @@ def cmd_query(args) -> int:
 
         files.sort(key=lambda x: x.get('created', ''), reverse=True)
 
-        output_success('query', pattern=args.pattern, count=len(files), files=files)
-        return 0
+        return build_success('query', pattern=args.pattern, count=len(files), files=files)
     except Exception as e:
-        output_error('query', str(e))
-        return 1
+        return build_error('query', str(e))
 
 
-def cmd_cleanup(args) -> int:
+def cmd_cleanup(args) -> dict:
     """Remove old memory files based on age."""
     try:
         duration = parse_duration(args.older_than)
@@ -263,19 +250,15 @@ def cmd_cleanup(args) -> int:
                         removed.append(str(file_path))
 
         status = 'dry_run' if dry_run else 'success'
-        output_toon(
-            {
-                'status': status,
-                'operation': 'cleanup',
-                'older_than': args.older_than,
-                'removed_count': len(removed),
-                'removed': removed,
-            }
-        )
-        return 0
+        return {
+            'status': status,
+            'operation': 'cleanup',
+            'older_than': args.older_than,
+            'removed_count': len(removed),
+            'removed': removed,
+        }
     except Exception as e:
-        output_error('cleanup', str(e))
-        return 1
+        return build_error('cleanup', str(e))
 
 
 def validate_memory_format(data: dict) -> list[dict]:
@@ -328,20 +311,19 @@ def validate_memory_format(data: dict) -> list[dict]:
     return checks
 
 
-def cmd_validate(args) -> int:
+def cmd_validate(args) -> dict:
     """Validate memory file format and structure."""
     try:
         file_path = Path(args.file)
 
         if not file_path.exists():
-            output_error('validate', f'File not found: {file_path}')
-            return 1
+            return build_error('validate', f'File not found: {file_path}')
 
         # Parse JSON
         try:
             data = read_memory_file(file_path)
         except json.JSONDecodeError as e:
-            result = {
+            return {
                 'status': 'success',
                 'success': True,
                 'valid': False,
@@ -349,8 +331,6 @@ def cmd_validate(args) -> int:
                 'format': 'memory',
                 'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
             }
-            output_toon(result)
-            return 0
 
         # Add JSON syntax check
         checks = [{'check': 'json_syntax', 'passed': True}]
@@ -361,7 +341,7 @@ def cmd_validate(args) -> int:
         # Determine overall validity
         valid = all(c.get('passed', True) for c in checks)
 
-        result = {
+        return {
             'status': 'success',
             'success': True,
             'valid': valid,
@@ -369,11 +349,8 @@ def cmd_validate(args) -> int:
             'format': 'memory',
             'checks': checks,
         }
-        output_toon(result)
-        return 0
     except Exception as e:
-        output_error('validate', str(e))
-        return 1
+        return build_error('validate', str(e))
 
 
 @safe_main
@@ -453,7 +430,9 @@ Examples:
         parser.print_help()
         return 1
 
-    return args.func(args) or 0
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':

@@ -41,7 +41,6 @@ Examples:
 """
 
 import argparse
-import sys
 
 # Direct imports from same directory (local imports)
 from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES  # type: ignore[import-not-found]
@@ -53,7 +52,7 @@ VALID_TYPES = VALID_LOG_TYPES
 VALID_LEVELS = VALID_LOG_LEVELS
 
 
-def handle_read(args: argparse.Namespace) -> None:
+def handle_read(args: argparse.Namespace) -> dict:
     """Handle read subcommand."""
     plan_id = args.plan_id
     log_type = args.type
@@ -100,20 +99,16 @@ def handle_read(args: argparse.Namespace) -> None:
                 'raw_content': '',
             }
 
-    # Output
-    if result.get('status') == 'error':
-        output_toon(result)
-        sys.exit(1)
-    else:
-        output_toon(result)
+    return result
 
 
-def handle_separator(args: argparse.Namespace) -> None:
+def handle_separator(args: argparse.Namespace) -> dict | None:
     """Handle separator subcommand."""
     log_separator(args.type, args.plan_id)
+    return None
 
 
-def handle_write(args: argparse.Namespace) -> int | None:
+def handle_write(args: argparse.Namespace) -> dict | None:
     """Handle write subcommand."""
     log_type = args.log_type
     plan_id = args.plan_id
@@ -124,8 +119,7 @@ def handle_write(args: argparse.Namespace) -> int | None:
     try:
         log_entry(log_type, plan_id, level, message)
     except Exception as e:
-        output_toon({'status': 'error', 'error': 'write_failed', 'message': str(e)})
-        return 1
+        return {'status': 'error', 'error': 'write_failed', 'message': str(e)}
     return None
 
 
@@ -166,12 +160,15 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    result: dict | None = None
     if args.command == 'read':
-        handle_read(args)
+        result = handle_read(args)
     elif args.command == 'separator':
-        handle_separator(args)
+        result = handle_separator(args)
     else:
-        handle_write(args)
+        result = handle_write(args)
+    if result is not None:
+        output_toon(result)
     return 0
 
 

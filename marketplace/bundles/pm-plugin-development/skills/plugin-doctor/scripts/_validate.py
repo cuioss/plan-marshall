@@ -19,15 +19,16 @@ Usage:
 """
 
 import argparse
-import sys
 
 from _cmd_cross_file import cmd_cross_file
 from _cmd_extension import cmd_extension
 from _cmd_inventory import cmd_inventory
 from _cmd_references import cmd_references
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 
-def main():
+@safe_main
+def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description='Plugin validation and inventory tools',
@@ -86,8 +87,10 @@ Examples:
         parser.print_help()
         return 1
 
-    return args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

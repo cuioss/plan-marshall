@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Inventory subcommand for scanning skill directories."""
 
-import json
-import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -120,24 +118,22 @@ def scan_directory(skill_path: Path, include_hidden: bool) -> dict:
     }
 
 
-def cmd_inventory(args) -> int:
+def cmd_inventory(args) -> dict:
     """Scan skill directory and return structured inventory."""
     skill_path = Path(args.skill_path)
 
     if not skill_path.exists():
-        print(json.dumps({'error': f'Directory not found: {args.skill_path}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_found', 'message': f'Directory not found: {args.skill_path}'}
 
     if not skill_path.is_dir():
-        print(json.dumps({'error': f'Not a directory: {args.skill_path}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_directory', 'message': f'Not a directory: {args.skill_path}'}
 
     skill_path = skill_path.resolve()
     result = scan_directory(skill_path, args.include_hidden)
 
     if 'error' in result:
-        print(json.dumps(result), file=sys.stderr)
-        return 1
+        result['status'] = 'error'
+        return result
 
-    print(json.dumps(result, indent=2))
-    return 0
+    result['status'] = 'success'
+    return result

@@ -200,7 +200,7 @@ Description
 """)
 
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-missing-overview')
-        assert not result.success, 'Expected failure for missing Overview'
+        assert result.success, 'Script should exit 0 even for validation errors'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'validation_failed'
@@ -226,7 +226,7 @@ Some text but no ### N. Title items
 """)
 
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-deliverables')
-        assert not result.success, 'Expected failure for no numbered deliverables'
+        assert result.success, 'Script should exit 0 even for validation errors'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert any('numbered deliverables' in issue for issue in data['issues'])
@@ -236,7 +236,7 @@ def test_validate_document_not_found():
     """Test validation fails when document doesn't exist."""
     with PlanContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'no-solution')
-        assert not result.success, 'Expected failure for missing document'
+        assert result.success, 'Script should exit 0 even for document not found'
         data = parse_toon(result.stdout)
         assert data['error'] == 'document_not_found'
 
@@ -275,7 +275,7 @@ Just summary, no deliverables section
 """)
 
         result = run_script(SCRIPT_PATH, 'list-deliverables', '--plan-id', 'solution-empty')
-        assert not result.success, 'Expected failure for missing Deliverables section'
+        assert result.success, 'Script should exit 0 even for missing section'
         data = parse_toon(result.stdout)
         assert data['error'] == 'section_not_found'
 
@@ -319,7 +319,7 @@ def test_read_not_found():
     """Test read fails when document doesn't exist."""
     with PlanContext(plan_id='no-solution'):
         result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'no-solution')
-        assert not result.success, 'Expected failure for missing document'
+        assert result.success, 'Script should exit 0 even for document not found'
         data = parse_toon(result.stdout)
         assert data['error'] == 'document_not_found'
 
@@ -380,7 +380,7 @@ def test_read_deliverable_not_found():
             '--deliverable-number',
             '999',
         )
-        assert not result.success
+        assert result.success, 'Script should exit 0 even for deliverable not found'
         data = parse_toon(result.stdout)
         assert data['error'] == 'deliverable_not_found'
         assert 'available' in data  # Should list available deliverable numbers
@@ -476,7 +476,7 @@ def test_write_validates_existing_file():
         (ctx.plan_dir / 'solution_outline.md').write_text('# Just a title\n\nNo required sections here.')
 
         result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-invalid')
-        assert not result.success, 'Expected failure for invalid content'
+        assert result.success, 'Script should exit 0 even for validation errors'
         data = parse_toon(result.stdout)
         assert data['error'] == 'validation_failed'
 
@@ -485,7 +485,7 @@ def test_write_file_not_found():
     """Test that write fails when file not on disk."""
     with PlanContext(plan_id='solution-missing'):
         result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-missing')
-        assert not result.success, 'Expected failure when file not on disk'
+        assert result.success, 'Script should exit 0 even for document not found'
         data = parse_toon(result.stdout)
         assert data['error'] == 'document_not_found'
 
@@ -517,7 +517,7 @@ def test_update_nonexistent():
     """Test that update fails when solution outline does not exist."""
     with PlanContext(plan_id='solution-no-update'):
         result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-no-update')
-        assert not result.success, 'Expected failure when updating non-existent outline'
+        assert result.success, 'Script should exit 0 even for document not found'
         data = parse_toon(result.stdout)
         assert data['error'] == 'document_not_found'
 

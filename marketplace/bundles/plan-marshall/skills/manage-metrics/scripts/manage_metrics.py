@@ -120,19 +120,16 @@ def read_metrics_raw(plan_id: str) -> dict:
     return data
 
 
-def cmd_start_phase(args: argparse.Namespace) -> int:
+def cmd_start_phase(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     phase = args.phase
 
     if phase not in PHASE_NAMES:
-        output_toon(
-            {
-                'status': 'error',
-                'error': 'invalid_phase',
-                'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+        }
 
     data = read_metrics_raw(plan_id)
     now = now_utc_iso()
@@ -145,24 +142,20 @@ def cmd_start_phase(args: argparse.Namespace) -> int:
 
     write_metrics(plan_id, data)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': plan_id,
-            'phase': phase,
-            'start_time': now,
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'start_time': now,
+    }
 
 
-def cmd_end_phase(args: argparse.Namespace) -> int:
+def cmd_end_phase(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     phase = args.phase
 
     if phase not in PHASE_NAMES:
-        output_toon({'status': 'error', 'error': 'invalid_phase', 'message': f'Invalid phase: {phase}'})
-        return 1
+        return {'status': 'error', 'error': 'invalid_phase', 'message': f'Invalid phase: {phase}'}
 
     data = read_metrics_raw(plan_id)
     now = now_utc_iso()
@@ -210,19 +203,17 @@ def cmd_end_phase(args: argparse.Namespace) -> int:
     if args.total_tokens is not None:
         result['total_tokens'] = args.total_tokens
 
-    output_toon(result)
-    return 0
+    return result
 
 
-def cmd_generate(args: argparse.Namespace) -> int:
+def cmd_generate(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
 
     data = read_metrics_raw(plan_id)
     phases = data.get('phases', {})
 
     if not phases:
-        output_toon({'status': 'error', 'error': 'no_data', 'message': 'No metrics data found'})
-        return 1
+        return {'status': 'error', 'error': 'no_data', 'message': 'No metrics data found'}
 
     # Build metrics.md content
     lines = []
@@ -311,20 +302,17 @@ def cmd_generate(args: argparse.Namespace) -> int:
     md_path = get_plan_dir(plan_id) / METRICS_MD
     atomic_write_file(md_path, md_content)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': plan_id,
-            'file': METRICS_MD,
-            'phases_recorded': len(phases),
-            'total_duration_seconds': round(total_duration, 1),
-            'total_tokens': total_tokens,
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'file': METRICS_MD,
+        'phases_recorded': len(phases),
+        'total_duration_seconds': round(total_duration, 1),
+        'total_tokens': total_tokens,
+    }
 
 
-def cmd_enrich(args: argparse.Namespace) -> int:
+def cmd_enrich(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     session_id = args.session_id
 
@@ -351,15 +339,12 @@ def cmd_enrich(args: argparse.Namespace) -> int:
                     break
 
     if not transcript_path:
-        output_toon(
-            {
-                'status': 'success',
-                'plan_id': plan_id,
-                'enriched': False,
-                'message': f'JSONL transcript not found for session {session_id}',
-            }
-        )
-        return 0
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'enriched': False,
+            'message': f'JSONL transcript not found for session {session_id}',
+        }
 
     # Parse JSONL for token usage
     total_input = 0
@@ -384,14 +369,11 @@ def cmd_enrich(args: argparse.Namespace) -> int:
                 except (json.JSONDecodeError, AttributeError):
                     continue
     except OSError:
-        output_toon(
-            {
-                'status': 'error',
-                'error': 'read_failed',
-                'message': f'Cannot read transcript: {transcript_path}',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'error': 'read_failed',
+            'message': f'Cannot read transcript: {transcript_path}',
+        }
 
     # Update metrics with enriched data
     data = read_metrics_raw(plan_id)
@@ -403,18 +385,15 @@ def cmd_enrich(args: argparse.Namespace) -> int:
 
     write_metrics(plan_id, data)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': plan_id,
-            'enriched': True,
-            'input_tokens': total_input,
-            'output_tokens': total_output,
-            'total_tokens': total_input + total_output,
-            'message_count': message_count,
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'enriched': True,
+        'input_tokens': total_input,
+        'output_tokens': total_output,
+        'total_tokens': total_input + total_output,
+        'message_count': message_count,
+    }
 
 
 @safe_main
@@ -449,8 +428,9 @@ def main() -> int:
     enr.set_defaults(func=cmd_enrich)
 
     args = parser.parse_args()
-    result: int = args.func(args)
-    return result
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':

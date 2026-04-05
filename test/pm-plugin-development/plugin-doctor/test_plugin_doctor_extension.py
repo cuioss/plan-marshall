@@ -90,7 +90,7 @@ def test_validate_valid_extension():
         create_valid_extension(ext_path)
 
         result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
-        data = result.json()
+        data = result.toon()
 
         assert data.get('valid') is True, f'Should be valid: {data}'
         assert len(data.get('issues', [])) == 0
@@ -107,7 +107,7 @@ def test_validate_extension_missing_functions():
         create_invalid_extension_missing_func(ext_path)
 
         result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
-        data = result.json()
+        data = result.toon()
 
         assert data.get('valid') is False
         issues = data.get('issues', [])
@@ -124,7 +124,7 @@ def test_validate_extension_syntax_error():
         create_invalid_extension_syntax_error(ext_path)
 
         result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
-        data = result.json()
+        data = result.toon()
 
         assert data.get('valid') is False
         issues = data.get('issues', [])
@@ -138,7 +138,7 @@ def test_validate_extension_not_found():
         ext_path = temp_dir / 'nonexistent.py'
 
         result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
-        data = result.json()
+        data = result.toon()
 
         assert data.get('valid') is False
         issues = data.get('issues', [])
@@ -160,7 +160,7 @@ def test_validate_bundle_with_extension():
         create_valid_extension(ext_path)
 
         result = run_script(SCRIPT_PATH, 'extension', '--bundle', str(bundle_path))
-        data = result.json()
+        data = result.toon()
 
         assert 'extension' in data
         assert data['extension'].get('valid') is True
@@ -176,7 +176,7 @@ def test_validate_bundle_without_extension():
         bundle_path.mkdir(parents=True)
 
         result = run_script(SCRIPT_PATH, 'extension', '--bundle', str(bundle_path))
-        data = result.json()
+        data = result.toon()
 
         assert data.get('has_extension') is False
 
@@ -206,7 +206,7 @@ def test_scan_marketplace():
         create_invalid_extension_missing_func(ext3_path)
 
         result = run_script(SCRIPT_PATH, 'extension', '--marketplace', str(marketplace))
-        data = result.json()
+        data = result.toon()
 
         assert 'summary' in data
         assert data['summary']['total_bundles'] == 3
@@ -224,7 +224,7 @@ def test_scan_marketplace_real():
         return
 
     result = run_script(SCRIPT_PATH, 'extension', '--marketplace', str(marketplace_path))
-    data = result.json()
+    data = result.toon()
 
     assert 'summary' in data
     assert data['summary']['with_extension'] >= 6  # 6 bundles have extension.py

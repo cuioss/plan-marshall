@@ -126,9 +126,6 @@ def test_cmd_modules_bug_command_naming_collision():
     After fix, this test should still pass because the code should
     use filter_command instead of command.
     """
-    import contextlib
-    import io
-
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
@@ -140,29 +137,22 @@ def test_cmd_modules_bug_command_naming_collision():
             filter_command=None,  # No filter - should list ALL modules
         )
 
-        # Capture stdout
-        stdout_capture = io.StringIO()
-        with contextlib.redirect_stdout(stdout_capture):
-            result = cmd_modules(args)
+        result = cmd_modules(args)
 
-        assert result == 0, f'Expected return code 0, got {result}'
-        output = stdout_capture.getvalue()
+        assert result['status'] == 'success', f'Expected success, got {result}'
         # Should list all 3 modules, NOT filter by command='modules'
-        assert 'modules[3]:' in output, (
+        assert len(result['modules']) == 3, (
             f'BUG: Naming collision! Code uses args.command for filtering '
             f"but that contains subparser dest 'modules'. "
-            f"Expected 'modules[3]:' but got: {output}"
+            f"Expected 3 modules but got: {result['modules']}"
         )
-        assert 'module-a' in output
-        assert 'module-b' in output
-        assert 'module-c' in output
+        assert 'module-a' in result['modules']
+        assert 'module-b' in result['modules']
+        assert 'module-c' in result['modules']
 
 
 def test_cmd_modules_without_filter_lists_all_modules():
     """cmd_modules without --command filter lists all modules."""
-    import contextlib
-    import io
-
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
@@ -173,25 +163,18 @@ def test_cmd_modules_without_filter_lists_all_modules():
             filter_command=None,  # No filter - should list all modules
         )
 
-        # Capture stdout
-        stdout_capture = io.StringIO()
-        with contextlib.redirect_stdout(stdout_capture):
-            result = cmd_modules(args)
+        result = cmd_modules(args)
 
-        assert result == 0, f'Expected return code 0, got {result}'
-        output = stdout_capture.getvalue()
+        assert result['status'] == 'success', f'Expected success, got {result}'
         # Should list all 3 modules
-        assert 'modules[3]:' in output, f"Expected 'modules[3]:' in output, got: {output}"
-        assert 'module-a' in output
-        assert 'module-b' in output
-        assert 'module-c' in output
+        assert len(result['modules']) == 3, f"Expected 3 modules, got: {result['modules']}"
+        assert 'module-a' in result['modules']
+        assert 'module-b' in result['modules']
+        assert 'module-c' in result['modules']
 
 
 def test_cmd_modules_with_filter_filters_by_command():
     """cmd_modules with --command filter only returns matching modules."""
-    import contextlib
-    import io
-
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
@@ -202,25 +185,17 @@ def test_cmd_modules_with_filter_filters_by_command():
             filter_command='verify',  # Filter by 'verify' command
         )
 
-        # Capture stdout
-        stdout_capture = io.StringIO()
-        with contextlib.redirect_stdout(stdout_capture):
-            result = cmd_modules(args)
+        result = cmd_modules(args)
 
-        assert result == 0
-        output = stdout_capture.getvalue()
-        # Should list only modules with 'verify' command
-        assert 'command: verify' in output, f"Expected 'command: verify' in output, got: {output}"
-        assert 'module-a' in output
-        assert 'module-b' in output
-        assert 'module-c' not in output  # module-c has no 'verify'
+        assert result['status'] == 'success'
+        assert result['command'] == 'verify'
+        assert 'module-a' in result['modules']
+        assert 'module-b' in result['modules']
+        assert 'module-c' not in result['modules']  # module-c has no 'verify'
 
 
 def test_cmd_modules_with_filter_quality_gate():
     """cmd_modules with --command quality-gate returns only module-a."""
-    import contextlib
-    import io
-
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
@@ -230,16 +205,12 @@ def test_cmd_modules_with_filter_quality_gate():
             filter_command='quality-gate',
         )
 
-        # Capture stdout
-        stdout_capture = io.StringIO()
-        with contextlib.redirect_stdout(stdout_capture):
-            result = cmd_modules(args)
+        result = cmd_modules(args)
 
-        assert result == 0
-        output = stdout_capture.getvalue()
-        assert 'module-a' in output
-        assert 'module-b' not in output
-        assert 'module-c' not in output
+        assert result['status'] == 'success'
+        assert 'module-a' in result['modules']
+        assert 'module-b' not in result['modules']
+        assert 'module-c' not in result['modules']
 
 
 # =============================================================================

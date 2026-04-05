@@ -242,7 +242,7 @@ This is the lesson body.
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
             result = run_script(SCRIPT_PATH, 'get', '--id', 'nonexistent-id')
 
-        self.assert_failure(result)
+        self.assertIn('status: error', result.stdout)
         self.assertIn('not_found', result.stdout)
 
 
@@ -289,7 +289,7 @@ Body.
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
             result = run_script(SCRIPT_PATH, 'update', '--id', 'nonexistent', '--applied', 'true')
 
-        self.assert_failure(result)
+        self.assertIn('status: error', result.stdout)
         self.assertIn('not_found', result.stdout)
 
 
@@ -367,7 +367,7 @@ Body content.
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
             result = run_script(SCRIPT_PATH, 'archive', '--id', 'nonexistent')
 
-        self.assert_failure(result)
+        self.assertIn('status: error', result.stdout)
         self.assertIn('not_found', result.stdout)
 
 
@@ -403,7 +403,7 @@ class TestManageLessonFromError(ScriptTestCase):
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
             result = run_script(SCRIPT_PATH, 'from-error', '--context', 'not valid json')
 
-        self.assert_failure(result)
+        self.assertIn('status: error', result.stdout)
         self.assertIn('invalid_json', result.stdout)
 
 
