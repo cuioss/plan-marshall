@@ -36,6 +36,7 @@ if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
 
 from _build_discover import find_readme  # noqa: E402
+from file_ops import safe_main  # type: ignore[import-not-found]  # noqa: E402
 
 # =============================================================================
 # Constants
@@ -494,7 +495,8 @@ def discover_plugin_modules(project_root: str) -> list:
 # =============================================================================
 
 
-def main():
+@safe_main
+def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(description='Plugin bundle discovery')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -508,6 +510,8 @@ def main():
     if args.command == 'discover':
         modules = discover_plugin_modules(args.root)
         print(json.dumps(modules, indent=2))
+
+    return 0
 
 
 if __name__ == '__main__':

@@ -24,7 +24,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Planning-related name patterns
 PLANNING_PATTERNS = [
@@ -202,7 +203,8 @@ def generate_summary(categorized: dict, stats: dict) -> dict:
     }
 
 
-def main():
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(description='Scan marketplace for planning-related components')
     parser.add_argument('--format', choices=['full', 'summary'], default='full', help='Output format (default: full)')
     parser.add_argument(
@@ -211,40 +213,29 @@ def main():
 
     args = parser.parse_args()
 
-    try:
-        # Run marketplace inventory with planning filters
-        inventory = run_marketplace_inventory(args.include_descriptions)
+    # Run marketplace inventory with planning filters
+    inventory = run_marketplace_inventory(args.include_descriptions)
 
-        # Categorize into core and derived
-        categorized = categorize_components(inventory)
+    # Categorize into core and derived
+    categorized = categorize_components(inventory)
 
-        # Calculate statistics
-        stats = calculate_statistics(categorized)
+    # Calculate statistics
+    stats = calculate_statistics(categorized)
 
-        # Generate output
-        if args.format == 'summary':
-            output = generate_summary(categorized, stats)
-        else:
-            output = {
-                'patterns': PLANNING_PATTERNS,
-                'bundles_scanned': PLANNING_BUNDLES,
-                **categorized,
-                'statistics': stats,
-            }
+    # Generate output
+    if args.format == 'summary':
+        result = generate_summary(categorized, stats)
+    else:
+        result = {
+            'patterns': PLANNING_PATTERNS,
+            'bundles_scanned': PLANNING_BUNDLES,
+            **categorized,
+            'statistics': stats,
+        }
 
-        print(serialize_toon(output))
-        return 0
-
-    except FileNotFoundError as e:
-        print(f'ERROR: {e}', file=sys.stderr)
-        return 1
-    except RuntimeError as e:
-        print(f'ERROR: {e}', file=sys.stderr)
-        return 1
-    except (KeyError, ValueError) as e:
-        print(f'ERROR: Invalid TOON from marketplace-inventory: {e}', file=sys.stderr)
-        return 1
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

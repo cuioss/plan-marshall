@@ -19,15 +19,16 @@ Subcommands:
 """
 
 import argparse
-import sys
 
 from _cmd_classify_links import cmd_classify_links
 from _cmd_format import cmd_format
 from _cmd_stats import cmd_stats
 from _cmd_validate import cmd_validate
 from _cmd_verify_links import cmd_verify_links
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 
+@safe_main
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -84,8 +85,10 @@ def main():
     classify_parser.set_defaults(func=cmd_classify_links)
 
     args = parser.parse_args()
-    return args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

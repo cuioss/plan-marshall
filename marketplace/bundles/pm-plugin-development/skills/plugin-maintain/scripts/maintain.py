@@ -16,16 +16,16 @@ Usage:
 """
 
 import argparse
-import sys
 
 from _cmd_analyze import cmd_analyze
 from _cmd_check_duplication import cmd_check_duplication
 from _cmd_readme import cmd_readme
 from _cmd_update import cmd_update
-from _maintain_shared import EXIT_ERROR
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 
-def main():
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plugin component maintenance tools',
         epilog="""
@@ -73,10 +73,12 @@ Examples:
 
     if args.command is None:
         parser.print_help()
-        return EXIT_ERROR
+        return 1
 
-    return args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

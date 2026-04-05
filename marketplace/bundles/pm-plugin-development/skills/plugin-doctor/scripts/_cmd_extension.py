@@ -15,7 +15,6 @@ Output: JSON to stdout.
 
 import ast
 import importlib.util
-import json
 from pathlib import Path
 from typing import Any
 
@@ -638,14 +637,14 @@ def scan_extensions(marketplace_root: Path) -> dict[str, Any]:
     return results
 
 
-def cmd_extension(args) -> int:
+def cmd_extension(args) -> dict:
     """Validate extension.py files."""
     if args.extension_path:
         # Single extension validation
         extension_path = Path(args.extension_path)
         result = validate_extension(extension_path)
-        print(json.dumps(result, indent=2))
-        return 0 if result['valid'] else 1
+        result['status'] = 'success' if result['valid'] else 'error'
+        return result
 
     elif args.bundle_path:
         # Bundle consistency check
@@ -659,18 +658,19 @@ def cmd_extension(args) -> int:
         else:
             result = consistency
 
-        print(json.dumps(result, indent=2))
-        return 0 if consistency['valid'] else 1
+        result['status'] = 'success' if consistency['valid'] else 'error'
+        return result
 
     elif args.marketplace_path:
         # Scan all extensions
         marketplace_path = Path(args.marketplace_path)
         result = scan_extensions(marketplace_path)
-        print(json.dumps(result, indent=2))
 
         if 'error' in result:
-            return 1
-        return 0 if result['summary']['invalid'] == 0 else 1
+            result['status'] = 'error'
+        else:
+            result['status'] = 'success' if result['summary']['invalid'] == 0 else 'error'
+        return result
 
     else:
         # Default: scan from cwd first (supports test fixtures), then script-relative
@@ -685,8 +685,9 @@ def cmd_extension(args) -> int:
             marketplace_path = Path.cwd()
 
         result = scan_extensions(marketplace_path)
-        print(json.dumps(result, indent=2))
 
         if 'error' in result:
-            return 1
-        return 0 if result['summary']['invalid'] == 0 else 1
+            result['status'] = 'error'
+        else:
+            result['status'] = 'success' if result['summary']['invalid'] == 0 else 'error'
+        return result

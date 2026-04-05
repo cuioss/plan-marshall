@@ -3,16 +3,10 @@
 
 import json
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_NON_COMPLIANT = 1
-EXIT_ERROR = 2
 
 
 @dataclass
@@ -174,19 +168,17 @@ def verify_links(files: list[str]) -> tuple[list[Link], list[Issue]]:
     return all_links, issues
 
 
-def cmd_verify_links(args):
+def cmd_verify_links(args) -> dict:
     """Handle verify-links subcommand."""
     if args.file and args.directory:
-        print('Error: Cannot specify both --file and --directory', file=sys.stderr)
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'invalid_args', 'message': 'Cannot specify both --file and --directory'}
 
     target_path = args.file if args.file else (args.directory if args.directory else '.')
     recursive = args.recursive if args.directory else (not args.file)
 
     path = Path(target_path)
     if not path.exists():
-        print(f"Error: Path '{target_path}' not found", file=sys.stderr)
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'path_not_found', 'message': f"Path '{target_path}' not found"}
 
     files = []
     if path.is_file():
@@ -197,8 +189,11 @@ def cmd_verify_links(args):
         files = [str(f) for f in path.glob('*.adoc')]
 
     if not files:
-        print(f'No AsciiDoc files found in {target_path}', file=sys.stderr)
-        return EXIT_ERROR
+        return {
+            'status': 'error',
+            'error': 'no_files',
+            'message': f'No AsciiDoc files found in {target_path}',
+        }
 
     all_links, issues = verify_links(files)
     broken = [i for i in issues if i.issue_type == 'broken']
@@ -209,10 +204,11 @@ def cmd_verify_links(args):
             'script',
             'global',
             'INFO',
-            f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations in {len(files)} files',
+            f'[DOCS-LINKS] Found {len(broken)} broken links, {len(violations)} format violations'
+            f' in {len(files)} files',
         )
 
-    output = {
+    result = {
         'status': 'success' if not issues else 'failure',
         'data': {
             'files_processed': len(files),
@@ -232,9 +228,8 @@ def cmd_verify_links(args):
         },
         'metrics': {'valid_links': len(all_links) - len(issues)},
     }
-    print(json.dumps(output, indent=2))
 
     if args.report:
-        Path(args.report).write_text(json.dumps(output, indent=2))
+        Path(args.report).write_text(json.dumps(result, indent=2))
 
-    return EXIT_SUCCESS if not issues else EXIT_NON_COMPLIANT
+    return result

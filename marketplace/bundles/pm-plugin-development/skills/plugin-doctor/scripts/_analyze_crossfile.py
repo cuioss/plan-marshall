@@ -2,9 +2,7 @@
 """Cross-file content analysis subcommand."""
 
 import hashlib
-import json
 import re
-import sys
 from collections import defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -373,22 +371,19 @@ def analyze_cross_file(skill_path: Path, similarity_threshold: float) -> dict:
     }
 
 
-def cmd_cross_file(args) -> int:
+def cmd_cross_file(args) -> dict:
     """Analyze cross-file content in skill directory."""
     skill_path = Path(args.skill_path)
 
     if not skill_path.exists():
-        print(json.dumps({'error': f'Skill path not found: {args.skill_path}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_found', 'message': f'Skill path not found: {args.skill_path}'}
 
     if not skill_path.is_dir():
-        print(json.dumps({'error': f'Skill path is not a directory: {args.skill_path}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_directory', 'message': f'Skill path is not a directory: {args.skill_path}'}
 
     try:
         result = analyze_cross_file(skill_path, args.similarity_threshold)
-        print(json.dumps(result, indent=2))
-        return 0
+        result['status'] = 'success'
+        return result
     except Exception as e:
-        print(json.dumps({'error': f'Analysis failed: {str(e)}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'analysis_failed', 'message': f'Analysis failed: {str(e)}'}

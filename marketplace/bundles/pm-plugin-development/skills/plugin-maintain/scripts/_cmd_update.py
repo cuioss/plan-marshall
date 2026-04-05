@@ -7,8 +7,6 @@ import shutil
 import sys
 from pathlib import Path
 
-from _maintain_shared import EXIT_ERROR, EXIT_SUCCESS, output_toon
-
 
 def create_backup(path: Path) -> str:
     """Create backup of file."""
@@ -151,23 +149,21 @@ def apply_updates(component_path: str, updates: list) -> dict:
         return {'component_path': component_path, 'success': False, 'error': str(e), 'backup_restored': True}
 
 
-def cmd_update(args) -> int:
+def cmd_update(args) -> dict:
     """Handle update subcommand."""
     # Read updates from stdin or --updates argument
     if args.updates:
         try:
             input_data = json.loads(args.updates)
         except json.JSONDecodeError as e:
-            output_toon({'error': f'Invalid JSON in --updates: {e}'})
-            return EXIT_ERROR
+            return {'status': 'error', 'error': 'invalid_json', 'message': f'Invalid JSON in --updates: {e}'}
     else:
         try:
             input_data = json.loads(sys.stdin.read())
         except json.JSONDecodeError as e:
-            output_toon({'error': f'Invalid JSON input: {e}'})
-            return EXIT_ERROR
+            return {'status': 'error', 'error': 'invalid_json', 'message': f'Invalid JSON input: {e}'}
 
     updates = input_data.get('updates', [])
     result = apply_updates(args.component, updates)
-    output_toon(result)
-    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
+    result['status'] = 'success' if result.get('success') else 'error'
+    return result

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """References subcommand for validating plugin references in markdown files."""
 
-import json
 import re
-import sys
 from pathlib import Path
 
 
@@ -113,20 +111,18 @@ def extract_references(content: str, excluded_lines: set[int]) -> list[dict]:
     return references
 
 
-def cmd_references(args) -> int:
+def cmd_references(args) -> dict:
     """Validate plugin references in a markdown file."""
     file_path = Path(args.file)
 
     if not file_path.is_file():
-        print(json.dumps({'error': f'File not found: {args.file}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {args.file}'}
 
     try:
         with open(file_path, encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
-        print(json.dumps({'error': f'Failed to read file: {str(e)}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'read_failed', 'message': f'Failed to read file: {str(e)}'}
 
     file_type = detect_file_type(str(file_path))
     excluded_lines = pre_filter_documentation_lines(content)
@@ -136,13 +132,11 @@ def cmd_references(args) -> int:
     excluded_count = len(excluded_lines)
     exclusion_rate = (excluded_count / total_lines * 100) if total_lines > 0 else 0.0
 
-    result = {
+    return {
+        'status': 'success',
         'file_path': str(file_path),
         'file_type': file_type,
         'total_lines': total_lines,
         'references': references,
         'pre_filter': {'excluded_lines_count': excluded_count, 'exclusion_rate': round(exclusion_rate, 1)},
     }
-
-    print(json.dumps(result, indent=2))
-    return 0

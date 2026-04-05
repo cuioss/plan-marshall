@@ -31,31 +31,30 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 # get_plan_dir imported from file_ops
 
 
-def cmd_read(args: argparse.Namespace) -> None:
+def cmd_read(args: argparse.Namespace) -> dict | None:
     """Read file content from plan directory."""
     require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        output_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'})
-        sys.exit(1)
+        return {'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'}
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
     if not file_path.exists():
-        output_toon({'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {file_path}'})
-        sys.exit(1)
+        return {'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {file_path}'}
 
+    # Raw content output (not TOON) - print directly and return None
     print(file_path.read_text(encoding='utf-8'), end='')
+    return None
 
 
-def cmd_write(args: argparse.Namespace) -> None:
+def cmd_write(args: argparse.Namespace) -> dict:
     """Write content to file in plan directory."""
     require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        output_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'})
-        sys.exit(1)
+        return {'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'}
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
@@ -66,12 +65,10 @@ def cmd_write(args: argparse.Namespace) -> None:
     elif args.content:
         content = args.content
     else:
-        output_toon({'status': 'error', 'error': 'missing_content', 'message': 'Must provide --content or --stdin'})
-        sys.exit(1)
+        return {'status': 'error', 'error': 'missing_content', 'message': 'Must provide --content or --stdin'}
 
     if not content:
-        output_toon({'status': 'error', 'error': 'empty_content', 'message': 'Content cannot be empty'})
-        sys.exit(1)
+        return {'status': 'error', 'error': 'empty_content', 'message': 'Content cannot be empty'}
 
     # Ensure plan directory exists
     plan_dir.mkdir(parents=True, exist_ok=True)
@@ -79,30 +76,28 @@ def cmd_write(args: argparse.Namespace) -> None:
     # Write atomically
     atomic_write_file(file_path, content)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-FILES] Created {args.file}')
-    output_toon({'status': 'success', 'action': 'created', 'file': args.file, 'path': str(file_path)})
+    return {'status': 'success', 'action': 'created', 'file': args.file, 'path': str(file_path)}
 
 
-def cmd_remove(args: argparse.Namespace) -> None:
+def cmd_remove(args: argparse.Namespace) -> dict:
     """Remove file from plan directory."""
     require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        output_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'})
-        sys.exit(1)
+        return {'status': 'error', 'error': 'invalid_path', 'message': f'Invalid file path: {args.file}'}
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
     if not file_path.exists():
-        output_toon({'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {file_path}'})
-        sys.exit(1)
+        return {'status': 'error', 'error': 'file_not_found', 'message': f'File not found: {file_path}'}
 
     file_path.unlink()
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-FILES] Removed {args.file}')
-    output_toon({'status': 'success', 'action': 'removed', 'file': args.file, 'path': str(file_path)})
+    return {'status': 'success', 'action': 'removed', 'file': args.file, 'path': str(file_path)}
 
 
-def cmd_list(args: argparse.Namespace) -> None:
+def cmd_list(args: argparse.Namespace) -> dict:
     """List files in plan directory."""
     require_valid_plan_id(args)
 
@@ -110,15 +105,13 @@ def cmd_list(args: argparse.Namespace) -> None:
 
     if args.dir:
         if not is_valid_relative_path(args.dir):
-            output_toon({'status': 'error', 'error': 'invalid_path', 'message': f'Invalid directory path: {args.dir}'})
-            sys.exit(1)
+            return {'status': 'error', 'error': 'invalid_path', 'message': f'Invalid directory path: {args.dir}'}
         target_dir = plan_dir / args.dir
     else:
         target_dir = plan_dir
 
     if not target_dir.exists():
-        output_toon({'status': 'error', 'error': 'dir_not_found', 'message': f'Directory not found: {target_dir}'})
-        sys.exit(1)
+        return {'status': 'error', 'error': 'dir_not_found', 'message': f'Directory not found: {target_dir}'}
 
     files = []
     for item in sorted(target_dir.iterdir()):
@@ -127,61 +120,51 @@ def cmd_list(args: argparse.Namespace) -> None:
         else:
             files.append(item.name)
 
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'files': files})
+    return {'status': 'success', 'plan_id': args.plan_id, 'files': files}
 
 
-def cmd_exists(args):
+def cmd_exists(args) -> dict:
     """Check if file exists in plan directory.
 
-    Returns TOON output with exists: true/false.
-    Exits 0 for both found and not-found outcomes.
-    Exits 1 for validation errors (invalid plan_id or path).
+    Returns dict with exists: true/false.
     """
     require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.file):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'file': args.file,
-                'error': 'invalid_path',
-                'message': f'Invalid file path: {args.file}',
-            }
-        )
-        sys.exit(1)
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'file': args.file,
+            'error': 'invalid_path',
+            'message': f'Invalid file path: {args.file}',
+        }
 
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'file': args.file,
-            'exists': file_path.exists(),
-            'path': str(file_path),
-        }
-    )
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': args.file,
+        'exists': file_path.exists(),
+        'path': str(file_path),
+    }
 
 
-def cmd_mkdir(args):
+def cmd_mkdir(args) -> dict:
     """Create subdirectory in plan directory.
 
-    Returns TOON output with the created directory path.
+    Returns dict with the created directory path.
     """
     require_valid_plan_id(args)
 
     if not is_valid_relative_path(args.dir):
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_path',
-                'message': f'Invalid directory path: {args.dir}',
-            }
-        )
-        sys.exit(1)
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_path',
+            'message': f'Invalid directory path: {args.dir}',
+        }
 
     plan_dir = get_plan_dir(args.plan_id)
     target_dir = plan_dir / args.dir
@@ -189,21 +172,19 @@ def cmd_mkdir(args):
     already_exists = target_dir.exists()
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'action': 'exists' if already_exists else 'created',
-            'dir': args.dir,
-            'path': str(target_dir),
-        }
-    )
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'action': 'exists' if already_exists else 'created',
+        'dir': args.dir,
+        'path': str(target_dir),
+    }
 
 
-def cmd_create_or_reference(args):
+def cmd_create_or_reference(args) -> dict:
     """Create plan directory if it doesn't exist, or reference existing one.
 
-    Returns TOON output indicating whether the plan was created or already exists.
+    Returns dict indicating whether the plan was created or already exists.
     This replaces the two-step list+check pattern in plan-init.
     """
     require_valid_plan_id(args)
@@ -226,13 +207,12 @@ def cmd_create_or_reference(args):
                 # Parse error or read error - just note file exists
                 result['has_status'] = True
 
-        output_toon(result)
+        return result
     else:
         # Create the plan directory
         plan_dir.mkdir(parents=True, exist_ok=True)
 
-        result = {'status': 'success', 'plan_id': args.plan_id, 'action': 'created', 'path': str(plan_dir)}
-        output_toon(result)
+        return {'status': 'success', 'plan_id': args.plan_id, 'action': 'created', 'path': str(plan_dir)}
 
 
 @safe_main
@@ -286,7 +266,9 @@ def main() -> int:
     create_ref_parser.set_defaults(func=cmd_create_or_reference)
 
     args = parser.parse_args()
-    args.func(args)
+    result = args.func(args)
+    if result is not None:
+        output_toon(result)
     return 0
 
 

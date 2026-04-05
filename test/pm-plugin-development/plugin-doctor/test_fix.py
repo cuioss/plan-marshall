@@ -60,7 +60,7 @@ def test_extract_from_stdin():
         ]
     }
     result = run_script(SCRIPT_PATH, 'extract', input_data=json.dumps(diagnosis))
-    data = result.json()
+    data = result.toon()
     assert data is not None, 'Should return valid JSON'
     assert 'fixable_issues' in data or 'issues' in data, 'Should have issues field'
 
@@ -85,7 +85,7 @@ def test_categorize_safe_issues():
         ]
     }
     result = run_script(SCRIPT_PATH, 'categorize', input_data=json.dumps(issues))
-    data = result.json()
+    data = result.toon()
     assert data is not None, 'Should return valid JSON'
     # Should have safe_fixes or similar field
     assert 'safe_fixes' in data or 'safe' in data or 'categorized' in data, 'Should categorize fixes'
@@ -134,7 +134,7 @@ def test_verify_with_valid_file():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'missing-frontmatter', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data is not None, 'Should return valid JSON'
 
         Path(f.name).unlink()
@@ -153,7 +153,7 @@ def test_apply_rule_11_fix():
 
         fix_json = json.dumps({'type': 'agent-skill-tool-visibility', 'file': 'test-agent.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         # Verify Skill was appended
@@ -170,7 +170,7 @@ def test_apply_rule_11_fix_already_present():
 
         fix_json = json.dumps({'type': 'agent-skill-tool-visibility', 'file': 'test-agent.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is False, 'Fix should fail when Skill already present'
 
 
@@ -186,7 +186,7 @@ def test_verify_rule_11_fixed():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
         Path(f.name).unlink()
@@ -199,7 +199,7 @@ def test_verify_rule_11_still_missing():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
         Path(f.name).unlink()
@@ -212,7 +212,7 @@ def test_verify_rule_11_no_tools_field():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data['issue_resolved'] is True, f'Issue should be resolved (no tools = inherits all): {data}'
 
         Path(f.name).unlink()
@@ -233,7 +233,7 @@ def test_apply_remove_unsupported_tools_field():
 
         fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = skill_file.read_text()
@@ -252,7 +252,7 @@ def test_apply_remove_unsupported_tools_field_with_tools():
 
         fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = skill_file.read_text()
@@ -267,7 +267,7 @@ def test_apply_remove_unsupported_tools_no_field():
 
         fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is False, 'Fix should fail when field not present'
 
 
@@ -284,7 +284,7 @@ def test_apply_rename_misspelled_user_invocable():
 
         fix_json = json.dumps({'type': 'misspelled-user-invocable', 'file': 'SKILL.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = skill_file.read_text()
@@ -300,7 +300,7 @@ def test_apply_rename_misspelled_user_invocable_not_present():
 
         fix_json = json.dumps({'type': 'misspelled-user-invocable', 'file': 'SKILL.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is False, 'Fix should fail when not misspelled'
 
 
@@ -316,7 +316,7 @@ def test_verify_unsupported_tools_resolved():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'unsupported-skill-tools-field', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
         Path(f.name).unlink()
@@ -329,7 +329,7 @@ def test_verify_unsupported_tools_still_present():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'unsupported-skill-tools-field', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
         Path(f.name).unlink()
@@ -347,7 +347,7 @@ def test_verify_misspelled_user_invocable_resolved():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'misspelled-user-invocable', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
         Path(f.name).unlink()
@@ -360,7 +360,7 @@ def test_verify_misspelled_user_invocable_still_present():
         f.flush()
 
         result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'misspelled-user-invocable', '--file', f.name)
-        data = result.json()
+        data = result.toon()
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
         Path(f.name).unlink()
@@ -380,7 +380,7 @@ def test_checklist_pattern_is_safe():
         ]
     }
     result = run_script(SCRIPT_PATH, 'categorize', input_data=json.dumps(issues))
-    data = result.json()
+    data = result.toon()
     safe = data.get('safe', [])
     safe_types = [f.get('type') for f in safe]
     assert 'checklist-pattern' in safe_types, f'checklist-pattern should be safe, got {safe_types}'
@@ -395,7 +395,7 @@ def test_apply_checklist_pattern_fix():
 
         fix_json = json.dumps({'type': 'checklist-pattern', 'file': 'SKILL.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = md_file.read_text()
@@ -412,7 +412,7 @@ def test_apply_checklist_pattern_fix_mixed():
 
         fix_json = json.dumps({'type': 'subdoc-checklist-pattern', 'file': 'test.md'})
         result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.json()
+        data = result.toon()
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = md_file.read_text()

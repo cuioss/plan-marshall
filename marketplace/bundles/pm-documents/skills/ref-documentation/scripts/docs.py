@@ -13,12 +13,13 @@ Subcommands:
 """
 
 import argparse
-import sys
 
 from _cmd_analyze_tone import cmd_analyze_tone
 from _cmd_review import cmd_review
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 
+@safe_main
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -43,8 +44,10 @@ def main():
     tone_parser.set_defaults(func=cmd_analyze_tone)
 
     args = parser.parse_args()
-    return args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

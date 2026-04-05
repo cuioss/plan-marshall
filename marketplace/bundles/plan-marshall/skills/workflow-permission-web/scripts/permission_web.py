@@ -39,8 +39,6 @@ from triage_helpers import (  # type: ignore[import-not-found]
     load_skill_config,
     make_error,
     parse_json_arg,
-    print_error,
-    print_toon,
     safe_main,
 )
 
@@ -336,7 +334,7 @@ def cmd_analyze(args):
                 denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                return print_error(
+                return make_error(
                     f'Invalid JSON in global settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(global_path)
                 )
         else:
@@ -353,7 +351,7 @@ def cmd_analyze(args):
                 denied_domains.update(by_section['deny'])
                 stats['files_read'] += 1
             except json.JSONDecodeError as e:
-                return print_error(
+                return make_error(
                     f'Invalid JSON in local settings: {e}', code=ErrorCode.PARSE_ERROR, file=str(local_path)
                 )
         else:
@@ -386,7 +384,7 @@ def cmd_analyze(args):
         'status': 'success',
     }
 
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -401,7 +399,7 @@ def cmd_categorize(args):
         return rc
 
     if not isinstance(domains, list):
-        return print_error('Input must be a JSON array')
+        return make_error('Input must be a JSON array')
 
     categories = categorize_domains(domains)
     red_flags: dict[str, list[str]] = {}
@@ -418,7 +416,7 @@ def cmd_categorize(args):
         'status': 'success',
     }
 
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -526,11 +524,11 @@ def cmd_apply(args):
             return rc
 
     if not add_domains and not remove_domains:
-        return print_error('At least one of --add or --remove is required', code=ErrorCode.INVALID_INPUT)
+        return make_error('At least one of --add or --remove is required', code=ErrorCode.INVALID_INPUT)
 
     settings_path = Path(args.file).expanduser()
     result = apply_recommendations(settings_path, add_domains, remove_domains)
-    return print_toon(result)
+    return result
 
 
 # ============================================================================
@@ -577,7 +575,9 @@ Examples:
         ],
     )
     args = parser.parse_args()
-    return args.func(args)
+    from triage_helpers import print_toon as _output_toon  # type: ignore[import-not-found]
+
+    return _output_toon(args.func(args))
 
 
 if __name__ == '__main__':

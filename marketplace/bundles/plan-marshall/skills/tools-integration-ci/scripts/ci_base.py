@@ -106,16 +106,27 @@ def check_auth_cli(
 # ---------------------------------------------------------------------------
 
 
-def output_error(operation: str, error: str, context: str = '') -> int:
-    """Output error in TOON format to stderr and return EXIT_ERROR.
+def make_error(operation: str, error: str, context: str = '') -> dict:
+    """Build an error dict for CI operations.
 
-    CI-specific variant of file_ops.output_error with context field and int return.
+    Returns a dict with status='error' that the caller can return directly.
+    The dispatch/main layer handles serialization and output.
     """
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
     data: dict[str, str] = {'status': 'error', 'operation': operation, 'error': error}
     if context:
         data['context'] = context
+    return data
+
+
+# Keep output_error as a backwards-compatible alias used by ci.py router
+def output_error(operation: str, error: str, context: str = '') -> int:
+    """Output error in TOON format to stderr and return EXIT_ERROR.
+
+    Legacy wrapper -- new code should use make_error() and return the dict.
+    """
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    data = make_error(operation, error, context)
     print(serialize_toon(data), file=sys.stderr)
     return EXIT_ERROR
 
@@ -322,24 +333,22 @@ def make_simple_handler(
     Returns:
         A handler function suitable for the dispatch table.
     """
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
-    def handler(args: argparse.Namespace) -> int:
+    def handler(args: argparse.Namespace) -> dict:
         is_auth, err = auth_fn()
         if not is_auth:
-            return output_error(operation, err)
+            return make_error(operation, err)
 
         cli_args = build_args_fn(args)
         returncode, stdout, stderr = run_fn(cli_args)
         if returncode != 0:
-            return output_error(operation, 'Operation failed', stderr.strip())
+            return make_error(operation, 'Operation failed', stderr.strip())
 
         result = {'status': 'success', 'operation': operation}
         if result_extras:
             result.update(result_extras(args))
 
-        print(serialize_toon(result, table_separator='\t'))
-        return 0
+        return result
 
     return handler
 
@@ -510,7 +519,7 @@ def truncate_log_content(stdout: str, max_lines: int = CI_LOG_TRUNCATE_LINES) ->
 HandlerMap = dict[tuple[str, str], Any]
 
 
-def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.ArgumentParser) -> int:
+def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.ArgumentParser) -> dict:
     """Route parsed args to the correct handler function.
 
     Args:
@@ -519,7 +528,7 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
         parser: Top-level parser (used for fallback help output).
 
     Returns:
-        Exit code from the matched handler, or 1 if no match found.
+        Result dict from the matched handler, or error dict if no match found.
     """
     command = args.command
 
@@ -531,12 +540,12 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
         key = ('issue', args.issue_command)
     else:
         parser.print_help()
-        return 1
+        return make_error('dispatch', 'Unknown command')
 
     handler = handlers.get(key)
     if handler:
-        result: int = handler(args)
+        result: dict = handler(args)
         return result
 
     parser.print_help()
-    return EXIT_ERROR
+    return make_error('dispatch', f'Unknown subcommand for {command}')

@@ -291,43 +291,45 @@ def verify_findings(analysis: dict, llm_findings: dict) -> dict:
     }
 
 
-def cmd_cross_file(args) -> int:
+def cmd_cross_file(args) -> dict:
     """Verify LLM cross-file analysis findings."""
     analysis_path = Path(args.analysis)
     if not analysis_path.exists():
-        print(json.dumps({'error': f'Analysis file not found: {args.analysis}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'file_not_found', 'message': f'Analysis file not found: {args.analysis}'}
 
     try:
         with open(analysis_path, encoding='utf-8') as f:
             analysis = json.load(f)
     except json.JSONDecodeError as e:
-        print(json.dumps({'error': f'Invalid JSON in analysis file: {str(e)}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'invalid_json', 'message': f'Invalid JSON in analysis file: {str(e)}'}
 
     if args.llm_findings:
         findings_path = Path(args.llm_findings)
         if not findings_path.exists():
-            print(json.dumps({'error': f'LLM findings file not found: {args.llm_findings}'}), file=sys.stderr)
-            return 1
+            return {
+                'status': 'error',
+                'error': 'file_not_found',
+                'message': f'LLM findings file not found: {args.llm_findings}',
+            }
 
         try:
             with open(findings_path, encoding='utf-8') as f:
                 llm_findings = json.load(f)
         except json.JSONDecodeError as e:
-            print(json.dumps({'error': f'Invalid JSON in LLM findings file: {str(e)}'}), file=sys.stderr)
-            return 1
+            return {
+                'status': 'error',
+                'error': 'invalid_json',
+                'message': f'Invalid JSON in LLM findings file: {str(e)}',
+            }
     else:
         try:
             llm_findings = json.load(sys.stdin)
         except json.JSONDecodeError as e:
-            print(json.dumps({'error': f'Invalid JSON from stdin: {str(e)}'}), file=sys.stderr)
-            return 1
+            return {'status': 'error', 'error': 'invalid_json', 'message': f'Invalid JSON from stdin: {str(e)}'}
 
     try:
         result = verify_findings(analysis, llm_findings)
-        print(json.dumps(result, indent=2))
-        return 0
+        result['status'] = 'success'
+        return result
     except Exception as e:
-        print(json.dumps({'error': f'Verification failed: {str(e)}'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'verification_failed', 'message': f'Verification failed: {str(e)}'}

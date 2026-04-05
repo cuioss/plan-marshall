@@ -3,9 +3,9 @@
 Manage run-configuration.json - unified entry point.
 
 Consolidated from:
-- init-run-config.py → init subcommand
-- validate-run-config.py → validate subcommand
-- cleanup.py → cleanup / cleanup-status subcommands
+- init-run-config.py -> init subcommand
+- validate-run-config.py -> validate subcommand
+- cleanup.py -> cleanup / cleanup-status subcommands
 
 Provides operations for managing .plan/run-configuration.json files
 including creation, validation, structure verification, and directory cleanup.
@@ -15,7 +15,6 @@ Output: TOON to stdout with operation results.
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -43,16 +42,16 @@ def _write_json_file(file_path: Path, data: dict) -> None:
     write_json(file_path, data)
 
 
-def _output_success(action: str, **kwargs: Any) -> None:
-    """Output success result as TOON."""
+def _output_success(action: str, **kwargs: Any) -> dict:
+    """Build success result dict."""
     result: dict[str, Any] = {'status': 'success', 'action': action}
     result.update(kwargs)
-    output_toon(result)
+    return result
 
 
-def _output_error(error: str) -> None:
-    """Output error result as TOON via file_ops."""
-    output_toon({'status': 'error', 'error': 'config_error', 'message': error})
+def _output_error(error: str) -> dict:
+    """Build error result dict."""
+    return {'status': 'error', 'error': 'config_error', 'message': error}
 
 
 # =============================================================================
@@ -60,24 +59,23 @@ def _output_error(error: str) -> None:
 # =============================================================================
 
 
-def cmd_init(args: argparse.Namespace) -> int:
+def cmd_init(args: argparse.Namespace) -> dict:
     """Initialize run-configuration.json with base structure."""
     try:
         config_path = get_run_config_path()
 
         if config_path.exists() and not args.force:
-            _output_success('skipped', path=str(config_path), reason='File already exists (use --force to overwrite)')
-            return 0
+            return _output_success(
+                'skipped', path=str(config_path), reason='File already exists (use --force to overwrite)'
+            )
 
         _write_json_file(config_path, DEFAULT_STRUCTURE)
 
         action = 'recreated' if args.force and config_path.exists() else 'created'
-        _output_success(action, path=str(config_path), structure=DEFAULT_STRUCTURE)
-        return 0
+        return _output_success(action, path=str(config_path), structure=DEFAULT_STRUCTURE)
 
     except Exception as e:
-        _output_error(str(e))
-        return 1
+        return _output_error(str(e))
 
 
 # =============================================================================
@@ -126,28 +124,25 @@ def validate_run_config(data: dict[str, Any]) -> list[dict[str, Any]]:
     return checks
 
 
-def cmd_validate(args: argparse.Namespace) -> int:
+def cmd_validate(args: argparse.Namespace) -> dict:
     """Validate run-configuration.json format and structure."""
     try:
         file_path = Path(args.file)
 
         if not file_path.exists():
-            _output_error(f'File not found: {file_path}')
-            return 1
+            return _output_error(f'File not found: {file_path}')
 
         # Parse JSON
         try:
             data = json.loads(file_path.read_text(encoding='utf-8'))
         except json.JSONDecodeError as e:
-            result = {
+            return {
                 'status': 'success',
                 'valid': False,
                 'file': str(file_path),
                 'format': 'manage-run-config',
                 'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
             }
-            output_toon(result)
-            return 0
 
         # Add JSON syntax check
         checks = [{'check': 'json_syntax', 'passed': True}]
@@ -158,19 +153,16 @@ def cmd_validate(args: argparse.Namespace) -> int:
         # Determine overall validity
         valid = all(c.get('passed', True) for c in checks)
 
-        result = {
+        return {
             'status': 'success',
             'valid': valid,
             'file': str(file_path),
             'format': 'manage-run-config',
             'checks': checks,
         }
-        output_toon(result)
-        return 0
 
     except Exception as e:
-        _output_error(str(e))
-        return 1
+        return _output_error(str(e))
 
 
 # =============================================================================
@@ -195,7 +187,7 @@ def read_run_config(config_path: Path) -> dict[str, Any]:
     return result
 
 
-def cmd_timeout_get(args: argparse.Namespace) -> int:
+def cmd_timeout_get(args: argparse.Namespace) -> dict:
     """Get timeout for a command with default fallback and minimum bound."""
     try:
         config_path = get_run_config_path()
@@ -214,12 +206,14 @@ def cmd_timeout_get(args: argparse.Namespace) -> int:
             timeout = int(persisted * SAFETY_MARGIN)
 
         # Enforce minimum bound
-        print(max(timeout, MINIMUM_TIMEOUT_SECONDS))
-        return 0
+        return {
+            'status': 'success',
+            'command': args.command,
+            'timeout_seconds': max(timeout, MINIMUM_TIMEOUT_SECONDS),
+        }
 
     except Exception as e:
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        return _output_error(str(e))
 
 
 def compute_weighted_timeout(existing: int, new_duration: int) -> int:
@@ -267,7 +261,7 @@ def get_acceptable_warnings(config: dict[str, Any], build_system: str = 'maven')
     return result
 
 
-def cmd_warning_add(args: argparse.Namespace) -> int:
+def cmd_warning_add(args: argparse.Namespace) -> dict:
     """Add a warning pattern to acceptable list."""
     try:
         config_path = get_run_config_path()
@@ -278,8 +272,7 @@ def cmd_warning_add(args: argparse.Namespace) -> int:
         build_system = args.build_system
 
         if category not in VALID_WARNING_CATEGORIES:
-            _output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
-            return 1
+            return _output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
 
         # Ensure structure exists
         if build_system not in config:
@@ -290,21 +283,18 @@ def cmd_warning_add(args: argparse.Namespace) -> int:
         warnings_list = config[build_system]['acceptable_warnings'].setdefault(category, [])
 
         if pattern in warnings_list:
-            _output_success('skipped', category=category, pattern=pattern, reason='Pattern already exists')
-            return 0
+            return _output_success('skipped', category=category, pattern=pattern, reason='Pattern already exists')
 
         warnings_list.append(pattern)
         _write_json_file(config_path, config)
 
-        _output_success('added', category=category, pattern=pattern, build_system=build_system)
-        return 0
+        return _output_success('added', category=category, pattern=pattern, build_system=build_system)
 
     except Exception as e:
-        _output_error(str(e))
-        return 1
+        return _output_error(str(e))
 
 
-def cmd_warning_list(args: argparse.Namespace) -> int:
+def cmd_warning_list(args: argparse.Namespace) -> dict:
     """List accepted warning patterns."""
     try:
         config_path = get_run_config_path()
@@ -315,30 +305,25 @@ def cmd_warning_list(args: argparse.Namespace) -> int:
 
         if args.category:
             if args.category not in VALID_WARNING_CATEGORIES:
-                _output_error(f"Invalid category '{args.category}'. Valid: {VALID_WARNING_CATEGORIES}")
-                return 1
-            result: dict[str, Any] = {
+                return _output_error(f"Invalid category '{args.category}'. Valid: {VALID_WARNING_CATEGORIES}")
+            return {
                 'status': 'success',
                 'build_system': build_system,
                 'category': args.category,
                 'patterns': warnings.get(args.category, []),
             }
         else:
-            result = {
+            return {
                 'status': 'success',
                 'build_system': build_system,
                 'categories': {cat: warnings.get(cat, []) for cat in VALID_WARNING_CATEGORIES},
             }
 
-        output_toon(result)
-        return 0
-
     except Exception as e:
-        _output_error(str(e))
-        return 1
+        return _output_error(str(e))
 
 
-def cmd_warning_remove(args: argparse.Namespace) -> int:
+def cmd_warning_remove(args: argparse.Namespace) -> dict:
     """Remove a warning pattern from acceptable list."""
     try:
         config_path = get_run_config_path()
@@ -349,25 +334,21 @@ def cmd_warning_remove(args: argparse.Namespace) -> int:
         build_system = args.build_system
 
         if category not in VALID_WARNING_CATEGORIES:
-            _output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
-            return 1
+            return _output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
 
         warnings = get_acceptable_warnings(config, build_system)
         warnings_list = warnings.get(category, [])
 
         if pattern not in warnings_list:
-            _output_success('skipped', category=category, pattern=pattern, reason='Pattern not found')
-            return 0
+            return _output_success('skipped', category=category, pattern=pattern, reason='Pattern not found')
 
         warnings_list.remove(pattern)
         _write_json_file(config_path, config)
 
-        _output_success('removed', category=category, pattern=pattern, build_system=build_system)
-        return 0
+        return _output_success('removed', category=category, pattern=pattern, build_system=build_system)
 
     except Exception as e:
-        _output_error(str(e))
-        return 1
+        return _output_error(str(e))
 
 
 # =============================================================================
@@ -375,7 +356,7 @@ def cmd_warning_remove(args: argparse.Namespace) -> int:
 # =============================================================================
 
 
-def cmd_timeout_set(args: argparse.Namespace) -> int:
+def cmd_timeout_set(args: argparse.Namespace) -> dict:
     """Set timeout for a command with adaptive weighting."""
     try:
         config_path = get_run_config_path()
@@ -400,36 +381,29 @@ def cmd_timeout_set(args: argparse.Namespace) -> int:
             cmd_entry['timeout_seconds'] = duration
             _write_json_file(config_path, config)
 
-            output_toon(
-                {
-                    'status': 'success',
-                    'command': command,
-                    'timeout_seconds': duration,
-                    'source': 'initial',
-                }
-            )
+            return {
+                'status': 'success',
+                'command': command,
+                'timeout_seconds': duration,
+                'source': 'initial',
+            }
         else:
             # Compute weighted value favoring higher
             new_timeout = compute_weighted_timeout(existing, duration)
             cmd_entry['timeout_seconds'] = new_timeout
             _write_json_file(config_path, config)
 
-            output_toon(
-                {
-                    'status': 'success',
-                    'command': command,
-                    'timeout_seconds': new_timeout,
-                    'previous_seconds': existing,
-                    'observed_seconds': duration,
-                    'source': 'computed',
-                }
-            )
-
-        return 0
+            return {
+                'status': 'success',
+                'command': command,
+                'timeout_seconds': new_timeout,
+                'previous_seconds': existing,
+                'observed_seconds': duration,
+                'source': 'computed',
+            }
 
     except Exception as e:
-        output_toon({'status': 'error', 'error': str(e)})
-        return 1
+        return {'status': 'error', 'error': str(e)}
 
 
 # =============================================================================
@@ -437,14 +411,14 @@ def cmd_timeout_set(args: argparse.Namespace) -> int:
 # =============================================================================
 
 
-def cmd_cleanup(args: argparse.Namespace) -> int:
+def cmd_cleanup(args: argparse.Namespace) -> dict:
     """Execute cleanup based on retention settings (delegates to cleanup module)."""
     from _cmd_cleanup import cmd_clean
 
     return cmd_clean(args)
 
 
-def cmd_cleanup_status(args: argparse.Namespace) -> int:
+def cmd_cleanup_status(args: argparse.Namespace) -> dict:
     """Show cleanup status (delegates to cleanup module)."""
     from _cmd_cleanup import cmd_status
 
@@ -589,7 +563,9 @@ Examples:
             p_warning.print_help()
             return 1
 
-    return args.func(args) or 0
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 @safe_main

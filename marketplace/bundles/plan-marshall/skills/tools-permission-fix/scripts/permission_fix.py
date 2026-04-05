@@ -123,13 +123,12 @@ def resolve_settings_arg(args) -> str:
     return str(get_project_settings_path_for_write())
 
 
-def cmd_apply_fixes(args) -> int:
+def cmd_apply_fixes(args) -> dict:
     """Handle apply-fixes subcommand."""
     settings_path = resolve_settings_arg(args)
     settings, error = load_settings(settings_path)
     if error:
-        print(serialize_toon({'error': error}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': error}
 
     total_duplicates = 0
     total_paths_fixed = 0
@@ -170,8 +169,8 @@ def cmd_apply_fixes(args) -> int:
     else:
         result['applied'] = False
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS
+    result.setdefault('status', 'success')
+    return result
 
 
 # =============================================================================
@@ -179,7 +178,7 @@ def cmd_apply_fixes(args) -> int:
 # =============================================================================
 
 
-def cmd_add(args) -> int:
+def cmd_add(args) -> dict:
     """Handle add subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -190,8 +189,8 @@ def cmd_add(args) -> int:
     if args.permission in allow_list:
         result['success'] = True
         result['action'] = 'already_exists'
-        print(serialize_toon(result))
-        return EXIT_SUCCESS
+        result.setdefault("status", "success")
+        return result
 
     allow_list.append(args.permission)
     allow_list.sort()
@@ -203,8 +202,8 @@ def cmd_add(args) -> int:
         result['success'] = False
         result['error'] = 'Failed to save settings'
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
+    result['status'] = 'success' if result.get('success', True) else 'error'
+    return result
 
 
 # =============================================================================
@@ -212,7 +211,7 @@ def cmd_add(args) -> int:
 # =============================================================================
 
 
-def cmd_remove(args) -> int:
+def cmd_remove(args) -> dict:
     """Handle remove subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -223,8 +222,8 @@ def cmd_remove(args) -> int:
     if args.permission not in allow_list:
         result['success'] = True
         result['action'] = 'not_found'
-        print(serialize_toon(result))
-        return EXIT_SUCCESS
+        result.setdefault("status", "success")
+        return result
 
     allow_list.remove(args.permission)
 
@@ -235,8 +234,8 @@ def cmd_remove(args) -> int:
         result['success'] = False
         result['error'] = 'Failed to save settings'
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
+    result['status'] = 'success' if result.get('success', True) else 'error'
+    return result
 
 
 # =============================================================================
@@ -244,7 +243,7 @@ def cmd_remove(args) -> int:
 # =============================================================================
 
 
-def cmd_ensure(args) -> int:
+def cmd_ensure(args) -> dict:
     """Handle ensure subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -280,8 +279,8 @@ def cmd_ensure(args) -> int:
     else:
         result['success'] = True
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
+    result['status'] = 'success' if result.get('success', True) else 'error'
+    return result
 
 
 # =============================================================================
@@ -336,13 +335,12 @@ def generate_wildcard(parsed_permissions: list[dict]) -> str:
     return f'{perm_type}(**/{base_name}-*.{extension})'
 
 
-def cmd_consolidate(args) -> int:
+def cmd_consolidate(args) -> dict:
     """Handle consolidate subcommand."""
     settings_path = resolve_settings_arg(args)
     settings, error = load_settings(settings_path)
     if error:
-        print(serialize_toon({'error': error}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': error}
 
     allow_list = settings.get('permissions', {}).get('allow', [])
     timestamped_groups = defaultdict(list)
@@ -391,8 +389,8 @@ def cmd_consolidate(args) -> int:
     else:
         result['applied'] = False
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS
+    result.setdefault('status', 'success')
+    return result
 
 
 # =============================================================================
@@ -468,24 +466,21 @@ def generate_required_wildcards(marketplace: dict) -> list[str]:
     return wildcards
 
 
-def cmd_ensure_wildcards(args) -> int:
+def cmd_ensure_wildcards(args) -> dict:
     """Handle ensure-wildcards subcommand."""
     settings, error = load_settings(args.settings)
     if error:
-        print(serialize_toon({'error': error}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': error}
 
     marketplace_path = Path(args.marketplace_json)
     if not marketplace_path.exists():
-        print(serialize_toon({'error': f'Marketplace file not found: {args.marketplace_json}'}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': f'Marketplace file not found: {args.marketplace_json}'}
 
     try:
         with open(marketplace_path) as f:
             marketplace = json.load(f)
     except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON in {args.marketplace_json}: {e}'}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': f'Invalid JSON in {args.marketplace_json}: {e}'}
 
     allow_list = settings.get('permissions', {}).get('allow', [])
     allow_set = set(allow_list)
@@ -527,8 +522,8 @@ def cmd_ensure_wildcards(args) -> int:
     else:
         result['applied'] = False
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS
+    result.setdefault('status', 'success')
+    return result
 
 
 # =============================================================================
@@ -633,7 +628,7 @@ def build_bundle_summary(bundles: list[dict]) -> list[dict]:
     return summaries
 
 
-def cmd_generate_wildcards(args) -> int:
+def cmd_generate_wildcards(args) -> dict:
     """Handle generate-wildcards subcommand."""
     try:
         if args.input:
@@ -642,11 +637,9 @@ def cmd_generate_wildcards(args) -> int:
         else:
             inventory = json.load(sys.stdin)
     except json.JSONDecodeError as e:
-        print(serialize_toon({'error': f'Invalid JSON input: {e}'}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': f'Invalid JSON input: {e}'}
     except FileNotFoundError:
-        print(serialize_toon({'error': f'Input file not found: {args.input}'}))
-        return EXIT_ERROR
+        return {'status': 'error', 'error': f'Input file not found: {args.input}'}
 
     bundles = inventory.get('bundles', [])
 
@@ -661,8 +654,8 @@ def cmd_generate_wildcards(args) -> int:
                 'wildcards_generated': 0,
             },
         }
-        print(serialize_toon(result))
-        return EXIT_SUCCESS
+        result.setdefault("status", "success")
+        return result
 
     skill_wildcards = generate_skill_wildcards(bundles)
     command_bundle_wildcards = generate_command_bundle_wildcards(bundles)
@@ -700,8 +693,8 @@ def cmd_generate_wildcards(args) -> int:
             'scripts_note': f'{total_scripts} scripts - handled by relative path architecture (no permissions needed)',
         },
     }
-    print(serialize_toon(result))
-    return EXIT_SUCCESS
+    result.setdefault('status', 'success')
+    return result
 
 
 # =============================================================================
@@ -709,7 +702,7 @@ def cmd_generate_wildcards(args) -> int:
 # =============================================================================
 
 
-def cmd_ensure_executor(args) -> int:
+def cmd_ensure_executor(args) -> dict:
     """Handle ensure-executor subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -720,8 +713,8 @@ def cmd_ensure_executor(args) -> int:
     if EXECUTOR_PERMISSION in allow_list:
         result['action'] = 'already_exists'
         result['success'] = True
-        print(serialize_toon(result))
-        return EXIT_SUCCESS
+        result.setdefault("status", "success")
+        return result
 
     if not args.dry_run:
         allow_list.append(EXECUTOR_PERMISSION)
@@ -736,8 +729,8 @@ def cmd_ensure_executor(args) -> int:
         result['action'] = 'would_add'
         result['success'] = True
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
+    result['status'] = 'success' if result.get('success', True) else 'error'
+    return result
 
 
 # =============================================================================
@@ -750,7 +743,7 @@ def is_individual_script_permission(permission: str) -> bool:
     return permission.startswith('Bash(python3 ') and '/marketplace/bundles/' in permission and '/scripts' in permission
 
 
-def cmd_cleanup_scripts(args) -> int:
+def cmd_cleanup_scripts(args) -> dict:
     """Handle cleanup-scripts subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -772,8 +765,8 @@ def cmd_cleanup_scripts(args) -> int:
     if not individual_scripts and not broad_python:
         result['action'] = 'nothing_to_remove'
         result['success'] = True
-        print(serialize_toon(result))
-        return EXIT_SUCCESS
+        result.setdefault("status", "success")
+        return result
 
     if not args.dry_run:
         # Remove individual script permissions
@@ -796,8 +789,8 @@ def cmd_cleanup_scripts(args) -> int:
         result['success'] = True
         result['total_would_remove'] = len(individual_scripts) + (1 if broad_python else 0)
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS if result.get('success') else EXIT_ERROR
+    result['status'] = 'success' if result.get('success', True) else 'error'
+    return result
 
 
 # =============================================================================
@@ -805,7 +798,7 @@ def cmd_cleanup_scripts(args) -> int:
 # =============================================================================
 
 
-def cmd_migrate_executor(args) -> int:
+def cmd_migrate_executor(args) -> dict:
     """Handle migrate-executor subcommand."""
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
@@ -840,8 +833,7 @@ def cmd_migrate_executor(args) -> int:
         allow_list.sort()
 
         if not save_settings(str(settings_path), settings):
-            print(serialize_toon({'error': 'Failed to save settings', 'success': False}))
-            return EXIT_ERROR
+            return {'status': 'error', 'error': 'Failed to save settings', 'success': False}
 
     result = {
         'success': True,
@@ -857,8 +849,8 @@ def cmd_migrate_executor(args) -> int:
         'summary': f'Migrated to executor-only pattern: 1 permission replaces {len(individual_scripts)} individual script permissions',
     }
 
-    print(serialize_toon(result))
-    return EXIT_SUCCESS
+    result.setdefault('status', 'success')
+    return result
 
 
 # =============================================================================
@@ -954,7 +946,10 @@ def main():
         parser.print_help()
         return EXIT_ERROR
 
-    return args.func(args)
+    result = args.func(args)
+    is_error = result.get('status') != 'success'
+    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
+    return EXIT_ERROR if is_error else EXIT_SUCCESS
 
 
 if __name__ == '__main__':

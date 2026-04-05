@@ -20,15 +20,16 @@ Usage:
 """
 
 import argparse
-import sys
 
 from _cmd_apply import cmd_apply
 from _cmd_categorize import cmd_categorize
 from _cmd_extract import cmd_extract
 from _cmd_verify import cmd_verify
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 
-def main():
+@safe_main
+def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
         description='Plugin component fix tools',
@@ -83,8 +84,10 @@ Examples:
         parser.print_help()
         return 1
 
-    return args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

@@ -33,8 +33,7 @@ import argparse
 from _cmd_crud import cmd_add, cmd_remove, cmd_update
 from _cmd_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
-from _tasks_core import output_error
-from file_ops import safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 
 
@@ -151,15 +150,13 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
 
-    try:
-        handler = COMMANDS.get(args.command)
-        if handler:
-            return handler(args)
-        else:
-            output_error(f'Unknown command: {args.command}')
-            return 1
-    except Exception as e:
-        output_error(str(e))
+    handler = COMMANDS.get(args.command)
+    if handler:
+        result = handler(args)
+        output_toon(result)
+        return 0
+    else:
+        output_toon({'status': 'error', 'error': 'error', 'message': f'Unknown command: {args.command}'})
         return 1
 
 

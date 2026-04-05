@@ -11,7 +11,6 @@ from _tasks_core import (
     get_next_number,
     get_tasks_dir,
     output_error,
-    output_toon,
     parse_depends_on,
     parse_stdin_task,
     parse_task_file,
@@ -22,7 +21,7 @@ from file_ops import atomic_write_file  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 
-def cmd_add(args) -> int:
+def cmd_add(args) -> dict:
     """Handle 'add' subcommand.
 
     Reads task definition from --content CLI argument in TOON format.
@@ -30,14 +29,12 @@ def cmd_add(args) -> int:
     """
     content = args.content.replace('\\n', '\n')
     if not content.strip():
-        output_error('No task definition provided (--content is empty)')
-        return 1
+        return output_error('No task definition provided (--content is empty)')
 
     try:
         parsed = parse_stdin_task(content)
     except ValueError as e:
-        output_error(str(e))
-        return 1
+        return output_error(str(e))
 
     task_dir = get_tasks_dir(args.plan_id)
 
@@ -78,37 +75,33 @@ def cmd_add(args) -> int:
         f'[MANAGE-TASKS] Added TASK-{number:03d} ({parsed["origin"]}): {parsed["title"][:50]}',
     )
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'file': filename,
-            'total_tasks': total,
-            'task': {
-                'number': number,
-                'title': parsed['title'],
-                'domain': parsed['domain'],
-                'profile': parsed['profile'],
-                'skills': parsed['skills'],
-                'deliverable': parsed['deliverable'],
-                'depends_on': parsed['depends_on'],
-                'origin': parsed['origin'],
-                'status': 'pending',
-                'step_count': len(steps),
-            },
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': filename,
+        'total_tasks': total,
+        'task': {
+            'number': number,
+            'title': parsed['title'],
+            'domain': parsed['domain'],
+            'profile': parsed['profile'],
+            'skills': parsed['skills'],
+            'deliverable': parsed['deliverable'],
+            'depends_on': parsed['depends_on'],
+            'origin': parsed['origin'],
+            'status': 'pending',
+            'step_count': len(steps),
+        },
+    }
 
 
-def cmd_update(args) -> int:
+def cmd_update(args) -> dict:
     """Handle 'update' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
     filepath = find_task_file(task_dir, args.number)
     if not filepath:
-        output_error(f'Task TASK-{args.number} not found')
-        return 1
+        return output_error(f'Task TASK-{args.number} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)
@@ -125,8 +118,7 @@ def cmd_update(args) -> int:
         task['depends_on'] = depends_on
     if args.status:
         if args.status not in ('pending', 'in_progress', 'done', 'blocked'):
-            output_error(f'Invalid status: {args.status}. Must be pending, in_progress, done, or blocked')
-            return 1
+            return output_error(f'Invalid status: {args.status}. Must be pending, in_progress, done, or blocked')
         task['status'] = args.status
 
     # Handle new fields
@@ -136,8 +128,7 @@ def cmd_update(args) -> int:
         try:
             task['profile'] = validate_profile(args.profile)
         except ValueError as e:
-            output_error(str(e))
-            return 1
+            return output_error(str(e))
     if getattr(args, 'skills', None):
         try:
             # Skills can be comma-separated or a list
@@ -147,45 +138,39 @@ def cmd_update(args) -> int:
                 skills_list = args.skills
             task['skills'] = validate_skills(skills_list)
         except ValueError as e:
-            output_error(str(e))
-            return 1
+            return output_error(str(e))
     if getattr(args, 'deliverable', None):
         try:
             task['deliverable'] = int(args.deliverable)
         except ValueError:
-            output_error('Deliverable must be a positive integer')
-            return 1
+            return output_error('Deliverable must be a positive integer')
 
     # Filename uses TASK-NNN format - doesn't change when title changes
     new_content = format_task_file(task)
     atomic_write_file(filepath, new_content)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'file': filepath.name,
-            'task': {
-                'number': task['number'],
-                'title': task['title'],
-                'domain': task.get('domain'),
-                'profile': task.get('profile'),
-                'skills': task.get('skills', []),
-                'status': task['status'],
-            },
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': filepath.name,
+        'task': {
+            'number': task['number'],
+            'title': task['title'],
+            'domain': task.get('domain'),
+            'profile': task.get('profile'),
+            'skills': task.get('skills', []),
+            'status': task['status'],
+        },
+    }
 
 
-def cmd_remove(args) -> int:
+def cmd_remove(args) -> dict:
     """Handle 'remove' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
     filepath = find_task_file(task_dir, args.number)
     if not filepath:
-        output_error(f'Task TASK-{args.number} not found')
-        return 1
+        return output_error(f'Task TASK-{args.number} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)
@@ -197,12 +182,9 @@ def cmd_remove(args) -> int:
 
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Removed TASK-{task["number"]:03d}: {task["title"][:50]}')
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'total_tasks': total,
-            'removed': {'number': task['number'], 'title': task['title'], 'file': filename},
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'total_tasks': total,
+        'removed': {'number': task['number'], 'title': task['title'], 'file': filename},
+    }

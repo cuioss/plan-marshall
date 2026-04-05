@@ -23,7 +23,6 @@ Usage:
 
 import argparse
 import json
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,7 +39,7 @@ from _doctor_shared import (
     get_report_dir,
     get_report_filename,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 SCRIPT_DIR = Path(__file__).parent
 
@@ -141,12 +140,11 @@ def collect_filtered_components(
 # =============================================================================
 
 
-def cmd_scan(args) -> int:
+def cmd_scan(args) -> dict:
     """Scan marketplace and list all components."""
     marketplace_root = find_marketplace_root()
     if not marketplace_root:
-        print(json.dumps({'error': 'Marketplace directory not found'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
     bundle_filter = None
     if args.bundles:
@@ -173,7 +171,7 @@ def cmd_scan(args) -> int:
             }
         )
 
-    output = {
+    return {
         'status': 'success',
         'marketplace_root': str(marketplace_root),
         'total_bundles': len(bundles),
@@ -181,16 +179,12 @@ def cmd_scan(args) -> int:
         'bundles': bundles_list,
     }
 
-    print(serialize_toon(output))
-    return 0
 
-
-def cmd_analyze(args) -> int:
+def cmd_analyze(args) -> dict:
     """Analyze all components for issues."""
     marketplace_root = find_marketplace_root()
     if not marketplace_root:
-        print(json.dumps({'error': 'Marketplace directory not found'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
     bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
     component_list = collect_filtered_components(bundles, parse_csv_filter(args.type), parse_csv_filter(args.name))
@@ -211,7 +205,7 @@ def cmd_analyze(args) -> int:
 
     categorized = categorize_all_issues(all_issues)
 
-    output = {
+    return {
         'status': 'success',
         'total_components': len(all_analysis),
         'total_issues': total_issues,
@@ -224,16 +218,12 @@ def cmd_analyze(args) -> int:
         'categorized_unfixable': categorized['unfixable'],
     }
 
-    print(serialize_toon(output))
-    return 0
 
-
-def cmd_fix(args) -> int:
+def cmd_fix(args) -> dict:
     """Apply safe fixes across marketplace."""
     marketplace_root = find_marketplace_root()
     if not marketplace_root:
-        print(json.dumps({'error': 'Marketplace directory not found'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
     bundles = find_bundles(marketplace_root, parse_csv_filter(args.bundles))
     component_list = collect_filtered_components(bundles, parse_csv_filter(args.type), parse_csv_filter(args.name))
@@ -249,7 +239,7 @@ def cmd_fix(args) -> int:
     safe_issues = categorized['safe']
 
     if not safe_issues:
-        output = {
+        return {
             'status': 'no_fixes_needed',
             'message': 'No safe fixes to apply',
             'dry_run': args.dry_run,
@@ -257,14 +247,12 @@ def cmd_fix(args) -> int:
             'risky_issues': len(categorized['risky']),
             'unfixable_issues': len(categorized['unfixable']),
         }
-        print(serialize_toon(output))
-        return 0
 
     # Apply safe fixes
     fix_results = apply_safe_fixes(safe_issues, marketplace_root, SCRIPT_DIR, args.dry_run)
 
-    output = {
-        'status': 'completed',
+    return {
+        'status': 'completed' if not fix_results['failed'] else 'error',
         'dry_run': args.dry_run,
         'total_safe_issues': len(safe_issues),
         'applied': len(fix_results['applied']),
@@ -277,16 +265,12 @@ def cmd_fix(args) -> int:
         'unfixable_issues': len(categorized['unfixable']),
     }
 
-    print(serialize_toon(output))
-    return 0 if not fix_results['failed'] else 1
 
-
-def cmd_report(args) -> int:
+def cmd_report(args) -> dict:
     """Generate comprehensive report for LLM review."""
     marketplace_root = find_marketplace_root()
     if not marketplace_root:
-        print(json.dumps({'error': 'Marketplace directory not found'}), file=sys.stderr)
-        return 1
+        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
     bundle_filter = None
     if args.bundles:
@@ -346,7 +330,7 @@ def cmd_report(args) -> int:
         f.write(output_json)
 
     # Output success message
-    output = {
+    return {
         'status': 'success',
         'report_dir': str(report_dir),
         'report_file': str(json_path),
@@ -354,9 +338,6 @@ def cmd_report(args) -> int:
         'summary': report['summary'],
         'next_step': 'LLM should read report_file and create findings.md with analysis',
     }
-    print(serialize_toon(output))
-
-    return 0
 
 
 # =============================================================================
@@ -364,7 +345,8 @@ def cmd_report(args) -> int:
 # =============================================================================
 
 
-def main():
+@safe_main
+def main() -> int:
     parser = argparse.ArgumentParser(
         description='Batch marketplace analysis and fixing',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -430,8 +412,10 @@ Examples:
         parser.print_help()
         return 1
 
-    return args.func(args)
+    result = args.func(args)
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()

@@ -6,7 +6,7 @@ Entry point for all architecture operations. Dispatches to command modules.
 
 import argparse
 
-from file_ops import safe_main  # type: ignore[import-not-found]
+from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 
 @safe_main
@@ -244,7 +244,9 @@ def main() -> int:
         handler = handlers.get(args.command)
 
     if handler:
-        return handler(args)
+        result = handler(args)
+        output_toon(result)
+        return 0
     else:
         parser.print_help()
         return 1

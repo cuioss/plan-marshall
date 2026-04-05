@@ -54,7 +54,7 @@ def test_structure_table_refs_no_unreferenced():
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = result.json()
+    data = result.toon()
     unreferenced = data.get('standards_files', {}).get('unreferenced_files', [])
     assert len(unreferenced) == 0, f'Should have no unreferenced files, found {len(unreferenced)}'
 
@@ -68,7 +68,7 @@ def test_structure_table_refs_no_missing():
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = result.json()
+    data = result.toon()
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Should have no missing files, found {len(missing)}'
 
@@ -82,7 +82,7 @@ def test_structure_table_refs_perfect_score():
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = result.json()
+    data = result.toon()
     score = data.get('structure_score', 0)
     assert score >= 100, f'Score should be 100, got {score}'
 
@@ -96,7 +96,7 @@ def test_structure_code_block_no_false_positive():
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = result.json()
+    data = result.toon()
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Should not flag code block examples as missing, found {len(missing)}'
 
@@ -110,7 +110,7 @@ def test_structure_cross_skill_no_false_positive():
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = result.json()
+    data = result.toon()
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Cross-skill refs should not be flagged as missing, found {len(missing)}'
 
@@ -124,7 +124,7 @@ def test_structure_real_plugin_doctor():
     result = run_script(SCRIPT_PATH, 'structure', '--directory', str(skill_dir))
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
-    data = result.json()
+    data = result.toon()
     score = data.get('structure_score', 0)
     assert score >= 90, f'plugin-doctor should score >= 90, got {score}'
 
@@ -153,8 +153,9 @@ def test_crossfile_missing_argument():
 def test_crossfile_invalid_path():
     """Test returns error for invalid path."""
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', '/nonexistent/path')
-    assert result.returncode != 0, 'Should return error for invalid path'
-    output = result.stderr.lower() + result.stdout.lower()
+    data = result.toon()
+    assert data.get('status') == 'error', 'Should return error for invalid path'
+    output = str(data).lower()
     assert 'not found' in output or 'error' in output, 'Should indicate path not found'
 
 
@@ -165,7 +166,7 @@ def test_crossfile_duplicates_valid_json():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.json()
+    data = result.toon()
     assert data is not None, 'Should return valid JSON'
 
 
@@ -176,7 +177,7 @@ def test_crossfile_detect_exact_duplicates():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.json()
+    data = result.toon()
 
     exact_duplicates = data.get('exact_duplicates', [])
     assert len(exact_duplicates) >= 1, f'Should detect exact duplicates, found {len(exact_duplicates)}'
@@ -189,7 +190,7 @@ def test_crossfile_extraction_candidates():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.json()
+    data = result.toon()
 
     assert 'extraction_candidates' in data, 'Should have extraction_candidates field'
 
@@ -201,7 +202,7 @@ def test_crossfile_llm_review_flag():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.json()
+    data = result.toon()
 
     summary = data.get('summary', {})
     assert 'llm_review_required' in summary, 'Should contain llm_review_required flag in summary'
@@ -214,7 +215,7 @@ def test_crossfile_clean_skill():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.json()
+    data = result.toon()
     assert data is not None, 'Should return valid JSON for clean skill'
 
 
@@ -225,7 +226,7 @@ def test_crossfile_custom_threshold():
         return  # Skip if fixture not available
 
     result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path), '--similarity-threshold', '0.3')
-    data = result.json()
+    data = result.toon()
     assert data is not None, 'Should accept custom similarity threshold'
 
 
@@ -241,7 +242,7 @@ def test_markdown_subdoc_bloat_normal():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['bloat']['classification'] == 'NORMAL', f'Expected NORMAL, got {data["bloat"]["classification"]}'
     finally:
         temp_file.unlink()
@@ -254,7 +255,7 @@ def test_markdown_subdoc_bloat_large():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['bloat']['classification'] == 'LARGE', f'Expected LARGE, got {data["bloat"]["classification"]}'
     finally:
         temp_file.unlink()
@@ -267,7 +268,7 @@ def test_markdown_subdoc_bloat_bloated():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['bloat']['classification'] == 'BLOATED', f'Expected BLOATED, got {data["bloat"]["classification"]}'
     finally:
         temp_file.unlink()
@@ -280,7 +281,7 @@ def test_markdown_subdoc_bloat_critical():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         assert data['bloat']['classification'] == 'CRITICAL', (
             f'Expected CRITICAL, got {data["bloat"]["classification"]}'
         )
@@ -317,7 +318,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect body section reference, found {len(rule_12)}'
         assert rule_12[0]['pattern'] == 'invalid_section_reference'
@@ -348,7 +349,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect "otherwise body" pattern, found {len(rule_12)}'
     finally:
@@ -379,7 +380,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag correct original_input reference, found {len(rule_12)}'
     finally:
@@ -409,7 +410,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag body reference without plan-documents call, found {len(rule_12)}'
     finally:
@@ -428,7 +429,7 @@ def test_markdown_skill_detects_unsupported_tools_field():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
         tools_info = required.get('tools', {})
@@ -447,7 +448,7 @@ def test_markdown_skill_detects_misspelled_user_invocable():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
         user_inv = required.get('user_invocable', {})
@@ -464,7 +465,7 @@ def test_markdown_skill_detects_correct_user_invocable():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
         user_inv = required.get('user_invocable', {})
@@ -481,7 +482,7 @@ def test_markdown_skill_detects_missing_user_invocable():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
         user_inv = required.get('user_invocable', {})
@@ -503,7 +504,7 @@ def test_checklist_detection_present():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is True
         assert checklists['count'] == 3
@@ -518,7 +519,7 @@ def test_checklist_detection_absent():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is False
         assert checklists['count'] == 0
@@ -535,7 +536,7 @@ def test_checklist_detection_mixed():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is True
         assert checklists['count'] == 3
@@ -561,7 +562,7 @@ def test_checklist_template_exempt():
 
     result = run_script(SCRIPT_PATH, 'markdown', '--file', str(template_path), '--type', 'skill')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
-    data = result.json()
+    data = result.toon()
     checklists = data['checklist_patterns']
     assert checklists['has_checklists'] is False, 'Templates should be exempt from checklist detection'
 
@@ -571,7 +572,7 @@ def test_checklist_template_exempt():
     try:
         result2 = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result2.returncode == 0
-        data2 = result2.json()
+        data2 = result2.toon()
         assert data2['checklist_patterns']['has_checklists'] is True, 'Non-templates should detect checklists'
     finally:
         temp_file.unlink()
@@ -584,7 +585,7 @@ def test_checklist_sections_extracted():
     try:
         result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
         assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.json()
+        data = result.toon()
         checklists = data['checklist_patterns']
         assert 'Quality Rules' in checklists['sections']
         assert 'Verification' in checklists['sections']

@@ -235,8 +235,7 @@ def test_missing_marshal_json():
 
         result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
         assert not result.success, 'Should fail without marshal.json'
-        assert 'error' in result.stdout.lower()
-        assert 'marshal.json not found' in result.stdout
+        assert 'marshal.json not found' in result.stderr
 
 
 def test_missing_retention_config():
@@ -248,8 +247,7 @@ def test_missing_retention_config():
 
         result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
         assert not result.success, 'Should fail without retention config'
-        assert 'error' in result.stdout.lower()
-        assert 'system.retention' in result.stdout.lower()
+        assert 'system.retention' in result.stderr.lower()
 
 
 def test_missing_subcommand():

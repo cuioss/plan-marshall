@@ -6,10 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_ERROR = 2
-
 
 def categorize_broken_link(issue: dict[str, Any]) -> str:
     """Categorize a broken link issue."""
@@ -27,7 +23,7 @@ def categorize_broken_link(issue: dict[str, Any]) -> str:
     return 'must-verify-manual'
 
 
-def cmd_classify_links(args):
+def cmd_classify_links(args) -> dict:
     """Handle classify-links subcommand."""
     try:
         if args.input:
@@ -36,11 +32,10 @@ def cmd_classify_links(args):
         else:
             input_data = json.load(sys.stdin)
     except (json.JSONDecodeError, FileNotFoundError) as e:
-        print(f'Error: {e}', file=sys.stderr)
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'input_error', 'message': str(e)}
 
     issues = input_data.get('issues', input_data.get('data', {}).get('issues', []))
-    categorized = {'likely-false-positive': [], 'must-verify-manual': [], 'definitely-broken': []}
+    categorized: dict[str, list[Any]] = {'likely-false-positive': [], 'must-verify-manual': [], 'definitely-broken': []}
 
     for issue in issues:
         category = categorize_broken_link(issue)
@@ -48,6 +43,7 @@ def cmd_classify_links(args):
         categorized[category].append(issue)
 
     result = {
+        'status': 'success',
         'summary': {
             'total_issues': len(issues),
             'likely_false_positive_count': len(categorized['likely-false-positive']),
@@ -57,10 +53,8 @@ def cmd_classify_links(args):
         'categorized_issues': categorized,
     }
 
-    output_json = json.dumps(result, indent=2 if args.pretty else None)
     if args.output:
+        output_json = json.dumps(result, indent=2 if args.pretty else None)
         Path(args.output).write_text(output_json)
-    else:
-        print(output_json)
 
-    return EXIT_SUCCESS
+    return result

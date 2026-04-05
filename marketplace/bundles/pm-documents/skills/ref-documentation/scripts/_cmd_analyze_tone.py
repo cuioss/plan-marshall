@@ -3,14 +3,9 @@
 
 import json
 import re
-import sys
 from pathlib import Path
 
 from plan_logging import log_entry  # type: ignore[import-not-found]
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_ERROR = 2
 
 # Promotional language patterns
 PROMOTIONAL_PATTERNS = [
@@ -28,11 +23,10 @@ PERFORMANCE_PATTERNS = [
 ]
 
 
-def cmd_analyze_tone(args):
+def cmd_analyze_tone(args) -> dict:
     """Handle analyze-tone subcommand."""
     if not args.file and not args.directory:
-        print('Error: --file or --directory required', file=sys.stderr)
-        return EXIT_ERROR
+        return {'status': 'error', 'error': 'missing_args', 'message': '--file or --directory required'}
 
     all_issues = []
 
@@ -77,10 +71,12 @@ def cmd_analyze_tone(args):
             'script',
             'global',
             'INFO',
-            f'[DOCS-TONE] Found {len(all_issues)} issues ({promotional_count} promotional, {perf_count} performance claims)',
+            f'[DOCS-TONE] Found {len(all_issues)} issues'
+            f' ({promotional_count} promotional, {perf_count} performance claims)',
         )
 
     result = {
+        'status': 'success',
         'summary': {
             'total_issues': len(all_issues),
             'promotional_count': promotional_count,
@@ -89,10 +85,7 @@ def cmd_analyze_tone(args):
         'all_issues': all_issues,
     }
 
-    output_json = json.dumps(result, indent=2 if args.pretty else None)
     if args.output:
-        Path(args.output).write_text(output_json)
-    else:
-        print(output_json)
+        Path(args.output).write_text(json.dumps(result, indent=2 if args.pretty else None))
 
-    return EXIT_SUCCESS
+    return result

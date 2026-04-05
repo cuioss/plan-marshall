@@ -193,7 +193,7 @@ def safe_main(main_fn: Callable[[], int]) -> int:
 # ============================================================================
 
 
-def parse_json_arg(raw: str, field_name: str) -> tuple[Any, int]:
+def parse_json_arg(raw: str, field_name: str) -> tuple[Any, dict | None]:
     """Parse a JSON string from a CLI argument.
 
     Eliminates the duplicated try/except json.loads pattern across workflow
@@ -204,22 +204,16 @@ def parse_json_arg(raw: str, field_name: str) -> tuple[Any, int]:
         field_name: Argument name for error messages (e.g., '--issues').
 
     Returns:
-        Tuple of (parsed_value, return_code). On success, return_code is 0.
-        On failure, the error TOON is already printed and return_code is 1;
-        the caller should ``return 1`` immediately.
+        Tuple of (parsed_value, error_dict_or_None). On success, error is None.
+        On failure, error is a dict the caller should ``return`` immediately.
     """
     try:
-        return json.loads(raw), 0
+        return json.loads(raw), None
     except json.JSONDecodeError as e:
-        print(
-            serialize_toon(
-                make_error(
-                    f'Invalid {field_name} JSON: {e}',
-                    code=ErrorCode.INVALID_INPUT,
-                )
-            )
+        return None, make_error(
+            f'Invalid {field_name} JSON: {e}',
+            code=ErrorCode.INVALID_INPUT,
         )
-        return None, 1
 
 
 # ============================================================================
@@ -349,35 +343,34 @@ def is_test_file(file_path: str) -> bool:
 # ============================================================================
 
 
-def cmd_triage_single(json_str: str, triage_fn: Callable[[dict], dict]) -> int:
+def cmd_triage_single(json_str: str, triage_fn: Callable[[dict], dict]) -> dict:
     """Standard single-item triage command handler.
 
-    Parses JSON string, calls triage_fn, prints TOON result.
+    Parses JSON string, calls triage_fn, returns result dict.
 
     Args:
         json_str: JSON string representing a single item (comment, issue, etc.)
         triage_fn: Function that takes a dict and returns a triage result dict
 
     Returns:
-        0 on success, 1 on failure
+        Result dict with 'status' key.
     """
     try:
         item = json.loads(json_str)
     except json.JSONDecodeError as e:
-        return print_error(f'Invalid JSON input: {e}')
+        return make_error(f'Invalid JSON input: {e}')
 
-    result = triage_fn(item)
-    return print_toon(result)
+    return triage_fn(item)
 
 
 def cmd_triage_batch_handler(
     json_str: str,
     triage_fn: Callable[[dict], dict],
     action_categories: list[str],
-) -> int:
+) -> dict:
     """Standard batch triage command handler.
 
-    Parses JSON array, triages each item, prints TOON with summary counts.
+    Parses JSON array, triages each item, returns result dict with summary counts.
 
     Args:
         json_str: JSON string representing an array of items
@@ -386,15 +379,15 @@ def cmd_triage_batch_handler(
             (e.g., ['code_change', 'explain', 'ignore'] or ['fix', 'suppress'])
 
     Returns:
-        0 on success, 1 on failure
+        Result dict with 'status' key.
     """
     try:
         items = json.loads(json_str)
     except json.JSONDecodeError as e:
-        return print_error(f'Invalid JSON input: {e}')
+        return make_error(f'Invalid JSON input: {e}')
 
     if not isinstance(items, list):
-        return print_error('Input must be a JSON array')
+        return make_error('Input must be a JSON array')
 
     results: list[dict[str, Any]] = []
     failed = 0
@@ -417,7 +410,7 @@ def cmd_triage_batch_handler(
     for category in action_categories:
         summary[category] = sum(1 for r in results if r.get('action') == category)
 
-    return print_toon({'results': results, 'summary': summary, 'status': 'success'})
+    return {'results': results, 'summary': summary, 'status': 'success'}
 
 
 # ============================================================================

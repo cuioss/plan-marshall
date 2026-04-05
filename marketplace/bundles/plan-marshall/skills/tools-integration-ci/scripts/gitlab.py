@@ -66,9 +66,9 @@ from ci_base import (  # type: ignore[import-not-found]
     compute_elapsed,
     compute_total_elapsed,
     dispatch,
+    make_error,
     make_pr_number_handler,
     make_simple_handler,
-    output_error,
     poll_until,
     run_cli,
     truncate_log_content,
@@ -136,12 +136,12 @@ def run_api(endpoint: str) -> tuple[int, list | dict | None, str]:
 # ---------------------------------------------------------------------------
 
 
-def cmd_pr_create(args: argparse.Namespace) -> int:
+def cmd_pr_create(args: argparse.Namespace) -> dict:
     """Handle 'pr create' subcommand (creates MR in GitLab)."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_create', err)
+        return make_error('pr_create', err)
 
     # Build command - glab uses 'mr' for merge requests
     glab_args = ['mr', 'create', '--title', args.title, '--description', args.body]
@@ -153,7 +153,7 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
     # Execute
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return output_error('pr_create', 'Failed to create MR', stderr.strip())
+        return make_error('pr_create', 'Failed to create MR', stderr.strip())
 
     # Parse the URL from output (glab mr create outputs the URL)
     mr_url = stdout.strip()
@@ -170,18 +170,12 @@ def cmd_pr_create(args: argparse.Namespace) -> int:
             pass
 
     # Output TOON (using 'pr' terminology for API consistency)
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_create',
-                'pr_number': mr_number,
-                'pr_url': mr_url,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_create',
+        'pr_number': mr_number,
+        'pr_url': mr_url,
+    }
 
 
 def view_pr_data() -> dict:
@@ -251,22 +245,16 @@ def view_pr_data() -> dict:
     }
 
 
-def cmd_pr_view(args: argparse.Namespace) -> int:
+def cmd_pr_view(args: argparse.Namespace) -> dict:
     """Handle 'pr view' subcommand - get MR for current branch."""
-    result = view_pr_data()
-    if result.get('status') != 'success':
-        return output_error(
-            result.get('operation', 'pr_view'), result.get('error', 'Unknown error'), result.get('context', '')
-        )
-    print(serialize_toon(result, table_separator='\t'))
-    return 0
+    return view_pr_data()
 
 
-def cmd_pr_list(args: argparse.Namespace) -> int:
+def cmd_pr_list(args: argparse.Namespace) -> dict:
     """Handle 'pr list' subcommand - list merge requests with optional filters."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_list', err)
+        return make_error('pr_list', err)
 
     # Map state for glab: open->opened, closed->closed, all->all
     state_map = {'open': 'opened', 'closed': 'closed', 'all': 'all'}
@@ -278,12 +266,12 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
 
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return output_error('pr_list', 'Failed to list MRs', stderr.strip())
+        return make_error('pr_list', 'Failed to list MRs', stderr.strip())
 
     try:
         mrs: list[dict[str, Any]] = json.loads(stdout)
     except json.JSONDecodeError:
-        return output_error('pr_list', 'Failed to parse glab output', stdout[:100])
+        return make_error('pr_list', 'Failed to parse glab output', stdout[:100])
 
     pr_list = [
         {
@@ -296,20 +284,14 @@ def cmd_pr_list(args: argparse.Namespace) -> int:
         }
         for mr in mrs
     ]
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_list',
-                'total': len(mrs),
-                'state_filter': args.state,
-                'head_filter': args.head or '',
-                'prs': pr_list,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_list',
+        'total': len(mrs),
+        'state_filter': args.state,
+        'head_filter': args.head or '',
+        'prs': pr_list,
+    }
 
 
 cmd_pr_reply = make_pr_number_handler(
@@ -320,78 +302,66 @@ cmd_pr_reply = make_pr_number_handler(
 )
 
 
-def cmd_pr_resolve_thread(args: argparse.Namespace) -> int:
+def cmd_pr_resolve_thread(args: argparse.Namespace) -> dict:
     """Handle 'pr resolve-thread' subcommand - resolve a discussion thread."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_resolve_thread', err)
+        return make_error('pr_resolve_thread', err)
 
     project_path = get_project_path()
     if not project_path:
-        return output_error('pr_resolve_thread', 'Could not determine project path')
+        return make_error('pr_resolve_thread', 'Could not determine project path')
 
     encoded_path = quote(project_path, safe='')
     endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions/{args.thread_id}'
 
     returncode, stdout, stderr = run_glab(['api', '-X', 'PUT', endpoint, '-f', 'resolved=true'])
     if returncode != 0:
-        return output_error('pr_resolve_thread', f'Failed to resolve thread: {stderr.strip()}')
+        return make_error('pr_resolve_thread', f'Failed to resolve thread: {stderr.strip()}')
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_resolve_thread',
-                'thread_id': args.thread_id,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_resolve_thread',
+        'thread_id': args.thread_id,
+    }
 
 
-def cmd_pr_thread_reply(args: argparse.Namespace) -> int:
+def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     """Handle 'pr thread-reply' subcommand - reply to a discussion thread."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_thread_reply', err)
+        return make_error('pr_thread_reply', err)
 
     project_path = get_project_path()
     if not project_path:
-        return output_error('pr_thread_reply', 'Could not determine project path')
+        return make_error('pr_thread_reply', 'Could not determine project path')
 
     encoded_path = quote(project_path, safe='')
     endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions/{args.thread_id}/notes'
 
     returncode, stdout, stderr = run_glab(['api', '-X', 'POST', endpoint, '-f', f'body={args.body}'])
     if returncode != 0:
-        return output_error('pr_thread_reply', f'Failed to reply to thread: {stderr.strip()}')
+        return make_error('pr_thread_reply', f'Failed to reply to thread: {stderr.strip()}')
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_thread_reply',
-                'pr_number': args.pr_number,
-                'thread_id': args.thread_id,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_thread_reply',
+        'pr_number': args.pr_number,
+        'thread_id': args.thread_id,
+    }
 
 
-def cmd_pr_reviews(args: argparse.Namespace) -> int:
+def cmd_pr_reviews(args: argparse.Namespace) -> dict:
     """Handle 'pr reviews' subcommand (gets MR approvals in GitLab)."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_reviews', err)
+        return make_error('pr_reviews', err)
 
     # Get MR details including approvals
     returncode, stdout, stderr = run_glab(['mr', 'view', str(args.pr_number), '--output', 'json'])
     if returncode != 0:
-        return output_error('pr_reviews', f'Failed to get MR {args.pr_number}', stderr.strip())
+        return make_error('pr_reviews', f'Failed to get MR {args.pr_number}', stderr.strip())
 
     # Parse JSON
     try:
@@ -399,7 +369,7 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
         # GitLab approvals are in 'approved_by' array
         approvals = data.get('approved_by', [])
     except json.JSONDecodeError:
-        return output_error('pr_reviews', 'Failed to parse glab output', stdout[:100])
+        return make_error('pr_reviews', 'Failed to parse glab output', stdout[:100])
 
     # Build review list for TOON table
     reviews = []
@@ -413,19 +383,13 @@ def cmd_pr_reviews(args: argparse.Namespace) -> int:
         )
 
     # Output TOON - map GitLab approvals to review format
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_reviews',
-                'pr_number': args.pr_number,
-                'review_count': len(approvals),
-                'reviews': reviews,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_reviews',
+        'pr_number': args.pr_number,
+        'review_count': len(approvals),
+        'reviews': reviews,
+    }
 
 
 def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dict:
@@ -519,15 +483,9 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     }
 
 
-def cmd_pr_comments(args: argparse.Namespace) -> int:
+def cmd_pr_comments(args: argparse.Namespace) -> dict:
     """Handle 'pr comments' subcommand - fetch MR discussion comments."""
-    result = fetch_pr_comments_data(args.pr_number, args.unresolved_only)
-    if result.get('status') != 'success':
-        return output_error(
-            result.get('operation', 'pr_comments'), result.get('error', 'Unknown error'), result.get('context', '')
-        )
-    print(serialize_toon(result, table_separator='\t'))
-    return 0
+    return fetch_pr_comments_data(args.pr_number, args.unresolved_only)
 
 
 def format_checks_toon(jobs: list[dict]) -> tuple[list[dict], int]:
@@ -577,17 +535,17 @@ def format_checks_toon(jobs: list[dict]) -> tuple[list[dict], int]:
     return rows, total_elapsed
 
 
-def cmd_ci_status(args: argparse.Namespace) -> int:
+def cmd_ci_status(args: argparse.Namespace) -> dict:
     """Handle 'ci status' subcommand (checks pipeline status in GitLab)."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('ci_status', err)
+        return make_error('ci_status', err)
 
     # Get MR to find pipeline
     returncode, stdout, stderr = run_glab(['mr', 'view', str(args.pr_number), '--output', 'json'])
     if returncode != 0:
-        return output_error('ci_status', f'Failed to get MR {args.pr_number}', stderr.strip())
+        return make_error('ci_status', f'Failed to get MR {args.pr_number}', stderr.strip())
 
     # Parse JSON
     try:
@@ -596,7 +554,7 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
         pipeline_status = pipeline.get('status', 'unknown')
         pipeline_id = pipeline.get('id', 'unknown')
     except json.JSONDecodeError:
-        return output_error('ci_status', 'Failed to parse glab output', stdout[:100])
+        return make_error('ci_status', 'Failed to parse glab output', stdout[:100])
 
     # Get pipeline jobs if we have a pipeline
     jobs = []
@@ -625,28 +583,22 @@ def cmd_ci_status(args: argparse.Namespace) -> int:
     checks, total_elapsed = format_checks_toon(jobs)
 
     # Output TOON
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'ci_status',
-                'pr_number': args.pr_number,
-                'overall_status': overall,
-                'check_count': len(jobs),
-                'elapsed_sec': total_elapsed,
-                'checks': checks,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'ci_status',
+        'pr_number': args.pr_number,
+        'overall_status': overall,
+        'check_count': len(jobs),
+        'elapsed_sec': total_elapsed,
+        'checks': checks,
+    }
 
 
-def cmd_ci_wait(args: argparse.Namespace) -> int:
+def cmd_ci_wait(args: argparse.Namespace) -> dict:
     """Handle 'ci wait' subcommand (waits for pipeline in GitLab)."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('ci_wait', err)
+        return make_error('ci_wait', err)
 
     completed_statuses = {'success', 'failed', 'canceled', 'skipped'}
 
@@ -681,7 +633,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
     result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
 
     if 'error' in result:
-        return output_error('ci_wait', result['error'], result['last_data'].get('context', ''))
+        return make_error('ci_wait', result['error'], result['last_data'].get('context', ''))
 
     last_data = result['last_data']
     jobs = last_data.get('jobs', [])
@@ -699,28 +651,21 @@ def cmd_ci_wait(args: argparse.Namespace) -> int:
         if check_dicts:
             error_data['elapsed_sec'] = total_elapsed
             error_data['checks'] = check_dicts
-        print(serialize_toon(error_data, table_separator='\t'), file=sys.stderr)
-        return 1
+        return error_data
 
     pipeline_status = last_data.get('pipeline_status', 'unknown')
     final_status = 'success' if pipeline_status == 'success' else 'failure'
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'ci_wait',
-                'pr_number': args.pr_number,
-                'final_status': final_status,
-                'duration_sec': result['duration_sec'],
-                'polls': result['polls'],
-                'elapsed_sec': total_elapsed,
-                'checks': check_dicts,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'ci_wait',
+        'pr_number': args.pr_number,
+        'final_status': final_status,
+        'duration_sec': result['duration_sec'],
+        'polls': result['polls'],
+        'elapsed_sec': total_elapsed,
+        'checks': check_dicts,
+    }
 
 
 cmd_ci_rerun = make_simple_handler(
@@ -732,11 +677,11 @@ cmd_ci_rerun = make_simple_handler(
 )
 
 
-def cmd_ci_logs(args: argparse.Namespace) -> int:
+def cmd_ci_logs(args: argparse.Namespace) -> dict:
     """Handle 'ci logs' subcommand - get job logs."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('ci_logs', err)
+        return make_error('ci_logs', err)
 
     # Use subprocess.run directly for longer timeout (120s)
     cmd = ['glab', 'ci', 'trace', str(args.run_id)]
@@ -751,38 +696,32 @@ def cmd_ci_logs(args: argparse.Namespace) -> int:
         stdout = result.stdout
         stderr = result.stderr
     except FileNotFoundError:
-        return output_error('ci_logs', 'glab CLI not found')
+        return make_error('ci_logs', 'glab CLI not found')
     except subprocess.TimeoutExpired:
-        return output_error('ci_logs', 'Command timed out')
+        return make_error('ci_logs', 'Command timed out')
     except Exception as e:
-        return output_error('ci_logs', str(e))
+        return make_error('ci_logs', str(e))
 
     if returncode != 0:
-        return output_error('ci_logs', f'Failed to get logs for job {args.run_id}', stderr.strip())
+        return make_error('ci_logs', f'Failed to get logs for job {args.run_id}', stderr.strip())
 
     content, line_count = truncate_log_content(stdout)
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'ci_logs',
-                'run_id': args.run_id,
-                'log_lines': line_count,
-                'content': content,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'ci_logs',
+        'run_id': args.run_id,
+        'log_lines': line_count,
+        'content': content,
+    }
 
 
-def cmd_issue_create(args: argparse.Namespace) -> int:
+def cmd_issue_create(args: argparse.Namespace) -> dict:
     """Handle 'issue create' subcommand."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('issue_create', err)
+        return make_error('issue_create', err)
 
     # Build command
     glab_args = ['issue', 'create', '--title', args.title, '--description', args.body]
@@ -792,7 +731,7 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
     # Execute
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return output_error('issue_create', 'Failed to create issue', stderr.strip())
+        return make_error('issue_create', 'Failed to create issue', stderr.strip())
 
     # Parse the URL from output
     issue_url = stdout.strip()
@@ -808,37 +747,31 @@ def cmd_issue_create(args: argparse.Namespace) -> int:
             pass
 
     # Output TOON
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'issue_create',
-                'issue_number': issue_number,
-                'issue_url': issue_url,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'issue_create',
+        'issue_number': issue_number,
+        'issue_url': issue_url,
+    }
 
 
-def cmd_issue_view(args: argparse.Namespace) -> int:
+def cmd_issue_view(args: argparse.Namespace) -> dict:
     """Handle 'issue view' subcommand."""
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('issue_view', err)
+        return make_error('issue_view', err)
 
     # Get issue details
     returncode, stdout, stderr = run_glab(['issue', 'view', str(args.issue), '--output', 'json'])
     if returncode != 0:
-        return output_error('issue_view', f'Failed to view issue {args.issue}', stderr.strip())
+        return make_error('issue_view', f'Failed to view issue {args.issue}', stderr.strip())
 
     # Parse JSON
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return output_error('issue_view', 'Failed to parse glab output', stdout[:100])
+        return make_error('issue_view', 'Failed to parse glab output', stdout[:100])
 
     # Map GitLab state to unified state
     state = data.get('state', 'unknown')
@@ -874,16 +807,14 @@ def cmd_issue_view(args: argparse.Namespace) -> int:
     if milestone:
         result['milestone'] = milestone.get('title', '')
 
-    # Output TOON
-    print(serialize_toon(result, table_separator='\t'))
-    return 0
+    return result
 
 
-def cmd_pr_merge(args: argparse.Namespace) -> int:
+def cmd_pr_merge(args: argparse.Namespace) -> dict:
     """Handle 'pr merge' subcommand - merge a merge request."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_merge', err)
+        return make_error('pr_merge', err)
 
     glab_args = ['mr', 'merge', str(args.pr_number)]
     if args.strategy == 'squash':
@@ -893,27 +824,21 @@ def cmd_pr_merge(args: argparse.Namespace) -> int:
 
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return output_error('pr_merge', f'Failed to merge MR {args.pr_number}', stderr.strip())
+        return make_error('pr_merge', f'Failed to merge MR {args.pr_number}', stderr.strip())
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_merge',
-                'pr_number': args.pr_number,
-                'strategy': args.strategy,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_merge',
+        'pr_number': args.pr_number,
+        'strategy': args.strategy,
+    }
 
 
-def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
+def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     """Handle 'pr auto-merge' subcommand - auto-merge when pipeline succeeds."""
     is_auth, err = check_auth()
     if not is_auth:
-        return output_error('pr_auto_merge', err)
+        return make_error('pr_auto_merge', err)
 
     glab_args = ['mr', 'merge', str(args.pr_number), '--when-pipeline-succeeds']
     if args.strategy == 'squash':
@@ -921,20 +846,14 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> int:
 
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return output_error('pr_auto_merge', f'Failed to enable auto-merge for MR {args.pr_number}', stderr.strip())
+        return make_error('pr_auto_merge', f'Failed to enable auto-merge for MR {args.pr_number}', stderr.strip())
 
-    print(
-        serialize_toon(
-            {
-                'status': 'success',
-                'operation': 'pr_auto_merge',
-                'pr_number': args.pr_number,
-                'enabled': True,
-            },
-            table_separator='\t',
-        )
-    )
-    return 0
+    return {
+        'status': 'success',
+        'operation': 'pr_auto_merge',
+        'pr_number': args.pr_number,
+        'enabled': True,
+    }
 
 
 cmd_pr_close = make_pr_number_handler(
@@ -953,10 +872,10 @@ cmd_pr_ready = make_pr_number_handler(
 )
 
 
-def cmd_pr_edit(args: argparse.Namespace) -> int:
+def cmd_pr_edit(args: argparse.Namespace) -> dict:
     """Handle 'pr edit' subcommand - edit MR title and/or description."""
     if not args.title and not args.body:
-        return output_error('pr_edit', 'At least one of --title or --body must be provided')
+        return make_error('pr_edit', 'At least one of --title or --body must be provided')
 
     glab_args = ['mr', 'update', str(args.pr_number)]
     if args.title:
@@ -964,7 +883,7 @@ def cmd_pr_edit(args: argparse.Namespace) -> int:
     if args.body:
         glab_args.extend(['--description', args.body])
 
-    result: int = make_pr_number_handler('pr_edit', lambda a: glab_args, run_glab, check_auth)(args)
+    result: dict = make_pr_number_handler('pr_edit', lambda a: glab_args, run_glab, check_auth)(args)
     return result
 
 
@@ -1016,7 +935,10 @@ def main() -> int:
         ('issue', 'close'): cmd_issue_close,
     }
 
-    return dispatch(args, handlers, parser)
+    result = dispatch(args, handlers, parser)
+    is_error = result.get('status') != 'success'
+    print(serialize_toon(result, table_separator='	'), file=sys.stderr if is_error else sys.stdout)
+    return 1 if is_error else 0
 
 
 if __name__ == '__main__':

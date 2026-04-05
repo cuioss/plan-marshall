@@ -137,23 +137,20 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
         return 'ok', []
 
 
-def cmd_mode(args: argparse.Namespace) -> int:
+def cmd_mode(args: argparse.Namespace) -> dict:
     """Handle the 'mode' subcommand."""
     plan_dir = Path(args.plan_dir)
     mode, reason = determine_mode(plan_dir)
 
-    print(f'mode\t{mode}')
-    print(f'reason\t{reason}')
-    return 0
+    return {'status': 'success', 'mode': mode, 'reason': reason}
 
 
-def cmd_check_docs(args: argparse.Namespace) -> int:
+def cmd_check_docs(args: argparse.Namespace) -> dict:
     """Handle the 'check-docs' subcommand."""
     project_root = Path(args.project_root)
     status, missing = check_docs(project_root)
 
-    print(f'status\t{status}')
-    print(f'missing_count\t{len(missing)}')
+    result: dict = {'status': 'success', 'check_status': status, 'missing_count': len(missing)}
     if missing:
         # Group by check key for easy consumption
         checks_by_key: dict[str, list[str]] = {}
@@ -163,18 +160,16 @@ def cmd_check_docs(args: argparse.Namespace) -> int:
                 checks_by_key[key] = []
             checks_by_key[key].append(entry['file'])
         for key, files in checks_by_key.items():
-            print(f'{key}\t{",".join(files)}')
-    return 0
+            result[key] = ','.join(files)
+    return result
 
 
-def cmd_check_structure(args: argparse.Namespace) -> int:
+def cmd_check_structure(args: argparse.Namespace) -> dict:
     """Handle the 'check-structure' subcommand."""
     plan_dir = Path(args.plan_dir)
     status, path = check_structure(plan_dir)
 
-    print(f'status\t{status}')
-    print(f'path\t{path}')
-    return 0
+    return {'status': 'success', 'check_status': status, 'path': str(path)}
 
 
 def main() -> int:
@@ -196,14 +191,20 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == 'mode':
-        return cmd_mode(args)
+        result = cmd_mode(args)
     elif args.command == 'check-docs':
-        return cmd_check_docs(args)
+        result = cmd_check_docs(args)
     elif args.command == 'check-structure':
-        return cmd_check_structure(args)
+        result = cmd_check_structure(args)
     else:
         parser.print_help()
         return 1
+
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    is_error = result.get('status') != 'success'
+    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
+    return 1 if is_error else 0
 
 
 if __name__ == '__main__':

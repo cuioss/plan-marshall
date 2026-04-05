@@ -127,22 +127,23 @@ def test_safe_main_exception(capsys):
 
 def test_parse_json_arg_success():
     """Test valid JSON parsing."""
-    val, rc = parse_json_arg('{"key": "val"}', '--data')
-    assert rc == 0
+    val, err = parse_json_arg('{"key": "val"}', '--data')
+    assert err is None
     assert val == {'key': 'val'}
 
 
 def test_parse_json_arg_invalid(capsys):
-    """Test invalid JSON returns error."""
-    val, rc = parse_json_arg('not-json', '--data')
-    assert rc == 1
+    """Test invalid JSON returns error dict."""
+    val, err = parse_json_arg('not-json', '--data')
+    assert err is not None
+    assert err['status'] == 'error'
     assert val is None
 
 
 def test_parse_json_arg_array():
     """Test JSON array parsing."""
-    val, rc = parse_json_arg('[1, 2, 3]', '--items')
-    assert rc == 0
+    val, err = parse_json_arg('[1, 2, 3]', '--items')
+    assert err is None
     assert val == [1, 2, 3]
 
 
@@ -275,16 +276,15 @@ def _mock_triage(item: dict) -> dict:
 
 def test_cmd_triage_single_success(capsys):
     """Test single triage with valid JSON."""
-    rc = cmd_triage_single('{"severity": "HIGH"}', _mock_triage)
-    assert rc == 0
-    result = parse_toon(capsys.readouterr().out)
+    result = cmd_triage_single('{"severity": "HIGH"}', _mock_triage)
+    assert result['status'] == 'success'
     assert result['action'] == 'fix'
 
 
 def test_cmd_triage_single_invalid_json(capsys):
     """Test single triage with invalid JSON."""
-    rc = cmd_triage_single('not-json', _mock_triage)
-    assert rc == 1
+    result = cmd_triage_single('not-json', _mock_triage)
+    assert result['status'] == 'error'
 
 
 # =============================================================================
@@ -295,9 +295,8 @@ def test_cmd_triage_single_invalid_json(capsys):
 def test_cmd_triage_batch_success(capsys):
     """Test batch triage with valid items."""
     items = json.dumps([{'severity': 'HIGH'}, {'severity': 'LOW'}])
-    rc = cmd_triage_batch_handler(items, _mock_triage, ['fix', 'ignore'])
-    assert rc == 0
-    result = parse_toon(capsys.readouterr().out)
+    result = cmd_triage_batch_handler(items, _mock_triage, ['fix', 'ignore'])
+    assert result['status'] == 'success'
     assert result['summary']['total'] == 2
     assert result['summary']['fix'] == 1
     assert result['summary']['ignore'] == 1
@@ -306,14 +305,14 @@ def test_cmd_triage_batch_success(capsys):
 
 def test_cmd_triage_batch_invalid_json(capsys):
     """Test batch triage with invalid JSON."""
-    rc = cmd_triage_batch_handler('not-json', _mock_triage, ['fix'])
-    assert rc == 1
+    result = cmd_triage_batch_handler('not-json', _mock_triage, ['fix'])
+    assert result['status'] == 'error'
 
 
 def test_cmd_triage_batch_not_array(capsys):
     """Test batch triage with non-array JSON."""
-    rc = cmd_triage_batch_handler('{"key": "val"}', _mock_triage, ['fix'])
-    assert rc == 1
+    result = cmd_triage_batch_handler('{"key": "val"}', _mock_triage, ['fix'])
+    assert result['status'] == 'error'
 
 
 def test_cmd_triage_batch_error_handling(capsys):
@@ -325,9 +324,8 @@ def test_cmd_triage_batch_error_handling(capsys):
         return {'action': 'fix', 'status': 'success'}
 
     items = json.dumps([{'id': 'ok1'}, {'id': 'bad', 'bomb': True}, {'id': 'ok2'}])
-    rc = cmd_triage_batch_handler(items, flaky_triage, ['fix'])
-    assert rc == 0
-    result = parse_toon(capsys.readouterr().out)
+    result = cmd_triage_batch_handler(items, flaky_triage, ['fix'])
+    assert result['status'] == 'success'
     assert result['summary']['total'] == 3
     assert result['summary']['failed'] == 1
     assert result['summary']['fix'] == 2

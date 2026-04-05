@@ -130,7 +130,7 @@ class TestManageInterface(unittest.TestCase):
     def test_read_interface_not_found(self):
         """Test reading non-existent interface."""
         result = self.run_iface('read', '--number', '999')
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0)
         output = self.parse_output(result)
         self.assertEqual(output['status'], 'error')
         self.assertIn('not found', output['message'].lower())
@@ -140,8 +140,9 @@ class TestManageInterface(unittest.TestCase):
         self.run_iface('create', '--title', 'Delete Test', '--type', 'File')
 
         result = self.run_iface('delete', '--number', '1')
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0)
         output = self.parse_output(result)
+        self.assertEqual(output['status'], 'error')
         self.assertIn('--force', output['message'])
 
     def test_delete_with_force(self):
