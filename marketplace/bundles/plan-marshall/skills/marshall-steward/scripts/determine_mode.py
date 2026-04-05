@@ -43,6 +43,16 @@ import argparse
 import sys
 from pathlib import Path
 
+# Bootstrap sys.path — this script runs before the executor sets up PYTHONPATH.
+# Resolve shared library paths relative to this script's location in the plugin tree:
+#   skills/marshall-steward/scripts/ → skills/{lib}/scripts/
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_SKILLS_DIR = _SCRIPTS_DIR.parent.parent
+for _lib in ('ref-toon-format',):
+    _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
+    if _lib_path not in sys.path:
+        sys.path.insert(0, _lib_path)
+
 # Content checks applied to project documentation files.
 # Each check has a key, the files it applies to, and a substring marker
 # to search for (plain string match, not regex).
