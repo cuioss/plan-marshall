@@ -290,18 +290,20 @@ def test_cli_transition_invalid_plan_id():
         '--completed',
         '1-init',
     )
-    assert not result.success, 'Expected failure for invalid plan ID'
+    assert result.success, 'Expected exit 0 with TOON error for invalid plan ID'
+    assert 'status: error' in result.stdout
 
 
 def test_cli_archive_invalid_plan_id():
-    """Test archive CLI rejects invalid plan ID with exit code 1."""
+    """Test archive CLI rejects invalid plan ID with TOON error (exit 0)."""
     result = run_script(
         SCRIPT_PATH,
         'archive',
         '--plan-id',
         'BAD ID!',
     )
-    assert not result.success, 'Expected failure for invalid plan ID'
+    assert result.success, 'Expected exit 0 with TOON error for invalid plan ID'
+    assert 'status: error' in result.stdout
 
 
 def test_cli_self_test_passes():

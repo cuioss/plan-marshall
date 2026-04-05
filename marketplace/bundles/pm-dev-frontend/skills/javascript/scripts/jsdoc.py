@@ -22,7 +22,6 @@ from typing import Any
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 EXIT_SUCCESS = 0
-EXIT_ERROR = 1
 
 
 # =============================================================================
@@ -413,8 +412,6 @@ def cmd_analyze(args) -> int:
 
     print(serialize_toon(result))
 
-    if result.get('status') == 'error':
-        return EXIT_ERROR
     return EXIT_SUCCESS
 
 

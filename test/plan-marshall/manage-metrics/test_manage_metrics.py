@@ -90,7 +90,7 @@ def test_start_phase_invalid_plan_id():
     with PlanContext(plan_id='test'):
         with pytest.raises(SystemExit) as exc_info:
             cmd_start_phase(_ns_start_phase('../escape', '1-init'))
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 def test_start_phase_multiple_phases():

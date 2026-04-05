@@ -13,7 +13,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from permission_common import (  # type: ignore[import-not-found]  # noqa: E402, I001
-    EXIT_ERROR,
     EXIT_SUCCESS,
     load_settings,
     load_settings_path,
@@ -171,4 +170,3 @@ class TestResolveScopeToPaths:
 
 def test_exit_codes():
     assert EXIT_SUCCESS == 0
-    assert EXIT_ERROR == 1

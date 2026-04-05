@@ -108,7 +108,7 @@ def test_create_invalid_plan_id():
             cmd_create(
                 Namespace(plan_id='Invalid_Plan', title='Test', phases='1-init', force=False)
             )
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 # =============================================================================
@@ -440,7 +440,7 @@ def test_delete_plan_invalid_id():
     with PlanContext():
         with pytest.raises(SystemExit) as exc_info:
             cmd_delete_plan(Namespace(plan_id='Invalid_Plan'))
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 # =============================================================================

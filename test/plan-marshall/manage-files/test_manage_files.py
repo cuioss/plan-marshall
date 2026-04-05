@@ -180,7 +180,7 @@ def test_exists_invalid_plan_id():
     with PlanContext():
         with pytest.raises(SystemExit) as exc_info:
             cmd_exists(Namespace(plan_id='Invalid_Plan', file='test.md'))
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 def test_exists_invalid_file_path():
@@ -278,7 +278,7 @@ def test_create_or_reference_invalid_plan_id():
     with EmptyPlanContext():
         with pytest.raises(SystemExit) as exc_info:
             cmd_create_or_reference(Namespace(plan_id='Invalid_Plan'))
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 # =============================================================================
@@ -291,7 +291,7 @@ def test_invalid_plan_id_uppercase():
     with PlanContext():
         with pytest.raises(SystemExit) as exc_info:
             cmd_list(Namespace(plan_id='My-Plan', dir=None))
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 def test_invalid_plan_id_underscore():
@@ -299,7 +299,7 @@ def test_invalid_plan_id_underscore():
     with PlanContext():
         with pytest.raises(SystemExit) as exc_info:
             cmd_list(Namespace(plan_id='my_plan', dir=None))
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 # =============================================================================

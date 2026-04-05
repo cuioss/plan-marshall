@@ -569,7 +569,7 @@ def test_invalid_plan_id_uppercase():
     with PlanContext():
         with pytest.raises(SystemExit) as exc_info:
             cmd_validate(_validate_ns(plan_id='My-Plan'))
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 def test_invalid_plan_id_underscore():
@@ -577,7 +577,7 @@ def test_invalid_plan_id_underscore():
     with PlanContext():
         with pytest.raises(SystemExit) as exc_info:
             cmd_validate(_validate_ns(plan_id='my_plan'))
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
 
 # =============================================================================
@@ -612,9 +612,9 @@ def test_cli_read_raw():
 
 
 def test_cli_invalid_plan_id():
-    """CLI plumbing: invalid plan ID exits with non-zero code."""
+    """CLI plumbing: invalid plan ID exits with code 0 and TOON error."""
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'My-Plan')
-        assert not result.success, 'Expected rejection of uppercase plan ID'
+        assert result.success, 'Expected exit 0 with TOON error for invalid plan ID'
         data = parse_toon(result.stdout)
         assert data['error'] == 'invalid_plan_id'

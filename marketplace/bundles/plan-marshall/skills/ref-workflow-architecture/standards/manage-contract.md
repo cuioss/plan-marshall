@@ -30,7 +30,12 @@ Recommended patterns for manage-* script implementations:
 
 **Output**: Use `output_toon()` from `file_ops` for all TOON output. For success/error shortcuts, use `output_success()` and `output_toon_error()` from `file_ops`. Avoid defining skill-local output wrappers.
 
-**Error handling**: Command handler functions (`cmd_*`) should return `int` (0 for success, 1 for error). Avoid `sys.exit(1)` in command handlers — return error codes instead, letting `main()` propagate them via `safe_main`.
+**Error handling**: Three-tier exit code model:
+- **Exit 0**: Normal operation — success OR expected error (report via `status: error` in TOON output to stdout). All `cmd_*` handlers return `dict` with `status` field; `main()` prints TOON and returns 0.
+- **Exit 1**: Unexpected crash — reserved for `@safe_main` exception handler only. Never return 1 from `cmd_*` or `main()`.
+- **Exit 2**: Argparse validation — missing subcommand or invalid argument routing (manual `print_help() + return 2`).
+
+Avoid `sys.exit(1)` anywhere. Use `output_toon()` from `file_ops` for all output, then return 0.
 
 **Module structure**: Scripts with 3+ commands should use the modular pattern:
 - `_*_core.py` — Shared utilities (path resolution, JSON I/O, validation)

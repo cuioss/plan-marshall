@@ -9,11 +9,9 @@ Provides:
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 
 from permission_common import (  # type: ignore[import-not-found]
-    EXIT_ERROR,
     EXIT_SUCCESS,
     get_global_settings_path,
     get_project_settings_path,
@@ -422,12 +420,11 @@ def main():
 
     if not args.command:
         parser.print_help()
-        return EXIT_ERROR
+        return 2
 
     result = args.func(args)
-    is_error = result.get('status') != 'success'
-    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
-    return EXIT_ERROR if is_error else EXIT_SUCCESS
+    print(serialize_toon(result))
+    return EXIT_SUCCESS
 
 
 if __name__ == '__main__':

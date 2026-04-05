@@ -130,7 +130,7 @@ def require_valid_plan_id(args) -> str:
     """Validate plan_id from argparse args, exit with TOON error if invalid.
 
     Extracts args.plan_id, validates kebab-case format. On failure, prints
-    a standard TOON error to stdout and calls sys.exit(1).
+    a standard TOON error to stdout and exits with code 0 (expected error).
 
     Returns the validated plan_id string for chaining.
 
@@ -150,7 +150,7 @@ def require_valid_plan_id(args) -> str:
                 }
             )
         )
-        sys.exit(1)
+        sys.exit(0)
     if not is_valid_plan_id(plan_id):
         print(
             serialize_toon(
@@ -162,7 +162,7 @@ def require_valid_plan_id(args) -> str:
                 }
             )
         )
-        sys.exit(1)
+        sys.exit(0)
     return plan_id
 
 
@@ -199,7 +199,7 @@ def require_plan_file(plan_id: str, *path_parts: str) -> Path:
                 }
             )
         )
-        sys.exit(1)
+        sys.exit(0)
 
     target = base_path('plans', plan_id, *path_parts)
     if not target.exists():
@@ -215,7 +215,7 @@ def require_plan_file(plan_id: str, *path_parts: str) -> Path:
                 }
             )
         )
-        sys.exit(1)
+        sys.exit(0)
 
     return target
 
