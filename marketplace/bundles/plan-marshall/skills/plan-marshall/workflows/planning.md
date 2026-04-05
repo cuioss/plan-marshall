@@ -75,19 +75,17 @@ Create a new plan and automatically continue to 2-refine/3-outline/4-plan phases
 
 **1-Init Phase** uses a single agent:
 
-**Metrics**: Record phase start before agent invocation:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
-  --plan-id {plan_id} --phase 1-init
-```
-
 ```
 Task: plan-marshall:phase-agent
   Input: skill=plan-marshall:phase-1-init, source={source}, content={content}
   Output: plan_id, domains array
 ```
 
-**Metrics**: After agent completes, record phase end with token data from `<usage>` tag:
+**Metrics**: After agent completes and `plan_id` is known, record phase start and end with token data from `<usage>` tag:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
+  --plan-id {plan_id} --phase 1-init
+```
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
   --plan-id {plan_id} --phase 1-init \
