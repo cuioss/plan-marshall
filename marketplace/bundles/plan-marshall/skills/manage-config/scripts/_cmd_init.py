@@ -16,7 +16,7 @@ from _config_defaults import get_default_config
 from _config_detection import detect_domains
 
 
-def cmd_init(args) -> int:
+def cmd_init(args) -> dict:
     """Handle init command."""
     if is_initialized() and not getattr(args, 'force', False):
         return error_exit('marshal.json already exists. Use --force to overwrite.')

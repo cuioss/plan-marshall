@@ -8,33 +8,28 @@ from typing import Any
 
 from _status_core import (
     PHASE_ROUTING,
-    output_toon,
     require_status,
 )
 from constants import PHASE_STATUS_DONE, PHASES  # type: ignore[import-not-found]
 
 
-def cmd_route(args: argparse.Namespace) -> int:
+def cmd_route(args: argparse.Namespace) -> dict:
     """Get skill for a phase."""
     if args.phase not in PHASE_ROUTING:
-        output_toon(
-            {
-                'status': 'error',
-                'phase': args.phase,
-                'error': 'unknown_phase',
-                'message': f'Unknown phase: {args.phase}',
-                'valid_phases': list(PHASE_ROUTING.keys()),
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'phase': args.phase,
+            'error': 'unknown_phase',
+            'message': f'Unknown phase: {args.phase}',
+            'valid_phases': list(PHASE_ROUTING.keys()),
+        }
 
     skill, description = PHASE_ROUTING[args.phase]
 
-    output_toon({'status': 'success', 'phase': args.phase, 'skill': skill, 'description': description})
-    return 0
+    return {'status': 'success', 'phase': args.phase, 'skill': skill, 'description': description}
 
 
-def cmd_get_routing_context(args: argparse.Namespace) -> int:
+def cmd_get_routing_context(args: argparse.Namespace) -> dict:
     """Get combined routing context: phase, skill, and progress in one call."""
     status = require_status(args)
 
@@ -51,23 +46,20 @@ def cmd_get_routing_context(args: argparse.Namespace) -> int:
     if current_phase in PHASE_ROUTING:
         skill, description = PHASE_ROUTING[current_phase]
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'title': status.get('title', ''),
-            'current_phase': current_phase,
-            'skill': skill,
-            'skill_description': description,
-            'total_phases': total,
-            'completed_phases': completed,
-            'phases': [{'name': p['name'], 'status': p['status']} for p in phases],
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'title': status.get('title', ''),
+        'current_phase': current_phase,
+        'skill': skill,
+        'skill_description': description,
+        'total_phases': total,
+        'completed_phases': completed,
+        'phases': [{'name': p['name'], 'status': p['status']} for p in phases],
+    }
 
 
-def cmd_self_test(_args: argparse.Namespace) -> int:
+def cmd_self_test(_args: argparse.Namespace) -> dict:
     """Verify manage-status health: imports, routing, and directory access."""
     from _status_core import get_plans_dir
 
@@ -109,7 +101,4 @@ def cmd_self_test(_args: argparse.Namespace) -> int:
     if failures:
         result['failures'] = ','.join(failures)
 
-    output_toon(result)
-    if failed > 0:
-        return 1
-    return 0
+    return result

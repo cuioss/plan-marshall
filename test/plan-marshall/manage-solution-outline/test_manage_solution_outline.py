@@ -2,18 +2,36 @@
 """
 Tests for manage-solution-outline script.
 
+Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 Solution outlines are written directly by agents, then validated via this script.
 """
 
+import importlib.util
 import sys
+from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import PlanContext, get_script_path, run_script
+from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 
-# Get script path
+# Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
+
+# Tier 2 direct imports via importlib (script filename has hyphens)
+_spec = importlib.util.spec_from_file_location('manage_solution_outline', str(SCRIPT_PATH))
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+
+cmd_validate = _mod.cmd_validate
+cmd_list_deliverables = _mod.cmd_list_deliverables
+cmd_read = _mod.cmd_read
+cmd_exists = _mod.cmd_exists
+cmd_resolve_path = _mod.cmd_resolve_path
+cmd_write = _mod.cmd_write
+cmd_update = _mod.cmd_update
 
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
@@ -135,7 +153,47 @@ Use standard JWT libraries with Quarkus integration.
 
 
 # =============================================================================
-# Test: Validate Command
+# Namespace Builders
+# =============================================================================
+
+
+def _validate_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_validate."""
+    return Namespace(plan_id=plan_id)
+
+
+def _list_deliverables_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_list_deliverables."""
+    return Namespace(plan_id=plan_id)
+
+
+def _read_ns(plan_id='test-plan', raw=False, deliverable_number=None):
+    """Build Namespace for cmd_read."""
+    return Namespace(plan_id=plan_id, raw=raw, deliverable_number=deliverable_number)
+
+
+def _exists_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_exists."""
+    return Namespace(plan_id=plan_id)
+
+
+def _resolve_path_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_resolve_path."""
+    return Namespace(plan_id=plan_id)
+
+
+def _write_ns(plan_id='test-plan', force=False):
+    """Build Namespace for cmd_write."""
+    return Namespace(plan_id=plan_id, force=force)
+
+
+def _update_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_update."""
+    return Namespace(plan_id=plan_id)
+
+
+# =============================================================================
+# Tier 2: Validate Command
 # =============================================================================
 
 
@@ -144,13 +202,11 @@ def test_validate_success():
     with PlanContext(plan_id='solution-valid') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-valid')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert 'validation' in data
-        assert data['validation']['deliverable_count'] == 3
-        assert '1. Create JwtValidationService class' in data['validation']['deliverables']
+        result = cmd_validate(_validate_ns(plan_id='solution-valid'))
+        assert result['status'] == 'success'
+        assert 'validation' in result
+        assert result['validation']['deliverable_count'] == 3
+        assert '1. Create JwtValidationService class' in result['validation']['deliverables']
 
 
 def test_validate_extracts_compatibility():
@@ -158,12 +214,10 @@ def test_validate_extracts_compatibility():
     with PlanContext(plan_id='solution-compat') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-compat')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert 'compatibility' in data['validation']
-        compat = data['validation']['compatibility']
+        result = cmd_validate(_validate_ns(plan_id='solution-compat'))
+        assert result['status'] == 'success'
+        assert 'compatibility' in result['validation']
+        compat = result['validation']['compatibility']
         assert 'breaking' in compat
 
 
@@ -175,12 +229,10 @@ def test_validate_without_compatibility():
     with PlanContext(plan_id='solution-no-compat') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(solution_no_compat)
 
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-compat')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
+        result = cmd_validate(_validate_ns(plan_id='solution-no-compat'))
+        assert result['status'] == 'success'
         # compatibility should not be present when header lacks it
-        assert 'compatibility' not in data.get('validation', {})
+        assert 'compatibility' not in result.get('validation', {})
 
 
 def test_validate_missing_overview():
@@ -199,12 +251,10 @@ Brief summary
 Description
 """)
 
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-missing-overview')
-        assert result.success, 'Script should exit 0 even for validation errors'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'validation_failed'
-        assert any('Overview' in issue for issue in data['issues'])
+        result = cmd_validate(_validate_ns(plan_id='solution-missing-overview'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'validation_failed'
+        assert any('Overview' in issue for issue in result['issues'])
 
 
 def test_validate_no_deliverables():
@@ -225,24 +275,20 @@ Architecture diagram here
 Some text but no ### N. Title items
 """)
 
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-deliverables')
-        assert result.success, 'Script should exit 0 even for validation errors'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert any('numbered deliverables' in issue for issue in data['issues'])
+        result = cmd_validate(_validate_ns(plan_id='solution-no-deliverables'))
+        assert result['status'] == 'error'
+        assert any('numbered deliverables' in issue for issue in result['issues'])
 
 
 def test_validate_document_not_found():
     """Test validation fails when document doesn't exist."""
     with PlanContext(plan_id='no-solution'):
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'no-solution')
-        assert result.success, 'Script should exit 0 even for document not found'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'document_not_found'
+        result = cmd_validate(_validate_ns(plan_id='no-solution'))
+        assert result['error'] == 'document_not_found'
 
 
 # =============================================================================
-# Test: List Deliverables Command
+# Tier 2: List Deliverables Command
 # =============================================================================
 
 
@@ -251,14 +297,12 @@ def test_list_deliverables():
     with PlanContext(plan_id='solution-list') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'list-deliverables', '--plan-id', 'solution-list')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['deliverable_count'] == 3
-        assert len(data['deliverables']) == 3
+        result = cmd_list_deliverables(_list_deliverables_ns(plan_id='solution-list'))
+        assert result['status'] == 'success'
+        assert result['deliverable_count'] == 3
+        assert len(result['deliverables']) == 3
         # Check structure of deliverables
-        first = data['deliverables'][0]
+        first = result['deliverables'][0]
         assert first['number'] == 1
         assert first['title'] == 'Create JwtValidationService class'
         assert first['reference'] == '1. Create JwtValidationService class'
@@ -274,14 +318,12 @@ def test_list_deliverables_empty():
 Just summary, no deliverables section
 """)
 
-        result = run_script(SCRIPT_PATH, 'list-deliverables', '--plan-id', 'solution-empty')
-        assert result.success, 'Script should exit 0 even for missing section'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'section_not_found'
+        result = cmd_list_deliverables(_list_deliverables_ns(plan_id='solution-empty'))
+        assert result['error'] == 'section_not_found'
 
 
 # =============================================================================
-# Test: Read Command
+# Tier 2: Read Command
 # =============================================================================
 
 
@@ -290,60 +332,31 @@ def test_read():
     with PlanContext(plan_id='solution-read') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'solution-read')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        # Content is a nested object - verify it exists and has expected sections
-        assert 'content:' in result.stdout
-        assert 'summary:' in result.stdout
-        assert 'overview:' in result.stdout
-        assert 'deliverables:' in result.stdout
-
-
-def test_read_raw():
-    """Test reading a solution document in raw mode."""
-    with PlanContext(plan_id='solution-raw') as ctx:
-        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
-
-        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'solution-raw', '--raw')
-        assert result.success, f'Script failed: {result.stderr}'
-        # Raw mode outputs the actual markdown
-        assert '# Solution: JWT Validation Service' in result.stdout
-        assert '## Overview' in result.stdout
-        assert '## Deliverables' in result.stdout
-        assert '### 1. Create JwtValidationService class' in result.stdout
+        result = cmd_read(_read_ns(plan_id='solution-read'))
+        assert result['status'] == 'success'
+        # Content is a nested dict with parsed sections
+        assert 'content' in result
+        assert 'summary' in result['content']
+        assert 'overview' in result['content']
+        assert 'deliverables' in result['content']
 
 
 def test_read_not_found():
     """Test read fails when document doesn't exist."""
     with PlanContext(plan_id='no-solution'):
-        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'no-solution')
-        assert result.success, 'Script should exit 0 even for document not found'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'document_not_found'
+        result = cmd_read(_read_ns(plan_id='no-solution'))
+        assert result['error'] == 'document_not_found'
 
 
 def test_read_deliverable_by_number():
     """Test reading a specific deliverable by number."""
     with PlanContext(plan_id='deliverable-num') as ctx:
-        # Write valid solution with multiple deliverables
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        # Read deliverable 1
-        result = run_script(
-            SCRIPT_PATH,
-            'read',
-            '--plan-id',
-            'deliverable-num',
-            '--deliverable-number',
-            '1',
-        )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['deliverable']['number'] == 1
-        assert 'JwtValidationService' in data['deliverable']['title']
+        result = cmd_read(_read_ns(plan_id='deliverable-num', deliverable_number=1))
+        assert result['status'] == 'success'
+        assert result['deliverable']['number'] == 1
+        assert 'JwtValidationService' in result['deliverable']['title']
 
 
 def test_read_deliverable_by_number_second():
@@ -351,20 +364,10 @@ def test_read_deliverable_by_number_second():
     with PlanContext(plan_id='deliverable-num-2') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        # Read deliverable 2
-        result = run_script(
-            SCRIPT_PATH,
-            'read',
-            '--plan-id',
-            'deliverable-num-2',
-            '--deliverable-number',
-            '2',
-        )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['deliverable']['number'] == 2
-        assert 'configuration properties' in data['deliverable']['title']
+        result = cmd_read(_read_ns(plan_id='deliverable-num-2', deliverable_number=2))
+        assert result['status'] == 'success'
+        assert result['deliverable']['number'] == 2
+        assert 'configuration properties' in result['deliverable']['title']
 
 
 def test_read_deliverable_not_found():
@@ -372,22 +375,13 @@ def test_read_deliverable_not_found():
     with PlanContext(plan_id='deliverable-notfound') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'read',
-            '--plan-id',
-            'deliverable-notfound',
-            '--deliverable-number',
-            '999',
-        )
-        assert result.success, 'Script should exit 0 even for deliverable not found'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'deliverable_not_found'
-        assert 'available' in data  # Should list available deliverable numbers
+        result = cmd_read(_read_ns(plan_id='deliverable-notfound', deliverable_number=999))
+        assert result['error'] == 'deliverable_not_found'
+        assert 'available' in result  # Should list available deliverable numbers
 
 
 # =============================================================================
-# Test: Exists Command
+# Tier 2: Exists Command
 # =============================================================================
 
 
@@ -396,64 +390,54 @@ def test_exists_present():
     with PlanContext(plan_id='solution-exists') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'solution-exists')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['exists'] is True
+        result = cmd_exists(_exists_ns(plan_id='solution-exists'))
+        assert result['status'] == 'success'
+        assert result['exists'] is True
 
 
 def test_exists_absent():
     """Test exists returns success with exists=false when document doesn't exist."""
     with PlanContext(plan_id='no-solution'):
-        result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'no-solution')
-        assert result.success
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['exists'] is False
+        result = cmd_exists(_exists_ns(plan_id='no-solution'))
+        assert result['status'] == 'success'
+        assert result['exists'] is False
 
 
 # =============================================================================
-# Test: Resolve Path Command
+# Tier 2: Resolve Path Command
 # =============================================================================
 
 
 def test_resolve_path():
     """Test resolve-path returns correct path."""
     with PlanContext(plan_id='solution-resolve') as ctx:
-        result = run_script(SCRIPT_PATH, 'resolve-path', '--plan-id', 'solution-resolve')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['plan_id'] == 'solution-resolve'
-        assert 'solution_outline.md' in data['path']
-        assert data['exists'] is False
+        result = cmd_resolve_path(_resolve_path_ns(plan_id='solution-resolve'))
+        assert result['status'] == 'success'
+        assert result['plan_id'] == 'solution-resolve'
+        assert 'solution_outline.md' in result['path']
+        assert result['exists'] is False
 
         # Write a file and check exists becomes True
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
-        result = run_script(SCRIPT_PATH, 'resolve-path', '--plan-id', 'solution-resolve')
-        data = parse_toon(result.stdout)
-        assert data['exists'] is True
+        result = cmd_resolve_path(_resolve_path_ns(plan_id='solution-resolve'))
+        assert result['exists'] is True
 
 
 # =============================================================================
-# Test: Write Command (validates file on disk)
+# Tier 2: Write Command (validates file on disk)
 # =============================================================================
 
 
 def test_write_new():
     """Test validating a new solution outline written to disk."""
     with PlanContext(plan_id='solution-write') as ctx:
-        # Write content directly (simulates Write tool)
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write')
-        assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['file'] == 'solution_outline.md'
-        assert 'validation' in data
-        assert data['validation']['deliverable_count'] == 3
+        result = cmd_write(_write_ns(plan_id='solution-write'))
+        assert result['status'] == 'success'
+        assert result['file'] == 'solution_outline.md'
+        assert 'validation' in result
+        assert result['validation']['deliverable_count'] == 3
 
 
 def test_write_includes_compatibility():
@@ -461,74 +445,57 @@ def test_write_includes_compatibility():
     with PlanContext(plan_id='solution-write-compat') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-write-compat')
-        assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert 'compatibility' in data['validation']
-        assert 'breaking' in data['validation']['compatibility']
+        result = cmd_write(_write_ns(plan_id='solution-write-compat'))
+        assert result['status'] == 'success'
+        assert 'compatibility' in result['validation']
+        assert 'breaking' in result['validation']['compatibility']
 
 
 def test_write_validates_existing_file():
     """Test that write detects validation errors in file on disk."""
     with PlanContext(plan_id='solution-invalid') as ctx:
-        # Write invalid content (missing required sections)
         (ctx.plan_dir / 'solution_outline.md').write_text('# Just a title\n\nNo required sections here.')
 
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-invalid')
-        assert result.success, 'Script should exit 0 even for validation errors'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'validation_failed'
+        result = cmd_write(_write_ns(plan_id='solution-invalid'))
+        assert result['error'] == 'validation_failed'
 
 
 def test_write_file_not_found():
     """Test that write fails when file not on disk."""
     with PlanContext(plan_id='solution-missing'):
-        result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'solution-missing')
-        assert result.success, 'Script should exit 0 even for document not found'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'document_not_found'
+        result = cmd_write(_write_ns(plan_id='solution-missing'))
+        assert result['error'] == 'document_not_found'
 
 
 # =============================================================================
-# Test: Update Command (validates file on disk)
+# Tier 2: Update Command (validates file on disk)
 # =============================================================================
 
 
 def test_update_existing():
     """Test validating an updated solution outline."""
     with PlanContext(plan_id='solution-update') as ctx:
-        # Write updated content directly
         updated_solution = VALID_SOLUTION.replace(
             'Implement JWT validation service for authentication.',
             'Implement enhanced JWT validation with key rotation support.',
         )
         (ctx.plan_dir / 'solution_outline.md').write_text(updated_solution)
 
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-update')
-        assert result.success, f'Script failed: {result.stderr}\nOutput: {result.stdout}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['action'] == 'updated'
-        assert data['validation']['deliverable_count'] == 3
+        result = cmd_update(_update_ns(plan_id='solution-update'))
+        assert result['status'] == 'success'
+        assert result['action'] == 'updated'
+        assert result['validation']['deliverable_count'] == 3
 
 
 def test_update_nonexistent():
     """Test that update fails when solution outline does not exist."""
     with PlanContext(plan_id='solution-no-update'):
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'solution-no-update')
-        assert result.success, 'Script should exit 0 even for document not found'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'document_not_found'
+        result = cmd_update(_update_ns(plan_id='solution-no-update'))
+        assert result['error'] == 'document_not_found'
 
 
 # =============================================================================
-# Test: Invalid Plan IDs
-# =============================================================================
-
-
-# =============================================================================
-# Test: module_testing Profile Warning
+# Tier 2: module_testing Profile Warning
 # =============================================================================
 
 
@@ -572,13 +539,11 @@ Add JWT configuration to application.properties.
     with PlanContext(plan_id='solution-warn-profile') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(solution_with_bad_profile)
 
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-warn-profile')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
+        result = cmd_validate(_validate_ns(plan_id='solution-warn-profile'))
+        assert result['status'] == 'success'
         # Should have a warning about module_testing without test files
-        assert 'warnings' in data
-        assert any('module_testing profile but no test files' in w for w in data['warnings'])
+        assert 'warnings' in result
+        assert any('module_testing profile but no test files' in w for w in result['warnings'])
 
 
 def test_validate_no_warning_module_testing_with_test_files():
@@ -586,57 +551,70 @@ def test_validate_no_warning_module_testing_with_test_files():
     with PlanContext(plan_id='solution-no-warn-profile') as ctx:
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'solution-no-warn-profile')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        # Deliverable 1 has module_testing profile AND test files in affected files
-        # (via deliverable 3 which has test files), but deliverable 1 only has
-        # src/main/java/... — check there is NO module_testing warning for D3
+        result = cmd_validate(_validate_ns(plan_id='solution-no-warn-profile'))
+        assert result['status'] == 'success'
         # D3 has module_testing + test file path, so no warning expected for it
-        warnings = data.get('warnings', [])
+        warnings = result.get('warnings', [])
         d3_warnings = [w for w in warnings if 'D3' in w and 'module_testing' in w]
         assert len(d3_warnings) == 0, f'Unexpected module_testing warning for D3: {d3_warnings}'
+
+
+# =============================================================================
+# Tier 2: Invalid Plan IDs (require_valid_plan_id calls sys.exit)
+# =============================================================================
 
 
 def test_invalid_plan_id_uppercase():
     """Test that uppercase plan IDs are rejected."""
     with PlanContext():
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'My-Plan')
-        assert not result.success, 'Expected rejection of uppercase plan ID'
-        data = parse_toon(result.stdout)
-        assert data['error'] == 'invalid_plan_id'
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_validate(_validate_ns(plan_id='My-Plan'))
+        assert exc_info.value.code == 1
 
 
 def test_invalid_plan_id_underscore():
     """Test that underscores in plan IDs are rejected."""
     with PlanContext():
-        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'my_plan')
-        assert not result.success, 'Expected rejection of underscore plan ID'
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_validate(_validate_ns(plan_id='my_plan'))
+        assert exc_info.value.code == 1
+
+
+# =============================================================================
+# Tier 3 (subprocess): CLI Plumbing Tests
+# =============================================================================
+
+
+def test_cli_validate_success():
+    """CLI plumbing: validate subcommand works end-to-end."""
+    with PlanContext(plan_id='cli-validate') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'cli-validate')
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['validation']['deliverable_count'] == 3
+
+
+def test_cli_read_raw():
+    """CLI plumbing: read --raw outputs raw markdown to stdout."""
+    with PlanContext(plan_id='cli-raw') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-raw', '--raw')
+        assert result.success, f'Script failed: {result.stderr}'
+        # Raw mode outputs the actual markdown before the TOON result
+        assert '# Solution: JWT Validation Service' in result.stdout
+        assert '## Overview' in result.stdout
+        assert '## Deliverables' in result.stdout
+        assert '### 1. Create JwtValidationService class' in result.stdout
+
+
+def test_cli_invalid_plan_id():
+    """CLI plumbing: invalid plan ID exits with non-zero code."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'My-Plan')
+        assert not result.success, 'Expected rejection of uppercase plan ID'
         data = parse_toon(result.stdout)
         assert data['error'] == 'invalid_plan_id'
-
-
-if __name__ == '__main__':
-    import sys
-
-    # Run tests
-    test_funcs = [name for name in dir() if name.startswith('test_')]
-    passed = 0
-    failed = 0
-
-    for test_name in test_funcs:
-        try:
-            print(f'Running {test_name}...', end=' ')
-            globals()[test_name]()
-            print('PASS')
-            passed += 1
-        except AssertionError as e:
-            print(f'FAIL: {e}')
-            failed += 1
-        except Exception as e:
-            print(f'ERROR: {e}')
-            failed += 1
-
-    print(f'\nPassed: {passed}, Failed: {failed}')
-    sys.exit(0 if failed == 0 else 1)

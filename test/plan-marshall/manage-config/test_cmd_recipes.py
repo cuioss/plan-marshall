@@ -4,68 +4,98 @@
 Recipes are discovered at runtime from extensions (provides_recipes())
 and project recipe-* skills. These tests verify the runtime discovery
 by calling list-recipes and resolve-recipe against live extensions.
+
+Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
+from argparse import Namespace
+
+# Tier 2 direct imports
+from _cmd_skill_resolution import cmd_list_recipes, cmd_resolve_recipe
 from test_helpers import SCRIPT_PATH
 
+# Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PlanContext, run_script
 
 # =============================================================================
-# list-recipes Tests (runtime discovery)
+# list-recipes Tests (Tier 2 - direct import)
 # =============================================================================
 
 
 def test_list_recipes_returns_success():
     """Test list-recipes returns success status."""
     with PlanContext(plan_id='recipe-list'):
-        result = run_script(SCRIPT_PATH, 'list-recipes')
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'success' in result.stdout.lower()
+        result = cmd_list_recipes(Namespace())
+        assert result['status'] == 'success'
+        assert 'recipes' in result
+        assert 'count' in result
 
 
 def test_list_recipes_includes_project_recipe():
     """Test list-recipes discovers project recipe-* skills."""
     with PlanContext(plan_id='recipe-project'):
-        result = run_script(SCRIPT_PATH, 'list-recipes')
-        assert result.success, f'Should succeed: {result.stderr}'
+        result = cmd_list_recipes(Namespace())
+        assert result['status'] == 'success'
         # Project has .claude/skills/recipe-plugin-compliance
-        assert 'plugin-compliance' in result.stdout
+        recipes_str = str(result['recipes'])
+        assert 'plugin-compliance' in recipes_str
 
 
 def test_list_recipes_includes_domain():
     """Test list-recipes includes domain key in recipe entries."""
     with PlanContext(plan_id='recipe-domain'):
-        result = run_script(SCRIPT_PATH, 'list-recipes')
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'plan-marshall-plugin-dev' in result.stdout
+        result = cmd_list_recipes(Namespace())
+        assert result['status'] == 'success'
+        recipes_str = str(result['recipes'])
+        assert 'plan-marshall-plugin-dev' in recipes_str
 
 
 # =============================================================================
-# resolve-recipe Tests (runtime discovery)
+# resolve-recipe Tests (Tier 2 - direct import)
 # =============================================================================
 
 
 def test_resolve_recipe_found():
     """Test resolve-recipe returns recipe metadata for project recipe."""
     with PlanContext(plan_id='recipe-resolve'):
-        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'plugin-compliance')
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'plugin-compliance' in result.stdout
-        assert 'project:recipe-plugin-compliance' in result.stdout
-        assert 'plan-marshall-plugin-dev' in result.stdout
+        result = cmd_resolve_recipe(Namespace(recipe='plugin-compliance'))
+        assert result['status'] == 'success'
+        assert result['recipe_key'] == 'plugin-compliance'
+        assert 'project:recipe-plugin-compliance' in result['recipe_skill']
+        assert result['domain'] == 'plan-marshall-plugin-dev'
 
 
 def test_resolve_recipe_returns_profile():
     """Test resolve-recipe returns profile from project recipe metadata."""
     with PlanContext(plan_id='recipe-profile'):
-        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'plugin-compliance')
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'implementation' in result.stdout
+        result = cmd_resolve_recipe(Namespace(recipe='plugin-compliance'))
+        assert result['status'] == 'success'
+        assert result['profile'] == 'implementation'
 
 
 def test_resolve_recipe_not_found():
     """Test resolve-recipe returns error for unknown recipe."""
     with PlanContext(plan_id='recipe-notfound'):
-        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'nonexistent-recipe')
-        assert not result.success or 'error' in result.stdout.lower(), 'Should report error'
+        result = cmd_resolve_recipe(Namespace(recipe='nonexistent-recipe'))
+        assert result['status'] == 'error'
+
+
+# =============================================================================
+# CLI Plumbing Tests (Tier 3 - subprocess)
+# =============================================================================
+
+
+def test_cli_list_recipes():
+    """Test CLI plumbing: list-recipes outputs TOON."""
+    with PlanContext(plan_id='recipe-cli-list'):
+        result = run_script(SCRIPT_PATH, 'list-recipes')
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'success' in result.stdout.lower()
+
+
+def test_cli_resolve_recipe():
+    """Test CLI plumbing: resolve-recipe outputs TOON."""
+    with PlanContext(plan_id='recipe-cli-resolve'):
+        result = run_script(SCRIPT_PATH, 'resolve-recipe', '--recipe', 'plugin-compliance')
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'plugin-compliance' in result.stdout

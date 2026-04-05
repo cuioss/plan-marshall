@@ -38,7 +38,7 @@ from _cmd_system_plan import cmd_plan, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
 from _config_core import EXIT_ERROR
-from file_ops import safe_main
+from file_ops import output_toon, safe_main
 
 
 def _add_phase_subparser(
@@ -298,56 +298,60 @@ def main() -> int:
         return EXIT_ERROR
 
     # Route to handler
+    result = None
     if args.noun == 'skill-domains':
         if not args.verb:
             p_sd.print_help()
             return EXIT_ERROR
-        return cmd_skill_domains(args)
+        result = cmd_skill_domains(args)
     elif args.noun == 'system':
         if not args.sub_noun or not args.verb:
             p_sys.print_help()
             return EXIT_ERROR
-        return cmd_system(args)
+        result = cmd_system(args)
     elif args.noun == 'plan':
         if not args.sub_noun or not args.verb:
             p_plan.print_help()
             return EXIT_ERROR
-        return cmd_plan(args)
+        result = cmd_plan(args)
     elif args.noun == 'ci':
         if not args.verb:
             p_ci.print_help()
             return EXIT_ERROR
-        return cmd_ci(args)
+        result = cmd_ci(args)
     elif args.noun == 'ext-defaults':
         if not args.verb:
             p_ext.print_help()
             return EXIT_ERROR
-        return cmd_ext_defaults(args)
+        result = cmd_ext_defaults(args)
     elif args.noun == 'init':
-        return cmd_init(args)
+        result = cmd_init(args)
     elif args.noun == 'resolve-domain-skills':
-        return cmd_resolve_domain_skills(args)
+        result = cmd_resolve_domain_skills(args)
     elif args.noun == 'resolve-workflow-skill-extension':
-        return cmd_resolve_workflow_skill_extension(args)
+        result = cmd_resolve_workflow_skill_extension(args)
     elif args.noun == 'get-skills-by-profile':
-        return cmd_get_skills_by_profile(args)
+        result = cmd_get_skills_by_profile(args)
     elif args.noun == 'configure-task-executors':
-        return cmd_configure_task_executors(args)
+        result = cmd_configure_task_executors(args)
     elif args.noun == 'resolve-task-executor':
-        return cmd_resolve_task_executor(args)
+        result = cmd_resolve_task_executor(args)
     elif args.noun == 'list-recipes':
-        return cmd_list_recipes(args)
+        result = cmd_list_recipes(args)
     elif args.noun == 'resolve-recipe':
-        return cmd_resolve_recipe(args)
+        result = cmd_resolve_recipe(args)
     elif args.noun == 'resolve-outline-skill':
-        return cmd_resolve_outline_skill(args)
+        result = cmd_resolve_outline_skill(args)
     elif args.noun == 'list-finalize-steps':
-        return cmd_list_finalize_steps(args)
+        result = cmd_list_finalize_steps(args)
     elif args.noun == 'list-verify-steps':
-        return cmd_list_verify_steps(args)
+        result = cmd_list_verify_steps(args)
     else:
         parser.print_help()
         return EXIT_ERROR
+
+    output_toon(result)
+    return 0
 
 
 if __name__ == '__main__':

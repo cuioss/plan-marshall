@@ -9,7 +9,6 @@ Plan sub-nouns delegate to phase handlers in _cmd_quality_phases:
 
 from _cmd_quality_phases import PHASE_SECTIONS, cmd_phase
 from _config_core import (
-    EXIT_ERROR,
     MarshalNotInitializedError,
     _coerce_value,
     error_exit,
@@ -20,7 +19,7 @@ from _config_core import (
 )
 
 
-def cmd_system(args) -> int:
+def cmd_system(args) -> dict:
     """Handle system noun."""
     try:
         require_initialized()
@@ -46,10 +45,10 @@ def cmd_system(args) -> int:
             save_config(config)
             return success_exit({'field': field, 'value': value})
 
-    return EXIT_ERROR
+    return error_exit('Unknown system sub-noun or verb')
 
 
-def cmd_plan(args) -> int:
+def cmd_plan(args) -> dict:
     """Handle plan noun.
 
     Delegates to phase handlers for phase-based sub-nouns.
@@ -60,4 +59,4 @@ def cmd_plan(args) -> int:
     if sub_noun in PHASE_SECTIONS:
         return cmd_phase(args, sub_noun)
 
-    return EXIT_ERROR
+    return error_exit('Unknown plan sub-noun')

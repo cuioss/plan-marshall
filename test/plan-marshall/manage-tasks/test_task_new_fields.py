@@ -1,43 +1,50 @@
 #!/usr/bin/env python3
-"""Tests for manage-tasks.py new fields: domain, profile, skills, origin."""
+"""Tests for manage-tasks.py new fields: domain, profile, skills, origin.
 
+Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
+"""
+
+import json
 import os
-import shutil
 import sys
+from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import create_temp_dir, get_script_path, run_script
+from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 
-# Script under test
+# Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
+
+# Tier 2 direct imports via importlib to avoid name collisions
+# (_cmd_query.py exists in both manage-status AND manage-tasks,
+#  _cmd_crud.py exists in both manage-tasks AND manage-references)
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-tasks' / 'scripts'
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_crud = _load_module('_tasks_cmd_crud_nf', '_cmd_crud.py')
+_query = _load_module('_tasks_cmd_query_nf', '_cmd_query.py')
+_step = _load_module('_tasks_cmd_step_nf', '_cmd_step.py')
+
+cmd_add, cmd_update = _crud.cmd_add, _crud.cmd_update
+cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
+cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = _query.cmd_next_tasks, _query.cmd_tasks_by_domain, _query.cmd_tasks_by_profile
+cmd_finalize_step = _step.cmd_finalize_step
 
 
 # =============================================================================
 # Test Helpers
 # =============================================================================
-
-
-def setup_plan_dir():
-    """Create temp plan directory and set PLAN_BASE_DIR."""
-    temp_dir = create_temp_dir()
-    plan_base = temp_dir / '.plan'
-    plan_base.mkdir()
-    os.environ['PLAN_BASE_DIR'] = str(plan_base)
-
-    # Create plan directory
-    plan_dir = plan_base / 'plans' / 'test-plan'
-    plan_dir.mkdir(parents=True)
-
-    return temp_dir
-
-
-def cleanup(temp_dir):
-    """Clean up temp directory and env var."""
-    if 'PLAN_BASE_DIR' in os.environ:
-        del os.environ['PLAN_BASE_DIR']
-    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def build_task_toon_with_new_fields(
@@ -79,10 +86,61 @@ def build_task_toon_with_new_fields(
     return '\n'.join(lines)
 
 
+def _add_ns(plan_id='test-plan', content=''):
+    """Build Namespace for cmd_add."""
+    return Namespace(plan_id=plan_id, content=content)
+
+
+def _get_ns(plan_id='test-plan', number=1):
+    """Build Namespace for cmd_get."""
+    return Namespace(plan_id=plan_id, number=number)
+
+
+def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False):
+    """Build Namespace for cmd_list."""
+    return Namespace(plan_id=plan_id, status=status, deliverable=deliverable, ready=ready)
+
+
+def _next_ns(plan_id='test-plan', include_context=False, ignore_deps=False):
+    """Build Namespace for cmd_next."""
+    return Namespace(plan_id=plan_id, include_context=include_context, ignore_deps=ignore_deps)
+
+
+def _update_ns(plan_id='test-plan', number=1, title=None, description=None,
+               depends_on=None, status=None, domain=None, profile=None,
+               skills=None, deliverable=None):
+    """Build Namespace for cmd_update."""
+    return Namespace(
+        plan_id=plan_id, number=number, title=title, description=description,
+        depends_on=depends_on, status=status, domain=domain, profile=profile,
+        skills=skills, deliverable=deliverable,
+    )
+
+
+def _finalize_step_ns(plan_id='test-plan', task=1, step=1, outcome='done', reason=None):
+    """Build Namespace for cmd_finalize_step."""
+    return Namespace(plan_id=plan_id, task=task, step=step, outcome=outcome, reason=reason)
+
+
+def _tasks_by_domain_ns(plan_id='test-plan', domain='java'):
+    """Build Namespace for cmd_tasks_by_domain."""
+    return Namespace(plan_id=plan_id, domain=domain)
+
+
+def _tasks_by_profile_ns(plan_id='test-plan', profile='implementation'):
+    """Build Namespace for cmd_tasks_by_profile."""
+    return Namespace(plan_id=plan_id, profile=profile)
+
+
+def _next_tasks_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_next_tasks."""
+    return Namespace(plan_id=plan_id)
+
+
 def add_task_with_fields(plan_id='test-plan', **kwargs):
     """Helper to add a task with new fields."""
     toon = build_task_toon_with_new_fields(**kwargs)
-    return run_script(SCRIPT_PATH, 'add', '--plan-id', plan_id, '--content', toon.replace('\n', '\\n'))
+    return cmd_add(_add_ns(plan_id=plan_id, content=toon.replace('\n', '\\n')))
 
 
 # =============================================================================
@@ -92,9 +150,9 @@ def add_task_with_fields(plan_id='test-plan', **kwargs):
 
 def test_add_with_profile():
     """Add task with profile field."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-add-prof'):
         result = add_task_with_fields(
+            plan_id='nf-add-prof',
             title='Test task',
             deliverable=1,
             domain='java',
@@ -102,32 +160,28 @@ def test_add_with_profile():
             skills=['pm-dev-java:java-core'],
         )
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'status: success' in result.stdout
-        assert 'profile: implementation' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'implementation'
 
 
 def test_add_with_testing_profile():
     """Add task with testing profile."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-test-prof'):
         result = add_task_with_fields(
-            title='Test task', deliverable=1, domain='java', profile='testing', skills=['pm-dev-java:junit-core']
+            plan_id='nf-test-prof',
+            title='Test task', deliverable=1, domain='java', profile='testing',
+            skills=['pm-dev-java:junit-core'],
         )
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'profile: testing' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'testing'
 
 
 def test_add_with_quality_profile():
     """Add task with quality profile."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-qual-prof'):
         result = add_task_with_fields(
+            plan_id='nf-qual-prof',
             title='Quality check task',
             deliverable=1,
             domain='java',
@@ -135,17 +189,15 @@ def test_add_with_quality_profile():
             skills=['pm-dev-java:java-maintenance'],
         )
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'profile: quality' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'quality'
 
 
 def test_add_with_skills():
     """Add task with skills array."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-skills'):
         result = add_task_with_fields(
+            plan_id='nf-skills',
             title='Multi-skill task',
             deliverable=1,
             domain='java',
@@ -153,32 +205,27 @@ def test_add_with_skills():
             skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi', 'pm-dev-java:java-lombok'],
         )
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'skills[3]:' in result.stdout
-        assert 'pm-dev-java:java-core' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert len(result['task']['skills']) == 3
+        assert 'pm-dev-java:java-core' in result['task']['skills']
 
 
 def test_add_with_origin():
     """Add task with origin field."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-origin'):
         result = add_task_with_fields(
-            title='Plan origin task', deliverable=1, domain='java', profile='implementation', origin='plan'
+            plan_id='nf-origin',
+            title='Plan origin task', deliverable=1, domain='java',
+            profile='implementation', origin='plan',
         )
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'origin: plan' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['origin'] == 'plan'
 
 
 def test_add_with_arbitrary_profile():
     """Add accepts any profile value (profiles are config-driven, not hardcoded)."""
-    temp_dir = setup_plan_dir()
-    try:
-        # Test with 'architecture' profile (not in old VALID_PROFILES)
+    with PlanContext(plan_id='nf-arb-prof'):
         toon = """title: Architecture task
 deliverable: 1
 domain: java
@@ -188,18 +235,15 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-arb-prof', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'profile: architecture' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'architecture'
 
 
 def test_add_with_planning_profile():
     """Add accepts 'planning' profile (config-driven)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-plan-prof'):
         toon = """title: Planning task
 deliverable: 1
 domain: java
@@ -209,18 +253,15 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-plan-prof', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'profile: planning' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'planning'
 
 
 def test_add_with_custom_profile():
     """Add accepts custom profile values (config-driven)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-cust-prof'):
         toon = """title: Custom task
 deliverable: 1
 domain: java
@@ -230,18 +271,15 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-cust-prof', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'profile: my-custom-profile' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'my-custom-profile'
 
 
 def test_add_fails_with_invalid_skill_format():
     """Add fails with invalid skill format (missing colon)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-bad-skill'):
         toon = """title: Invalid skill
 deliverable: 1
 domain: java
@@ -251,13 +289,11 @@ skills:
   - invalid-skill-no-colon
 steps:
   - Step 1"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-bad-skill', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-        assert 'skill' in result.stdout.lower() or 'bundle:skill' in result.stdout.lower()
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        msg = result.get('message', '').lower()
+        assert 'skill' in msg or 'bundle:skill' in msg
 
 
 # =============================================================================
@@ -267,56 +303,44 @@ steps:
 
 def test_get_returns_domain():
     """Get returns domain field."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Test', domain='javascript', profile='implementation')
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
+    with PlanContext(plan_id='nf-get-dom'):
+        add_task_with_fields(plan_id='nf-get-dom', title='Test', domain='javascript', profile='implementation')
+        result = cmd_get(_get_ns(plan_id='nf-get-dom', number=1))
 
-        assert result.returncode == 0
-        assert 'domain: javascript' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['domain'] == 'javascript'
 
 
 def test_get_returns_profile():
     """Get returns profile field."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Test', profile='testing')
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
+    with PlanContext(plan_id='nf-get-prof'):
+        add_task_with_fields(plan_id='nf-get-prof', title='Test', profile='testing')
+        result = cmd_get(_get_ns(plan_id='nf-get-prof', number=1))
 
-        assert result.returncode == 0
-        assert 'profile: testing' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'testing'
 
 
 def test_get_returns_skills():
     """Get returns skills array."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Test', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'])
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
+    with PlanContext(plan_id='nf-get-skills'):
+        add_task_with_fields(plan_id='nf-get-skills', title='Test', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'])
+        result = cmd_get(_get_ns(plan_id='nf-get-skills', number=1))
 
-        assert result.returncode == 0
-        assert 'skills[2]:' in result.stdout
-        assert 'pm-dev-java:java-core' in result.stdout
-        assert 'pm-dev-java:java-cdi' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert len(result['task']['skills']) == 2
+        assert 'pm-dev-java:java-core' in result['task']['skills']
+        assert 'pm-dev-java:java-cdi' in result['task']['skills']
 
 
 def test_get_returns_origin():
     """Get returns origin field."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Test', origin='plan')
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
+    with PlanContext(plan_id='nf-get-origin'):
+        add_task_with_fields(plan_id='nf-get-origin', title='Test', origin='plan')
+        result = cmd_get(_get_ns(plan_id='nf-get-origin', number=1))
 
-        assert result.returncode == 0
-        assert 'origin: plan' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['origin'] == 'plan'
 
 
 # =============================================================================
@@ -326,35 +350,30 @@ def test_get_returns_origin():
 
 def test_list_includes_domain_column():
     """List includes domain column."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Java task', domain='java', profile='implementation')
-        add_task_with_fields(title='JS task', domain='javascript', profile='implementation')
+    with PlanContext(plan_id='nf-list-dom'):
+        add_task_with_fields(plan_id='nf-list-dom', title='Java task', domain='java', profile='implementation')
+        add_task_with_fields(plan_id='nf-list-dom', title='JS task', domain='javascript', profile='implementation')
 
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
+        result = cmd_list(_list_ns(plan_id='nf-list-dom'))
 
-        assert result.returncode == 0
-        # Check table includes domain
-        assert 'java' in result.stdout
-        assert 'javascript' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        domains = [t['domain'] for t in result['tasks_table']]
+        assert 'java' in domains
+        assert 'javascript' in domains
 
 
 def test_list_includes_profile_column():
     """List includes profile column."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Impl task', profile='implementation')
-        add_task_with_fields(title='Test task', profile='testing')
+    with PlanContext(plan_id='nf-list-prof'):
+        add_task_with_fields(plan_id='nf-list-prof', title='Impl task', profile='implementation')
+        add_task_with_fields(plan_id='nf-list-prof', title='Test task', profile='testing')
 
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
+        result = cmd_list(_list_ns(plan_id='nf-list-prof'))
 
-        assert result.returncode == 0
-        assert 'implementation' in result.stdout
-        assert 'testing' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        profiles = [t['profile'] for t in result['tasks_table']]
+        assert 'implementation' in profiles
+        assert 'testing' in profiles
 
 
 # =============================================================================
@@ -364,132 +383,99 @@ def test_list_includes_profile_column():
 
 def test_update_domain():
     """Update domain field."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Task', domain='java')
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--domain', 'javascript')
+    with PlanContext(plan_id='nf-upd-dom'):
+        add_task_with_fields(plan_id='nf-upd-dom', title='Task', domain='java')
+        result = cmd_update(_update_ns(plan_id='nf-upd-dom', number=1, domain='javascript'))
 
-        assert result.returncode == 0
-        assert 'domain: javascript' in result.stdout
+        assert result['status'] == 'success'
+        assert result['task']['domain'] == 'javascript'
 
         # Verify with get
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'domain: javascript' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        get_result = cmd_get(_get_ns(plan_id='nf-upd-dom', number=1))
+        assert get_result['task']['domain'] == 'javascript'
 
 
 def test_update_profile():
     """Update profile field."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Task', profile='implementation')
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--profile', 'testing')
+    with PlanContext(plan_id='nf-upd-prof'):
+        add_task_with_fields(plan_id='nf-upd-prof', title='Task', profile='implementation')
+        result = cmd_update(_update_ns(plan_id='nf-upd-prof', number=1, profile='testing'))
 
-        assert result.returncode == 0
-        assert 'profile: testing' in result.stdout
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'testing'
 
         # Verify with get
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'profile: testing' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        get_result = cmd_get(_get_ns(plan_id='nf-upd-prof', number=1))
+        assert get_result['task']['profile'] == 'testing'
 
 
 def test_update_skills():
     """Update skills field."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Task', skills=['pm-dev-java:java-core'])
-        result = run_script(
-            SCRIPT_PATH,
-            'update',
-            '--plan-id',
-            'test-plan',
-            '--number',
-            '1',
-            '--skills',
-            'pm-dev-java:java-cdi,pm-dev-java:java-lombok',
-        )
+    with PlanContext(plan_id='nf-upd-skills'):
+        add_task_with_fields(plan_id='nf-upd-skills', title='Task', skills=['pm-dev-java:java-core'])
+        result = cmd_update(_update_ns(
+            plan_id='nf-upd-skills', number=1,
+            skills='pm-dev-java:java-cdi,pm-dev-java:java-lombok',
+        ))
 
-        assert result.returncode == 0
+        assert result['status'] == 'success'
 
         # Verify with get
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'pm-dev-java:java-cdi' in get_result.stdout
-        assert 'pm-dev-java:java-lombok' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        get_result = cmd_get(_get_ns(plan_id='nf-upd-skills', number=1))
+        assert 'pm-dev-java:java-cdi' in get_result['task']['skills']
+        assert 'pm-dev-java:java-lombok' in get_result['task']['skills']
 
 
 def test_update_deliverable():
     """Update deliverable field (single integer)."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Task', deliverable=1)
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--deliverable', '2')
+    with PlanContext(plan_id='nf-upd-del'):
+        add_task_with_fields(plan_id='nf-upd-del', title='Task', deliverable=1)
+        result = cmd_update(_update_ns(plan_id='nf-upd-del', number=1, deliverable=2))
 
-        assert result.returncode == 0
+        assert result['status'] == 'success'
 
         # Verify with get
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'deliverable: 2' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        get_result = cmd_get(_get_ns(plan_id='nf-upd-del', number=1))
+        assert get_result['task']['deliverable'] == 2
 
 
 def test_update_with_arbitrary_profile():
     """Update accepts any profile value (profiles are config-driven)."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Task', profile='implementation')
+    with PlanContext(plan_id='nf-upd-arb-prof'):
+        add_task_with_fields(plan_id='nf-upd-arb-prof', title='Task', profile='implementation')
 
-        # Update to arbitrary profile
-        result = run_script(
-            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--profile', 'architecture'
-        )
+        result = cmd_update(_update_ns(plan_id='nf-upd-arb-prof', number=1, profile='architecture'))
 
-        assert result.returncode == 0
-        assert 'profile: architecture' in result.stdout
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'architecture'
 
         # Verify persisted
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'profile: architecture' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        get_result = cmd_get(_get_ns(plan_id='nf-upd-arb-prof', number=1))
+        assert get_result['task']['profile'] == 'architecture'
 
 
 def test_update_with_custom_profile():
     """Update accepts custom profile values."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Task', profile='implementation')
+    with PlanContext(plan_id='nf-upd-cust-prof'):
+        add_task_with_fields(plan_id='nf-upd-cust-prof', title='Task', profile='implementation')
 
-        # Update to custom profile
-        result = run_script(
-            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--profile', 'my-custom-profile'
-        )
+        result = cmd_update(_update_ns(plan_id='nf-upd-cust-prof', number=1, profile='my-custom-profile'))
 
-        assert result.returncode == 0
-        assert 'profile: my-custom-profile' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['profile'] == 'my-custom-profile'
 
 
 def test_update_fails_with_invalid_skills():
     """Update fails with invalid skill format."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Task', skills=['pm-dev-java:java-core'])
-        result = run_script(
-            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--skills', 'invalid-no-colon'
-        )
+    with PlanContext(plan_id='nf-upd-bad-skill'):
+        add_task_with_fields(plan_id='nf-upd-bad-skill', title='Task', skills=['pm-dev-java:java-core'])
+        result = cmd_update(_update_ns(
+            plan_id='nf-upd-bad-skill', number=1, skills='invalid-no-colon',
+        ))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-        assert 'skill' in result.stdout.lower() or 'bundle:skill' in result.stdout.lower()
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        msg = result.get('message', '').lower()
+        assert 'skill' in msg or 'bundle:skill' in msg
 
 
 # =============================================================================
@@ -499,35 +485,30 @@ def test_update_fails_with_invalid_skills():
 
 def test_tasks_by_domain_filters():
     """tasks-by-domain filters by domain."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Java task 1', domain='java')
-        add_task_with_fields(title='JS task', domain='javascript')
-        add_task_with_fields(title='Java task 2', domain='java')
+    with PlanContext(plan_id='nf-by-dom'):
+        add_task_with_fields(plan_id='nf-by-dom', title='Java task 1', domain='java')
+        add_task_with_fields(plan_id='nf-by-dom', title='JS task', domain='javascript')
+        add_task_with_fields(plan_id='nf-by-dom', title='Java task 2', domain='java')
 
-        result = run_script(SCRIPT_PATH, 'tasks-by-domain', '--plan-id', 'test-plan', '--domain', 'java')
+        result = cmd_tasks_by_domain(_tasks_by_domain_ns(plan_id='nf-by-dom', domain='java'))
 
-        assert result.returncode == 0
-        assert 'total: 2' in result.stdout
-        assert 'Java task 1' in result.stdout
-        assert 'Java task 2' in result.stdout
-        assert 'JS task' not in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['counts']['total'] == 2
+        titles = [t['title'] for t in result['tasks_table']]
+        assert 'Java task 1' in titles
+        assert 'Java task 2' in titles
+        assert 'JS task' not in titles
 
 
 def test_tasks_by_domain_empty_result():
     """tasks-by-domain returns empty when no matches."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Java task', domain='java')
+    with PlanContext(plan_id='nf-by-dom-empty'):
+        add_task_with_fields(plan_id='nf-by-dom-empty', title='Java task', domain='java')
 
-        result = run_script(SCRIPT_PATH, 'tasks-by-domain', '--plan-id', 'test-plan', '--domain', 'javascript')
+        result = cmd_tasks_by_domain(_tasks_by_domain_ns(plan_id='nf-by-dom-empty', domain='javascript'))
 
-        assert result.returncode == 0
-        assert 'total: 0' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['counts']['total'] == 0
 
 
 # =============================================================================
@@ -537,39 +518,35 @@ def test_tasks_by_domain_empty_result():
 
 def test_tasks_by_profile_filters():
     """tasks-by-profile filters by profile."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Impl task 1', profile='implementation')
-        add_task_with_fields(title='Test task', profile='testing')
-        add_task_with_fields(title='Impl task 2', profile='implementation')
+    with PlanContext(plan_id='nf-by-prof'):
+        add_task_with_fields(plan_id='nf-by-prof', title='Impl task 1', profile='implementation')
+        add_task_with_fields(plan_id='nf-by-prof', title='Test task', profile='testing')
+        add_task_with_fields(plan_id='nf-by-prof', title='Impl task 2', profile='implementation')
 
-        result = run_script(SCRIPT_PATH, 'tasks-by-profile', '--plan-id', 'test-plan', '--profile', 'implementation')
+        result = cmd_tasks_by_profile(_tasks_by_profile_ns(plan_id='nf-by-prof', profile='implementation'))
 
-        assert result.returncode == 0
-        assert 'total: 2' in result.stdout
-        assert 'Impl task 1' in result.stdout
-        assert 'Impl task 2' in result.stdout
-        assert 'Test task' not in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['counts']['total'] == 2
+        titles = [t['title'] for t in result['tasks_table']]
+        assert 'Impl task 1' in titles
+        assert 'Impl task 2' in titles
+        assert 'Test task' not in titles
 
 
 def test_tasks_by_profile_testing():
     """tasks-by-profile filters testing profile."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Impl task', profile='implementation')
-        add_task_with_fields(title='Test task 1', profile='testing')
-        add_task_with_fields(title='Test task 2', profile='testing')
+    with PlanContext(plan_id='nf-by-prof-test'):
+        add_task_with_fields(plan_id='nf-by-prof-test', title='Impl task', profile='implementation')
+        add_task_with_fields(plan_id='nf-by-prof-test', title='Test task 1', profile='testing')
+        add_task_with_fields(plan_id='nf-by-prof-test', title='Test task 2', profile='testing')
 
-        result = run_script(SCRIPT_PATH, 'tasks-by-profile', '--plan-id', 'test-plan', '--profile', 'testing')
+        result = cmd_tasks_by_profile(_tasks_by_profile_ns(plan_id='nf-by-prof-test', profile='testing'))
 
-        assert result.returncode == 0
-        assert 'total: 2' in result.stdout
-        assert 'Test task 1' in result.stdout
-        assert 'Test task 2' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['counts']['total'] == 2
+        titles = [t['title'] for t in result['tasks_table']]
+        assert 'Test task 1' in titles
+        assert 'Test task 2' in titles
 
 
 # =============================================================================
@@ -579,109 +556,88 @@ def test_tasks_by_profile_testing():
 
 def test_next_tasks_returns_ready_tasks():
     """next-tasks returns all tasks with satisfied dependencies."""
-    temp_dir = setup_plan_dir()
-    try:
-        # Task 1 - no deps
-        add_task_with_fields(title='Task 1', depends_on='none')
-        # Task 2 - no deps
-        add_task_with_fields(title='Task 2', depends_on='none')
-        # Task 3 - depends on task 1
-        add_task_with_fields(title='Task 3', depends_on='TASK-1')
+    with PlanContext(plan_id='nf-next-tasks'):
+        add_task_with_fields(plan_id='nf-next-tasks', title='Task 1', depends_on='none')
+        add_task_with_fields(plan_id='nf-next-tasks', title='Task 2', depends_on='none')
+        add_task_with_fields(plan_id='nf-next-tasks', title='Task 3', depends_on='TASK-1')
 
-        result = run_script(SCRIPT_PATH, 'next-tasks', '--plan-id', 'test-plan')
+        result = cmd_next_tasks(_next_tasks_ns(plan_id='nf-next-tasks'))
 
-        assert result.returncode == 0
-        assert 'ready_count: 2' in result.stdout
-        assert 'Task 1' in result.stdout
-        assert 'Task 2' in result.stdout
-        # Task 3 should be in blocked
-        assert 'blocked_count: 1' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['ready_count'] == 2
+        ready_titles = [t['title'] for t in result['ready_tasks']]
+        assert 'Task 1' in ready_titles
+        assert 'Task 2' in ready_titles
+        assert result['blocked_count'] == 1
 
 
 def test_next_tasks_includes_skills():
     """next-tasks includes skills in ready task output."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-next-skills'):
         add_task_with_fields(
-            title='Task with skills', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'], depends_on='none'
+            plan_id='nf-next-skills',
+            title='Task with skills',
+            skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'],
+            depends_on='none',
         )
 
-        result = run_script(SCRIPT_PATH, 'next-tasks', '--plan-id', 'test-plan')
+        result = cmd_next_tasks(_next_tasks_ns(plan_id='nf-next-skills'))
 
-        assert result.returncode == 0
-        assert 'pm-dev-java:java-core' in result.stdout
-        assert 'pm-dev-java:java-cdi' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert 'pm-dev-java:java-core' in result['ready_tasks'][0]['skills']
+        assert 'pm-dev-java:java-cdi' in result['ready_tasks'][0]['skills']
 
 
 def test_next_tasks_shows_blocked():
     """next-tasks shows blocked tasks with waiting_for."""
-    temp_dir = setup_plan_dir()
-    try:
-        # Only task depends on non-existent task
-        add_task_with_fields(title='Blocked task', depends_on='TASK-99')
+    with PlanContext(plan_id='nf-next-blocked'):
+        add_task_with_fields(plan_id='nf-next-blocked', title='Blocked task', depends_on='TASK-99')
 
-        result = run_script(SCRIPT_PATH, 'next-tasks', '--plan-id', 'test-plan')
+        result = cmd_next_tasks(_next_tasks_ns(plan_id='nf-next-blocked'))
 
-        assert result.returncode == 0
-        assert 'ready_count: 0' in result.stdout
-        assert 'blocked_count: 1' in result.stdout
-        # waiting_for is in the table header and TASK-99 is in the data
-        assert 'blocked_tasks[1]' in result.stdout
-        assert 'waiting_for' in result.stdout  # in the header
-        assert 'TASK-99' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['ready_count'] == 0
+        assert result['blocked_count'] == 1
+        assert 'TASK-99' in result['blocked_tasks'][0]['waiting_for']
 
 
 def test_next_tasks_includes_in_progress():
     """next-tasks includes in_progress tasks."""
-    temp_dir = setup_plan_dir()
-    try:
-        # Add tasks with 2 steps so completing one step leaves task in_progress
+    with PlanContext(plan_id='nf-next-inprog'):
         add_task_with_fields(
-            title='Task 1', depends_on='none', steps=['src/main/java/FileA.java', 'src/main/java/FileB.java']
+            plan_id='nf-next-inprog', title='Task 1', depends_on='none',
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
         )
-        add_task_with_fields(title='Task 2', depends_on='none')
+        add_task_with_fields(plan_id='nf-next-inprog', title='Task 2', depends_on='none')
 
         # Complete first step of task 1 (puts task in_progress with step 2 remaining)
-        run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
-        )
+        cmd_finalize_step(_finalize_step_ns(plan_id='nf-next-inprog', task=1, step=1, outcome='done'))
 
-        result = run_script(SCRIPT_PATH, 'next-tasks', '--plan-id', 'test-plan')
+        result = cmd_next_tasks(_next_tasks_ns(plan_id='nf-next-inprog'))
 
-        assert result.returncode == 0
-        assert 'in_progress_count: 1' in result.stdout
-        # Task 2 is ready (not started)
-        assert 'ready_count: 1' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['in_progress_count'] == 1
+        assert result['ready_count'] == 1
 
 
 def test_next_returns_new_fields():
     """Next command returns domain, profile, skills in output."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-next-fields'):
         add_task_with_fields(
+            plan_id='nf-next-fields',
             title='Task with all fields',
             domain='java',
             profile='implementation',
             skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'],
         )
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
+        result = cmd_next(_next_ns(plan_id='nf-next-fields'))
 
-        assert result.returncode == 0
-        assert 'domain: java' in result.stdout
-        assert 'profile: implementation' in result.stdout
-        assert 'skills[2]:' in result.stdout
-        assert 'origin: plan' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next']['domain'] == 'java'
+        assert result['next']['profile'] == 'implementation'
+        assert len(result['next']['skills']) == 2
+        assert result['next']['origin'] == 'plan'
 
 
 # =============================================================================
@@ -691,11 +647,9 @@ def test_next_returns_new_fields():
 
 def test_file_contains_all_new_fields():
     """Created file contains all new fields (JSON format)."""
-    temp_dir = setup_plan_dir()
-    try:
-        import json
-
+    with PlanContext(plan_id='nf-file-fields'):
         add_task_with_fields(
+            plan_id='nf-file-fields',
             title='Complete task',
             domain='java',
             profile='implementation',
@@ -703,7 +657,7 @@ def test_file_contains_all_new_fields():
             origin='plan',
         )
 
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'nf-file-fields' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
         content = files[0].read_text(encoding='utf-8')
         task = json.loads(content)
@@ -713,13 +667,6 @@ def test_file_contains_all_new_fields():
         assert task['origin'] == 'plan'
         assert 'pm-dev-java:java-core' in task['skills']
         assert 'pm-dev-java:java-cdi' in task['skills']
-    finally:
-        cleanup(temp_dir)
-
-
-# =============================================================================
-# Tests: origin values
-# =============================================================================
 
 
 # =============================================================================
@@ -729,8 +676,7 @@ def test_file_contains_all_new_fields():
 
 def test_add_with_arbitrary_domain():
     """Add accepts any domain value (domains are config-driven)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-arb-dom'):
         toon = """title: Requirements task
 deliverable: 1
 domain: requirements
@@ -740,18 +686,15 @@ skills:
   - pm-requirements:req-core
 steps:
   - docs/requirements.adoc"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-arb-dom', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'domain: requirements' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['domain'] == 'requirements'
 
 
 def test_add_with_custom_domain():
     """Add accepts custom domain values (config-driven)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-cust-dom'):
         toon = """title: Custom domain task
 deliverable: 1
 domain: my-custom-domain
@@ -761,28 +704,21 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-cust-dom', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'domain: my-custom-domain' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['domain'] == 'my-custom-domain'
 
 
 def test_update_with_arbitrary_domain():
     """Update accepts any domain value."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_task_with_fields(title='Task', domain='java')
+    with PlanContext(plan_id='nf-upd-arb-dom'):
+        add_task_with_fields(plan_id='nf-upd-arb-dom', title='Task', domain='java')
 
-        result = run_script(
-            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--domain', 'requirements'
-        )
+        result = cmd_update(_update_ns(plan_id='nf-upd-arb-dom', number=1, domain='requirements'))
 
-        assert result.returncode == 0
-        assert 'domain: requirements' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['domain'] == 'requirements'
 
 
 # =============================================================================
@@ -792,8 +728,7 @@ def test_update_with_arbitrary_domain():
 
 def test_add_with_plan_origin():
     """Add task with plan origin (default)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-plan-origin'):
         toon = """title: Implementation task
 deliverable: 1
 domain: java
@@ -803,18 +738,15 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-plan-origin', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'origin: plan' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['origin'] == 'plan'
 
 
 def test_add_with_fix_origin():
     """Add task with fix origin."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-fix-origin'):
         toon = """title: Fix task
 deliverable: 1
 domain: java
@@ -825,18 +757,15 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-fix-origin', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'origin: fix' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['origin'] == 'fix'
 
 
 def test_add_with_sonar_origin():
     """Add task with sonar origin."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-sonar-origin'):
         toon = """title: Sonar fix task
 deliverable: 1
 domain: java
@@ -847,12 +776,10 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-sonar-origin', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'origin: sonar' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['origin'] == 'sonar'
 
 
 # =============================================================================
@@ -862,8 +789,7 @@ steps:
 
 def test_task_file_uses_numbered_format():
     """Task file uses TASK-NNN.json format."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-num-fmt'):
         toon = """title: Implementation task with long title
 deliverable: 1
 domain: java
@@ -873,19 +799,16 @@ skills:
   - pm-dev-java:java-core
 steps:
   - src/main/java/File.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-num-fmt', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'file: TASK-001.json' in result.stdout
-        assert 'origin: plan' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['file'] == 'TASK-001.json'
+        assert result['task']['origin'] == 'plan'
 
 
 def test_fix_task_file_uses_numbered_format():
     """Fix task file uses same TASK-NNN.json format."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='nf-fix-fmt'):
         toon = """title: Fix broken test
 deliverable: 1
 domain: java
@@ -896,15 +819,25 @@ skills:
   - pm-dev-java:junit-core
 steps:
   - src/test/java/FileTest.java"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='nf-fix-fmt', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'file: TASK-001.json' in result.stdout
-        assert 'origin: fix' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['file'] == 'TASK-001.json'
+        assert result['task']['origin'] == 'fix'
 
 
 # =============================================================================
-# Main
+# Subprocess tests (CLI plumbing - Tier 3)
 # =============================================================================
+
+
+def test_cli_tasks_by_domain_missing_domain_exits_2():
+    """tasks-by-domain without --domain exits with code 2 (argparse error)."""
+    result = run_script(SCRIPT_PATH, 'tasks-by-domain', '--plan-id', 'test-plan')
+    assert result.returncode == 2
+
+
+def test_cli_tasks_by_profile_missing_profile_exits_2():
+    """tasks-by-profile without --profile exits with code 2 (argparse error)."""
+    result = run_script(SCRIPT_PATH, 'tasks-by-profile', '--plan-id', 'test-plan')
+    assert result.returncode == 2

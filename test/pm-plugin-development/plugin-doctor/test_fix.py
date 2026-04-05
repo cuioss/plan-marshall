@@ -10,6 +10,7 @@ Tests plugin component fix capabilities including:
 
 import json
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
@@ -19,9 +20,14 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_fix.py')
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'fix'
 
+# Direct imports for Tier 2 testing
+from _cmd_apply import cmd_apply  # noqa: E402
+from _cmd_categorize import cmd_categorize  # noqa: E402
+from _cmd_extract import cmd_extract  # noqa: E402
+from _cmd_verify import cmd_verify  # noqa: E402
 
 # =============================================================================
-# Main help tests
+# CLI plumbing tests (Tier 3 - subprocess)
 # =============================================================================
 
 
@@ -40,69 +46,6 @@ def test_main_help():
     assert 'verify' in combined, 'verify subcommand in help'
 
 
-# =============================================================================
-# Extract Subcommand Tests
-# =============================================================================
-
-
-def test_extract_help():
-    """Test extract --help is available."""
-    result = run_script(SCRIPT_PATH, 'extract', '--help')
-    assert 'input' in result.stdout or 'input' in result.stderr, 'Help should mention input option'
-
-
-def test_extract_from_stdin():
-    """Test extract accepts JSON from stdin."""
-    diagnosis = {
-        'issues': [
-            {'type': 'missing-frontmatter', 'severity': 'high', 'fixable': True},
-            {'type': 'bloat', 'severity': 'medium', 'fixable': False},
-        ]
-    }
-    result = run_script(SCRIPT_PATH, 'extract', input_data=json.dumps(diagnosis))
-    data = result.toon()
-    assert data is not None, 'Should return valid JSON'
-    assert 'fixable_issues' in data or 'issues' in data, 'Should have issues field'
-
-
-# =============================================================================
-# Categorize Subcommand Tests
-# =============================================================================
-
-
-def test_categorize_help():
-    """Test categorize --help is available."""
-    result = run_script(SCRIPT_PATH, 'categorize', '--help')
-    assert 'input' in result.stdout or 'input' in result.stderr, 'Help should mention input option'
-
-
-def test_categorize_safe_issues():
-    """Test categorize identifies safe fixes."""
-    issues = {
-        'issues': [
-            {'type': 'missing-frontmatter', 'file': 'test.md'},
-            {'type': 'trailing-whitespace', 'file': 'test.md'},
-        ]
-    }
-    result = run_script(SCRIPT_PATH, 'categorize', input_data=json.dumps(issues))
-    data = result.toon()
-    assert data is not None, 'Should return valid JSON'
-    # Should have safe_fixes or similar field
-    assert 'safe_fixes' in data or 'safe' in data or 'categorized' in data, 'Should categorize fixes'
-
-
-# =============================================================================
-# Apply Subcommand Tests
-# =============================================================================
-
-
-def test_apply_help():
-    """Test apply --help is available."""
-    result = run_script(SCRIPT_PATH, 'apply', '--help')
-    combined = result.stdout + result.stderr
-    assert 'fix' in combined.lower(), 'Help should mention fix option'
-
-
 def test_apply_missing_arguments():
     """Test apply requires fix and bundle-dir."""
     result = run_script(SCRIPT_PATH, 'apply')
@@ -110,21 +53,55 @@ def test_apply_missing_arguments():
 
 
 # =============================================================================
-# Verify Subcommand Tests
+# Extract Subcommand Tests (Tier 2 - direct import)
 # =============================================================================
 
 
-def test_verify_help():
-    """Test verify --help is available."""
-    result = run_script(SCRIPT_PATH, 'verify', '--help')
-    combined = result.stdout + result.stderr
-    assert 'fix-type' in combined or 'file' in combined, 'Help should mention fix-type or file option'
+def test_extract_from_stdin():
+    """Test extract accepts JSON diagnosis data."""
+    diagnosis = {
+        'issues': [
+            {'type': 'missing-frontmatter', 'severity': 'high', 'fixable': True},
+            {'type': 'bloat', 'severity': 'medium', 'fixable': False},
+        ]
+    }
+    # Write to temp file for input
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(diagnosis, f)
+        f.flush()
+        args = Namespace(input=f.name)
+        data = cmd_extract(args)
+        assert data is not None, 'Should return valid dict'
+        assert 'fixable_issues' in data or 'issues' in data, 'Should have issues field'
+        Path(f.name).unlink()
 
 
-def test_verify_missing_arguments():
-    """Test verify requires arguments."""
-    result = run_script(SCRIPT_PATH, 'verify')
-    assert result.returncode != 0, 'Should error without arguments'
+# =============================================================================
+# Categorize Subcommand Tests (Tier 2 - direct import)
+# =============================================================================
+
+
+def test_categorize_safe_issues():
+    """Test categorize identifies safe fixes."""
+    issues = {
+        'fixable_issues': [
+            {'type': 'checklist-pattern', 'file': 'test.md'},
+            {'type': 'subdoc-checklist-pattern', 'file': 'ref.md'},
+        ]
+    }
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(issues, f)
+        f.flush()
+        args = Namespace(input=f.name)
+        data = cmd_categorize(args)
+        assert data is not None, 'Should return valid dict'
+        assert 'safe' in data or 'safe_fixes' in data or 'categorized' in data, 'Should categorize fixes'
+        Path(f.name).unlink()
+
+
+# =============================================================================
+# Verify Subcommand Tests (Tier 2 - direct import)
+# =============================================================================
 
 
 def test_verify_with_valid_file():
@@ -133,15 +110,15 @@ def test_verify_with_valid_file():
         f.write('---\nname: test\ndescription: Test\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'missing-frontmatter', '--file', f.name)
-        data = result.toon()
-        assert data is not None, 'Should return valid JSON'
+        args = Namespace(fix_type='missing-frontmatter', file=f.name)
+        data = cmd_verify(args)
+        assert data is not None, 'Should return valid dict'
 
         Path(f.name).unlink()
 
 
 # =============================================================================
-# Rule 11 Apply Tests
+# Rule 11 Apply Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -152,8 +129,14 @@ def test_apply_rule_11_fix():
         agent_file.write_text('---\nname: test-agent\ndescription: Test\ntools: Read, Write\n---\n\n# Test Agent\n')
 
         fix_json = json.dumps({'type': 'agent-skill-tool-visibility', 'file': 'test-agent.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        # Write fix to temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         # Verify Skill was appended
@@ -169,13 +152,18 @@ def test_apply_rule_11_fix_already_present():
         agent_file.write_text('---\nname: test-agent\ndescription: Test\ntools: Read, Skill\n---\n\n# Test Agent\n')
 
         fix_json = json.dumps({'type': 'agent-skill-tool-visibility', 'file': 'test-agent.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is False, 'Fix should fail when Skill already present'
 
 
 # =============================================================================
-# Rule 11 Verify Tests
+# Rule 11 Verify Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -185,8 +173,8 @@ def test_verify_rule_11_fixed():
         f.write('---\nname: test\ndescription: Test\ntools: Read, Write, Skill\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
-        data = result.toon()
+        args = Namespace(fix_type='agent-skill-tool-visibility', file=f.name)
+        data = cmd_verify(args)
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
         Path(f.name).unlink()
@@ -198,8 +186,8 @@ def test_verify_rule_11_still_missing():
         f.write('---\nname: test\ndescription: Test\ntools: Read, Write\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
-        data = result.toon()
+        args = Namespace(fix_type='agent-skill-tool-visibility', file=f.name)
+        data = cmd_verify(args)
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
         Path(f.name).unlink()
@@ -211,15 +199,15 @@ def test_verify_rule_11_no_tools_field():
         f.write('---\nname: test\ndescription: Test\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'agent-skill-tool-visibility', '--file', f.name)
-        data = result.toon()
+        args = Namespace(fix_type='agent-skill-tool-visibility', file=f.name)
+        data = cmd_verify(args)
         assert data['issue_resolved'] is True, f'Issue should be resolved (no tools = inherits all): {data}'
 
         Path(f.name).unlink()
 
 
 # =============================================================================
-# Apply unsupported-skill-tools-field Tests
+# Apply unsupported-skill-tools-field Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -232,8 +220,13 @@ def test_apply_remove_unsupported_tools_field():
         )
 
         fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = skill_file.read_text()
@@ -251,8 +244,13 @@ def test_apply_remove_unsupported_tools_field_with_tools():
         )
 
         fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = skill_file.read_text()
@@ -266,13 +264,18 @@ def test_apply_remove_unsupported_tools_no_field():
         skill_file.write_text('---\nname: test-skill\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
 
         fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is False, 'Fix should fail when field not present'
 
 
 # =============================================================================
-# Apply misspelled-user-invocable Tests
+# Apply misspelled-user-invocable Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -283,8 +286,13 @@ def test_apply_rename_misspelled_user_invocable():
         skill_file.write_text('---\nname: test-skill\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n')
 
         fix_json = json.dumps({'type': 'misspelled-user-invocable', 'file': 'SKILL.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = skill_file.read_text()
@@ -299,13 +307,18 @@ def test_apply_rename_misspelled_user_invocable_not_present():
         skill_file.write_text('---\nname: test-skill\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
 
         fix_json = json.dumps({'type': 'misspelled-user-invocable', 'file': 'SKILL.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is False, 'Fix should fail when not misspelled'
 
 
 # =============================================================================
-# Verify unsupported-skill-tools-field Tests
+# Verify unsupported-skill-tools-field Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -315,8 +328,8 @@ def test_verify_unsupported_tools_resolved():
         f.write('---\nname: test\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'unsupported-skill-tools-field', '--file', f.name)
-        data = result.toon()
+        args = Namespace(fix_type='unsupported-skill-tools-field', file=f.name)
+        data = cmd_verify(args)
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
         Path(f.name).unlink()
@@ -328,15 +341,15 @@ def test_verify_unsupported_tools_still_present():
         f.write('---\nname: test\ndescription: Test\nallowed-tools: Read\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'unsupported-skill-tools-field', '--file', f.name)
-        data = result.toon()
+        args = Namespace(fix_type='unsupported-skill-tools-field', file=f.name)
+        data = cmd_verify(args)
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
         Path(f.name).unlink()
 
 
 # =============================================================================
-# Verify misspelled-user-invocable Tests
+# Verify misspelled-user-invocable Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -346,8 +359,8 @@ def test_verify_misspelled_user_invocable_resolved():
         f.write('---\nname: test\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'misspelled-user-invocable', '--file', f.name)
-        data = result.toon()
+        args = Namespace(fix_type='misspelled-user-invocable', file=f.name)
+        data = cmd_verify(args)
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
         Path(f.name).unlink()
@@ -359,15 +372,15 @@ def test_verify_misspelled_user_invocable_still_present():
         f.write('---\nname: test\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'verify', '--fix-type', 'misspelled-user-invocable', '--file', f.name)
-        data = result.toon()
+        args = Namespace(fix_type='misspelled-user-invocable', file=f.name)
+        data = cmd_verify(args)
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
         Path(f.name).unlink()
 
 
 # =============================================================================
-# Apply checklist-pattern Tests
+# Apply checklist-pattern Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -379,10 +392,15 @@ def test_checklist_pattern_is_safe():
             {'type': 'subdoc-checklist-pattern', 'file': 'ref.md'},
         ]
     }
-    result = run_script(SCRIPT_PATH, 'categorize', input_data=json.dumps(issues))
-    data = result.toon()
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(issues, f)
+        f.flush()
+        args = Namespace(input=f.name)
+        data = cmd_categorize(args)
+        Path(f.name).unlink()
+
     safe = data.get('safe', [])
-    safe_types = [f.get('type') for f in safe]
+    safe_types = [fix.get('type') for fix in safe]
     assert 'checklist-pattern' in safe_types, f'checklist-pattern should be safe, got {safe_types}'
     assert 'subdoc-checklist-pattern' in safe_types, f'subdoc-checklist-pattern should be safe, got {safe_types}'
 
@@ -394,8 +412,13 @@ def test_apply_checklist_pattern_fix():
         md_file.write_text('---\nname: test\n---\n\n# Test\n\n- [ ] First item\n- [ ] Second item\n- Normal item\n')
 
         fix_json = json.dumps({'type': 'checklist-pattern', 'file': 'SKILL.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = md_file.read_text()
@@ -411,8 +434,13 @@ def test_apply_checklist_pattern_fix_mixed():
         md_file.write_text('# Test\n\n- [ ] Unchecked\n- [x] Checked\n- [X] Also checked\n')
 
         fix_json = json.dumps({'type': 'subdoc-checklist-pattern', 'file': 'test.md'})
-        result = run_script(SCRIPT_PATH, 'apply', '--fix', '-', '--bundle-dir', tmp_dir, input_data=fix_json)
-        data = result.toon()
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
         assert data['success'] is True, f'Fix should succeed: {data}'
 
         content = md_file.read_text()

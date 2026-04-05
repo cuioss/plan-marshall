@@ -10,36 +10,31 @@ from _status_core import (
     _try_read_status_json,
     get_plans_dir,
     log_entry,
-    output_toon,
     require_status,
     write_status,
 )
 from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS  # type: ignore[import-not-found]
 
 
-def cmd_read(args: argparse.Namespace) -> int:
+def cmd_read(args: argparse.Namespace) -> dict:
     """Read plan status."""
     status = require_status(args)
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'plan': status})
-    return 0
+    return {'status': 'success', 'plan_id': args.plan_id, 'plan': status}
 
 
-def cmd_set_phase(args: argparse.Namespace) -> int:
+def cmd_set_phase(args: argparse.Namespace) -> dict:
     """Set current phase."""
     status = require_status(args)
 
     phase_names = [p['name'] for p in status.get('phases', [])]
     if args.phase not in phase_names:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_phase',
-                'message': f'Invalid phase: {args.phase}',
-                'valid_phases': phase_names,
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {args.phase}',
+            'valid_phases': phase_names,
+        }
 
     previous = status.get('current_phase')
     status['current_phase'] = args.phase
@@ -52,11 +47,10 @@ def cmd_set_phase(args: argparse.Namespace) -> int:
     write_status(args.plan_id, status)
     log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Phase: {previous} -> {args.phase}')
 
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous})
-    return 0
+    return {'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous}
 
 
-def cmd_update_phase(args: argparse.Namespace) -> int:
+def cmd_update_phase(args: argparse.Namespace) -> dict:
     """Update a specific phase status."""
     status = require_status(args)
 
@@ -68,23 +62,19 @@ def cmd_update_phase(args: argparse.Namespace) -> int:
             break
 
     if not found:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'phase_not_found',
-                'message': f"Phase '{args.phase}' not found",
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'phase_not_found',
+            'message': f"Phase '{args.phase}' not found",
+        }
 
     write_status(args.plan_id, status)
 
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'phase': args.phase, 'phase_status': args.status})
-    return 0
+    return {'status': 'success', 'plan_id': args.plan_id, 'phase': args.phase, 'phase_status': args.status}
 
 
-def cmd_progress(args: argparse.Namespace) -> int:
+def cmd_progress(args: argparse.Namespace) -> dict:
     """Calculate plan progress."""
     status = require_status(args)
 
@@ -93,22 +83,19 @@ def cmd_progress(args: argparse.Namespace) -> int:
     completed = sum(1 for p in phases if p.get('status') == PHASE_STATUS_DONE)
     percent = int((completed / total) * 100) if total > 0 else 0
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'progress': {
-                'total_phases': total,
-                'completed_phases': completed,
-                'current_phase': status.get('current_phase'),
-                'percent': percent,
-            },
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'progress': {
+            'total_phases': total,
+            'completed_phases': completed,
+            'current_phase': status.get('current_phase'),
+            'percent': percent,
+        },
+    }
 
 
-def cmd_metadata(args: argparse.Namespace) -> int:
+def cmd_metadata(args: argparse.Namespace) -> dict:
     """Get or set a metadata field in status.json."""
     status = require_status(args)
 
@@ -131,8 +118,7 @@ def cmd_metadata(args: argparse.Namespace) -> int:
         }
         if previous_value is not None:
             result['previous_value'] = previous_value
-        output_toon(result)
-        return 0
+        return result
 
     elif args.get:
         # Get metadata
@@ -140,40 +126,31 @@ def cmd_metadata(args: argparse.Namespace) -> int:
         value = metadata.get(args.field)
 
         if value is None:
-            output_toon(
-                {
-                    'status': 'not_found',
-                    'plan_id': args.plan_id,
-                    'field': args.field,
-                    'message': f"Metadata field '{args.field}' not found",
-                    'available_fields': list(metadata.keys()),
-                }
-            )
-            return 0
-
-        output_toon(
-            {
-                'status': 'success',
+            return {
+                'status': 'not_found',
                 'plan_id': args.plan_id,
                 'field': args.field,
-                'value': value,
+                'message': f"Metadata field '{args.field}' not found",
+                'available_fields': list(metadata.keys()),
             }
-        )
-        return 0
+
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'field': args.field,
+            'value': value,
+        }
 
     else:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'missing_operation',
-                'message': 'Either --get or --set is required',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'missing_operation',
+            'message': 'Either --get or --set is required',
+        }
 
 
-def cmd_get_context(args: argparse.Namespace) -> int:
+def cmd_get_context(args: argparse.Namespace) -> dict:
     """Get combined status context (phase, progress, metadata)."""
     status = require_status(args)
 
@@ -196,16 +173,14 @@ def cmd_get_context(args: argparse.Namespace) -> int:
     for key, value in metadata.items():
         context[key] = value
 
-    output_toon(context)
-    return 0
+    return context
 
 
-def cmd_list(args: argparse.Namespace) -> int:
+def cmd_list(args: argparse.Namespace) -> dict:
     """Discover all plans."""
     plans_dir = get_plans_dir()
     if not plans_dir.exists():
-        output_toon({'status': 'success', 'total': 0, 'plans': []})
-        return 0
+        return {'status': 'success', 'total': 0, 'plans': []}
 
     plans = []
     for plan_dir in sorted(plans_dir.iterdir()):
@@ -231,5 +206,4 @@ def cmd_list(args: argparse.Namespace) -> int:
             # Skip plans with corrupted status
             continue
 
-    output_toon({'status': 'success', 'total': len(plans), 'plans': plans})
-    return 0
+    return {'status': 'success', 'total': len(plans), 'plans': plans}

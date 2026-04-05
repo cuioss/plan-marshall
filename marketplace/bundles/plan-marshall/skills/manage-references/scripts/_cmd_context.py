@@ -7,11 +7,10 @@ Handles: get-context
 from _references_core import (
     require_references,
 )
-from file_ops import output_toon  # type: ignore[import-not-found]
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_get_context(args):
+def cmd_get_context(args) -> dict:
     """Get all references context in one call."""
     require_valid_plan_id(args)
 
@@ -36,4 +35,4 @@ def cmd_get_context(args):
     if args.include_files:
         context['modified_files'] = refs.get('modified_files', [])
 
-    output_toon(context)
+    return context

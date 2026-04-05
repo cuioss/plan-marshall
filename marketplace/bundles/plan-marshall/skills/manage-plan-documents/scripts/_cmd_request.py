@@ -11,7 +11,6 @@ import argparse
 from _documents_core import (  # type: ignore[import-not-found]
     atomic_write_file,
     output_error,
-    output_toon,
     render_template,
     resolve_document_path,
     validate_doc_type_and_plan,
@@ -20,17 +19,17 @@ from _documents_core import (  # type: ignore[import-not-found]
 from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
 
 
-def cmd_create(doc_type: str, args) -> int:
+def cmd_create(doc_type: str, args) -> dict:
     """Create a new document."""
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     # For unknown type, include available types in error
     # (validate_doc_type_and_plan already handles this, but create adds extras)
     # Re-check to provide available types list
     if doc_def is None:
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     # Collect fields from args
     fields = {}
@@ -43,71 +42,62 @@ def cmd_create(doc_type: str, args) -> int:
     # Validate
     errors = validate_fields(doc_def, fields)
     if errors:
-        output_toon({'status': 'error', 'error': 'validation_failed', 'errors': errors})
-        return 1
+        return {'status': 'error', 'error': 'validation_failed', 'errors': errors}
 
     # Check if document already exists
     file_path, file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
 
     if file_path.exists() and not getattr(args, 'force', False):
-        output_toon(
-            {
-                'status': 'error',
-                'error': 'document_exists',
-                'plan_id': args.plan_id,
-                'document': doc_type,
-                'file': file_name,
-                'message': 'Document already exists. Use --force to overwrite.',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'error': 'document_exists',
+            'plan_id': args.plan_id,
+            'document': doc_type,
+            'file': file_name,
+            'message': 'Document already exists. Use --force to overwrite.',
+        }
 
     # Render and write
     content = render_template(doc_def, fields, args.plan_id)
     atomic_write_file(file_path, content)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'document': doc_type,
-            'file': file_name,
-            'action': 'created',
-            'document_info': {
-                'title': fields.get('title', ''),
-                'sections': ','.join(f['name'] for f in doc_def.get('fields', [])),
-            },
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'document': doc_type,
+        'file': file_name,
+        'action': 'created',
+        'document_info': {
+            'title': fields.get('title', ''),
+            'sections': ','.join(f['name'] for f in doc_def.get('fields', [])),
+        },
+    }
 
 
-def cmd_read(doc_type: str, args) -> int:
+def cmd_read(doc_type: str, args) -> dict:
     """Read a document."""
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     file_path, file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
 
     if not file_path.exists():
-        output_toon(
-            {
-                'status': 'error',
-                'error': 'document_not_found',
-                'plan_id': args.plan_id,
-                'document': doc_type,
-                'file': file_name,
-                'suggestions': [f'Create the {doc_type} document first', 'Check plan_id spelling'],
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': args.plan_id,
+            'document': doc_type,
+            'file': file_name,
+            'suggestions': [f'Create the {doc_type} document first', 'Check plan_id spelling'],
+        }
 
     content = file_path.read_text(encoding='utf-8')
 
     if getattr(args, 'raw', False):
         # Output raw content
         print(content)
+        return {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'raw': True}
     elif getattr(args, 'section', None):
         # Extract specific section
         section_name = args.section.lower().replace(' ', '_')
@@ -121,54 +111,45 @@ def cmd_read(doc_type: str, args) -> int:
             actual_section = 'original_input'
 
         if not section_content:
-            output_toon(
-                {
-                    'status': 'error',
-                    'error': 'section_not_found',
-                    'plan_id': args.plan_id,
-                    'document': doc_type,
-                    'section': section_name,
-                    'available_sections': list(sections.keys()),
-                }
-            )
-            return 1
-        output_toon(
-            {
-                'status': 'success',
+            return {
+                'status': 'error',
+                'error': 'section_not_found',
                 'plan_id': args.plan_id,
                 'document': doc_type,
-                'section': actual_section,
-                'requested_section': section_name,
-                'content': section_content,
+                'section': section_name,
+                'available_sections': list(sections.keys()),
             }
-        )
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'document': doc_type,
+            'section': actual_section,
+            'requested_section': section_name,
+            'content': section_content,
+        }
     else:
         # Parse into sections
         sections = parse_document_sections(content)
-        output_toon(
-            {
-                'status': 'success',
-                'plan_id': args.plan_id,
-                'document': doc_type,
-                'file': file_name,
-                'content': sections,
-            }
-        )
-
-    return 0
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'document': doc_type,
+            'file': file_name,
+            'content': sections,
+        }
 
 
-def cmd_update(doc_type: str, args) -> int:
+def cmd_update(doc_type: str, args) -> dict:
     """Update a document section."""
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     file_path, _file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
 
     if not file_path.exists():
         output_error('document_not_found', plan_id=args.plan_id, document=doc_type)
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     content = file_path.read_text(encoding='utf-8')
     section = args.section.lower().replace(' ', '_')
@@ -211,13 +192,10 @@ def cmd_update(doc_type: str, args) -> int:
 
     atomic_write_file(file_path, '\n'.join(new_lines))
 
-    output_toon(
-        {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'section': section, 'updated': True}
-    )
-    return 0
+    return {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'section': section, 'updated': True}
 
 
-def cmd_clarify(doc_type: str, args) -> int:
+def cmd_clarify(doc_type: str, args) -> dict:
     """Add clarifications and clarified request to a document.
 
     This command adds:
@@ -228,13 +206,13 @@ def cmd_clarify(doc_type: str, args) -> int:
     """
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     file_path, _file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
 
     if not file_path.exists():
         output_error('document_not_found', plan_id=args.plan_id, document=doc_type)
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     content = file_path.read_text(encoding='utf-8')
     lines = content.split('\n')
@@ -271,61 +249,48 @@ def cmd_clarify(doc_type: str, args) -> int:
             new_sections.append(clarified_request)
 
     if not new_sections:
-        output_toon(
-            {
-                'status': 'error',
-                'error': 'no_content',
-                'message': 'Provide --clarifications and/or --clarified-request',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'error': 'no_content',
+            'message': 'Provide --clarifications and/or --clarified-request',
+        }
 
     # Append new sections to content
     new_content = content.rstrip() + '\n' + '\n'.join(new_sections) + '\n'
     atomic_write_file(file_path, new_content)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'document': doc_type,
-            'sections_added': [s.strip().replace('## ', '') for s in new_sections if s.startswith('\n##')],
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'document': doc_type,
+        'sections_added': [s.strip().replace('## ', '') for s in new_sections if s.startswith('\n##')],
+    }
 
 
-def cmd_exists(doc_type: str, args) -> int:
+def cmd_exists(doc_type: str, args) -> dict:
     """Check if document exists."""
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     file_path, file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
 
     exists = file_path.exists()
-    output_toon(
-        {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'file': file_name, 'exists': exists}
-    )
-
-    return 0 if exists else 1
+    return {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'file': file_name, 'exists': exists}
 
 
-def cmd_remove(doc_type: str, args) -> int:
+def cmd_remove(doc_type: str, args) -> dict:
     """Remove a document."""
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     file_path, file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
 
     if not file_path.exists():
         output_error('document_not_found', plan_id=args.plan_id, document=doc_type)
-        return 1
+        return {'status': 'error', 'error': 'validation_failed'}
 
     file_path.unlink()
 
-    output_toon(
-        {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'file': file_name, 'action': 'removed'}
-    )
-    return 0
+    return {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'file': file_name, 'action': 'removed'}

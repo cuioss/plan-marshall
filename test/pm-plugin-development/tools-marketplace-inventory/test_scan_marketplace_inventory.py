@@ -4,6 +4,11 @@
 Migrated from test-scan-marketplace-inventory.sh - tests marketplace inventory
 scanning including basic discovery, resource filtering, description extraction,
 TOON validity, bundle structure, script discovery, and error handling.
+
+NOTE: All tests remain Tier 3 (subprocess) because scan-marketplace-inventory.py
+has a monolithic main() function with no separate cmd_* entry points for direct
+import. The script's logic (scope resolution, bundle discovery, resource filtering)
+is tightly coupled to argparse and output serialization within main().
 """
 
 from pathlib import Path

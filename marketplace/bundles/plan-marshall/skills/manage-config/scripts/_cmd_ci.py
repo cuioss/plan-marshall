@@ -9,7 +9,6 @@ Storage split:
 """
 
 from _config_core import (
-    EXIT_ERROR,
     MarshalNotInitializedError,
     error_exit,
     load_config,
@@ -28,12 +27,12 @@ def _get_timestamp() -> str:
     return now_utc_iso()
 
 
-def _handle_get(ci_config: dict) -> int:
+def _handle_get(ci_config: dict) -> dict:
     """Handle 'get' verb."""
     return success_exit({'ci': ci_config})
 
 
-def _handle_get_provider(ci_config: dict) -> int:
+def _handle_get_provider(ci_config: dict) -> dict:
     """Handle 'get-provider' verb."""
     return success_exit(
         {
@@ -44,7 +43,7 @@ def _handle_get_provider(ci_config: dict) -> int:
     )
 
 
-def _handle_set_provider(args, config: dict, ci_config: dict) -> int:
+def _handle_set_provider(args, config: dict, ci_config: dict) -> dict:
     """Handle 'set-provider' verb."""
     ci_config['provider'] = args.provider
     ci_config['repo_url'] = args.repo_url
@@ -54,7 +53,7 @@ def _handle_set_provider(args, config: dict, ci_config: dict) -> int:
     return success_exit({'provider': args.provider, 'repo_url': args.repo_url})
 
 
-def _handle_set_tools(args) -> int:
+def _handle_set_tools(args) -> dict:
     """Handle 'set-tools' verb."""
     run_config = load_run_config()
     run_ci = run_config.get('ci', {})
@@ -66,14 +65,14 @@ def _handle_set_tools(args) -> int:
     return success_exit({'authenticated_tools': tools})
 
 
-def _handle_get_tools() -> int:
+def _handle_get_tools() -> dict:
     """Handle 'get-tools' verb."""
     run_config = load_run_config()
     run_ci = run_config.get('ci', {})
     return success_exit({'authenticated_tools': run_ci.get('authenticated_tools', [])})
 
 
-def _handle_persist(args, config: dict, ci_config: dict) -> int:
+def _handle_persist(args, config: dict, ci_config: dict) -> dict:
     """Handle 'persist' verb - full CI config persistence."""
     ci_config['provider'] = args.provider
     ci_config['repo_url'] = args.repo_url
@@ -100,7 +99,7 @@ def _handle_persist(args, config: dict, ci_config: dict) -> int:
     return success_exit({'provider': args.provider, 'repo_url': args.repo_url})
 
 
-def cmd_ci(args) -> int:
+def cmd_ci(args) -> dict:
     """Handle ci noun."""
     try:
         require_initialized()
@@ -123,4 +122,4 @@ def cmd_ci(args) -> int:
     if handler:
         return handler()
 
-    return EXIT_ERROR
+    return error_exit('Unknown ci verb')

@@ -8,7 +8,6 @@ All phases read/write from config['plan'][phase_section].
 """
 
 from _config_core import (
-    EXIT_ERROR,
     MarshalNotInitializedError,
     _coerce_value,
     error_exit,
@@ -30,7 +29,7 @@ LIST_STEP_PHASES = {'phase-5-execute', 'phase-6-finalize'}
 SCALAR_PHASES = {'phase-1-init', 'phase-2-refine', 'phase-3-outline', 'phase-4-plan'}
 
 
-def cmd_phase(args, phase_section: str) -> int:
+def cmd_phase(args, phase_section: str) -> dict:
     """Handle phase-based plan sub-nouns.
 
     Args:
@@ -117,4 +116,4 @@ def cmd_phase(args, phase_section: str) -> int:
         save_config(config)
         return success_exit({'phase': phase_section, 'step': step, 'steps': steps, 'count': len(steps)})
 
-    return EXIT_ERROR
+    return error_exit('Unknown phase verb')

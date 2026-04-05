@@ -8,6 +8,7 @@ Consolidates tests from:
 Tests plugin component analysis capabilities.
 """
 
+from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
@@ -19,9 +20,13 @@ SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_analyz
 SKILL_STRUCTURE_FIXTURES = Path(__file__).parent / 'fixtures' / 'skill-structure'
 CROSS_FILE_FIXTURES = Path(__file__).parent / 'fixtures' / 'cross-file-analysis'
 
+# Direct imports for Tier 2 testing
+from _analyze_crossfile import cmd_cross_file as cmd_crossfile_analyze  # noqa: E402
+from _analyze_markdown import cmd_markdown  # noqa: E402
+from _analyze_structure import cmd_structure  # noqa: E402
 
 # =============================================================================
-# Main help tests
+# CLI plumbing tests (Tier 3 - subprocess)
 # =============================================================================
 
 
@@ -40,8 +45,14 @@ def test_main_help():
     assert 'cross-file' in combined, 'cross-file subcommand in help'
 
 
+def test_crossfile_missing_argument():
+    """Test returns error for missing argument."""
+    result = run_script(SCRIPT_PATH, 'cross-file')
+    assert result.returncode != 0, 'Should return error for missing argument'
+
+
 # =============================================================================
-# Structure Subcommand Tests (from analyze-skill-structure.py)
+# Structure Subcommand Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -51,10 +62,8 @@ def test_structure_table_refs_no_unreferenced():
     if not test_dir.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f'Script returned error: {result.stderr}'
-
-    data = result.toon()
+    args = Namespace(directory=str(test_dir))
+    data = cmd_structure(args)
     unreferenced = data.get('standards_files', {}).get('unreferenced_files', [])
     assert len(unreferenced) == 0, f'Should have no unreferenced files, found {len(unreferenced)}'
 
@@ -65,10 +74,8 @@ def test_structure_table_refs_no_missing():
     if not test_dir.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f'Script returned error: {result.stderr}'
-
-    data = result.toon()
+    args = Namespace(directory=str(test_dir))
+    data = cmd_structure(args)
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Should have no missing files, found {len(missing)}'
 
@@ -79,10 +86,8 @@ def test_structure_table_refs_perfect_score():
     if not test_dir.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f'Script returned error: {result.stderr}'
-
-    data = result.toon()
+    args = Namespace(directory=str(test_dir))
+    data = cmd_structure(args)
     score = data.get('structure_score', 0)
     assert score >= 100, f'Score should be 100, got {score}'
 
@@ -93,10 +98,8 @@ def test_structure_code_block_no_false_positive():
     if not test_dir.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f'Script returned error: {result.stderr}'
-
-    data = result.toon()
+    args = Namespace(directory=str(test_dir))
+    data = cmd_structure(args)
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Should not flag code block examples as missing, found {len(missing)}'
 
@@ -107,10 +110,8 @@ def test_structure_cross_skill_no_false_positive():
     if not test_dir.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'structure', '--directory', str(test_dir))
-    assert result.returncode == 0, f'Script returned error: {result.stderr}'
-
-    data = result.toon()
+    args = Namespace(directory=str(test_dir))
+    data = cmd_structure(args)
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Cross-skill refs should not be flagged as missing, found {len(missing)}'
 
@@ -121,53 +122,35 @@ def test_structure_real_plugin_doctor():
     if not skill_dir.exists():
         return  # Skip if not found
 
-    result = run_script(SCRIPT_PATH, 'structure', '--directory', str(skill_dir))
-    assert result.returncode == 0, f'Script returned error: {result.stderr}'
-
-    data = result.toon()
+    args = Namespace(directory=str(skill_dir))
+    data = cmd_structure(args)
     score = data.get('structure_score', 0)
     assert score >= 90, f'plugin-doctor should score >= 90, got {score}'
 
 
 # =============================================================================
-# Cross-File Subcommand Tests (from analyze-cross-file-content.py)
+# Cross-File Subcommand Tests (Tier 2 - direct import)
 # =============================================================================
-
-
-def test_crossfile_help():
-    """Test cross-file --help is available."""
-    result = run_script(SCRIPT_PATH, 'cross-file', '--help')
-    assert 'skill-path' in result.stdout or 'skill-path' in result.stderr, (
-        'Help output should contain skill-path option'
-    )
-
-
-def test_crossfile_missing_argument():
-    """Test returns error for missing argument."""
-    result = run_script(SCRIPT_PATH, 'cross-file')
-    assert result.returncode != 0, 'Should return error for missing argument'
-    output = result.stderr.lower() + result.stdout.lower()
-    assert 'error' in output or 'required' in output, 'Should indicate error for missing argument'
 
 
 def test_crossfile_invalid_path():
     """Test returns error for invalid path."""
-    result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', '/nonexistent/path')
-    data = result.toon()
+    args = Namespace(skill_path='/nonexistent/path', similarity_threshold=0.6)
+    data = cmd_crossfile_analyze(args)
     assert data.get('status') == 'error', 'Should return error for invalid path'
     output = str(data).lower()
     assert 'not found' in output or 'error' in output, 'Should indicate path not found'
 
 
 def test_crossfile_duplicates_valid_json():
-    """Test returns valid JSON for skill with duplicates."""
+    """Test returns valid dict for skill with duplicates."""
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
     if not skill_path.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.toon()
-    assert data is not None, 'Should return valid JSON'
+    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    data = cmd_crossfile_analyze(args)
+    assert data is not None, 'Should return valid dict'
 
 
 def test_crossfile_detect_exact_duplicates():
@@ -176,9 +159,8 @@ def test_crossfile_detect_exact_duplicates():
     if not skill_path.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.toon()
-
+    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    data = cmd_crossfile_analyze(args)
     exact_duplicates = data.get('exact_duplicates', [])
     assert len(exact_duplicates) >= 1, f'Should detect exact duplicates, found {len(exact_duplicates)}'
 
@@ -189,9 +171,8 @@ def test_crossfile_extraction_candidates():
     if not skill_path.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.toon()
-
+    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    data = cmd_crossfile_analyze(args)
     assert 'extraction_candidates' in data, 'Should have extraction_candidates field'
 
 
@@ -201,22 +182,21 @@ def test_crossfile_llm_review_flag():
     if not skill_path.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.toon()
-
+    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    data = cmd_crossfile_analyze(args)
     summary = data.get('summary', {})
     assert 'llm_review_required' in summary, 'Should contain llm_review_required flag in summary'
 
 
 def test_crossfile_clean_skill():
-    """Test returns valid JSON for clean skill."""
+    """Test returns valid dict for clean skill."""
     skill_path = CROSS_FILE_FIXTURES / 'skill-clean'
     if not skill_path.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path))
-    data = result.toon()
-    assert data is not None, 'Should return valid JSON for clean skill'
+    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    data = cmd_crossfile_analyze(args)
+    assert data is not None, 'Should return valid dict for clean skill'
 
 
 def test_crossfile_custom_threshold():
@@ -225,13 +205,13 @@ def test_crossfile_custom_threshold():
     if not skill_path.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'cross-file', '--skill-path', str(skill_path), '--similarity-threshold', '0.3')
-    data = result.toon()
+    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.3)
+    data = cmd_crossfile_analyze(args)
     assert data is not None, 'Should accept custom similarity threshold'
 
 
 # =============================================================================
-# Markdown Subcommand Tests - Subdoc Bloat Thresholds
+# Markdown Subcommand Tests - Subdoc Bloat Thresholds (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -240,9 +220,8 @@ def test_markdown_subdoc_bloat_normal():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n' + 'Line\n' * 100
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='subdoc')
+        data = cmd_markdown(args)
         assert data['bloat']['classification'] == 'NORMAL', f'Expected NORMAL, got {data["bloat"]["classification"]}'
     finally:
         temp_file.unlink()
@@ -253,9 +232,8 @@ def test_markdown_subdoc_bloat_large():
     content = '# Test\n\n' + 'Line of content here.\n' * 450
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='subdoc')
+        data = cmd_markdown(args)
         assert data['bloat']['classification'] == 'LARGE', f'Expected LARGE, got {data["bloat"]["classification"]}'
     finally:
         temp_file.unlink()
@@ -266,9 +244,8 @@ def test_markdown_subdoc_bloat_bloated():
     content = '# Test\n\n' + 'Line of content here.\n' * 650
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='subdoc')
+        data = cmd_markdown(args)
         assert data['bloat']['classification'] == 'BLOATED', f'Expected BLOATED, got {data["bloat"]["classification"]}'
     finally:
         temp_file.unlink()
@@ -279,9 +256,8 @@ def test_markdown_subdoc_bloat_critical():
     content = '# Test\n\n' + 'Line of content here.\n' * 850
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'subdoc')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='subdoc')
+        data = cmd_markdown(args)
         assert data['bloat']['classification'] == 'CRITICAL', (
             f'Expected CRITICAL, got {data["bloat"]["classification"]}'
         )
@@ -316,9 +292,8 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 """
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='agent')
+        data = cmd_markdown(args)
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect body section reference, found {len(rule_12)}'
         assert rule_12[0]['pattern'] == 'invalid_section_reference'
@@ -347,9 +322,8 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 """
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect "otherwise body" pattern, found {len(rule_12)}'
     finally:
@@ -378,9 +352,8 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 """
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='agent')
+        data = cmd_markdown(args)
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag correct original_input reference, found {len(rule_12)}'
     finally:
@@ -408,9 +381,8 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 """
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'agent')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='agent')
+        data = cmd_markdown(args)
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag body reference without plan-documents call, found {len(rule_12)}'
     finally:
@@ -418,7 +390,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 
 # =============================================================================
-# Skill Frontmatter Field Validation Tests
+# Skill Frontmatter Field Validation Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -427,9 +399,8 @@ def test_markdown_skill_detects_unsupported_tools_field():
     content = '---\nname: test-skill\ndescription: Test\nallowed-tools: Read\nuser-invocable: true\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
         tools_info = required.get('tools', {})
@@ -446,9 +417,8 @@ def test_markdown_skill_detects_misspelled_user_invocable():
     content = '---\nname: test-skill\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
         user_inv = required.get('user_invocable', {})
@@ -463,9 +433,8 @@ def test_markdown_skill_detects_correct_user_invocable():
     content = '---\nname: test-skill\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
         user_inv = required.get('user_invocable', {})
@@ -480,9 +449,8 @@ def test_markdown_skill_detects_missing_user_invocable():
     content = '---\nname: test-skill\ndescription: Test\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
         user_inv = required.get('user_invocable', {})
@@ -493,7 +461,7 @@ def test_markdown_skill_detects_missing_user_invocable():
 
 
 # =============================================================================
-# Markdown Subcommand Tests - Checklist Pattern Detection
+# Markdown Subcommand Tests - Checklist Pattern Detection (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -502,9 +470,8 @@ def test_checklist_detection_present():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n## Rules\n\n- [ ] First item\n- [ ] Second item\n- [ ] Third item\n'
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is True
         assert checklists['count'] == 3
@@ -517,9 +484,8 @@ def test_checklist_detection_absent():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- First item\n- Second item\n'
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is False
         assert checklists['count'] == 0
@@ -534,9 +500,8 @@ def test_checklist_detection_mixed():
     )
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is True
         assert checklists['count'] == 3
@@ -546,7 +511,6 @@ def test_checklist_detection_mixed():
 
 def test_checklist_template_exempt():
     """Test that files in /templates/ path are exempt from checklist detection."""
-    # Template path: use the real pr-template.md which has checkboxes
     template_path = (
         PROJECT_ROOT
         / 'marketplace'
@@ -560,9 +524,8 @@ def test_checklist_template_exempt():
     if not template_path.exists():
         return  # Skip if fixture not available
 
-    result = run_script(SCRIPT_PATH, 'markdown', '--file', str(template_path), '--type', 'skill')
-    assert result.returncode == 0, f'Script returned error: {result.stderr}'
-    data = result.toon()
+    args = Namespace(file=str(template_path), type='skill')
+    data = cmd_markdown(args)
     checklists = data['checklist_patterns']
     assert checklists['has_checklists'] is False, 'Templates should be exempt from checklist detection'
 
@@ -570,9 +533,8 @@ def test_checklist_template_exempt():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- [ ] Item\n'
     temp_file = create_temp_file(content)
     try:
-        result2 = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result2.returncode == 0
-        data2 = result2.toon()
+        args2 = Namespace(file=str(temp_file), type='skill')
+        data2 = cmd_markdown(args2)
         assert data2['checklist_patterns']['has_checklists'] is True, 'Non-templates should detect checklists'
     finally:
         temp_file.unlink()
@@ -583,9 +545,8 @@ def test_checklist_sections_extracted():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n## Quality Rules\n\n- [ ] Item A\n\n## Other Section\n\nNo checklists here.\n\n## Verification\n\n- [x] Item B\n'
     temp_file = create_temp_file(content)
     try:
-        result = run_script(SCRIPT_PATH, 'markdown', '--file', str(temp_file), '--type', 'skill')
-        assert result.returncode == 0, f'Script returned error: {result.stderr}'
-        data = result.toon()
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
         checklists = data['checklist_patterns']
         assert 'Quality Rules' in checklists['sections']
         assert 'Verification' in checklists['sections']

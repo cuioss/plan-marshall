@@ -1,43 +1,50 @@
 #!/usr/bin/env python3
-"""Tests for manage-tasks.py script with --content-based add API."""
+"""Tests for manage-tasks.py script with --content-based add API.
 
+Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
+"""
+
+import json
 import os
-import shutil
 import sys
+from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import create_temp_dir, get_script_path, run_script
+from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 
-# Script under test
+# Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
+
+# Tier 2 direct imports via importlib to avoid name collisions
+# (_cmd_query.py exists in both manage-status AND manage-tasks,
+#  _cmd_crud.py exists in both manage-tasks AND manage-references)
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-tasks' / 'scripts'
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_crud = _load_module('_tasks_cmd_crud', '_cmd_crud.py')
+_query = _load_module('_tasks_cmd_query', '_cmd_query.py')
+_step = _load_module('_tasks_cmd_step', '_cmd_step.py')
+
+cmd_add, cmd_remove, cmd_update = _crud.cmd_add, _crud.cmd_remove, _crud.cmd_update
+cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
+cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = _query.cmd_next_tasks, _query.cmd_tasks_by_domain, _query.cmd_tasks_by_profile
+cmd_add_step, cmd_finalize_step, cmd_remove_step = _step.cmd_add_step, _step.cmd_finalize_step, _step.cmd_remove_step
 
 
 # =============================================================================
 # Test Helpers
 # =============================================================================
-
-
-def setup_plan_dir():
-    """Create temp plan directory and set PLAN_BASE_DIR."""
-    temp_dir = create_temp_dir()
-    plan_base = temp_dir / '.plan'
-    plan_base.mkdir()
-    os.environ['PLAN_BASE_DIR'] = str(plan_base)
-
-    # Create plan directory
-    plan_dir = plan_base / 'plans' / 'test-plan'
-    plan_dir.mkdir(parents=True)
-
-    return temp_dir
-
-
-def cleanup(temp_dir):
-    """Clean up temp directory and env var."""
-    if 'PLAN_BASE_DIR' in os.environ:
-        del os.environ['PLAN_BASE_DIR']
-    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def build_task_toon(
@@ -91,12 +98,82 @@ def build_task_toon(
     return '\n'.join(lines)
 
 
-def add_basic_task(
-    plan_id='test-plan', title='Test task', deliverable=1, domain='java', description='Task description', steps=None
-):
-    """Helper to add a task with minimal required params."""
-    toon = build_task_toon(title=title, deliverable=deliverable, domain=domain, description=description, steps=steps)
-    return run_script(SCRIPT_PATH, 'add', '--plan-id', plan_id, '--content', toon.replace('\n', '\\n'))
+def _add_ns(plan_id='test-plan', content=''):
+    """Build Namespace for cmd_add."""
+    return Namespace(plan_id=plan_id, content=content)
+
+
+def _get_ns(plan_id='test-plan', number=1):
+    """Build Namespace for cmd_get."""
+    return Namespace(plan_id=plan_id, number=number)
+
+
+def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False):
+    """Build Namespace for cmd_list."""
+    return Namespace(plan_id=plan_id, status=status, deliverable=deliverable, ready=ready)
+
+
+def _next_ns(plan_id='test-plan', include_context=False, ignore_deps=False):
+    """Build Namespace for cmd_next."""
+    return Namespace(plan_id=plan_id, include_context=include_context, ignore_deps=ignore_deps)
+
+
+def _update_ns(plan_id='test-plan', number=1, title=None, description=None,
+               depends_on=None, status=None, domain=None, profile=None,
+               skills=None, deliverable=None):
+    """Build Namespace for cmd_update."""
+    return Namespace(
+        plan_id=plan_id, number=number, title=title, description=description,
+        depends_on=depends_on, status=status, domain=domain, profile=profile,
+        skills=skills, deliverable=deliverable,
+    )
+
+
+def _remove_ns(plan_id='test-plan', number=1):
+    """Build Namespace for cmd_remove."""
+    return Namespace(plan_id=plan_id, number=number)
+
+
+def _finalize_step_ns(plan_id='test-plan', task=1, step=1, outcome='done', reason=None):
+    """Build Namespace for cmd_finalize_step."""
+    return Namespace(plan_id=plan_id, task=task, step=step, outcome=outcome, reason=reason)
+
+
+def _add_step_ns(plan_id='test-plan', task=1, target='New Step', after=None):
+    """Build Namespace for cmd_add_step."""
+    return Namespace(plan_id=plan_id, task=task, target=target, after=after)
+
+
+def _remove_step_ns(plan_id='test-plan', task=1, step=1):
+    """Build Namespace for cmd_remove_step."""
+    return Namespace(plan_id=plan_id, task=task, step=step)
+
+
+def _tasks_by_domain_ns(plan_id='test-plan', domain='java'):
+    """Build Namespace for cmd_tasks_by_domain."""
+    return Namespace(plan_id=plan_id, domain=domain)
+
+
+def _tasks_by_profile_ns(plan_id='test-plan', profile='implementation'):
+    """Build Namespace for cmd_tasks_by_profile."""
+    return Namespace(plan_id=plan_id, profile=profile)
+
+
+def _next_tasks_ns(plan_id='test-plan'):
+    """Build Namespace for cmd_next_tasks."""
+    return Namespace(plan_id=plan_id)
+
+
+def add_basic_task(plan_id='test-plan', title='Test task', deliverable=1,
+                   domain='java', description='Task description', steps=None,
+                   depends_on='none', origin=None):
+    """Helper to add a task with minimal required params via direct import."""
+    toon = build_task_toon(
+        title=title, deliverable=deliverable, domain=domain,
+        description=description, steps=steps, depends_on=depends_on,
+        origin=origin,
+    )
+    return cmd_add(_add_ns(plan_id=plan_id, content=toon.replace('\n', '\\n')))
 
 
 # =============================================================================
@@ -106,64 +183,53 @@ def add_basic_task(
 
 def test_add_first_task():
     """Add first task creates TASK-001."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-first'):
         toon = build_task_toon(
             title='First task',
             deliverable=1,
             domain='java',
             description='Task description',
-            steps=['src/main/java/First.java', 'src/main/java/Second.java'],  # File paths per contract
+            steps=['src/main/java/First.java', 'src/main/java/Second.java'],
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-first', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'status: success' in result.stdout
-        assert 'TASK-001' in result.stdout
-        assert 'total_tasks: 1' in result.stdout
+        assert result['status'] == 'success'
+        assert result['file'] == 'TASK-001.json'
+        assert result['total_tasks'] == 1
 
         # Verify file exists
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'add-first' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
         assert len(files) == 1, f'Expected 1 file, got {files}'
-    finally:
-        cleanup(temp_dir)
 
 
 def test_add_sequential_numbering():
     """Adding multiple tasks gets sequential numbers."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='First', deliverable=1, steps=['src/main/java/First.java'])
+    with PlanContext(plan_id='add-seq'):
+        add_basic_task(plan_id='add-seq', title='First', deliverable=1, steps=['src/main/java/First.java'])
         result = add_basic_task(
-            title='Second', deliverable=2, steps=['src/main/java/Second.java', 'src/test/java/SecondTest.java']
+            plan_id='add-seq', title='Second', deliverable=2,
+            steps=['src/main/java/Second.java', 'src/test/java/SecondTest.java'],
         )
 
-        assert result.returncode == 0
-        assert 'TASK-002' in result.stdout
-        assert 'total_tasks: 2' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['file'] == 'TASK-002.json'
+        assert result['total_tasks'] == 2
 
 
 def test_add_creates_numbered_filename():
     """Filename uses TASK-NNN format (not slug or type suffix)."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Implement JWT Service!', deliverable=1)
+    with PlanContext(plan_id='add-fname'):
+        add_basic_task(plan_id='add-fname', title='Implement JWT Service!', deliverable=1)
 
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'add-fname' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
         assert len(files) == 1
         assert files[0].name == 'TASK-001.json'
-    finally:
-        cleanup(temp_dir)
 
 
 def test_add_rejects_zero_deliverable_for_plan_origin():
     """deliverable=0 is rejected for non-holistic origins."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-zero-del'):
         toon = build_task_toon(
             title='Zero deliverable task',
             deliverable=0,
@@ -171,19 +237,15 @@ def test_add_rejects_zero_deliverable_for_plan_origin():
             description='Invalid zero deliverable',
             steps=['src/main/java/Test.java'],
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-zero-del', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Script should exit 0: {result.stderr}'
-        assert 'status: error' in result.stdout
-        assert 'deliverable' in result.stdout.lower()
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        assert 'deliverable' in result.get('message', '').lower()
 
 
 def test_add_accepts_holistic_with_zero_deliverable():
     """deliverable=0 is accepted for holistic origin tasks."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-holistic'):
         toon = build_task_toon(
             title='Holistic verification task',
             deliverable=0,
@@ -192,125 +254,97 @@ def test_add_accepts_holistic_with_zero_deliverable():
             steps=['./pw verify plan-marshall'],
             origin='holistic',
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-holistic', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Holistic task should succeed: {result.stderr}'
-        assert 'TASK-001' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['file'] == 'TASK-001.json'
 
 
 def test_add_fails_without_content():
     """Add fails if --content is empty."""
-    temp_dir = setup_plan_dir()
-    try:
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', '')
+    with PlanContext(plan_id='add-empty'):
+        result = cmd_add(_add_ns(plan_id='add-empty', content=''))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
 
 
 def test_add_fails_without_deliverable():
     """Add fails if deliverable is missing."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-no-del'):
         toon = """title: No deliverable
 domain: java
 description: Desc
 steps:
   - Step 1"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-no-del', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-        assert 'deliverable' in result.stdout.lower()
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        assert 'deliverable' in result.get('message', '').lower()
 
 
 def test_add_fails_with_invalid_deliverable():
     """Add fails with invalid deliverable format."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-bad-del'):
         toon = build_task_toon(
             title='Bad format',
-            deliverable=0,  # Must be positive
+            deliverable=0,
             domain='java',
             description='Desc',
             steps=['src/main/java/Component.java'],
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-bad-del', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
 
 
 def test_add_fails_without_domain():
     """Add fails if domain is missing."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-no-dom'):
         toon = """title: No domain
 deliverable: 1
 description: Desc
 steps:
   - Step 1"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-no-dom', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-        assert 'domain' in result.stdout.lower()
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        assert 'domain' in result.get('message', '').lower()
 
 
 def test_add_accepts_arbitrary_domain():
     """Add accepts any domain value (domains are config-driven, not hardcoded)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-arb-dom'):
         toon = build_task_toon(
             title='Python domain',
             deliverable=1,
-            domain='python',  # Arbitrary domain - now accepted
+            domain='python',
             description='Desc',
             steps=['src/main/python/script.py'],
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-arb-dom', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'domain: python' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['domain'] == 'python'
 
 
 def test_add_fails_without_steps():
     """Add fails if no steps provided."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-no-steps'):
         toon = """title: No steps
 deliverable: 1
 domain: java
 description: Desc"""
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-no-steps', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-        assert 'steps' in result.stdout.lower()
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        assert 'steps' in result.get('message', '').lower()
 
 
 def test_add_with_dependencies():
     """Add task with depends-on."""
-    temp_dir = setup_plan_dir()
-    try:
-        # Create first task
-        add_basic_task(title='First', deliverable=1)
+    with PlanContext(plan_id='add-deps'):
+        add_basic_task(plan_id='add-deps', title='First', deliverable=1)
 
-        # Create second task depending on first
         toon = build_task_toon(
             title='Second',
             deliverable=2,
@@ -319,19 +353,15 @@ def test_add_with_dependencies():
             steps=['src/main/java/Component.java'],
             depends_on='TASK-1',
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-deps', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'depends_on[1]:' in result.stdout
-        assert 'TASK-1' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert 'TASK-1' in result['task']['depends_on']
 
 
 def test_add_with_verification():
     """Add task with verification block."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-verif'):
         toon = build_task_toon(
             title='Verified task',
             deliverable=1,
@@ -341,18 +371,14 @@ def test_add_with_verification():
             verification_commands=['mvn test', 'mvn verify'],
             verification_criteria='Build passes',
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-verif', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0
-        assert 'status: success' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
 
 
 def test_add_with_shell_metacharacters_in_verification():
     """Add task with shell metacharacters in verification commands (the original issue)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='add-shell-meta'):
         toon = build_task_toon(
             title='Task with complex verification',
             deliverable=1,
@@ -362,19 +388,16 @@ def test_add_with_shell_metacharacters_in_verification():
             verification_commands=["grep -l '```json' marketplace/bundles/*.md | wc -l"],
             verification_criteria='All grep commands return 0',
         )
-        result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        result = cmd_add(_add_ns(plan_id='add-shell-meta', content=toon.replace('\n', '\\n')))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'status: success' in result.stdout
+        assert result['status'] == 'success'
 
         # Verify the verification commands were stored correctly
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'add-shell-meta' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
         content = files[0].read_text(encoding='utf-8')
         assert "grep -l '```json'" in content
         assert '| wc -l' in content
-    finally:
-        cleanup(temp_dir)
 
 
 # =============================================================================
@@ -384,8 +407,7 @@ def test_add_with_shell_metacharacters_in_verification():
 
 def test_get_existing_task():
     """Get returns full task details."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='get-exist'):
         toon = build_task_toon(
             title='Test task',
             deliverable=1,
@@ -393,39 +415,31 @@ def test_get_existing_task():
             description='Test description',
             steps=['src/main/java/One.java', 'src/main/java/Two.java', 'src/main/java/Three.java'],
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='get-exist', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
+        result = cmd_get(_get_ns(plan_id='get-exist', number=1))
 
-        assert result.returncode == 0
-        assert 'status: success' in result.stdout
-        assert 'number: 1' in result.stdout
-        assert 'Test task' in result.stdout
-        assert 'deliverable: 1' in result.stdout
-        assert 'Test description' in result.stdout
-        assert 'One.java' in result.stdout  # Updated to file path
-        assert 'Two.java' in result.stdout  # Updated to file path
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['number'] == 1
+        assert result['task']['title'] == 'Test task'
+        assert result['task']['deliverable'] == 1
+        assert result['task']['description'] == 'Test description'
+        assert 'One.java' in result['task']['steps'][0]['target']
+        assert 'Two.java' in result['task']['steps'][1]['target']
 
 
 def test_get_nonexistent_returns_error():
     """Get nonexistent task returns error."""
-    temp_dir = setup_plan_dir()
-    try:
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '99')
+    with PlanContext(plan_id='get-noexist'):
+        result = cmd_get(_get_ns(plan_id='get-noexist', number=99))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-        assert 'TASK-99' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        assert 'TASK-99' in result.get('message', '')
 
 
 def test_get_returns_verification_block():
     """Get returns verification block details."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='get-verif'):
         toon = build_task_toon(
             title='Verified task',
             deliverable=1,
@@ -435,15 +449,12 @@ def test_get_returns_verification_block():
             verification_commands=['mvn test'],
             verification_criteria='Tests pass',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='get-verif', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
+        result = cmd_get(_get_ns(plan_id='get-verif', number=1))
 
-        assert result.returncode == 0
-        assert 'verification:' in result.stdout
-        assert 'criteria: Tests pass' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task']['verification']['criteria'] == 'Tests pass'
 
 
 # =============================================================================
@@ -453,83 +464,69 @@ def test_get_returns_verification_block():
 
 def test_list_empty():
     """List with no tasks shows zero counts."""
-    temp_dir = setup_plan_dir()
-    try:
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
+    with PlanContext(plan_id='list-empty'):
+        result = cmd_list(_list_ns(plan_id='list-empty'))
 
-        assert result.returncode == 0
-        assert 'total: 0' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['counts']['total'] == 0
 
 
 def test_list_with_tasks():
     """List shows all tasks in table format with domain, profile and deliverables."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='First', deliverable=1, steps=['src/main/java/File.java'])
-        add_basic_task(title='Second', deliverable=2, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+    with PlanContext(plan_id='list-tasks'):
+        add_basic_task(plan_id='list-tasks', title='First', deliverable=1, steps=['src/main/java/File.java'])
+        add_basic_task(plan_id='list-tasks', title='Second', deliverable=2, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
+        result = cmd_list(_list_ns(plan_id='list-tasks'))
 
-        assert result.returncode == 0
-        assert 'total: 2' in result.stdout
-        assert 'tasks_table[2]' in result.stdout
-        # Format: {number,title,domain,profile,deliverable,status,progress}
-        assert '1,First,java,implementation,1,pending,0/1' in result.stdout
-        assert '2,Second,java,implementation,2,pending,0/2' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['counts']['total'] == 2
+        assert len(result['tasks_table']) == 2
+        # Check table row content
+        assert result['tasks_table'][0]['number'] == 1
+        assert result['tasks_table'][0]['title'] == 'First'
+        assert result['tasks_table'][0]['domain'] == 'java'
+        assert result['tasks_table'][0]['progress'] == '0/1'
+        assert result['tasks_table'][1]['progress'] == '0/2'
 
 
 def test_list_filter_by_status():
     """List can filter by status."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='First', deliverable=1, steps=['src/main/java/File.java'])
-        add_basic_task(title='Second', deliverable=2, steps=['src/main/java/File.java'])
-        # Mark first task as in_progress by finalizing step (starts from pending)
-        run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
-        )
+    with PlanContext(plan_id='list-status'):
+        add_basic_task(plan_id='list-status', title='First', deliverable=1, steps=['src/main/java/File.java'])
+        add_basic_task(plan_id='list-status', title='Second', deliverable=2, steps=['src/main/java/File.java'])
+        # Mark first task as done by finalizing its only step
+        cmd_finalize_step(_finalize_step_ns(plan_id='list-status', task=1, step=1, outcome='done'))
 
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--status', 'pending')
+        result = cmd_list(_list_ns(plan_id='list-status', status='pending'))
 
-        assert result.returncode == 0
-        assert 'tasks_table[1]' in result.stdout
-        assert '2,Second' in result.stdout
-        assert '1,First' not in result.stdout  # Task 1 is now done (single step)
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert len(result['tasks_table']) == 1
+        assert result['tasks_table'][0]['title'] == 'Second'
 
 
 def test_list_filter_by_deliverable():
     """List can filter by deliverable number."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='First', deliverable=1, steps=['src/main/java/File.java'])
-        add_basic_task(title='Second', deliverable=1, steps=['src/main/java/File.java'])
-        add_basic_task(title='Third', deliverable=2, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='list-del'):
+        add_basic_task(plan_id='list-del', title='First', deliverable=1, steps=['src/main/java/File.java'])
+        add_basic_task(plan_id='list-del', title='Second', deliverable=1, steps=['src/main/java/File.java'])
+        add_basic_task(plan_id='list-del', title='Third', deliverable=2, steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--deliverable', '1')
+        result = cmd_list(_list_ns(plan_id='list-del', deliverable=1))
 
-        assert result.returncode == 0
-        assert 'total: 2' in result.stdout
-        assert 'First' in result.stdout
-        assert 'Second' in result.stdout
-        assert 'Third' not in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['counts']['total'] == 2
+        titles = [t['title'] for t in result['tasks_table']]
+        assert 'First' in titles
+        assert 'Second' in titles
+        assert 'Third' not in titles
 
 
 def test_list_filter_ready():
     """List --ready shows only tasks with satisfied dependencies."""
-    temp_dir = setup_plan_dir()
-    try:
-        # First task - no deps
-        add_basic_task(title='First', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='list-ready'):
+        add_basic_task(plan_id='list-ready', title='First', deliverable=1, steps=['src/main/java/File.java'])
 
-        # Second task - depends on first
         toon = build_task_toon(
             title='Second',
             deliverable=2,
@@ -538,16 +535,14 @@ def test_list_filter_ready():
             steps=['src/main/java/File.java'],
             depends_on='TASK-1',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='list-ready', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan', '--ready')
+        result = cmd_list(_list_ns(plan_id='list-ready', ready=True))
 
-        assert result.returncode == 0
-        assert 'First' in result.stdout
-        # Second is blocked by TASK-1
-        assert 'Second' not in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        titles = [t['title'] for t in result['tasks_table']]
+        assert 'First' in titles
+        assert 'Second' not in titles
 
 
 # =============================================================================
@@ -557,8 +552,7 @@ def test_list_filter_ready():
 
 def test_next_returns_first_pending():
     """Next returns first pending task and step."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='next-first'):
         toon = build_task_toon(
             title='First Task',
             deliverable=1,
@@ -566,77 +560,59 @@ def test_next_returns_first_pending():
             description='D1',
             steps=['src/main/java/One.java', 'src/main/java/Two.java'],
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='next-first', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
+        result = cmd_next(_next_ns(plan_id='next-first'))
 
-        assert result.returncode == 0
-        assert 'task_number: 1' in result.stdout
-        assert 'task_title: First Task' in result.stdout
-        assert 'step_number: 1' in result.stdout
-        assert 'One.java' in result.stdout  # File path instead of descriptive text
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next']['task_number'] == 1
+        assert result['next']['task_title'] == 'First Task'
+        assert result['next']['step_number'] == 1
+        assert 'One.java' in result['next']['step_target']
 
 
 def test_next_returns_in_progress_task():
     """Next prioritizes in_progress tasks."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='First', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
-        add_basic_task(title='Second', deliverable=2, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='next-inprog'):
+        add_basic_task(plan_id='next-inprog', title='First', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+        add_basic_task(plan_id='next-inprog', title='Second', deliverable=2, steps=['src/main/java/File.java'])
         # Complete first step to put task in_progress (still has step 2)
-        run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
-        )
+        cmd_finalize_step(_finalize_step_ns(plan_id='next-inprog', task=1, step=1, outcome='done'))
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
+        result = cmd_next(_next_ns(plan_id='next-inprog'))
 
-        assert result.returncode == 0
-        assert 'task_number: 1' in result.stdout
-        assert 'step_number: 2' in result.stdout  # Now on step 2
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next']['task_number'] == 1
+        assert result['next']['step_number'] == 2
 
 
 def test_next_returns_null_when_all_done():
     """Next returns null when all tasks complete."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Only Task', deliverable=1, steps=['src/main/java/File.java'])
-        run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
-        )
+    with PlanContext(plan_id='next-done'):
+        add_basic_task(plan_id='next-done', title='Only Task', deliverable=1, steps=['src/main/java/File.java'])
+        cmd_finalize_step(_finalize_step_ns(plan_id='next-done', task=1, step=1, outcome='done'))
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
+        result = cmd_next(_next_ns(plan_id='next-done'))
 
-        assert result.returncode == 0
-        assert 'next: null' in result.stdout
-        assert 'All tasks completed' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next'] is None
+        assert 'All tasks completed' in result['context']['message']
 
 
 def test_next_empty_plan():
     """Next on empty plan returns null."""
-    temp_dir = setup_plan_dir()
-    try:
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
+    with PlanContext(plan_id='next-empty'):
+        result = cmd_next(_next_ns(plan_id='next-empty'))
 
-        assert result.returncode == 0
-        assert 'next: null' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next'] is None
 
 
 def test_next_respects_dependencies():
     """Next skips tasks with unmet dependencies."""
-    temp_dir = setup_plan_dir()
-    try:
-        # First task - no deps
-        add_basic_task(title='First', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='next-deps'):
+        add_basic_task(plan_id='next-deps', title='First', deliverable=1, steps=['src/main/java/File.java'])
 
-        # Second task - depends on first (blocked)
         toon = build_task_toon(
             title='Second',
             deliverable=2,
@@ -645,23 +621,18 @@ def test_next_respects_dependencies():
             steps=['src/main/java/File.java'],
             depends_on='TASK-1',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='next-deps', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
+        result = cmd_next(_next_ns(plan_id='next-deps'))
 
-        assert result.returncode == 0
-        # Should return first task since second is blocked
-        assert 'task_number: 1' in result.stdout
-        assert 'task_title: First' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next']['task_number'] == 1
+        assert result['next']['task_title'] == 'First'
 
 
 def test_next_shows_blocked_tasks():
     """Next shows blocked tasks when all available are blocked."""
-    temp_dir = setup_plan_dir()
-    try:
-        # Create only task with dependency on non-existent task
+    with PlanContext(plan_id='next-blocked'):
         toon = build_task_toon(
             title='Blocked',
             deliverable=1,
@@ -670,23 +641,19 @@ def test_next_shows_blocked_tasks():
             steps=['src/main/java/File.java'],
             depends_on='TASK-99',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='next-blocked', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan')
+        result = cmd_next(_next_ns(plan_id='next-blocked'))
 
-        assert result.returncode == 0
-        assert 'next: null' in result.stdout
-        assert 'blocked_tasks' in result.stdout
-        assert 'TASK-99' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next'] is None
+        assert 'blocked_tasks' in result
+        assert any('TASK-99' in str(bt.get('waiting_for', '')) for bt in result['blocked_tasks'])
 
 
 def test_next_ignore_deps():
     """Next with --ignore-deps ignores dependency constraints."""
-    temp_dir = setup_plan_dir()
-    try:
-        # Only task with unmet dependency
+    with PlanContext(plan_id='next-igdeps'):
         toon = build_task_toon(
             title='Blocked',
             deliverable=1,
@@ -695,22 +662,18 @@ def test_next_ignore_deps():
             steps=['src/main/java/File.java'],
             depends_on='TASK-99',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='next-igdeps', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--ignore-deps')
+        result = cmd_next(_next_ns(plan_id='next-igdeps', ignore_deps=True))
 
-        assert result.returncode == 0
-        # Should return task despite unmet dependency
-        assert 'task_number: 1' in result.stdout
-        assert 'task_title: Blocked' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next']['task_number'] == 1
+        assert result['next']['task_title'] == 'Blocked'
 
 
 def test_next_include_context():
     """Next with --include-context includes deliverable details."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='next-ctx'):
         toon = build_task_toon(
             title='Feature task',
             deliverable=1,
@@ -718,16 +681,14 @@ def test_next_include_context():
             description='Task description',
             steps=['src/main/java/One.java', 'src/main/java/Two.java'],
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='next-ctx', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'next', '--plan-id', 'test-plan', '--include-context')
+        result = cmd_next(_next_ns(plan_id='next-ctx', include_context=True))
 
-        assert result.returncode == 0, f'Failed: {result.stderr}'
-        assert 'task_number: 1' in result.stdout
-        assert 'deliverable: 1' in result.stdout
-        assert 'deliverable_source:' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['next']['task_number'] == 1
+        assert result['next']['deliverable'] == 1
+        assert 'deliverable_source' in result['next']
 
 
 # =============================================================================
@@ -737,121 +698,80 @@ def test_next_include_context():
 
 def test_finalize_step_done_marks_completed():
     """finalize-step --outcome done marks step as done."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+    with PlanContext(plan_id='fin-done'):
+        add_basic_task(plan_id='fin-done', title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
-        )
+        result = cmd_finalize_step(_finalize_step_ns(plan_id='fin-done', task=1, step=1, outcome='done'))
 
-        assert result.returncode == 0
-        assert 'outcome: done' in result.stdout
-        assert 'next_step:' in result.stdout
-        assert 'number: 2' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['finalized']['outcome'] == 'done'
+        assert result['next_step'] is not None
+        assert result['next_step']['number'] == 2
 
 
 def test_finalize_step_done_completes_task():
     """finalize-step --outcome done on last step marks task as done."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='fin-complete'):
+        add_basic_task(plan_id='fin-complete', title='Task', deliverable=1, steps=['src/main/java/File.java'])
 
-        result = run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
-        )
+        result = cmd_finalize_step(_finalize_step_ns(plan_id='fin-complete', task=1, step=1, outcome='done'))
 
-        assert result.returncode == 0
-        assert 'task_complete: true' in result.stdout
-        assert 'task_status: done' in result.stdout
-        assert 'next_step: null' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task_complete'] is True
+        assert result['task_status'] == 'done'
+        assert result['next_step'] is None
 
 
 def test_finalize_step_skipped_marks_skipped():
     """finalize-step --outcome skipped marks step as skipped."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+    with PlanContext(plan_id='fin-skip'):
+        add_basic_task(plan_id='fin-skip', title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(
-            SCRIPT_PATH,
-            'finalize-step',
-            '--plan-id',
-            'test-plan',
-            '--task',
-            '1',
-            '--step',
-            '1',
-            '--outcome',
-            'skipped',
-            '--reason',
-            'Already done',
-        )
+        result = cmd_finalize_step(_finalize_step_ns(
+            plan_id='fin-skip', task=1, step=1, outcome='skipped', reason='Already done',
+        ))
 
-        assert result.returncode == 0
-        assert 'outcome: skipped' in result.stdout
-        assert 'next_step:' in result.stdout
-        assert 'number: 2' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['finalized']['outcome'] == 'skipped'
+        assert result['next_step'] is not None
+        assert result['next_step']['number'] == 2
 
 
 def test_finalize_step_skipped_completes_task():
     """Skipping last step via finalize-step marks task as done."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='fin-skip-last'):
+        add_basic_task(plan_id='fin-skip-last', title='Task', deliverable=1, steps=['src/main/java/File.java'])
 
-        result = run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'skipped'
-        )
+        result = cmd_finalize_step(_finalize_step_ns(plan_id='fin-skip-last', task=1, step=1, outcome='skipped'))
 
-        assert result.returncode == 0
-        assert 'task_complete: true' in result.stdout
-        assert 'task_status: done' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['task_complete'] is True
+        assert result['task_status'] == 'done'
 
 
 def test_finalize_step_invalid_step():
     """finalize-step with invalid step number fails."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='fin-invalid'):
+        add_basic_task(plan_id='fin-invalid', title='Task', deliverable=1, steps=['src/main/java/File.java'])
 
-        result = run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '99', '--outcome', 'done'
-        )
+        result = cmd_finalize_step(_finalize_step_ns(plan_id='fin-invalid', task=1, step=99, outcome='done'))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-        assert 'Step 99 not found' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        assert 'Step 99 not found' in result.get('message', '')
 
 
 def test_finalize_step_returns_progress():
     """finalize-step returns progress indicator."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='fin-prog'):
         add_basic_task(
-            title='Task',
-            deliverable=1,
+            plan_id='fin-prog', title='Task', deliverable=1,
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
         )
 
-        result = run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
-        )
+        result = cmd_finalize_step(_finalize_step_ns(plan_id='fin-prog', task=1, step=1, outcome='done'))
 
-        assert result.returncode == 0
-        assert 'progress: 1/3' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert result['progress'] == '1/3'
 
 
 # =============================================================================
@@ -861,52 +781,37 @@ def test_finalize_step_returns_progress():
 
 def test_add_step_appends():
     """Add-step appends to end by default."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+    with PlanContext(plan_id='addstep-app'):
+        add_basic_task(plan_id='addstep-app', title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
 
-        result = run_script(SCRIPT_PATH, 'add-step', '--plan-id', 'test-plan', '--task', '1', '--target', 'New Step')
+        result = cmd_add_step(_add_step_ns(plan_id='addstep-app', task=1, target='New Step'))
 
-        assert result.returncode == 0
-        assert 'step: 3' in result.stdout
+        assert result['status'] == 'success'
+        assert result['step'] == 3
 
         # Verify step count
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'steps[3]' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        get_result = cmd_get(_get_ns(plan_id='addstep-app', number=1))
+        assert len(get_result['task']['steps']) == 3
 
 
 def test_add_step_after():
     """Add-step inserts after specified position."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileC.java'])
+    with PlanContext(plan_id='addstep-aft'):
+        add_basic_task(plan_id='addstep-aft', title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileC.java'])
 
-        # Add-step uses the title as-is (no validation on added steps)
-        result = run_script(
-            SCRIPT_PATH,
-            'add-step',
-            '--plan-id',
-            'test-plan',
-            '--task',
-            '1',
-            '--target',
-            'src/main/java/FileB.java',
-            '--after',
-            '1',
-        )
+        result = cmd_add_step(_add_step_ns(
+            plan_id='addstep-aft', task=1, target='src/main/java/FileB.java', after=1,
+        ))
 
-        assert result.returncode == 0
-        assert 'step: 2' in result.stdout
+        assert result['status'] == 'success'
+        assert result['step'] == 2
 
-        # Verify order - steps are now file paths
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert '1,src/main/java/FileA.java' in get_result.stdout
-        assert '2,src/main/java/FileB.java' in get_result.stdout
-        assert '3,src/main/java/FileC.java' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        # Verify order
+        get_result = cmd_get(_get_ns(plan_id='addstep-aft', number=1))
+        steps = get_result['task']['steps']
+        assert steps[0]['target'] == 'src/main/java/FileA.java'
+        assert steps[1]['target'] == 'src/main/java/FileB.java'
+        assert steps[2]['target'] == 'src/main/java/FileC.java'
 
 
 # =============================================================================
@@ -916,41 +821,34 @@ def test_add_step_after():
 
 def test_remove_step():
     """Remove-step removes and renumbers."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='rmstep'):
         add_basic_task(
-            title='Task',
-            deliverable=1,
+            plan_id='rmstep', title='Task', deliverable=1,
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
         )
 
-        result = run_script(SCRIPT_PATH, 'remove-step', '--plan-id', 'test-plan', '--task', '1', '--step', '2')
+        result = cmd_remove_step(_remove_step_ns(plan_id='rmstep', task=1, step=2))
 
-        assert result.returncode == 0
-        assert 'Step 2 removed' in result.stdout
+        assert result['status'] == 'success'
+        assert 'Step 2 removed' in result.get('message', '')
 
-        # Verify renumbering - steps are file paths
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'steps[2]' in get_result.stdout
-        assert '1,src/main/java/FileA.java' in get_result.stdout
-        assert '2,src/main/java/FileC.java' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        # Verify renumbering
+        get_result = cmd_get(_get_ns(plan_id='rmstep', number=1))
+        steps = get_result['task']['steps']
+        assert len(steps) == 2
+        assert steps[0]['target'] == 'src/main/java/FileA.java'
+        assert steps[1]['target'] == 'src/main/java/FileC.java'
 
 
 def test_remove_step_last_fails():
     """Cannot remove the last step."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='rmstep-last'):
+        add_basic_task(plan_id='rmstep-last', title='Task', deliverable=1, steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'remove-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1')
+        result = cmd_remove_step(_remove_step_ns(plan_id='rmstep-last', task=1, step=1))
 
-        assert result.returncode == 0
-        assert 'status: error' in result.stdout
-        assert 'Cannot remove the last step' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'error'
+        assert 'Cannot remove the last step' in result.get('message', '')
 
 
 # =============================================================================
@@ -960,53 +858,40 @@ def test_remove_step_last_fails():
 
 def test_update_title_keeps_filename():
     """Updating title does NOT rename file (TASK-NNN format is stable)."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Old Title', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='upd-title'):
+        add_basic_task(plan_id='upd-title', title='Old Title', deliverable=1, steps=['src/main/java/File.java'])
 
-        # Verify initial filename uses numbered format, not slug
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'upd-title' / 'tasks'
         initial_files = list(task_dir.glob('TASK-001.json'))
         assert len(initial_files) == 1, 'Should have TASK-001.json'
 
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--title', 'New Title')
+        result = cmd_update(_update_ns(plan_id='upd-title', number=1, title='New Title'))
 
-        assert result.returncode == 0
-        # Filename stays the same (TASK-NNN format)
-        assert 'TASK-001.json' in result.stdout
+        assert result['status'] == 'success'
+        assert result['file'] == 'TASK-001.json'
 
-        # File still exists with same name
         final_files = list(task_dir.glob('TASK-001.json'))
         assert len(final_files) == 1, 'File should still be TASK-001.json'
-    finally:
-        cleanup(temp_dir)
 
 
 def test_update_depends_on():
     """Update depends_on field."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Task', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='upd-deps'):
+        add_basic_task(plan_id='upd-deps', title='Task', deliverable=1, steps=['src/main/java/File.java'])
 
-        result = run_script(
-            SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--depends-on', 'TASK-5', 'TASK-6'
-        )
+        result = cmd_update(_update_ns(plan_id='upd-deps', number=1, depends_on=['TASK-5', 'TASK-6']))
 
-        assert result.returncode == 0
+        assert result['status'] == 'success'
 
         # Verify
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'depends_on[2]:' in get_result.stdout
-        assert 'TASK-5' in get_result.stdout
-        assert 'TASK-6' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        get_result = cmd_get(_get_ns(plan_id='upd-deps', number=1))
+        assert 'TASK-5' in get_result['task']['depends_on']
+        assert 'TASK-6' in get_result['task']['depends_on']
 
 
 def test_update_clear_depends_on():
     """Update depends_on to none clears dependencies."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='upd-clear-deps'):
         toon = build_task_toon(
             title='Task',
             deliverable=1,
@@ -1015,17 +900,15 @@ def test_update_clear_depends_on():
             steps=['src/main/java/File.java'],
             depends_on='TASK-1',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='upd-clear-deps', content=toon.replace('\n', '\\n')))
 
-        result = run_script(SCRIPT_PATH, 'update', '--plan-id', 'test-plan', '--number', '1', '--depends-on', 'none')
+        result = cmd_update(_update_ns(plan_id='upd-clear-deps', number=1, depends_on=['none']))
 
-        assert result.returncode == 0
+        assert result['status'] == 'success'
 
         # Verify
-        get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'test-plan', '--number', '1')
-        assert 'depends_on[0]:' in get_result.stdout
-    finally:
-        cleanup(temp_dir)
+        get_result = cmd_get(_get_ns(plan_id='upd-clear-deps', number=1))
+        assert get_result['task']['depends_on'] == []
 
 
 # =============================================================================
@@ -1035,41 +918,31 @@ def test_update_clear_depends_on():
 
 def test_remove_deletes_file():
     """Remove deletes the task file."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='To Delete', deliverable=1, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='rm-del'):
+        add_basic_task(plan_id='rm-del', title='To Delete', deliverable=1, steps=['src/main/java/File.java'])
 
-        result = run_script(SCRIPT_PATH, 'remove', '--plan-id', 'test-plan', '--number', '1')
+        result = cmd_remove(_remove_ns(plan_id='rm-del', number=1))
 
-        assert result.returncode == 0
-        assert 'status: success' in result.stdout
-        assert 'total_tasks: 0' in result.stdout
+        assert result['status'] == 'success'
+        assert result['total_tasks'] == 0
 
-        # Verify file gone
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'rm-del' / 'tasks'
         files = list(task_dir.glob('TASK-*.json'))
         assert len(files) == 0
-    finally:
-        cleanup(temp_dir)
 
 
 def test_remove_preserves_gaps():
     """Removing a task preserves number gaps."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='First', deliverable=1, steps=['src/main/java/File.java'])
-        add_basic_task(title='Second', deliverable=2, steps=['src/main/java/File.java'])
-        add_basic_task(title='Third', deliverable=3, steps=['src/main/java/File.java'])
+    with PlanContext(plan_id='rm-gaps'):
+        add_basic_task(plan_id='rm-gaps', title='First', deliverable=1, steps=['src/main/java/File.java'])
+        add_basic_task(plan_id='rm-gaps', title='Second', deliverable=2, steps=['src/main/java/File.java'])
+        add_basic_task(plan_id='rm-gaps', title='Third', deliverable=3, steps=['src/main/java/File.java'])
 
-        # Remove middle
-        run_script(SCRIPT_PATH, 'remove', '--plan-id', 'test-plan', '--number', '2')
+        cmd_remove(_remove_ns(plan_id='rm-gaps', number=2))
 
-        # Next add should be 4, not 2
-        result = add_basic_task(title='Fourth', deliverable=4, steps=['src/main/java/File.java'])
+        result = add_basic_task(plan_id='rm-gaps', title='Fourth', deliverable=4, steps=['src/main/java/File.java'])
 
-        assert 'TASK-004' in result.stdout
-    finally:
-        cleanup(temp_dir)
+        assert result['file'] == 'TASK-004.json'
 
 
 # =============================================================================
@@ -1079,26 +952,18 @@ def test_remove_preserves_gaps():
 
 def test_progress_calculation():
     """Progress is correctly calculated in list output."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='prog-calc'):
         add_basic_task(
-            title='Task',
-            deliverable=1,
+            plan_id='prog-calc', title='Task', deliverable=1,
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
         )
-        run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '1', '--outcome', 'done'
-        )
-        run_script(
-            SCRIPT_PATH, 'finalize-step', '--plan-id', 'test-plan', '--task', '1', '--step', '2', '--outcome', 'skipped'
-        )
+        cmd_finalize_step(_finalize_step_ns(plan_id='prog-calc', task=1, step=1, outcome='done'))
+        cmd_finalize_step(_finalize_step_ns(plan_id='prog-calc', task=1, step=2, outcome='skipped'))
 
-        result = run_script(SCRIPT_PATH, 'list', '--plan-id', 'test-plan')
+        result = cmd_list(_list_ns(plan_id='prog-calc'))
 
-        assert result.returncode == 0
-        assert '2/3' in result.stdout  # 2 completed (done + skipped) out of 3
-    finally:
-        cleanup(temp_dir)
+        assert result['status'] == 'success'
+        assert '2/3' in result['tasks_table'][0]['progress']
 
 
 # =============================================================================
@@ -1108,8 +973,7 @@ def test_progress_calculation():
 
 def test_file_contains_new_fields():
     """Created file contains all new fields (JSON format)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='file-fields'):
         toon = build_task_toon(
             title='Test task',
             deliverable=1,
@@ -1120,20 +984,17 @@ def test_file_contains_new_fields():
             verification_commands=['mvn test'],
             verification_criteria='Tests pass',
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='file-fields', content=toon.replace('\n', '\\n')))
 
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'file-fields' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
         content = files[0].read_text(encoding='utf-8')
-
-        # JSON format assertions
-        import json
 
         task = json.loads(content)
         assert task['number'] == 1
         assert task['status'] == 'pending'
-        assert task['deliverable'] == 1  # Single integer (1:1 constraint)
-        assert task['depends_on'] == []  # 'none' is stored as empty list
+        assert task['deliverable'] == 1
+        assert task['depends_on'] == []
         assert task['domain'] == 'java'
         assert 'verification' in task
         assert task['verification']['criteria'] == 'Tests pass'
@@ -1141,36 +1002,29 @@ def test_file_contains_new_fields():
         assert task['steps'][0]['target'] == 'src/main/java/File1.java'
         assert task['steps'][0]['status'] == 'pending'
         assert task['current_step'] == 1
-    finally:
-        cleanup(temp_dir)
 
 
 def test_deliverable_is_single_number_not_array():
     """Deliverable field is a single integer, not an array (1:1 constraint)."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='del-single'):
         toon = build_task_toon(
             title='Test task',
-            deliverable=1,  # Note: singular, integer
+            deliverable=1,
             domain='java',
             description='Test description',
             steps=['src/main/java/File1.java'],
         )
-        run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
+        cmd_add(_add_ns(plan_id='del-single', content=toon.replace('\n', '\\n')))
 
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'del-single' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
         content = files[0].read_text(encoding='utf-8')
-
-        import json
 
         task = json.loads(content)
         assert 'deliverable' in task
         assert 'deliverables' not in task
         assert isinstance(task['deliverable'], int), f'Expected int, got {type(task["deliverable"])}'
         assert task['deliverable'] == 1
-    finally:
-        cleanup(temp_dir)
 
 
 # =============================================================================
@@ -1180,29 +1034,23 @@ def test_deliverable_is_single_number_not_array():
 
 def test_numbered_filename_ignores_title_special_chars():
     """Filename uses TASK-NNN format regardless of special characters in title."""
-    temp_dir = setup_plan_dir()
-    try:
-        add_basic_task(title='Test@#$%Special!!!Characters', deliverable=1)
+    with PlanContext(plan_id='fname-special'):
+        add_basic_task(plan_id='fname-special', title='Test@#$%Special!!!Characters', deliverable=1)
 
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'fname-special' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
         assert len(files) == 1, f'Expected TASK-001.json, found: {list(task_dir.glob("TASK-*.json"))}'
-    finally:
-        cleanup(temp_dir)
 
 
 def test_numbered_filename_ignores_title_length():
     """Filename uses TASK-NNN format regardless of title length."""
-    temp_dir = setup_plan_dir()
-    try:
+    with PlanContext(plan_id='fname-long'):
         long_title = 'A' * 100
-        add_basic_task(title=long_title, deliverable=1)
+        add_basic_task(plan_id='fname-long', title=long_title, deliverable=1)
 
-        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'test-plan' / 'tasks'
+        task_dir = Path(os.environ['PLAN_BASE_DIR']) / 'plans' / 'fname-long' / 'tasks'
         files = list(task_dir.glob('TASK-001.json'))
         assert len(files) == 1, f'Expected TASK-001.json, found: {list(task_dir.glob("TASK-*.json"))}'
-    finally:
-        cleanup(temp_dir)
 
 
 # =============================================================================
@@ -1212,9 +1060,7 @@ def test_numbered_filename_ignores_title_length():
 
 def test_arbitrary_domains_accepted():
     """Arbitrary domain strings are accepted (config-driven, not hardcoded)."""
-    temp_dir = setup_plan_dir()
-    try:
-        # Various domain names - all should be accepted since domains are arbitrary
+    with PlanContext(plan_id='arb-domains'):
         domains = ['java', 'my-custom-domain', 'frontend-react', 'backend-api', 'devops']
         for i, domain in enumerate(domains, 1):
             toon = build_task_toon(
@@ -1224,12 +1070,29 @@ def test_arbitrary_domains_accepted():
                 description=f'Test {domain}',
                 steps=['src/main/java/File.java'],
             )
-            result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan', '--content', toon.replace('\n', '\\n'))
-            assert result.returncode == 0, f'Domain {domain} failed: {result.stderr}'
-    finally:
-        cleanup(temp_dir)
+            result = cmd_add(_add_ns(plan_id='arb-domains', content=toon.replace('\n', '\\n')))
+            assert result['status'] == 'success', f'Domain {domain} failed'
 
 
 # =============================================================================
-# Main
+# Subprocess tests (CLI plumbing - Tier 3)
 # =============================================================================
+
+
+def test_cli_missing_subcommand_exits_2():
+    """Missing subcommand exits with code 2 (argparse error)."""
+    result = run_script(SCRIPT_PATH)
+    assert result.returncode == 2
+
+
+def test_cli_help_exits_0():
+    """--help exits with code 0."""
+    result = run_script(SCRIPT_PATH, '--help')
+    assert result.returncode == 0
+    assert 'manage implementation tasks' in result.stdout.lower()
+
+
+def test_cli_add_missing_content_exits_2():
+    """add without --content exits with code 2 (argparse error)."""
+    result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan')
+    assert result.returncode == 2

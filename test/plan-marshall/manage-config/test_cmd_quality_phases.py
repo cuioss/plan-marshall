@@ -3,17 +3,22 @@
 
 Tests plan phase-5-execute (including verification pipeline), phase-6-finalize pipeline commands,
 as well as scalar phase commands (phase-1-init, phase-2-refine).
+
+Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
 import json
+from argparse import Namespace
 
-from test_helpers import SCRIPT_PATH, create_marshal_json
+# Tier 2 direct imports
+from _cmd_system_plan import cmd_plan
+from test_helpers import SCRIPT_PATH, create_marshal_json, patch_config_paths
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PlanContext, run_script
 
 # =============================================================================
-# phase-5-execute Verification Pipeline Command Tests
+# phase-5-execute Verification Pipeline Command Tests (Tier 2)
 # =============================================================================
 
 
@@ -21,23 +26,25 @@ def test_execute_verify_get():
     """Test plan phase-5-execute get returns steps list config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-5-execute', 'get')
+        result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'verification_max_iterations' in result.stdout
-        assert 'steps' in result.stdout
-        assert 'default:quality_check' in result.stdout
+        assert result['status'] == 'success'
+        assert 'verification_max_iterations' in result
+        assert 'steps' in result
+        assert 'default:quality_check' in result['steps']
 
 
 def test_execute_verify_set_max_iterations():
     """Test plan phase-5-execute set-max-iterations for verification."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-5-execute', 'set-max-iterations', '--value', '10')
+        result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='set-max-iterations', value=10))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         # Verify changed
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
@@ -48,17 +55,15 @@ def test_execute_set_steps():
     """Test plan phase-5-execute set-steps replaces entire steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'plan',
-            'phase-5-execute',
-            'set-steps',
-            '--steps',
-            'default:quality_check,default:build_verify,pm-documents:doc-verify',
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-5-execute',
+            verb='set-steps',
+            steps='default:quality_check,default:build_verify,pm-documents:doc-verify',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         assert config['plan']['phase-5-execute']['steps'] == [
@@ -72,17 +77,16 @@ def test_execute_add_step():
     """Test plan phase-5-execute add-step appends to steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'plan',
-            'phase-5-execute',
-            'add-step',
-            '--step',
-            'pm-documents:doc-verify',
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-5-execute',
+            verb='add-step',
+            step='pm-documents:doc-verify',
+            position=None,
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-5-execute']['steps']
@@ -94,17 +98,15 @@ def test_execute_remove_step():
     """Test plan phase-5-execute remove-step removes from steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'plan',
-            'phase-5-execute',
-            'remove-step',
-            '--step',
-            'default:quality_check',
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-5-execute',
+            verb='remove-step',
+            step='default:quality_check',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-5-execute']['steps']
@@ -116,51 +118,53 @@ def test_execute_verify_get_field():
     """Test plan phase-5-execute get --field returns specific verification field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-5-execute', 'get', '--field', 'verification_max_iterations')
+        result = cmd_plan(Namespace(
+            sub_noun='phase-5-execute',
+            verb='get',
+            field='verification_max_iterations',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert '5' in result.stdout
+        assert result['status'] == 'success'
+        assert result['value'] == 5
 
 
 def test_execute_add_step_duplicate():
     """Test plan phase-5-execute add-step with existing step returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'plan',
-            'phase-5-execute',
-            'add-step',
-            '--step',
-            'default:quality_check',
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-5-execute',
+            verb='add-step',
+            step='default:quality_check',
+            position=None,
+        ))
 
-        assert 'error' in result.stdout.lower(), 'Should report error for duplicate step'
-        assert 'default:quality_check' in result.stdout
+        assert result['status'] == 'error'
+        assert 'default:quality_check' in result['error']
 
 
 def test_execute_remove_step_not_found():
     """Test plan phase-5-execute remove-step with missing step returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'plan',
-            'phase-5-execute',
-            'remove-step',
-            '--step',
-            'nonexistent',
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-5-execute',
+            verb='remove-step',
+            step='nonexistent',
+        ))
 
-        assert 'error' in result.stdout.lower(), 'Should report error for missing step'
-        assert 'nonexistent' in result.stdout
+        assert result['status'] == 'error'
+        assert 'nonexistent' in result['error']
 
 
 # =============================================================================
-# phase-6-finalize Command Tests
+# phase-6-finalize Command Tests (Tier 2)
 # =============================================================================
 
 
@@ -168,30 +172,29 @@ def test_finalize_get():
     """Test plan phase-6-finalize get returns steps list config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'get')
+        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field=None))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'max_iterations' in result.stdout
-        assert 'steps' in result.stdout
-        assert 'default:commit-push' in result.stdout
+        assert result['status'] == 'success'
+        assert 'max_iterations' in result
+        assert 'steps' in result
+        assert 'default:commit-push' in result['steps']
 
 
 def test_finalize_set_steps():
     """Test plan phase-6-finalize set-steps replaces entire steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'plan',
-            'phase-6-finalize',
-            'set-steps',
-            '--steps',
-            'default:commit-push,default:create-pr,default:archive-plan',
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-6-finalize',
+            verb='set-steps',
+            steps='default:commit-push,default:create-pr,default:archive-plan',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
@@ -202,20 +205,27 @@ def test_finalize_set_steps_empty_error():
     """Test plan phase-6-finalize set-steps with empty list returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-steps', '--steps', '')
+        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set-steps', steps=''))
 
-        assert 'error' in result.stdout.lower(), 'Should report error for empty steps'
+        assert result['status'] == 'error'
 
 
 def test_finalize_add_step():
     """Test plan phase-6-finalize add-step appends a new step."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step', '--step', 'pm-dev-java:java-post-pr')
+        result = cmd_plan(Namespace(
+            sub_noun='phase-6-finalize',
+            verb='add-step',
+            step='pm-dev-java:java-post-pr',
+            position=None,
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
@@ -227,19 +237,16 @@ def test_finalize_add_step_with_position():
     """Test plan phase-6-finalize add-step with position inserts at index."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'plan',
-            'phase-6-finalize',
-            'add-step',
-            '--step',
-            'project:finalize-step-custom',
-            '--position',
-            '0',
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-6-finalize',
+            verb='add-step',
+            step='project:finalize-step-custom',
+            position=0,
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
@@ -250,20 +257,31 @@ def test_finalize_add_step_duplicate_error():
     """Test plan phase-6-finalize add-step with duplicate returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'add-step', '--step', 'default:commit-push')
+        result = cmd_plan(Namespace(
+            sub_noun='phase-6-finalize',
+            verb='add-step',
+            step='default:commit-push',
+            position=None,
+        ))
 
-        assert 'error' in result.stdout.lower(), 'Should report error for duplicate step'
+        assert result['status'] == 'error'
 
 
 def test_finalize_remove_step():
     """Test plan phase-6-finalize remove-step removes a step."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step', '--step', 'default:sonar-roundtrip')
+        result = cmd_plan(Namespace(
+            sub_noun='phase-6-finalize',
+            verb='remove-step',
+            step='default:sonar-roundtrip',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         steps = config['plan']['phase-6-finalize']['steps']
@@ -274,27 +292,33 @@ def test_finalize_remove_step_not_found_error():
     """Test plan phase-6-finalize remove-step with missing step returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'remove-step', '--step', 'bogus')
+        result = cmd_plan(Namespace(
+            sub_noun='phase-6-finalize',
+            verb='remove-step',
+            step='bogus',
+        ))
 
-        assert 'error' in result.stdout.lower(), 'Should report error for missing step'
+        assert result['status'] == 'error'
 
 
 def test_finalize_set_max_iterations():
     """Test plan phase-6-finalize set-max-iterations."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'set-max-iterations', '--value', '7')
+        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set-max-iterations', value=7))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         assert config['plan']['phase-6-finalize']['max_iterations'] == 7
 
 
 # =============================================================================
-# Scalar Phase Command Tests
+# Scalar Phase Command Tests (Tier 2)
 # =============================================================================
 
 
@@ -302,23 +326,28 @@ def test_phase_1_init_get():
     """Test plan phase-1-init get returns config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-1-init', 'get')
+        result = cmd_plan(Namespace(sub_noun='phase-1-init', verb='get', field=None))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'branch_strategy' in result.stdout
+        assert result['status'] == 'success'
+        assert 'branch_strategy' in result
 
 
 def test_phase_1_init_set():
     """Test plan phase-1-init set updates a field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-1-init', 'set', '--field', 'branch_strategy', '--value', 'feature-branch'
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-1-init',
+            verb='set',
+            field='branch_strategy',
+            value='feature-branch',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         assert config['plan']['phase-1-init']['branch_strategy'] == 'feature-branch'
@@ -328,23 +357,28 @@ def test_phase_2_refine_get():
     """Test plan phase-2-refine get returns config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-2-refine', 'get')
+        result = cmd_plan(Namespace(sub_noun='phase-2-refine', verb='get', field=None))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'confidence_threshold' in result.stdout
+        assert result['status'] == 'success'
+        assert 'confidence_threshold' in result
 
 
 def test_phase_2_refine_set():
     """Test plan phase-2-refine set updates a field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-2-refine', 'set', '--field', 'confidence_threshold', '--value', '90'
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-2-refine',
+            verb='set',
+            field='confidence_threshold',
+            value='90',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         assert config['plan']['phase-2-refine']['confidence_threshold'] == 90
@@ -354,24 +388,29 @@ def test_phase_5_execute_get():
     """Test plan phase-5-execute get returns config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-5-execute', 'get')
+        result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'commit_strategy' in result.stdout
-        assert 'compatibility' not in result.stdout
+        assert result['status'] == 'success'
+        assert 'commit_strategy' in result
+        assert 'compatibility' not in result
 
 
 def test_phase_5_execute_set():
     """Test plan phase-5-execute set updates a field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-5-execute', 'set', '--field', 'commit_strategy', '--value', 'per_plan'
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-5-execute',
+            verb='set',
+            field='commit_strategy',
+            value='per_plan',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         assert config['plan']['phase-5-execute']['commit_strategy'] == 'per_plan'
@@ -381,27 +420,59 @@ def test_phase_2_refine_get_includes_compatibility():
     """Test plan phase-2-refine get returns compatibility."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'plan', 'phase-2-refine', 'get')
+        result = cmd_plan(Namespace(sub_noun='phase-2-refine', verb='get', field=None))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'compatibility' in result.stdout
-        assert 'confidence_threshold' in result.stdout
+        assert result['status'] == 'success'
+        assert 'compatibility' in result
+        assert 'confidence_threshold' in result
 
 
 def test_phase_2_refine_set_compatibility():
     """Test plan phase-2-refine set updates compatibility field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'plan', 'phase-2-refine', 'set', '--field', 'compatibility', '--value', 'deprecation'
-        )
+        result = cmd_plan(Namespace(
+            sub_noun='phase-2-refine',
+            verb='set',
+            field='compatibility',
+            value='deprecation',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         config = json.loads((ctx.fixture_dir / 'marshal.json').read_text())
         assert config['plan']['phase-2-refine']['compatibility'] == 'deprecation'
+
+
+# =============================================================================
+# CLI Plumbing Tests (Tier 3 - subprocess)
+# =============================================================================
+
+
+def test_cli_plan_phase_5_execute_get():
+    """Test CLI plumbing: plan phase-5-execute get outputs TOON."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-5-execute', 'get')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'verification_max_iterations' in result.stdout
+
+
+def test_cli_plan_phase_6_finalize_get():
+    """Test CLI plumbing: plan phase-6-finalize get outputs TOON."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'plan', 'phase-6-finalize', 'get')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'max_iterations' in result.stdout
 
 
 # =============================================================================

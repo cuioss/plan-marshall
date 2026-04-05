@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from constants import EXIT_ERROR, EXIT_SUCCESS, FILE_MARSHAL  # type: ignore[import-not-found]
+from constants import EXIT_ERROR, FILE_MARSHAL  # type: ignore[import-not-found]  # noqa: F401 - EXIT_ERROR re-exported
 from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
 
 # Bundle path for skill description resolution
@@ -90,16 +90,14 @@ def output(data: dict) -> None:
     output_toon(data)
 
 
-def error_exit(message: str, **extra) -> int:
-    """Output error and return error exit code."""
-    output({'status': 'error', 'error': message, **extra})
-    return EXIT_ERROR
+def error_exit(message: str, **extra) -> dict:
+    """Return error dict."""
+    return {'status': 'error', 'error': message, **extra}
 
 
-def success_exit(data: dict) -> int:
-    """Output success and return success exit code."""
-    output({'status': 'success', **data})
-    return EXIT_SUCCESS
+def success_exit(data: dict) -> dict:
+    """Return success dict."""
+    return {'status': 'success', **data}
 
 
 def _parse_skill_md_description(skill_path: Path, fallback: str) -> str:

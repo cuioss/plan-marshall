@@ -35,7 +35,7 @@ from _cmd_skill_resolution import (
 
 # Direct imports - PYTHONPATH set by executor
 from _config_core import EXIT_ERROR
-from file_ops import safe_main
+from file_ops import output_toon, safe_main
 
 
 @safe_main
@@ -112,7 +112,9 @@ def main() -> int:
 
     handler = handlers.get(args.command)
     if handler:
-        return handler(args)
+        result = handler(args)
+        output_toon(result)
+        return 0
 
     parser.print_help()
     return EXIT_ERROR

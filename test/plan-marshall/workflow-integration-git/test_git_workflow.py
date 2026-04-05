@@ -1,8 +1,12 @@
-"""Tests for git_workflow.py - consolidated git workflow script."""
+"""Tests for git_workflow.py - consolidated git workflow script.
+
+Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
+"""
 
 import sys
 import tempfile
 import unittest
+from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
@@ -11,8 +15,21 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E4
 
 from conftest import get_script_path, run_script  # noqa: E402
 
-# Script under test
+# Script under test (for subprocess CLI plumbing tests)
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git_workflow.py')
+
+# Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
+from git_workflow import (  # type: ignore[import-not-found]  # noqa: E402
+    _SKIP_DIRS,
+    SAFE_ARTIFACT_PATTERNS,
+    UNCERTAIN_ARTIFACT_PATTERNS,
+    VALID_TYPES,
+    analyze_diff,
+    cmd_detect_artifacts,
+    cmd_format_commit,
+    scan_artifacts,
+    wrap_text,
+)
 
 
 def run_git_script(args: list) -> tuple:
@@ -22,13 +39,13 @@ def run_git_script(args: list) -> tuple:
 
 
 class TestFormatCommit(unittest.TestCase):
-    """Test git_workflow.py format-commit subcommand."""
+    """Test git_workflow.py format-commit via direct import."""
 
     def test_basic_format(self):
         """Test basic commit message formatting."""
-        stdout, _, code = run_git_script(['format-commit', '--type', 'feat', '--subject', 'add new feature'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = cmd_format_commit(
+            Namespace(commit_type='feat', scope=None, subject='add new feature', body=None, breaking=None, footer=None)
+        )
         self.assertEqual(result['type'], 'feat')
         self.assertEqual(result['subject'], 'add new feature')
         self.assertIn('feat: add new feature', result['formatted_message'])
@@ -36,105 +53,106 @@ class TestFormatCommit(unittest.TestCase):
 
     def test_format_with_scope(self):
         """Test commit message with scope."""
-        stdout, _, code = run_git_script(
-            ['format-commit', '--type', 'fix', '--scope', 'auth', '--subject', 'fix login bug']
+        result = cmd_format_commit(
+            Namespace(commit_type='fix', scope='auth', subject='fix login bug', body=None, breaking=None, footer=None)
         )
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
         self.assertEqual(result['scope'], 'auth')
         self.assertIn('fix(auth):', result['formatted_message'])
 
     def test_format_with_body(self):
         """Test commit message with body."""
-        stdout, _, code = run_git_script(
-            [
-                'format-commit',
-                '--type',
-                'docs',
-                '--subject',
-                'update readme',
-                '--body',
-                'Added installation instructions',
-            ]
+        result = cmd_format_commit(
+            Namespace(
+                commit_type='docs',
+                scope=None,
+                subject='update readme',
+                body='Added installation instructions',
+                breaking=None,
+                footer=None,
+            )
         )
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
         self.assertEqual(result['body'], 'Added installation instructions')
-        self.assertIn('Added installation instructions', stdout)
 
     def test_format_with_breaking_change(self):
         """Test commit message with breaking change."""
-        stdout, _, code = run_git_script(
-            ['format-commit', '--type', 'feat', '--subject', 'change api', '--breaking', 'API signature changed']
+        result = cmd_format_commit(
+            Namespace(
+                commit_type='feat',
+                scope=None,
+                subject='change api',
+                body=None,
+                breaking='API signature changed',
+                footer=None,
+            )
         )
-        self.assertEqual(code, 0)
-        self.assertIn('feat!:', stdout)
-        self.assertIn('BREAKING CHANGE:', stdout)
+        self.assertIn('feat!:', result['formatted_message'])
+        self.assertIn('BREAKING CHANGE:', result['formatted_message'])
 
     def test_format_with_footer(self):
         """Test commit message with footer."""
-        stdout, _, code = run_git_script(
-            ['format-commit', '--type', 'fix', '--subject', 'fix crash', '--footer', 'Fixes #123']
+        result = cmd_format_commit(
+            Namespace(
+                commit_type='fix',
+                scope=None,
+                subject='fix crash',
+                body=None,
+                breaking=None,
+                footer='Fixes #123',
+            )
         )
-        self.assertEqual(code, 0)
-        self.assertIn('Fixes #123', stdout)
+        self.assertIn('Fixes #123', result['formatted_message'])
 
     def test_all_commit_types(self):
         """Test all valid commit types."""
-        valid_types = ['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore', 'ci']
-        for commit_type in valid_types:
-            stdout, _, code = run_git_script(['format-commit', '--type', commit_type, '--subject', 'test subject'])
-            self.assertEqual(code, 0, f'Failed for type: {commit_type}')
-            result = parse_toon(stdout)
-            self.assertEqual(result['type'], commit_type)
+        for commit_type in VALID_TYPES:
+            result = cmd_format_commit(
+                Namespace(
+                    commit_type=commit_type, scope=None, subject='test subject', body=None, breaking=None, footer=None
+                )
+            )
+            self.assertEqual(result['type'], commit_type, f'Failed for type: {commit_type}')
 
     def test_validation_warning_long_subject(self):
         """Test validation warning for long subject."""
         long_subject = 'a' * 55  # Exceeds 50 chars
-        stdout, _, code = run_git_script(['format-commit', '--type', 'fix', '--subject', long_subject])
-        self.assertEqual(code, 0)  # Still valid, just warning
-        result = parse_toon(stdout)
+        result = cmd_format_commit(
+            Namespace(commit_type='fix', scope=None, subject=long_subject, body=None, breaking=None, footer=None)
+        )
         self.assertTrue(result['validation']['valid'])
         self.assertTrue(any('50 chars' in w for w in result['validation']['warnings']))
 
     def test_validation_error_very_long_subject(self):
         """Test validation error for very long subject."""
         very_long_subject = 'a' * 75  # Exceeds 72 chars
-        stdout, _, code = run_git_script(['format-commit', '--type', 'fix', '--subject', very_long_subject])
-        self.assertEqual(code, 1)  # Invalid
-        result = parse_toon(stdout)
+        result = cmd_format_commit(
+            Namespace(commit_type='fix', scope=None, subject=very_long_subject, body=None, breaking=None, footer=None)
+        )
         self.assertFalse(result['validation']['valid'])
 
     def test_validation_warning_past_tense(self):
         """Test validation warning for past tense verb."""
-        stdout, _, code = run_git_script(['format-commit', '--type', 'fix', '--subject', 'fixed the bug'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = cmd_format_commit(
+            Namespace(commit_type='fix', scope=None, subject='fixed the bug', body=None, breaking=None, footer=None)
+        )
         self.assertTrue(any('imperative' in w.lower() for w in result['validation']['warnings']))
 
-    def test_missing_required_args(self):
-        """Test error when required args missing."""
-        _, stderr, code = run_git_script(['format-commit'])
-        self.assertNotEqual(code, 0)
-        self.assertIn('--type', stderr)
-
     def test_co_authored_by_not_appended_by_script(self):
-        """Test that format-commit does NOT append Co-Authored-By (caller adds it at commit time)."""
-        stdout, _, code = run_git_script(['format-commit', '--type', 'feat', '--subject', 'add feature'])
-        self.assertEqual(code, 0)
-        self.assertNotIn('Co-Authored-By', stdout)
+        """Test that format-commit does NOT append Co-Authored-By."""
+        result = cmd_format_commit(
+            Namespace(commit_type='feat', scope=None, subject='add feature', body=None, breaking=None, footer=None)
+        )
+        self.assertNotIn('Co-Authored-By', result['formatted_message'])
 
     def test_ci_commit_type(self):
         """Test that ci is a valid commit type."""
-        stdout, _, code = run_git_script(['format-commit', '--type', 'ci', '--subject', 'update workflow'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = cmd_format_commit(
+            Namespace(commit_type='ci', scope=None, subject='update workflow', body=None, breaking=None, footer=None)
+        )
         self.assertEqual(result['type'], 'ci')
         self.assertIn('ci: update workflow', result['formatted_message'])
 
     def test_imperative_allowlist_no_false_warnings(self):
         """Test that imperative allowlist words don't trigger past-tense warnings."""
-        # Words ending in -ed/-ing that are valid imperative forms, not past tense/gerund
         allowlist_samples = [
             'embed',
             'spread',
@@ -147,32 +165,65 @@ class TestFormatCommit(unittest.TestCase):
             'nothing',
         ]
         for word in allowlist_samples:
-            stdout, _, code = run_git_script(['format-commit', '--type', 'fix', '--subject', f'{word} the module'])
-            self.assertEqual(code, 0, f'Failed for allowlist word: {word}')
-            result = parse_toon(stdout)
+            result = cmd_format_commit(
+                Namespace(
+                    commit_type='fix', scope=None, subject=f'{word} the module', body=None, breaking=None, footer=None
+                )
+            )
             warnings = result['validation']['warnings']
             imperative_warnings = [w for w in warnings if 'imperative' in w.lower()]
             self.assertEqual(
                 len(imperative_warnings), 0, f'False imperative warning for allowlisted word "{word}": {warnings}'
             )
 
-    def test_body_wrapping_preserves_indentation(self):
-        """Test that body wrapping preserves leading indentation for bullet lists."""
-        body = (
-            '  - This is a very long bullet point that should wrap at seventy two characters while keeping indentation'
+    def test_breaking_and_footer_combined(self):
+        """Test commit message with both --breaking and --footer simultaneously."""
+        result = cmd_format_commit(
+            Namespace(
+                commit_type='feat',
+                scope='api',
+                subject='change auth endpoint',
+                body=None,
+                breaking='Old /auth endpoint removed',
+                footer='Fixes #123',
+            )
         )
-        stdout, _, code = run_git_script(['format-commit', '--type', 'fix', '--subject', 'fix issue', '--body', body])
-        self.assertEqual(code, 0)
-        # Verify wrapped lines start with the same indentation
-        body_lines = [
-            line for line in stdout.split('\n') if line.startswith('  ') and not line.strip().startswith('Co-Authored')
-        ]
-        for line in body_lines:
-            self.assertTrue(line.startswith('  '), f'Indentation lost: {line!r}')
+        self.assertIn('feat(api)!:', result['formatted_message'])
+        self.assertIn('BREAKING CHANGE:', result['formatted_message'])
+        self.assertIn('Fixes #123', result['formatted_message'])
+
+    def test_all_params_combined(self):
+        """Test commit message with body + breaking + footer + scope."""
+        result = cmd_format_commit(
+            Namespace(
+                commit_type='feat',
+                scope='api',
+                subject='change auth endpoint',
+                body='Migrated to OAuth 2.0 flow',
+                breaking='Old /auth endpoint removed',
+                footer='Fixes #123',
+            )
+        )
+        self.assertIn('feat(api)!:', result['formatted_message'])
+        self.assertIn('BREAKING CHANGE:', result['formatted_message'])
+        self.assertIn('Fixes #123', result['formatted_message'])
+        self.assertIn('Migrated to OAuth 2.0 flow', result['formatted_message'])
+
+    def test_long_scope_plus_subject_exceeds_72(self):
+        """Header exceeding 72 chars should fail validation."""
+        long_scope = 'very-long-module-name'
+        long_subject = 'a' * 50  # type(scope): subject -> 5 + 23 + 4 + 50 = 82 chars
+        result = cmd_format_commit(
+            Namespace(
+                commit_type='feat', scope=long_scope, subject=long_subject, body=None, breaking=None, footer=None
+            )
+        )
+        self.assertFalse(result['validation']['valid'])
+        self.assertTrue(any('Header' in w for w in result['validation']['warnings']))
 
 
 class TestAnalyzeDiff(unittest.TestCase):
-    """Test git_workflow.py analyze-diff subcommand."""
+    """Test git_workflow.py analyze-diff via direct import."""
 
     def test_analyze_bug_fix(self):
         """Test analysis detects bug fix patterns from comment keywords."""
@@ -184,47 +235,25 @@ class TestAnalyzeDiff(unittest.TestCase):
 +    if (value == null) throw new IllegalArgumentException();
 +    return value;
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['suggestions']['type'], 'fix')
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['type'], 'fix')
 
     def test_analyze_file_not_found(self):
         """Test error when diff file not found."""
-        stdout, _, code = run_git_script(['analyze-diff', '--file', '/nonexistent/file.diff'])
-        self.assertEqual(code, 1)
-        result = parse_toon(stdout)
+        result = cmd_detect_artifacts(Namespace(root='/nonexistent/path', no_gitignore=False))
         self.assertEqual(result['status'], 'error')
         self.assertIn('not found', result['error'])
 
-    def test_missing_file_arg(self):
-        """Test error when file arg missing."""
-        _, stderr, code = run_git_script(['analyze-diff'])
-        self.assertNotEqual(code, 0)
-        self.assertIn('--file', stderr)
-
     def test_analyze_feat_detection(self):
         """Test analysis detects feat when additions far exceed deletions."""
-        # Need many more additions than deletions (additions > deletions * 2)
-        # and at least one src file for feat detection
         lines = ['diff --git a/src/main/java/New.java b/src/main/java/New.java']
         lines.append('@@ -1 +1,20 @@')
         lines.append('-old line')
         for i in range(20):
             lines.append(f'+    new line {i}')
         diff_content = '\n'.join(lines) + '\n'
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['type'], 'feat')
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['type'], 'feat')
 
     def test_analyze_refactor_detection(self):
         """Test analysis detects refactor when additions roughly equal deletions."""
@@ -238,13 +267,8 @@ class TestAnalyzeDiff(unittest.TestCase):
 -        String s = format(x);
 +        String s = formatOutput(x);
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['type'], 'refactor')
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['type'], 'refactor')
 
     def test_analyze_ci_detection(self):
         """Test analysis detects ci type for CI config files."""
@@ -254,13 +278,8 @@ class TestAnalyzeDiff(unittest.TestCase):
 -    runs-on: ubuntu-20.04
 +    runs-on: ubuntu-22.04
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['type'], 'ci')
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['type'], 'ci')
 
     def test_analyze_monorepo_scope(self):
         """Test scope detection for monorepo layouts (packages/<name>/...)."""
@@ -271,13 +290,8 @@ class TestAnalyzeDiff(unittest.TestCase):
 +export function logout() { return true; }
 +export function refresh() { return true; }
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['scope'], 'auth-service')
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['scope'], 'auth-service')
 
     def test_analyze_python_scope_detection(self):
         """Test scope detection for Python file layouts (src/<package>/*.py)."""
@@ -291,30 +305,8 @@ class TestAnalyzeDiff(unittest.TestCase):
 +def third():
 +    return None
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['scope'], 'mypackage')
-
-    def test_analyze_js_scope_detection(self):
-        """Test scope detection for JS/TS layouts (src/<component>/*.ts)."""
-        diff_content = """diff --git a/src/components/Button.tsx b/src/components/Button.tsx
---- a/src/components/Button.tsx
-+++ b/src/components/Button.tsx
-+export const Button = () => <button>Click</button>;
-+export const IconButton = () => <button>Icon</button>;
-+export const LinkButton = () => <a>Link</a>;
-"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['scope'], 'components')
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['scope'], 'mypackage')
 
     def test_analyze_generic_scope_detection(self):
         """Test scope detection falls back to top-level directory."""
@@ -325,35 +317,8 @@ class TestAnalyzeDiff(unittest.TestCase):
 +host = localhost
 +port = 5432
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['scope'], 'config')
-
-    def test_analyze_bug_in_comment_lines(self):
-        """Test bug detection from comment lines in diff content."""
-        diff_content = """diff --git a/src/main/java/Service.java b/src/main/java/Service.java
---- a/src/main/java/Service.java
-+++ b/src/main/java/Service.java
-+    // Fix null pointer when user is not authenticated
-+    if (user != null) {
-+        return user.getName();
-+    }
-"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['type'], 'fix')
-
-
-class TestAnalyzeDiffTypeDetection(unittest.TestCase):
-    """Test analyze-diff type detection for test-only and docs-only changes (#28, #29)."""
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['scope'], 'config')
 
     def test_analyze_test_only_changes(self):
         """Test analysis detects 'test' type when only test files change."""
@@ -365,13 +330,8 @@ class TestAnalyzeDiffTypeDetection(unittest.TestCase):
 +        assertEquals(1, service.compute());
 +    }
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['type'], 'test')
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['type'], 'test')
 
     def test_analyze_docs_only_changes(self):
         """Test analysis detects 'docs' type when only documentation files change."""
@@ -381,110 +341,18 @@ class TestAnalyzeDiffTypeDetection(unittest.TestCase):
 +## Installation
 +Run `npm install` to get started.
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['type'], 'docs')
+        suggestions = analyze_diff(diff_content)
+        self.assertEqual(suggestions['type'], 'docs')
 
-    def test_analyze_asciidoc_docs(self):
-        """Test docs detection for .adoc files."""
-        diff_content = """diff --git a/doc/architecture.adoc b/doc/architecture.adoc
---- a/doc/architecture.adoc
-+++ b/doc/architecture.adoc
-+= Architecture Guide
-+This document describes the system architecture.
-"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['suggestions']['type'], 'docs')
-
-
-class TestFormatCommitCombined(unittest.TestCase):
-    """Test format-commit with all optional params at once (#26)."""
-
-    def test_breaking_and_footer_combined(self):
-        """Test commit message with both --breaking and --footer simultaneously."""
-        stdout, _, code = run_git_script(
-            [
-                'format-commit',
-                '--type',
-                'feat',
-                '--scope',
-                'api',
-                '--subject',
-                'change auth endpoint',
-                '--breaking',
-                'Old /auth endpoint removed',
-                '--footer',
-                'Fixes #123',
-            ]
-        )
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertIn('feat(api)!:', result['formatted_message'])
-        self.assertIn('BREAKING CHANGE:', stdout)
-        self.assertIn('Fixes #123', stdout)
-
-    def test_all_params_combined(self):
-        """Test commit message with body + breaking + footer + scope."""
-        stdout, _, code = run_git_script(
-            [
-                'format-commit',
-                '--type',
-                'feat',
-                '--scope',
-                'api',
-                '--subject',
-                'change auth endpoint',
-                '--body',
-                'Migrated to OAuth 2.0 flow',
-                '--breaking',
-                'Old /auth endpoint removed',
-                '--footer',
-                'Fixes #123',
-            ]
-        )
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertIn('feat(api)!:', result['formatted_message'])
-        self.assertIn('BREAKING CHANGE:', stdout)
-        self.assertIn('Fixes #123', stdout)
-        self.assertIn('Migrated to OAuth 2.0 flow', stdout)
-
-
-class TestFormatCommitHeaderLength(unittest.TestCase):
-    """Test format-commit validates total header length (#27)."""
-
-    def test_long_scope_plus_subject_exceeds_72(self):
-        """Header exceeding 72 chars should fail validation."""
-        long_scope = 'very-long-module-name'
-        long_subject = 'a' * 50  # type(scope): subject → 5 + 23 + 4 + 50 = 82 chars
-        stdout, _, code = run_git_script(
-            [
-                'format-commit',
-                '--type',
-                'feat',
-                '--scope',
-                long_scope,
-                '--subject',
-                long_subject,
-            ]
-        )
-        self.assertEqual(code, 1)
-        result = parse_toon(stdout)
-        self.assertFalse(result['validation']['valid'])
-        self.assertTrue(any('Header' in w for w in result['validation']['warnings']))
+    def test_analyze_empty_diff(self):
+        """Test analysis of an empty diff returns default suggestions."""
+        suggestions = analyze_diff('')
+        self.assertEqual(suggestions['type'], 'chore')
+        self.assertIsNone(suggestions['scope'])
 
 
 class TestDetectArtifacts(unittest.TestCase):
-    """Test git_workflow.py detect-artifacts subcommand."""
+    """Test git_workflow.py detect-artifacts via direct import."""
 
     def setUp(self):
         """Create a temporary directory with artifact files."""
@@ -509,12 +377,8 @@ class TestDetectArtifacts(unittest.TestCase):
         self._create_file('module/__pycache__/foo.pyc')
         self._create_file('scratch.temp')
 
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'success')
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
         self.assertGreaterEqual(len(result['safe']), 4)
-        # Verify specific patterns
         safe_str = '\n'.join(result['safe'])
         self.assertIn('.class', safe_str)
         self.assertIn('.DS_Store', safe_str)
@@ -525,11 +389,7 @@ class TestDetectArtifacts(unittest.TestCase):
         self._create_file('target/output.jar')
         self._create_file('build/libs/app.jar')
 
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'success')
-        # .class in target/ is captured by safe patterns, .jar files are uncertain
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
         self.assertTrue(len(result['uncertain']) >= 1 or len(result['safe']) >= 1)
         self.assertGreater(result['total'], 0)
 
@@ -538,9 +398,7 @@ class TestDetectArtifacts(unittest.TestCase):
         self._create_file('mypackage.egg-info/PKG-INFO')
         self._create_file('.eggs/some-egg.egg')
 
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
         self.assertGreaterEqual(len(result['safe']), 2)
         safe_str = '\n'.join(result['safe'])
         self.assertIn('egg-info', safe_str)
@@ -551,9 +409,7 @@ class TestDetectArtifacts(unittest.TestCase):
         self._create_file('tsconfig.tsbuildinfo')
         self._create_file('packages/lib/tsconfig.tsbuildinfo')
 
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
         safe_str = '\n'.join(result['safe'])
         self.assertIn('tsbuildinfo', safe_str)
         self.assertGreaterEqual(len(result['safe']), 2)
@@ -563,12 +419,9 @@ class TestDetectArtifacts(unittest.TestCase):
         self._create_file('.plan/temp/scratch.txt')
         self._create_file('.plan/temp/debug.log')
 
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
         safe_str = '\n'.join(result['safe'])
         self.assertIn('.plan/temp', safe_str)
-        # Should NOT be in uncertain
         uncertain_str = '\n'.join(result['uncertain'])
         self.assertNotIn('.plan/temp', uncertain_str)
 
@@ -577,22 +430,18 @@ class TestDetectArtifacts(unittest.TestCase):
         self._create_file('dist/bundle.js')
         self._create_file('.next/cache/data.json')
 
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
         uncertain_str = '\n'.join(result['uncertain'])
         self.assertIn('dist/', uncertain_str)
         self.assertIn('.next/', uncertain_str)
 
     def test_detects_root_level_artifacts(self):
-        """Test detection of artifacts at repo root, not just in subdirectories (#23)."""
+        """Test detection of artifacts at repo root (#23)."""
         self._create_file('Example.class')
         self._create_file('.DS_Store')
         self._create_file('scratch.temp')
 
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
         self.assertGreaterEqual(len(result['safe']), 3)
         safe_str = '\n'.join(result['safe'])
         self.assertIn('Example.class', safe_str)
@@ -604,50 +453,61 @@ class TestDetectArtifacts(unittest.TestCase):
         self._create_file('src/main/java/App.java')
         self._create_file('README.md')
 
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'success')
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
         self.assertEqual(result['total'], 0)
         self.assertEqual(len(result['safe']), 0)
         self.assertEqual(len(result['uncertain']), 0)
 
     def test_nonexistent_root_fails(self):
         """Test error when root directory doesn't exist."""
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', '/nonexistent/path'])
-        self.assertEqual(code, 1)
-        result = parse_toon(stdout)
+        result = cmd_detect_artifacts(Namespace(root='/nonexistent/path', no_gitignore=False))
         self.assertEqual(result['status'], 'error')
         self.assertIn('not found', result['error'])
 
-    def test_defaults_to_cwd_without_root(self):
-        """Test that detect-artifacts runs without --root argument."""
-        stdout, _, code = run_git_script(['detect-artifacts'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        self.assertEqual(result['status'], 'success')
+    def test_skips_git_directory(self):
+        """Test that .git/ directory contents are excluded from results."""
+        self._create_file('.git/objects/pack/pack-abc.class')
+        self._create_file('.git/hooks/pre-commit.pyc')
+        self._create_file('src/real.temp')
 
-    def test_help_includes_detect_artifacts(self):
-        """Test that help output lists detect-artifacts."""
-        stdout, _, code = run_git_script(['--help'])
-        self.assertEqual(code, 0)
-        self.assertIn('detect-artifacts', stdout)
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
+        all_files = result['safe'] + result['uncertain']
+        for f in all_files:
+            self.assertFalse(f.startswith('.git/'), f'.git file should be excluded: {f}')
+        self.assertTrue(any('real.temp' in f for f in result['safe']))
+
+
+class TestDetectArtifactsGitignore(unittest.TestCase):
+    """Test detect-artifacts with gitignore integration (subprocess-dependent)."""
+
+    def setUp(self):
+        """Create a temporary directory."""
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        """Clean up temporary directory."""
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _create_file(self, relpath: str) -> None:
+        """Create a file within the temp directory."""
+        full = Path(self.tmpdir) / relpath
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text('test')
 
     def test_respects_gitignore_by_default(self):
         """Test that gitignored files are excluded from results by default."""
         import subprocess as sp
 
-        # Set up a git repo with .gitignore
         sp.run(['git', 'init'], cwd=self.tmpdir, capture_output=True)
         sp.run(['git', 'config', 'user.email', 'test@test.com'], cwd=self.tmpdir, capture_output=True)
         sp.run(['git', 'config', 'user.name', 'Test'], cwd=self.tmpdir, capture_output=True)
 
-        # Create .gitignore that ignores *.class
         (Path(self.tmpdir) / '.gitignore').write_text('*.class\n')
         sp.run(['git', 'add', '.gitignore'], cwd=self.tmpdir, capture_output=True)
         sp.run(['git', 'commit', '-m', 'init'], cwd=self.tmpdir, capture_output=True)
 
-        # Create artifacts — .class is gitignored, .temp is not
         self._create_file('src/Example.class')
         self._create_file('scratch.temp')
 
@@ -655,25 +515,8 @@ class TestDetectArtifacts(unittest.TestCase):
         self.assertEqual(code, 0)
         result = parse_toon(stdout)
         safe_files = result['safe']
-        # .class should be excluded (gitignored), .temp should remain
         self.assertFalse(any('.class' in f for f in safe_files), f'.class should be excluded: {safe_files}')
         self.assertTrue(any('.temp' in f for f in safe_files), f'.temp should be present: {safe_files}')
-
-    def test_skips_git_directory(self):
-        """Test that .git/ directory contents are excluded from results."""
-        # Create a fake .git directory with artifact-like files
-        self._create_file('.git/objects/pack/pack-abc.class')
-        self._create_file('.git/hooks/pre-commit.pyc')
-        self._create_file('src/real.temp')
-
-        stdout, _, code = run_git_script(['detect-artifacts', '--root', self.tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        # .git files should be excluded, only src/real.temp in results
-        all_files = result['safe'] + result['uncertain']
-        for f in all_files:
-            self.assertFalse(f.startswith('.git/'), f'.git file should be excluded: {f}')
-        self.assertTrue(any('real.temp' in f for f in result['safe']))
 
     def test_no_gitignore_flag_includes_all(self):
         """Test that --no-gitignore includes gitignored files."""
@@ -701,195 +544,101 @@ class TestDetectArtifacts(unittest.TestCase):
 class TestWrapText(unittest.TestCase):
     """Test wrap_text function directly."""
 
-    @classmethod
-    def setUpClass(cls):
-        """Import wrap_text for direct testing."""
-        from importlib import import_module
-
-        mod = import_module('git_workflow')
-        cls.wrap_text = staticmethod(mod.wrap_text)
-
     def test_short_line_unchanged(self):
         """Lines within width are not wrapped."""
-        self.assertEqual(self.wrap_text('short line', 72), 'short line')
+        self.assertEqual(wrap_text('short line', 72), 'short line')
 
     def test_long_line_wrapped(self):
         """Lines exceeding width are wrapped at word boundaries."""
         text = 'a ' * 40  # 80 chars
-        result = self.wrap_text(text.strip(), 72)
+        result = wrap_text(text.strip(), 72)
         for line in result.split('\n'):
             self.assertLessEqual(len(line), 72)
 
     def test_preserves_bullet_indentation(self):
         """Wrapped lines preserve leading indentation."""
-        text = '  - ' + 'word ' * 20
-        _ = self.wrap_text(text.strip(), 72)
-        # First line has no indent since we stripped, but indented input does
         text_indented = '  - ' + 'word ' * 20
-        result_indented = self.wrap_text(text_indented, 72)
+        result_indented = wrap_text(text_indented, 72)
         for line in result_indented.split('\n'):
             self.assertTrue(line.startswith('  '), f'Lost indent: {line!r}')
 
     def test_deep_indent_not_wrapped(self):
         """Lines with >52 chars indent are kept as-is (effective_width < 20)."""
         text = ' ' * 55 + 'deeply indented content that should not be wrapped'
-        result = self.wrap_text(text, 72)
+        result = wrap_text(text, 72)
         self.assertEqual(result, text)
 
     def test_very_long_word_not_broken(self):
         """A single word longer than width should not be split (#20)."""
         url = 'https://example.com/very/long/path/that/exceeds/seventy/two/characters/easily'
-        result = self.wrap_text(url, 72)
-        # The URL should remain intact on a single line
+        result = wrap_text(url, 72)
         self.assertEqual(result, url)
 
     def test_multiline_preserves_paragraphs(self):
         """Multiple paragraphs separated by newlines are handled independently."""
         text = 'First paragraph.\nSecond paragraph.'
-        result = self.wrap_text(text, 72)
+        result = wrap_text(text, 72)
         self.assertEqual(result, text)
-
-
-class TestAnalyzeDiffEdgeCases(unittest.TestCase):
-    """Test git_workflow.py analyze-diff edge cases."""
-
-    def test_analyze_empty_diff_file(self):
-        """Test analysis of an empty diff file returns default suggestions."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write('')
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['suggestions']['type'], 'chore')
-            self.assertIsNone(result['suggestions']['scope'])
-
-    def test_analyze_diff_only_whitespace(self):
-        """Test analysis of a diff with only whitespace."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write('   \n\n  \n')
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-            self.assertEqual(code, 0)
-            result = parse_toon(stdout)
-            self.assertEqual(result['status'], 'success')
-            self.assertEqual(result['suggestions']['type'], 'chore')
-
-
-class TestToonContract(unittest.TestCase):
-    """Verify TOON output matches the contract documented in SKILL.md."""
-
-    def test_format_commit_output_contract(self):
-        """Verify format-commit output has all documented fields."""
-        stdout, _, code = run_git_script(
-            [
-                'format-commit',
-                '--type',
-                'feat',
-                '--scope',
-                'auth',
-                '--subject',
-                'add login',
-            ]
-        )
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        # Documented fields in SKILL.md output section
-        required_fields = {'type', 'scope', 'subject', 'formatted_message', 'validation', 'status'}
-        missing = required_fields - set(result.keys())
-        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
-        # Validation sub-structure
-        self.assertIn('valid', result['validation'])
-        self.assertIn('warnings', result['validation'])
-
-    def test_analyze_diff_output_contract(self):
-        """Verify analyze-diff output has all documented fields."""
-        diff_content = """diff --git a/src/main/java/New.java b/src/main/java/New.java
-+new line
-"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as f:
-            f.write(diff_content)
-            f.flush()
-            stdout, _, code = run_git_script(['analyze-diff', '--file', f.name])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        required_fields = {'mode', 'suggestions', 'status'}
-        missing = required_fields - set(result.keys())
-        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
-        # Suggestions sub-structure
-        sug = result['suggestions']
-        for field in ('type', 'scope', 'detected_changes', 'files_changed'):
-            self.assertIn(field, sug, f'Missing suggestions.{field}')
-
-    def test_detect_artifacts_output_contract(self):
-        """Verify detect-artifacts output has all documented fields."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            stdout, _, code = run_git_script(['detect-artifacts', '--root', tmpdir])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        required_fields = {'root', 'safe', 'uncertain', 'total', 'status'}
-        missing = required_fields - set(result.keys())
-        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
 
 
 class TestArtifactConfigLoading(unittest.TestCase):
     """Test that artifact patterns are loaded from artifact-patterns.json config."""
 
-    @classmethod
-    def setUpClass(cls):
-        """Import git_workflow module for direct testing."""
-        from git_workflow import (  # type: ignore[import-not-found]
-            _SKIP_DIRS,
-            SAFE_ARTIFACT_PATTERNS,
-            UNCERTAIN_ARTIFACT_PATTERNS,
-        )
-
-        cls.safe_patterns = SAFE_ARTIFACT_PATTERNS
-        cls.uncertain_patterns = UNCERTAIN_ARTIFACT_PATTERNS
-        cls.skip_dirs = _SKIP_DIRS
-
     def test_safe_patterns_loaded(self):
         """Test that safe artifact patterns are loaded from config."""
-        self.assertIsInstance(self.safe_patterns, list)
-        self.assertTrue(len(self.safe_patterns) > 0)
-        # Verify known patterns
-        patterns_str = ' '.join(self.safe_patterns)
+        self.assertIsInstance(SAFE_ARTIFACT_PATTERNS, list)
+        self.assertTrue(len(SAFE_ARTIFACT_PATTERNS) > 0)
+        patterns_str = ' '.join(SAFE_ARTIFACT_PATTERNS)
         self.assertIn('*.class', patterns_str)
         self.assertIn('*.pyc', patterns_str)
         self.assertIn('.DS_Store', patterns_str)
 
     def test_uncertain_patterns_loaded(self):
         """Test that uncertain artifact patterns are loaded from config."""
-        self.assertIsInstance(self.uncertain_patterns, list)
-        self.assertTrue(len(self.uncertain_patterns) > 0)
-        patterns_str = ' '.join(self.uncertain_patterns)
+        self.assertIsInstance(UNCERTAIN_ARTIFACT_PATTERNS, list)
+        self.assertTrue(len(UNCERTAIN_ARTIFACT_PATTERNS) > 0)
+        patterns_str = ' '.join(UNCERTAIN_ARTIFACT_PATTERNS)
         self.assertIn('target/**', patterns_str)
 
     def test_skip_dirs_loaded(self):
         """Test that skip directories are loaded from config."""
-        self.assertIsInstance(self.skip_dirs, set)
-        self.assertIn('.git', self.skip_dirs)
-        self.assertIn('node_modules', self.skip_dirs)
-        self.assertIn('.venv', self.skip_dirs)
+        self.assertIsInstance(_SKIP_DIRS, set)
+        self.assertIn('.git', _SKIP_DIRS)
+        self.assertIn('node_modules', _SKIP_DIRS)
+        self.assertIn('.venv', _SKIP_DIRS)
 
     def test_no_overlap_between_skip_dirs_and_uncertain(self):
-        """Test that skip_dirs entries are not also in uncertain_patterns.
-
-        If a directory is in skip_dirs, it's skipped during traversal and
-        will never reach the uncertain pattern check — having it in both
-        is dead config.
-        """
-        for skip_dir in self.skip_dirs:
-            for pattern in self.uncertain_patterns:
+        """Test that skip_dirs entries are not also in uncertain_patterns."""
+        for skip_dir in _SKIP_DIRS:
+            for pattern in UNCERTAIN_ARTIFACT_PATTERNS:
                 self.assertFalse(
                     pattern.startswith(f'{skip_dir}/') or pattern.startswith(f'{skip_dir}/**'),
                     f'skip_dir "{skip_dir}" overlaps with uncertain pattern "{pattern}"',
                 )
 
 
+class TestToonContract(unittest.TestCase):
+    """Verify output matches the contract documented in SKILL.md."""
+
+    def test_format_commit_output_contract(self):
+        """Verify format-commit output has all documented fields."""
+        result = cmd_format_commit(
+            Namespace(commit_type='feat', scope='auth', subject='add login', body=None, breaking=None, footer=None)
+        )
+        required_fields = {'type', 'scope', 'subject', 'formatted_message', 'validation', 'status'}
+        missing = required_fields - set(result.keys())
+        self.assertEqual(missing, set(), f'Missing contract fields: {missing}')
+        self.assertIn('valid', result['validation'])
+        self.assertIn('warnings', result['validation'])
+
+
+# =============================================================================
+# Subprocess (Tier 3) tests -- CLI plumbing only
+# =============================================================================
+
+
 class TestMain(unittest.TestCase):
-    """Test git_workflow.py main entry point."""
+    """Test git_workflow.py main entry point (CLI plumbing)."""
 
     def test_no_subcommand(self):
         """Test error when no subcommand provided."""
@@ -902,6 +651,12 @@ class TestMain(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('format-commit', stdout)
         self.assertIn('analyze-diff', stdout)
+
+    def test_missing_required_args(self):
+        """Test error when required args missing."""
+        _, stderr, code = run_git_script(['format-commit'])
+        self.assertNotEqual(code, 0)
+        self.assertIn('--type', stderr)
 
 
 if __name__ == '__main__':

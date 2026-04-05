@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 from _config_core import (
-    EXIT_ERROR,
     MarshalNotInitializedError,
     error_exit,
     get_skill_description,
@@ -440,7 +439,7 @@ def _discover_all_verify_steps() -> list[dict]:
     return all_steps
 
 
-def cmd_list_verify_steps(args) -> int:
+def cmd_list_verify_steps(args) -> dict:
     """List all available verify steps discovered at runtime.
 
     Sources: built-in + project verify-step-* skills + extension provides_verify_steps().
@@ -449,7 +448,7 @@ def cmd_list_verify_steps(args) -> int:
     return success_exit({'steps': all_steps, 'count': len(all_steps)})
 
 
-def cmd_skill_domains(args) -> int:
+def cmd_skill_domains(args) -> dict:
     """Handle skill-domains noun."""
     try:
         require_initialized()
@@ -856,7 +855,7 @@ def cmd_skill_domains(args) -> int:
             save_config(config)
             return success_exit({'scope': domain or 'global', 'removed': True})
 
-    return EXIT_ERROR
+    return error_exit('Unknown skill-domains verb')
 
 
 ### Resolution and discovery commands in _cmd_skill_resolution.py ###

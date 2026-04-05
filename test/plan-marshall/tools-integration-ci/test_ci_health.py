@@ -2,69 +2,122 @@
 """Tests for ci_health.py script.
 
 Tests provider detection, tool verification, and configuration persistence.
+
+Tier 2 (direct import) tests for cmd_* functions.
+Tier 3 (subprocess) tests retained for CLI plumbing and persist (marshal.json I/O).
 """
 
 import json
+from argparse import Namespace
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PlanContext, get_script_path, run_script
 
-# Get script path
+# Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'ci_health.py')
 
+# Tier 2 direct imports
+from ci_health import cmd_detect, cmd_status, cmd_verify  # type: ignore[import-not-found]  # noqa: E402
 
-def test_detect_success():
-    """Test detect command returns valid output."""
-    result = run_script(SCRIPT_PATH, 'detect')
-    assert result.success, f'Script failed: {result.stderr}'
-    data = result.toon()
-    assert 'status' in data
-    assert data['status'] == 'success'
-    assert 'provider' in data
-    assert data['provider'] in ('github', 'gitlab', 'unknown')
-    assert 'confidence' in data
+# =============================================================================
+# Tier 2: Direct import tests for cmd_detect
+# =============================================================================
+
+
+def test_detect_returns_success():
+    """Test detect command returns valid output via direct import."""
+    result = cmd_detect(Namespace())
+    assert result['status'] == 'success'
+    assert 'provider' in result
+    assert result['provider'] in ('github', 'gitlab', 'unknown')
+    assert 'confidence' in result
+
+
+def test_detect_includes_repo_url():
+    """Test detect output includes repo_url field."""
+    result = cmd_detect(Namespace())
+    assert 'repo_url' in result
+
+
+# =============================================================================
+# Tier 2: Direct import tests for cmd_verify
+# =============================================================================
 
 
 def test_verify_all_tools():
-    """Test verify command checks all tools."""
+    """Test verify command checks all tools via direct import."""
+    result = cmd_verify(Namespace(tool=None))
+    assert result['status'] == 'success'
+    assert 'tools' in result
+    # Should have git at minimum
+    assert 'git' in result['tools']
+    assert 'installed' in result['tools']['git']
+
+
+def test_verify_specific_tool_git():
+    """Test verify command for specific tool via direct import."""
+    result = cmd_verify(Namespace(tool='git'))
+    assert result['status'] == 'success'
+    assert 'tools' in result
+    assert 'git' in result['tools']
+
+
+def test_verify_unknown_tool():
+    """Test verify command with unknown tool returns error via direct import."""
+    result = cmd_verify(Namespace(tool='unknown_tool_xyz'))
+    assert result['status'] == 'error'
+    assert 'error' in result
+
+
+# =============================================================================
+# Tier 2: Direct import tests for cmd_status
+# =============================================================================
+
+
+def test_status_returns_comprehensive_output():
+    """Test status command returns comprehensive output via direct import."""
+    result = cmd_status(Namespace())
+    assert result['status'] == 'success'
+    assert 'provider' in result
+    assert 'tools' in result
+    assert 'overall' in result
+    assert result['overall'] in ('healthy', 'degraded', 'unknown')
+
+
+# =============================================================================
+# Tier 3: Subprocess tests for CLI plumbing
+# =============================================================================
+
+
+def test_help_flag():
+    """Test --help flag works."""
+    result = run_script(SCRIPT_PATH, '--help')
+    assert result.success, f'--help failed: {result.stderr}'
+    assert 'detect' in result.stdout
+    assert 'verify' in result.stdout
+    assert 'status' in result.stdout
+    assert 'persist' in result.stdout
+
+
+def test_detect_cli_output():
+    """Test detect subcommand produces valid TOON via subprocess."""
+    result = run_script(SCRIPT_PATH, 'detect')
+    assert result.success, f'Script failed: {result.stderr}'
+    data = result.toon()
+    assert data['status'] == 'success'
+
+
+def test_verify_cli_output():
+    """Test verify subcommand produces valid TOON via subprocess."""
     result = run_script(SCRIPT_PATH, 'verify')
     assert result.success, f'Script failed: {result.stderr}'
     data = result.toon()
     assert data['status'] == 'success'
-    assert 'tools' in data
-    # Should have git at minimum
-    assert 'git' in data['tools']
-    assert 'installed' in data['tools']['git']
 
 
-def test_verify_specific_tool():
-    """Test verify command for specific tool."""
-    result = run_script(SCRIPT_PATH, 'verify', '--tool', 'git')
-    assert result.success, f'Script failed: {result.stderr}'
-    data = result.toon()
-    assert data['status'] == 'success'
-    assert 'tools' in data
-    assert 'git' in data['tools']
-
-
-def test_verify_unknown_tool():
-    """Test verify command with unknown tool returns error."""
-    result = run_script(SCRIPT_PATH, 'verify', '--tool', 'unknown_tool_xyz')
-    assert not result.success, 'Expected script to fail for unknown tool'
-    data = result.toon_or_error()
-    assert 'error' in data
-
-
-def test_status_success():
-    """Test status command returns comprehensive output."""
-    result = run_script(SCRIPT_PATH, 'status')
-    assert result.success, f'Script failed: {result.stderr}'
-    data = result.toon()
-    assert data['status'] == 'success'
-    assert 'provider' in data
-    assert 'tools' in data
-    assert 'overall' in data
-    assert data['overall'] in ('healthy', 'degraded', 'unknown')
+# =============================================================================
+# Tier 3: Subprocess tests for persist (requires marshal.json I/O)
+# =============================================================================
 
 
 def test_persist_no_marshal_json():
@@ -110,16 +163,6 @@ def test_persist_stores_provider_only():
         assert 'detected_at' in updated['ci']
         # No commands stored — router handles resolution
         assert 'commands' not in updated['ci']
-
-
-def test_help_flag():
-    """Test --help flag works."""
-    result = run_script(SCRIPT_PATH, '--help')
-    assert result.success, f'--help failed: {result.stderr}'
-    assert 'detect' in result.stdout
-    assert 'verify' in result.stdout
-    assert 'status' in result.stdout
-    assert 'persist' in result.stdout
 
 
 def test_persist_key_ordering():

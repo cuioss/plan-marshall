@@ -14,6 +14,25 @@ from conftest import get_script_path
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')
 
 
+def patch_config_paths(fixture_dir: Path) -> None:
+    """Patch _config_core module-level paths for direct import (Tier 2) tests.
+
+    _config_core computes PLAN_BASE_DIR and MARSHAL_PATH at import time
+    from the PLAN_BASE_DIR env var. Since tests change this env var per
+    PlanContext, we must patch the module-level constants to match.
+
+    Call this inside PlanContext.__enter__() before any cmd_* calls.
+
+    Args:
+        fixture_dir: The PlanContext fixture directory (ctx.fixture_dir)
+    """
+    import _config_core
+
+    _config_core.PLAN_BASE_DIR = fixture_dir
+    _config_core.MARSHAL_PATH = fixture_dir / 'marshal.json'
+    _config_core.RUN_CONFIG_PATH = fixture_dir / 'run-configuration.json'
+
+
 def create_run_config(fixture_dir: Path, config: dict | None = None) -> Path:
     """Create run-configuration.json in fixture directory.
 

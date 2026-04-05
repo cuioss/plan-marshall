@@ -6,18 +6,37 @@ Consolidated from:
 - test_validate_memory.py - validation subcommand
 
 Tests memory layer operations and format validation.
+
+Tier 2 (direct import) with 2 subprocess tests for CLI plumbing.
 """
 
+import importlib.util
 import os
+import re
+import sys
 import tempfile
+from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import get_script_path, run_script
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from conftest import get_script_path, run_script  # noqa: E402
 
-# Script under test
+# Script path for subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-memories', 'manage-memory.py')
+
+# Tier 2 direct import via importlib (hyphenated filename)
+_spec = importlib.util.spec_from_file_location('manage_memory', str(SCRIPT_PATH))
+manage_memory = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(manage_memory)
+
+cmd_save = manage_memory.cmd_save
+cmd_load = manage_memory.cmd_load
+cmd_list = manage_memory.cmd_list
+cmd_query = manage_memory.cmd_query
+cmd_cleanup = manage_memory.cmd_cleanup
+cmd_validate = manage_memory.cmd_validate
 
 
 # =============================================================================
@@ -27,25 +46,24 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-memories', 'manage-memory
 
 @contextmanager
 def memory_test_context():
-    """Context manager that creates temp directory and sets PLAN_BASE_DIR."""
+    """Context manager that creates temp directory and patches MEMORY_BASE."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
+        memory_base = temp_dir / '.plan' / 'memory'
+
+        old_memory_base = manage_memory.MEMORY_BASE
         old_plan_base_dir = os.environ.get('PLAN_BASE_DIR')
-        # Set PLAN_BASE_DIR to temp_dir/.plan for script to find files
+
+        manage_memory.MEMORY_BASE = memory_base
         os.environ['PLAN_BASE_DIR'] = str(temp_dir / '.plan')
         try:
             yield temp_dir
         finally:
-            # Restore original PLAN_BASE_DIR
+            manage_memory.MEMORY_BASE = old_memory_base
             if old_plan_base_dir is None:
                 os.environ.pop('PLAN_BASE_DIR', None)
             else:
                 os.environ['PLAN_BASE_DIR'] = old_plan_base_dir
-
-
-def run_memory_script(*args):
-    """Run the memory script with arguments."""
-    return run_script(SCRIPT_PATH, *args)
 
 
 def parse_output(output):
@@ -56,41 +74,49 @@ def parse_output(output):
 
 
 # =============================================================================
-# Tests
+# Tier 2: Direct Import Tests
 # =============================================================================
 
 
 def test_save_creates_dirs():
     """Test save creates directories on-the-fly."""
     with memory_test_context() as temp_dir:
-        result = run_memory_script(
-            'save', '--category', 'context', '--identifier', 'test-feature', '--content', '{"notes": "Testing"}'
+        result = cmd_save(
+            Namespace(
+                category='context',
+                identifier='test-feature',
+                content='{"notes": "Testing"}',
+                session_id=None,
+            )
         )
-        data = parse_output(result.stdout)
 
-        assert data.get('success') is True, 'Should succeed'
-        assert 'context' in data.get('path', ''), 'Path should contain context'
+        assert result['success'] is True, 'Should succeed'
+        assert 'context' in result.get('path', ''), 'Path should contain context'
 
-        # Verify directory was created (uses .plan/memory, not .claude/memory)
+        # Verify directory was created
         assert (temp_dir / '.plan' / 'memory' / 'context').is_dir(), 'Context directory should be created'
 
 
 def test_save_context():
     """Test save to context category."""
     with memory_test_context():
-        result = run_memory_script(
-            'save', '--category', 'context', '--identifier', 'test-feature', '--content', '{"decisions": ["Use JWT"]}'
+        result = cmd_save(
+            Namespace(
+                category='context',
+                identifier='test-feature',
+                content='{"decisions": ["Use JWT"]}',
+                session_id=None,
+            )
         )
-        data = parse_output(result.stdout)
 
-        assert data.get('success') is True, 'Should succeed'
-        assert 'context' in data.get('path', ''), 'Path should contain context'
+        assert result['success'] is True, 'Should succeed'
+        assert 'context' in result.get('path', ''), 'Path should contain context'
 
 
 def test_load():
     """Test load memory file."""
     with memory_test_context() as temp_dir:
-        # First save - context category adds date prefix, so create file directly
+        # Create file directly to control filename
         memory_dir = temp_dir / '.plan' / 'memory' / 'context'
         memory_dir.mkdir(parents=True)
         (memory_dir / 'load-test.json').write_text("""{
@@ -102,17 +128,15 @@ def test_load():
   "content": {"value": 123}
 }""")
 
-        result = run_memory_script('load', '--category', 'context', '--identifier', 'load-test')
-        data = parse_output(result.stdout)
+        result = cmd_load(Namespace(category='context', identifier='load-test'))
 
-        assert data.get('success') is True, 'Should succeed'
-        assert data.get('content', {}).get('value') == 123, 'Content value should be 123'
+        assert result['success'] is True, 'Should succeed'
+        assert result.get('content', {}).get('value') == 123, 'Content value should be 123'
 
 
 def test_load_has_meta():
     """Test load includes meta envelope."""
     with memory_test_context() as temp_dir:
-        # Create file directly to avoid date prefix
         memory_dir = temp_dir / '.plan' / 'memory' / 'context'
         memory_dir.mkdir(parents=True)
         (memory_dir / 'meta-test.json').write_text("""{
@@ -124,11 +148,10 @@ def test_load_has_meta():
   "content": {"test": true}
 }""")
 
-        result = run_memory_script('load', '--category', 'context', '--identifier', 'meta-test')
-        data = parse_output(result.stdout)
+        result = cmd_load(Namespace(category='context', identifier='meta-test'))
 
-        assert data.get('success') is True, 'Should succeed'
-        meta = data.get('meta', {})
+        assert result['success'] is True, 'Should succeed'
+        meta = result.get('meta', {})
         assert 'created' in meta, 'Meta should have created'
         assert meta.get('category') == 'context', 'Meta category should be context'
 
@@ -136,7 +159,6 @@ def test_load_has_meta():
 def test_list_category():
     """Test list files in category."""
     with memory_test_context() as temp_dir:
-        # Create files directly to avoid date prefix issues
         memory_dir = temp_dir / '.plan' / 'memory' / 'context'
         memory_dir.mkdir(parents=True)
         (memory_dir / 'list-test-1.json').write_text("""{
@@ -148,29 +170,33 @@ def test_list_category():
   "content": {}
 }""")
 
-        result = run_memory_script('list', '--category', 'context')
-        data = parse_output(result.stdout)
+        result = cmd_list(Namespace(category='context', since=None))
 
-        assert data.get('success') is True, 'Should succeed'
-        assert data.get('count', 0) >= 2, 'Should find at least 2 files'
+        assert result['success'] is True, 'Should succeed'
+        assert result.get('count', 0) >= 2, 'Should find at least 2 files'
 
 
 def test_list_all():
     """Test list all categories."""
     with memory_test_context():
-        # Create at least one file
-        run_memory_script('save', '--category', 'context', '--identifier', 'list-all-test', '--content', '{}')
+        # Create a file via cmd_save
+        cmd_save(
+            Namespace(
+                category='context',
+                identifier='list-all-test',
+                content='{}',
+                session_id=None,
+            )
+        )
 
-        result = run_memory_script('list')
-        data = parse_output(result.stdout)
+        result = cmd_list(Namespace(category=None, since=None))
 
-        assert data.get('success') is True, 'Should succeed'
+        assert result['success'] is True, 'Should succeed'
 
 
 def test_query_pattern():
     """Test query by pattern."""
     with memory_test_context() as temp_dir:
-        # Create files directly to avoid date prefix issues
         memory_dir = temp_dir / '.plan' / 'memory' / 'context'
         memory_dir.mkdir(parents=True)
         (memory_dir / 'query-auth-test.json').write_text("""{
@@ -182,18 +208,15 @@ def test_query_pattern():
   "content": {}
 }""")
 
-        result = run_memory_script('query', '--pattern', 'query-auth*', '--category', 'context')
-        data = parse_output(result.stdout)
+        result = cmd_query(Namespace(pattern='query-auth*', category='context'))
 
-        assert data.get('success') is True, 'Should succeed'
-        assert data.get('count', 0) >= 1, 'Should find at least 1 match'
+        assert result['success'] is True, 'Should succeed'
+        assert result.get('count', 0) >= 1, 'Should find at least 1 match'
 
 
 def test_cleanup():
     """Test cleanup old files."""
     with memory_test_context() as temp_dir:
-        # Create a file with an old created timestamp directly in the JSON
-        # Uses .plan/memory, not .claude/memory
         memory_dir = temp_dir / '.plan' / 'memory' / 'context'
         memory_dir.mkdir(parents=True)
         (memory_dir / 'old-cleanup-test.json').write_text("""{
@@ -205,52 +228,41 @@ def test_cleanup():
   "content": {}
 }""")
 
-        result = run_memory_script('cleanup', '--category', 'context', '--older-than', '1d')
-        data = parse_output(result.stdout)
+        result = cmd_cleanup(Namespace(category='context', older_than='1d', dry_run=False))
 
-        assert data.get('status') == 'success', 'Should succeed'
-        assert data.get('operation') == 'cleanup', 'Operation should be cleanup'
-        assert data.get('older_than') == '1d', 'Should echo older_than parameter'
-        assert data.get('removed_count', 0) >= 1, 'Should remove at least 1 file'
+        assert result['status'] == 'success', 'Should succeed'
+        assert result['operation'] == 'cleanup', 'Operation should be cleanup'
+        assert result['older_than'] == '1d', 'Should echo older_than parameter'
+        assert result.get('removed_count', 0) >= 1, 'Should remove at least 1 file'
 
 
 def test_load_not_found():
     """Test load non-existent file returns error."""
     with memory_test_context():
-        result = run_memory_script('load', '--category', 'context', '--identifier', 'nonexistent')
-        # Script may output to stderr for errors
-        output = result.stdout if result.stdout.strip() else result.stderr
-        data = parse_output(output)
+        result = cmd_load(Namespace(category='context', identifier='nonexistent'))
 
-        assert data.get('status') == 'error', 'Should fail for non-existent file'
-
-
-def test_invalid_category():
-    """Test invalid category returns error."""
-    with memory_test_context():
-        result = run_memory_script('save', '--category', 'invalid', '--identifier', 'test', '--content', '{}')
-
-        combined = result.stdout.lower() + result.stderr.lower()
-        assert 'invalid choice' in combined, 'Should show invalid choice error'
+        assert result['status'] == 'error', 'Should fail for non-existent file'
 
 
 def test_context_date_prefix():
     """Test context files get date prefix."""
     with memory_test_context():
-        import re
-
-        result = run_memory_script(
-            'save', '--category', 'context', '--identifier', 'date-prefix-test', '--content', '{}'
+        result = cmd_save(
+            Namespace(
+                category='context',
+                identifier='date-prefix-test',
+                content='{}',
+                session_id=None,
+            )
         )
-        data = parse_output(result.stdout)
 
-        assert data.get('success') is True, 'Should succeed'
-        identifier = data.get('identifier', '')
+        assert result['success'] is True, 'Should succeed'
+        identifier = result.get('identifier', '')
         assert re.search(r'\d{4}-\d{2}-\d{2}', identifier), 'Identifier should have date prefix'
 
 
 # =============================================================================
-# Validate Subcommand Tests
+# Validate Subcommand Tests (Tier 2)
 # =============================================================================
 
 
@@ -270,11 +282,10 @@ def test_validate_valid_memory():
   }
 }""")
 
-        result = run_memory_script('validate', '--file', str(memory_dir / 'valid-test.json'))
-        data = parse_output(result.stdout)
+        result = cmd_validate(Namespace(file=str(memory_dir / 'valid-test.json')))
 
-        assert data.get('success') is True, 'Should succeed'
-        assert data.get('valid') is True, 'Valid memory file should be valid'
+        assert result['success'] is True, 'Should succeed'
+        assert result['valid'] is True, 'Valid memory file should be valid'
 
 
 def test_validate_missing_meta():
@@ -286,11 +297,10 @@ def test_validate_missing_meta():
   }
 }""")
 
-        result = run_memory_script('validate', '--file', str(temp_dir / 'invalid-memory.json'))
-        data = parse_output(result.stdout)
+        result = cmd_validate(Namespace(file=str(temp_dir / 'invalid-memory.json')))
 
-        assert data.get('success') is True, 'Should succeed (validation ran)'
-        assert data.get('valid') is False, 'Missing meta should be invalid'
+        assert result['success'] is True, 'Should succeed (validation ran)'
+        assert result['valid'] is False, 'Missing meta should be invalid'
 
 
 def test_validate_missing_content():
@@ -304,11 +314,10 @@ def test_validate_missing_content():
   }
 }""")
 
-        result = run_memory_script('validate', '--file', str(temp_dir / 'missing-content.json'))
-        data = parse_output(result.stdout)
+        result = cmd_validate(Namespace(file=str(temp_dir / 'missing-content.json')))
 
-        assert data.get('success') is True, 'Should succeed (validation ran)'
-        assert data.get('valid') is False, 'Missing content should be invalid'
+        assert result['success'] is True, 'Should succeed (validation ran)'
+        assert result['valid'] is False, 'Missing content should be invalid'
 
 
 def test_validate_invalid_category():
@@ -323,11 +332,10 @@ def test_validate_invalid_category():
   "content": {}
 }""")
 
-        result = run_memory_script('validate', '--file', str(temp_dir / 'invalid-category.json'))
-        data = parse_output(result.stdout)
+        result = cmd_validate(Namespace(file=str(temp_dir / 'invalid-category.json')))
 
-        assert data.get('success') is True, 'Should succeed (validation ran)'
-        assert data.get('valid') is False, 'Invalid category should be invalid'
+        assert result['success'] is True, 'Should succeed (validation ran)'
+        assert result['valid'] is False, 'Invalid category should be invalid'
 
 
 def test_validate_invalid_json():
@@ -338,11 +346,10 @@ def test_validate_invalid_json():
   missing-quotes: "value"
 }""")
 
-        result = run_memory_script('validate', '--file', str(temp_dir / 'invalid-json.json'))
-        data = parse_output(result.stdout)
+        result = cmd_validate(Namespace(file=str(temp_dir / 'invalid-json.json')))
 
-        assert data.get('success') is True, 'Should succeed (validation ran)'
-        assert data.get('valid') is False, 'Invalid JSON should be invalid'
+        assert result['success'] is True, 'Should succeed (validation ran)'
+        assert result['valid'] is False, 'Invalid JSON should be invalid'
 
 
 def test_validate_checks_array():
@@ -359,22 +366,19 @@ def test_validate_checks_array():
   "content": {}
 }""")
 
-        result = run_memory_script('validate', '--file', str(memory_dir / 'checks-test.json'))
-        data = parse_output(result.stdout)
+        result = cmd_validate(Namespace(file=str(memory_dir / 'checks-test.json')))
 
-        assert data.get('success') is True, 'Should succeed'
-        checks = data.get('checks', [])
+        assert result['success'] is True, 'Should succeed'
+        checks = result.get('checks', [])
         assert len(checks) > 0, 'Should include checks array with items'
 
 
 def test_validate_file_not_found():
     """Test validate file not found returns error."""
     with memory_test_context() as temp_dir:
-        result = run_memory_script('validate', '--file', str(temp_dir / 'nonexistent.json'))
-        output = result.stdout if result.stdout.strip() else result.stderr
-        data = parse_output(output)
+        result = cmd_validate(Namespace(file=str(temp_dir / 'nonexistent.json')))
 
-        assert data.get('status') == 'error', 'Should fail for non-existent file'
+        assert result['status'] == 'error', 'Should fail for non-existent file'
 
 
 def test_validate_format_is_memory():
@@ -391,10 +395,50 @@ def test_validate_format_is_memory():
   "content": {}
 }""")
 
-        result = run_memory_script('validate', '--file', str(memory_dir / 'format-test.json'))
-        data = parse_output(result.stdout)
+        result = cmd_validate(Namespace(file=str(memory_dir / 'format-test.json')))
 
-        assert data.get('format') == 'memory', "Format should be 'memory'"
+        assert result['format'] == 'memory', "Format should be 'memory'"
+
+
+# =============================================================================
+# Tier 3: CLI Plumbing Tests (subprocess)
+# =============================================================================
+
+
+def test_cli_invalid_category():
+    """Test invalid category returns argparse error via CLI."""
+    with tempfile.TemporaryDirectory() as td:
+        old_val = os.environ.get('PLAN_BASE_DIR')
+        os.environ['PLAN_BASE_DIR'] = str(Path(td) / '.plan')
+        try:
+            result = run_script(SCRIPT_PATH, 'save', '--category', 'invalid', '--identifier', 'test', '--content', '{}')
+            combined = result.stdout.lower() + result.stderr.lower()
+            assert 'invalid choice' in combined, 'Should show invalid choice error'
+        finally:
+            if old_val is None:
+                os.environ.pop('PLAN_BASE_DIR', None)
+            else:
+                os.environ['PLAN_BASE_DIR'] = old_val
+
+
+def test_cli_save_roundtrip():
+    """Test save + load roundtrip via CLI to verify TOON output plumbing."""
+    with tempfile.TemporaryDirectory() as td:
+        old_val = os.environ.get('PLAN_BASE_DIR')
+        os.environ['PLAN_BASE_DIR'] = str(Path(td) / '.plan')
+        try:
+            result = run_script(
+                SCRIPT_PATH,
+                'save', '--category', 'context', '--identifier', 'cli-test', '--content', '{"cli": true}',
+            )
+            data = parse_output(result.stdout)
+            assert data.get('success') is True, 'CLI save should succeed'
+            assert result.returncode == 0, 'Exit code should be 0'
+        finally:
+            if old_val is None:
+                os.environ.pop('PLAN_BASE_DIR', None)
+            else:
+                os.environ['PLAN_BASE_DIR'] = old_val
 
 
 # =============================================================================

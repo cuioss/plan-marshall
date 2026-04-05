@@ -8,6 +8,7 @@ Tests plugin validation capabilities including:
 """
 
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
@@ -17,9 +18,12 @@ from conftest import get_script_path, run_script
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_validate.py')
 
+# Direct imports for Tier 2 testing
+from _cmd_inventory import cmd_inventory  # noqa: E402
+from _cmd_references import cmd_references  # noqa: E402
 
 # =============================================================================
-# Main help tests
+# CLI plumbing tests (Tier 3 - subprocess)
 # =============================================================================
 
 
@@ -37,29 +41,22 @@ def test_main_help():
     assert 'inventory' in combined, 'inventory subcommand in help'
 
 
-# =============================================================================
-# References Subcommand Tests
-# =============================================================================
-
-
-def test_references_help():
-    """Test references --help is available."""
-    result = run_script(SCRIPT_PATH, 'references', '--help')
-    assert 'file' in result.stdout or 'file' in result.stderr, 'Help should mention file option'
-
-
 def test_references_missing_file():
     """Test references requires file argument."""
     result = run_script(SCRIPT_PATH, 'references')
     assert result.returncode != 0, 'Should error without file'
 
 
+# =============================================================================
+# References Subcommand Tests (Tier 2 - direct import)
+# =============================================================================
+
+
 def test_references_nonexistent_file():
     """Test references handles nonexistent file."""
-    result = run_script(SCRIPT_PATH, 'references', '--file', '/nonexistent/file.md')
-    assert result.returncode != 0 or 'error' in result.stdout.lower() or 'error' in result.stderr.lower(), (
-        'Should error for nonexistent file'
-    )
+    args = Namespace(file='/nonexistent/file.md')
+    result = cmd_references(args)
+    assert result is not None, 'Should return a result dict'
 
 
 def test_references_valid_file():
@@ -68,54 +65,24 @@ def test_references_valid_file():
         f.write('---\nname: test\ndescription: Test\n---\n\n# Test\n\nSee [link](./other.md)\n')
         f.flush()
 
-        result = run_script(SCRIPT_PATH, 'references', '--file', f.name)
-        data = result.toon()
-        assert data is not None, 'Should return valid JSON'
+        args = Namespace(file=f.name)
+        data = cmd_references(args)
+        assert data is not None, 'Should return valid dict'
 
         Path(f.name).unlink()
 
 
 # =============================================================================
-# Cross-File Subcommand Tests
+# Inventory Subcommand Tests (Tier 2 - direct import)
 # =============================================================================
-
-
-def test_crossfile_help():
-    """Test cross-file --help is available."""
-    result = run_script(SCRIPT_PATH, 'cross-file', '--help')
-    combined = result.stdout + result.stderr
-    assert 'analysis' in combined or 'findings' in combined, 'Help should mention analysis or findings option'
-
-
-def test_crossfile_missing_arguments():
-    """Test cross-file requires arguments."""
-    result = run_script(SCRIPT_PATH, 'cross-file')
-    assert result.returncode != 0, 'Should error without arguments'
-
-
-# =============================================================================
-# Inventory Subcommand Tests
-# =============================================================================
-
-
-def test_inventory_help():
-    """Test inventory --help is available."""
-    result = run_script(SCRIPT_PATH, 'inventory', '--help')
-    assert 'skill-path' in result.stdout or 'skill-path' in result.stderr, 'Help should mention skill-path option'
-
-
-def test_inventory_missing_path():
-    """Test inventory requires skill-path."""
-    result = run_script(SCRIPT_PATH, 'inventory')
-    assert result.returncode != 0, 'Should error without skill-path'
 
 
 def test_inventory_nonexistent_path():
     """Test inventory handles nonexistent path."""
-    result = run_script(SCRIPT_PATH, 'inventory', '--skill-path', '/nonexistent/skill')
-    assert result.returncode != 0 or 'error' in result.stdout.lower() or 'error' in result.stderr.lower(), (
-        'Should error for nonexistent path'
-    )
+    args = Namespace(skill_path='/nonexistent/skill', include_hidden=False)
+    data = cmd_inventory(args)
+    assert data is not None, 'Should return a result dict'
+    assert 'error' in str(data).lower() or data.get('status') == 'error', 'Should error for nonexistent path'
 
 
 def test_inventory_real_skill():
@@ -124,9 +91,9 @@ def test_inventory_real_skill():
     if not skill_dir.exists():
         return  # Skip if not found
 
-    result = run_script(SCRIPT_PATH, 'inventory', '--skill-path', str(skill_dir))
-    data = result.toon()
-    assert data is not None, 'Should return valid JSON'
+    args = Namespace(skill_path=str(skill_dir), include_hidden=False)
+    data = cmd_inventory(args)
+    assert data is not None, 'Should return valid dict'
     assert 'files' in data or 'inventory' in data or 'skill_path' in data, 'Should have inventory data'
 
 

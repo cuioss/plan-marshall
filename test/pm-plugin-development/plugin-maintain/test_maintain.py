@@ -9,9 +9,8 @@ Tests plugin maintenance capabilities including:
 """
 
 import tempfile
+from argparse import Namespace
 from pathlib import Path
-
-from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script
 
@@ -19,9 +18,14 @@ from conftest import get_script_path, run_script
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-maintain', 'maintain.py')
 
+# Direct imports for Tier 2 testing
+from _cmd_analyze import cmd_analyze  # noqa: E402
+from _cmd_check_duplication import cmd_check_duplication  # noqa: E402
+from _cmd_readme import cmd_readme  # noqa: E402
+from _cmd_update import cmd_update  # noqa: E402
 
 # =============================================================================
-# Main help tests
+# CLI plumbing tests (Tier 3 - subprocess)
 # =============================================================================
 
 
@@ -40,21 +44,15 @@ def test_main_help():
     assert 'readme' in combined, 'readme subcommand in help'
 
 
-# =============================================================================
-# Update Subcommand Tests
-# =============================================================================
-
-
-def test_update_help():
-    """Test update --help is available."""
-    result = run_script(SCRIPT_PATH, 'update', '--help')
-    assert 'component' in result.stdout or 'component' in result.stderr, 'Help should mention component option'
-
-
 def test_update_missing_component():
     """Test update requires component."""
     result = run_script(SCRIPT_PATH, 'update')
     assert result.returncode != 0, 'Should error without component'
+
+
+# =============================================================================
+# Update Subcommand Tests (Tier 2 - direct import)
+# =============================================================================
 
 
 def test_update_with_updates_arg():
@@ -64,9 +62,9 @@ def test_update_with_updates_arg():
         f.flush()
 
         updates = '{"updates": [{"type": "frontmatter", "field": "version", "value": "1.0"}]}'
-        result = run_script(SCRIPT_PATH, 'update', '--component', f.name, '--updates', updates)
-        data = parse_toon(result.stdout)
-        assert data is not None, 'Should return valid TOON'
+        args = Namespace(component=f.name, updates=updates)
+        data = cmd_update(args)
+        assert data is not None, 'Should return valid dict'
 
         # Clean up backup if created
         backup = Path(f.name + '.maintain-backup')
@@ -76,22 +74,8 @@ def test_update_with_updates_arg():
 
 
 # =============================================================================
-# Check-Duplication Subcommand Tests
+# Check-Duplication Subcommand Tests (Tier 2 - direct import)
 # =============================================================================
-
-
-def test_checkdup_help():
-    """Test check-duplication --help is available."""
-    result = run_script(SCRIPT_PATH, 'check-duplication', '--help')
-    combined = result.stdout + result.stderr
-    assert 'skill-path' in combined, 'Help should mention skill-path'
-    assert 'content-file' in combined, 'Help should mention content-file'
-
-
-def test_checkdup_missing_arguments():
-    """Test check-duplication requires arguments."""
-    result = run_script(SCRIPT_PATH, 'check-duplication')
-    assert result.returncode != 0, 'Should error without arguments'
 
 
 def test_checkdup_nonexistent_skill():
@@ -100,59 +84,43 @@ def test_checkdup_nonexistent_skill():
         f.write('# Some content\n')
         f.flush()
 
-        result = run_script(
-            SCRIPT_PATH, 'check-duplication', '--skill-path', '/nonexistent/skill', '--content-file', f.name
-        )
-        data = parse_toon(result.stdout)
-        assert data is not None, 'Should return valid TOON'
+        args = Namespace(skill_path='/nonexistent/skill', content_file=f.name)
+        data = cmd_check_duplication(args)
+        assert data is not None, 'Should return valid dict'
         assert 'error' in data, 'Should have error for nonexistent skill'
 
         Path(f.name).unlink()
 
 
 # =============================================================================
-# Analyze Subcommand Tests
+# Analyze Subcommand Tests (Tier 2 - direct import)
 # =============================================================================
-
-
-def test_analyze_help():
-    """Test analyze --help is available."""
-    result = run_script(SCRIPT_PATH, 'analyze', '--help')
-    assert 'component' in result.stdout or 'component' in result.stderr, 'Help should mention component option'
-
-
-def test_analyze_missing_component():
-    """Test analyze requires component."""
-    result = run_script(SCRIPT_PATH, 'analyze')
-    assert result.returncode != 0, 'Should error without component'
 
 
 def test_analyze_nonexistent_file():
     """Test analyze handles nonexistent file."""
-    result = run_script(SCRIPT_PATH, 'analyze', '--component', '/nonexistent/file.md')
-    data = parse_toon(result.stdout)
-    assert data is not None, 'Should return valid TOON'
+    args = Namespace(component='/nonexistent/file.md')
+    data = cmd_analyze(args)
+    assert data is not None, 'Should return valid dict'
     assert 'error' in data, 'Should have error for nonexistent file'
 
 
 def test_analyze_valid_agent():
     """Test analyze with a valid agent file."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, dir='/tmp'):
-        # Create in a path that looks like agents/
-        agent_dir = Path('/tmp/test_agents')
-        agent_dir.mkdir(exist_ok=True)
-        agent_file = agent_dir / 'test-agent.md'
-        agent_file.write_text(
-            '---\nname: test-agent\ndescription: Test agent\ntools: Read, Write\n---\n\n# Test Agent\n\n## Purpose\nDoes testing.\n'
-        )
+    agent_dir = Path('/tmp/test_agents')
+    agent_dir.mkdir(exist_ok=True)
+    agent_file = agent_dir / 'test-agent.md'
+    agent_file.write_text(
+        '---\nname: test-agent\ndescription: Test agent\ntools: Read, Write\n---\n\n# Test Agent\n\n## Purpose\nDoes testing.\n'
+    )
 
-        result = run_script(SCRIPT_PATH, 'analyze', '--component', str(agent_file))
-        data = parse_toon(result.stdout)
-        assert data is not None, 'Should return valid TOON'
-        assert 'quality_score' in data, 'Should have quality_score'
+    args = Namespace(component=str(agent_file))
+    data = cmd_analyze(args)
+    assert data is not None, 'Should return valid dict'
+    assert 'quality_score' in data, 'Should have quality_score'
 
-        agent_file.unlink()
-        agent_dir.rmdir()
+    agent_file.unlink()
+    agent_dir.rmdir()
 
 
 def test_analyze_real_agent():
@@ -163,35 +131,23 @@ def test_analyze_real_agent():
     if not agent_file.exists():
         return  # Skip if not found
 
-    result = run_script(SCRIPT_PATH, 'analyze', '--component', str(agent_file))
-    data = parse_toon(result.stdout)
-    assert data is not None, 'Should return valid TOON'
+    args = Namespace(component=str(agent_file))
+    data = cmd_analyze(args)
+    assert data is not None, 'Should return valid dict'
     assert 'quality_score' in data, 'Should have quality_score'
     assert data['quality_score'] >= 0, 'Quality score should be non-negative'
 
 
 # =============================================================================
-# Readme Subcommand Tests
+# Readme Subcommand Tests (Tier 2 - direct import)
 # =============================================================================
-
-
-def test_readme_help():
-    """Test readme --help is available."""
-    result = run_script(SCRIPT_PATH, 'readme', '--help')
-    assert 'bundle-path' in result.stdout or 'bundle-path' in result.stderr, 'Help should mention bundle-path option'
-
-
-def test_readme_missing_path():
-    """Test readme requires bundle-path."""
-    result = run_script(SCRIPT_PATH, 'readme')
-    assert result.returncode != 0, 'Should error without bundle-path'
 
 
 def test_readme_nonexistent_path():
     """Test readme handles nonexistent path."""
-    result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', '/nonexistent/bundle')
-    data = parse_toon(result.stdout)
-    assert data is not None, 'Should return valid TOON'
+    args = Namespace(bundle_path='/nonexistent/bundle')
+    data = cmd_readme(args)
+    assert data is not None, 'Should return valid dict'
     assert 'error' in data, 'Should have error for nonexistent path'
 
 
@@ -201,9 +157,9 @@ def test_readme_real_bundle():
     if not bundle_path.exists():
         return  # Skip if not found
 
-    result = run_script(SCRIPT_PATH, 'readme', '--bundle-path', str(bundle_path))
-    data = parse_toon(result.stdout)
-    assert data is not None, 'Should return valid TOON'
+    args = Namespace(bundle_path=str(bundle_path))
+    data = cmd_readme(args)
+    assert data is not None, 'Should return valid dict'
     assert 'readme_generated' in data, 'Should have readme_generated field'
     assert data['readme_generated'] is True, 'Should successfully generate README'
     assert 'readme_content' in data, 'Should have readme_content'

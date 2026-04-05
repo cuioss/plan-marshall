@@ -5,6 +5,7 @@ Tests the cmd_extension.py script that validates extension.py files.
 """
 
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
@@ -12,6 +13,9 @@ from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_validate.py')
+
+# Direct import for Tier 2 testing
+from _cmd_extension import cmd_extension  # noqa: E402
 
 
 def create_valid_extension(ext_path: Path) -> None:
@@ -78,7 +82,21 @@ def broken(
 
 
 # =============================================================================
-# Single Extension Validation Tests
+# CLI plumbing tests (Tier 3 - subprocess)
+# =============================================================================
+
+
+def test_extension_help():
+    """Test extension subcommand shows help."""
+    result = run_script(SCRIPT_PATH, 'extension', '--help')
+    assert result.success
+    assert '--extension' in result.stdout
+    assert '--bundle' in result.stdout
+    assert '--marketplace' in result.stdout
+
+
+# =============================================================================
+# Single Extension Validation Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -89,13 +107,12 @@ def test_validate_valid_extension():
         ext_path = temp_dir / 'extension.py'
         create_valid_extension(ext_path)
 
-        result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
-        data = result.toon()
+        args = Namespace(extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
+        data = cmd_extension(args)
 
         assert data.get('valid') is True, f'Should be valid: {data}'
         assert len(data.get('issues', [])) == 0
         methods = data.get('methods', {})
-        # Only get_skill_domains is required
         assert 'get_skill_domains' in methods
 
 
@@ -106,12 +123,11 @@ def test_validate_extension_missing_functions():
         ext_path = temp_dir / 'extension.py'
         create_invalid_extension_missing_func(ext_path)
 
-        result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
-        data = result.toon()
+        args = Namespace(extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
+        data = cmd_extension(args)
 
         assert data.get('valid') is False
         issues = data.get('issues', [])
-        # Only required methods are checked - get_skill_domains is required, provides_build_systems is optional
         missing_methods = [i['method'] for i in issues if i['type'] == 'missing_method']
         assert 'get_skill_domains' in missing_methods, f'Should report missing get_skill_domains: {missing_methods}'
 
@@ -123,8 +139,8 @@ def test_validate_extension_syntax_error():
         ext_path = temp_dir / 'extension.py'
         create_invalid_extension_syntax_error(ext_path)
 
-        result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
-        data = result.toon()
+        args = Namespace(extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
+        data = cmd_extension(args)
 
         assert data.get('valid') is False
         issues = data.get('issues', [])
@@ -137,8 +153,8 @@ def test_validate_extension_not_found():
         temp_dir = Path(td)
         ext_path = temp_dir / 'nonexistent.py'
 
-        result = run_script(SCRIPT_PATH, 'extension', '--extension', str(ext_path))
-        data = result.toon()
+        args = Namespace(extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
+        data = cmd_extension(args)
 
         assert data.get('valid') is False
         issues = data.get('issues', [])
@@ -146,7 +162,7 @@ def test_validate_extension_not_found():
 
 
 # =============================================================================
-# Bundle Validation Tests
+# Bundle Validation Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -154,13 +170,12 @@ def test_validate_bundle_with_extension():
     """Test validating a bundle that has extension.py."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
-        # Create bundle structure
         bundle_path = temp_dir / 'test-bundle'
         ext_path = bundle_path / 'skills' / 'plan-marshall-plugin' / 'extension.py'
         create_valid_extension(ext_path)
 
-        result = run_script(SCRIPT_PATH, 'extension', '--bundle', str(bundle_path))
-        data = result.toon()
+        args = Namespace(extension_path=None, bundle_path=str(bundle_path), marketplace_path=None)
+        data = cmd_extension(args)
 
         assert 'extension' in data
         assert data['extension'].get('valid') is True
@@ -171,18 +186,17 @@ def test_validate_bundle_without_extension():
     """Test validating a bundle without extension.py."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
-        # Create bundle structure without extension
         bundle_path = temp_dir / 'test-bundle'
         bundle_path.mkdir(parents=True)
 
-        result = run_script(SCRIPT_PATH, 'extension', '--bundle', str(bundle_path))
-        data = result.toon()
+        args = Namespace(extension_path=None, bundle_path=str(bundle_path), marketplace_path=None)
+        data = cmd_extension(args)
 
         assert data.get('has_extension') is False
 
 
 # =============================================================================
-# Marketplace Scan Tests
+# Marketplace Scan Tests (Tier 2 - direct import)
 # =============================================================================
 
 
@@ -190,7 +204,6 @@ def test_scan_marketplace():
     """Test scanning marketplace for all extensions."""
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
-        # Create marketplace structure with multiple bundles
         marketplace = temp_dir / 'marketplace'
         bundles = marketplace / 'bundles'
 
@@ -205,8 +218,8 @@ def test_scan_marketplace():
         ext3_path = bundles / 'bundle3' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
         create_invalid_extension_missing_func(ext3_path)
 
-        result = run_script(SCRIPT_PATH, 'extension', '--marketplace', str(marketplace))
-        data = result.toon()
+        args = Namespace(extension_path=None, bundle_path=None, marketplace_path=str(marketplace))
+        data = cmd_extension(args)
 
         assert 'summary' in data
         assert data['summary']['total_bundles'] == 3
@@ -220,26 +233,16 @@ def test_scan_marketplace_real():
     marketplace_path = Path(__file__).parent.parent.parent.parent / 'marketplace'
 
     if not marketplace_path.exists():
-        # Skip if not running in correct directory
         return
 
-    result = run_script(SCRIPT_PATH, 'extension', '--marketplace', str(marketplace_path))
-    data = result.toon()
+    args = Namespace(extension_path=None, bundle_path=None, marketplace_path=str(marketplace_path))
+    data = cmd_extension(args)
 
     assert 'summary' in data
-    assert data['summary']['with_extension'] >= 6  # 6 bundles have extension.py
+    assert data['summary']['with_extension'] >= 6
     assert data['summary']['invalid'] == 0, (
         f'All should be valid, issues: {[e for e in data.get("extensions", []) if not e.get("valid")]}'
     )
-
-
-def test_extension_help():
-    """Test extension subcommand shows help."""
-    result = run_script(SCRIPT_PATH, 'extension', '--help')
-    assert result.success
-    assert '--extension' in result.stdout
-    assert '--bundle' in result.stdout
-    assert '--marketplace' in result.stdout
 
 
 # =============================================================================
