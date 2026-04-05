@@ -61,8 +61,10 @@ def get_marketplace_bundles_path() -> Path:
 def get_extension_api_scripts_path() -> Path:
     """Get path to extension scripts directory (where extension_base.py lives).
 
+    This helper assumes the script is located three levels deep within a skill
+    directory (e.g., skills/extension-api/scripts/) to resolve the shared path.
     Extension base classes live in script-shared/scripts/extension/ while this
-    discovery script lives in extension-api/scripts/. Resolve relative to __file__.
+    discovery script lives in extension-api/scripts/.
     """
     return Path(__file__).resolve().parent.parent.parent / 'script-shared' / 'scripts' / 'extension'
 
