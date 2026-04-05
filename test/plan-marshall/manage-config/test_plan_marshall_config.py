@@ -10,15 +10,10 @@ Detailed variant and corner case tests are in:
 Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
 
+import importlib.util
+import sys
 from argparse import Namespace
-
-# Tier 2 direct imports
-from _cmd_ci import cmd_ci
-from _cmd_ext_defaults import cmd_ext_defaults
-from _cmd_init import cmd_init
-from _cmd_skill_domains import cmd_skill_domains
-from _cmd_skill_resolution import cmd_resolve_domain_skills
-from _cmd_system_plan import cmd_plan, cmd_system
+from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from test_helpers import (
@@ -29,7 +24,36 @@ from test_helpers import (
     patch_config_paths,
 )
 
-from conftest import PlanContext, run_script
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_ci = _load_module('_cmd_ci', '_cmd_ci.py')
+_cmd_ext_defaults = _load_module('_cmd_ext_defaults', '_cmd_ext_defaults.py')
+_cmd_init_mod = _load_module('_cmd_init', '_cmd_init.py')
+_cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
+_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
+_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
+
+cmd_ci = _cmd_ci.cmd_ci
+cmd_ext_defaults = _cmd_ext_defaults.cmd_ext_defaults
+cmd_init = _cmd_init_mod.cmd_init
+cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
+cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
+cmd_plan = _cmd_system_plan.cmd_plan
+cmd_system = _cmd_system_plan.cmd_system
+
+from conftest import PlanContext, run_script  # noqa: E402
 
 # =============================================================================
 # Happy-Path Integration Tests (Tier 2 - direct import)

@@ -5,17 +5,38 @@ Note: These tests import internal modules directly for detailed testing.
 Public API tests should use npm.py CLI instead.
 """
 
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
 import tempfile
 from pathlib import Path
 
+# Cross-skill imports (PYTHONPATH set by conftest)
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
-from _npm_parse_errors import parse_log as parse_errors
-from _npm_parse_eslint import parse_log as parse_eslint
-from _npm_parse_jest import parse_log as parse_jest
-from _npm_parse_tap import parse_log as parse_tap
 
-# Modules under test (PYTHONPATH set by conftest)
-from _npm_parse_typescript import parse_log as parse_typescript
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-npm' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_npm_parse_errors_mod = _load_module('_npm_parse_errors', '_npm_parse_errors.py')
+_npm_parse_eslint_mod = _load_module('_npm_parse_eslint', '_npm_parse_eslint.py')
+_npm_parse_jest_mod = _load_module('_npm_parse_jest', '_npm_parse_jest.py')
+_npm_parse_tap_mod = _load_module('_npm_parse_tap', '_npm_parse_tap.py')
+_npm_parse_typescript_mod = _load_module('_npm_parse_typescript', '_npm_parse_typescript.py')
+
+parse_errors = _npm_parse_errors_mod.parse_log
+parse_eslint = _npm_parse_eslint_mod.parse_log
+parse_jest = _npm_parse_jest_mod.parse_log
+parse_tap = _npm_parse_tap_mod.parse_log
+parse_typescript = _npm_parse_typescript_mod.parse_log
 
 # Test data location (fixtures in test directory)
 TEST_DATA_DIR = Path(__file__).parent / 'fixtures' / 'log-test-data'

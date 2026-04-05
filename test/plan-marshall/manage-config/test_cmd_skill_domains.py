@@ -7,22 +7,40 @@ including nested structure variants and edge cases.
 Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
 
+import importlib.util
 import json
+import sys
 from argparse import Namespace
 from pathlib import Path
 
-# Tier 2 direct imports
-from _cmd_skill_domains import cmd_list_verify_steps, cmd_skill_domains
-from _cmd_skill_resolution import (
-    cmd_get_skills_by_profile,
-    cmd_list_finalize_steps,
-    cmd_resolve_domain_skills,
-    cmd_resolve_workflow_skill_extension,
-)
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json, patch_config_paths
 
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
+_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
+
+cmd_list_verify_steps = _cmd_skill_domains.cmd_list_verify_steps
+cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
+cmd_get_skills_by_profile = _cmd_skill_resolution.cmd_get_skills_by_profile
+cmd_list_finalize_steps = _cmd_skill_resolution.cmd_list_finalize_steps
+cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
+cmd_resolve_workflow_skill_extension = _cmd_skill_resolution.cmd_resolve_workflow_skill_extension
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PlanContext, run_script
+from conftest import PlanContext, run_script  # noqa: E402
 
 # =============================================================================
 # skill-domains Basic Tests (Flat Structure) - Tier 2

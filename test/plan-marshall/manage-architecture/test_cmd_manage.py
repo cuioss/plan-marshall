@@ -1,24 +1,36 @@
 #!/usr/bin/env python3
 """Tests for _cmd_manage.py module."""
 
+import importlib.util
 import json
 import sys
 import tempfile
 from pathlib import Path
 
-from _architecture_core import (
-    DataNotFoundError,
-    ModuleNotFoundInProjectError,
-    save_derived_data,
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
 )
 
-# Import modules under test (PYTHONPATH set by conftest)
-from _cmd_manage import (
-    api_get_derived,
-    api_get_derived_module,
-    api_init,
-    list_modules,
-)
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
+_cmd_manage = _load_module('_cmd_manage', '_cmd_manage.py')
+
+DataNotFoundError = _architecture_core.DataNotFoundError
+ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
+save_derived_data = _architecture_core.save_derived_data
+api_get_derived = _cmd_manage.api_get_derived
+api_get_derived_module = _cmd_manage.api_get_derived_module
+api_init = _cmd_manage.api_init
+list_modules = _cmd_manage.list_modules
 
 # =============================================================================
 # Helper Functions

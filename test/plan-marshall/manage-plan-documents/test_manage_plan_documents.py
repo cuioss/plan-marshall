@@ -4,6 +4,7 @@
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
+import importlib.util
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -15,12 +16,32 @@ from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-plan-documents.py')
 
-# Tier 2 direct imports
-from _cmd_request import cmd_clarify, cmd_create, cmd_exists, cmd_read, cmd_remove  # noqa: E402
-from _cmd_types import cmd_list_types  # noqa: E402
-
 # Import toon_parser for subprocess tests
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-plan-documents' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_request = _load_module('_cmd_request', '_cmd_request.py')
+_cmd_types = _load_module('_cmd_types', '_cmd_types.py')
+
+cmd_clarify = _cmd_request.cmd_clarify
+cmd_create = _cmd_request.cmd_create
+cmd_exists = _cmd_request.cmd_exists
+cmd_read = _cmd_request.cmd_read
+cmd_remove = _cmd_request.cmd_remove
+cmd_list_types = _cmd_types.cmd_list_types
 
 # =============================================================================
 # Test: List Types

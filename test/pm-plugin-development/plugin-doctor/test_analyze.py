@@ -20,10 +20,29 @@ SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_analyz
 SKILL_STRUCTURE_FIXTURES = Path(__file__).parent / 'fixtures' / 'skill-structure'
 CROSS_FILE_FIXTURES = Path(__file__).parent / 'fixtures' / 'cross-file-analysis'
 
-# Direct imports for Tier 2 testing
-from _analyze_crossfile import cmd_cross_file as cmd_crossfile_analyze  # noqa: E402
-from _analyze_markdown import cmd_markdown  # noqa: E402
-from _analyze_structure import cmd_structure  # noqa: E402
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_analyze_crossfile_mod = _load_module('_analyze_crossfile', '_analyze_crossfile.py')
+_analyze_markdown_mod = _load_module('_analyze_markdown', '_analyze_markdown.py')
+_analyze_structure_mod = _load_module('_analyze_structure', '_analyze_structure.py')
+
+cmd_crossfile_analyze = _analyze_crossfile_mod.cmd_cross_file
+cmd_markdown = _analyze_markdown_mod.cmd_markdown
+cmd_structure = _analyze_structure_mod.cmd_structure
 
 # =============================================================================
 # CLI plumbing tests (Tier 3 - subprocess)

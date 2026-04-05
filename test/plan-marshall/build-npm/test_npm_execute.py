@@ -5,12 +5,33 @@ Tests the npm execution config, npm/npx detection, and factory-generated functio
 """
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
 sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=120), timeout_set=MagicMock()))
 
-from _npm_execute import _CONFIG, NPX_COMMANDS, detect_command_type  # noqa: E402
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-npm' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_npm_execute_mod = _load_module('_npm_execute', '_npm_execute.py')
+
+_CONFIG = _npm_execute_mod._CONFIG
+NPX_COMMANDS = _npm_execute_mod.NPX_COMMANDS
+detect_command_type = _npm_execute_mod.detect_command_type
 
 # =============================================================================
 # Config Tests

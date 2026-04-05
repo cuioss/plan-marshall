@@ -5,14 +5,32 @@ Tests project discovery from settings.gradle files and build.gradle scanning.
 """
 
 
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+from pathlib import Path
+
 import pytest
-from _gradle_cmd_find_project import (
-    find_build_files,
-    find_settings_file,
-    get_root_project_name,
-    parse_included_projects,
-    project_path_to_gradle_notation,
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-gradle' / 'scripts'
 )
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_gradle_cmd_find_project_mod = _load_module('_gradle_cmd_find_project', '_gradle_cmd_find_project.py')
+
+find_build_files = _gradle_cmd_find_project_mod.find_build_files
+find_settings_file = _gradle_cmd_find_project_mod.find_settings_file
+get_root_project_name = _gradle_cmd_find_project_mod.get_root_project_name
+parse_included_projects = _gradle_cmd_find_project_mod.parse_included_projects
+project_path_to_gradle_notation = _gradle_cmd_find_project_mod.project_path_to_gradle_notation
 
 
 @pytest.fixture

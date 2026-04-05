@@ -20,11 +20,31 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_fix.py')
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'fix'
 
-# Direct imports for Tier 2 testing
-from _cmd_apply import cmd_apply  # noqa: E402
-from _cmd_categorize import cmd_categorize  # noqa: E402
-from _cmd_extract import cmd_extract  # noqa: E402
-from _cmd_verify import cmd_verify  # noqa: E402
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_cmd_apply_mod = _load_module('_cmd_apply', '_cmd_apply.py')
+_cmd_categorize_mod = _load_module('_cmd_categorize', '_cmd_categorize.py')
+_cmd_extract_mod = _load_module('_cmd_extract', '_cmd_extract.py')
+_cmd_verify_mod = _load_module('_cmd_verify', '_cmd_verify.py')
+
+cmd_apply = _cmd_apply_mod.cmd_apply
+cmd_categorize = _cmd_categorize_mod.cmd_categorize
+cmd_extract = _cmd_extract_mod.cmd_extract
+cmd_verify = _cmd_verify_mod.cmd_verify
 
 # =============================================================================
 # CLI plumbing tests (Tier 3 - subprocess)

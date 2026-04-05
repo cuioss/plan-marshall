@@ -1,21 +1,34 @@
 #!/usr/bin/env python3
 """Tests for _cmd_client.py module."""
 
+import importlib.util
 import sys
 import tempfile
 from argparse import Namespace
+from pathlib import Path
 
-from _architecture_core import (
-    save_derived_data,
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
 )
 
-# Import modules under test (PYTHONPATH set by conftest)
-from _cmd_client import (
-    cmd_modules,
-    get_module_graph,
-    get_modules_list,
-    get_modules_with_command,
-)
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
+_cmd_client = _load_module('_cmd_client', '_cmd_client.py')
+
+save_derived_data = _architecture_core.save_derived_data
+cmd_modules = _cmd_client.cmd_modules
+get_module_graph = _cmd_client.get_module_graph
+get_modules_list = _cmd_client.get_modules_list
+get_modules_with_command = _cmd_client.get_modules_with_command
 
 # =============================================================================
 # Helper Functions

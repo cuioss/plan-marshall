@@ -6,7 +6,6 @@ Tests the Python build operations including:
 - execute_direct() - Foundation API (mocked subprocess)
 """
 
-import importlib.util
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -26,6 +25,9 @@ BUILD_SCRIPT = (
     / 'scripts'
     / 'python_build.py'
 )
+
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
 
 
 def _load_python_build():
@@ -63,9 +65,24 @@ def _load_python_build():
 
 python_build = _load_python_build()
 
-# Direct imports for functions no longer re-exported through python_build
-from _python_cmd_parse import parse_log  # noqa: E402
-from _python_execute import execute_direct  # noqa: E402
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-python' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_python_cmd_parse_mod = _load_module('_python_cmd_parse', '_python_cmd_parse.py')
+_python_execute_mod = _load_module('_python_execute', '_python_execute.py')
+
+parse_log = _python_cmd_parse_mod.parse_log
+execute_direct = _python_execute_mod.execute_direct
 
 # =============================================================================
 # Test: Wrapper resolution (via _python_execute)

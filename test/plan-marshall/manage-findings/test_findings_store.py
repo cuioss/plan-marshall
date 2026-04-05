@@ -1,24 +1,38 @@
 #!/usr/bin/env python3
 """Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings."""
 
+import importlib.util
 import sys
 from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-# conftest sets up PYTHONPATH so we can import the store directly
-from _findings_core import (  # type: ignore[import-not-found]
-    add_finding,
-    add_qgate_finding,
-    clear_qgate_findings,
-    promote_finding,
-    query_findings,
-    query_qgate_findings,
-    resolve_finding,
-    resolve_qgate_finding,
+from conftest import PlanContext  # noqa: E402
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-findings' / 'scripts'
 )
 
-from conftest import PlanContext
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_findings_core = _load_module('_findings_core', '_findings_core.py')
+
+add_finding = _findings_core.add_finding
+add_qgate_finding = _findings_core.add_qgate_finding
+clear_qgate_findings = _findings_core.clear_qgate_findings
+promote_finding = _findings_core.promote_finding
+query_findings = _findings_core.query_findings
+query_qgate_findings = _findings_core.query_qgate_findings
+resolve_finding = _findings_core.resolve_finding
+resolve_qgate_finding = _findings_core.resolve_qgate_finding
 
 # =============================================================================
 # Test: add_finding

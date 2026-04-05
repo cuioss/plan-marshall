@@ -1,30 +1,43 @@
 #!/usr/bin/env python3
 """Tests for extension_base.py module (public API)."""
 
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util
 import sys
+from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-# Import constants from canonical source
-from _extension_constants import (
-    ALL_CANONICAL_COMMANDS,
-    CANONICAL_COMMANDS,
-    CMD_BENCHMARK,
-    CMD_CLEAN,
-    CMD_CLEAN_INSTALL,
-    CMD_COMPILE,
-    CMD_COVERAGE,
-    CMD_INSTALL,
-    CMD_INTEGRATION_TESTS,
-    CMD_MODULE_TESTS,
-    CMD_PACKAGE,
-    CMD_QUALITY_GATE,
-    CMD_TEST_COMPILE,
-    CMD_VERIFY,
-    PROFILE_PATTERNS,
+from extension_base import ExtensionBase  # type: ignore[import-not-found]
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'extension'
 )
 
-# Import ExtensionBase from its own module
-from extension_base import ExtensionBase
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_extension_constants_mod = _load_module('_extension_constants', '_extension_constants.py')
+
+ALL_CANONICAL_COMMANDS = _extension_constants_mod.ALL_CANONICAL_COMMANDS
+CANONICAL_COMMANDS = _extension_constants_mod.CANONICAL_COMMANDS
+CMD_BENCHMARK = _extension_constants_mod.CMD_BENCHMARK
+CMD_CLEAN = _extension_constants_mod.CMD_CLEAN
+CMD_CLEAN_INSTALL = _extension_constants_mod.CMD_CLEAN_INSTALL
+CMD_COMPILE = _extension_constants_mod.CMD_COMPILE
+CMD_COVERAGE = _extension_constants_mod.CMD_COVERAGE
+CMD_INSTALL = _extension_constants_mod.CMD_INSTALL
+CMD_INTEGRATION_TESTS = _extension_constants_mod.CMD_INTEGRATION_TESTS
+CMD_MODULE_TESTS = _extension_constants_mod.CMD_MODULE_TESTS
+CMD_PACKAGE = _extension_constants_mod.CMD_PACKAGE
+CMD_QUALITY_GATE = _extension_constants_mod.CMD_QUALITY_GATE
+CMD_TEST_COMPILE = _extension_constants_mod.CMD_TEST_COMPILE
+CMD_VERIFY = _extension_constants_mod.CMD_VERIFY
+PROFILE_PATTERNS = _extension_constants_mod.PROFILE_PATTERNS
 
 # =============================================================================
 # Tests for CMD_* Constants

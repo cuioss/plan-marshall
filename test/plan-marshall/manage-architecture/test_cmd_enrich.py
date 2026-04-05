@@ -1,28 +1,41 @@
 #!/usr/bin/env python3
 """Tests for _cmd_enrich.py module."""
 
+import importlib.util
 import sys
 import tempfile
+from pathlib import Path
 
-from _architecture_core import (
-    DataNotFoundError,
-    ModuleNotFoundInProjectError,
-    load_llm_enriched,
-    save_derived_data,
-    save_llm_enriched,
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
 )
 
-# Import modules under test (PYTHONPATH set by conftest)
-from _cmd_enrich import (
-    enrich_best_practice,
-    enrich_dependencies,
-    enrich_insight,
-    enrich_module,
-    enrich_package,
-    enrich_project,
-    enrich_skills_by_profile,
-    enrich_tip,
-)
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
+_cmd_enrich = _load_module('_cmd_enrich', '_cmd_enrich.py')
+
+DataNotFoundError = _architecture_core.DataNotFoundError
+ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
+load_llm_enriched = _architecture_core.load_llm_enriched
+save_derived_data = _architecture_core.save_derived_data
+save_llm_enriched = _architecture_core.save_llm_enriched
+enrich_best_practice = _cmd_enrich.enrich_best_practice
+enrich_dependencies = _cmd_enrich.enrich_dependencies
+enrich_insight = _cmd_enrich.enrich_insight
+enrich_module = _cmd_enrich.enrich_module
+enrich_package = _cmd_enrich.enrich_package
+enrich_project = _cmd_enrich.enrich_project
+enrich_skills_by_profile = _cmd_enrich.enrich_skills_by_profile
+enrich_tip = _cmd_enrich.enrich_tip
 
 # =============================================================================
 # Helper Functions

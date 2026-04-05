@@ -1,19 +1,38 @@
 #!/usr/bin/env python3
 """Tests for build_format.py module."""
 
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
 import json
 import sys
+from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-# Import modules under test (PYTHONPATH set by conftest)
-from _build_format import (
-    CORE_FIELDS,
-    EXTRA_FIELDS,
-    STRUCTURED_FIELDS,
-    format_json,
-    format_toon,
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build'
 )
-from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_build_format_mod = _load_module('_build_format', '_build_format.py')
+_build_parse_mod = _load_module('_build_parse', '_build_parse.py')
+
+CORE_FIELDS = _build_format_mod.CORE_FIELDS
+EXTRA_FIELDS = _build_format_mod.EXTRA_FIELDS
+STRUCTURED_FIELDS = _build_format_mod.STRUCTURED_FIELDS
+format_json = _build_format_mod.format_json
+format_toon = _build_format_mod.format_toon
+
+SEVERITY_ERROR = _build_parse_mod.SEVERITY_ERROR
+SEVERITY_WARNING = _build_parse_mod.SEVERITY_WARNING
+Issue = _build_parse_mod.Issue
+UnitTestSummary = _build_parse_mod.UnitTestSummary
 
 # =============================================================================
 # Constants Tests

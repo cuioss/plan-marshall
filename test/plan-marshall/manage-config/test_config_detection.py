@@ -4,15 +4,32 @@
 Tests module detection including nested Maven modules and npm workspaces.
 """
 
+import importlib.util
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-# Import functions under test (PYTHONPATH set by conftest)
-from _config_detection import detect_maven_modules, detect_npm_workspaces
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+)
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_config_detection = _load_module('_config_detection', '_config_detection.py')
+
+detect_maven_modules = _config_detection.detect_maven_modules
+detect_npm_workspaces = _config_detection.detect_npm_workspaces
 
 
 class TempProjectContext:

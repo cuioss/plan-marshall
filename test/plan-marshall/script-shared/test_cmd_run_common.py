@@ -4,26 +4,29 @@ Tests the centralized cmd_run routing that replaces duplicated code
 across Maven, Gradle, npm, and Python build skills.
 """
 
-import sys
+# Tier 2 direct imports via importlib for uniform import style
+import importlib.util  # noqa: E402
 from pathlib import Path
 
-# Add script paths for imports
-_SCRIPT_DIRS = [
-    Path(__file__).resolve().parents[3]
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'build',
-]
-for d in _SCRIPT_DIRS:
-    if str(d) not in sys.path:
-        sys.path.insert(0, str(d))
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts' / 'build'
+)
 
-from _build_parse import Issue, UnitTestSummary  # noqa: E402
-from _build_shared import cmd_run_common  # noqa: E402
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_build_parse_mod = _load_module('_build_parse', '_build_parse.py')
+_build_shared_mod = _load_module('_build_shared', '_build_shared.py')
+
+Issue = _build_parse_mod.Issue
+UnitTestSummary = _build_parse_mod.UnitTestSummary
+cmd_run_common = _build_shared_mod.cmd_run_common
 
 # =============================================================================
 # Fixtures
