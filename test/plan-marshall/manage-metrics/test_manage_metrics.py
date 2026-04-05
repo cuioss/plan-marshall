@@ -31,6 +31,8 @@ def _ns_end_phase(
     plan_id: str,
     phase: str,
     total_tokens: int | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
     duration_ms: int | None = None,
     tool_uses: int | None = None,
 ) -> Namespace:
@@ -39,6 +41,8 @@ def _ns_end_phase(
         plan_id=plan_id,
         phase=phase,
         total_tokens=total_tokens,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
         duration_ms=duration_ms,
         tool_uses=tool_uses,
         command='end-phase',
@@ -147,6 +151,45 @@ def test_end_phase_without_start():
         assert 'duration_seconds' not in result
 
 
+def test_end_phase_with_input_output_tokens():
+    """end-phase stores input and output token data separately."""
+    with PlanContext(plan_id='metrics-end-io-01') as ctx:
+        cmd_start_phase(_ns_start_phase('metrics-end-io-01', '1-init'))
+        result = cmd_end_phase(
+            _ns_end_phase(
+                'metrics-end-io-01',
+                '1-init',
+                total_tokens=30000,
+                input_tokens=25000,
+                output_tokens=5000,
+            )
+        )
+        assert result['status'] == 'success'
+        assert result['total_tokens'] == 30000
+
+        metrics_file = ctx.plan_dir / 'work' / 'metrics.toon'
+        content = metrics_file.read_text()
+        assert 'input_tokens: 25000' in content
+        assert 'output_tokens: 5000' in content
+        assert 'total_tokens: 30000' in content
+
+
+def test_end_phase_input_output_without_total():
+    """end-phase accepts input/output tokens without total_tokens."""
+    with PlanContext(plan_id='metrics-end-io-02') as ctx:
+        cmd_start_phase(_ns_start_phase('metrics-end-io-02', '2-refine'))
+        result = cmd_end_phase(
+            _ns_end_phase('metrics-end-io-02', '2-refine', input_tokens=10000, output_tokens=2000)
+        )
+        assert result['status'] == 'success'
+        assert 'total_tokens' not in result
+
+        metrics_file = ctx.plan_dir / 'work' / 'metrics.toon'
+        content = metrics_file.read_text()
+        assert 'input_tokens: 10000' in content
+        assert 'output_tokens: 2000' in content
+
+
 def test_end_phase_no_optional_args():
     """end-phase works without optional token data."""
     with PlanContext(plan_id='metrics-end-04'):
@@ -182,11 +225,35 @@ def test_generate_creates_metrics_md():
         md_content = md_path.read_text()
         assert '# Metrics: metrics-gen-01' in md_content
         assert '## Phase Breakdown' in md_content
-        assert '| Phase | Duration | Tokens | Tool Uses |' in md_content
+        assert '| Phase | Duration | Tokens | Input | Output | Tool Uses |' in md_content
         assert '1-init' in md_content
         assert '2-refine' in md_content
         assert '25,000' in md_content
         assert '**Total**' in md_content
+
+
+def test_generate_shows_input_output_breakdown():
+    """generate includes input/output token columns when data is available."""
+    with PlanContext(plan_id='metrics-gen-io-01') as ctx:
+        cmd_start_phase(_ns_start_phase('metrics-gen-io-01', '1-init'))
+        cmd_end_phase(
+            _ns_end_phase(
+                'metrics-gen-io-01',
+                '1-init',
+                total_tokens=30000,
+                input_tokens=25000,
+                output_tokens=5000,
+            )
+        )
+        result = cmd_generate(_ns_generate('metrics-gen-io-01'))
+        assert result['status'] == 'success'
+        assert result['total_input_tokens'] == 25000
+        assert result['total_output_tokens'] == 5000
+
+        md_content = (ctx.plan_dir / 'metrics.md').read_text()
+        assert '| Phase | Duration | Tokens | Input | Output | Tool Uses |' in md_content
+        assert '25,000' in md_content
+        assert '5,000' in md_content
 
 
 def test_generate_no_data():

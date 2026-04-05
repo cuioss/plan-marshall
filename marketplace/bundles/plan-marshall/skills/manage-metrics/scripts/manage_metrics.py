@@ -7,7 +7,7 @@ Usage:
         python3 manage_metrics.py start-phase --plan-id <id> --phase <phase>
 
     End phase timing:
-        python3 manage_metrics.py end-phase --plan-id <id> --phase <phase> [--total-tokens N] [--duration-ms N] [--tool-uses N]
+        python3 manage_metrics.py end-phase --plan-id <id> --phase <phase> [--total-tokens N] [--input-tokens N] [--output-tokens N] [--duration-ms N] [--tool-uses N]
 
     Generate metrics.md:
         python3 manage_metrics.py generate --plan-id <id>
@@ -186,6 +186,12 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
     if args.total_tokens is not None:
         phase_data['total_tokens'] = args.total_tokens
 
+    if args.input_tokens is not None:
+        phase_data['input_tokens'] = args.input_tokens
+
+    if args.output_tokens is not None:
+        phase_data['output_tokens'] = args.output_tokens
+
     if args.tool_uses is not None:
         phase_data['tool_uses'] = args.tool_uses
 
@@ -225,11 +231,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # Phase breakdown table
     lines.append('## Phase Breakdown')
     lines.append('')
-    lines.append('| Phase | Duration | Tokens | Tool Uses |')
-    lines.append('|-------|----------|--------|-----------|')
+    lines.append('| Phase | Duration | Tokens | Input | Output | Tool Uses |')
+    lines.append('|-------|----------|--------|-------|--------|-----------|')
 
     total_duration = 0.0
     total_tokens = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
     total_tool_uses = 0
 
     for phase_name in PHASE_NAMES:
@@ -247,6 +255,16 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             tokens = 0
         total_tokens += int(tokens)
 
+        input_tokens = _coerce_numeric(phase.get('input_tokens', 0))
+        if not isinstance(input_tokens, (int, float)):
+            input_tokens = 0
+        total_input_tokens += int(input_tokens)
+
+        output_tokens = _coerce_numeric(phase.get('output_tokens', 0))
+        if not isinstance(output_tokens, (int, float)):
+            output_tokens = 0
+        total_output_tokens += int(output_tokens)
+
         tool_uses = _coerce_numeric(phase.get('tool_uses', 0))
         if not isinstance(tool_uses, (int, float)):
             tool_uses = 0
@@ -254,13 +272,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
 
         duration_str = format_duration(duration) if duration else '-'
         tokens_str = f'{tokens:,}' if tokens else '-'
+        input_str = f'{input_tokens:,}' if input_tokens else '-'
+        output_str = f'{output_tokens:,}' if output_tokens else '-'
         tool_uses_str = str(tool_uses) if tool_uses else '-'
 
-        lines.append(f'| {phase_name} | {duration_str} | {tokens_str} | {tool_uses_str} |')
+        lines.append(f'| {phase_name} | {duration_str} | {tokens_str} | {input_str} | {output_str} | {tool_uses_str} |')
 
     # Totals row
     lines.append(
-        f'| **Total** | **{format_duration(total_duration)}** | **{total_tokens:,}** | **{total_tool_uses}** |'
+        f'| **Total** | **{format_duration(total_duration)}** | **{total_tokens:,}** | **{total_input_tokens:,}** | **{total_output_tokens:,}** | **{total_tool_uses}** |'
     )
     lines.append('')
 
@@ -292,6 +312,14 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if tokens:
             lines.append(f'- **Total tokens**: {int(tokens):,}')
 
+        input_tok = phase.get('input_tokens')
+        if input_tok:
+            lines.append(f'- **Input tokens**: {int(input_tok):,}')
+
+        output_tok = phase.get('output_tokens')
+        if output_tok:
+            lines.append(f'- **Output tokens**: {int(output_tok):,}')
+
         tool_uses = phase.get('tool_uses')
         if tool_uses:
             lines.append(f'- **Tool uses**: {int(tool_uses)}')
@@ -302,7 +330,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     md_path = get_plan_dir(plan_id) / METRICS_MD
     atomic_write_file(md_path, md_content)
 
-    return {
+    result = {
         'status': 'success',
         'plan_id': plan_id,
         'file': METRICS_MD,
@@ -310,6 +338,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'total_duration_seconds': round(total_duration, 1),
         'total_tokens': total_tokens,
     }
+    if total_input_tokens:
+        result['total_input_tokens'] = total_input_tokens
+    if total_output_tokens:
+        result['total_output_tokens'] = total_output_tokens
+    return result
 
 
 def cmd_enrich(args: argparse.Namespace) -> dict:
@@ -412,6 +445,8 @@ def main() -> int:
     add_plan_id_arg(ep)
     ep.add_argument('--phase', required=True, help='Phase name')
     ep.add_argument('--total-tokens', type=int, default=None, help='Total tokens from Task agent <usage>')
+    ep.add_argument('--input-tokens', type=int, default=None, help='Input tokens from Task agent <usage>')
+    ep.add_argument('--output-tokens', type=int, default=None, help='Output tokens from Task agent <usage>')
     ep.add_argument('--duration-ms', type=int, default=None, help='Duration in ms from Task agent <usage>')
     ep.add_argument('--tool-uses', type=int, default=None, help='Tool use count from Task agent <usage>')
     ep.set_defaults(func=cmd_end_phase)

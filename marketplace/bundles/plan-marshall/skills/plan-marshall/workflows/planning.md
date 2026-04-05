@@ -196,10 +196,13 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
   --plan-id {plan_id} --completed 3-outline
 ```
 
-**Metrics**: After outline completes, record phase end (no token data — main context):
+**Metrics**: After outline completes, record phase end with aggregated token data from agents spawned during this phase (detect-change-type-agent and q-gate-validation-agent). Sum `total_tokens`, `tool_uses`, and `duration_ms` from each agent's `<usage>` tag:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 3-outline
+  --plan-id {plan_id} --phase 3-outline \
+  --total-tokens {sum of total_tokens from all agent <usage> tags} \
+  --tool-uses {sum of tool_uses from all agent <usage> tags} \
+  --duration-ms {sum of duration_ms from all agent <usage> tags}
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
   --plan-id {plan_id}
 ```
