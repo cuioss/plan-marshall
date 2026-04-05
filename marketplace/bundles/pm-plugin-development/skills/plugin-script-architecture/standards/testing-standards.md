@@ -345,6 +345,42 @@ from extension_base import PROFILE_PATTERNS
 - conftest.py adds paths to sys.path for direct imports
 - IDE warnings about unresolved imports are expected (PYTHONPATH is set at runtime)
 
+### Colliding Module Names (importlib Pattern)
+
+When multiple skills have identically-named internal modules (e.g., `_cmd_query.py` in both `manage-status` and `manage-tasks`), Python's module cache prevents correct imports via `sys.path`. Once `_cmd_query` is imported from one location, subsequent imports from a different `sys.path` return the cached version.
+
+**Solution**: Use `importlib.util.spec_from_file_location` with unique synthetic module names:
+
+```python
+import importlib.util
+from pathlib import Path
+
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / '{bundle}' / 'skills' / '{skill}' / 'scripts'
+)
+
+def _load_module(name, filename):
+    """Load a module by file path with a unique synthetic name."""
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+# Use unique prefixes to avoid cache collisions
+_crud = _load_module('_tasks_cmd_crud', '_cmd_crud.py')
+_query = _load_module('_tasks_cmd_query', '_cmd_query.py')
+```
+
+**When to use**: Only when the module filename exists in multiple skills' `scripts/` directories. For unique module names, standard `from _module import ...` works fine.
+
+**Known collisions**:
+
+| Module | Skills |
+|--------|--------|
+| `_cmd_query.py` | `manage-status`, `manage-tasks` |
+| `_cmd_crud.py` | `manage-references`, `manage-tasks` |
+
 ## Naming Conventions
 
 | Item | Convention | Example |

@@ -291,6 +291,10 @@ skills/my-skill/scripts/
 └── _cmd_step.py         # Internal - step command handlers
 ```
 
+### Collision Risk
+
+Generic internal module names like `_cmd_crud.py` or `_cmd_query.py` may exist in multiple skills. At runtime this is fine (the executor runs one script at a time), but in **tests** it causes module cache collisions — see "Colliding Module Names" in `testing-standards.md` for the `importlib` workaround.
+
 ### Import Pattern
 
 Entry point imports from internal modules:
