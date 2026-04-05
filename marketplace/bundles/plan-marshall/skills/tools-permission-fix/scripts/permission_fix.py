@@ -22,7 +22,18 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from permission_common import (  # type: ignore[import-not-found]
+# Bootstrap sys.path — this script may run before the executor sets up PYTHONPATH
+# (called directly during wizard Step 3 to ensure executor permission).
+# Resolve shared library paths relative to this script's location in the plugin tree:
+#   skills/tools-permission-fix/scripts/ → skills/{lib}/scripts/
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_SKILLS_DIR = _SCRIPTS_DIR.parent.parent
+for _lib in ('ref-toon-format', 'tools-file-ops', 'tools-permission-doctor'):
+    _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
+    if _lib_path not in sys.path:
+        sys.path.insert(0, _lib_path)
+
+from permission_common import (  # type: ignore[import-not-found]  # noqa: E402
     EXIT_SUCCESS,
     get_project_settings_path_for_write,
     get_settings_path,
@@ -30,7 +41,7 @@ from permission_common import (  # type: ignore[import-not-found]
     load_settings_path,
     save_settings,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # Executor-only permission pattern
 EXECUTOR_PERMISSION = 'Bash(python3 .plan/execute-script.py *)'
