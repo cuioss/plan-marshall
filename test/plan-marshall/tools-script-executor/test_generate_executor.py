@@ -535,3 +535,25 @@ def test_collect_script_dirs_versioned_includes_subdirectories():
 
         assert str(scripts_dir) in dirs, f'Expected versioned scripts dir in {dirs}'
         assert str(scripts_dir / 'build') in dirs, f'Expected versioned build subdir in {dirs}'
+
+
+# =============================================================================
+# Bootstrap isolation test -- verify script works WITHOUT executor PYTHONPATH
+# =============================================================================
+
+
+def test_generate_executor_imports_without_executor_pythonpath():
+    """generate_executor.py must resolve its own imports without executor PYTHONPATH.
+
+    This script is called directly during wizard Step 4 (before executor exists)
+    to generate the executor. It must self-resolve its dependencies.
+    """
+    env = os.environ.copy()
+    env.pop('PYTHONPATH', None)
+    result = subprocess.run(
+        [sys.executable, str(GENERATE_SCRIPT), '--help'],
+        capture_output=True, text=True, env=env, timeout=30,
+    )
+    assert result.returncode == 0, (
+        f'generate_executor.py failed without PYTHONPATH:\n{result.stderr}'
+    )

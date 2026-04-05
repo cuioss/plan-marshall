@@ -30,6 +30,17 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+# Bootstrap sys.path — this script may run before the executor sets up PYTHONPATH
+# (called directly during wizard Step 4 to generate the executor).
+# Resolve shared library paths relative to this script's location in the plugin tree:
+#   skills/tools-script-executor/scripts/ → skills/{lib}/scripts/
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_SKILLS_DIR = _SCRIPTS_DIR.parent.parent
+for _lib in ('ref-toon-format', 'tools-file-ops'):
+    _lib_path = str(_SKILLS_DIR / _lib / 'scripts')
+    if _lib_path not in sys.path:
+        sys.path.insert(0, _lib_path)
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
