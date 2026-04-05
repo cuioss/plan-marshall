@@ -30,7 +30,7 @@ from extension_discovery import (  # type: ignore[import-not-found]
 )
 
 
-def cmd_resolve_domain_skills(args) -> int:
+def cmd_resolve_domain_skills(args) -> dict:
     """Handle resolve-domain-skills command.
 
     Loads profiles from extension.py via bundle reference, then aggregates
@@ -99,7 +99,7 @@ def cmd_resolve_domain_skills(args) -> int:
     return success_exit(result)
 
 
-def cmd_resolve_workflow_skill_extension(args) -> int:
+def cmd_resolve_workflow_skill_extension(args) -> dict:
     """Resolve workflow skill extension for a domain and type."""
     try:
         require_initialized()
@@ -123,7 +123,7 @@ def cmd_resolve_workflow_skill_extension(args) -> int:
     return success_exit({'domain': domain, 'type': ext_type, 'extension': extension})
 
 
-def cmd_get_skills_by_profile(args) -> int:
+def cmd_get_skills_by_profile(args) -> dict:
     """Get skills organized by profile for a domain.
 
     Returns all skills grouped by profile name, with core skills merged into each.
@@ -201,7 +201,7 @@ def cmd_get_skills_by_profile(args) -> int:
     return success_exit({'domain': domain, 'skills_by_profile': skills_by_profile})
 
 
-def cmd_configure_task_executors(args) -> int:
+def cmd_configure_task_executors(args) -> dict:
     """Configure task executors from discovered profiles."""
     try:
         require_initialized()
@@ -254,7 +254,7 @@ def cmd_configure_task_executors(args) -> int:
     )
 
 
-def cmd_resolve_task_executor(args) -> int:
+def cmd_resolve_task_executor(args) -> dict:
     """Resolve task executor skill for a given profile."""
     try:
         require_initialized()
@@ -366,13 +366,13 @@ def _discover_all_recipes() -> list[dict]:
     return all_recipes
 
 
-def cmd_list_recipes(args) -> int:
+def cmd_list_recipes(args) -> dict:
     """List all available recipes discovered at runtime."""
     all_recipes = _discover_all_recipes()
     return success_exit({'recipes': all_recipes, 'count': len(all_recipes)})
 
 
-def cmd_resolve_recipe(args) -> int:
+def cmd_resolve_recipe(args) -> dict:
     """Resolve a specific recipe by key."""
     recipe_key = args.recipe
     all_recipes = _discover_all_recipes()
@@ -468,13 +468,13 @@ def _discover_all_finalize_steps() -> list[dict]:
     return all_steps
 
 
-def cmd_list_finalize_steps(args) -> int:
+def cmd_list_finalize_steps(args) -> dict:
     """List all available finalize steps discovered at runtime."""
     all_steps = _discover_all_finalize_steps()
     return success_exit({'steps': all_steps, 'count': len(all_steps)})
 
 
-def cmd_resolve_outline_skill(args) -> int:
+def cmd_resolve_outline_skill(args) -> dict:
     """Resolve outline skill for a domain."""
     try:
         require_initialized()

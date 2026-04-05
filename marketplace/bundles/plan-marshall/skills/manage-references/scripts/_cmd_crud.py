@@ -10,25 +10,21 @@ from _references_core import (
     require_references,
     write_references,
 )
-from file_ops import output_toon  # type: ignore[import-not-found]
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_create(args):
+def cmd_create(args) -> dict:
     """Create references.json with basic fields."""
     require_valid_plan_id(args)
 
     path = get_references_path(args.plan_id)
     if path.exists():
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'already_exists',
-                'message': 'references.json already exists',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'already_exists',
+            'message': 'references.json already exists',
+        }
 
     # Build base references
     refs = {'branch': args.branch, 'base_branch': 'main', 'modified_files': []}
@@ -43,18 +39,16 @@ def cmd_create(args):
 
     write_references(args.plan_id, refs)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'file': 'references.json',
-            'created': True,
-            'fields': list(refs.keys()),
-        }
-    )
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': 'references.json',
+        'created': True,
+        'fields': list(refs.keys()),
+    }
 
 
-def cmd_read(args):
+def cmd_read(args) -> dict:
     """Read entire references.json."""
     require_valid_plan_id(args)
 
@@ -68,10 +62,10 @@ def cmd_read(args):
         else:
             summary[key] = value
 
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'references': summary})
+    return {'status': 'success', 'plan_id': args.plan_id, 'references': summary}
 
 
-def cmd_get(args):
+def cmd_get(args) -> dict:
     """Get a specific field value."""
     require_valid_plan_id(args)
 
@@ -79,21 +73,18 @@ def cmd_get(args):
 
     value = refs.get(args.field)
     if value is None:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'field': args.field,
-                'error': 'field_not_found',
-                'message': f"Field '{args.field}' not found",
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'field': args.field,
+            'error': 'field_not_found',
+            'message': f"Field '{args.field}' not found",
+        }
 
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': value})
+    return {'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': value}
 
 
-def cmd_set(args):
+def cmd_set(args) -> dict:
     """Set a specific field value."""
     require_valid_plan_id(args)
 
@@ -105,4 +96,4 @@ def cmd_set(args):
     result = {'status': 'success', 'plan_id': args.plan_id, 'field': args.field, 'value': args.value}
     if previous is not None:
         result['previous'] = previous
-    output_toon(result)
+    return result

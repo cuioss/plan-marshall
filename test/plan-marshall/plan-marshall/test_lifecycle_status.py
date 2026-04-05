@@ -166,7 +166,7 @@ def test_transition_invalid_phase():
         result = run_script(
             LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'invalid-transition', '--completed', 'nonexistent'
         )
-        assert not result.success, 'Expected failure for invalid phase'
+        assert result.success, 'Expected exit 0 for expected error'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'invalid_phase'
@@ -217,7 +217,7 @@ def test_route_unknown_phase():
     """Test routing for unknown phase."""
     with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'route', '--phase', 'unknown-phase')
-        assert not result.success, 'Expected failure for unknown phase'
+        assert result.success, 'Expected exit 0 for expected error'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'unknown_phase'
@@ -244,7 +244,7 @@ def test_archive_not_found():
     """Test archive with non-existent plan."""
     with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'archive', '--plan-id', 'nonexistent')
-        assert not result.success, 'Expected failure for missing plan'
+        assert result.success, 'Expected exit 0 for expected error'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
         assert data['error'] == 'not_found'

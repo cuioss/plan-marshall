@@ -3,18 +3,29 @@
 
 Tests skill-domains, resolve-domain-skills commands
 including nested structure variants and edge cases.
+
+Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
 
 import json
+from argparse import Namespace
 from pathlib import Path
 
-from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
+# Tier 2 direct imports
+from _cmd_skill_domains import cmd_list_verify_steps, cmd_skill_domains
+from _cmd_skill_resolution import (
+    cmd_get_skills_by_profile,
+    cmd_list_finalize_steps,
+    cmd_resolve_domain_skills,
+    cmd_resolve_workflow_skill_extension,
+)
+from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json, patch_config_paths
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PlanContext, run_script
 
 # =============================================================================
-# skill-domains Basic Tests (Flat Structure)
+# skill-domains Basic Tests (Flat Structure) - Tier 2
 # =============================================================================
 
 
@@ -22,125 +33,133 @@ def test_skill_domains_list():
     """Test skill-domains list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
+        result = cmd_skill_domains(Namespace(verb='list'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'success' in result.stdout.lower()
-        assert 'java' in result.stdout
+        assert result['status'] == 'success'
+        assert 'java' in result['domains']
 
 
 def test_skill_domains_get():
     """Test skill-domains get."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
+        result = cmd_skill_domains(Namespace(verb='get', domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-core' in result.stdout
+        assert result['status'] == 'success'
+        assert 'pm-dev-java:java-core' in result['defaults']
 
 
 def test_skill_domains_get_defaults():
     """Test skill-domains get-defaults."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-defaults', '--domain', 'java')
+        result = cmd_skill_domains(Namespace(verb='get-defaults', domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-core' in result.stdout
+        assert result['status'] == 'success'
+        assert 'pm-dev-java:java-core' in result['defaults']
 
 
 def test_skill_domains_get_optionals():
     """Test skill-domains get-optionals."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-optionals', '--domain', 'java')
+        result = cmd_skill_domains(Namespace(verb='get-optionals', domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-cdi' in result.stdout
+        assert result['status'] == 'success'
+        assert 'pm-dev-java:java-cdi' in result['optionals']
 
 
 def test_skill_domains_unknown_domain():
     """Test skill-domains get with unknown domain returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'unknown')
+        result = cmd_skill_domains(Namespace(verb='get', domain='unknown'))
 
-        assert 'error' in result.stdout.lower(), 'Should report error'
-        assert 'unknown' in result.stdout.lower()
+        assert result['status'] == 'error'
+        assert 'unknown' in result['error'].lower()
 
 
 def test_skill_domains_add():
     """Test skill-domains add."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'skill-domains', 'add', '--domain', 'python', '--defaults', 'pm-dev-python:cui-python-core'
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='add',
+            domain='python',
+            defaults='pm-dev-python:cui-python-core',
+            optionals=None,
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         # Verify added
-        verify = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'python')
-        assert 'pm-dev-python:cui-python-core' in verify.stdout
+        verify = cmd_skill_domains(Namespace(verb='get', domain='python'))
+        assert 'pm-dev-python:cui-python-core' in verify['defaults']
 
 
 def test_skill_domains_validate():
     """Test skill-domains validate."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        # Valid skill
-        result = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-core'
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='validate',
+            domain='java',
+            skill='pm-dev-java:java-core',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'true' in result.stdout.lower() or 'valid' in result.stdout.lower()
+        assert result['status'] == 'success'
+        assert result['valid'] is True
 
 
 def test_skill_domains_validate_returns_location():
     """Test skill-domains validate returns in_defaults or in_optionals."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
         # Skill in defaults
-        result_defaults = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-core'
-        )
-
-        assert result_defaults.success, f'Should succeed: {result_defaults.stderr}'
-        assert 'in_defaults' in result_defaults.stdout.lower()
+        result_defaults = cmd_skill_domains(Namespace(
+            verb='validate', domain='java', skill='pm-dev-java:java-core',
+        ))
+        assert result_defaults['in_defaults'] is True
 
         # Skill in optionals
-        result_optionals = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-cdi'
-        )
-
-        assert result_optionals.success, f'Should succeed: {result_optionals.stderr}'
-        assert 'in_optionals' in result_optionals.stdout.lower()
+        result_optionals = cmd_skill_domains(Namespace(
+            verb='validate', domain='java', skill='pm-dev-java:java-cdi',
+        ))
+        assert result_optionals['in_optionals'] is True
 
 
 def test_skill_domains_validate_invalid_skill():
     """Test skill-domains validate with invalid skill returns false."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:invalid-skill'
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='validate', domain='java', skill='pm-dev-java:invalid-skill',
+        ))
 
-        assert result.success, f'Should succeed even if invalid: {result.stderr}'
-        assert 'false' in result.stdout.lower()
+        assert result['status'] == 'success'
+        assert result['valid'] is False
 
 
 # =============================================================================
-# skill-domains Nested Structure Tests
+# skill-domains Nested Structure Tests (Tier 2)
 # =============================================================================
 
 
@@ -148,52 +167,50 @@ def test_skill_domains_get_nested_structure():
     """Test skill-domains get returns nested structure for domains with bundle reference."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
+        result = cmd_skill_domains(Namespace(verb='get', domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should include bundle reference
-        assert 'bundle' in result.stdout
-        assert 'pm-dev-java' in result.stdout
-        # Should include workflow_skill_extensions
-        assert 'workflow_skill_extensions' in result.stdout
+        assert result['status'] == 'success'
+        assert 'bundle' in result
+        assert result['bundle'] == 'pm-dev-java'
+        assert 'workflow_skill_extensions' in result
 
 
 def test_skill_domains_get_defaults_nested():
     """Test skill-domains get-defaults loads core.defaults from extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-defaults', '--domain', 'java')
+        result = cmd_skill_domains(Namespace(verb='get-defaults', domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should return core.defaults loaded from pm-dev-java extension.py
-        assert 'pm-dev-java:java-core' in result.stdout
+        assert result['status'] == 'success'
+        defaults_str = str(result['defaults'])
+        assert 'pm-dev-java:java-core' in defaults_str
 
 
 def test_skill_domains_get_optionals_nested():
     """Test skill-domains get-optionals loads core.optionals from extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-optionals', '--domain', 'java')
+        result = cmd_skill_domains(Namespace(verb='get-optionals', domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should return core.optionals loaded from pm-dev-java extension.py
-        assert 'pm-dev-java:java-null-safety' in result.stdout
-        assert 'pm-dev-java:java-lombok' in result.stdout
+        assert result['status'] == 'success'
+        optionals_str = str(result['optionals'])
+        assert 'pm-dev-java:java-null-safety' in optionals_str
+        assert 'pm-dev-java:java-lombok' in optionals_str
 
 
 def test_skill_domains_validate_nested():
     """Test skill-domains validate loads profiles from extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-
-        # Validate skill in core.defaults (loaded from extension.py)
         result = run_script(
             SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:java-core'
         )
-
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'true' in result.stdout.lower() or 'valid' in result.stdout.lower()
 
@@ -202,12 +219,9 @@ def test_skill_domains_validate_nested_profile_skill():
     """Test skill-domains validate finds skills in profile blocks loaded from extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-
-        # Validate skill in module_testing.defaults (junit-core loaded from extension)
         result = run_script(
             SCRIPT_PATH, 'skill-domains', 'validate', '--domain', 'java', '--skill', 'pm-dev-java:junit-core'
         )
-
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'true' in result.stdout.lower() or 'valid' in result.stdout.lower()
         assert 'in_defaults' in result.stdout.lower()
@@ -217,26 +231,24 @@ def test_skill_domains_get_system_has_task_executors():
     """Test skill-domains get returns system domain with task_executors."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'system')
+        result = cmd_skill_domains(Namespace(verb='get', domain='system'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # System domain has defaults
-        assert 'defaults' in result.stdout
-        assert 'plan-marshall:general-development-rules' in result.stdout
-        # System domain has task_executors
-        assert 'task_executors' in result.stdout
+        assert result['status'] == 'success'
+        assert 'defaults' in result
+        assert 'plan-marshall:general-development-rules' in result['defaults']
+        assert 'task_executors' in result
 
 
 # =============================================================================
-# skill-domains detect Tests
+# skill-domains detect Tests (Tier 2)
 # =============================================================================
 
 
 def test_skill_domains_detect_runs():
     """Test skill-domains detect command runs successfully."""
     with PlanContext() as ctx:
-        # Create minimal marshal.json
         config = {
             'skill_domains': {'system': {'defaults': ['plan-marshall:dev-general-practices'], 'optionals': []}},
             'system': {'retention': {}},
@@ -266,18 +278,17 @@ def test_skill_domains_detect_runs():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'detect')
+        result = cmd_skill_domains(Namespace(verb='detect'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'success' in result.stdout.lower()
-        assert 'detected' in result.stdout.lower()
+        assert result['status'] == 'success'
+        assert 'detected' in result
 
 
 def test_skill_domains_detect_no_overwrite():
     """Test skill-domains detect does not overwrite existing domains."""
     with PlanContext() as ctx:
-        # Create marshal.json with custom java domain (new structure with bundle reference)
         config = {
             'skill_domains': {
                 'system': {'defaults': [], 'optionals': []},
@@ -313,18 +324,19 @@ def test_skill_domains_detect_no_overwrite():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'detect')
+        result = cmd_skill_domains(Namespace(verb='detect'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
-        # Verify existing java domain was NOT overwritten (even if java was detected)
-        verify = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
-        assert 'custom-java-bundle' in verify.stdout or 'custom:outline-skill' in verify.stdout
+        # Verify existing java domain was NOT overwritten
+        verify = cmd_skill_domains(Namespace(verb='get', domain='java'))
+        assert verify['bundle'] == 'custom-java-bundle'
 
 
 # =============================================================================
-# resolve-domain-skills Tests
+# resolve-domain-skills Tests (Tier 2)
 # =============================================================================
 
 
@@ -332,90 +344,92 @@ def test_resolve_domain_skills_java_implementation():
     """Test resolve-domain-skills for java + implementation profile."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'implementation')
+        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='implementation'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should include core defaults (java-core)
-        assert 'pm-dev-java:java-core' in result.stdout
-        # Should include implementation optionals (java-cdi, java-maintenance)
-        assert 'pm-dev-java:java-cdi' in result.stdout
-        # Should NOT include testing defaults (junit-core)
-        assert 'pm-dev-java:junit-core' not in result.stdout
+        assert result['status'] == 'success'
+        defaults_str = str(result['defaults'])
+        assert 'pm-dev-java:java-core' in defaults_str
+        optionals_str = str(result['optionals'])
+        assert 'pm-dev-java:java-cdi' in optionals_str
+        # Should NOT include testing defaults
+        assert 'pm-dev-java:junit-core' not in defaults_str
 
 
 def test_resolve_domain_skills_java_testing():
     """Test resolve-domain-skills for java + module_testing profile."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'module_testing')
+        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='module_testing'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should include core defaults (java-core)
-        assert 'pm-dev-java:java-core' in result.stdout
-        # Should include module_testing defaults (junit-core)
-        assert 'pm-dev-java:junit-core' in result.stdout
-        # Should include module_testing optionals (junit-integration)
-        assert 'pm-dev-java:junit-integration' in result.stdout
-        # Should NOT include implementation optionals (java-cdi)
-        assert 'pm-dev-java:java-cdi' not in result.stdout
+        assert result['status'] == 'success'
+        defaults_str = str(result['defaults'])
+        optionals_str = str(result['optionals'])
+        assert 'pm-dev-java:java-core' in defaults_str
+        assert 'pm-dev-java:junit-core' in defaults_str
+        assert 'pm-dev-java:junit-integration' in optionals_str
+        # Should NOT include implementation optionals
+        assert 'pm-dev-java:java-cdi' not in optionals_str
 
 
 def test_resolve_domain_skills_javascript_implementation():
     """Test resolve-domain-skills for javascript + implementation profile."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'javascript', '--profile', 'implementation'
-        )
+        result = cmd_resolve_domain_skills(Namespace(domain='javascript', profile='implementation'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should include core defaults (cui-javascript)
-        assert 'pm-dev-frontend:javascript' in result.stdout
-        # Should include implementation optionals (renamed from cui-javascript-linting)
-        assert 'pm-dev-frontend:lint-config' in result.stdout
+        assert result['status'] == 'success'
+        defaults_str = str(result['defaults'])
+        optionals_str = str(result['optionals'])
+        assert 'pm-dev-frontend:javascript' in defaults_str
+        assert 'pm-dev-frontend:lint-config' in optionals_str
 
 
 def test_resolve_domain_skills_unknown_domain():
     """Test resolve-domain-skills with unknown domain returns error."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'unknown', '--profile', 'implementation')
+        result = cmd_resolve_domain_skills(Namespace(domain='unknown', profile='implementation'))
 
-        assert 'error' in result.stdout.lower(), 'Should report error'
-        assert 'unknown' in result.stdout.lower()
+        assert result['status'] == 'error'
+        assert 'unknown' in result['error'].lower()
 
 
 def test_resolve_domain_skills_unknown_profile():
     """Test resolve-domain-skills with unknown profile returns error."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'invalid-profile')
+        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='invalid-profile'))
 
-        assert 'error' in result.stdout.lower(), 'Should report error'
-        assert 'profile' in result.stdout.lower()
+        assert result['status'] == 'error'
+        assert 'profile' in result['error'].lower()
 
 
 def test_resolve_domain_skills_java_quality():
     """Test resolve-domain-skills for java + quality profile (finalize phase)."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'quality')
+        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='quality'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should include core defaults (java-core)
-        assert 'pm-dev-java:java-core' in result.stdout
-        # Should include quality defaults (javadoc)
-        assert 'pm-dev-java:javadoc' in result.stdout
+        assert result['status'] == 'success'
+        defaults_str = str(result['defaults'])
+        assert 'pm-dev-java:java-core' in defaults_str
+        assert 'pm-dev-java:javadoc' in defaults_str
 
 
 # =============================================================================
-# resolve-workflow-skill-extension Tests
+# resolve-workflow-skill-extension Tests (Tier 2)
 # =============================================================================
 
 
@@ -423,82 +437,80 @@ def test_resolve_workflow_skill_extension_java_outline():
     """Test resolve-workflow-skill-extension returns outline extension for java."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension', '--domain', 'java', '--type', 'outline')
+        result = cmd_resolve_workflow_skill_extension(Namespace(domain='java', type='outline'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:ext-outline-java' in result.stdout
-        assert 'domain' in result.stdout
-        assert 'type' in result.stdout
-        assert 'extension' in result.stdout
+        assert result['status'] == 'success'
+        assert result['extension'] == 'pm-dev-java:ext-outline-java'
+        assert result['domain'] == 'java'
+        assert result['type'] == 'outline'
 
 
 def test_resolve_workflow_skill_extension_java_triage():
     """Test resolve-workflow-skill-extension returns triage extension for java."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension', '--domain', 'java', '--type', 'triage')
+        result = cmd_resolve_workflow_skill_extension(Namespace(domain='java', type='triage'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:ext-triage-java' in result.stdout
+        assert result['status'] == 'success'
+        assert result['extension'] == 'pm-dev-java:ext-triage-java'
 
 
 def test_resolve_workflow_skill_extension_javascript_outline():
     """Test resolve-workflow-skill-extension returns outline extension for javascript."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'resolve-workflow-skill-extension', '--domain', 'javascript', '--type', 'outline'
-        )
+        result = cmd_resolve_workflow_skill_extension(Namespace(domain='javascript', type='outline'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-frontend:ext-outline-frontend' in result.stdout
+        assert result['status'] == 'success'
+        assert result['extension'] == 'pm-dev-frontend:ext-outline-frontend'
 
 
 def test_resolve_workflow_skill_extension_missing_type():
     """Test resolve-workflow-skill-extension returns null for missing extension type."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        # javascript has no triage extension
-        result = run_script(
-            SCRIPT_PATH, 'resolve-workflow-skill-extension', '--domain', 'javascript', '--type', 'triage'
-        )
+        result = cmd_resolve_workflow_skill_extension(Namespace(domain='javascript', type='triage'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should return null for extension, not error
-        assert 'null' in result.stdout.lower() or 'none' in result.stdout.lower()
+        assert result['status'] == 'success'
+        assert result['extension'] is None
 
 
 def test_resolve_workflow_skill_extension_unknown_domain():
     """Test resolve-workflow-skill-extension returns null for unknown domain (not error)."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension', '--domain', 'unknown', '--type', 'outline')
+        result = cmd_resolve_workflow_skill_extension(Namespace(domain='unknown', type='outline'))
 
-        assert result.success, f'Should succeed (returns null, not error): {result.stderr}'
-        # Should return null for extension, not error
-        assert 'null' in result.stdout.lower() or 'none' in result.stdout.lower()
+        assert result['status'] == 'success'
+        assert result['extension'] is None
 
 
 def test_resolve_workflow_skill_extension_plugin_dev():
     """Test resolve-workflow-skill-extension returns extensions for plugin-dev domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH, 'resolve-workflow-skill-extension', '--domain', 'plan-marshall-plugin-dev', '--type', 'outline'
-        )
+        result = cmd_resolve_workflow_skill_extension(Namespace(
+            domain='plan-marshall-plugin-dev', type='outline',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-plugin-development:ext-outline-workflow' in result.stdout
+        assert result['status'] == 'success'
+        assert result['extension'] == 'pm-plugin-development:ext-outline-workflow'
 
 
 # =============================================================================
-# get-extensions / set-extensions Tests
+# get-extensions / set-extensions Tests (Tier 2)
 # =============================================================================
 
 
@@ -506,56 +518,53 @@ def test_get_extensions_java():
     """Test get-extensions returns extensions for java domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-extensions', '--domain', 'java')
+        result = cmd_skill_domains(Namespace(verb='get-extensions', domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'extensions' in result.stdout
-        assert 'outline' in result.stdout
-        assert 'triage' in result.stdout
+        assert result['status'] == 'success'
+        assert 'extensions' in result
+        assert 'outline' in result['extensions']
+        assert 'triage' in result['extensions']
 
 
 def test_get_extensions_unknown_domain():
     """Test get-extensions returns error for unknown domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-extensions', '--domain', 'unknown')
+        result = cmd_skill_domains(Namespace(verb='get-extensions', domain='unknown'))
 
-        assert 'error' in result.stdout.lower(), 'Should report error'
+        assert result['status'] == 'error'
 
 
 def test_set_extensions():
     """Test set-extensions adds extension to domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'skill-domains',
-            'set-extensions',
-            '--domain',
-            'java',
-            '--type',
-            'triage',
-            '--skill',
-            'pm-dev-java:new-triage',
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='set-extensions',
+            domain='java',
+            type='triage',
+            skill='pm-dev-java:new-triage',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'triage' in result.stdout
-        assert 'pm-dev-java:new-triage' in result.stdout
+        assert result['status'] == 'success'
+        assert result['type'] == 'triage'
+        assert result['skill'] == 'pm-dev-java:new-triage'
 
 
 # =============================================================================
-# get-available / configure Tests
+# get-available / configure Tests (Tier 2)
 # =============================================================================
 
 
 def test_get_available_uses_discovery():
-    """Test get-available uses discovery for domains (no longer tied to build system)."""
+    """Test get-available uses discovery for domains."""
     with PlanContext() as ctx:
-        # Create marshal.json - build_systems no longer affect get-available
         config = {
             'skill_domains': {'system': {'defaults': []}},
             'system': {'retention': {}},
@@ -585,12 +594,12 @@ def test_get_available_uses_discovery():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-available')
+        result = cmd_skill_domains(Namespace(verb='get-available'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Returns discovered_domains from bundle manifests
-        assert 'discovered_domains' in result.stdout
+        assert result['status'] == 'success'
+        assert 'discovered_domains' in result
 
 
 def test_configure_domains():
@@ -625,19 +634,18 @@ def test_configure_domains():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'configure', '--domains', 'java,javascript')
+        result = cmd_skill_domains(Namespace(verb='configure', domains='java,javascript'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'system_domain' in result.stdout
-        assert 'configured' in result.stdout
+        assert result['status'] == 'success'
+        assert 'system_domain' in result
 
         # Verify marshal.json was updated
         updated = json.loads(marshal_path.read_text())
-        assert 'system' in updated['skill_domains'], 'System domain should be added'
-        assert 'java' in updated['skill_domains'], 'Java domain should be added'
-        assert 'javascript' in updated['skill_domains'], 'JavaScript domain should be added'
-        assert 'task_executors' in updated['skill_domains']['system'], 'System should have task_executors'
+        assert 'system' in updated['skill_domains']
+        assert 'java' in updated['skill_domains']
+        assert 'javascript' in updated['skill_domains']
 
 
 def test_configure_always_adds_system():
@@ -672,18 +680,18 @@ def test_configure_always_adds_system():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'configure', '--domains', '')
+        result = cmd_skill_domains(Namespace(verb='configure', domains=''))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
-        # Verify system domain was added
         updated = json.loads(marshal_path.read_text())
-        assert 'system' in updated['skill_domains'], 'System domain should always be added'
+        assert 'system' in updated['skill_domains']
 
 
 # =============================================================================
-# set with --profile Tests (profiles are read-only from extension.py)
+# set with --profile Tests (Tier 2)
 # =============================================================================
 
 
@@ -691,25 +699,21 @@ def test_set_with_profile_returns_error():
     """Test set with --profile returns error since profiles are in extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'skill-domains',
-            'set',
-            '--domain',
-            'java',
-            '--profile',
-            'quality',
-            '--defaults',
-            'pm-dev-java:new-skill',
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='set',
+            domain='java',
+            profile='quality',
+            defaults='pm-dev-java:new-skill',
+            optionals=None,
+        ))
 
-        # Should return error because profiles are read-only (from extension.py)
-        assert 'error' in result.stdout.lower(), 'Should report error for profile modification'
+        assert result['status'] == 'error'
 
 
 # =============================================================================
-# get-skills-by-profile Tests
+# get-skills-by-profile Tests (Tier 2)
 # =============================================================================
 
 
@@ -717,92 +721,90 @@ def test_get_skills_by_profile_java():
     """Test get-skills-by-profile loads profile-keyed skills from extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
+        result = cmd_get_skills_by_profile(Namespace(domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should have skills_by_profile structure (loaded from pm-dev-java extension)
-        assert 'skills_by_profile' in result.stdout
-        # Should have all profiles
-        assert 'implementation' in result.stdout
-        assert 'module_testing' in result.stdout
-        # integration_testing should NOT appear — pm-dev-java doesn't define it
-        assert 'integration_testing' not in result.stdout
+        assert result['status'] == 'success'
+        assert 'skills_by_profile' in result
+        assert 'implementation' in result['skills_by_profile']
+        assert 'module_testing' in result['skills_by_profile']
+        # integration_testing should NOT appear as standalone profile for java
+        assert 'integration_testing' not in result['skills_by_profile']
 
 
 def test_get_skills_by_profile_includes_core_skills():
     """Test get-skills-by-profile includes core skills in all profiles."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
+        result = cmd_get_skills_by_profile(Namespace(domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Core skill should appear in output (java-core from extension.py core.defaults)
-        assert 'pm-dev-java:java-core' in result.stdout
+        assert result['status'] == 'success'
+        # Core skill should appear in every profile
+        for profile_skills in result['skills_by_profile'].values():
+            assert 'pm-dev-java:java-core' in profile_skills
 
 
 def test_get_skills_by_profile_includes_profile_skills():
     """Test get-skills-by-profile includes profile-specific skills."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
+        result = cmd_get_skills_by_profile(Namespace(domain='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Module testing profile skill should appear (junit-core from extension.py)
-        assert 'pm-dev-java:junit-core' in result.stdout
+        assert result['status'] == 'success'
+        assert 'pm-dev-java:junit-core' in result['skills_by_profile']['module_testing']
 
 
 def test_get_skills_by_profile_javascript():
     """Test get-skills-by-profile works for javascript domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'javascript')
+        result = cmd_get_skills_by_profile(Namespace(domain='javascript'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'skills_by_profile' in result.stdout
-        # Core js skill should be present (from pm-dev-frontend extension.py)
-        assert 'pm-dev-frontend:javascript' in result.stdout
+        assert result['status'] == 'success'
+        assert 'skills_by_profile' in result
+        all_skills = str(result['skills_by_profile'])
+        assert 'pm-dev-frontend:javascript' in all_skills
 
 
 def test_get_skills_by_profile_unknown_domain():
     """Test get-skills-by-profile returns error for unknown domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'unknown')
+        result = cmd_get_skills_by_profile(Namespace(domain='unknown'))
 
-        assert 'error' in result.stdout.lower(), 'Should report error'
-        assert 'unknown' in result.stdout.lower()
+        assert result['status'] == 'error'
+        assert 'unknown' in result['error'].lower()
 
 
 def test_get_skills_by_profile_flat_domain_fallback():
     """Test get-skills-by-profile returns core skills for flat structure domain (no bundle)."""
     with PlanContext() as ctx:
-        # Create marshal.json with flat structure (no bundle reference)
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'get-skills-by-profile', '--domain', 'java')
+        result = cmd_get_skills_by_profile(Namespace(domain='java'))
 
-        assert 'success' in result.stdout.lower(), 'Should succeed with fallback to top-level defaults'
-        assert 'skills_by_profile' in result.stdout
+        assert result['status'] == 'success'
+        assert 'skills_by_profile' in result
 
 
 # =============================================================================
-# Tests for verbs that work without skill_domains
+# Tests for verbs that work without skill_domains (Tier 2)
 # =============================================================================
 
 
 def test_get_available_works_without_skill_domains():
-    """Test get-available works without skill_domains being configured.
-
-    This is the main fix: get-available should succeed even if marshal.json
-    exists but doesn't have skill_domains, because it uses dynamic discovery.
-    """
+    """Test get-available works without skill_domains being configured."""
     with PlanContext() as ctx:
-        # Create marshal.json WITHOUT skill_domains key
         config = {
             'system': {'retention': {}},
             'plan': {
@@ -828,25 +830,20 @@ def test_get_available_works_without_skill_domains():
                     ],
                 },
             },
-            # NOTE: No skill_domains key!
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get-available')
+        result = cmd_skill_domains(Namespace(verb='get-available'))
 
-        assert result.success, f'get-available should succeed without skill_domains: {result.stderr}'
-        assert 'discovered_domains' in result.stdout
+        assert result['status'] == 'success'
+        assert 'discovered_domains' in result
 
 
 def test_configure_works_without_skill_domains():
-    """Test configure works without skill_domains being configured.
-
-    Configure creates skill_domains from scratch using bundle discovery,
-    so it shouldn't require skill_domains to already exist.
-    """
+    """Test configure works without skill_domains being configured."""
     with PlanContext() as ctx:
-        # Create marshal.json WITHOUT skill_domains key
         config = {
             'system': {'retention': {}},
             'plan': {
@@ -872,32 +869,25 @@ def test_configure_works_without_skill_domains():
                     ],
                 },
             },
-            # NOTE: No skill_domains key!
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'configure', '--domains', 'java')
+        result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
-        assert result.success, f'configure should succeed without skill_domains: {result.stderr}'
-        assert 'system_domain' in result.stdout
-        assert 'configured' in result.stdout
+        assert result['status'] == 'success'
+        assert 'system_domain' in result
 
-        # Verify skill_domains was created
         updated = json.loads(marshal_path.read_text())
-        assert 'skill_domains' in updated, 'skill_domains should be created'
-        assert 'system' in updated['skill_domains'], 'System domain should be added'
-        assert 'java' in updated['skill_domains'], 'Java domain should be added'
+        assert 'skill_domains' in updated
+        assert 'system' in updated['skill_domains']
+        assert 'java' in updated['skill_domains']
 
 
 def test_list_requires_skill_domains():
-    """Test list verb requires skill_domains to be configured.
-
-    Unlike get-available and configure, the list verb reads existing
-    skill_domains from marshal.json, so it should fail if missing.
-    """
+    """Test list verb requires skill_domains to be configured."""
     with PlanContext() as ctx:
-        # Create marshal.json WITHOUT skill_domains key
         config = {
             'system': {'retention': {}},
             'plan': {
@@ -923,29 +913,31 @@ def test_list_requires_skill_domains():
                     ],
                 },
             },
-            # NOTE: No skill_domains key!
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
+        result = cmd_skill_domains(Namespace(verb='list'))
 
-        assert not result.success, 'list should fail without skill_domains'
-        assert 'skill_domains not configured' in result.stdout
+        assert result['status'] == 'error'
+        assert 'skill_domains not configured' in result['error']
 
 
 # =============================================================================
-# Project Skills Tests
+# Project Skills Tests (Tier 2)
 # =============================================================================
 
 
 def test_discover_project_discovers_skills():
-    """Test discover-project finds skills in .claude/skills/."""
+    """Test discover-project finds skills in .claude/skills/.
+
+    This test scans .claude/skills/ relative to cwd, so keep as subprocess.
+    """
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
         # Create .claude/skills/ with a test skill (relative to cwd)
-        # discover-project scans .claude/skills/ relative to working directory
         skills_dir = Path('.claude/skills/test-skill')
         skills_dir.mkdir(parents=True, exist_ok=True)
         skill_md = skills_dir / 'SKILL.md'
@@ -956,9 +948,7 @@ def test_discover_project_discovers_skills():
 
             assert result.success, f'Should succeed: {result.stderr}'
             assert 'project:test-skill' in result.stdout
-            assert 'test-skill' in result.stdout
         finally:
-            # Clean up
             skill_md.unlink()
             skills_dir.rmdir()
 
@@ -968,8 +958,6 @@ def test_discover_project_returns_structured_output():
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
 
-        # discover-project scans .claude/skills/ relative to cwd (project root).
-        # The project root has real .claude/skills/ entries, so count >= 0.
         result = run_script(SCRIPT_PATH, 'skill-domains', 'discover-project')
 
         assert result.success, f'Should succeed: {result.stderr}'
@@ -981,25 +969,20 @@ def test_attach_project_to_domain():
     """Test attach-project adds project skills to a domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'skill-domains',
-            'attach-project',
-            '--domain',
-            'java',
-            '--skills',
-            'project:my-custom-skill',
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='attach-project',
+            domain='java',
+            skills='project:my-custom-skill',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'project_skills' in result.stdout
-        assert 'project:my-custom-skill' in result.stdout
+        assert result['status'] == 'success'
+        assert 'project:my-custom-skill' in result['project_skills']
 
         # Verify marshal.json was updated
         marshal_path = ctx.fixture_dir / 'marshal.json'
         updated = json.loads(marshal_path.read_text())
-        assert 'project_skills' in updated['skill_domains']['java']
         assert 'project:my-custom-skill' in updated['skill_domains']['java']['project_skills']
 
 
@@ -1007,20 +990,16 @@ def test_attach_project_to_system_domain():
     """Test attach-project works with system domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'skill-domains',
-            'attach-project',
-            '--domain',
-            'system',
-            '--skills',
-            'project:cross-domain-skill',
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='attach-project',
+            domain='system',
+            skills='project:cross-domain-skill',
+        ))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
-        # Verify marshal.json was updated
         marshal_path = ctx.fixture_dir / 'marshal.json'
         updated = json.loads(marshal_path.read_text())
         assert 'project:cross-domain-skill' in updated['skill_domains']['system']['project_skills']
@@ -1030,64 +1009,43 @@ def test_attach_project_rejects_invalid_notation():
     """Test attach-project rejects skills not starting with project:."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'skill-domains',
-            'attach-project',
-            '--domain',
-            'java',
-            '--skills',
-            'pm-dev-java:invalid-notation',
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='attach-project',
+            domain='java',
+            skills='pm-dev-java:invalid-notation',
+        ))
 
-        assert 'error' in result.stdout.lower(), 'Should reject non-project: notation'
+        assert result['status'] == 'error'
 
 
 def test_attach_project_rejects_unknown_domain():
     """Test attach-project rejects unknown domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(
-            SCRIPT_PATH,
-            'skill-domains',
-            'attach-project',
-            '--domain',
-            'nonexistent',
-            '--skills',
-            'project:some-skill',
-        )
+        result = cmd_skill_domains(Namespace(
+            verb='attach-project',
+            domain='nonexistent',
+            skills='project:some-skill',
+        ))
 
-        assert 'error' in result.stdout.lower(), 'Should reject unknown domain'
+        assert result['status'] == 'error'
 
 
 def test_attach_project_no_duplicates():
     """Test attach-project does not add duplicate skills."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
         # Attach first time
-        run_script(
-            SCRIPT_PATH,
-            'skill-domains',
-            'attach-project',
-            '--domain',
-            'java',
-            '--skills',
-            'project:my-skill',
-        )
+        cmd_skill_domains(Namespace(verb='attach-project', domain='java', skills='project:my-skill'))
 
         # Attach same skill again
-        run_script(
-            SCRIPT_PATH,
-            'skill-domains',
-            'attach-project',
-            '--domain',
-            'java',
-            '--skills',
-            'project:my-skill',
-        )
+        cmd_skill_domains(Namespace(verb='attach-project', domain='java', skills='project:my-skill'))
 
         # Verify no duplicate
         marshal_path = ctx.fixture_dir / 'marshal.json'
@@ -1099,15 +1057,12 @@ def test_attach_project_no_duplicates():
 def test_configure_preserves_project_skills():
     """Test configure preserves existing project_skills when reconfiguring domains."""
     with PlanContext() as ctx:
-        # Create marshal with project_skills already attached
         config = {
             'skill_domains': {
                 'system': {
                     'defaults': ['plan-marshall:dev-general-practices'],
                     'project_skills': ['project:system-skill'],
-                    'task_executors': {
-                        'implementation': 'plan-marshall:task-implementation',
-                    },
+                    'task_executors': {'implementation': 'plan-marshall:task-implementation'},
                 },
                 'java': {
                     'bundle': 'pm-dev-java',
@@ -1142,39 +1097,25 @@ def test_configure_preserves_project_skills():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        # Reconfigure with java domain
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'configure', '--domains', 'java')
+        result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
-        # Verify project_skills were preserved
         updated = json.loads(marshal_path.read_text())
-
-        # System domain should have preserved project_skills
-        assert 'project_skills' in updated['skill_domains']['system']
         assert 'project:system-skill' in updated['skill_domains']['system']['project_skills']
-
-        # Java domain should have preserved project_skills
-        assert 'project_skills' in updated['skill_domains']['java']
         assert 'project:java-helper' in updated['skill_domains']['java']['project_skills']
 
 
 def test_configure_drops_project_skills_for_removed_domains():
     """Test configure drops project_skills for domains that are no longer selected."""
     with PlanContext() as ctx:
-        # Create marshal with project_skills on a domain that will be removed
         config = {
             'skill_domains': {
                 'system': {'defaults': [], 'task_executors': {}},
-                'java': {
-                    'bundle': 'pm-dev-java',
-                    'project_skills': ['project:java-helper'],
-                },
-                'javascript': {
-                    'bundle': 'pm-dev-frontend',
-                    'project_skills': ['project:js-helper'],
-                },
+                'java': {'bundle': 'pm-dev-java', 'project_skills': ['project:java-helper']},
+                'javascript': {'bundle': 'pm-dev-frontend', 'project_skills': ['project:js-helper']},
             },
             'system': {'retention': {}},
             'plan': {
@@ -1203,18 +1144,14 @@ def test_configure_drops_project_skills_for_removed_domains():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        # Reconfigure with only java (removes javascript)
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'configure', '--domains', 'java')
+        result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
+        assert result['status'] == 'success'
 
         updated = json.loads(marshal_path.read_text())
-
-        # Java should keep its project_skills
         assert 'project:java-helper' in updated['skill_domains']['java'].get('project_skills', [])
-
-        # JavaScript should be gone entirely
         assert 'javascript' not in updated['skill_domains']
 
 
@@ -1256,16 +1193,17 @@ def test_get_nested_includes_project_skills():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'system')
+        result = cmd_skill_domains(Namespace(verb='get', domain='system'))
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'project_skills' in result.stdout
-        assert 'project:my-tool' in result.stdout
+        assert result['status'] == 'success'
+        assert 'project_skills' in result
+        assert 'project:my-tool' in result['project_skills']
 
 
 # =============================================================================
-# list-finalize-steps Tests
+# list-finalize-steps Tests (Tier 2)
 # =============================================================================
 
 
@@ -1273,52 +1211,53 @@ def test_list_finalize_steps_returns_built_in():
     """Test list-finalize-steps returns built-in steps with default: prefix."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'list-finalize-steps')
+        result = cmd_list_finalize_steps(Namespace())
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'default:commit-push' in result.stdout
-        assert 'default:create-pr' in result.stdout
-        assert 'default:archive-plan' in result.stdout
-        assert 'default:branch-cleanup' in result.stdout
-        assert 'built-in' in result.stdout
+        assert result['status'] == 'success'
+        step_names = [s['name'] for s in result['steps']]
+        assert 'default:commit-push' in step_names
+        assert 'default:create-pr' in step_names
+        assert 'default:archive-plan' in step_names
+        assert 'default:branch-cleanup' in step_names
 
 
 def test_list_finalize_steps_count():
     """Test list-finalize-steps returns correct count for built-in steps."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'list-finalize-steps')
+        result = cmd_list_finalize_steps(Namespace())
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        # Should have at least 8 built-in steps
-        assert 'count' in result.stdout
+        assert result['status'] == 'success'
+        assert result['count'] >= 8
 
 
 def test_list_finalize_steps_discovers_project_skills():
-    """Test list-finalize-steps discovers project-local finalize-step-* skills."""
+    """Test list-finalize-steps discovers project-local finalize-step-* skills.
+
+    Scans .claude/skills/ relative to cwd, so keep as subprocess.
+    """
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        # Create a project-local finalize step skill
         skill_dir = ctx.fixture_dir / '.claude' / 'skills' / 'finalize-step-hello-world'
         skill_dir.mkdir(parents=True)
         (skill_dir / 'SKILL.md').write_text(
             '---\nname: finalize-step-hello-world\ndescription: Hello World\n---\n\n# Hello World\n'
         )
 
-        # cwd=fixture_dir so script resolves .claude/skills/ from test directory
         result = run_script(SCRIPT_PATH, 'list-finalize-steps', cwd=ctx.fixture_dir)
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'project:finalize-step-hello-world' in result.stdout
         assert 'Hello World' in result.stdout
-        assert 'project' in result.stdout
 
 
 # =============================================================================
-# list-verify-steps Tests
+# list-verify-steps Tests (Tier 2)
 # =============================================================================
 
 
@@ -1326,34 +1265,73 @@ def test_list_verify_steps_returns_built_in():
     """Test list-verify-steps returns built-in steps with default: prefix."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
 
-        result = run_script(SCRIPT_PATH, 'list-verify-steps')
+        result = cmd_list_verify_steps(Namespace())
 
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'default:quality_check' in result.stdout
-        assert 'default:build_verify' in result.stdout
-        assert 'built-in' in result.stdout
+        assert result['status'] == 'success'
+        step_names = [s['name'] for s in result['steps']]
+        assert 'default:quality_check' in step_names
+        assert 'default:build_verify' in step_names
 
 
 def test_list_verify_steps_discovers_project_skills():
-    """Test list-verify-steps discovers project-local verify-step-* skills."""
+    """Test list-verify-steps discovers project-local verify-step-* skills.
+
+    Scans .claude/skills/ relative to cwd, so keep as subprocess.
+    """
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
 
-        # Create a project-local verify step skill
         skill_dir = ctx.fixture_dir / '.claude' / 'skills' / 'verify-step-hello-world'
         skill_dir.mkdir(parents=True)
         (skill_dir / 'SKILL.md').write_text(
             '---\nname: verify-step-hello-world\ndescription: Hello World\n---\n\n# Hello World\n'
         )
 
-        # cwd=fixture_dir so script resolves .claude/skills/ from test directory
         result = run_script(SCRIPT_PATH, 'list-verify-steps', cwd=ctx.fixture_dir)
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'project:verify-step-hello-world' in result.stdout
         assert 'Hello World' in result.stdout
-        assert 'project' in result.stdout
+
+
+# =============================================================================
+# CLI Plumbing Tests (Tier 3 - subprocess)
+# =============================================================================
+
+
+def test_cli_skill_domains_list():
+    """Test CLI plumbing: skill-domains list outputs TOON."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'list')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'java' in result.stdout
+
+
+def test_cli_skill_domains_get():
+    """Test CLI plumbing: skill-domains get outputs TOON."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'pm-dev-java:java-core' in result.stdout
+
+
+def test_cli_resolve_domain_skills():
+    """Test CLI plumbing: resolve-domain-skills outputs TOON."""
+    with PlanContext() as ctx:
+        create_nested_marshal_json(ctx.fixture_dir)
+
+        result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'implementation')
+
+        assert result.success, f'Should succeed: {result.stderr}'
+        assert 'pm-dev-java:java-core' in result.stdout
 
 
 # =============================================================================

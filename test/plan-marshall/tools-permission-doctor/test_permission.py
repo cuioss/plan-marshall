@@ -5,27 +5,32 @@ Tests for the permission_doctor.py script.
 Tests subcommands:
 - detect-redundant: Detect redundant permissions between global/local
 - detect-suspicious: Detect suspicious permissions (security anti-patterns)
+
+Tier 2 (direct import) for cmd_detect_redundant and cmd_detect_suspicious.
+Tier 3 (subprocess) retained for CLI plumbing and --scope tests.
 """
 
 import json
-import sys
+from argparse import Namespace
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
-# Script path to permission_doctor.py
+# Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-doctor' / 'scripts' / 'permission_doctor.py'
 )
 
+# Tier 2 direct imports
+from permission_doctor import cmd_detect_redundant, cmd_detect_suspicious  # type: ignore[import-not-found]  # noqa: E402
 
 # =============================================================================
-# Tests for detect-redundant subcommand
+# Tier 2: Direct import tests for detect-redundant
 # =============================================================================
 
 
 class TestDetectRedundant(ScriptTestCase):
-    """Test permission_doctor.py detect-redundant subcommand."""
+    """Test permission_doctor.py detect-redundant subcommand via direct import."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-doctor'
@@ -45,14 +50,13 @@ class TestDetectRedundant(ScriptTestCase):
             json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Edit(.plan/**)'], 'deny': [], 'ask': []}})
         )
 
-        result = run_script(
-            SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
+        result = cmd_detect_redundant(
+            Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
         )
-        self.assert_success(result)
-        data = result.toon()
 
-        self.assertIn('redundant', data)
-        redundant_perms = [r['permission'] for r in data['redundant']]
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('redundant', result)
+        redundant_perms = [r['permission'] for r in result['redundant']]
         self.assertIn('Bash(git:*)', redundant_perms)
         self.assertNotIn('Edit(.plan/**)', redundant_perms)
 
@@ -66,14 +70,13 @@ class TestDetectRedundant(ScriptTestCase):
             json.dumps({'permissions': {'allow': ['Skill(pm-dev-java:*)', 'Edit(.plan/**)'], 'deny': [], 'ask': []}})
         )
 
-        result = run_script(
-            SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
+        result = cmd_detect_redundant(
+            Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
         )
-        self.assert_success(result)
-        data = result.toon()
 
-        self.assertIn('marketplace_in_local', data)
-        marketplace_perms = [m['permission'] for m in data['marketplace_in_local']]
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('marketplace_in_local', result)
+        marketplace_perms = [m['permission'] for m in result['marketplace_in_local']]
         self.assertIn('Skill(pm-dev-java:*)', marketplace_perms)
 
     def test_project_local_command_not_flagged_as_marketplace(self):
@@ -120,20 +123,19 @@ This is a project-local command.
             )
         )
 
-        result = run_script(
-            SCRIPT_PATH,
-            'detect-redundant',
-            '--global-settings',
-            str(global_file),
-            '--local-settings',
-            str(local_file),
-            cwd=self.temp_dir,
-        )
-        self.assert_success(result)
-        data = result.toon()
+        import os
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(self.temp_dir)
+            result = cmd_detect_redundant(
+                Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
+            )
+        finally:
+            os.chdir(original_cwd)
 
-        self.assertIn('marketplace_in_local', data)
-        marketplace_perms = [m['permission'] for m in data['marketplace_in_local']]
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('marketplace_in_local', result)
+        marketplace_perms = [m['permission'] for m in result['marketplace_in_local']]
 
         # Project-local command should NOT be flagged
         self.assertNotIn('SlashCommand(/my-local-command)', marketplace_perms)
@@ -151,24 +153,23 @@ This is a project-local command.
             json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Skill(builder:*)'], 'deny': [], 'ask': []}})
         )
 
-        result = run_script(
-            SCRIPT_PATH, 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file)
+        result = cmd_detect_redundant(
+            Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
         )
-        self.assert_success(result)
-        data = result.toon()
 
-        self.assertIn('summary', data)
-        self.assertIn('redundant_count', data['summary'])
-        self.assertIn('marketplace_in_local_count', data['summary'])
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('summary', result)
+        self.assertIn('redundant_count', result['summary'])
+        self.assertIn('marketplace_in_local_count', result['summary'])
 
 
 # =============================================================================
-# Tests for detect-suspicious subcommand
+# Tier 2: Direct import tests for detect-suspicious
 # =============================================================================
 
 
 class TestDetectSuspicious(ScriptTestCase):
-    """Test permission_doctor.py detect-suspicious subcommand."""
+    """Test permission_doctor.py detect-suspicious subcommand via direct import."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-doctor'
@@ -179,12 +180,13 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(sudo:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
-        self.assert_success(result)
-        data = result.toon()
+        result = cmd_detect_suspicious(
+            Namespace(scope=None, settings=str(settings_file), approved_file=None)
+        )
 
-        self.assertIn('suspicious', data)
-        suspicious_perms = [s['permission'] for s in data['suspicious']]
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('suspicious', result)
+        suspicious_perms = [s['permission'] for s in result['suspicious']]
         self.assertIn('Bash(sudo:*)', suspicious_perms)
 
     def test_detect_system_path_access(self):
@@ -192,11 +194,12 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(/etc/**)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
-        self.assert_success(result)
-        data = result.toon()
+        result = cmd_detect_suspicious(
+            Namespace(scope=None, settings=str(settings_file), approved_file=None)
+        )
 
-        suspicious_perms = [s['permission'] for s in data['suspicious']]
+        self.assertEqual(result['status'], 'success')
+        suspicious_perms = [s['permission'] for s in result['suspicious']]
         self.assertIn('Write(/etc/**)', suspicious_perms)
 
     def test_output_includes_severity(self):
@@ -204,12 +207,13 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(rm:-rf:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
-        self.assert_success(result)
-        data = result.toon()
+        result = cmd_detect_suspicious(
+            Namespace(scope=None, settings=str(settings_file), approved_file=None)
+        )
 
-        if data['suspicious']:
-            for item in data['suspicious']:
+        self.assertEqual(result['status'], 'success')
+        if result['suspicious']:
+            for item in result['suspicious']:
                 self.assertIn('severity', item)
 
     def test_detect_dangerous_command_dd(self):
@@ -219,11 +223,12 @@ class TestDetectSuspicious(ScriptTestCase):
             json.dumps({'permissions': {'allow': ['Bash(dd:if=/dev/zero)'], 'deny': [], 'ask': []}})
         )
 
-        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
-        self.assert_success(result)
-        data = result.toon()
+        result = cmd_detect_suspicious(
+            Namespace(scope=None, settings=str(settings_file), approved_file=None)
+        )
 
-        suspicious_perms = [s['permission'] for s in data['suspicious']]
+        self.assertEqual(result['status'], 'success')
+        suspicious_perms = [s['permission'] for s in result['suspicious']]
         self.assertIn('Bash(dd:if=/dev/zero)', suspicious_perms)
 
     def test_detect_broad_write_all_users(self):
@@ -231,11 +236,12 @@ class TestDetectSuspicious(ScriptTestCase):
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(//Users/**)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
-        self.assert_success(result)
-        data = result.toon()
+        result = cmd_detect_suspicious(
+            Namespace(scope=None, settings=str(settings_file), approved_file=None)
+        )
 
-        suspicious_perms = [s['permission'] for s in data['suspicious']]
+        self.assertEqual(result['status'], 'success')
+        suspicious_perms = [s['permission'] for s in result['suspicious']]
         self.assertIn('Write(//Users/**)', suspicious_perms)
 
     def test_clean_settings_no_suspicious(self):
@@ -247,33 +253,35 @@ class TestDetectSuspicious(ScriptTestCase):
             )
         )
 
-        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
-        self.assert_success(result)
-        data = result.toon()
+        result = cmd_detect_suspicious(
+            Namespace(scope=None, settings=str(settings_file), approved_file=None)
+        )
 
-        self.assertEqual(len(data.get('suspicious', [])), 0)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(len(result.get('suspicious', [])), 0)
 
     def test_detect_env_variable_access(self):
         """Should flag broad environment variable access."""
         settings_file = self.temp_dir / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(env:*)'], 'deny': [], 'ask': []}}))
 
-        result = run_script(SCRIPT_PATH, 'detect-suspicious', '--settings', str(settings_file))
-        self.assert_success(result)
-        data = result.toon()
+        result = cmd_detect_suspicious(
+            Namespace(scope=None, settings=str(settings_file), approved_file=None)
+        )
 
+        self.assertEqual(result['status'], 'success')
         # env access may or may not be flagged depending on patterns
         # At minimum, the command should succeed
-        self.assertIn('suspicious', data)
+        self.assertIn('suspicious', result)
 
 
 # =============================================================================
-# Tests for --scope option
+# Tier 3: Subprocess tests for --scope option and CLI plumbing
 # =============================================================================
 
 
 class TestScopeOption(ScriptTestCase):
-    """Test permission_doctor.py --scope option."""
+    """Test permission_doctor.py --scope option (subprocess - needs path resolution)."""
 
     bundle = 'plan-marshall'
     skill = 'tools-permission-doctor'
@@ -281,10 +289,6 @@ class TestScopeOption(ScriptTestCase):
 
     def test_detect_redundant_with_scope_both(self):
         """detect-redundant should work with --scope both."""
-        # Create global settings in home directory simulation
-        # Note: This test uses the actual home directory's settings
-        # For proper isolation, we'd need to mock Path.home()
-        # Here we just verify the command works with --scope both
         result = run_script(SCRIPT_PATH, 'detect-redundant', '--scope', 'both', cwd=self.temp_dir)
         # May succeed or fail depending on whether settings exist
         # Just verify it doesn't crash with unexpected error
@@ -313,7 +317,7 @@ class TestScopeOption(ScriptTestCase):
 
 
 # =============================================================================
-# Simple function-based tests for quick validation
+# Tier 3: Subprocess tests for CLI plumbing
 # =============================================================================
 
 
@@ -338,52 +342,3 @@ def test_detect_suspicious_help():
     """detect-suspicious subcommand should have help."""
     result = run_script(SCRIPT_PATH, 'detect-suspicious', '--help')
     assert result.returncode == 0
-
-
-# =============================================================================
-# Main
-# =============================================================================
-
-if __name__ == '__main__':
-    import unittest
-
-    # Check if script exists first
-    if not SCRIPT_PATH.exists():
-        print(f'ERROR: Script not found: {SCRIPT_PATH}')
-        sys.exit(1)
-
-    # Run unittest-based tests
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
-
-    suite.addTests(loader.loadTestsFromTestCase(TestDetectRedundant))
-    suite.addTests(loader.loadTestsFromTestCase(TestDetectSuspicious))
-    suite.addTests(loader.loadTestsFromTestCase(TestScopeOption))
-
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-
-    # Also run simple function tests
-    print('\n' + '=' * 50)
-    print('Running simple function tests...')
-    print('=' * 50)
-
-    simple_tests = [
-        test_script_exists,
-        test_help_works,
-        test_detect_redundant_help,
-        test_detect_suspicious_help,
-    ]
-
-    # Run simple function tests
-    simple_failures = 0
-    for test_fn in simple_tests:
-        try:
-            test_fn()
-            print(f'  PASS: {test_fn.__name__}')
-        except AssertionError as e:
-            print(f'  FAIL: {test_fn.__name__}: {e}')
-            simple_failures += 1
-
-    # Exit with combined result
-    sys.exit(0 if result.wasSuccessful() and simple_failures == 0 else 1)

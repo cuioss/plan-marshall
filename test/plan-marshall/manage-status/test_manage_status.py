@@ -3,17 +3,42 @@
 
 import json
 import sys
+from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script  # noqa: E402
 
-# Get script path
+# Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
 
-# Import toon_parser - conftest sets up PYTHONPATH
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
+# Tier 2 direct imports via importlib to avoid name collisions
+# (_cmd_query.py exists in both manage-status and manage-tasks)
+import importlib.util  # noqa: E402
+
+_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-status' / 'scripts'
+
+
+def _load_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_lifecycle = _load_module('_status_cmd_lifecycle', '_cmd_lifecycle.py')
+_query = _load_module('_status_cmd_query', '_cmd_query.py')
+
+cmd_create, cmd_delete_plan = _lifecycle.cmd_create, _lifecycle.cmd_delete_plan
+cmd_get_context = _query.cmd_get_context
+cmd_metadata = _query.cmd_metadata
+cmd_progress = _query.cmd_progress
+cmd_read = _query.cmd_read
+cmd_set_phase = _query.cmd_set_phase
+cmd_update_phase = _query.cmd_update_phase
 
 # =============================================================================
 # Test: Create Command
@@ -21,123 +46,69 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E4
 
 
 def test_create_status():
-    """Test creating a status.json with standard 7-phase model."""
+    """Test creating a status.json with standard 6-phase model."""
     with PlanContext(plan_id='test-plan'):
-        result = run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'test-plan',
-            '--title',
-            'Test Plan',
-            '--phases',
-            '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+        result = cmd_create(
+            Namespace(
+                plan_id='test-plan',
+                title='Test Plan',
+                phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+                force=False,
+            )
         )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['created'] is True
-        assert data['plan']['title'] == 'Test Plan'
-        assert data['plan']['current_phase'] == '1-init'
+        assert result['status'] == 'success'
+        assert result['created'] is True
+        assert result['plan']['title'] == 'Test Plan'
+        assert result['plan']['current_phase'] == '1-init'
 
 
 def test_create_status_custom_phases():
     """Test creating a status.json with custom phases."""
     with PlanContext(plan_id='custom-plan'):
-        result = run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'custom-plan',
-            '--title',
-            'Custom Test',
-            '--phases',
-            'init,execute,finalize',
+        result = cmd_create(
+            Namespace(plan_id='custom-plan', title='Custom Test', phases='init,execute,finalize', force=False)
         )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
+        assert result['status'] == 'success'
 
 
 def test_create_status_force_overwrite():
     """Test force overwrite of existing status.json."""
     with PlanContext(plan_id='force-plan'):
         # Create first plan
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'force-plan',
-            '--title',
-            'Original Plan',
-            '--phases',
-            '1-init,2-refine,3-outline',
+        cmd_create(
+            Namespace(plan_id='force-plan', title='Original Plan', phases='1-init,2-refine,3-outline', force=False)
         )
         # Create again with --force
-        result = run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'force-plan',
-            '--title',
-            'Replaced Plan',
-            '--phases',
-            '1-init,2-refine,3-outline',
-            '--force',
+        result = cmd_create(
+            Namespace(plan_id='force-plan', title='Replaced Plan', phases='1-init,2-refine,3-outline', force=True)
         )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['plan']['title'] == 'Replaced Plan'
+        assert result['status'] == 'success'
+        assert result['plan']['title'] == 'Replaced Plan'
 
 
 def test_create_status_already_exists():
     """Test create fails if status already exists without force."""
     with PlanContext(plan_id='exists-plan'):
         # Create first plan
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'exists-plan',
-            '--title',
-            'First Plan',
-            '--phases',
-            '1-init,2-refine',
+        cmd_create(
+            Namespace(plan_id='exists-plan', title='First Plan', phases='1-init,2-refine', force=False)
         )
         # Try to create again without --force
-        result = run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'exists-plan',
-            '--title',
-            'Second Plan',
-            '--phases',
-            '1-init,2-refine',
+        result = cmd_create(
+            Namespace(plan_id='exists-plan', title='Second Plan', phases='1-init,2-refine', force=False)
         )
-        assert not result.success, 'Expected failure for existing status'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'file_exists'
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_exists'
 
 
 def test_create_invalid_plan_id():
-    """Test create fails with invalid plan_id."""
+    """Test create fails with invalid plan_id (sys.exit(1) from require_valid_plan_id)."""
     with PlanContext():
-        result = run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'Invalid_Plan',  # uppercase not allowed
-            '--title',
-            'Test',
-            '--phases',
-            '1-init',
-        )
-        assert not result.success, 'Expected failure for invalid plan_id'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'invalid_plan_id'
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_create(
+                Namespace(plan_id='Invalid_Plan', title='Test', phases='1-init', force=False)
+            )
+        assert exc_info.value.code == 1
 
 
 # =============================================================================
@@ -148,33 +119,21 @@ def test_create_invalid_plan_id():
 def test_read_status():
     """Test reading status.json."""
     with PlanContext(plan_id='read-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'read-plan',
-            '--title',
-            'Read Test',
-            '--phases',
-            '1-init,2-refine,3-outline',
+        cmd_create(
+            Namespace(plan_id='read-plan', title='Read Test', phases='1-init,2-refine,3-outline', force=False)
         )
-        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'read-plan')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert 'plan' in data
-        assert data['plan']['title'] == 'Read Test'
-        assert data['plan']['current_phase'] == '1-init'
+        result = cmd_read(Namespace(plan_id='read-plan'))
+        assert result['status'] == 'success'
+        assert 'plan' in result
+        assert result['plan']['title'] == 'Read Test'
+        assert result['plan']['current_phase'] == '1-init'
 
 
 def test_read_not_found():
-    """Test read fails for non-existent plan."""
+    """Test read fails for non-existent plan (RuntimeError from require_status)."""
     with PlanContext():
-        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
-        assert not result.success, 'Expected failure for missing plan'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'file_not_found'
+        with pytest.raises(RuntimeError):
+            cmd_read(Namespace(plan_id='nonexistent'))
 
 
 # =============================================================================
@@ -185,42 +144,29 @@ def test_read_not_found():
 def test_set_phase():
     """Test setting phase."""
     with PlanContext(plan_id='phase-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'phase-plan',
-            '--title',
-            'Phase Test',
-            '--phases',
-            '1-init,2-refine,3-outline,4-plan,5-execute',
+        cmd_create(
+            Namespace(
+                plan_id='phase-plan',
+                title='Phase Test',
+                phases='1-init,2-refine,3-outline,4-plan,5-execute',
+                force=False,
+            )
         )
-        result = run_script(SCRIPT_PATH, 'set-phase', '--plan-id', 'phase-plan', '--phase', '3-outline')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['current_phase'] == '3-outline'
-        assert data['previous_phase'] == '1-init'
+        result = cmd_set_phase(Namespace(plan_id='phase-plan', phase='3-outline'))
+        assert result['status'] == 'success'
+        assert result['current_phase'] == '3-outline'
+        assert result['previous_phase'] == '1-init'
 
 
 def test_set_phase_invalid():
     """Test set-phase fails for invalid phase."""
     with PlanContext(plan_id='invalid-phase-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'invalid-phase-plan',
-            '--title',
-            'Test',
-            '--phases',
-            '1-init,2-refine',
+        cmd_create(
+            Namespace(plan_id='invalid-phase-plan', title='Test', phases='1-init,2-refine', force=False)
         )
-        result = run_script(SCRIPT_PATH, 'set-phase', '--plan-id', 'invalid-phase-plan', '--phase', 'nonexistent')
-        assert not result.success, 'Expected failure for invalid phase'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'invalid_phase'
+        result = cmd_set_phase(Namespace(plan_id='invalid-phase-plan', phase='nonexistent'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_phase'
 
 
 # =============================================================================
@@ -231,53 +177,26 @@ def test_set_phase_invalid():
 def test_update_phase():
     """Test updating a specific phase status."""
     with PlanContext(plan_id='update-phase-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'update-phase-plan',
-            '--title',
-            'Update Test',
-            '--phases',
-            '1-init,2-refine,3-outline',
+        cmd_create(
+            Namespace(
+                plan_id='update-phase-plan', title='Update Test', phases='1-init,2-refine,3-outline', force=False
+            )
         )
-        result = run_script(
-            SCRIPT_PATH, 'update-phase', '--plan-id', 'update-phase-plan', '--phase', '1-init', '--status', 'done'
-        )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['phase'] == '1-init'
-        assert data['phase_status'] == 'done'
+        result = cmd_update_phase(Namespace(plan_id='update-phase-plan', phase='1-init', status='done'))
+        assert result['status'] == 'success'
+        assert result['phase'] == '1-init'
+        assert result['phase_status'] == 'done'
 
 
 def test_update_phase_not_found():
     """Test update-phase fails for non-existent phase."""
     with PlanContext(plan_id='update-notfound-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'update-notfound-plan',
-            '--title',
-            'Test',
-            '--phases',
-            '1-init,2-refine',
+        cmd_create(
+            Namespace(plan_id='update-notfound-plan', title='Test', phases='1-init,2-refine', force=False)
         )
-        result = run_script(
-            SCRIPT_PATH,
-            'update-phase',
-            '--plan-id',
-            'update-notfound-plan',
-            '--phase',
-            'nonexistent',
-            '--status',
-            'done',
-        )
-        assert not result.success, 'Expected failure for non-existent phase'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'phase_not_found'
+        result = cmd_update_phase(Namespace(plan_id='update-notfound-plan', phase='nonexistent', status='done'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'phase_not_found'
 
 
 # =============================================================================
@@ -288,50 +207,34 @@ def test_update_phase_not_found():
 def test_progress_initial():
     """Test progress calculation for initial state."""
     with PlanContext(plan_id='progress-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'progress-plan',
-            '--title',
-            'Progress Test',
-            '--phases',
-            '1-init,2-refine,3-outline,4-plan',
+        cmd_create(
+            Namespace(plan_id='progress-plan', title='Progress Test', phases='1-init,2-refine,3-outline,4-plan',
+                      force=False)
         )
-        result = run_script(SCRIPT_PATH, 'progress', '--plan-id', 'progress-plan')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['progress']['total_phases'] == 4
-        assert data['progress']['completed_phases'] == 0
-        assert data['progress']['percent'] == 0
+        result = cmd_progress(Namespace(plan_id='progress-plan'))
+        assert result['status'] == 'success'
+        assert result['progress']['total_phases'] == 4
+        assert result['progress']['completed_phases'] == 0
+        assert result['progress']['percent'] == 0
 
 
 def test_progress_after_completion():
     """Test progress calculation after completing phases."""
     with PlanContext(plan_id='progress-done-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'progress-done-plan',
-            '--title',
-            'Progress Test',
-            '--phases',
-            '1-init,2-refine,3-outline,4-plan',
+        cmd_create(
+            Namespace(
+                plan_id='progress-done-plan',
+                title='Progress Test',
+                phases='1-init,2-refine,3-outline,4-plan',
+                force=False,
+            )
         )
         # Mark first two phases as done
-        run_script(
-            SCRIPT_PATH, 'update-phase', '--plan-id', 'progress-done-plan', '--phase', '1-init', '--status', 'done'
-        )
-        run_script(
-            SCRIPT_PATH, 'update-phase', '--plan-id', 'progress-done-plan', '--phase', '2-refine', '--status', 'done'
-        )
-        result = run_script(SCRIPT_PATH, 'progress', '--plan-id', 'progress-done-plan')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['progress']['completed_phases'] == 2
-        assert data['progress']['percent'] == 50
+        cmd_update_phase(Namespace(plan_id='progress-done-plan', phase='1-init', status='done'))
+        cmd_update_phase(Namespace(plan_id='progress-done-plan', phase='2-refine', status='done'))
+        result = cmd_progress(Namespace(plan_id='progress-done-plan'))
+        assert result['progress']['completed_phases'] == 2
+        assert result['progress']['percent'] == 50
 
 
 # =============================================================================
@@ -342,133 +245,65 @@ def test_progress_after_completion():
 def test_metadata_set():
     """Test setting a metadata field."""
     with PlanContext(plan_id='metadata-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'metadata-plan',
-            '--title',
-            'Metadata Test',
-            '--phases',
-            '1-init,2-refine',
+        cmd_create(
+            Namespace(plan_id='metadata-plan', title='Metadata Test', phases='1-init,2-refine', force=False)
         )
-        result = run_script(
-            SCRIPT_PATH,
-            'metadata',
-            '--plan-id',
-            'metadata-plan',
-            '--set',
-            '--field',
-            'change_type',
-            '--value',
-            'feature',
+        result = cmd_metadata(
+            Namespace(plan_id='metadata-plan', set=True, get=False, field='change_type', value='feature')
         )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['field'] == 'change_type'
-        assert data['value'] == 'feature'
+        assert result['status'] == 'success'
+        assert result['field'] == 'change_type'
+        assert result['value'] == 'feature'
 
 
 def test_metadata_get():
     """Test getting a metadata field."""
     with PlanContext(plan_id='metadata-get-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'metadata-get-plan',
-            '--title',
-            'Metadata Test',
-            '--phases',
-            '1-init,2-refine',
+        cmd_create(
+            Namespace(plan_id='metadata-get-plan', title='Metadata Test', phases='1-init,2-refine', force=False)
         )
         # Set metadata first
-        run_script(
-            SCRIPT_PATH,
-            'metadata',
-            '--plan-id',
-            'metadata-get-plan',
-            '--set',
-            '--field',
-            'change_type',
-            '--value',
-            'bug_fix',
+        cmd_metadata(
+            Namespace(plan_id='metadata-get-plan', set=True, get=False, field='change_type', value='bug_fix')
         )
         # Get metadata
-        result = run_script(
-            SCRIPT_PATH, 'metadata', '--plan-id', 'metadata-get-plan', '--get', '--field', 'change_type'
+        result = cmd_metadata(
+            Namespace(plan_id='metadata-get-plan', set=False, get=True, field='change_type', value=None)
         )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['field'] == 'change_type'
-        assert data['value'] == 'bug_fix'
+        assert result['status'] == 'success'
+        assert result['field'] == 'change_type'
+        assert result['value'] == 'bug_fix'
 
 
 def test_metadata_get_not_found():
     """Test getting a non-existent metadata field."""
     with PlanContext(plan_id='metadata-notfound-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'metadata-notfound-plan',
-            '--title',
-            'Test',
-            '--phases',
-            '1-init',
+        cmd_create(
+            Namespace(plan_id='metadata-notfound-plan', title='Test', phases='1-init', force=False)
         )
-        result = run_script(
-            SCRIPT_PATH, 'metadata', '--plan-id', 'metadata-notfound-plan', '--get', '--field', 'nonexistent'
+        result = cmd_metadata(
+            Namespace(plan_id='metadata-notfound-plan', set=False, get=True, field='nonexistent', value=None)
         )
-        assert result.success, 'Missing field should return exit 0 (not_found is a valid query result)'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'not_found'
-        assert data['field'] == 'nonexistent'
+        assert result['status'] == 'not_found'
+        assert result['field'] == 'nonexistent'
 
 
 def test_metadata_update_existing():
     """Test updating an existing metadata field."""
     with PlanContext(plan_id='metadata-update-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'metadata-update-plan',
-            '--title',
-            'Test',
-            '--phases',
-            '1-init',
+        cmd_create(
+            Namespace(plan_id='metadata-update-plan', title='Test', phases='1-init', force=False)
         )
         # Set initial value
-        run_script(
-            SCRIPT_PATH,
-            'metadata',
-            '--plan-id',
-            'metadata-update-plan',
-            '--set',
-            '--field',
-            'change_type',
-            '--value',
-            'feature',
+        cmd_metadata(
+            Namespace(plan_id='metadata-update-plan', set=True, get=False, field='change_type', value='feature')
         )
         # Update value
-        result = run_script(
-            SCRIPT_PATH,
-            'metadata',
-            '--plan-id',
-            'metadata-update-plan',
-            '--set',
-            '--field',
-            'change_type',
-            '--value',
-            'bug_fix',
+        result = cmd_metadata(
+            Namespace(plan_id='metadata-update-plan', set=True, get=False, field='change_type', value='bug_fix')
         )
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['value'] == 'bug_fix'
-        assert data['previous_value'] == 'feature'
+        assert result['value'] == 'bug_fix'
+        assert result['previous_value'] == 'feature'
 
 
 # =============================================================================
@@ -479,50 +314,38 @@ def test_metadata_update_existing():
 def test_get_context():
     """Test get-context returns combined status context."""
     with PlanContext(plan_id='context-plan'):
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'context-plan',
-            '--title',
-            'Context Test',
-            '--phases',
-            '1-init,2-refine,3-outline,4-plan',
+        cmd_create(
+            Namespace(
+                plan_id='context-plan',
+                title='Context Test',
+                phases='1-init,2-refine,3-outline,4-plan',
+                force=False,
+            )
         )
         # Set some metadata
-        run_script(
-            SCRIPT_PATH,
-            'metadata',
-            '--plan-id',
-            'context-plan',
-            '--set',
-            '--field',
-            'change_type',
-            '--value',
-            'feature',
+        cmd_metadata(
+            Namespace(plan_id='context-plan', set=True, get=False, field='change_type', value='feature')
         )
         # Mark first phase as done
-        run_script(SCRIPT_PATH, 'update-phase', '--plan-id', 'context-plan', '--phase', '1-init', '--status', 'done')
-        run_script(SCRIPT_PATH, 'set-phase', '--plan-id', 'context-plan', '--phase', '2-refine')
+        cmd_update_phase(Namespace(plan_id='context-plan', phase='1-init', status='done'))
+        cmd_set_phase(Namespace(plan_id='context-plan', phase='2-refine'))
 
-        result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'context-plan')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
+        result = cmd_get_context(Namespace(plan_id='context-plan'))
+        assert result['status'] == 'success'
         # Should have phase info
-        assert data['current_phase'] == '2-refine'
+        assert result['current_phase'] == '2-refine'
         # Should have progress
-        assert data['total_phases'] == 4
-        assert data['completed_phases'] == 1
+        assert result['total_phases'] == 4
+        assert result['completed_phases'] == 1
         # Should have metadata
-        assert data['change_type'] == 'feature'
+        assert result['change_type'] == 'feature'
 
 
 def test_get_context_not_found():
-    """Test get-context with missing plan."""
+    """Test get-context with missing plan (RuntimeError from require_status)."""
     with PlanContext():
-        result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
-        assert not result.success, 'Expected failure for missing plan'
+        with pytest.raises(RuntimeError):
+            cmd_get_context(Namespace(plan_id='nonexistent'))
 
 
 # =============================================================================
@@ -530,18 +353,11 @@ def test_get_context_not_found():
 # =============================================================================
 
 
-def test_json_storage_format(tmp_path):
+def test_json_storage_format():
     """Test that status is stored in JSON format."""
     with PlanContext(plan_id='json-plan') as ctx:
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'json-plan',
-            '--title',
-            'JSON Test',
-            '--phases',
-            '1-init,2-refine,3-outline',
+        cmd_create(
+            Namespace(plan_id='json-plan', title='JSON Test', phases='1-init,2-refine,3-outline', force=False)
         )
         # Directly read the status.json file
         status_file = ctx.plan_dir / 'status.json'
@@ -555,18 +371,11 @@ def test_json_storage_format(tmp_path):
         assert 'updated' in content
 
 
-def test_json_phases_structure(tmp_path):
+def test_json_phases_structure():
     """Test that phases are stored with correct structure."""
     with PlanContext(plan_id='phases-plan') as ctx:
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'phases-plan',
-            '--title',
-            'Phases Test',
-            '--phases',
-            '1-init,2-refine,3-outline',
+        cmd_create(
+            Namespace(plan_id='phases-plan', title='Phases Test', phases='1-init,2-refine,3-outline', force=False)
         )
         status_file = ctx.plan_dir / 'status.json'
         content = json.loads(status_file.read_text(encoding='utf-8'))
@@ -578,29 +387,14 @@ def test_json_phases_structure(tmp_path):
         assert phases[2] == {'name': '3-outline', 'status': 'pending'}
 
 
-def test_json_metadata_structure(tmp_path):
+def test_json_metadata_structure():
     """Test that metadata is stored correctly."""
     with PlanContext(plan_id='metadata-json-plan') as ctx:
-        run_script(
-            SCRIPT_PATH,
-            'create',
-            '--plan-id',
-            'metadata-json-plan',
-            '--title',
-            'Metadata Test',
-            '--phases',
-            '1-init',
+        cmd_create(
+            Namespace(plan_id='metadata-json-plan', title='Metadata Test', phases='1-init', force=False)
         )
-        run_script(
-            SCRIPT_PATH,
-            'metadata',
-            '--plan-id',
-            'metadata-json-plan',
-            '--set',
-            '--field',
-            'change_type',
-            '--value',
-            'feature',
+        cmd_metadata(
+            Namespace(plan_id='metadata-json-plan', set=True, get=False, field='change_type', value='feature')
         )
 
         status_file = ctx.plan_dir / 'status.json'
@@ -624,13 +418,11 @@ def test_delete_plan_success():
         (ctx.plan_dir / 'tasks').mkdir()
         (ctx.plan_dir / 'tasks' / 'TASK-001.toon').write_text('title: Test')
 
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'delete-test')
-        assert result.success, f'Script failed: {result.stderr}'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'success'
-        assert data['action'] == 'deleted'
-        assert data['plan_id'] == 'delete-test'
-        assert data['files_removed'] == 3  # request.md, references.json, TASK-001.toon
+        result = cmd_delete_plan(Namespace(plan_id='delete-test'))
+        assert result['status'] == 'success'
+        assert result['action'] == 'deleted'
+        assert result['plan_id'] == 'delete-test'
+        assert result['files_removed'] == 3  # request.md, references.json, TASK-001.toon
         # Verify directory was deleted
         assert not ctx.plan_dir.exists()
 
@@ -638,18 +430,41 @@ def test_delete_plan_success():
 def test_delete_plan_not_found():
     """Test deleting a plan that doesn't exist."""
     with PlanContext():
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'nonexistent-plan')
-        assert not result.success, 'Expected failure for nonexistent plan'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'plan_not_found'
+        result = cmd_delete_plan(Namespace(plan_id='nonexistent-plan'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'plan_not_found'
 
 
 def test_delete_plan_invalid_id():
-    """Test delete-plan rejects invalid plan IDs."""
+    """Test delete-plan rejects invalid plan IDs (sys.exit(1) from require_valid_plan_id)."""
     with PlanContext():
-        result = run_script(SCRIPT_PATH, 'delete-plan', '--plan-id', 'Invalid_Plan')
-        assert not result.success, 'Expected failure for invalid plan ID'
-        data = parse_toon(result.stdout)
-        assert data['status'] == 'error'
-        assert data['error'] == 'invalid_plan_id'
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_delete_plan(Namespace(plan_id='Invalid_Plan'))
+        assert exc_info.value.code == 1
+
+
+# =============================================================================
+# CLI Plumbing Tests (Tier 3 - subprocess)
+# =============================================================================
+
+
+def test_cli_missing_required_args():
+    """Test that missing required args produces exit code 2 (argparse error)."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'create', '--plan-id', 'test-plan')
+        # argparse exits with code 2 for missing required args (--title, --phases)
+        assert not result.success
+
+
+def test_cli_help_flag():
+    """Test that --help produces exit code 0."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, '--help')
+        assert result.success
+
+
+def test_cli_subcommand_help():
+    """Test that subcommand --help produces exit code 0."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'create', '--help')
+        assert result.success

@@ -8,11 +8,10 @@ Contains: list-types subcommand and type enumeration logic.
 from _documents_core import (  # type: ignore[import-not-found]
     get_available_types,
     load_document_type,
-    output_toon,
 )
 
 
-def cmd_list_types(args) -> int:
+def cmd_list_types(args) -> dict:
     """List available document types."""
     types = get_available_types()
     type_info = []
@@ -28,5 +27,4 @@ def cmd_list_types(args) -> int:
                 }
             )
 
-    output_toon({'status': 'success', 'types': type_info})
-    return 0
+    return {'status': 'success', 'types': type_info}

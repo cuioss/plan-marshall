@@ -12,7 +12,6 @@ from _status_core import (
     get_status_path,
     log_entry,
     now_utc_iso,
-    output_toon,
     require_status,
     require_valid_plan_id,
     write_status,
@@ -25,34 +24,28 @@ from constants import (  # type: ignore[import-not-found]
 from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 
-def cmd_create(args: argparse.Namespace) -> int:
+def cmd_create(args: argparse.Namespace) -> dict:
     """Create status.json for a new plan."""
     require_valid_plan_id(args)
 
     path = get_status_path(args.plan_id)
     if path.exists() and not args.force:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'file_exists',
-                'message': 'status.json already exists. Use --force to overwrite.',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'file_exists',
+            'message': 'status.json already exists. Use --force to overwrite.',
+        }
 
     # Parse phases from comma-separated argument
     phases = [p.strip() for p in args.phases.split(',') if p.strip()]
     if not phases:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_phases',
-                'message': 'At least one phase is required',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_phases',
+            'message': 'At least one phase is required',
+        }
 
     now = now_utc_iso()
 
@@ -68,19 +61,16 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     write_status(args.plan_id, status)
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'file': 'status.json',
-            'created': True,
-            'plan': {'title': args.title, 'current_phase': phases[0]},
-        }
-    )
-    return 0
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'file': 'status.json',
+        'created': True,
+        'plan': {'title': args.title, 'current_phase': phases[0]},
+    }
 
 
-def cmd_transition(args: argparse.Namespace) -> int:
+def cmd_transition(args: argparse.Namespace) -> dict:
     """Transition to next phase."""
     status = require_status(args)
 
@@ -88,15 +78,12 @@ def cmd_transition(args: argparse.Namespace) -> int:
     phase_names = [p['name'] for p in phases]
 
     if args.completed not in phase_names:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'invalid_phase',
-                'message': f'Invalid phase: {args.completed}',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {args.completed}',
+        }
 
     completed_idx = phase_names.index(args.completed)
 
@@ -119,20 +106,16 @@ def cmd_transition(args: argparse.Namespace) -> int:
     else:
         result['message'] = 'All phases completed'
 
-    output_toon(result)
-    return 0
+    return result
 
 
-def cmd_archive(args: argparse.Namespace) -> int:
+def cmd_archive(args: argparse.Namespace) -> dict:
     """Archive a completed plan."""
     require_valid_plan_id(args)
 
     plan_dir = get_plan_dir(args.plan_id)
     if not plan_dir.exists():
-        output_toon(
-            {'status': 'error', 'plan_id': args.plan_id, 'error': 'not_found', 'message': 'Plan directory not found'}
-        )
-        return 1
+        return {'status': 'error', 'plan_id': args.plan_id, 'error': 'not_found', 'message': 'Plan directory not found'}
 
     date_prefix = now_utc_iso()[:10]  # YYYY-MM-DD
     archive_name = f'{date_prefix}-{args.plan_id}'
@@ -140,34 +123,27 @@ def cmd_archive(args: argparse.Namespace) -> int:
     archive_path = archive_dir / archive_name
 
     if args.dry_run:
-        output_toon(
-            {'status': 'success', 'plan_id': args.plan_id, 'dry_run': True, 'would_archive_to': str(archive_path)}
-        )
-        return 0
+        return {'status': 'success', 'plan_id': args.plan_id, 'dry_run': True, 'would_archive_to': str(archive_path)}
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     shutil.move(str(plan_dir), str(archive_path))
 
-    output_toon({'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)})
-    return 0
+    return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
 
 
-def cmd_delete_plan(args: argparse.Namespace) -> int:
+def cmd_delete_plan(args: argparse.Namespace) -> dict:
     """Delete an entire plan directory."""
     require_valid_plan_id(args)
 
     plan_dir = get_plan_dir(args.plan_id)
 
     if not plan_dir.exists():
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'plan_not_found',
-                'message': f'Plan directory does not exist: {plan_dir}',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_not_found',
+            'message': f'Plan directory does not exist: {plan_dir}',
+        }
 
     # Count files before deletion for audit trail
     files_removed = sum(1 for _ in plan_dir.rglob('*') if _.is_file())
@@ -175,33 +151,24 @@ def cmd_delete_plan(args: argparse.Namespace) -> int:
     try:
         shutil.rmtree(plan_dir)
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Deleted plan ({files_removed} files)')
-        output_toon(
-            {
-                'status': 'success',
-                'plan_id': args.plan_id,
-                'action': 'deleted',
-                'path': str(plan_dir),
-                'files_removed': files_removed,
-            }
-        )
-        return 0
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'action': 'deleted',
+            'path': str(plan_dir),
+            'files_removed': files_removed,
+        }
     except PermissionError as e:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'permission_denied',
-                'message': f'Permission denied: {e}',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'permission_denied',
+            'message': f'Permission denied: {e}',
+        }
     except Exception as e:
-        output_toon(
-            {
-                'status': 'error',
-                'plan_id': args.plan_id,
-                'error': 'delete_failed',
-                'message': f'Failed to delete plan directory: {e}',
-            }
-        )
-        return 1
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'delete_failed',
+            'message': f'Failed to delete plan directory: {e}',
+        }

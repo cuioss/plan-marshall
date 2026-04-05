@@ -8,17 +8,14 @@ import argparse
 import json
 
 from _config_core import (
-    EXIT_ERROR,
-    EXIT_SUCCESS,
     get_extension_defaults,
     load_config,
-    output,
     require_initialized,
     save_config,
 )
 
 
-def cmd_ext_defaults(args: argparse.Namespace) -> int:
+def cmd_ext_defaults(args: argparse.Namespace) -> dict:
     """Route ext-defaults subcommands."""
     handlers = {
         'get': cmd_ext_defaults_get,
@@ -30,10 +27,10 @@ def cmd_ext_defaults(args: argparse.Namespace) -> int:
     handler = handlers.get(args.verb)
     if handler:
         return handler(args)
-    return EXIT_ERROR
+    return {'status': 'error', 'error': 'Unknown ext-defaults verb'}
 
 
-def cmd_ext_defaults_get(args: argparse.Namespace) -> int:
+def cmd_ext_defaults_get(args: argparse.Namespace) -> dict:
     """Get extension default value by key."""
     try:
         require_initialized()
@@ -42,18 +39,15 @@ def cmd_ext_defaults_get(args: argparse.Namespace) -> int:
         key = args.key
 
         if key not in ext:
-            output({'status': 'not_found', 'key': key})
-            return EXIT_SUCCESS
+            return {'status': 'not_found', 'key': key}
 
         value = ext[key]
-        output({'status': 'success', 'key': key, 'value': value})
-        return EXIT_SUCCESS
+        return {'status': 'success', 'key': key, 'value': value}
     except Exception as e:
-        output({'status': 'error', 'error': str(e)})
-        return EXIT_ERROR
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_ext_defaults_set(args: argparse.Namespace) -> int:
+def cmd_ext_defaults_set(args: argparse.Namespace) -> dict:
     """Set extension default value (always overwrites)."""
     try:
         require_initialized()
@@ -72,14 +66,12 @@ def cmd_ext_defaults_set(args: argparse.Namespace) -> int:
         ext[key] = value
         save_config(config)
 
-        output({'status': 'success', 'key': key, 'value': value, 'action': 'set'})
-        return EXIT_SUCCESS
+        return {'status': 'success', 'key': key, 'value': value, 'action': 'set'}
     except Exception as e:
-        output({'status': 'error', 'error': str(e)})
-        return EXIT_ERROR
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_ext_defaults_set_default(args: argparse.Namespace) -> int:
+def cmd_ext_defaults_set_default(args: argparse.Namespace) -> dict:
     """Set extension default value only if key doesn't exist (write-once)."""
     try:
         require_initialized()
@@ -90,8 +82,7 @@ def cmd_ext_defaults_set_default(args: argparse.Namespace) -> int:
         raw_value = args.value
 
         if key in ext:
-            output({'status': 'skipped', 'key': key, 'reason': 'key_exists', 'existing_value': ext[key]})
-            return EXIT_SUCCESS
+            return {'status': 'skipped', 'key': key, 'reason': 'key_exists', 'existing_value': ext[key]}
 
         # Try to parse as JSON, fall back to string
         try:
@@ -102,28 +93,24 @@ def cmd_ext_defaults_set_default(args: argparse.Namespace) -> int:
         ext[key] = value
         save_config(config)
 
-        output({'status': 'success', 'key': key, 'value': value, 'action': 'set_default'})
-        return EXIT_SUCCESS
+        return {'status': 'success', 'key': key, 'value': value, 'action': 'set_default'}
     except Exception as e:
-        output({'status': 'error', 'error': str(e)})
-        return EXIT_ERROR
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_ext_defaults_list(args: argparse.Namespace) -> int:
+def cmd_ext_defaults_list(args: argparse.Namespace) -> dict:
     """List all extension defaults."""
     try:
         require_initialized()
         config = load_config()
         ext = get_extension_defaults(config)
 
-        output({'status': 'success', 'extension_defaults': ext, 'count': len(ext)})
-        return EXIT_SUCCESS
+        return {'status': 'success', 'extension_defaults': ext, 'count': len(ext)}
     except Exception as e:
-        output({'status': 'error', 'error': str(e)})
-        return EXIT_ERROR
+        return {'status': 'error', 'error': str(e)}
 
 
-def cmd_ext_defaults_remove(args: argparse.Namespace) -> int:
+def cmd_ext_defaults_remove(args: argparse.Namespace) -> dict:
     """Remove extension default by key."""
     try:
         require_initialized()
@@ -133,14 +120,11 @@ def cmd_ext_defaults_remove(args: argparse.Namespace) -> int:
         key = args.key
 
         if key not in ext:
-            output({'status': 'skipped', 'key': key, 'reason': 'key_not_found'})
-            return EXIT_SUCCESS
+            return {'status': 'skipped', 'key': key, 'reason': 'key_not_found'}
 
         del ext[key]
         save_config(config)
 
-        output({'status': 'success', 'key': key, 'action': 'removed'})
-        return EXIT_SUCCESS
+        return {'status': 'success', 'key': key, 'action': 'removed'}
     except Exception as e:
-        output({'status': 'error', 'error': str(e)})
-        return EXIT_ERROR
+        return {'status': 'error', 'error': str(e)}

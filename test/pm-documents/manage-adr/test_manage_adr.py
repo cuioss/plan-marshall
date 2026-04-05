@@ -1,24 +1,46 @@
 #!/usr/bin/env python3
-"""Tests for manage-adr.py script."""
+"""Tests for manage-adr.py script.
 
+Tier 2 (direct import) tests with 2 subprocess CLI plumbing tests retained.
+"""
+
+import importlib.util
 import os
 import shutil
 import sys
 import tempfile
 import unittest
+from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from toon_parser import parse_toon  # type: ignore[import-not-found]
+from conftest import get_script_path, run_script  # noqa: E402
 
-from conftest import ScriptResult, get_script_path, run_script
+# Script path for remaining subprocess (CLI plumbing) tests
+SCRIPT_PATH = get_script_path('pm-documents', 'manage-adr', 'manage-adr.py')
+
+# Tier 2 direct imports - load hyphenated module via importlib
+_MANAGE_ADR_SCRIPT = str(
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace' / 'bundles' / 'pm-documents' / 'skills' / 'manage-adr' / 'scripts' / 'manage-adr.py'
+)
+_spec = importlib.util.spec_from_file_location('manage_adr', _MANAGE_ADR_SCRIPT)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+
+cmd_list = _mod.cmd_list
+cmd_create = _mod.cmd_create
+cmd_read = _mod.cmd_read
+cmd_update = _mod.cmd_update
+cmd_delete = _mod.cmd_delete
+cmd_next_number = _mod.cmd_next_number
+ADR_DIR_REF = _mod  # for patching ADR_DIR
 
 
 class TestManageAdr(unittest.TestCase):
-    """Test cases for ADR management script."""
+    """Test cases for ADR management script (Tier 2 direct import)."""
 
-    script_path: Path
     temp_dir: str
     adr_dir: Path
     original_cwd: str
@@ -26,7 +48,6 @@ class TestManageAdr(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test fixtures."""
-        cls.script_path = get_script_path('pm-documents', 'manage-adr', 'manage-adr.py')
         cls.temp_dir = tempfile.mkdtemp()
         cls.adr_dir = Path(cls.temp_dir) / 'doc' / 'adr'
         cls.adr_dir.mkdir(parents=True)
@@ -44,30 +65,22 @@ class TestManageAdr(unittest.TestCase):
         for f in self.adr_dir.glob('*.adoc'):
             f.unlink()
 
-    def run_adr(self, *args) -> 'ScriptResult':
-        """Run the ADR script with given arguments."""
-        return run_script(self.script_path, *args, cwd=self.temp_dir)
-
-    def parse_output(self, result: 'ScriptResult') -> dict:
-        """Parse TOON output from stdout."""
-        return parse_toon(result.stdout)
+    # =========================================================================
+    # Tier 2: Direct import tests
+    # =========================================================================
 
     def test_next_number_empty_dir(self):
         """Test next-number returns 1 for empty directory."""
-        result = self.run_adr('next-number')
-        self.assertEqual(result.returncode, 0)
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'success')
-        self.assertEqual(output['next_number'], 1)
+        result = cmd_next_number(Namespace(command='next-number'))
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['next_number'], 1)
 
     def test_create_adr(self):
         """Test creating a new ADR."""
-        result = self.run_adr('create', '--title', 'Use PostgreSQL')
-        self.assertEqual(result.returncode, 0)
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'success')
-        self.assertEqual(output['number'], 1)
-        self.assertIn('001-Use_PostgreSQL.adoc', output['path'])
+        result = cmd_create(Namespace(command='create', title='Use PostgreSQL', status='Proposed'))
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['number'], 1)
+        self.assertIn('001-Use_PostgreSQL.adoc', result['path'])
 
         # Verify file exists
         created_file = self.adr_dir / '001-Use_PostgreSQL.adoc'
@@ -81,95 +94,78 @@ class TestManageAdr(unittest.TestCase):
 
     def test_create_adr_with_status(self):
         """Test creating ADR with custom status."""
-        result = self.run_adr('create', '--title', 'Another Decision', '--status', 'Accepted')
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'success')
+        result = cmd_create(Namespace(command='create', title='Another Decision', status='Accepted'))
+        self.assertEqual(result['status'], 'success')
 
         # Verify status in file
-        created_file = self.adr_dir / f'{output["number"]:03d}-Another_Decision.adoc'
+        created_file = self.adr_dir / f'{result["number"]:03d}-Another_Decision.adoc'
         content = created_file.read_text()
         self.assertIn('Accepted', content)
 
     def test_create_multiple_adrs(self):
         """Test creating multiple ADRs increments numbers."""
-        self.run_adr('create', '--title', 'First ADR')
-        self.run_adr('create', '--title', 'Second ADR')
-        result = self.run_adr('create', '--title', 'Third ADR')
-
-        output = self.parse_output(result)
-        self.assertEqual(output['number'], 3)
+        cmd_create(Namespace(command='create', title='First ADR', status='Proposed'))
+        cmd_create(Namespace(command='create', title='Second ADR', status='Proposed'))
+        result = cmd_create(Namespace(command='create', title='Third ADR', status='Proposed'))
+        self.assertEqual(result['number'], 3)
 
     def test_list_adrs(self):
         """Test listing ADRs."""
-        self.run_adr('create', '--title', 'ADR One')
-        self.run_adr('create', '--title', 'ADR Two')
+        cmd_create(Namespace(command='create', title='ADR One', status='Proposed'))
+        cmd_create(Namespace(command='create', title='ADR Two', status='Proposed'))
 
-        result = self.run_adr('list')
-        self.assertEqual(result.returncode, 0)
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'success')
-        self.assertEqual(output['count'], 2)
+        result = cmd_list(Namespace(command='list', status=None))
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['count'], 2)
 
     def test_list_adrs_filter_status(self):
         """Test listing ADRs filtered by status."""
-        self.run_adr('create', '--title', 'Proposed One')
-        self.run_adr('create', '--title', 'Accepted One', '--status', 'Accepted')
+        cmd_create(Namespace(command='create', title='Proposed One', status='Proposed'))
+        cmd_create(Namespace(command='create', title='Accepted One', status='Accepted'))
 
-        result = self.run_adr('list', '--status', 'Proposed')
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'success')
-        self.assertEqual(output['count'], 1)
+        result = cmd_list(Namespace(command='list', status='Proposed'))
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['count'], 1)
 
     def test_read_adr(self):
         """Test reading ADR by number."""
-        self.run_adr('create', '--title', 'Test Read')
+        cmd_create(Namespace(command='create', title='Test Read', status='Proposed'))
 
-        result = self.run_adr('read', '--number', '1')
-        self.assertEqual(result.returncode, 0)
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'success')
-        # Content is multiline — check stdout directly
-        self.assertIn('Test Read', result.stdout)
+        result = cmd_read(Namespace(command='read', number=1))
+        self.assertEqual(result['status'], 'success')
+        self.assertIn('Test Read', result['content'])
 
     def test_read_adr_not_found(self):
         """Test reading non-existent ADR."""
-        result = self.run_adr('read', '--number', '999')
-        self.assertEqual(result.returncode, 0)
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'error')
-        self.assertIn('not found', output['message'].lower())
+        result = cmd_read(Namespace(command='read', number=999))
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('not found', result['message'].lower())
 
     def test_update_adr_status(self):
         """Test updating ADR status."""
-        self.run_adr('create', '--title', 'Update Test')
+        cmd_create(Namespace(command='create', title='Update Test', status='Proposed'))
 
-        result = self.run_adr('update', '--number', '1', '--status', 'Deprecated')
-        self.assertEqual(result.returncode, 0)
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'success')
+        result = cmd_update(Namespace(command='update', number=1, status='Deprecated'))
+        self.assertEqual(result['status'], 'success')
 
         # Verify status updated
-        result = self.run_adr('read', '--number', '1')
-        self.assertIn('Deprecated', result.stdout)
+        read_result = cmd_read(Namespace(command='read', number=1))
+        self.assertIn('Deprecated', read_result['content'])
 
     def test_delete_requires_force(self):
         """Test delete requires --force flag."""
-        self.run_adr('create', '--title', 'Delete Test')
+        cmd_create(Namespace(command='create', title='Delete Test', status='Proposed'))
 
-        result = self.run_adr('delete', '--number', '1')
-        self.assertEqual(result.returncode, 0)
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'error')
-        self.assertIn('--force', output['message'])
+        result = cmd_delete(Namespace(command='delete', number=1, force=False))
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('--force', result['message'])
 
     def test_delete_with_force(self):
         """Test delete with --force flag."""
-        self.run_adr('create', '--title', 'Delete Me')
+        cmd_create(Namespace(command='create', title='Delete Me', status='Proposed'))
 
-        result = self.run_adr('delete', '--number', '1', '--force')
-        self.assertEqual(result.returncode, 0)
-        output = self.parse_output(result)
-        self.assertTrue(output['deleted'])
+        result = cmd_delete(Namespace(command='delete', number=1, force=True))
+        self.assertTrue(result['deleted'])
 
         # Verify file is deleted
         files = list(self.adr_dir.glob('001-*.adoc'))
@@ -177,22 +173,36 @@ class TestManageAdr(unittest.TestCase):
 
     def test_filename_sanitization(self):
         """Test filename sanitization for special characters."""
-        result = self.run_adr('create', '--title', 'Use API/REST for User Service!')
-        output = self.parse_output(result)
-        self.assertEqual(output['status'], 'success')
+        result = cmd_create(Namespace(command='create', title='Use API/REST for User Service!', status='Proposed'))
+        self.assertEqual(result['status'], 'success')
         # Get just the filename part
-        filename = Path(output['path']).name
+        filename = Path(result['path']).name
         # Special chars should be removed/replaced
         self.assertNotIn('/', filename)
         self.assertNotIn('!', filename)
 
-    def test_invalid_status(self):
-        """Test creating ADR with invalid status."""
-        result = self.run_adr('create', '--title', 'Invalid Status', '--status', 'InvalidStatus')
+    # =========================================================================
+    # Tier 3: Subprocess CLI plumbing tests (retained)
+    # =========================================================================
+
+    def test_cli_invalid_status(self):
+        """Test creating ADR with invalid status via CLI (argparse rejection)."""
+        result = run_script(SCRIPT_PATH, 'create', '--title', 'Invalid Status', '--status', 'InvalidStatus',
+                            cwd=self.temp_dir)
         # argparse will reject invalid choices with exit code 2
         self.assertNotEqual(result.returncode, 0)
         # Error message is in stderr from argparse
         self.assertIn('invalid choice', result.stderr.lower())
+
+    def test_cli_create_and_list(self):
+        """Test CLI plumbing: create then list via subprocess."""
+        result = run_script(SCRIPT_PATH, 'create', '--title', 'CLI Test', cwd=self.temp_dir)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('success', result.stdout)
+
+        result = run_script(SCRIPT_PATH, 'list', cwd=self.temp_dir)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('success', result.stdout)
 
 
 if __name__ == '__main__':

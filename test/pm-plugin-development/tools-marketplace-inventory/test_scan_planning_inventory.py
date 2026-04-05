@@ -3,6 +3,11 @@
 
 Tests planning inventory scanning including core/derived categorization,
 statistics calculation, output formats, and integration with marketplace-inventory.
+
+NOTE: All tests remain Tier 3 (subprocess) because scan-planning-inventory.py
+has a monolithic main() function with no separate cmd_* entry points for direct
+import. The script's logic (marketplace inventory aggregation, categorization,
+statistics) is tightly coupled to argparse and output serialization within main().
 """
 
 import sys

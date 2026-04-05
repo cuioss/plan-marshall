@@ -3,6 +3,13 @@
 
 Tests dependency resolution including detection of various dependency types,
 index building, forward/reverse lookups, and validation.
+
+NOTE: Detection/parsing tests (TestComponentId, TestFrontmatterExtraction,
+TestScriptNotationDetection, etc.) are already Tier 2 via direct import of
+_dep_detection module. CLI subcommand tests (TestDepsSubcommand, etc.) remain
+Tier 3 because cmd_deps/cmd_rdeps/cmd_tree/cmd_validate take a DependencyIndex
+as first argument (not an argparse Namespace), requiring full index construction
+that the CLI main() handles.
 """
 
 import json

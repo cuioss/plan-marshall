@@ -3,6 +3,9 @@
 
 Tests auto-detection of build systems and domains from project files.
 Domain detection uses skill-domains detect to find build files at project root.
+
+Detection tests remain as subprocess (Tier 3) because detect_domains() scans
+from cwd via Path('.'), requiring cwd=fixture_dir in subprocess calls.
 """
 
 import json
@@ -127,7 +130,7 @@ def create_mixed_multi_module_project(fixture_dir: Path) -> None:
 
 
 def create_minimal_marshal_json(fixture_dir: Path) -> Path:
-    """Create minimal marshal.json for detection tests."""
+    """Create minimal marshal.json in fixture directory."""
     config = {
         'skill_domains': {'system': {'defaults': ['plan-marshall:general-development-rules'], 'optionals': []}},
         'system': {'retention': {'logs_days': 1}},
@@ -139,7 +142,10 @@ def create_minimal_marshal_json(fixture_dir: Path) -> Path:
 
 
 # =============================================================================
-# Domain Detection Tests (skill-domains detect)
+# Domain Detection Tests (Tier 3 - subprocess, require cwd=fixture_dir)
+#
+# detect_domains() scans from Path('.'), so all detection tests must use
+# subprocess with cwd=fixture_dir to position the working directory correctly.
 # =============================================================================
 
 

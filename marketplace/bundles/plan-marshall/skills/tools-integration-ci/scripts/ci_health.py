@@ -297,8 +297,8 @@ def cmd_persist(args: argparse.Namespace) -> dict:
 
     config = load_config()
     ci_config = config.get('ci', {})
-    result_code = _handle_persist(persist_args, config, ci_config)
-    if result_code != 0:
+    persist_result = _handle_persist(persist_args, config, ci_config)
+    if persist_result.get('status') != 'success':
         return {'status': 'error', 'error': 'Failed to persist CI config'}
 
     return {

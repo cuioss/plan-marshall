@@ -1,9 +1,13 @@
-"""Tests for pr.py - consolidated PR workflow script (provider-agnostic)."""
+"""Tests for pr.py - consolidated PR workflow script (provider-agnostic).
+
+Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
+"""
 
 import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -11,18 +15,22 @@ from toon_parser import parse_toon, parse_toon_table  # type: ignore[import-not-
 
 from conftest import get_script_path, run_script  # noqa: E402
 
-# Script under test
+# Script under test (for subprocess CLI plumbing tests)
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-ci', 'pr.py')
 
-
-def run_pr_script(args: list) -> tuple:
-    """Run pr.py with args and return (stdout, stderr, returncode)."""
-    result = run_script(SCRIPT_PATH, *args)
-    return result.stdout, result.stderr, result.returncode
+# Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
+from pr import (  # type: ignore[import-not-found]  # noqa: E402
+    _get_provider_module,
+    classify_comment,
+    fetch_comments,
+    get_current_pr_number,
+    triage_comment,
+)
+from triage_helpers import cmd_triage_batch_handler, cmd_triage_single  # type: ignore[import-not-found]  # noqa: E402
 
 
 class TestPRTriage(unittest.TestCase):
-    """Test pr.py triage subcommand."""
+    """Test pr.py triage via direct import."""
 
     def test_triage_high_priority_bug(self):
         """Test triage identifies bug as high priority."""
@@ -33,9 +41,7 @@ class TestPRTriage(unittest.TestCase):
             'line': 42,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'code_change')
         self.assertEqual(result['priority'], 'high')
         self.assertEqual(result['status'], 'success')
@@ -49,9 +55,7 @@ class TestPRTriage(unittest.TestCase):
             'line': 10,
             'author': 'security-reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'code_change')
         self.assertEqual(result['priority'], 'high')
 
@@ -64,9 +68,7 @@ class TestPRTriage(unittest.TestCase):
             'line': 25,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'code_change')
         self.assertEqual(result['priority'], 'medium')
 
@@ -79,9 +81,7 @@ class TestPRTriage(unittest.TestCase):
             'line': 5,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'code_change')
         self.assertEqual(result['priority'], 'low')
 
@@ -94,18 +94,14 @@ class TestPRTriage(unittest.TestCase):
             'line': 100,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'explain')
         self.assertEqual(result['priority'], 'low')
 
     def test_triage_lgtm_ignored(self):
         """Test triage ignores LGTM comments."""
         comment = {'id': 'C6', 'body': 'LGTM!', 'path': None, 'line': None, 'author': 'approver'}
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'ignore')
         self.assertEqual(result['priority'], 'low')
 
@@ -118,34 +114,22 @@ class TestPRTriage(unittest.TestCase):
             'line': 15,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'code_change')
         self.assertEqual(result['priority'], 'low')
 
     def test_triage_empty_body(self):
         """Test triage handles empty comment body."""
         comment = {'id': 'C8', 'body': '', 'path': 'src/Empty.java', 'line': 1, 'author': 'reviewer'}
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'ignore')
         self.assertIn('Empty', result['reason'])
 
     def test_triage_invalid_json(self):
-        """Test triage handles invalid JSON."""
-        stdout, _, code = run_pr_script(['triage', '--comment', 'not-valid-json'])
-        self.assertEqual(code, 1)
-        result = parse_toon(stdout)
+        """Test triage handles invalid JSON via cmd_triage_single."""
+        result = cmd_triage_single('not-valid-json', triage_comment)
         self.assertEqual(result['status'], 'error')
         self.assertIn('Invalid JSON', result['error'])
-
-    def test_triage_missing_comment(self):
-        """Test triage without required comment arg."""
-        _, stderr, code = run_pr_script(['triage'])
-        self.assertNotEqual(code, 0)
-        self.assertIn('--comment', stderr)
 
     def test_triage_location_formatting(self):
         """Test triage formats location correctly."""
@@ -156,14 +140,12 @@ class TestPRTriage(unittest.TestCase):
             'line': 99,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['location'], 'src/File.java:99')
 
 
 class TestPRTriageBatch(unittest.TestCase):
-    """Test pr.py triage-batch subcommand."""
+    """Test pr.py triage-batch via direct import."""
 
     def test_triage_batch_multiple_comments(self):
         """Test batch triage processes multiple comments at once."""
@@ -172,9 +154,7 @@ class TestPRTriageBatch(unittest.TestCase):
             {'id': 'B2', 'body': 'LGTM!', 'path': None, 'line': None, 'author': 'r2'},
             {'id': 'B3', 'body': 'Why did you do this?', 'path': 'src/B.java', 'line': 5, 'author': 'r3'},
         ]
-        stdout, _, code = run_pr_script(['triage-batch', '--comments', json.dumps(comments)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = cmd_triage_batch_handler(json.dumps(comments), triage_comment, ['code_change', 'explain', 'ignore'])
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['summary']['total'], 3)
         self.assertEqual(result['summary']['code_change'], 1)
@@ -183,23 +163,17 @@ class TestPRTriageBatch(unittest.TestCase):
 
     def test_triage_batch_empty_list(self):
         """Test batch triage with empty list."""
-        stdout, _, code = run_pr_script(['triage-batch', '--comments', '[]'])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = cmd_triage_batch_handler('[]', triage_comment, ['code_change', 'explain', 'ignore'])
         self.assertEqual(result['summary']['total'], 0)
 
     def test_triage_batch_invalid_json(self):
         """Test batch triage with invalid JSON."""
-        stdout, _, code = run_pr_script(['triage-batch', '--comments', 'not-json'])
-        self.assertEqual(code, 1)
-        result = parse_toon(stdout)
+        result = cmd_triage_batch_handler('not-json', triage_comment, ['code_change', 'explain', 'ignore'])
         self.assertEqual(result['status'], 'error')
 
     def test_triage_batch_not_array(self):
         """Test batch triage rejects non-array input."""
-        stdout, _, code = run_pr_script(['triage-batch', '--comments', '{"id": "C1"}'])
-        self.assertEqual(code, 1)
-        result = parse_toon(stdout)
+        result = cmd_triage_batch_handler('{"id": "C1"}', triage_comment, ['code_change', 'explain', 'ignore'])
         self.assertEqual(result['status'], 'error')
         self.assertIn('array', result['error'])
 
@@ -285,87 +259,37 @@ class TestParseToonTable(unittest.TestCase):
 
 
 class TestClassifyCommentOrdering(unittest.TestCase):
-    """Test that classify_comment checks code_change BEFORE ignore.
-
-    This verifies the fix for the ordering bug where ignore patterns
-    (e.g., 'lgtm') could swallow actionable comments like
-    'LGTM, but please fix the typo'.
-    """
+    """Test that classify_comment checks code_change BEFORE ignore."""
 
     def test_lgtm_with_fix_request_is_code_change(self):
         """LGTM with actionable fix request should be code_change, not ignore."""
-        comment = {
-            'id': 'ORD1',
-            'body': 'LGTM, but please fix the typo in the variable name',
-            'path': 'src/Main.java',
-            'line': 10,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('LGTM, but please fix the typo in the variable name')
         self.assertEqual(result['action'], 'code_change')
 
     def test_looks_good_but_has_bug(self):
         """'Looks good but there's a bug' should be code_change."""
-        comment = {
-            'id': 'ORD2',
-            'body': 'Looks good overall, but there is a bug in the error handling',
-            'path': 'src/Handler.java',
-            'line': 55,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('Looks good overall, but there is a bug in the error handling')
         self.assertEqual(result['action'], 'code_change')
         self.assertEqual(result['priority'], 'high')
 
     def test_nice_but_rename(self):
         """'Nice, but rename X' should be code_change."""
-        comment = {
-            'id': 'ORD3',
-            'body': 'Nice work! But please rename this variable to camelCase',
-            'path': 'src/Utils.java',
-            'line': 3,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('Nice work! But please rename this variable to camelCase')
         self.assertEqual(result['action'], 'code_change')
 
     def test_pure_lgtm_still_ignored(self):
         """Pure LGTM without actionable content should still be ignore."""
-        comment = {
-            'id': 'ORD4',
-            'body': 'LGTM!',
-            'path': None,
-            'line': None,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('LGTM!')
         self.assertEqual(result['action'], 'ignore')
 
     def test_approved_still_ignored(self):
         """Pure 'approved' without actionable content should still be ignore."""
-        comment = {
-            'id': 'ORD5',
-            'body': 'Approved',
-            'path': None,
-            'line': None,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('Approved')
         self.assertEqual(result['action'], 'ignore')
 
 
 class TestPRTriageContext(unittest.TestCase):
-    """Test pr.py triage with --context for improved classification."""
+    """Test pr.py triage with context for improved classification."""
 
     def test_context_boosts_ambiguous_comment(self):
         """Test that providing code context upgrades ambiguous comments."""
@@ -376,23 +300,13 @@ class TestPRTriageContext(unittest.TestCase):
             'line': 10,
             'author': 'reviewer',
         }
-        # Without context — short comment, no keyword match → would be ignore
-        stdout_no_ctx, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        _ = parse_toon(stdout_no_ctx)
+        # Without context
+        triage_comment(comment)  # smoke test without context
 
         # With context that contains the referenced identifier
-        stdout_ctx, _, code = run_pr_script(
-            [
-                'triage',
-                '--comment',
-                json.dumps(comment),
-                '--context',
-                'public String getValue() { return this.value; }',
-            ]
-        )
-        self.assertEqual(code, 0)
-        result_ctx = parse_toon(stdout_ctx)
+        comment_with_ctx = dict(comment)
+        comment_with_ctx['context'] = 'public String getValue() { return this.value; }'
+        result_ctx = triage_comment(comment_with_ctx)
         # With context, should be classified as code_change
         self.assertEqual(result_ctx['action'], 'code_change')
 
@@ -404,18 +318,9 @@ class TestPRTriageContext(unittest.TestCase):
             'path': None,
             'line': None,
             'author': 'approver',
+            'context': 'public void someMethod() {}',
         }
-        stdout, _, code = run_pr_script(
-            [
-                'triage',
-                '--comment',
-                json.dumps(comment),
-                '--context',
-                'public void someMethod() {}',
-            ]
-        )
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         # LGTM should still be ignore regardless of context
         self.assertEqual(result['action'], 'ignore')
 
@@ -429,9 +334,7 @@ class TestPRTriageContext(unittest.TestCase):
             'author': 'reviewer',
             'context': 'public void processData(List<Item> items) { for (Item i : items) { validate(i); } }',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertEqual(result['action'], 'code_change')
 
 
@@ -440,26 +343,8 @@ class TestContextShortCommentThreshold(unittest.TestCase):
 
     def test_context_ignored_for_short_comment(self):
         """Comments <20 chars skip context matching even with valid context."""
-        comment = {
-            'id': 'SHORT1',
-            'body': 'see getValue',
-            'path': 'src/A.java',
-            'line': 1,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(
-            [
-                'triage',
-                '--comment',
-                json.dumps(comment),
-                '--context',
-                'public String getValue() { return this.value; }',
-            ]
-        )
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('see getValue', context='public String getValue() { return this.value; }')
         # Short comment (<20 chars) should NOT be boosted by context
-        # It should match the default path, not code_change via context
         self.assertNotIn('context', result.get('reason', '').lower())
 
 
@@ -468,31 +353,13 @@ class TestStandaloneQuestionMark(unittest.TestCase):
 
     def test_only_question_mark_is_explain(self):
         """A comment that is just '?' should be classified as explain."""
-        comment = {
-            'id': 'QM1',
-            'body': '?',
-            'path': 'src/A.java',
-            'line': 1,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('?')
         self.assertEqual(result['action'], 'explain')
         self.assertEqual(result['priority'], 'low')
 
     def test_embedded_question_mark_is_explain(self):
         """A comment with just a question mark among non-keyword text."""
-        comment = {
-            'id': 'QM2',
-            'body': 'hmm, really?',
-            'path': 'src/A.java',
-            'line': 1,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('hmm, really?')
         self.assertEqual(result['action'], 'explain')
 
 
@@ -501,33 +368,18 @@ class TestClassifyCommentDefaults(unittest.TestCase):
 
     def test_long_comment_without_keywords_is_code_change(self):
         """Comments >100 chars without keyword matches default to code_change/low."""
-        comment = {
-            'id': 'DEF1',
-            'body': 'I think this entire approach needs to be reconsidered because the current implementation '
-            'does not align well with the overall architecture of the project',
-            'path': 'src/Design.java',
-            'line': 50,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        body = (
+            'I think this entire approach needs to be reconsidered because the current implementation '
+            'does not align well with the overall architecture of the project'
+        )
+        result = classify_comment(body)
         self.assertEqual(result['action'], 'code_change')
         self.assertEqual(result['priority'], 'low')
         self.assertIn('>100 chars', result['reason'])
 
     def test_short_comment_without_keywords_is_ignore(self):
         """Comments <=100 chars without keyword matches default to ignore/low."""
-        comment = {
-            'id': 'DEF2',
-            'body': 'Interesting approach here',
-            'path': 'src/Design.java',
-            'line': 50,
-            'author': 'reviewer',
-        }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = classify_comment('Interesting approach here')
         self.assertEqual(result['action'], 'ignore')
         self.assertEqual(result['priority'], 'low')
 
@@ -544,9 +396,7 @@ class TestSuggestImplementationLocation(unittest.TestCase):
             'line': None,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertNotIn('None', result.get('suggested_implementation', ''))
 
     def test_path_without_line(self):
@@ -558,15 +408,13 @@ class TestSuggestImplementationLocation(unittest.TestCase):
             'line': None,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertIn('src/Service.java', result.get('suggested_implementation', ''))
         self.assertNotIn('None', result.get('suggested_implementation', ''))
 
 
 class TestToonContract(unittest.TestCase):
-    """Verify TOON output matches the contract documented in SKILL.md."""
+    """Verify output matches the contract documented in SKILL.md."""
 
     def test_triage_output_contract(self):
         """Verify triage output has all documented fields."""
@@ -577,24 +425,20 @@ class TestToonContract(unittest.TestCase):
             'line': 10,
             'author': 'reviewer',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         required_fields = {'comment_id', 'action', 'reason', 'priority', 'suggested_implementation', 'status'}
         missing = required_fields - set(result.keys())
-        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+        self.assertEqual(missing, set(), f'Missing contract fields: {missing}')
 
     def test_triage_batch_output_contract(self):
         """Verify triage-batch output has all documented fields."""
         comments = [
             {'id': 'B1', 'body': 'Bug here', 'path': 'src/A.java', 'line': 1, 'author': 'r1'},
         ]
-        stdout, _, code = run_pr_script(['triage-batch', '--comments', json.dumps(comments)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = cmd_triage_batch_handler(json.dumps(comments), triage_comment, ['code_change', 'explain', 'ignore'])
         required_fields = {'results', 'summary', 'status'}
         missing = required_fields - set(result.keys())
-        self.assertEqual(missing, set(), f'Missing TOON contract fields: {missing}')
+        self.assertEqual(missing, set(), f'Missing contract fields: {missing}')
         # Summary sub-structure
         summary = result['summary']
         for field in ('total', 'code_change', 'explain', 'ignore'):
@@ -608,12 +452,10 @@ class TestTriageBatchMixedValidity(unittest.TestCase):
         """Test batch triage handles a mix of well-formed and malformed entries."""
         comments = [
             {'id': 'MIX1', 'body': 'Please fix this bug', 'path': 'src/A.java', 'line': 1, 'author': 'r1'},
-            {'id': 'MIX2'},  # Missing body — should still process (empty body → ignore)
+            {'id': 'MIX2'},  # Missing body — should still process (empty body -> ignore)
             {'id': 'MIX3', 'body': 'Why is this here?', 'path': 'src/B.java', 'line': 5, 'author': 'r3'},
         ]
-        stdout, _, code = run_pr_script(['triage-batch', '--comments', json.dumps(comments)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = cmd_triage_batch_handler(json.dumps(comments), triage_comment, ['code_change', 'explain', 'ignore'])
         self.assertEqual(result['status'], 'success')
         self.assertEqual(result['summary']['total'], 3)
 
@@ -630,9 +472,7 @@ class TestSuggestImplementationVerbs(unittest.TestCase):
             'line': 1,
             'author': 'r',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
+        result = triage_comment(comment)
         self.assertIn('Rename', result['suggested_implementation'])
 
     def test_remove_suggestion(self):
@@ -644,10 +484,7 @@ class TestSuggestImplementationVerbs(unittest.TestCase):
             'line': 1,
             'author': 'r',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        # Classified as code_change (matches 'wrong' pattern), suggestion should mention remove
+        result = triage_comment(comment)
         self.assertIn('Remove', result['suggested_implementation'])
 
     def test_move_suggestion(self):
@@ -659,50 +496,31 @@ class TestSuggestImplementationVerbs(unittest.TestCase):
             'line': 1,
             'author': 'r',
         }
-        stdout, _, code = run_pr_script(['triage', '--comment', json.dumps(comment)])
-        self.assertEqual(code, 0)
-        result = parse_toon(stdout)
-        # Classified as code_change (matches 'missing' pattern), suggestion should mention restructure
+        result = triage_comment(comment)
         self.assertIn('Restructure', result['suggested_implementation'])
 
 
 class TestProviderContract(unittest.TestCase):
-    """Verify the provider module contract that pr.py depends on.
-
-    pr.py imports ci.get_provider() and then the provider module's
-    view_pr_data() and fetch_pr_comments_data(). These tests validate
-    that the contract is documented and the import mechanism works,
-    catching drift if tools-integration-ci refactors its API.
-    """
+    """Verify the provider module contract that pr.py depends on."""
 
     def test_provider_module_resolver_exists(self):
         """Test that _get_provider_module function exists and is callable."""
-        from pr import _get_provider_module  # type: ignore[import-not-found]
-
         self.assertTrue(callable(_get_provider_module))
 
     def test_provider_contract_functions_documented(self):
         """Test that required contract functions are listed in source."""
-        from pr import _get_provider_module  # type: ignore[import-not-found]
-
         doc = _get_provider_module.__doc__ or ''
         self.assertIn('view_pr_data', doc)
         self.assertIn('fetch_pr_comments_data', doc)
 
     def test_get_current_pr_number_handles_no_provider(self):
         """Test that get_current_pr_number returns None when provider unavailable."""
-        from unittest.mock import patch
-
-        from pr import get_current_pr_number  # type: ignore[import-not-found]
-
         with patch('pr._get_provider_module', return_value=None):
             result = get_current_pr_number()
             self.assertIsNone(result)
 
     def test_fetch_comments_returns_structured_error_on_failure(self):
         """Test that fetch_comments returns structured error dict, not exception."""
-        from pr import fetch_comments  # type: ignore[import-not-found]
-
         # Use an impossible PR number to trigger an error from any provider
         result = fetch_comments(999999999)
         # Should return error dict, not raise
@@ -710,13 +528,7 @@ class TestProviderContract(unittest.TestCase):
         self.assertIn('error', result)
 
     def test_fetch_comments_success_contract_shape(self):
-        """Validate the return shape contract for successful fetch_comments.
-
-        Even though we can't get a real success in test, verify the function
-        returns the documented keys so drift is caught early.
-        """
-        from pr import fetch_comments  # type: ignore[import-not-found]
-
+        """Validate the return shape contract for successful fetch_comments."""
         result = fetch_comments(999999999)
         # On failure, must have status + error
         self.assertIn('status', result)
@@ -727,20 +539,47 @@ class TestProviderContract(unittest.TestCase):
 
     def test_classify_comment_returns_dict(self):
         """Verify classify_comment returns a dict with action/priority/reason keys."""
-        from pr import classify_comment  # type: ignore[import-not-found]
-
         result = classify_comment('Please fix this bug')
         self.assertIsInstance(result, dict)
         for key in ('action', 'priority', 'reason'):
             self.assertIn(key, result, f'classify_comment missing key: {key}')
 
 
-class TestPRFetchComments(unittest.TestCase):
-    """Test pr.py fetch-comments subcommand.
+# =============================================================================
+# Subprocess (Tier 3) tests — CLI plumbing only
+# =============================================================================
 
-    Note: These tests verify argument parsing without actual CI CLI calls.
-    The fetch-comments command now uses marshal.json routing for provider abstraction.
-    """
+
+def run_pr_script(args: list) -> tuple:
+    """Run pr.py with args and return (stdout, stderr, returncode)."""
+    result = run_script(SCRIPT_PATH, *args)
+    return result.stdout, result.stderr, result.returncode
+
+
+class TestPRMain(unittest.TestCase):
+    """Test pr.py main entry point (CLI plumbing)."""
+
+    def test_no_subcommand(self):
+        """Test error when no subcommand provided."""
+        _, stderr, code = run_pr_script([])
+        self.assertNotEqual(code, 0)
+
+    def test_help(self):
+        """Test help output."""
+        stdout, _, code = run_pr_script(['--help'])
+        self.assertEqual(code, 0)
+        self.assertIn('fetch-comments', stdout)
+        self.assertIn('triage', stdout)
+
+    def test_triage_missing_comment(self):
+        """Test triage without required comment arg."""
+        _, stderr, code = run_pr_script(['triage'])
+        self.assertNotEqual(code, 0)
+        self.assertIn('--comment', stderr)
+
+
+class TestPRFetchComments(unittest.TestCase):
+    """Test pr.py fetch-comments subcommand (CLI plumbing)."""
 
     def test_fetch_comments_help(self):
         """Test fetch-comments help output."""
@@ -756,22 +595,6 @@ class TestPRFetchComments(unittest.TestCase):
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'error')
         self.assertIn('error', result)
-
-
-class TestPRMain(unittest.TestCase):
-    """Test pr.py main entry point."""
-
-    def test_no_subcommand(self):
-        """Test error when no subcommand provided."""
-        _, stderr, code = run_pr_script([])
-        self.assertNotEqual(code, 0)
-
-    def test_help(self):
-        """Test help output."""
-        stdout, _, code = run_pr_script(['--help'])
-        self.assertEqual(code, 0)
-        self.assertIn('fetch-comments', stdout)
-        self.assertIn('triage', stdout)
 
 
 if __name__ == '__main__':

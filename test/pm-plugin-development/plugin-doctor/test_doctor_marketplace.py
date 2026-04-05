@@ -8,6 +8,11 @@ Tests the hybrid Phase 1 script that provides automated batch operations:
 - report: Generate comprehensive report
 
 Output format: TOON (parsed via toon_parser).
+
+NOTE: Most tests remain Tier 3 (subprocess) because the cmd_* functions in
+doctor-marketplace.py use find_marketplace_root() which depends on Path.cwd().
+The subprocess tests pass cwd= to control this discovery, which cannot be
+replicated cleanly with direct import without os.chdir().
 """
 
 import json
@@ -36,7 +41,7 @@ def marketplace_available():
 
 
 # =============================================================================
-# Help and Basic Tests
+# Help and Basic Tests (Tier 3 - subprocess)
 # =============================================================================
 
 
@@ -64,7 +69,7 @@ def test_no_command_shows_help():
 
 
 # =============================================================================
-# Scan Subcommand Tests
+# Scan Subcommand Tests (Tier 3 - subprocess, cwd-dependent)
 # =============================================================================
 
 
@@ -142,7 +147,7 @@ def test_scan_bundle_filter():
 
 
 # =============================================================================
-# Analyze Subcommand Tests
+# Analyze Subcommand Tests (Tier 3 - subprocess, cwd-dependent)
 # =============================================================================
 
 
@@ -236,7 +241,6 @@ def test_analyze_type_filter():
 
     # All analyzed components should be agents — check via analysis table rows
     for item in data['analysis']:
-        # In TOON table format, nested dicts are serialized as JSON strings
         component = item.get('component', {})
         if isinstance(component, str):
             component = json.loads(component)
@@ -245,7 +249,7 @@ def test_analyze_type_filter():
 
 
 # =============================================================================
-# Fix Subcommand Tests
+# Fix Subcommand Tests (Tier 3 - subprocess, cwd-dependent)
 # =============================================================================
 
 
@@ -270,7 +274,6 @@ def test_fix_dry_run_returns_valid_toon():
     first_bundle = scan_data['bundles'][0]['name']
 
     result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run', cwd=str(PROJECT_ROOT))
-    # Should succeed even if no fixes needed
     assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
     data = parse_output(result)
@@ -285,7 +288,6 @@ def test_fix_dry_run_no_changes():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    # Get a snapshot of file modification times
     result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
     scan_data = parse_output(result)
     if not scan_data['bundles']:
@@ -311,7 +313,7 @@ def test_fix_dry_run_no_changes():
 
 
 # =============================================================================
-# Report Subcommand Tests
+# Report Subcommand Tests (Tier 3 - subprocess, cwd-dependent)
 # =============================================================================
 
 
@@ -366,7 +368,6 @@ def test_report_summary_structure():
     result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
     data = parse_output(result)
 
-    # Summary is a nested dict in TOON output (not a JSON string)
     summary = data['summary']
     assert 'total_bundles' in summary, 'Summary should have total_bundles'
     assert 'total_components' in summary, 'Summary should have total_components'
@@ -390,7 +391,6 @@ def test_report_has_llm_review_items():
     result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
     response = parse_output(result)
 
-    # Read the actual report file (still JSON on disk)
     report_path = Path(PROJECT_ROOT) / response['report_file']
     assert report_path.exists(), f'Report file should exist: {report_path}'
 
@@ -413,7 +413,6 @@ def test_report_to_custom_dir():
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    # Create a temp directory for the custom output
     output_dir = tempfile.mkdtemp()
 
     try:
@@ -422,7 +421,6 @@ def test_report_to_custom_dir():
         )
         assert result.returncode == 0, f'Report failed: {result.stderr}'
 
-        # Verify directory contains timestamped JSON file
         json_files = list(Path(output_dir).glob('*-report.json'))
         assert len(json_files) == 1, f'Should have exactly one report JSON file, found: {json_files}'
         json_path = json_files[0]
@@ -435,7 +433,7 @@ def test_report_to_custom_dir():
 
 
 # =============================================================================
-# Integration Tests with Fixture
+# Integration Tests with Fixture (Tier 3 - subprocess, cwd-dependent)
 # =============================================================================
 
 
@@ -587,7 +585,7 @@ def test_fixture_report():
 
 
 # =============================================================================
-# Sub-Document Analysis Tests
+# Sub-Document Analysis Tests (Tier 3 - subprocess, cwd-dependent)
 # =============================================================================
 
 
@@ -619,7 +617,7 @@ Read `references/guide.md` for standards.
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
-        # Find the test-skill analysis — in TOON table, nested values are JSON strings
+        # Find the test-skill analysis
         skill_analysis = None
         for item in data['analysis']:
             component = item.get('component', {})
@@ -648,13 +646,11 @@ def test_fixture_analyze_detects_subdoc_bloat():
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
-    # Add a bloated reference file (>600 lines)
     skill_refs_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'references'
     skill_refs_dir.mkdir(parents=True)
     bloated_content = '# Bloated Guide\n\n' + 'This is a line of content that adds to the bloat.\n' * 650
     (skill_refs_dir / 'bloated-guide.md').write_text(bloated_content)
 
-    # Update SKILL.md to reference it
     skill_md = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'SKILL.md'
     skill_md.write_text("""---
 name: test-skill
@@ -672,7 +668,6 @@ Read `references/bloated-guide.md` for standards.
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
-        # Collect all issues from analysis items
         all_issues = _collect_issues(data)
 
         bloat_issues = [i for i in all_issues if i['type'] == 'subdoc-bloat']
@@ -689,7 +684,6 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
-    # Add a normal-sized reference file
     skill_refs_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'references'
     skill_refs_dir.mkdir(parents=True)
     (skill_refs_dir / 'small-guide.md').write_text('# Small Guide\n\nJust a few lines.\n')
@@ -708,7 +702,7 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
 
 
 # =============================================================================
-# Sub-document Hardcoded Path Tests
+# Sub-document Hardcoded Path Tests (Tier 3 - subprocess)
 # =============================================================================
 
 
@@ -717,7 +711,6 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
-    # Add a standards file with hardcoded script path
     skill_stds_dir = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'standards'
     skill_stds_dir.mkdir(parents=True)
     (skill_stds_dir / 'test-workflow.md').write_text(
@@ -738,7 +731,7 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
 
 
 # =============================================================================
-# Rule 11 Detection Tests
+# Rule 11 Detection Tests (Tier 3 - subprocess)
 # =============================================================================
 
 
@@ -747,7 +740,6 @@ def test_fixture_analyze_detects_rule_11():
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
-    # Add an agent with tools but no Skill
     agents_dir = fixture.marketplace_root / 'test-bundle' / 'agents'
     (agents_dir / 'no-skill-agent.md').write_text(
         '---\nname: no-skill-agent\ndescription: Agent without Skill\ntools: Read, Write, Edit\n---\n\n# No Skill Agent\n'
@@ -775,7 +767,6 @@ def test_fixture_analyze_no_rule_11_with_skill():
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
-    # Add an agent with Skill in tools
     agents_dir = fixture.marketplace_root / 'test-bundle' / 'agents'
     (agents_dir / 'has-skill-agent.md').write_text(
         '---\nname: has-skill-agent\ndescription: Agent with Skill\ntools: Read, Write, Skill\n---\n\n# Has Skill Agent\n'
@@ -799,7 +790,6 @@ def test_fixture_analyze_no_rule_11_without_tools():
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
-    # Add an agent without tools field
     agents_dir = fixture.marketplace_root / 'test-bundle' / 'agents'
     (agents_dir / 'no-tools-agent.md').write_text(
         '---\nname: no-tools-agent\ndescription: Agent without tools\n---\n\n# No Tools Agent\n'
@@ -819,7 +809,7 @@ def test_fixture_analyze_no_rule_11_without_tools():
 
 
 # =============================================================================
-# Skill Tool Coverage Tests
+# Skill Tool Coverage Tests (Tier 3 - subprocess)
 # =============================================================================
 
 
@@ -828,7 +818,6 @@ def test_fixture_analyze_skill_has_coverage():
     fixture = TestWithTempMarketplace()
     temp_dir = fixture.setup_temp_marketplace()
 
-    # Skills don't support tools/allowed-tools fields
     skill_md = fixture.marketplace_root / 'test-bundle' / 'skills' / 'test-skill' / 'SKILL.md'
     skill_md.write_text("""---
 name: test-skill
@@ -846,7 +835,6 @@ This skill provides testing capabilities.
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
-        # Find the test-skill analysis
         skill_analysis = None
         for item in data['analysis']:
             component = item.get('component', {})
@@ -864,7 +852,6 @@ This skill provides testing capabilities.
 
         coverage = analysis['coverage']
         tool_coverage = coverage.get('tool_coverage', {})
-        # Skills don't declare tools - should have empty declared_tools
         declared = tool_coverage.get('declared_tools', [])
         assert declared == [], f'Skills should have no declared tools, got {declared}'
     finally:
@@ -877,12 +864,7 @@ This skill provides testing capabilities.
 
 
 def _collect_issues(data, path_filter=None):
-    """Collect all issues from TOON analysis output.
-
-    Args:
-        data: Parsed TOON output dict
-        path_filter: Optional substring to filter by component path
-    """
+    """Collect all issues from TOON analysis output."""
     all_issues = []
     for item in data.get('analysis', []):
         if path_filter:
