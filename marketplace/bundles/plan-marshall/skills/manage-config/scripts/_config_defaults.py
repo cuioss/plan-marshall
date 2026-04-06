@@ -32,7 +32,7 @@ DEFAULT_TASK_EXECUTORS = {
 # Default system domain configuration
 DEFAULT_SYSTEM_DOMAIN = {
     'defaults': [],
-    'optionals': ['plan-marshall:dev-general-practices'],
+    'optionals': [],
     'task_executors': DEFAULT_TASK_EXECUTORS,
 }
 

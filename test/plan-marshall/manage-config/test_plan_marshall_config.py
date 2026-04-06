@@ -449,6 +449,20 @@ def test_get_default_config_validates_invariants():
     assert not (defaults & optionals), 'defaults and optionals must not overlap'
 
 
+def test_dev_general_practices_not_in_system_domain():
+    """dev-general-practices must not be in system defaults or optionals.
+
+    Each phase skill and agent loads it explicitly via Skill: directive,
+    so the global system domain entry is redundant.
+    """
+    system = _config_defaults.DEFAULT_SYSTEM_DOMAIN
+    all_skills = system.get('defaults', []) + system.get('optionals', [])
+    assert 'plan-marshall:dev-general-practices' not in all_skills, (
+        'dev-general-practices should not be in system domain — '
+        'loaded explicitly by each phase skill and agent'
+    )
+
+
 # =============================================================================
 # Main
 # =============================================================================
