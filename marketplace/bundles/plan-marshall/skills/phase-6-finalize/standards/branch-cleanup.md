@@ -96,20 +96,29 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 → Abort cleanup. The user was already informed about these PRs in the confirmation dialog but confirmed anyway — however, deleting a branch with dependent PRs is too destructive. Log and skip.
 
+### Read PR Merge Strategy
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize get --field pr_merge_strategy --trace-plan-id {plan_id}
+```
+
+Extract `value` as `{pr_merge_strategy}` (default: `squash`). Valid values: `squash`, `merge`, `rebase`.
+
 ### Merge PR (if not yet merged)
 
 **Only if `state == open`**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge \
-    --pr-number {pr_number} --delete-branch
+    --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch
 ```
 
 If merge fails with branch protection error ('base branch policy prohibits the merge'), fall back to auto-merge:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-merge \
-    --pr-number {pr_number}
+    --pr-number {pr_number} --strategy {pr_merge_strategy}
 ```
 
 Log the fallback:

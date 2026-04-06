@@ -169,6 +169,28 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
 ```
 
+**PR merge strategy**: Ask user for the merge strategy used when merging PRs during branch cleanup (default: squash):
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Which merge strategy should be used when merging PRs?"
+      header: "PR Merge"
+      options:
+        - label: "squash (Recommended)"
+          description: "Squash all commits into one before merging"
+        - label: "merge"
+          description: "Create a merge commit preserving all commits"
+        - label: "rebase"
+          description: "Rebase commits onto the base branch"
+      multiSelect: false
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize set --field pr_merge_strategy --value {squash|merge|rebase}
+```
+
 **Max iterations**: Ask user for verification iterations (default 5) and finalize iterations (default 3):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \

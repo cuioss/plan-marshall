@@ -132,7 +132,7 @@ Manage phase-specific plan configuration. Each phase has its own sub-noun.
 | `phase-1-init` | `get`, `set` | Init phase (e.g., `branch_strategy`) |
 | `phase-2-refine` | `get`, `set` | Refine phase (e.g., `compatibility`) |
 | `phase-5-execute` | `get`, `set`, `set-max-iterations`, `set-step`, `set-domain-step`, `set-domain-step-agent` | Execute phase |
-| `phase-6-finalize` | `get`, `set-max-iterations`, `set-step` | Finalize phase |
+| `phase-6-finalize` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step` | Finalize phase (e.g., `pr_merge_strategy`) |
 
 ### Basic get/set pattern
 
@@ -163,6 +163,10 @@ manage-config plan phase-5-execute set-domain-step-agent \
 ### phase-6-finalize additional verbs
 
 ```bash
+# Set PR merge strategy (squash, merge, rebase; default: squash)
+manage-config plan phase-6-finalize set \
+  --field pr_merge_strategy --value squash
+
 # Set maximum finalize iterations
 manage-config plan phase-6-finalize set-max-iterations --value 5
 
