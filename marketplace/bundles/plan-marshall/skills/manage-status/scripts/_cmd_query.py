@@ -16,15 +16,19 @@ from _status_core import (
 from constants import PHASE_STATUS_DONE, PHASE_STATUS_IN_PROGRESS  # type: ignore[import-not-found]
 
 
-def cmd_read(args: argparse.Namespace) -> dict:
+def cmd_read(args: argparse.Namespace) -> dict | None:
     """Read plan status."""
     status = require_status(args)
+    if status is None:
+        return None
     return {'status': 'success', 'plan_id': args.plan_id, 'plan': status}
 
 
-def cmd_set_phase(args: argparse.Namespace) -> dict:
+def cmd_set_phase(args: argparse.Namespace) -> dict | None:
     """Set current phase."""
     status = require_status(args)
+    if status is None:
+        return None
 
     phase_names = [p['name'] for p in status.get('phases', [])]
     if args.phase not in phase_names:
@@ -50,9 +54,11 @@ def cmd_set_phase(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'plan_id': args.plan_id, 'current_phase': args.phase, 'previous_phase': previous}
 
 
-def cmd_update_phase(args: argparse.Namespace) -> dict:
+def cmd_update_phase(args: argparse.Namespace) -> dict | None:
     """Update a specific phase status."""
     status = require_status(args)
+    if status is None:
+        return None
 
     found = False
     for phase in status.get('phases', []):
@@ -74,9 +80,11 @@ def cmd_update_phase(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'plan_id': args.plan_id, 'phase': args.phase, 'phase_status': args.status}
 
 
-def cmd_progress(args: argparse.Namespace) -> dict:
+def cmd_progress(args: argparse.Namespace) -> dict | None:
     """Calculate plan progress."""
     status = require_status(args)
+    if status is None:
+        return None
 
     phases = status.get('phases', [])
     total = len(phases)
@@ -95,9 +103,11 @@ def cmd_progress(args: argparse.Namespace) -> dict:
     }
 
 
-def cmd_metadata(args: argparse.Namespace) -> dict:
+def cmd_metadata(args: argparse.Namespace) -> dict | None:
     """Get or set a metadata field in status.json."""
     status = require_status(args)
+    if status is None:
+        return None
 
     if args.set:
         # Set metadata
@@ -150,9 +160,11 @@ def cmd_metadata(args: argparse.Namespace) -> dict:
         }
 
 
-def cmd_get_context(args: argparse.Namespace) -> dict:
+def cmd_get_context(args: argparse.Namespace) -> dict | None:
     """Get combined status context (phase, progress, metadata)."""
     status = require_status(args)
+    if status is None:
+        return None
 
     phases = status.get('phases', [])
     total = len(phases)

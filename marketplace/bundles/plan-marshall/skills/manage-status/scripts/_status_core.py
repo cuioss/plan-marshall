@@ -99,13 +99,13 @@ def _try_read_status_json(plan_dir: Path) -> dict[Any, Any] | None:
     return None
 
 
-def require_status(args) -> dict[Any, Any]:
-    """Validate plan_id and read status, raising RuntimeError if missing."""
+def require_status(args) -> dict[Any, Any] | None:
+    """Validate plan_id and read status, returning None with TOON error if missing."""
     require_valid_plan_id(args)
     status = read_status(args.plan_id)
     if not status:
         output_toon(
             {'status': 'error', 'plan_id': args.plan_id, 'error': 'file_not_found', 'message': 'status.json not found'}
         )
-        raise RuntimeError(f'status.json not found for plan {args.plan_id}')
+        return None
     return status

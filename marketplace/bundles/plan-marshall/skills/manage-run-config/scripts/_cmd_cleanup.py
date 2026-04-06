@@ -15,7 +15,7 @@ from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
 from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES, DIR_TEMP, FILE_MARSHAL  # type: ignore[import-not-found]
-from file_ops import get_base_dir  # type: ignore[import-not-found]
+from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
 
 # Configuration - delegate to file_ops for consistent path resolution
 PLAN_BASE_DIR = get_base_dir()
@@ -36,26 +36,26 @@ class CleanupStats:
     memory_bytes: int = 0
 
 
-def get_retention_settings() -> dict:
+def get_retention_settings() -> dict | None:
     """
     Get retention settings from marshal.json.
 
     Returns:
-        dict with retention settings
-
-    Raises:
-        RuntimeError: If marshal.json doesn't exist or has no retention config
+        dict with retention settings, or None if not found (TOON error already output).
     """
     if not MARSHAL_JSON.exists():
-        raise RuntimeError('marshal.json not found. Run command /marshall-steward first')
+        output_toon({'status': 'error', 'error': 'file_not_found', 'message': 'marshal.json not found. Run command /marshall-steward first'})
+        return None
 
     try:
         config = json.loads(MARSHAL_JSON.read_text(encoding='utf-8'))
     except json.JSONDecodeError as e:
-        raise RuntimeError(f'Invalid marshal.json: {e}') from e
+        output_toon({'status': 'error', 'error': 'invalid_json', 'message': f'Invalid marshal.json: {e}'})
+        return None
 
     if 'system' not in config or 'retention' not in config['system']:
-        raise RuntimeError('system.retention not configured. Run command /marshall-steward first')
+        output_toon({'status': 'error', 'error': 'missing_config', 'message': 'system.retention not configured. Run command /marshall-steward first'})
+        return None
 
     retention: dict = config['system']['retention']
     return retention
@@ -224,14 +224,16 @@ def clean_memory(max_age_days: int, dry_run: bool = False) -> tuple[int, int]:
     return deleted, total_bytes
 
 
-def get_status() -> dict:
+def get_status() -> dict | None:
     """
     Get status of all cleanable directories.
 
     Returns:
-        dict with counts and sizes for each target
+        dict with counts and sizes for each target, or None if config missing.
     """
     retention = get_retention_settings()
+    if retention is None:
+        return None
 
     # Temp stats
     temp_dir = PLAN_BASE_DIR / DIR_TEMP
@@ -304,9 +306,11 @@ def get_status() -> dict:
     }
 
 
-def cmd_clean(args) -> dict:
+def cmd_clean(args) -> dict | None:
     """Execute cleanup based on retention settings."""
     retention = get_retention_settings()
+    if retention is None:
+        return None
     target = args.target
     dry_run = args.dry_run
 
@@ -355,9 +359,11 @@ def cmd_clean(args) -> dict:
     }
 
 
-def cmd_status(args) -> dict:
+def cmd_status(args) -> dict | None:
     """Show cleanup status."""
     status = get_status()
+    if status is None:
+        return None
 
     return {
         'status': 'ok',

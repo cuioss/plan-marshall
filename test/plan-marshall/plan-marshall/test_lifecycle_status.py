@@ -70,10 +70,11 @@ def test_get_routing_context_after_transition():
 
 
 def test_get_routing_context_not_found():
-    """Test get-routing-context with missing plan."""
+    """Test get-routing-context exits 0 with TOON error for missing plan."""
     with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'get-routing-context', '--plan-id', 'nonexistent')
-        assert not result.success, 'Expected failure for missing plan'
+        assert result.success, 'Should exit 0 with TOON error output'
+        assert 'status: error' in result.stdout
 
 
 # =============================================================================
@@ -173,10 +174,11 @@ def test_transition_invalid_phase():
 
 
 def test_transition_not_found():
-    """Test transition with non-existent plan."""
+    """Test transition exits 0 with TOON error for non-existent plan."""
     with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'nonexistent', '--completed', '1-init')
-        assert not result.success, 'Expected failure for missing plan'
+        assert result.success, 'Should exit 0 with TOON error output'
+        assert 'status: error' in result.stdout
 
 
 # =============================================================================

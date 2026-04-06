@@ -804,15 +804,16 @@ def test_cleanup_status_via_unified():
 
 
 def test_cleanup_missing_marshal_json_via_unified():
-    """Cleanup subcommand fails when marshal.json is missing."""
+    """Cleanup subcommand outputs TOON error and exits 0 when marshal.json is missing."""
     with PlanContext(plan_id='test-cleanup-unified-nomarshal') as ctx:
         marshal_path = ctx.fixture_dir / 'marshal.json'
         if marshal_path.exists():
             marshal_path.unlink()
 
         result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
-        assert not result.success, 'Should fail without marshal.json'
-        assert 'marshal.json not found' in result.stderr
+        assert result.success, 'Should exit 0 with TOON error output'
+        assert 'status: error' in result.stdout
+        assert 'marshal.json not found' in result.stdout
 
 
 def test_cleanup_help():

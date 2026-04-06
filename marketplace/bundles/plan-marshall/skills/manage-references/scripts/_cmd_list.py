@@ -95,11 +95,13 @@ def cmd_add_list(args) -> dict:
     }
 
 
-def cmd_set_list(args) -> dict:
+def cmd_set_list(args) -> dict | None:
     """Set a list field to new values (replaces existing list)."""
     require_valid_plan_id(args)
 
     refs = require_references(args.plan_id)
+    if refs is None:
+        return None
 
     # Get previous count if field exists
     previous_count = 0
