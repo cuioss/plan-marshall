@@ -28,6 +28,7 @@ Output:
 
 import re
 from pathlib import Path
+from typing import Any
 
 # Direct imports - executor sets up PYTHONPATH for cross-skill imports
 from _build_discover import (
@@ -621,7 +622,7 @@ def _build_commands(
             elif canonical in ['integration-tests', 'e2e', 'coverage', 'benchmark']:
                 cmd_map[canonical] = profile_args
 
-    result = build_canonical_commands(skill, cmd_map)
+    result: dict[str, Any] = build_canonical_commands(skill, cmd_map)
 
     # Report conflicts when multiple profiles map to the same canonical
     conflicts = {c: ps for c, ps in canonical_profiles.items() if len(ps) > 1}
