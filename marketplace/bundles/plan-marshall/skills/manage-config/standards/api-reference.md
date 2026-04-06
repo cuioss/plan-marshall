@@ -132,7 +132,7 @@ Manage phase-specific plan configuration. Each phase has its own sub-noun.
 | `phase-1-init` | `get`, `set` | Init phase (e.g., `branch_strategy`) |
 | `phase-2-refine` | `get`, `set` | Refine phase (e.g., `compatibility`) |
 | `phase-5-execute` | `get`, `set`, `set-max-iterations`, `set-step`, `set-domain-step`, `set-domain-step-agent` | Execute phase |
-| `phase-6-finalize` | `get`, `set`, `set-max-iterations`, `set-step` | Finalize phase (e.g., `pr_merge_strategy`) |
+| `phase-6-finalize` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step` | Finalize phase (e.g., `pr_merge_strategy`) |
 
 ### Basic get/set pattern
 
