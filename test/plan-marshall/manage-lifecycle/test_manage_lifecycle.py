@@ -9,8 +9,6 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-import pytest
-
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script  # noqa: E402
@@ -208,11 +206,10 @@ def test_transition_invalid_phase():
 
 
 def test_transition_nonexistent_plan():
-    """Test transition raises RuntimeError for a plan without status.json."""
+    """Test transition returns None for a plan without status.json."""
     with PlanContext(plan_id='lifecycle-trans-noplan'):
-        # No status.json created — require_status raises RuntimeError
-        with pytest.raises(RuntimeError):
-            cmd_transition(Namespace(plan_id='lifecycle-trans-noplan', completed='1-init'))
+        result = cmd_transition(Namespace(plan_id='lifecycle-trans-noplan', completed='1-init'))
+        assert result is None
 
 
 # =============================================================================
@@ -233,11 +230,10 @@ def test_get_routing_context_valid():
 
 
 def test_get_routing_context_missing_plan():
-    """Test get-routing-context raises RuntimeError for nonexistent plan."""
+    """Test get-routing-context returns None for nonexistent plan."""
     with PlanContext(plan_id='lifecycle-ctx-missing'):
-        # No status.json created — require_status raises RuntimeError
-        with pytest.raises(RuntimeError):
-            cmd_get_routing_context(Namespace(plan_id='lifecycle-ctx-missing'))
+        result = cmd_get_routing_context(Namespace(plan_id='lifecycle-ctx-missing'))
+        assert result is None
 
 
 # =============================================================================

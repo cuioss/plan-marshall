@@ -10,11 +10,13 @@ from _references_core import (
 from input_validation import require_valid_plan_id  # type: ignore[import-not-found]
 
 
-def cmd_get_context(args) -> dict:
+def cmd_get_context(args) -> dict | None:
     """Get all references context in one call."""
     require_valid_plan_id(args)
 
     refs = require_references(args.plan_id)
+    if refs is None:
+        return None
 
     # Build comprehensive context
     context = {

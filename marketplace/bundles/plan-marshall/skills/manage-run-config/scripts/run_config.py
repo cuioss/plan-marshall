@@ -411,14 +411,14 @@ def cmd_timeout_set(args: argparse.Namespace) -> dict:
 # =============================================================================
 
 
-def cmd_cleanup(args: argparse.Namespace) -> dict:
+def cmd_cleanup(args: argparse.Namespace) -> dict | None:
     """Execute cleanup based on retention settings (delegates to cleanup module)."""
     from _cmd_cleanup import cmd_clean
 
     return cmd_clean(args)
 
 
-def cmd_cleanup_status(args: argparse.Namespace) -> dict:
+def cmd_cleanup_status(args: argparse.Namespace) -> dict | None:
     """Show cleanup status (delegates to cleanup module)."""
     from _cmd_cleanup import cmd_status
 
@@ -564,7 +564,8 @@ Examples:
             return 1
 
     result = args.func(args)
-    output_toon(result)
+    if result is not None:
+        output_toon(result)
     return 0
 
 

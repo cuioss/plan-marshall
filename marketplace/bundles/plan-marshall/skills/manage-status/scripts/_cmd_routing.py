@@ -29,9 +29,11 @@ def cmd_route(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'phase': args.phase, 'skill': skill, 'description': description}
 
 
-def cmd_get_routing_context(args: argparse.Namespace) -> dict:
+def cmd_get_routing_context(args: argparse.Namespace) -> dict | None:
     """Get combined routing context: phase, skill, and progress in one call."""
     status = require_status(args)
+    if status is None:
+        return None
 
     current_phase = status.get('current_phase', 'unknown')
     phases = status.get('phases', [])

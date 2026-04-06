@@ -226,7 +226,7 @@ def test_clean_nonexistent():
 
 
 def test_missing_marshal_json():
-    """Script fails loudly when marshal.json is missing."""
+    """Script outputs TOON error and exits 0 when marshal.json is missing."""
     with PlanContext(plan_id='test-missing-marshal') as ctx:
         # Ensure no marshal.json exists (may persist from other tests)
         marshal_path = ctx.fixture_dir / 'marshal.json'
@@ -234,20 +234,22 @@ def test_missing_marshal_json():
             marshal_path.unlink()
 
         result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
-        assert not result.success, 'Should fail without marshal.json'
-        assert 'marshal.json not found' in result.stderr
+        assert result.success, 'Should exit 0 with TOON error output'
+        assert 'status: error' in result.stdout
+        assert 'marshal.json not found' in result.stdout
 
 
 def test_missing_retention_config():
-    """Script fails loudly when retention config is missing."""
+    """Script outputs TOON error and exits 0 when retention config is missing."""
     with PlanContext(plan_id='test-missing-retention') as ctx:
         # Create marshal.json without system.retention section
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({'other': 'config'}))
 
         result = run_script(SCRIPT_PATH, 'cleanup', '--target', 'all')
-        assert not result.success, 'Should fail without retention config'
-        assert 'system.retention' in result.stderr.lower()
+        assert result.success, 'Should exit 0 with TOON error output'
+        assert 'status: error' in result.stdout
+        assert 'system.retention' in result.stdout.lower()
 
 
 def test_missing_subcommand():

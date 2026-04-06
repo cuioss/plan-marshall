@@ -48,17 +48,14 @@ def write_references(plan_id: str, refs: dict) -> None:
     write_json(get_references_path(plan_id), refs)
 
 
-def require_references(plan_id: str) -> dict[Any, Any]:
-    """Read references, raising RuntimeError if not found.
+def require_references(plan_id: str) -> dict[Any, Any] | None:
+    """Read references, returning None with TOON error if not found.
 
     Args:
         plan_id: Plan identifier (must already be validated).
 
     Returns:
-        References dict.
-
-    Raises:
-        RuntimeError: If references.json not found (error already printed).
+        References dict, or None if not found (TOON error already output).
     """
     refs = read_references(plan_id)
     if not refs:
@@ -70,5 +67,5 @@ def require_references(plan_id: str) -> dict[Any, Any]:
                 'message': 'references.json not found',
             }
         )
-        raise RuntimeError(f'references.json not found for plan {plan_id}')
+        return None
     return refs

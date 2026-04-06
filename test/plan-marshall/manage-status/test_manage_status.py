@@ -130,10 +130,10 @@ def test_read_status():
 
 
 def test_read_not_found():
-    """Test read fails for non-existent plan (RuntimeError from require_status)."""
+    """Test read returns None for non-existent plan (TOON error already output)."""
     with PlanContext():
-        with pytest.raises(RuntimeError):
-            cmd_read(Namespace(plan_id='nonexistent'))
+        result = cmd_read(Namespace(plan_id='nonexistent'))
+        assert result is None
 
 
 # =============================================================================
@@ -342,10 +342,10 @@ def test_get_context():
 
 
 def test_get_context_not_found():
-    """Test get-context with missing plan (RuntimeError from require_status)."""
+    """Test get-context returns None for missing plan (TOON error already output)."""
     with PlanContext():
-        with pytest.raises(RuntimeError):
-            cmd_get_context(Namespace(plan_id='nonexistent'))
+        result = cmd_get_context(Namespace(plan_id='nonexistent'))
+        assert result is None
 
 
 # =============================================================================
@@ -468,3 +468,35 @@ def test_cli_subcommand_help():
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'create', '--help')
         assert result.success
+
+
+# =============================================================================
+# Regression Tests: Not-found conditions exit 0 with TOON error
+# =============================================================================
+
+
+def test_cli_read_not_found_exits_zero():
+    """Regression: read with missing status.json exits 0 with TOON error output."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
+        assert result.success, f'Should exit 0, got: {result.stderr}'
+        assert 'status: error' in result.stdout
+        assert 'file_not_found' in result.stdout
+
+
+def test_cli_transition_not_found_exits_zero():
+    """Regression: transition with missing status.json exits 0 with TOON error output."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'transition', '--plan-id', 'nonexistent', '--completed', '1-init')
+        assert result.success, f'Should exit 0, got: {result.stderr}'
+        assert 'status: error' in result.stdout
+        assert 'file_not_found' in result.stdout
+
+
+def test_cli_get_routing_context_not_found_exits_zero():
+    """Regression: get-routing-context with missing status.json exits 0 with TOON error output."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'get-routing-context', '--plan-id', 'nonexistent')
+        assert result.success, f'Should exit 0, got: {result.stderr}'
+        assert 'status: error' in result.stdout
+        assert 'file_not_found' in result.stdout

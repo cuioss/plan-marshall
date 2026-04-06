@@ -100,7 +100,8 @@ def main() -> int:
     handler = handlers.get(args.command)
     if handler:
         result = handler(args)
-        output_toon(result)
+        if result is not None:
+            output_toon(result)
         return 0
     else:
         parser.print_help()

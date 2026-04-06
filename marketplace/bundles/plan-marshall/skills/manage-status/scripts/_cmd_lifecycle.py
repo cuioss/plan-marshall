@@ -70,9 +70,11 @@ def cmd_create(args: argparse.Namespace) -> dict:
     }
 
 
-def cmd_transition(args: argparse.Namespace) -> dict:
+def cmd_transition(args: argparse.Namespace) -> dict | None:
     """Transition to next phase."""
     status = require_status(args)
+    if status is None:
+        return None
 
     phases = status.get('phases', [])
     phase_names = [p['name'] for p in phases]

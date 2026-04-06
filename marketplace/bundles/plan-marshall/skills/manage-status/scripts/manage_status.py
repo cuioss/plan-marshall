@@ -128,7 +128,8 @@ def main() -> int:
 
     args = parser.parse_args()
     result = args.func(args)
-    output_toon(result)
+    if result is not None:
+        output_toon(result)
     return 0
 
 

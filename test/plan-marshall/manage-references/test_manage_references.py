@@ -8,8 +8,6 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-import pytest
-
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from conftest import PlanContext, get_script_path, run_script  # noqa: E402
@@ -198,10 +196,10 @@ def test_get_context_empty():
 
 
 def test_get_context_not_found():
-    """Test get-context with missing plan raises RuntimeError."""
+    """Test get-context returns None for missing plan (TOON error already output)."""
     with PlanContext():
-        with pytest.raises(RuntimeError, match='references.json not found'):
-            cmd_get_context(_get_context_ns(plan_id='nonexistent'))
+        result = cmd_get_context(_get_context_ns(plan_id='nonexistent'))
+        assert result is None
 
 
 # =============================================================================
@@ -284,10 +282,10 @@ def test_set_list_empty_clears():
 
 
 def test_set_list_nonexistent_plan():
-    """Test set-list on non-existent plan raises RuntimeError."""
+    """Test set-list returns None for non-existent plan (TOON error already output)."""
     with PlanContext():
-        with pytest.raises(RuntimeError, match='references.json not found'):
-            cmd_set_list(_set_list_ns(plan_id='nonexistent'))
+        result = cmd_set_list(_set_list_ns(plan_id='nonexistent'))
+        assert result is None
 
 
 def test_set_list_returns_previous_count():
@@ -384,3 +382,35 @@ def test_cli_create_roundtrip():
         assert get_result.success, f'Script failed: {get_result.stderr}'
         get_data = parse_toon(get_result.stdout)
         assert get_data['value'] == 'feature/test'
+
+
+# =============================================================================
+# Regression Tests: Not-found conditions exit 0 with TOON error
+# =============================================================================
+
+
+def test_cli_get_not_found_exits_zero():
+    """Regression: get with missing references.json exits 0 with TOON error output."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'nonexistent', '--field', 'branch')
+        assert result.success, f'Should exit 0, got: {result.stderr}'
+        assert 'status: error' in result.stdout
+        assert 'file_not_found' in result.stdout
+
+
+def test_cli_read_not_found_exits_zero():
+    """Regression: read with missing references.json exits 0 with TOON error output."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
+        assert result.success, f'Should exit 0, got: {result.stderr}'
+        assert 'status: error' in result.stdout
+        assert 'file_not_found' in result.stdout
+
+
+def test_cli_get_context_not_found_exits_zero():
+    """Regression: get-context with missing references.json exits 0 with TOON error output."""
+    with PlanContext():
+        result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
+        assert result.success, f'Should exit 0, got: {result.stderr}'
+        assert 'status: error' in result.stdout
+        assert 'file_not_found' in result.stdout
