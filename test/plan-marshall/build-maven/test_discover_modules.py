@@ -526,6 +526,47 @@ def test_no_profile_conflict_for_different_canonicals():
 
 
 # =============================================================================
+# Unit Tests: Nested Module -pl Argument
+# =============================================================================
+
+
+def test_nested_module_uses_relative_path_for_pl():
+    """Test that nested modules use relative_path (not artifact ID) for -pl argument.
+
+    Maven requires -pl to use the directory path relative to reactor root,
+    not the artifact ID. For nested modules like benchmarking/benchmark-core,
+    the artifact ID (benchmark-core) differs from the relative path.
+    """
+    commands = _build_commands(
+        module_name='benchmark-core', packaging='jar', has_sources=True, has_tests=True,
+        profiles=[], relative_path='benchmarking/benchmark-core'
+    )
+    # The -pl argument must use the relative path, not the artifact ID
+    assert '-pl benchmarking/benchmark-core' in commands['compile']
+    assert '-pl benchmark-core' not in commands['compile']
+
+
+def test_nested_module_pl_in_all_commands():
+    """Test that all commands for a nested module use the correct -pl path."""
+    commands = _build_commands(
+        module_name='oauth-sheriff-quarkus', packaging='jar', has_sources=True, has_tests=True,
+        profiles=[], relative_path='oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus'
+    )
+    for cmd_name in ['clean', 'compile', 'verify', 'module-tests', 'quality-gate']:
+        assert '-pl oauth-sheriff-quarkus-parent/oauth-sheriff-quarkus' in commands[cmd_name], \
+            f'{cmd_name} should use relative_path for -pl'
+
+
+def test_root_module_has_no_pl_arg():
+    """Test that root module commands do not include -pl argument."""
+    commands = _build_commands(
+        module_name='parent-pom', packaging='jar', has_sources=True, has_tests=True,
+        profiles=[], relative_path='.'
+    )
+    assert '-pl' not in commands['compile']
+
+
+# =============================================================================
 # Integration Tests: Full Pipeline
 # =============================================================================
 

@@ -583,7 +583,7 @@ def _build_commands(
     """
     skill = 'plan-marshall:build-maven:maven'
     is_root_module = not relative_path or relative_path == '.'
-    pl_arg = '' if is_root_module else f' -pl {module_name}'
+    pl_arg = '' if is_root_module else f' -pl {relative_path}'
 
     # 1. Always: clean (all modules including pom)
     cmd_map: dict[str, str] = {
