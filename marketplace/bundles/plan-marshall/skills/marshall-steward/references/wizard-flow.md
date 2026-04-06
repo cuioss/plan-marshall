@@ -322,20 +322,41 @@ Modules discovered: 10
 
 **Prerequisite**: Step 9 completed (architecture API is available).
 
-**Check if already present**: Look for marker `build-python` or `build-maven` or `build-gradle` or `build-npm` in CLAUDE.md. If found, skip this step.
+**Check if already present**: Look for the heading `Build Commands (Resolved)` in CLAUDE.md. If found, skip this step.
 
-**Resolve available commands** for the default module:
+**Check for existing build sections**: Search CLAUDE.md for existing hand-written build command patterns: `mvn `, `mvnw`, `gradle `, `npm run`, `./pw `, `build command`. If any are found, present the user with a choice:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "CLAUDE.md already has build commands. Replace with resolved commands?"
+      header: "Build conflict"
+      options:
+        - label: "Replace existing"
+          description: "Remove hand-written build commands and add resolved commands"
+        - label: "Keep existing"
+          description: "Skip adding resolved commands, keep current CLAUDE.md as-is"
+      multiSelect: false
+```
+
+If user chooses "Keep existing", skip the rest of this step. If "Replace existing", remove the existing build command section before adding the resolved commands below.
+
+**Resolve available commands** for the default module. Attempt ALL canonical commands — only include those that resolve successfully:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command compile --name default
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command quality-gate --name default
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command module-tests --name default
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command verify --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command integration-tests --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command e2e --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command coverage --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command benchmark --name default
 ```
 
 For each successful resolution, collect the `executable` value.
 
-**Add to CLAUDE.md** (in a "Development Notes" or equivalent section):
+**Add to CLAUDE.md** under the heading `### Build Commands (Resolved)` (in a "Development Notes" or equivalent section):
 
 ```
 - Never hard-code build commands (./pw, mvn, npm, gradle) — use these resolved commands instead:
@@ -343,7 +364,10 @@ For each successful resolution, collect the `executable` value.
   - Quality gate: `{resolved quality-gate executable}`
   - Tests: `{resolved module-tests executable}`
   - Full verify: `{resolved verify executable}`
-  - Omit `{module}` to run against all modules
+  {- Integration tests: `{resolved integration-tests executable}` — only if resolved}
+  {- E2E: `{resolved e2e executable}` — only if resolved}
+  {- Coverage: `{resolved coverage executable}` — only if resolved}
+  {- Benchmark: `{resolved benchmark executable}` — only if resolved}
   - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
   - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
 ```
@@ -369,7 +393,41 @@ Load skill `pm-dev-java:manage-maven-profiles` and follow its workflow to:
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
 ```
 
-**If no Maven modules OR no unmatched profiles** → Skip to Step 11.
+**If no Maven modules OR no unmatched profiles** → Continue to Step 10b.
+
+### Step 10b: Resolve Profile Conflicts (Maven Only)
+
+**Condition**: Only if any Maven module was discovered.
+
+Check the `derived-data.json` for modules where multiple profiles map to the same canonical command. The `commands` section in derived-data is built from `_build_commands()` which detects conflicts — look for a `conflicts` key in any module's commands output.
+
+Alternatively, inspect `modules.*.metadata.profiles` and group by canonical value. If any canonical has more than one profile mapped to it, a conflict exists.
+
+**If conflicts exist** (e.g., both `pre-commit` and `sonar` map to `quality-gate`):
+
+Ask the user which profile to use for each conflicting canonical command:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Multiple profiles map to '{canonical}'. Which should be used?"
+      header: "Profile conflict"
+      options:
+        # For each conflicting profile (dynamic):
+        - label: "{profile_id}"
+          description: "Uses: mvn verify -P{profile_id}"
+      multiSelect: false
+```
+
+After user selects, update the module's commands to use the chosen profile:
+1. Store the user's choice via `manage-config ext-defaults set` with key `build.maven.profiles.map.canonical` and value `{profile_id}:{canonical}` (append to existing comma-separated mappings)
+2. Re-run discovery to apply the explicit mapping:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture discover --force
+```
+
+**If no conflicts** → Skip to Step 11.
 
 ---
 
