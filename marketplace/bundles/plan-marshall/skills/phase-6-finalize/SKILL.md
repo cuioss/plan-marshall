@@ -100,7 +100,7 @@ Three step types are supported, distinguished by prefix notation:
 | `default:sonar-roundtrip` | `standards/sonar-roundtrip.md` | Sonar analysis roundtrip |
 | `default:knowledge-capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
-| `default:branch-cleanup` | `standards/branch-cleanup.md` | Merge PR (with --delete-branch) and pull latest |
+| `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
 | `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
 
 ### Interface Contract for External Steps
@@ -361,7 +361,7 @@ State checks (for present steps):
 | `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar quality gate, issue resolution |
 | `standards/knowledge-capture.md` | `default:knowledge-capture` | manage-memories save command |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
-| `standards/branch-cleanup.md` | `default:branch-cleanup` | Merge PR (with --delete-branch), pull latest, with user confirmation |
+| `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
