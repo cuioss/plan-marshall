@@ -88,7 +88,7 @@ def test_run_failure_returns_exit_1():
         # 'run nonexistent-script' should fail
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'run nonexistent-script-xyz', cwd=temp_dir)
 
-        assert result.returncode == 1, 'Failed run should exit with 1'
+        assert result.returncode == 0, 'Failed run should exit with 0 — status modeled in TOON output'
         assert 'status: error' in result.stdout, 'Should have error status'
 
 

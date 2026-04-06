@@ -80,7 +80,7 @@ def test_run_failure_includes_errors():
     with mock_gradle_project('gradlew-failure.sh') as temp_dir:
         result = run_script(SCRIPT_PATH, 'run', '--command-args', 'clean test', cwd=temp_dir)
 
-        assert result.returncode == 1, 'Failed run should exit with 1'
+        assert result.returncode == 0, 'Failed run should exit with 0 — status modeled in TOON output'
         assert 'status: error' in result.stdout, 'Should have error status'
 
 
