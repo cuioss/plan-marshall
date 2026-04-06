@@ -306,9 +306,8 @@ TIMEOUT=$(python3 .plan/execute-script.py plan-marshall:manage-run-config:run_co
   --command "ci:pr_checks" --default 300)
 
 # Use in await_until with outer shell timeout as safety net
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until poll \
-  --check-cmd "gh pr checks 123 --json state" \
-  --success-field "status=success" \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+  --pr-number 123 \
   --timeout "$TIMEOUT" \
   --interval 30
 
@@ -326,10 +325,8 @@ For **async polling** (CI checks, Sonar analysis), use `await_until --command-ke
 ```bash
 # await_until manages timeout internally via run-config
 # External timeout (600s) is just a safety net
-timeout 600s python3 .plan/execute-script.py plan-marshall:tools-script-executor:await_until poll \
-  --check-cmd "gh pr checks 123 --json state" \
-  --success-field "state=completed" \
-  --command-key "ci:pr_checks"
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+  --pr-number 123
 ```
 
 **Key difference from synchronous builds**:
