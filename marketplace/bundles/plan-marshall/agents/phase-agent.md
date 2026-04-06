@@ -35,6 +35,9 @@ The agent layer is intentionally thin. Rather than creating a specialized agent 
 Skill: plan-marshall:dev-general-practices
 ```
 
+**Constraints:**
+- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+
 ## Step 2: Load Skill (MANDATORY)
 
 Load the caller-specified skill using the Skill tool BEFORE any other action:

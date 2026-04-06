@@ -12,6 +12,18 @@ user-invocable: false
 
 **Base Contract**: This skill follows the task executor contract defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md) for input/output contracts, error handling, and script notations.
 
+## Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
+## Enforcement
+
+**Constraints:**
+- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Never bypass the manage-tasks next/finalize-step loop — if parallelization is needed, it must happen at the TASK level, not at the STEP level within a task
+
 ---
 
 ## Common Workflow

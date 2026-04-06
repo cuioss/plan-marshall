@@ -12,6 +12,12 @@ user-invocable: false
 
 **Phase Handled**: execute
 
+## Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Enforcement
 
 > **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
@@ -22,6 +28,9 @@ user-invocable: false
 - Never access `.plan/` files directly — use manage-* scripts via Bash (Edit/Write tools trigger permission prompts on `.plan/` directories)
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
+
+**Constraints:**
+- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 
 ---
 

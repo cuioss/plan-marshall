@@ -10,6 +10,12 @@ user-invocable: false
 
 **Prerequisite**: Request must be refined (phase-2-refine completed) with track field set.
 
+## Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Enforcement
 
 > **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
@@ -21,6 +27,9 @@ user-invocable: false
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
 - Never fall back to simple track if complex track fails — return error
+
+**Constraints:**
+- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 
 ---
 

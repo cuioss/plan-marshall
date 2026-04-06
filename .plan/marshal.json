@@ -44,9 +44,7 @@
   },
   "skill_domains": {
     "system": {
-      "defaults": [
-        "plan-marshall:dev-general-practices"
-      ],
+      "defaults": [],
       "optionals": [
         "plan-marshall:dev-general-practices"
       ],

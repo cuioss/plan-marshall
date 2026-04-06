@@ -29,6 +29,7 @@ from _config_core import (
 )
 from _config_defaults import (
     DEFAULT_SYSTEM_DOMAIN,
+    validate_domain_invariants,
 )
 from _config_detection import detect_domains
 
@@ -711,6 +712,7 @@ def cmd_skill_domains(args) -> dict:
 
         # Always add system domain
         skill_domains['system'] = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
+        validate_domain_invariants(skill_domains['system'])
 
         # Apply domain config for each selected domain from bundle extension.py
         domains_configured = []

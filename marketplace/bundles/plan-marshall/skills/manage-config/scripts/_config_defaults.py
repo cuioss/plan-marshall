@@ -31,10 +31,28 @@ DEFAULT_TASK_EXECUTORS = {
 
 # Default system domain configuration
 DEFAULT_SYSTEM_DOMAIN = {
-    'defaults': ['plan-marshall:dev-general-practices'],
+    'defaults': [],
     'optionals': ['plan-marshall:dev-general-practices'],
     'task_executors': DEFAULT_TASK_EXECUTORS,
 }
+
+
+def validate_domain_invariants(domain: dict) -> None:
+    """Validate that defaults and optionals have no overlap.
+
+    A skill in defaults (always loaded) must never also appear in optionals
+    (selectively loaded). Overlap indicates a configuration error.
+
+    Raises:
+        ValueError: If any skill appears in both defaults and optionals.
+    """
+    defaults = set(domain.get('defaults', []))
+    optionals = set(domain.get('optionals', []))
+    overlap = defaults & optionals
+    if overlap:
+        raise ValueError(
+            f"Skills must not appear in both defaults and optionals: {sorted(overlap)}"
+        )
 
 # System retention defaults
 DEFAULT_SYSTEM_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
@@ -126,8 +144,10 @@ def get_default_config() -> dict:
     """
     import copy
 
+    system_domain = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
+    validate_domain_invariants(system_domain)
     return {
-        'skill_domains': {'system': copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)},
+        'skill_domains': {'system': system_domain},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'plan': {
             'phase-1-init': copy.deepcopy(DEFAULT_PLAN_INIT),
