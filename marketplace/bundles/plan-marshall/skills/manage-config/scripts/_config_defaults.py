@@ -121,6 +121,7 @@ BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
 DEFAULT_PLAN_FINALIZE = {
     'max_iterations': 3,
     'review_bot_buffer_seconds': 300,
+    'pr_merge_strategy': 'squash',
     'steps': list(BUILT_IN_FINALIZE_STEPS),
 }
 

@@ -121,6 +121,46 @@ def test_plan_phase_5_execute_get():
         assert 'commit_strategy' in result
 
 
+def test_plan_phase_6_finalize_get():
+    """Test plan phase-6-finalize get returns config including pr_merge_strategy."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
+
+        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field=None))
+
+        assert result['status'] == 'success'
+        assert result['pr_merge_strategy'] == 'squash'
+
+
+def test_plan_phase_6_finalize_get_field_pr_merge_strategy():
+    """Test plan phase-6-finalize get --field pr_merge_strategy."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
+
+        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
+
+        assert result['status'] == 'success'
+        assert result['value'] == 'squash'
+
+
+def test_plan_phase_6_finalize_set_pr_merge_strategy():
+    """Test plan phase-6-finalize set --field pr_merge_strategy --value rebase."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
+
+        result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set', field='pr_merge_strategy', value='rebase'))
+
+        assert result['status'] == 'success'
+        assert result['value'] == 'rebase'
+
+        # Verify persisted
+        result2 = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
+        assert result2['value'] == 'rebase'
+
+
 def test_resolve_domain_skills():
     """Test resolve-domain-skills command."""
     with PlanContext() as ctx:
