@@ -343,7 +343,14 @@ def test_classify_profile_integration_tests_aliases():
     assert _classify_profile('integration-tests') == 'integration-tests'
     assert _classify_profile('integration-test') == 'integration-tests'
     assert _classify_profile('it') == 'integration-tests'
-    assert _classify_profile('e2e') == 'integration-tests'
+
+
+def test_classify_profile_e2e_aliases():
+    """Test e2e profile classification via aliases."""
+    # These are defined in CANONICAL_COMMANDS["e2e"]["aliases"]
+    assert _classify_profile('e2e') == 'e2e'
+    assert _classify_profile('acceptance') == 'e2e'
+    assert _classify_profile('end-to-end') == 'e2e'
 
 
 def test_classify_profile_benchmark_aliases():

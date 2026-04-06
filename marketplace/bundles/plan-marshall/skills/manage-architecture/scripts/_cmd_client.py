@@ -220,7 +220,7 @@ def get_module_graph(project_dir: str = '.', full: bool = False) -> dict[str, An
             is_leaf = enriched_mod.get('is_leaf', False)
             # Also check purpose - integration-tests/deployment/benchmark are leaves
             purpose = enriched_mod.get('purpose', '')
-            is_purpose_leaf = purpose in ['integration-tests', 'deployment', 'benchmark']
+            is_purpose_leaf = purpose in ['integration-tests', 'e2e', 'deployment', 'benchmark']
 
             # Include if: non-pom packaging OR marked as leaf OR purpose indicates leaf
             if packaging != 'pom' or is_leaf or is_purpose_leaf:

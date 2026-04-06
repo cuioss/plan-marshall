@@ -17,6 +17,7 @@ CMD_COMPILE = 'compile'
 CMD_TEST_COMPILE = 'test-compile'
 CMD_MODULE_TESTS = 'module-tests'
 CMD_INTEGRATION_TESTS = 'integration-tests'
+CMD_E2E = 'e2e'
 CMD_COVERAGE = 'coverage'
 CMD_BENCHMARK = 'benchmark'
 CMD_QUALITY_GATE = 'quality-gate'
@@ -31,6 +32,7 @@ ALL_CANONICAL_COMMANDS = [
     CMD_TEST_COMPILE,
     CMD_MODULE_TESTS,
     CMD_INTEGRATION_TESTS,
+    CMD_E2E,
     CMD_COVERAGE,
     CMD_BENCHMARK,
     CMD_QUALITY_GATE,
@@ -52,8 +54,13 @@ CANONICAL_COMMANDS = {
             'integration-test',
             'integrationTest',
             'it',
+        ],
+    },
+    CMD_E2E: {
+        'aliases': [
             'e2e',
             'acceptance',
+            'end-to-end',
         ],
     },
     CMD_COVERAGE: {

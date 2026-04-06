@@ -30,9 +30,13 @@ EXT_KEY_PROFILES_MAP = 'build.maven.profiles.map.canonical'
 # Patterns for automatic profile classification
 PROFILE_PATTERNS = {
     'integration-tests': [
-        r'(?:integration|it|e2e|acceptance)[-_]?tests?',
+        r'(?:integration|it)[-_]?tests?',
         r'local[-_]?integration',
         r'failsafe',
+    ],
+    'e2e': [
+        r'(?:e2e|acceptance)[-_]?tests?',
+        r'end[-_]?to[-_]?end',
     ],
     'coverage': [
         r'jacoco',

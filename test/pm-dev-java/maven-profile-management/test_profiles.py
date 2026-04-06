@@ -74,6 +74,31 @@ def test_classify_it():
     assert result['classification'] == 'integration-tests'
 
 
+def test_classify_e2e():
+    """classify_profile identifies e2e-tests as e2e."""
+    result = classify_profile('e2e-tests')
+    assert result['classification'] == 'e2e'
+    assert result['confidence'] == 'high'
+
+
+def test_classify_acceptance():
+    """classify_profile identifies acceptance-tests as e2e."""
+    result = classify_profile('acceptance-tests')
+    assert result['classification'] == 'e2e'
+
+
+def test_classify_end_to_end():
+    """classify_profile identifies end-to-end as e2e."""
+    result = classify_profile('end-to-end')
+    assert result['classification'] == 'e2e'
+
+
+def test_classify_e2e_not_integration():
+    """classify_profile does not classify e2e as integration-tests."""
+    result = classify_profile('e2e-tests')
+    assert result['classification'] != 'integration-tests'
+
+
 def test_classify_jmh():
     """classify_profile identifies jmh as benchmark."""
     result = classify_profile('jmh')
