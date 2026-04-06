@@ -61,24 +61,24 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    # Route to command module
+    # Route to command module (prefixed _cred_ to avoid PYTHONPATH namespace collisions)
     if args.command == 'configure':
-        from _cmd_configure import run_configure
+        from _cred_configure import run_configure
         return run_configure(args)
     elif args.command == 'edit':
-        from _cmd_edit import run_edit
+        from _cred_edit import run_edit
         return run_edit(args)
     elif args.command == 'verify':
-        from _cmd_verify import run_verify
+        from _cred_verify import run_verify
         return run_verify(args)
     elif args.command == 'list':
-        from _cmd_list import run_list
+        from _cred_list import run_list
         return run_list(args)
     elif args.command == 'remove':
-        from _cmd_remove import run_remove
+        from _cred_remove import run_remove
         return run_remove(args)
     elif args.command == 'ensure-denied':
-        from _cmd_ensure_denied import run_ensure_denied
+        from _cred_ensure_denied import run_ensure_denied
         return run_ensure_denied(args)
 
     return 1

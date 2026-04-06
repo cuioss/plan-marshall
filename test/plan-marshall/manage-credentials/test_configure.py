@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for _cmd_configure.py module.
+"""Tests for _cred_configure.py module.
 
 Tests the interactive configure wizard with mocked input/getpass.
 """
@@ -38,7 +38,7 @@ class TestConfigureLogic:
 
     def test_find_provider_returns_match(self):
         """_find_provider returns matching provider."""
-        from _cmd_configure import _find_provider  # type: ignore[import-not-found]
+        from _cred_configure import _find_provider  # type: ignore[import-not-found]
 
         providers = [
             {'skill_name': 'a', 'display_name': 'A'},
@@ -49,7 +49,7 @@ class TestConfigureLogic:
 
     def test_find_provider_returns_none_for_missing(self):
         """_find_provider returns None when not found."""
-        from _cmd_configure import _find_provider  # type: ignore[import-not-found]
+        from _cred_configure import _find_provider  # type: ignore[import-not-found]
 
         providers = [{'skill_name': 'a'}]
         assert _find_provider(providers, 'missing') is None

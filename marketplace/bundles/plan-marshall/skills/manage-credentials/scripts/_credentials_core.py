@@ -404,9 +404,10 @@ class RestClient:
 
     def _close_connection(self) -> None:
         """Close connection properly."""
-        if getattr(self, '_conn', None):
+        conn = getattr(self, '_conn', None)
+        if conn is not None:
             try:
-                self._conn.close()
+                conn.close()
             except Exception:
                 pass
             self._conn = None
