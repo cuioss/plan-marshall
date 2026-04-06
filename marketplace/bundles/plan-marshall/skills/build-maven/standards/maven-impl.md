@@ -88,7 +88,15 @@ Includes: All pre-commit checks, JaCoCo coverage, threshold verification.
 ./mvnw -Pintegration-tests verify
 ```
 
-Runs integration tests (*IT.java, *ITCase.java).
+Runs in-process integration tests (*IT.java, *ITCase.java) using Failsafe, Weld, or embedded servers.
+
+### E2E Tests Profile
+
+```bash
+./mvnw -Pe2e verify
+```
+
+Runs end-to-end / acceptance tests against a deployed application (browser, HTTP client).
 
 ### Extension Defaults
 

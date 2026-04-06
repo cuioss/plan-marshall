@@ -613,7 +613,7 @@ def _build_commands(
             profile_args = f'verify -P{profile_id}{pl_arg}'
             if canonical == 'quality-gate':
                 cmd_map['quality-gate'] = profile_args
-            elif canonical in ['integration-tests', 'coverage', 'benchmark']:
+            elif canonical in ['integration-tests', 'e2e', 'coverage', 'benchmark']:
                 cmd_map[canonical] = profile_args
 
     return build_canonical_commands(skill, cmd_map)

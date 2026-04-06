@@ -31,6 +31,7 @@ CMD_CLEAN_INSTALL = _extension_constants_mod.CMD_CLEAN_INSTALL
 CMD_COMPILE = _extension_constants_mod.CMD_COMPILE
 CMD_COVERAGE = _extension_constants_mod.CMD_COVERAGE
 CMD_INSTALL = _extension_constants_mod.CMD_INSTALL
+CMD_E2E = _extension_constants_mod.CMD_E2E
 CMD_INTEGRATION_TESTS = _extension_constants_mod.CMD_INTEGRATION_TESTS
 CMD_MODULE_TESTS = _extension_constants_mod.CMD_MODULE_TESTS
 CMD_PACKAGE = _extension_constants_mod.CMD_PACKAGE
@@ -51,6 +52,7 @@ def test_cmd_constants_values():
     assert CMD_TEST_COMPILE == 'test-compile'
     assert CMD_MODULE_TESTS == 'module-tests'
     assert CMD_INTEGRATION_TESTS == 'integration-tests'
+    assert CMD_E2E == 'e2e'
     assert CMD_COVERAGE == 'coverage'
     assert CMD_BENCHMARK == 'benchmark'
     assert CMD_QUALITY_GATE == 'quality-gate'
@@ -68,6 +70,7 @@ def test_all_canonical_commands_contains_all():
         CMD_TEST_COMPILE,
         CMD_MODULE_TESTS,
         CMD_INTEGRATION_TESTS,
+        CMD_E2E,
         CMD_COVERAGE,
         CMD_BENCHMARK,
         CMD_QUALITY_GATE,
@@ -93,7 +96,7 @@ def test_canonical_commands_only_aliased():
 
 def test_canonical_commands_expected_keys():
     """CANONICAL_COMMANDS contains the expected command keys."""
-    expected = {CMD_INTEGRATION_TESTS, CMD_COVERAGE, CMD_BENCHMARK, CMD_QUALITY_GATE}
+    expected = {CMD_INTEGRATION_TESTS, CMD_E2E, CMD_COVERAGE, CMD_BENCHMARK, CMD_QUALITY_GATE}
     assert set(CANONICAL_COMMANDS.keys()) == expected
 
 
@@ -104,10 +107,18 @@ def test_canonical_commands_expected_keys():
 
 def test_profile_patterns_integration_tests():
     """Integration test aliases map to CMD_INTEGRATION_TESTS."""
-    aliases = ['integration-tests', 'integration-test', 'it', 'e2e', 'acceptance']
+    aliases = ['integration-tests', 'integration-test', 'it']
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_INTEGRATION_TESTS
+
+
+def test_profile_patterns_e2e():
+    """E2E aliases map to CMD_E2E."""
+    aliases = ['e2e', 'acceptance', 'end-to-end']
+    for alias in aliases:
+        assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
+        assert PROFILE_PATTERNS[alias] == CMD_E2E
 
 
 def test_profile_patterns_quality_gate():

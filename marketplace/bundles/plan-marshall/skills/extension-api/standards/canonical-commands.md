@@ -16,7 +16,8 @@ Canonical commands provide a **build-system-agnostic vocabulary** for common dev
 | `compile` | build | No | Compile production sources only |
 | `test-compile` | build | No | Compile production and test sources |
 | `module-tests` | test | **Yes** | Unit tests for the module |
-| `integration-tests` | test | No | Integration tests (containers, external services) |
+| `integration-tests` | test | No | Integration tests (containers, embedded servers, Weld) |
+| `e2e` | test | No | End-to-end / acceptance tests (full-stack, browser, deployed app) |
 | `coverage` | test | No | Test execution with coverage measurement |
 | `benchmark` | test | No | Benchmark/performance tests |
 | `quality-gate` | quality | **Yes** | Static analysis, linting, formatting checks |
@@ -41,7 +42,7 @@ Commands fall into three categories based on when they are included:
 | **Always (non-pom)** | `verify`, `install`, `clean-install`, `package` | Non-pom modules only |
 | **Source-conditional** | `compile` | Only if `paths.sources` is non-empty |
 | **Test-conditional** | `test-compile`, `module-tests` | Only if `paths.tests` is non-empty |
-| **Profile-based** | `integration-tests`, `coverage`, `performance` | Only if corresponding profile detected |
+| **Profile-based** | `integration-tests`, `e2e`, `coverage`, `performance` | Only if corresponding profile detected |
 
 ### Resolution Rules
 
@@ -80,7 +81,8 @@ Only include if `stats.test_files > 0` or `paths.tests` is non-empty:
 #### 4. Profile-Based Commands
 
 Only include if corresponding profile/configuration is detected:
-- `integration-tests` - Requires integration test profile
+- `integration-tests` - Requires integration test profile (in-process: Failsafe, Weld, embedded servers)
+- `e2e` - Requires e2e/acceptance test profile (full-stack: browser, HTTP against deployed app)
 - `coverage` - Requires coverage tooling (JaCoCo, Istanbul, etc.)
 - `benchmark` - Requires benchmark configuration (JMH, etc.)
 
@@ -127,7 +129,7 @@ discover_modules():
             canonical = _classify_profile(profile.id)  # Internal function
             if canonical == "quality-gate":
                 commands["quality-gate"] = enhance_with_profile(...)
-            elif canonical in ["integration-tests", "coverage", "performance"]:
+            elif canonical in ["integration-tests", "e2e", "coverage", "performance"]:
                 commands[canonical] = build_profile_command(...)
 
         return {... "commands": commands}
