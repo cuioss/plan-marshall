@@ -1,14 +1,24 @@
 # Branch Cleanup
 
-Merge PR (with `--delete-branch`), wait for CI, and pull latest.
+Switch back to base branch and clean up after plan completion. Behavior adapts based on whether `default:create-pr` is in the finalize steps list.
 
 ## Prerequisites
 
-- Config field `8_branch_cleanup` is `true`
-- A PR exists for the current branch (from Step 4: Create PR)
 - Branch name available from references context (`branch` field)
+- The finalize `steps` list has been read from config (Step 2 of phase-6-finalize)
 
-## Execution
+## Mode Detection
+
+Check whether `default:create-pr` appears in the finalize `steps` list (already available from Step 2 config read):
+
+- **PR mode** (`default:create-pr` IS in `steps`): Full PR merge workflow — merge PR, wait for CI, clean up branches.
+- **Local-only mode** (`default:create-pr` is NOT in `steps`): PR creation and merging are handled outside this workflow. Only switch to base branch, pull latest, and remove the local feature branch.
+
+---
+
+## Execution: PR Mode
+
+Applies when `default:create-pr` is present in the finalize steps list.
 
 ### Gather Context
 
@@ -171,9 +181,87 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: {checkout|pull} failed - {error}"
 ```
 
-### Log Completion
+### Log Completion (PR Mode)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup complete: merged PR #{pr_number}, pulled latest on {base_branch}"
+```
+
+---
+
+## Execution: Local-Only Mode
+
+Applies when `default:create-pr` is NOT in the finalize steps list. PR creation and merging are handled outside this workflow.
+
+### Gather Context
+
+Get branch information from references context (already available from Step 2 config read):
+- `head_branch`: current feature branch (from `branch` field in references)
+- `base_branch`: target branch (e.g., `main`)
+
+### User Confirmation Gate
+
+**MANDATORY**: Present context and ask user before any action.
+
+```
+AskUserQuestion:
+  questions:
+    - question: "PR creation and merge are handled outside this workflow. Ready to switch back to base branch and clean up?"
+      header: "Branch Cleanup (local-only)"
+      description: |
+        **Branch**: {head_branch} → {base_branch}
+
+        **Actions**:
+        - Switch to {base_branch}
+        - Pull latest changes
+        - Delete local branch {head_branch}
+      options:
+        - label: "Yes, proceed"
+          description: "Switch to base branch and clean up"
+        - label: "No, skip"
+          description: "Stay on current branch"
+      multiSelect: false
+```
+
+**If user selects "No, skip"**:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: user declined (local-only mode)"
+```
+→ Done, return.
+
+### Switch to Base Branch, Pull, and Clean Up
+
+```bash
+git checkout {base_branch}
+```
+
+```bash
+git pull
+```
+
+```bash
+git branch -d {head_branch}
+```
+
+If `git branch -d` fails → log warning (branch may not exist locally or has unmerged changes):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist or has unmerged changes)"
+```
+
+**Error handling**:
+
+If checkout or pull fails → log error and abort:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: {checkout|pull} failed - {error}"
+```
+
+### Log Completion (Local-Only Mode)
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup complete (local-only): switched to {base_branch}, pulled latest"
 ```
