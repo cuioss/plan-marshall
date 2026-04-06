@@ -197,7 +197,7 @@ Applies when `default:create-pr` is NOT in the finalize steps list. PR creation 
 ### Gather Context
 
 Get branch information from references context (already available from Step 2 config read):
-- `head_branch`: current feature branch
+- `head_branch`: current feature branch (from `branch` field in references)
 - `base_branch`: target branch (e.g., `main`)
 
 ### User Confirmation Gate
@@ -248,7 +248,7 @@ git branch -d {head_branch}
 If `git branch -d` fails → log warning (branch may not exist locally or has unmerged changes):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error}"
+  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist or has unmerged changes)"
 ```
 
 **Error handling**:
