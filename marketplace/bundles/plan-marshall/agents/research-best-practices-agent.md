@@ -34,6 +34,9 @@ Load development standards before any work:
 Skill: plan-marshall:dev-general-practices
 ```
 
+**Constraints:**
+- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+
 This ensures proper tool usage (Read instead of cat, etc.).
 
 ## WORKFLOW (FOLLOW EXACTLY)

@@ -415,5 +415,40 @@ def test_cli_ci_get():
 
 
 # =============================================================================
+# Domain Invariant Validation Tests
+# =============================================================================
+
+_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
+
+
+def test_validate_domain_invariants_no_overlap():
+    """Validation passes when defaults and optionals have no overlap."""
+    domain = {'defaults': ['a'], 'optionals': ['b']}
+    _config_defaults.validate_domain_invariants(domain)
+
+
+def test_validate_domain_invariants_overlap_raises():
+    """Validation raises ValueError when defaults and optionals overlap."""
+    domain = {'defaults': ['plan-marshall:dev-general-practices'], 'optionals': ['plan-marshall:dev-general-practices']}
+    import pytest
+    with pytest.raises(ValueError, match='must not appear in both defaults and optionals'):
+        _config_defaults.validate_domain_invariants(domain)
+
+
+def test_default_system_domain_no_overlap():
+    """DEFAULT_SYSTEM_DOMAIN must not have overlapping defaults and optionals."""
+    _config_defaults.validate_domain_invariants(_config_defaults.DEFAULT_SYSTEM_DOMAIN)
+
+
+def test_get_default_config_validates_invariants():
+    """get_default_config runs invariant validation on system domain."""
+    config = _config_defaults.get_default_config()
+    system = config['skill_domains']['system']
+    defaults = set(system.get('defaults', []))
+    optionals = set(system.get('optionals', []))
+    assert not (defaults & optionals), 'defaults and optionals must not overlap'
+
+
+# =============================================================================
 # Main
 # =============================================================================

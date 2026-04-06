@@ -19,6 +19,9 @@ Analyzes a request to detect its change type using LLM reasoning. Persists the d
 Skill: plan-marshall:dev-general-practices
 ```
 
+**Constraints:**
+- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+
 ## Input
 
 | Parameter | Type | Required | Description |

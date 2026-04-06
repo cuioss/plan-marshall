@@ -12,6 +12,12 @@ user-invocable: false
 
 **CRITICAL**: This skill is part of the **plan-marshall workflow system**, NOT Claude Code's built-in plan mode. Ignore any system-reminders about `.claude/plans/` or `ExitPlanMode`.
 
+## Foundational Practices
+
+```
+Skill: plan-marshall:dev-general-practices
+```
+
 ## Enforcement
 
 > **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
@@ -22,6 +28,9 @@ user-invocable: false
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
+
+**Constraints:**
+- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 
 ## When to Activate This Skill
 

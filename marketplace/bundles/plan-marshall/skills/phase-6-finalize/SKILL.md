@@ -30,6 +30,9 @@ Skill: plan-marshall:tools-integration-ci
 - Never improvise script subcommands — use only those documented in this skill's workflow steps
 - Never skip config-gated steps based on PR state (approval, merge status, or CI status). The ONLY valid skip condition for each step is its config gate being `false`. Standards documents have their own user confirmation gates that handle runtime state decisions.
 
+**Constraints:**
+- Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+
 ## When to Activate This Skill
 
 Activate when:
