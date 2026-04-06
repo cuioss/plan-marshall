@@ -322,7 +322,7 @@ Modules discovered: 10
 
 **Prerequisite**: Step 9 completed (architecture API is available).
 
-**Check if already present**: Look for the heading `Build Commands (Resolved)` in CLAUDE.md. If found, skip this step.
+**Check if already present**: Look for the heading `### Build Commands` in CLAUDE.md. If found, skip this step.
 
 **Check for existing build sections**: Search CLAUDE.md for existing hand-written build command patterns: `mvn `, `mvnw`, `gradle `, `npm run`, `./pw `, `build command`. If any are found, present the user with a choice:
 
@@ -354,9 +354,16 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture r
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command benchmark --name default
 ```
 
-For each successful resolution, collect the `executable` value.
+For each successful resolution, collect the `executable` value. Track which canonical command names were found on the default module (the "default commands set").
 
-**Add to CLAUDE.md** under the heading `### Build Commands (Resolved)` (in a "Development Notes" or equivalent section):
+**Collect child-module-only commands**: After resolving against default, iterate over all non-default modules. For each module, resolve the same canonical commands. Collect any commands that resolved successfully on the child module but were NOT found in the default commands set. These are child-module-only commands (e.g., `benchmark`, `integration-tests`, `e2e` that exist only on specific child modules).
+
+```bash
+# For each non-default module (from architecture info modules list):
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --name {module_name}
+```
+
+**Add to CLAUDE.md** under the heading `### Build Commands` (in a "Development Notes" or equivalent section):
 
 ```
 - Never hard-code build commands (./pw, mvn, npm, gradle) — use these resolved commands instead:
@@ -364,15 +371,18 @@ For each successful resolution, collect the `executable` value.
   - Quality gate: `{resolved quality-gate executable}`
   - Tests: `{resolved module-tests executable}`
   - Full verify: `{resolved verify executable}`
-  {- Integration tests: `{resolved integration-tests executable}` — only if resolved}
-  {- E2E: `{resolved e2e executable}` — only if resolved}
-  {- Coverage: `{resolved coverage executable}` — only if resolved}
-  {- Benchmark: `{resolved benchmark executable}` — only if resolved}
+  {- Integration tests: `{resolved integration-tests executable}` — only if resolved on default}
+  {- E2E: `{resolved e2e executable}` — only if resolved on default}
+  {- Coverage: `{resolved coverage executable}` — only if resolved on default}
+  {- Benchmark: `{resolved benchmark executable}` — only if resolved on default}
+  {- For each child-module-only command:}
+  {- {Canonical} ({module_name}): `{resolved executable}` — only on {module_name}}
+  - Omit `{module}` to run against all modules
   - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
   - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
 ```
 
-**Note**: Only include commands that resolved successfully. Different projects have different available commands.
+**Note**: Only include commands that resolved successfully. Different projects have different available commands. Child-module-only commands are listed separately with their module name for clarity.
 
 ---
 
