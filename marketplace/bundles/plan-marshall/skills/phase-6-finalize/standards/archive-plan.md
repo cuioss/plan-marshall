@@ -32,6 +32,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Lesson {source_id} marked as applied"
 ```
 
+Archive the lesson file so it no longer remains in `.plan/lessons-learned/`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons archive \
+  --id {source_id}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Lesson {source_id} archived"
+```
+
 **ELSE**: Skip — plan did not originate from a lesson.
 
 ## Archive
