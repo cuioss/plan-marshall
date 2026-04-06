@@ -584,6 +584,87 @@ def test_enrich_dependencies_sets_both():
 
 
 # =============================================================================
+# Tests for Dependency Cross-Check Validation
+# =============================================================================
+
+
+def _setup_project_with_deps(tmpdir: str, dependencies: list[str]) -> None:
+    """Create test project with specific module dependencies in derived-data."""
+    derived_data = {
+        'project': {'name': 'test-project'},
+        'modules': {
+            'module-a': {
+                'name': 'module-a',
+                'build_systems': ['maven'],
+                'paths': {'module': 'module-a'},
+                'metadata': {},
+                'packages': {},
+                'dependencies': dependencies,
+                'commands': {},
+            }
+        },
+    }
+    llm_enriched = {'project': {}, 'modules': {}}
+    save_derived_data(derived_data, tmpdir)
+    save_llm_enriched(llm_enriched, tmpdir)
+
+
+def test_enrich_dependencies_warns_on_unmatched():
+    """enrich_dependencies warns when key_dep not found in declared deps."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _setup_project_with_deps(tmpdir, ['de.cuioss:cui-java-tools:compile'])
+
+        key_deps = ['de.cuioss:cui-java-tools', 'com.nimbusds:nimbus-jose-jwt']
+        result = enrich_dependencies('module-a', key_deps, None, tmpdir)
+
+        assert result['status'] == 'success'
+        assert 'warnings' in result
+        assert len(result['warnings']) == 1
+        assert 'nimbus-jose-jwt' in result['warnings'][0]
+
+
+def test_enrich_dependencies_no_warning_when_all_match():
+    """enrich_dependencies emits no warnings when all key_deps match declared deps."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _setup_project_with_deps(tmpdir, [
+            'de.cuioss:cui-java-tools:compile',
+            'io.quarkus:quarkus-core:compile',
+        ])
+
+        key_deps = ['de.cuioss:cui-java-tools', 'io.quarkus:quarkus-core']
+        result = enrich_dependencies('module-a', key_deps, None, tmpdir)
+
+        assert result['status'] == 'success'
+        assert 'warnings' not in result
+
+
+def test_enrich_dependencies_warns_all_unmatched_against_empty():
+    """enrich_dependencies warns on all key_deps when module has no declared deps."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _setup_project_with_deps(tmpdir, [])
+
+        key_deps = ['com.nimbusds:nimbus-jose-jwt']
+        result = enrich_dependencies('module-a', key_deps, None, tmpdir)
+
+        assert result['status'] == 'success'
+        assert 'warnings' in result
+        assert len(result['warnings']) == 1
+
+
+def test_enrich_dependencies_still_persists_despite_warnings():
+    """enrich_dependencies persists key_deps even when warnings are emitted."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _setup_project_with_deps(tmpdir, [])
+
+        key_deps = ['com.nimbusds:nimbus-jose-jwt']
+        result = enrich_dependencies('module-a', key_deps, None, tmpdir)
+
+        assert result['key_dependencies'] == key_deps
+        enriched = load_llm_enriched(tmpdir)
+        assert enriched['modules']['module-a']['key_dependencies'] == key_deps
+
+
+# =============================================================================
 # Tests for Array Append Commands
 # =============================================================================
 

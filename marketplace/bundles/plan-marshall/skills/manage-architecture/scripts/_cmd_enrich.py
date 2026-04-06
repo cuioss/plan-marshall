@@ -427,6 +427,15 @@ def enrich_dependencies(
         enriched['modules'][module_name]['key_dependencies'] = key_deps
         result['key_dependencies'] = key_deps
 
+        # Cross-check key_deps against actual dependencies in derived-data
+        module_data = derived.get('modules', {}).get(module_name, {})
+        actual_deps = module_data.get('dependencies', [])
+        # actual deps are "groupId:artifactId:scope", key deps are "groupId:artifactId"
+        actual_prefixes = {':'.join(d.split(':')[:2]) for d in actual_deps if ':' in d}
+        unmatched = [d for d in key_deps if d not in actual_prefixes]
+        if unmatched:
+            result['warnings'] = [f'key_dependency not found in declared dependencies: {d}' for d in unmatched]
+
     if internal_deps is not None:
         enriched['modules'][module_name]['internal_dependencies'] = internal_deps
         result['internal_dependencies'] = internal_deps

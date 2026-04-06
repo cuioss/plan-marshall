@@ -605,15 +605,27 @@ def _build_commands(
             cmd_map['module-tests'] = f'test{pl_arg}'
 
     # 3. Profile-based commands (integration-tests, coverage, benchmark)
+    # Track which profiles map to each canonical for conflict detection
+    canonical_profiles: dict[str, list[str]] = {}
     for profile in profiles or []:
         canonical = profile.get('canonical')
         profile_id = profile.get('id')
 
         if canonical and profile_id:
+            canonical_profiles.setdefault(canonical, []).append(profile_id)
             profile_args = f'verify -P{profile_id}{pl_arg}'
             if canonical == 'quality-gate':
-                cmd_map['quality-gate'] = profile_args
+                # Only use the first profile match — subsequent matches are conflicts
+                if cmd_map.get('quality-gate') == f'verify{pl_arg}':
+                    cmd_map['quality-gate'] = profile_args
             elif canonical in ['integration-tests', 'e2e', 'coverage', 'benchmark']:
                 cmd_map[canonical] = profile_args
 
-    return build_canonical_commands(skill, cmd_map)
+    result = build_canonical_commands(skill, cmd_map)
+
+    # Report conflicts when multiple profiles map to the same canonical
+    conflicts = {c: ps for c, ps in canonical_profiles.items() if len(ps) > 1}
+    if conflicts:
+        result['conflicts'] = conflicts
+
+    return result

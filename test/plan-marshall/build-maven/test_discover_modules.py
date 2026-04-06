@@ -466,6 +466,66 @@ def test_pom_aggregator_does_not_get_module_tests():
 
 
 # =============================================================================
+# Unit Tests: Quality-Gate Profile Conflict Detection
+# =============================================================================
+
+
+def test_single_quality_gate_profile_no_conflict():
+    """Test that a single quality-gate profile produces no conflict."""
+    profiles = [{'id': 'pre-commit', 'canonical': 'quality-gate'}]
+    commands = _build_commands(
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True,
+        profiles=profiles, relative_path='.'
+    )
+    assert 'quality-gate' in commands
+    assert 'pre-commit' in commands['quality-gate']
+    assert 'conflicts' not in commands
+
+
+def test_two_quality_gate_profiles_first_wins():
+    """Test that when two profiles map to quality-gate, the first match wins."""
+    profiles = [
+        {'id': 'pre-commit', 'canonical': 'quality-gate'},
+        {'id': 'sonar', 'canonical': 'quality-gate'},
+    ]
+    commands = _build_commands(
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True,
+        profiles=profiles, relative_path='.'
+    )
+    assert 'quality-gate' in commands
+    assert 'pre-commit' in commands['quality-gate']
+    assert 'sonar' not in commands['quality-gate']
+
+
+def test_two_quality_gate_profiles_report_conflict():
+    """Test that when two profiles map to quality-gate, a conflict is reported."""
+    profiles = [
+        {'id': 'pre-commit', 'canonical': 'quality-gate'},
+        {'id': 'sonar', 'canonical': 'quality-gate'},
+    ]
+    commands = _build_commands(
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True,
+        profiles=profiles, relative_path='.'
+    )
+    assert 'conflicts' in commands
+    assert 'quality-gate' in commands['conflicts']
+    assert commands['conflicts']['quality-gate'] == ['pre-commit', 'sonar']
+
+
+def test_no_profile_conflict_for_different_canonicals():
+    """Test that profiles mapping to different canonicals produce no conflict."""
+    profiles = [
+        {'id': 'pre-commit', 'canonical': 'quality-gate'},
+        {'id': 'integration', 'canonical': 'integration-tests'},
+    ]
+    commands = _build_commands(
+        module_name='my-module', packaging='jar', has_sources=True, has_tests=True,
+        profiles=profiles, relative_path='.'
+    )
+    assert 'conflicts' not in commands
+
+
+# =============================================================================
 # Integration Tests: Full Pipeline
 # =============================================================================
 
