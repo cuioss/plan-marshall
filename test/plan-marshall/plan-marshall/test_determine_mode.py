@@ -21,8 +21,10 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward'
 from determine_mode import (  # type: ignore[import-not-found]  # noqa: E402
     check_docs,
     cmd_check_docs,
+    cmd_fix_docs,
     cmd_mode,
     determine_mode,
+    fix_docs,
 )
 
 
@@ -201,6 +203,122 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         status, missing = check_docs(self.temp_dir)
         self.assertEqual(status, 'ok')
         self.assertEqual(missing, [])
+
+
+class TestFixDocsSubcommand(ScriptTestCase):
+    """Test the 'fix-docs' subcommand via direct import."""
+
+    bundle = 'plan-marshall'
+    skill = 'marshall-steward'
+    script = 'determine_mode.py'
+
+    def test_ok_when_no_docs_exist(self):
+        """Should return ok when no documentation files exist."""
+        result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['fix_status'], 'ok')
+        self.assertEqual(result['fixed_count'], 0)
+
+    def test_ok_when_docs_already_complete(self):
+        """Should return ok when docs already have all required content."""
+        claude_md = self.temp_dir / 'CLAUDE.md'
+        claude_md.write_text(
+            '# Project\n\nUse `.plan/temp/` for temporary files.\n\n'
+            'use Glob, Read, Grep tools.\n\n### Workflow Discipline (Hard Rules)\n'
+        )
+        result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        self.assertEqual(result['fix_status'], 'ok')
+        self.assertEqual(result['fixed_count'], 0)
+
+    def test_fixes_missing_plan_temp_in_claude_md(self):
+        """Should append plan_temp content to CLAUDE.md."""
+        claude_md = self.temp_dir / 'CLAUDE.md'
+        claude_md.write_text(
+            '# Project\n\nuse Glob, Read, Grep tools.\n\n### Workflow Discipline (Hard Rules)\n'
+        )
+        result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        self.assertEqual(result['fix_status'], 'fixed')
+        self.assertIn('plan_temp:CLAUDE.md', result['fixes'])
+
+        content = claude_md.read_text()
+        self.assertIn('.plan/temp/', content)
+        self.assertIn('Write(.plan/**)', content)
+
+    def test_fixes_missing_file_ops(self):
+        """Should append file_ops content to CLAUDE.md."""
+        claude_md = self.temp_dir / 'CLAUDE.md'
+        claude_md.write_text('# Project\n\nUse .plan/temp for files.\n### Workflow Discipline\n')
+        result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        self.assertEqual(result['fix_status'], 'fixed')
+        self.assertIn('file_ops:CLAUDE.md', result['fixes'])
+
+        content = claude_md.read_text()
+        self.assertIn('use Glob, Read, Grep', content)
+
+    def test_fixes_missing_workflow_discipline(self):
+        """Should append workflow_discipline content to CLAUDE.md."""
+        claude_md = self.temp_dir / 'CLAUDE.md'
+        claude_md.write_text('# Project\n\nUse .plan/temp for files.\nuse Glob, Read, Grep tools.\n')
+        result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        self.assertEqual(result['fix_status'], 'fixed')
+        self.assertIn('workflow_discipline:CLAUDE.md', result['fixes'])
+
+        content = claude_md.read_text()
+        self.assertIn('Workflow Discipline', content)
+        self.assertIn('one command per call', content)
+        self.assertIn('no improvisation', content)
+
+    def test_fixes_multiple_missing_checks(self):
+        """Should fix all missing checks in one call."""
+        claude_md = self.temp_dir / 'CLAUDE.md'
+        claude_md.write_text('# Project\n')
+        result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        self.assertEqual(result['fix_status'], 'fixed')
+        self.assertEqual(result['fixed_count'], 3)
+
+        content = claude_md.read_text()
+        self.assertIn('.plan/temp/', content)
+        self.assertIn('use Glob, Read, Grep', content)
+        self.assertIn('Workflow Discipline', content)
+
+    def test_fixes_agents_md_plan_temp(self):
+        """Should append plan_temp to agents.md when missing."""
+        agents_md = self.temp_dir / 'agents.md'
+        agents_md.write_text('# Agents\n')
+        result = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        self.assertEqual(result['fix_status'], 'fixed')
+        self.assertIn('plan_temp:agents.md', result['fixes'])
+
+        content = agents_md.read_text()
+        self.assertIn('.plan/temp/', content)
+
+    def test_idempotent_on_second_run(self):
+        """Running fix-docs twice should be idempotent."""
+        claude_md = self.temp_dir / 'CLAUDE.md'
+        claude_md.write_text('# Project\n')
+
+        cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        result2 = cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        self.assertEqual(result2['fix_status'], 'ok')
+        self.assertEqual(result2['fixed_count'], 0)
+
+    def test_fix_docs_function_directly(self):
+        """Test the raw fix_docs function."""
+        status, fixes = fix_docs(self.temp_dir)
+        self.assertEqual(status, 'ok')
+        self.assertEqual(fixes, [])
+
+    def test_workflow_discipline_content_excludes_removed_rules(self):
+        """Workflow discipline should not contain removed rules."""
+        claude_md = self.temp_dir / 'CLAUDE.md'
+        claude_md.write_text('# Project\n\nUse .plan/temp.\nuse Glob, Read, Grep tools.\n')
+
+        cmd_fix_docs(Namespace(project_root=str(self.temp_dir)))
+        content = claude_md.read_text()
+
+        self.assertNotIn('scripts only', content)
+        self.assertNotIn('CI abstraction', content)
+        self.assertNotIn('architecture resolve', content)
 
 
 # =============================================================================
