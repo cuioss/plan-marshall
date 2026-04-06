@@ -116,10 +116,11 @@ class TestCmdRunCommonSuccess:
 class TestCmdRunCommonTimeout:
     """Tests for timeout result routing."""
 
-    def test_timeout_returns_one(self):
+    def test_timeout_returns_zero(self):
+        """Timeout is modeled in TOON output, not exit code."""
         result = _make_result(status='timeout', exit_code=-1, error='timed out', timeout_used=300)
         rc = cmd_run_common(result, _noop_parser, 'maven')
-        assert rc == 1
+        assert rc == 0
 
     def test_timeout_prints_timeout_status(self, capsys):
         result = _make_result(status='timeout', exit_code=-1, error='timed out', timeout_used=300)
@@ -156,10 +157,11 @@ class TestCmdRunCommonExecutionError:
 class TestCmdRunCommonBuildFailure:
     """Tests for build failure with log parsing."""
 
-    def test_build_failure_returns_one(self):
+    def test_build_failure_returns_zero(self):
+        """Build failure is modeled in TOON output, not exit code."""
         result = _make_result(status='error', exit_code=1, error='Build failed')
         rc = cmd_run_common(result, _error_parser, 'maven')
-        assert rc == 1
+        assert rc == 0
 
     def test_build_failure_includes_errors_in_output(self, capsys):
         result = _make_result(status='error', exit_code=1, error='Build failed')
@@ -174,15 +176,15 @@ class TestCmdRunCommonBuildFailure:
         assert 'passed' in stdout
         assert '5' in stdout
 
-    def test_parser_exception_still_returns_failure(self):
-        """If parser raises, cmd_run_common still returns build_failed."""
+    def test_parser_exception_still_returns_zero(self):
+        """If parser raises, cmd_run_common still returns 0 — status modeled in output."""
 
         def broken_parser(log_file):
             raise RuntimeError('parser crashed')
 
         result = _make_result(status='error', exit_code=1, error='Build failed')
         rc = cmd_run_common(result, broken_parser, 'maven')
-        assert rc == 1
+        assert rc == 0
 
     def test_parser_exception_prints_error_output(self, capsys):
         """If parser raises, output still contains build_failed."""

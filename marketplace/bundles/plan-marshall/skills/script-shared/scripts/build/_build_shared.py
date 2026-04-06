@@ -304,7 +304,7 @@ def cmd_run_common(
             command=command_str,
         )
         print(formatter(timeout_output))
-        return 1
+        return 0  # Status modeled in output, not exit code
 
     # Success case
     if result['status'] == 'success':
@@ -365,4 +365,4 @@ def cmd_run_common(
         )
         print(formatter(output))
 
-    return 1
+    return 0  # Status modeled in output, not exit code
