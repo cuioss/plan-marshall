@@ -5,6 +5,7 @@ Plan-marshall helper script for mode detection and documentation checks.
 Subcommands:
     mode            Determine wizard vs menu mode based on existing files
     check-docs      Check if project docs need .plan/temp documentation
+    fix-docs        Deterministically fix missing documentation content
     check-structure Check if project-architecture directory exists
 
 Note: check-docs and check-structure overlap with menu-healthcheck steps 2 and 5.
@@ -15,6 +16,7 @@ executor exists).
 Usage:
     python3 determine_mode.py mode
     python3 determine_mode.py check-docs
+    python3 determine_mode.py fix-docs
     python3 determine_mode.py check-structure
 
 Output (TOON format):
@@ -31,6 +33,14 @@ Output (TOON format):
         plan_temp	CLAUDE.md,agents.md
         file_ops	CLAUDE.md
         workflow_discipline	CLAUDE.md
+
+    fix-docs subcommand:
+        status	ok
+        fixed_count	0
+
+        status	fixed
+        fixed_count	2
+        fixes	plan_temp:CLAUDE.md,file_ops:CLAUDE.md
 
     check-structure subcommand:
         status	exists
@@ -74,6 +84,35 @@ CONTENT_CHECKS: list[dict[str, str | list[str]]] = [
         'pattern': 'Workflow Discipline',
     },
 ]
+
+# Verbatim content blocks appended by fix-docs when a check is missing.
+# Keys must match CONTENT_CHECKS keys. Values are the exact text to append.
+FIX_CONTENT: dict[str, str] = {
+    'plan_temp': (
+        '\n## Temporary Files\n'
+        '\n'
+        'Use `.plan/temp/` for ALL temporary and generated files '
+        '(covered by `Write(.plan/**)` permission — avoids permission prompts).\n'
+    ),
+    'file_ops': (
+        '\n## Tool Usage\n'
+        '\n'
+        '- Use proper tools (Edit, Read, Write) instead of shell commands (echo, cat)\n'
+        '- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead\n'
+    ),
+    'workflow_discipline': (
+        '\n### Workflow Discipline (Hard Rules)\n'
+        '\n'
+        '- **Bash: one command per call** — Each Bash call must contain exactly ONE command. '
+        'Never combine with `&&`, `;`, `&`, or newlines.\n'
+        '- **Bash: no shell constructs** — No `for`/`while` loops, no `$()` substitution, '
+        'no subshells, no heredocs with `#` lines. These trigger security prompts. '
+        'Use dedicated tools or multiple Bash calls instead.\n'
+        '- **Workflow steps: no improvisation** — When following a skill or workflow, '
+        'execute ONLY the commands documented in it. Never add discovery steps, '
+        'invent arguments, or skip documented steps.\n'
+    ),
+}
 
 
 def determine_mode(plan_dir: Path) -> tuple[str, str]:
@@ -153,6 +192,56 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
         return 'ok', []
 
 
+def fix_docs(project_root: Path) -> tuple[str, list[str]]:
+    """
+    Deterministically fix missing documentation content.
+
+    Runs check_docs to find missing content, then appends the exact
+    verbatim text from FIX_CONTENT to the appropriate files.
+
+    Args:
+        project_root: Path to the project root
+
+    Returns:
+        Tuple of (status, list of fix descriptions like 'plan_temp:CLAUDE.md')
+    """
+    status, missing = check_docs(project_root)
+    if status == 'ok':
+        return 'ok', []
+
+    fixes: list[str] = []
+    for entry in missing:
+        check_key = entry['check']
+        file_name = entry['file']
+        content_block = FIX_CONTENT.get(check_key)
+        if content_block is None:
+            continue
+
+        file_path = project_root / file_name
+        if not file_path.exists():
+            continue
+
+        existing = file_path.read_text()
+        # Ensure trailing newline before appending
+        if existing and not existing.endswith('\n'):
+            existing += '\n'
+        file_path.write_text(existing + content_block)
+        fixes.append(f'{check_key}:{file_name}')
+
+    return 'fixed' if fixes else 'ok', fixes
+
+
+def cmd_fix_docs(args: argparse.Namespace) -> dict:
+    """Handle the 'fix-docs' subcommand."""
+    project_root = Path(args.project_root)
+    status, fixes = fix_docs(project_root)
+
+    result: dict = {'status': 'success', 'fix_status': status, 'fixed_count': len(fixes)}
+    if fixes:
+        result['fixes'] = ','.join(fixes)
+    return result
+
+
 def cmd_mode(args: argparse.Namespace) -> dict:
     """Handle the 'mode' subcommand."""
     plan_dir = Path(args.plan_dir)
@@ -200,6 +289,10 @@ def main() -> int:
     docs_parser = subparsers.add_parser('check-docs', help='Check if project docs need .plan/temp documentation')
     docs_parser.add_argument('--project-root', type=str, default='.', help='Project root directory (default: .)')
 
+    # fix-docs subcommand
+    fix_parser = subparsers.add_parser('fix-docs', help='Deterministically fix missing documentation content')
+    fix_parser.add_argument('--project-root', type=str, default='.', help='Project root directory (default: .)')
+
     # check-structure subcommand
     structure_parser = subparsers.add_parser('check-structure', help='Check if project-architecture directory exists')
     structure_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
@@ -210,6 +303,8 @@ def main() -> int:
         result = cmd_mode(args)
     elif args.command == 'check-docs':
         result = cmd_check_docs(args)
+    elif args.command == 'fix-docs':
+        result = cmd_fix_docs(args)
     elif args.command == 'check-structure':
         result = cmd_check_structure(args)
     else:

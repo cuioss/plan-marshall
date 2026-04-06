@@ -41,10 +41,6 @@ Each Bash tool call must contain exactly ONE command. Never combine with newline
 
 Never use Bash for file discovery or reading. Use Glob, Grep, Read instead.
 
-### `.plan/` access: Scripts only
-
-ALL `.plan/` file access MUST go through `python3 .plan/execute-script.py`. Exception: when the loaded skill's workflow explicitly documents a direct `Write(...)` or `Read(...)` call.
-
 ### Skill workflow: No improvisation
 
 Execute ONLY the commands documented in the loaded skill's workflow. Never add discovery steps, invent arguments, or skip documented steps.
