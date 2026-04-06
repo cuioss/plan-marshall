@@ -45,9 +45,7 @@
   "skill_domains": {
     "system": {
       "defaults": [],
-      "optionals": [
-        "plan-marshall:dev-general-practices"
-      ],
+      "optionals": [],
       "task_executors": {
         "documentation": "plan-marshall:task-documentation",
         "implementation": "plan-marshall:task-implementation",

@@ -30,6 +30,7 @@ Output (TOON format):
         missing_count	2
         plan_temp	CLAUDE.md,agents.md
         file_ops	CLAUDE.md
+        workflow_discipline	CLAUDE.md
 
     check-structure subcommand:
         status	exists
@@ -66,6 +67,11 @@ CONTENT_CHECKS: list[dict[str, str | list[str]]] = [
         'key': 'file_ops',
         'files': ['CLAUDE.md'],
         'pattern': 'use Glob, Read, Grep',
+    },
+    {
+        'key': 'workflow_discipline',
+        'files': ['CLAUDE.md'],
+        'pattern': 'Workflow Discipline',
     },
 ]
 

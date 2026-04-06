@@ -113,7 +113,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
         """Should return ok when docs have all required content."""
         claude_md = self.temp_dir / 'CLAUDE.md'
         claude_md.write_text(
-            '# Project\n\nUse `.plan/temp/` for temporary files.\n\nFor file operations use Glob, Read, Grep tools.\n'
+            '# Project\n\nUse `.plan/temp/` for temporary files.\n\nFor file operations use Glob, Read, Grep tools.\n\n### Workflow Discipline (Hard Rules)\n'
         )
 
         result = cmd_check_docs(Namespace(project_root=str(self.temp_dir)))
@@ -176,7 +176,7 @@ class TestCheckDocsSubcommand(ScriptTestCase):
     def test_mixed_files_one_ok_one_missing(self):
         """Should only list files that need updating."""
         (self.temp_dir / 'CLAUDE.md').write_text(
-            'Use .plan/temp for temp files\nFor file operations use Glob, Read, Grep tools\n'
+            'Use .plan/temp for temp files\nFor file operations use Glob, Read, Grep tools\n### Workflow Discipline\n'
         )
         (self.temp_dir / 'agents.md').write_text('# Agents\n')
 
@@ -188,13 +188,13 @@ class TestCheckDocsSubcommand(ScriptTestCase):
 
     def test_missing_count_reflects_total_entries(self):
         """missing_count should reflect total number of missing check entries."""
-        # CLAUDE.md missing both checks, agents.md missing plan_temp = 3 entries
+        # CLAUDE.md missing all 3 checks, agents.md missing plan_temp = 4 entries
         (self.temp_dir / 'CLAUDE.md').write_text('# Project\n')
         (self.temp_dir / 'agents.md').write_text('# Agents\n')
 
         result = cmd_check_docs(Namespace(project_root=str(self.temp_dir)))
         self.assertEqual(result['status'], 'success')
-        self.assertEqual(result['missing_count'], 3)
+        self.assertEqual(result['missing_count'], 4)
 
     def test_check_docs_function_directly(self):
         """Test the raw check_docs function."""

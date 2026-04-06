@@ -171,6 +171,7 @@ Interpret the output:
 - `status: needs_update` → Apply fixes for each missing marker:
   - `plan_temp` → Append to listed file: `- Use .plan/temp/ for ALL temporary files (covered by Write(.plan/**) permission - avoids permission prompts)`
   - `file_ops` → Append to CLAUDE.md: `- Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead`
+  - `workflow_discipline` → Add a "### Workflow Discipline (Hard Rules)" section to CLAUDE.md with these rules: `.plan/` access via scripts only, one Bash command per call, no shell constructs, no workflow improvisation, CI abstraction layer required, build commands via architecture resolve
 
 ---
 

@@ -174,6 +174,17 @@ Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on
   - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
 - Use `gh` tool for GitHub access, not MCP
 
+### Workflow Discipline (Hard Rules)
+
+These rules apply to ALL work in this repository — ad-hoc tasks, plan execution, and agent work alike. They exist because Claude regularly violates them despite softer guidance.
+
+- **`.plan/` access: scripts only** — ALL `.plan/` file access MUST go through `python3 .plan/execute-script.py` manage-* scripts. Never Read/Write/Edit `.plan/` files directly unless a loaded skill's workflow explicitly documents it.
+- **Bash: one command per call** — Each Bash call must contain exactly ONE command. Never combine with `&&`, `;`, `&`, or newlines.
+- **Bash: no shell constructs** — No `for`/`while` loops, no `$()` substitution, no subshells, no heredocs with `#` lines. These trigger security prompts. Use dedicated tools or multiple Bash calls instead.
+- **Workflow steps: no improvisation** — When following a skill or workflow, execute ONLY the commands documented in it. Never add discovery steps, invent arguments, or skip documented steps.
+- **CI operations: use abstraction layer** — All CI/Git provider operations (PRs, issues, CI status, reviews) MUST go through `plan-marshall:tools-integration-ci:ci` scripts. Never use `gh` or `glab` directly.
+- **Build commands: resolve via architecture** — Never hard-code `./pw`, `mvn`, `npm`, or `gradle`. Always resolve via `plan-marshall:manage-architecture:architecture resolve` first, then execute the returned `executable`.
+
 ### Plugin Cache Sync
 
 When modifying plugin source files (skills, agents, commands), changes won't take effect until the plugin cache is updated. After editing files in `marketplace/bundles/`, run:
