@@ -96,7 +96,7 @@ Defines the extension's domain identity and organizes skills into profiles for c
 
 ```
 1. Extension discovery and loading
-2. ➤ get_skill_domains() → domain metadata + skill profiles
+2. -> get_skill_domains() -> domain metadata + skill profiles
 3. Domain registered in marshal.json under skill_domains.{domain_key}
 4. Profiles consumed by phase skills to load domain-specific knowledge
 ```
@@ -204,7 +204,7 @@ Sets project-specific configuration defaults in `marshal.json` before other comp
 **Lifecycle**: Called after extensions are loaded but before any workflow logic accesses configuration.
 
 ```
-Extension discovery → load → ➤ config_defaults() → plugin access / workflow execution
+Extension discovery -> load -> -> config_defaults() -> plugin access / workflow execution
 ```
 
 ```python
@@ -285,429 +285,23 @@ See [module-discovery.md](module-discovery.md) for the method contract and compl
 
 ---
 
-### provides_triage
-
-Declares a domain-specific triage skill containing finding decision-making knowledge — suppression syntax, severity guidelines, and acceptable-to-accept criteria.
-
-**Lifecycle**: Called during `skill-domains configure`. Stored in `marshal.json` and resolved at runtime when findings need triage.
-
-```
-Extension discovery → get_skill_domains() → ➤ provides_triage() → stored in marshal.json → resolved by execute/finalize phases
-```
-
-```python
-def provides_triage(self) -> str | None:
-    """Return triage skill reference as 'bundle:skill', or None.
-
-    Default: None
-    """
-```
-
-#### Required Skill Sections
-
-The referenced triage skill MUST include:
-
-| Section | Purpose | Content |
-|---------|---------|---------|
-| `## Suppression Syntax` | How to suppress findings | Annotation/comment syntax per finding type |
-| `## Severity Guidelines` | When to fix vs suppress vs accept | Decision table by severity |
-| `## Acceptable to Accept` | What can be accepted without fixing | Situations where accepting is appropriate |
-
-#### Triage Decision Flow
-
-```
-1. Run verification (build, test, lint, Sonar)
-2. Collect findings
-3. For each finding:
-   a. Determine domain from file path/extension
-   b. resolve-workflow-skill-extension --domain {domain} --type triage
-   c. If extension exists: load skill, apply severity/suppression rules
-   d. If no extension: use default severity mapping
-   e. Decide: fix | suppress | accept
-4. Apply fixes/suppressions → re-run verification if changes made
-```
-
-#### Storage in marshal.json
-
-```json
-{
-  "skill_domains": {
-    "java": {
-      "bundle": "pm-dev-java",
-      "workflow_skill_extensions": {
-        "triage": "pm-dev-java:ext-triage-java"
-      }
-    }
-  }
-}
-```
-
-#### Resolution Command
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-workflow-skill-extension --domain java --type triage
-```
-
-See [Existing Extensions](#existing-extensions) for current implementations.
-
----
-
-### provides_outline_skill
-
-Declares a domain-specific outline skill with change-type routing for solution outline creation. The skill provides `standards/change-{type}.md` files with domain-specific discovery, analysis, and deliverable logic.
-
-**Lifecycle**: Called during `skill-domains configure`. Stored in `marshal.json` and resolved at runtime by phase-3-outline.
-
-```
-Extension discovery → get_skill_domains() → ➤ provides_outline_skill() → stored in marshal.json → resolved by phase-3-outline
-```
-
-```python
-def provides_outline_skill(self) -> str | None:
-    """Return domain-specific outline skill reference as 'bundle:skill', or None.
-
-    Fallback: If None, generic plan-marshall:phase-3-outline
-    standards are used.
-
-    Default: None
-    """
-```
-
-#### Skill Structure Convention
-
-```
-{bundle}/skills/{skill}/
-├── SKILL.md                       # Shared workflow steps
-└── standards/
-    └── change-types.md            # All change types (bug_fix, enhancement, feature, tech_debt)
-```
-
-| Change Type | Description |
-|-------------|-------------|
-| `feature` | New functionality or component |
-| `enhancement` | Improve existing functionality |
-| `bug_fix` | Fix a defect or issue |
-| `tech_debt` | Refactoring, cleanup, removal |
-| `analysis` | Investigate, research, understand |
-| `verification` | Validate, check, confirm |
-
-Not all change types need coverage — unsupported types fall back to `plan-marshall:phase-3-outline/standards/change-{type}.md`.
-
-#### Storage in marshal.json
-
-The outline skill reference is stored at the domain level (not inside `workflow_skill_extensions`):
-
-```json
-{
-  "skill_domains": {
-    "plan-marshall-plugin-dev": {
-      "bundle": "pm-plugin-development",
-      "outline_skill": "pm-plugin-development:ext-outline-workflow",
-      "workflow_skill_extensions": {
-        "triage": "pm-plugin-development:ext-triage-plugin"
-      }
-    }
-  }
-}
-```
-
-#### Resolution Command
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-outline-skill --domain plan-marshall-plugin-dev
-```
-
-Returns `source: domain_specific` when a custom skill exists, or `source: generic_fallback` when using defaults.
-
-See [Existing Extensions](#existing-extensions) for current implementations. All other domains return `None` and use the generic `plan-marshall:phase-3-outline` standards.
-
----
-
-### provides_recipes
-
-Declares predefined, repeatable transformations (recipes) that bypass change-type detection and provide their own discovery, analysis, and deliverable patterns. Recipes are presented to users via `/plan-marshall action=recipe`.
-
-**Lifecycle**: Called during `skill-domains configure`. Recipes are discovered at runtime by `list-recipes` and `resolve-recipe` commands.
-
-```
-Extension discovery → get_skill_domains() → ➤ provides_recipes() → discovered at runtime by manage-config list-recipes/resolve-recipe
-```
-
-```python
-def provides_recipes(self) -> list[dict]:
-    """Return recipe definitions this extension provides.
-
-    Each recipe dict contains:
-        - key: str — Unique recipe identifier (e.g., 'refactor-to-profile-standards')
-        - name: str — Human-readable display name
-        - description: str — Description for recipe selection UI
-        - skill: str — Fully-qualified skill reference ('bundle:recipe-skill')
-        - default_change_type: str — Change type for outline phase (e.g., 'tech_debt')
-        - scope: str — Scope indicator ('codebase_wide', 'module')
-
-    Optional fields (set by user at plan creation time if omitted):
-        - profile: str — Target profile ('implementation', 'module_testing')
-        - package_source: str — Package source ('packages', 'test_packages')
-
-    Default: []
-    """
-```
-
-#### Return Structure
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `key` | str | Yes | Unique recipe identifier — used in `resolve-recipe --recipe {key}` |
-| `name` | str | Yes | Human-readable display name for UI |
-| `description` | str | Yes | Description shown during recipe selection |
-| `skill` | str | Yes | Fully-qualified skill reference (`bundle:recipe-skill`) |
-| `default_change_type` | str | Yes | Change type for phase-3-outline (e.g., `tech_debt`, `feature`) |
-| `scope` | str | Yes | Scope indicator (`codebase_wide`, `module`) |
-| `profile` | str | No | Target profile — omit if user selects at plan creation time |
-| `package_source` | str | No | Package source — omit if user selects at plan creation time |
-
-#### Auto-Assigned Fields
-
-The following fields are added automatically by `_discover_all_recipes()` — do **not** include them in the return value:
-
-| Field | Value | Source |
-|-------|-------|--------|
-| `domain` | First domain key from `get_skill_domains()` | Auto-extracted |
-| `source` | `'extension'` | Auto-assigned |
-
-#### Recipe Discovery Sources
-
-Recipes are discovered from two sources (in order):
-
-1. **Extension `provides_recipes()`** — domain bundle recipes (source: `extension`)
-2. **Project `recipe-*` skills in `.claude/skills/`** — project-level recipes (source: `project`)
-
-#### Resolution Commands
-
-```bash
-# List all recipes from all sources
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-recipes
-
-# Resolve a specific recipe by key
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-recipe --recipe refactor-to-profile-standards
-```
-
-#### Recipe Skill Interface
-
-The referenced recipe skill is loaded by phase-3-outline (Step 2.5) with these inputs:
-
-| Parameter | Source |
-|-----------|--------|
-| `plan_id` | Current plan |
-| `recipe_domain` | From status metadata (user-selected or recipe-declared) |
-| `recipe_profile` | From status metadata (user-selected or recipe-declared) |
-| `recipe_package_source` | From status metadata (user-selected or recipe-declared) |
-
-The recipe skill must write `solution_outline.md` with deliverables grouped by module.
-
-#### Implementation Pattern
-
-```python
-class Extension(ExtensionBase):
-    def provides_recipes(self) -> list[dict]:
-        return [
-            {
-                'key': 'refactor-to-profile-standards',
-                'name': 'Refactor to Profile Standards',
-                'description': 'Refactor code to comply with configured profile standards, package by package',
-                'skill': 'plan-marshall:recipe-refactor-to-profile-standards',
-                'default_change_type': 'tech_debt',
-                'scope': 'codebase_wide',
-                # profile and package_source omitted — user selects at plan creation
-            },
-        ]
-```
-
-See [Existing Extensions](#existing-extensions) for current implementations.
-
----
-
-### provides_verify_steps
-
-Declares domain-specific verification agents that run after implementation tasks complete. Steps are appended to the flat `steps` list in `plan.phase-5-execute.steps`.
-
-**Lifecycle**: Called during `skill-domains configure`. Steps appended to `marshal.json` steps list and consumed by phase-4-plan to create holistic verification tasks.
-
-```
-Extension discovery → get_skill_domains() → ➤ provides_verify_steps() → appended to steps list → phase-4-plan creates tasks → phase-5-execute runs agents
-```
-
-```python
-def provides_verify_steps(self) -> list[dict]:
-    """Return domain-specific verification steps.
-
-    Each step dict contains:
-        - name: Fully-qualified skill reference (e.g., 'my-bundle:my-verify-step')
-        - skill: Same as name (the fully-qualified skill reference)
-        - description: Human-readable description for wizard presentation
-
-    Default: []
-    """
-```
-
-#### Return Structure
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | str | Fully-qualified skill reference (`bundle:skill`) — used directly in steps list |
-| `skill` | str | Same as name (the fully-qualified skill reference) |
-| `description` | str | Human-readable description for `/marshall-steward` wizard |
-
-#### Storage in marshal.json
-
-Extension steps are appended to the flat `plan.phase-5-execute.steps` list after built-in steps:
-
-```json
-{
-  "plan": {
-    "phase-5-execute": {
-      "steps": [
-        "quality_check",
-        "build_verify",
-        "coverage_check"
-      ]
-    }
-  }
-}
-```
-
-Built-in steps (`quality_check`, `build_verify`) are always first. Extension steps follow in discovery order.
-
-#### Manage Commands
-
-```bash
-# Add a verify step
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute add-step --step my-bundle:my-verify-step
-
-# Remove a verify step
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute remove-step --step my-bundle:my-verify-step
-
-# Replace entire steps list
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-steps --steps quality_check,build_verify
-
-# List all available verify steps (built-in + extensions)
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
-```
-
-#### Runtime Consumption
-
-Phase-4-plan reads the steps list and creates holistic verification tasks:
-
-1. Read config: `plan phase-5-execute get --field steps --trace-plan-id {plan_id}`
-2. For each step: create a verification task with `profile: verification`, `deliverable: 0`, `origin: holistic`, `depends_on: [ALL non-holistic tasks]`
-3. Built-in steps (`quality_check`, `build_verify`) resolve via architecture commands
-4. Extension steps (colon notation) use the step name directly as the agent reference
-
-#### Implementation Pattern
-
-```python
-class Extension(ExtensionBase):
-    def provides_verify_steps(self) -> list[dict]:
-        return [
-            {
-                'name': 'my-bundle:my-verify-step',
-                'skill': 'my-bundle:my-verify-step',
-                'description': 'Custom domain verification',
-            },
-        ]
-```
-
-No bundles currently provide verification steps. See [Existing Extensions](#existing-extensions) for the full matrix.
-
-> **Note**: Coverage verification is handled by the built-in `default:coverage_check` step, not by an extension agent. See the dispatch table in `phase-5-execute`.
-
----
-
-### provides_finalize_steps
-
-Declares domain-specific finalize steps that execute during the phase-6-finalize pipeline. Steps are discovered by marshall-steward and presented to the user for selection.
-
-**Lifecycle**: Called during step discovery (marshall-steward wizard/menu). Selected steps are added to the `steps` list in `marshal.json` under `plan.phase-6-finalize.steps`.
-
-```
-Extension discovery → ➤ provides_finalize_steps() → marshall-steward multi-select → stored in marshal.json steps list → phase-6-finalize dispatches via Skill:
-```
-
-```python
-def provides_finalize_steps(self) -> list[dict]:
-    """Return domain-specific finalize steps.
-
-    Each step dict contains:
-        - name: str — Fully-qualified skill notation (used as step reference in steps list)
-        - skill: str — Same as name (fully-qualified skill reference)
-        - description: str — Human-readable description for wizard presentation
-
-    Default: []
-    """
-```
-
-#### Return Structure
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | str | Fully-qualified skill notation — used as step reference in `steps` list |
-| `skill` | str | Same as `name` (the skill to invoke) |
-| `description` | str | Human-readable description for `/marshall-steward` wizard |
-
-#### Storage in marshal.json
-
-Extension-contributed steps are added to the ordered `steps` list:
-
-```json
-{
-  "plan": {
-    "phase-6-finalize": {
-      "steps": [
-        "commit_push",
-        "create_pr",
-        "pm-dev-java:java-post-pr",
-        "branch_cleanup",
-        "archive"
-      ]
-    }
-  }
-}
-```
-
-The step reference is the fully-qualified skill notation. The position in the list determines execution order.
-
-#### Interface Contract
-
-Each finalize step skill receives:
-
-| Parameter | Description |
-|-----------|-------------|
-| `--plan-id` | The plan being finalized |
-| `--iteration` | Current finalize iteration (1-based) |
-
-The step skill can access plan context via manage-* scripts.
-
-#### Implementation Pattern
-
-```python
-class Extension(ExtensionBase):
-    def provides_finalize_steps(self) -> list[dict]:
-        return [
-            {
-                'name': 'pm-dev-java:java-post-pr',
-                'skill': 'pm-dev-java:java-post-pr',
-                'description': 'Java post-PR validation and artifact publishing',
-            },
-        ]
-```
-
-No bundles currently provide finalize steps. See [Existing Extensions](#existing-extensions) for the full matrix.
+## Extension Points
+
+Each extension point has its own contract document with formal parameters, pre-conditions, and post-conditions:
+
+| Extension Point | Hook Method | Contract | Implementations |
+|-----------------|-------------|----------|-----------------|
+| Build System | `discover_modules()` + `ExecuteConfig` factory | [ext-point-build.md](ext-point-build.md) | 4 (Maven, Gradle, npm, Python) |
+| Triage | `provides_triage()` | [ext-point-triage.md](ext-point-triage.md) | 7 |
+| Outline | `provides_outline_skill()` | [ext-point-outline.md](ext-point-outline.md) | 1 |
+| Recipe | `provides_recipes()` | [ext-point-recipe.md](ext-point-recipe.md) | 4 |
+| Credential | `credential_extension.py` | [ext-point-credential.md](ext-point-credential.md) | 1 |
+| Verify Steps | `provides_verify_steps()` | [ext-point-verify-steps.md](ext-point-verify-steps.md) | 0 |
+| Finalize Steps | `provides_finalize_steps()` | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) | 0 |
+
+See each document for the complete contract, implementation template, and current implementations.
+
+For all extension-related configuration paths, see [marshal-json-reference.md](marshal-json-reference.md).
 
 ---
 
@@ -905,54 +499,15 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 | Bundle | Domain Key | Triage | Outline Skill | Recipes | Verify Steps | Credentials | Notes |
 |--------|------------|--------|---------------|---------|-------------|-------------|-------|
-| pm-dev-java | java | ext-triage-java | - | - | - | - | Base Java bundle |
+| pm-dev-java | java | [ext-triage-java](ext-point-triage.md) | - | - | - | - | Base Java bundle |
 | pm-dev-java-cui | java-cui | - | - | - | - | - | Additive to pm-dev-java |
-| pm-dev-frontend | javascript | ext-triage-js | - | - | - | - | |
-| pm-dev-python | python | ext-triage-python | - | - | - | - | |
-| pm-dev-oci | oci-containers | ext-triage-oci | - | - | - | - | |
-| pm-documents | documentation | ext-triage-docs | - | - | - | - | Uses recipe for doc verification |
-| pm-requirements | requirements | ext-triage-reqs | - | - | - | - | |
-| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | - | |
-| plan-marshall | build, general-dev | - | - | 1 (refactor-to-profile-standards) | - | workflow-integration-sonar | Multi-domain |
-
----
-
-## Credential Extensions (Standalone)
-
-Separate from `ExtensionBase`, credential extensions declare external tool authentication needs. They are discovered by `_credentials_core.discover_credential_providers()` which scans all skill script directories for `credential_extension.py` files.
-
-### Convention
-
-- **File location**: `marketplace/bundles/{bundle}/skills/{skill}/scripts/credential_extension.py`
-- **Required function**: `get_credential_providers() -> list[dict]`
-- **Discovery**: Scans `skills/*/scripts/credential_extension.py` across all bundles (not just `plan-marshall-plugin/`)
-- **Consumer**: `manage-credentials` skill
-
-### Return Structure
-
-Each dict in the returned list must include:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `skill_name` | str | Skill identifier (e.g., `workflow-integration-sonar`) |
-| `display_name` | str | Human-readable name |
-| `auth_type` | str | Default auth type (`none`, `token`, `basic`) |
-| `default_url` | str | Default base URL |
-| `header_name` | str | HTTP header name for token auth |
-| `header_value_template` | str | Header value template (e.g., `Bearer {token}`) |
-| `verify_endpoint` | str | Endpoint for connectivity verification |
-| `verify_method` | str | HTTP method for verification |
-| `description` | str | Provider description |
-
-### Current Implementations
-
-| Bundle | Skill | Provider |
-|--------|-------|----------|
-| plan-marshall | workflow-integration-sonar | SonarCloud/SonarQube |
-
-### Why Not Part of ExtensionBase?
-
-Credential needs are per-skill (e.g., sonar skill), not per-domain-bundle. A domain bundle may have zero or many skills that need credentials. The `ExtensionBase` class models domain-level capabilities (skills, triage, recipes), while credential extensions model individual skill-level authentication requirements.
+| pm-dev-frontend | javascript | [ext-triage-js](ext-point-triage.md) | - | - | - | - | |
+| pm-dev-python | python | [ext-triage-python](ext-point-triage.md) | - | - | - | - | |
+| pm-dev-oci | oci-containers | [ext-triage-oci](ext-point-triage.md) | - | - | - | - | |
+| pm-documents | documentation | [ext-triage-docs](ext-point-triage.md) | - | [recipes](ext-point-recipe.md) | - | - | Uses recipe for doc verification |
+| pm-requirements | requirements | [ext-triage-reqs](ext-point-triage.md) | - | - | - | - | |
+| pm-plugin-development | plan-marshall-plugin-dev | [ext-triage-plugin](ext-point-triage.md) | [ext-outline-workflow](ext-point-outline.md) | - | - | - | |
+| plan-marshall | build, general-dev | - | - | [1 recipe](ext-point-recipe.md) | - | [sonar](ext-point-credential.md) | Multi-domain |
 
 ---
 
@@ -992,3 +547,4 @@ All six hooks (config_defaults, provides_triage, provides_outline_skill, provide
 - [build-execution.md](build-execution.md) - Build command execution API and return structure
 - [profiles.md](profiles.md) - Profile override mechanism and profile contracts
 - [workflow-overview.md](workflow-overview.md) - 6-phase workflow and user review gate
+- [marshal-json-reference.md](marshal-json-reference.md) - Central marshal.json path reference

@@ -2,6 +2,7 @@
 name: build-npm
 description: npm/npx build operations — TypeScript, Jest, ESLint, TAP parsing with workspace discovery, per-file JS coverage analysis, and automatic npm/npx routing
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-build
 ---
 
 # Build npm

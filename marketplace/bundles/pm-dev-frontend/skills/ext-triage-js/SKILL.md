@@ -2,6 +2,7 @@
 name: ext-triage-js
 description: Triage extension for JavaScript findings during plan-finalize phase
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 
 # JavaScript Triage Extension
@@ -57,5 +58,5 @@ Loaded via `resolve-workflow-skill-extension --domain javascript --type triage` 
 
 ## Related Documents
 
-- `plan-marshall:extension-api` - Triage extension contract
+
 - `pm-dev-frontend:javascript` - Core JavaScript patterns

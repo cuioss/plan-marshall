@@ -2,6 +2,7 @@
 name: recipe-doc-verify
 description: Recipe for verifying documentation quality across project — validates AsciiDoc format, links, and documentation drift
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 
 # Recipe: Verify Documentation Quality

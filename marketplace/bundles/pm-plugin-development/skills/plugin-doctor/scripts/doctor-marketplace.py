@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _cmd_apply import apply_single_fix, load_templates
+from _cmd_extension import validate_extension_contracts
 from _doctor_analysis import analyze_component
 from _doctor_report import generate_report
 from _doctor_shared import (
@@ -346,6 +347,19 @@ def cmd_report(args) -> dict:
 
 
 @safe_main
+def cmd_validate_contracts(args) -> dict:
+    """Validate extension point contract compliance."""
+    marketplace_root = find_marketplace_root()
+    if not marketplace_root:
+        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+
+    return validate_extension_contracts(
+        marketplace_root,
+        extension_type=args.extension_type,
+        skill_filter=args.skill,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description='Batch marketplace analysis and fixing',
@@ -405,6 +419,12 @@ Examples:
     p_report.add_argument('--bundles', help='Comma-separated list of bundle names')
     p_report.add_argument('--output', '-o', help='Output directory for report')
     p_report.set_defaults(func=cmd_report)
+
+    # validate-contracts subcommand
+    p_contracts = subparsers.add_parser('validate-contracts', help='Validate extension point contract compliance')
+    p_contracts.add_argument('--extension-type', help='Filter by extension type (triage,outline,recipe,build,credential)')
+    p_contracts.add_argument('--skill', help='Filter by specific skill (bundle:skill or skill-name)')
+    p_contracts.set_defaults(func=cmd_validate_contracts)
 
     args = parser.parse_args()
 

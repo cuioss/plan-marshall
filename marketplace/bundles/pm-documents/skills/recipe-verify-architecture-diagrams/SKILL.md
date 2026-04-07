@@ -2,6 +2,7 @@
 name: recipe-verify-architecture-diagrams
 description: Recipe for verifying and updating PlantUML diagrams to reflect current codebase state and regenerating PNG images
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 
 # Recipe: Verify and Update Architecture Diagrams
