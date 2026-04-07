@@ -6,10 +6,9 @@ from pathlib import Path
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-import conftest  # noqa: E402, F401
-
-# Direct imports — conftest sets up PYTHONPATH
 from _credentials_core import discover_credential_providers  # type: ignore[import-not-found]  # noqa: E402
+
+import conftest  # noqa: E402, F401
 
 
 class TestCredentialExtensionDiscovery:

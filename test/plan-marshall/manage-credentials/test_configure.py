@@ -5,8 +5,6 @@ Tests the configure command with placeholder-based secret entry
 and the check command for credential completeness.
 """
 
-import json
-import os
 import sys
 from pathlib import Path
 
@@ -121,7 +119,6 @@ class TestCheckCompleteness:
         """Returns complete=True when no placeholders present."""
         from _credentials_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
-            SECRET_PLACEHOLDERS,
             check_credential_completeness,
             save_credential,
         )
