@@ -10,8 +10,8 @@ Switch back to base branch and clean up after plan completion. Behavior adapts b
 ## Constraints
 
 - **Single-branch-only**: Only the plan's own feature branch (`{head_branch}` from references) may be deleted. Never delete any other local branches, regardless of their state or name.
-- **No broad cleanup**: Never run bulk branch deletion commands such as `git branch | grep -v main | xargs git branch -d`, `git fetch --prune`, `git remote prune`, or similar patterns that affect multiple branches.
-- **No improvisation**: Do not add git cleanup steps beyond what is explicitly documented in the execution sections below. The scope of this workflow is limited to switching branches, pulling, and deleting the single plan branch.
+- **No broad cleanup**: Never run bulk branch deletion commands such as `git branch | grep -v {base_branch} | xargs git branch -d`, `git fetch --prune`, `git remote prune`, or similar patterns that affect multiple branches.
+- **No improvisation**: Do not add git cleanup steps beyond what is explicitly documented in the execution sections below.
 
 ## Mode Detection
 
