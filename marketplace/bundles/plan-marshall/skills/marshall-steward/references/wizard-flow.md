@@ -788,7 +788,7 @@ AskUserQuestion:
 
 If user selects "Skip" → Continue to Step 16.
 
-**Step 15c**: If user selects "Configure now", collect values step by step.
+**Step 15c**: If user selects "Configure now", collect non-secret values step by step.
 
 **IMPORTANT**: Each AskUserQuestion below MUST be followed by the next step. Do NOT abort or skip if a user answer seems unexpected. Always proceed to Step 15e and run the configure command.
 
@@ -827,28 +827,6 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-3. If `auth_type=token`, collect the token. The user MUST select "Other" and paste their token as free text:
-
-```
-AskUserQuestion:
-  questions:
-    - question: "Paste your API token (select 'Other' and paste the token):"
-      header: "Token"
-      options:
-        - label: "Skip token"
-          description: "Skip — configure token later via /marshall-steward menu"
-        - label: "I need to generate a token first"
-          description: "Visit the provider's website to generate an API token"
-      multiSelect: false
-```
-
-**Handling the answer**:
-- If user typed custom text via "Other" → that text IS the token. Use it as `{token}`. Keep `auth_type=token`.
-- If user selected "Skip token" → change `auth_type` to `none` for Step 15e (use the `auth_type=none` command variant). User configures token later.
-- If user selected "I need to generate a token first" → display the provider URL, then change `auth_type` to `none` for Step 15e.
-
-4. If `auth_type=basic`, collect username and password the same way (user types via "Other").
-
 **Step 15d**: Auto-detect extra fields from `list-providers` output.
 
 Check if the selected provider has `extra_fields` in the `list-providers` output. If yes, auto-detect values and confirm with user.
@@ -883,36 +861,38 @@ AskUserQuestion:
 
 User can accept recommended values or type custom values via "Other".
 
-**Step 15e**: Run configure via executor. **ALWAYS execute this step** — do not skip even if token was skipped.
+**Step 15e**: Run configure via executor. **ALWAYS execute this step** — creates credential file with placeholder secrets.
 
-Build the command from collected values:
+Build the command from collected values (no secret args — secrets go into the file as placeholders):
 
 ```bash
-# With token + extra fields:
+# With extra fields:
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
   --skill {skill} --url {url} --auth-type {auth_type} \
-  --token {token} \
-  --extra organization={org} project_key={project_key} \
-  --no-verify
+  --extra organization={org} project_key={project_key}
 
-# Without token (auth_type=none or token skipped):
+# Without extra fields:
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-  --skill {skill} --url {url} --auth-type none \
-  --extra organization={org} project_key={project_key} \
-  --no-verify
-
-# With basic auth + extra fields:
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-  --skill {skill} --url {url} --auth-type basic \
-  --username {username} --password {password} \
-  --extra organization={org} project_key={project_key} \
-  --no-verify
+  --skill {skill} --url {url} --auth-type {auth_type}
 ```
 
 **CRITICAL**:
 - Omit `--extra` if the provider has no `extra_fields` in the `list-providers` output.
 - The keys used in `--extra` (e.g., `organization`, `project_key`) must match the `key` field from the provider's `extra_fields` array returned by `list-providers`.
-- Omit `--token` if `auth_type` is not `token`.
+
+**Step 15e2**: If configure returns `needs_editing: true`, tell user to edit the credential file:
+
+1. Tell user: "Open `{path}` and replace the placeholder with your actual token/password."
+2. Wait for user to confirm they've edited the file.
+3. Run check to verify no placeholders remain:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill}
+```
+
+If check returns `incomplete`, tell user which placeholders remain and ask them to edit again.
+
+If configure returns `exists_complete`, ask user whether to reuse the existing credential or reconfigure (remove + configure).
 
 **Step 15f**: Verify connectivity (optional, separate step):
 

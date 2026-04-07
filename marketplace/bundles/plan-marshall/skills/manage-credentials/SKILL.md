@@ -21,7 +21,7 @@ Credential management skill for plan-marshall. Stores credentials outside LLM re
 - Never print, log, serialize, or expose credentials to stdout, stderr, or TOON output
 - Never read credential files directly — all access goes through `_credentials_core.py`
 - Never bypass HTTPS enforcement when auth headers are configured
-- Never use `input()` for secret values — always use `getpass.getpass()`
+- Never pass secrets as CLI arguments or through the LLM — secrets go into files directly by the user
 
 **Constraints:**
 - Primary security boundary is `chmod 700` on `~/.plan-marshall-credentials/`
@@ -34,9 +34,10 @@ Credential management skill for plan-marshall. Stores credentials outside LLM re
 
 | Subcommand | Description |
 |------------|-------------|
-| `configure` | Credential setup (interactive or fully CLI-driven) |
+| `configure` | Create credential file with placeholder secrets |
+| `check` | Check if credential is complete (no placeholders remaining) |
 | `list-providers` | List available credential providers from extensions |
-| `edit` | Edit existing credentials (re-prompts, preserves defaults) |
+| `edit` | Update non-secret fields (URL, auth type) |
 | `verify` | HTTP connectivity test, updates `verified_at` |
 | `list` | List configured skills (no secrets in output) |
 | `remove` | Remove credential file and metadata |
@@ -52,38 +53,46 @@ plan-marshall:manage-credentials:credentials
 
 ### Configure New Credentials
 
-**Two-phase workflow** — the LLM collects non-secret values, then the script runs interactively for secrets:
+**Three-step workflow** — the LLM collects non-secret values, the script creates a file with placeholder secrets, and the user edits the file directly:
 
 1. **LLM phase**: Collect provider, URL, and auth type via `AskUserQuestion`
-2. **Build command** with CLI args:
+2. **Run configure** to create credential file with placeholders:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-     --skill {skill} --url {url} --auth-type {auth_type} [--verify|--no-verify] [--scope global|project]
+     --skill {skill} --url {url} --auth-type {auth_type} [--scope global|project] \
+     [--extra KEY=VALUE ...]
    ```
-3. **For `auth_type=none`**: Run via executor (no interactive input needed — completes without TTY)
-4. **For `auth_type=token` or `auth_type=basic`**: Run interactively via `!` prefix (secrets need TTY):
+3. **If `needs_editing: true`**: Tell user to open the file path and replace placeholders with real secrets
+4. **After user confirms**: Run check to verify completeness:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check \
+     --skill {skill} [--scope global|project]
    ```
-   ! python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-     --skill {skill} --url {url} --auth-type {auth_type} --verify
+5. **Optionally verify** connectivity:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify \
+     --skill {skill} [--scope global|project]
    ```
 
-**CLI args** (skip corresponding prompts when provided):
-- `--skill <name>` — Skip provider selection menu
-- `--url <url>` — Skip URL prompt
-- `--auth-type none|token|basic` — Skip auth type prompt
-- `--token <token>` — API token (skips interactive token prompt)
-- `--username <user>` / `--password <pass>` — Basic auth credentials (skips interactive prompts)
-- `--verify` / `--no-verify` — Skip verify prompt
+**CLI args**:
+- `--skill <name>` — Required. Skill name matching a credential extension
+- `--url <url>` — Base URL (uses provider default if omitted)
+- `--auth-type none|token|basic` — Auth type (uses provider default if omitted)
 - `--extra KEY=VALUE ...` — Extra fields (e.g., `--extra organization=cuioss project_key=cuioss_repo`)
 
-**Fully non-interactive example** (all values as CLI args, no TTY needed):
+**Return statuses**:
+- `created` — New file created. If `needs_editing: true`, user must edit the file to add secrets.
+- `exists_complete` — File already exists with real secrets. LLM asks user whether to reuse.
+- `exists_incomplete` — File exists but has placeholder secrets. LLM tells user to finish editing.
+
+### Check Credential Completeness
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-  --skill workflow-integration-sonar --url https://sonarcloud.io --auth-type token \
-  --token {token} --extra organization=cuioss project_key=cuioss_plan-marshall --no-verify
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check \
+  --skill {skill} [--scope global|project]
 ```
 
-Without `--skill` in interactive mode: discovers all available credential extensions, presents numbered selection menu.
+Returns `complete`, `incomplete`, or `not_found`. Use after the user edits a credential file.
 
 ### List Available Providers
 
@@ -101,18 +110,14 @@ python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials lis
 
 ### Edit Existing Credentials
 
-Same two-phase pattern as configure:
-
-1. **LLM phase**: Collect URL and auth type changes via `AskUserQuestion`
-2. **For `auth_type=none`**: Run via executor
-3. **For `auth_type=token` or `auth_type=basic`**: Run interactively via `!` prefix
+Updates non-secret fields (URL, auth type) via CLI args. For secret changes, the user edits the credential file directly.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
   --skill <name> [--url <url>] [--auth-type none|token|basic] [--scope global|project]
 ```
 
-In non-TTY mode, URL and auth type keep existing values if CLI args are not provided. Secrets keep existing values when not running interactively.
+Returns `path` and `needs_editing` status. If secrets need updating, tell the user to edit the file at the returned path.
 
 ### Verify Connectivity
 

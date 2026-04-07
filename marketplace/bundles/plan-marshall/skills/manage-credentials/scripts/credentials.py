@@ -6,8 +6,9 @@ Routes subcommands to individual command modules for secure credential
 storage, configuration, verification, and deny rule management.
 
 Usage:
-    credentials.py configure [--skill <name>] [--scope global|project]
-    credentials.py edit [--skill <name>] [--scope global|project]
+    credentials.py configure --skill <name> [--scope global|project]
+    credentials.py check --skill <name> [--scope global|project]
+    credentials.py edit --skill <name> [--scope global|project]
     credentials.py verify [--skill <name>] [--scope global|project]
     credentials.py list [--scope global|project|all]
     credentials.py remove [--skill <name>] [--scope global|project]
@@ -33,13 +34,6 @@ def main() -> int:
     configure_parser.add_argument('--url', help='Base URL (skips URL prompt)')
     configure_parser.add_argument('--auth-type', choices=['none', 'token', 'basic'],
                                   help='Auth type (skips auth type prompt)')
-    configure_parser.add_argument('--verify', action='store_true', default=None,
-                                  help='Verify connectivity after setup')
-    configure_parser.add_argument('--no-verify', dest='verify', action='store_false',
-                                  help='Skip connectivity verification')
-    configure_parser.add_argument('--token', help='API token (skips interactive token prompt)')
-    configure_parser.add_argument('--username', help='Username for basic auth (skips interactive prompt)')
-    configure_parser.add_argument('--password', help='Password for basic auth (skips interactive prompt)')
     configure_parser.add_argument('--extra', nargs='*', metavar='KEY=VALUE',
                                   help='Extra fields as key=value pairs (e.g., --extra organization=cuioss project_key=cuioss_plan-marshall)')
 
@@ -51,6 +45,12 @@ def main() -> int:
     edit_parser.add_argument('--url', help='New base URL (skips URL prompt)')
     edit_parser.add_argument('--auth-type', choices=['none', 'token', 'basic'],
                              help='New auth type (skips auth type prompt)')
+
+    # check
+    check_parser = subparsers.add_parser('check', help='Check credential completeness')
+    check_parser.add_argument('--skill', required=True, help='Skill name')
+    check_parser.add_argument('--scope', choices=['global', 'project'], default='global',
+                              help='Credential scope (default: global)')
 
     # verify
     verify_parser = subparsers.add_parser('verify', help='Test credential connectivity')
@@ -83,6 +83,9 @@ def main() -> int:
     if args.command == 'configure':
         from _cred_configure import run_configure
         return run_configure(args)
+    elif args.command == 'check':
+        from _cred_check import run_check
+        return run_check(args)
     elif args.command == 'edit':
         from _cred_edit import run_edit
         return run_edit(args)
