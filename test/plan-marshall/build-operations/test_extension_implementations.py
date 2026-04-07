@@ -713,12 +713,16 @@ def test_applies_to_module_result_structure():
 
 
 def _maven_it_module_data() -> dict:
-    """Maven module with integration test signals."""
+    """Maven module with integration test signals.
+
+    Profiles use dict format matching real Maven discovery output
+    (see _maven_cmd_discover.py map_canonical_profiles).
+    """
     return {
         'name': 'integration-tests',
         'build_systems': ['maven'],
         'paths': {'module': 'integration-tests', 'sources': ['src/main/java'], 'tests': ['src/test/java']},
-        'metadata': {'profiles': ['integration-test']},
+        'metadata': {'profiles': [{'id': 'integration-test', 'canonical': 'integration-tests'}]},
         'packages': {},
         'dependencies': ['org.testcontainers:testcontainers:test'],
         'commands': {},
@@ -796,6 +800,31 @@ def test_java_applies_to_module_signal_detection_it_module():
     assert result['applicable'] is True
     assert 'implementation' in result['skills_by_profile']
     assert 'module_testing' in result['skills_by_profile']
+
+
+def test_java_applies_to_module_with_dict_profiles():
+    """Java ext: handles profiles as dicts (real Maven discovery format).
+
+    Maven discovery returns profiles as {'id': '...', 'canonical': '...'}
+    dicts, not plain strings. _detect_applicable_profiles must extract 'id'
+    before calling .lower() on profile entries.
+    """
+    ext = load_extension('pm-dev-java')
+    module = {
+        'name': 'my-module',
+        'build_systems': ['maven'],
+        'paths': {'module': 'my-module', 'sources': ['src/main/java'], 'tests': ['src/test/java']},
+        'metadata': {'profiles': [
+            {'id': 'pre-commit', 'canonical': 'quality-gate'},
+            {'id': 'coverage', 'canonical': 'coverage'},
+        ]},
+        'packages': {},
+        'dependencies': [],
+        'commands': {},
+        'stats': {'source_files': 5, 'test_files': 3},
+    }
+    result = ext.applies_to_module(module)
+    assert result['applicable'] is True
 
 
 def test_general_dev_with_active_profiles():
