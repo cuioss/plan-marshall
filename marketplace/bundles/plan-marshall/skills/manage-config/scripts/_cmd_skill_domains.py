@@ -164,9 +164,13 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
 
     # Get applicable bundles if project_root provided
     applicable_bundles = set()
+    discovered_modules = []
     if project_root:
         applicable_extensions = discover_applicable_extensions(project_root)
         applicable_bundles = {ext['bundle'] for ext in applicable_extensions}
+        # Collect all modules discovered by build extensions for applies_to_module() checks
+        for app_ext in applicable_extensions:
+            discovered_modules.extend(app_ext.get('discovered_modules', []))
 
     domains = []
 
@@ -210,7 +214,17 @@ def discover_available_domains(project_root: Path | None = None) -> dict:
 
                     # Add applicability flag if project_root was provided
                     if project_root:
-                        domain_entry['applicable'] = ext['bundle'] in applicable_bundles
+                        if ext['bundle'] in applicable_bundles:
+                            domain_entry['applicable'] = True
+                        elif discovered_modules and hasattr(module, 'applies_to_module'):
+                            # Domain-only extensions don't override discover_modules()
+                            # but define applies_to_module() — check against build-discovered modules
+                            domain_entry['applicable'] = any(
+                                module.applies_to_module(m).get('applicable', False)
+                                for m in discovered_modules
+                            )
+                        else:
+                            domain_entry['applicable'] = False
 
                     domains.append(domain_entry)
             except Exception as e:
