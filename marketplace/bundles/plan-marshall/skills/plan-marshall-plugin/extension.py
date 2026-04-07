@@ -155,6 +155,9 @@ class Extension(ExtensionBase):
         # Python modules
         modules.extend(self._discover_python(project_root))
 
+        # Cross-extension: find nested build descriptors missed by primary discovery
+        modules.extend(self._discover_nested_descriptors(project_root, modules))
+
         return modules
 
     # =========================================================================
@@ -212,6 +215,74 @@ class Extension(ExtensionBase):
         from _npm_cmd_discover import discover_npm_modules
 
         return discover_npm_modules(project_root)
+
+    # =========================================================================
+    # Cross-Extension Nested Discovery
+    # =========================================================================
+
+    def _discover_nested_descriptors(self, project_root: str, existing_modules: list) -> list:
+        """Discover nested build descriptors missed by primary discovery.
+
+        Scans module paths discovered by one build system for co-located
+        descriptors from other build systems. For example, a Maven module
+        at path/e2e-playwright/ may also contain a package.json for npm.
+
+        Args:
+            project_root: Absolute path to project root.
+            existing_modules: Modules already discovered by primary discovery.
+
+        Returns:
+            List of additional module dicts for nested descriptors.
+        """
+        root = Path(project_root)
+
+        # Collect paths already covered by each build system
+        npm_paths = set()
+        non_npm_paths = set()
+        gradle_paths = set()
+        non_gradle_paths = set()
+
+        for mod in existing_modules:
+            if 'paths' not in mod:
+                continue
+            mod_path = mod['paths']['module']
+            build_systems = set(mod.get('build_systems', []))
+            if 'npm' in build_systems:
+                npm_paths.add(mod_path)
+            else:
+                non_npm_paths.add(mod_path)
+            if 'gradle' in build_systems:
+                gradle_paths.add(mod_path)
+            else:
+                non_gradle_paths.add(mod_path)
+
+        nested = []
+
+        # Find package.json in non-npm module paths
+        for mod_path in non_npm_paths:
+            abs_path = root / mod_path if mod_path != '.' else root
+            if (abs_path / PACKAGE_JSON).exists() and mod_path not in npm_paths:
+                from _npm_cmd_discover import discover_standalone_npm_module
+
+                module = discover_standalone_npm_module(project_root, str(abs_path))
+                if module:
+                    nested.append(module)
+
+        # Find build.gradle[.kts] in non-gradle module paths
+        for mod_path in non_gradle_paths:
+            abs_path = root / mod_path if mod_path != '.' else root
+            gradle_files = [BUILD_GRADLE_KTS, BUILD_GRADLE]
+            has_gradle = any((abs_path / gf).exists() for gf in gradle_files)
+            if has_gradle and mod_path not in gradle_paths:
+                from _gradle_cmd_discover import discover_gradle_modules
+
+                gradle_modules = discover_gradle_modules(project_root)
+                for gm in gradle_modules:
+                    if 'paths' in gm and gm['paths']['module'] == mod_path:
+                        nested.append(gm)
+                        break
+
+        return nested
 
     # =========================================================================
     # Python Discovery (delegated to build-python)

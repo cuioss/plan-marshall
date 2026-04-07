@@ -1004,6 +1004,99 @@ def test_oci_not_applicable_to_empty_module():
 
 
 # =============================================================================
+# Cross-Extension Nested Discovery Tests
+# =============================================================================
+
+
+def test_plan_marshall_discovers_nested_npm_from_maven_modules():
+    """_discover_nested_descriptors finds package.json inside Maven module paths."""
+    ext = load_extension('plan-marshall')
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        # Create nested package.json at a Maven module path
+        e2e_dir = root / 'e2e-playwright'
+        e2e_dir.mkdir()
+        import json
+        (e2e_dir / 'package.json').write_text(json.dumps({
+            'name': 'e2e-tests',
+            'scripts': {'test': 'playwright test'},
+        }))
+
+        # Simulate existing Maven-discovered modules (no npm at this path)
+        existing_modules = [
+            {
+                'name': 'e2e-playwright',
+                'build_systems': ['maven'],
+                'paths': {'module': 'e2e-playwright'},
+            },
+        ]
+
+        nested = ext._discover_nested_descriptors(str(root), existing_modules)
+
+        assert len(nested) == 1
+        assert nested[0]['build_systems'] == ['npm']
+        assert nested[0]['paths']['module'] == 'e2e-playwright'
+
+
+def test_plan_marshall_no_nested_when_npm_already_present():
+    """_discover_nested_descriptors skips paths already covered by npm."""
+    ext = load_extension('plan-marshall')
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        pkg_dir = root / 'my-app'
+        pkg_dir.mkdir()
+        import json
+        (pkg_dir / 'package.json').write_text(json.dumps({'name': 'my-app'}))
+
+        # Both maven and npm already discovered at same path
+        existing_modules = [
+            {
+                'name': 'my-app',
+                'build_systems': ['maven'],
+                'paths': {'module': 'my-app'},
+            },
+            {
+                'name': 'my-app',
+                'build_systems': ['npm'],
+                'paths': {'module': 'my-app'},
+            },
+        ]
+
+        nested = ext._discover_nested_descriptors(str(root), existing_modules)
+
+        assert len(nested) == 0
+
+
+def test_plan_marshall_nested_npm_uses_prefix():
+    """Nested npm modules discovered by cross-extension use --prefix commands."""
+    ext = load_extension('plan-marshall')
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        e2e_dir = root / 'e2e-playwright'
+        e2e_dir.mkdir()
+        import json
+        (e2e_dir / 'package.json').write_text(json.dumps({
+            'name': 'e2e-tests',
+            'scripts': {'test': 'playwright test'},
+        }))
+
+        existing_modules = [
+            {
+                'name': 'e2e-playwright',
+                'build_systems': ['maven'],
+                'paths': {'module': 'e2e-playwright'},
+            },
+        ]
+
+        nested = ext._discover_nested_descriptors(str(root), existing_modules)
+
+        assert len(nested) == 1
+        npm_module = nested[0]
+        assert '--prefix=e2e-playwright' in npm_module['commands']['module-tests']
+        assert '--workspace=' not in npm_module['commands']['module-tests']
+
+
+# =============================================================================
 # Cross-Bundle Validation Tests
 # =============================================================================
 
