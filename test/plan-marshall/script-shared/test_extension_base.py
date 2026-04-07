@@ -139,7 +139,7 @@ def test_profile_patterns_coverage():
 
 def test_profile_patterns_benchmark():
     """Benchmark aliases map to CMD_BENCHMARK."""
-    aliases = ['performance', 'jmh', 'perf', 'benchmarks', 'load']
+    aliases = ['benchmark', 'performance', 'benchmarks', 'jmh', 'perf', 'load']
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_BENCHMARK
