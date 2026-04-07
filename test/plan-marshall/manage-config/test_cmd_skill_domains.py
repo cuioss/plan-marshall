@@ -620,6 +620,30 @@ def test_get_available_uses_discovery():
         assert 'discovered_domains' in result
 
 
+def test_get_available_domain_only_extensions_use_applies_to_module():
+    """Domain-only extensions (no discover_modules override) get applicable via applies_to_module().
+
+    Extensions like pm-dev-java don't override discover_modules() (returns []),
+    so discover_applicable_extensions() excludes them. But they define applies_to_module()
+    which should be checked against build-discovered modules.
+    """
+    discover_available = _cmd_skill_domains.discover_available_domains
+
+    # Run against real plan-marshall repo — build extensions discover modules,
+    # domain extensions should be checked via applies_to_module()
+    result = discover_available(project_root=Path(__file__).parent.parent.parent.parent)
+    domains = result.get('domains', [])
+
+    # plan-marshall-plugin-dev should be applicable (build extension with discover_modules)
+    plugin_dev = [d for d in domains if d['key'] == 'plan-marshall-plugin-dev']
+    assert plugin_dev, 'plan-marshall-plugin-dev domain should be discovered'
+    assert plugin_dev[0].get('applicable') is True, 'plugin-dev should be applicable (build extension)'
+
+    # All domains should have the applicable field when project_root is provided
+    for domain in domains:
+        assert 'applicable' in domain, f"Domain {domain['key']} missing 'applicable' field"
+
+
 def test_configure_domains():
     """Test configure adds system domain and selected domains."""
     with PlanContext() as ctx:
