@@ -788,9 +788,11 @@ AskUserQuestion:
 
 If user selects "Skip" → Continue to Step 16.
 
-**Step 15c**: If user selects "Configure now", collect ALL values via `AskUserQuestion`:
+**Step 15c**: If user selects "Configure now", collect values step by step.
 
-1. Provider selection (from Step 15a results):
+**IMPORTANT**: Each AskUserQuestion below MUST be followed by the next step. Do NOT abort or skip if a user answer seems unexpected. Always proceed to Step 15e and run the configure command.
+
+1. Provider selection (only if multiple providers, otherwise use the single one):
 
 ```
 AskUserQuestion:
@@ -804,12 +806,12 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-2. URL and auth type:
+2. URL and auth type (use provider defaults as recommended options):
 
 ```
 AskUserQuestion:
   questions:
-    - question: "Base URL?"
+    - question: "Base URL for {display_name}?"
       header: "URL"
       options:
         - label: "{default_url} (Recommended)"
@@ -825,35 +827,42 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-3. If `auth_type=token`, collect token:
+3. If `auth_type=token`, collect the token. The user MUST select "Other" and paste their token as free text:
 
 ```
 AskUserQuestion:
   questions:
-    - question: "API token?"
+    - question: "Paste your API token (select 'Other' and paste the token):"
       header: "Token"
       options:
-        - label: "Enter token"
-          description: "Paste your API token"
+        - label: "Skip token"
+          description: "Skip — configure token later via /marshall-steward menu"
+        - label: "I need to generate a token first"
+          description: "Visit the provider's website to generate an API token"
       multiSelect: false
 ```
 
-The user types the token as custom text input (the "Other" option).
+**Handling the answer**:
+- If user typed custom text via "Other" → that text IS the token. Use it as `{token}`.
+- If user selected "Skip token" → set `auth_type` to `none` (no token stored, user configures later).
+- If user selected "I need to generate a token first" → display the provider URL and skip token for now.
 
-4. If `auth_type=basic`, collect username and password via separate `AskUserQuestion` calls.
+4. If `auth_type=basic`, collect username and password the same way (user types via "Other").
 
-**Step 15d**: Auto-detect extra fields (e.g., sonar organization and project key).
+**Step 15d**: Auto-detect extra fields from `list-providers` output.
 
-If the selected provider has `extra_fields` in its declaration, auto-detect values:
+Check if the selected provider has `extra_fields` in the `list-providers` output. If yes, auto-detect values and confirm with user.
 
-For `workflow-integration-sonar`:
-- Read CI config to get `repo_url`:
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ci get
-  ```
-- Extract organization from `repo_url` (e.g., `https://github.com/cuioss/plan-marshall` → `cuioss`)
-- Derive project key as `{org}_{repo}` (e.g., `cuioss_plan-marshall`)
-- Ask user to confirm or override:
+For `workflow-integration-sonar` (has `extra_fields: organization, project_key`):
+
+1. Read CI config to get `repo_url`:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ci get
+```
+
+2. Extract organization from `repo_url` (e.g., `https://github.com/cuioss/plan-marshall` → org=`cuioss`, repo=`plan-marshall`)
+3. Derive project key as `{org}_{repo}` (e.g., `cuioss_plan-marshall`)
+4. Confirm with user:
 
 ```
 AskUserQuestion:
@@ -868,33 +877,39 @@ AskUserQuestion:
       header: "Project"
       options:
         - label: "{detected_project_key} (Recommended)"
-          description: "Detected from repository URL (format: org_repo)"
+          description: "Detected as org_repo from repository URL"
       multiSelect: false
 ```
 
-**Step 15e**: Run configure via executor (everything collected, no interactive input needed):
+User can accept recommended values or type custom values via "Other".
+
+**Step 15e**: Run configure via executor. **ALWAYS execute this step** — do not skip even if token was skipped.
+
+Build the command from collected values:
 
 ```bash
+# With token + extra fields:
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
   --skill {skill} --url {url} --auth-type {auth_type} \
   --token {token} \
   --extra organization={org} project_key={project_key} \
   --no-verify
-```
 
-For `auth_type=none` (no `--token`):
-```bash
+# Without token (auth_type=none or token skipped):
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-  --skill {skill} --url {url} --auth-type none --no-verify
-```
+  --skill {skill} --url {url} --auth-type none \
+  --extra organization={org} project_key={project_key} \
+  --no-verify
 
-For `auth_type=basic` (use `--username` and `--password` instead of `--token`):
-```bash
+# With basic auth + extra fields:
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
   --skill {skill} --url {url} --auth-type basic \
   --username {username} --password {password} \
+  --extra organization={org} project_key={project_key} \
   --no-verify
 ```
+
+**CRITICAL**: Omit `--extra` if the provider has no `extra_fields`. Omit `--token` if `auth_type` is not `token`.
 
 **Step 15f**: Verify connectivity (optional, separate step):
 
