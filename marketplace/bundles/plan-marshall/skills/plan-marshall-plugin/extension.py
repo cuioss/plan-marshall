@@ -234,6 +234,9 @@ class Extension(ExtensionBase):
         Returns:
             List of additional module dicts for nested descriptors.
         """
+        from _gradle_cmd_discover import discover_gradle_modules
+        from _npm_cmd_discover import discover_standalone_npm_module
+
         root = Path(project_root)
 
         # Collect paths already covered by each build system
@@ -257,13 +260,12 @@ class Extension(ExtensionBase):
                 non_gradle_paths.add(mod_path)
 
         nested = []
+        all_gradle_modules = None
 
         # Find package.json in non-npm module paths
         for mod_path in non_npm_paths:
             abs_path = root / mod_path if mod_path != '.' else root
             if (abs_path / PACKAGE_JSON).exists() and mod_path not in npm_paths:
-                from _npm_cmd_discover import discover_standalone_npm_module
-
                 module = discover_standalone_npm_module(project_root, str(abs_path))
                 if module:
                     nested.append(module)
@@ -274,10 +276,9 @@ class Extension(ExtensionBase):
             gradle_files = [BUILD_GRADLE_KTS, BUILD_GRADLE]
             has_gradle = any((abs_path / gf).exists() for gf in gradle_files)
             if has_gradle and mod_path not in gradle_paths:
-                from _gradle_cmd_discover import discover_gradle_modules
-
-                gradle_modules = discover_gradle_modules(project_root)
-                for gm in gradle_modules:
+                if all_gradle_modules is None:
+                    all_gradle_modules = discover_gradle_modules(project_root)
+                for gm in all_gradle_modules:
                     if 'paths' in gm and gm['paths']['module'] == mod_path:
                         nested.append(gm)
                         break
