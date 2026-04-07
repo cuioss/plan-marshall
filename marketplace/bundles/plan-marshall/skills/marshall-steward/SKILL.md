@@ -93,6 +93,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 | permission_doctor | `plan-marshall:tools-permission-doctor:permission_doctor` | Permission analysis |
 | permission_fix | `plan-marshall:tools-permission-fix:permission_fix` | Permission fixes |
 | extension_discovery | `plan-marshall:extension-api:extension_discovery` | Extension config defaults |
+| credentials | `plan-marshall:manage-credentials:credentials` | External tool credential management |
 
 ---
 

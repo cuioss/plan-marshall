@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""
+Credential management CLI dispatcher.
+
+Routes subcommands to individual command modules for secure credential
+storage, configuration, verification, and deny rule management.
+
+Usage:
+    credentials.py configure [--skill <name>] [--scope global|project]
+    credentials.py edit [--skill <name>] [--scope global|project]
+    credentials.py verify [--skill <name>] [--scope global|project]
+    credentials.py list [--scope global|project|all]
+    credentials.py remove [--skill <name>] [--scope global|project]
+    credentials.py ensure-denied [--target global|project]
+"""
+
+import argparse
+import sys
+
+from file_ops import safe_main  # type: ignore[import-not-found]
+
+
+@safe_main
+def main() -> int:
+    parser = argparse.ArgumentParser(description='Credential management for external tool authentication')
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # configure
+    configure_parser = subparsers.add_parser('configure', help='Interactive credential setup wizard')
+    configure_parser.add_argument('--skill', help='Skill name (skips selection menu if provided)')
+    configure_parser.add_argument('--scope', choices=['global', 'project'], default='global',
+                                  help='Credential scope (default: global)')
+
+    # edit
+    edit_parser = subparsers.add_parser('edit', help='Edit existing credentials')
+    edit_parser.add_argument('--skill', help='Skill name')
+    edit_parser.add_argument('--scope', choices=['global', 'project'], default='global',
+                             help='Credential scope (default: global)')
+
+    # verify
+    verify_parser = subparsers.add_parser('verify', help='Test credential connectivity')
+    verify_parser.add_argument('--skill', help='Skill name')
+    verify_parser.add_argument('--scope', choices=['global', 'project'], default='global',
+                               help='Credential scope (default: global)')
+
+    # list
+    list_parser = subparsers.add_parser('list', help='List configured skills (no secrets)')
+    list_parser.add_argument('--scope', choices=['global', 'project', 'all'], default='all',
+                             help='Credential scope filter (default: all)')
+
+    # remove
+    remove_parser = subparsers.add_parser('remove', help='Remove credential and metadata')
+    remove_parser.add_argument('--skill', help='Skill name')
+    remove_parser.add_argument('--scope', choices=['global', 'project'], default='global',
+                               help='Credential scope (default: global)')
+
+    # ensure-denied
+    denied_parser = subparsers.add_parser('ensure-denied', help='Add deny rules to Claude Code settings')
+    denied_parser.add_argument('--target', choices=['global', 'project'], default='project',
+                               help='Settings target (default: project)')
+
+    args = parser.parse_args()
+
+    # Route to command module (prefixed _cred_ to avoid PYTHONPATH namespace collisions)
+    if args.command == 'configure':
+        from _cred_configure import run_configure
+        return run_configure(args)
+    elif args.command == 'edit':
+        from _cred_edit import run_edit
+        return run_edit(args)
+    elif args.command == 'verify':
+        from _cred_verify import run_verify
+        return run_verify(args)
+    elif args.command == 'list':
+        from _cred_list import run_list
+        return run_list(args)
+    elif args.command == 'remove':
+        from _cred_remove import run_remove
+        return run_remove(args)
+    elif args.command == 'ensure-denied':
+        from _cred_ensure_denied import run_ensure_denied
+        return run_ensure_denied(args)
+
+    return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

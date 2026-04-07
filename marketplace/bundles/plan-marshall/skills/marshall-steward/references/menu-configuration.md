@@ -35,6 +35,9 @@ AskUserQuestion:
     - label: "Review Gates"
       description: "Auto-continue between phases or pause for review"
       value: "review-gates"
+    - label: "Credentials & Secrets"
+      description: "Manage external tool credentials"
+      value: "credentials"
     - label: "Full Reconfigure"
       description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
       value: "wizard"
@@ -49,6 +52,7 @@ AskUserQuestion:
 | quality-pipelines | Execute "Configuration: Quality Pipelines" below |
 | review-gates | Execute "Configuration: Review Gates" below |
 | structure | Execute "Configuration: Project Structure" below |
+| credentials | Execute "Configuration: Credentials & Secrets" below |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
 
 ---
@@ -454,6 +458,47 @@ If user chooses "Refine", use the "Edit Module" operation flow.
 This regenerates `.plan/project-architecture/derived-data.json` from current build file definitions.
 
 ---
+
+---
+
+## Configuration: Credentials & Secrets
+
+Manage credentials for external tool authentication (SonarCloud, etc.).
+
+### Credentials Submenu
+
+```
+AskUserQuestion:
+  question: "What would you like to do with credentials?"
+  options:
+    - label: "Configure new"
+      description: "Set up credentials for an external tool"
+      value: "configure"
+    - label: "Edit existing"
+      description: "Update URL, token, or password for a configured tool"
+      value: "edit"
+    - label: "List"
+      description: "Show configured credentials (no secrets)"
+      value: "list"
+    - label: "Verify"
+      description: "Test connectivity for a configured tool"
+      value: "verify"
+    - label: "Remove"
+      description: "Remove credentials for a tool"
+      value: "remove"
+```
+
+### Routing
+
+| Selection | Action |
+|-----------|--------|
+| configure | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure` |
+| edit | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit --skill {skill}` |
+| list | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list` |
+| verify | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill}` |
+| remove | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials remove --skill {skill}` |
+
+For `edit`, `verify`, and `remove`: if `--skill` is not known, first run `list` to show available skills, then ask the user which one to operate on.
 
 ---
 

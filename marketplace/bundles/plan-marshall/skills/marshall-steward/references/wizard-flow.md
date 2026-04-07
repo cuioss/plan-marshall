@@ -762,7 +762,38 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health per
 
 ---
 
-## Step 15: Permission Setup (Optional)
+## Step 15: Credential Setup (Optional)
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Configure credentials for external tools?"
+      header: "Credentials"
+      options:
+        - label: "Skip (Recommended)"
+          description: "Configure credentials later via /marshall-steward menu"
+        - label: "Configure now"
+          description: "Set up credentials for SonarCloud or other external tools"
+      multiSelect: false
+```
+
+If user selects "Configure now":
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure
+```
+
+Then add deny rules:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project
+```
+
+If user selects "Skip" → Continue to Step 16.
+
+---
+
+## Step 16: Permission Setup (Optional)
 
 ```
 AskUserQuestion:
@@ -783,7 +814,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 
 ---
 
-## Step 16: Summary
+## Step 17: Summary
 
 Output final summary:
 
