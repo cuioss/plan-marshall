@@ -843,9 +843,9 @@ AskUserQuestion:
 ```
 
 **Handling the answer**:
-- If user typed custom text via "Other" → that text IS the token. Use it as `{token}`.
-- If user selected "Skip token" → set `auth_type` to `none` (no token stored, user configures later).
-- If user selected "I need to generate a token first" → display the provider URL and skip token for now.
+- If user typed custom text via "Other" → that text IS the token. Use it as `{token}`. Keep `auth_type=token`.
+- If user selected "Skip token" → change `auth_type` to `none` for Step 15e (use the `auth_type=none` command variant). User configures token later.
+- If user selected "I need to generate a token first" → display the provider URL, then change `auth_type` to `none` for Step 15e.
 
 4. If `auth_type=basic`, collect username and password the same way (user types via "Other").
 
@@ -909,7 +909,10 @@ python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials con
   --no-verify
 ```
 
-**CRITICAL**: Omit `--extra` if the provider has no `extra_fields`. Omit `--token` if `auth_type` is not `token`.
+**CRITICAL**:
+- Omit `--extra` if the provider has no `extra_fields` in the `list-providers` output.
+- The keys used in `--extra` (e.g., `organization`, `project_key`) must match the `key` field from the provider's `extra_fields` array returned by `list-providers`.
+- Omit `--token` if `auth_type` is not `token`.
 
 **Step 15f**: Verify connectivity (optional, separate step):
 
