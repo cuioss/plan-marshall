@@ -23,8 +23,6 @@ import shutil
 import sys
 from pathlib import Path
 
-# Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # Shared discovery helpers (test/plan-marshall/conftest.py adds parent to sys.path)
 from discovery_test_helpers import assert_valid_module
 

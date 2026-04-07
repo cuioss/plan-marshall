@@ -5,15 +5,10 @@ Note: These tests import internal modules directly for detailed testing.
 Public API tests should use gradle.py CLI instead.
 """
 
-import sys
-from pathlib import Path
-
-# Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 # Direct imports - conftest sets up PYTHONPATH (cross-skill)
 # Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
+import importlib.util
+from pathlib import Path
 
 from _build_parse import SEVERITY_ERROR, SEVERITY_WARNING, Issue, UnitTestSummary
 

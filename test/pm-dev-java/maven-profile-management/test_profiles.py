@@ -3,10 +3,6 @@
 
 import sys
 import tempfile
-from pathlib import Path
-
-# Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Direct imports - conftest sets up PYTHONPATH
 from _architecture_core import save_derived_data

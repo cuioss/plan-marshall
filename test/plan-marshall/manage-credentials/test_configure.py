@@ -5,12 +5,8 @@ Tests the configure command with placeholder-based secret entry
 and the check command for credential completeness.
 """
 
-import sys
-from pathlib import Path
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-credentials', 'credentials.py')
 

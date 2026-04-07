@@ -4,13 +4,9 @@ Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
 
 import json
-import sys
 import unittest
-from pathlib import Path
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 # Import toon_parser - conftest sets up PYTHONPATH
 

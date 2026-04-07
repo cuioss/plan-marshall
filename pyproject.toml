@@ -55,6 +55,7 @@ format = "ruff format marketplace/bundles/ test/ .claude/"
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+pythonpath = ["test"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

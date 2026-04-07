@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Tests for credential extension discovery across marketplace bundles."""
 
-import sys
-from pathlib import Path
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from _credentials_core import discover_credential_providers  # type: ignore[import-not-found]  # noqa: E402
+from _credentials_core import discover_credential_providers  # type: ignore[import-not-found]
 
-import conftest  # noqa: E402, F401
+import conftest  # noqa: F401
 
 
 class TestCredentialExtensionDiscovery:

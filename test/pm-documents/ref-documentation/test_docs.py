@@ -5,14 +5,11 @@ Tier 2 (direct import) tests with 2 subprocess CLI plumbing tests retained.
 """
 
 import importlib.util
-import sys
 import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 # Test directories
 TEST_DIR = Path(__file__).parent

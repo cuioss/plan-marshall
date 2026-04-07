@@ -5,15 +5,10 @@ Covers path resolution, credential file I/O, RestClient, and provider discovery.
 """
 
 import json
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from _credentials_core import (  # type: ignore[import-not-found]  # noqa: E402
+from _credentials_core import (  # type: ignore[import-not-found]
     CREDENTIALS_DIR,
     RestClient,
     discover_credential_providers,
@@ -24,7 +19,7 @@ from _credentials_core import (  # type: ignore[import-not-found]  # noqa: E402
     save_credential,
 )
 
-import conftest  # noqa: E402, F401
+import conftest  # noqa: F401
 
 # =============================================================================
 # Path Resolution Tests

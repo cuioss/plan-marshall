@@ -7,14 +7,11 @@ per package, excluding package-info.java and sub-package files.
 Uses the shared discover_packages() from extension-api (_build_discover).
 """
 
-import sys
+
 from pathlib import Path
 
-# Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 # Direct imports - conftest sets up PYTHONPATH
-from _build_discover import discover_packages  # noqa: E402
+from _build_discover import discover_packages
 
 
 def _create_java_package(base: Path, source_dir: str, package_path: str, files: list[str]) -> None:
