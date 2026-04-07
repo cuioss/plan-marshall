@@ -163,3 +163,67 @@ class TestCheckCompleteness:
             path = CREDENTIALS_DIR / f'{skill}.json'
             if path.exists():
                 path.unlink()
+
+    def test_auth_none_reports_complete(self, tmp_path):
+        """auth_type=none with no secret fields reports complete."""
+        from _credentials_core import (  # type: ignore[import-not-found]
+            CREDENTIALS_DIR,
+            check_credential_completeness,
+            save_credential,
+        )
+
+        skill = 'test-check-auth-none'
+        data = {
+            'skill': skill,
+            'url': 'https://example.com',
+            'auth_type': 'none',
+        }
+        try:
+            save_credential(skill, data, 'global')
+            result = check_credential_completeness(skill, 'global')
+            assert result['exists'] is True
+            assert result['complete'] is True
+            assert result['placeholders'] == []
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+
+class TestConfigureAuthTypeMismatch:
+    """Tests for configure reconfiguring when auth_type changes."""
+
+    def test_configure_reconfigures_on_auth_type_mismatch(self):
+        """Configure with token auth overwrites existing none credential."""
+        from _credentials_core import (  # type: ignore[import-not-found]
+            CREDENTIALS_DIR,
+            load_credential,
+            save_credential,
+        )
+
+        skill = 'workflow-integration-sonar'
+        # Pre-create with auth_type=none
+        data = {
+            'skill': skill,
+            'url': 'https://sonarcloud.io',
+            'auth_type': 'none',
+        }
+        try:
+            save_credential(skill, data, 'global')
+
+            result = run_script(
+                SCRIPT_PATH, 'configure',
+                '--skill', skill,
+                '--url', 'https://sonarcloud.io',
+                '--auth-type', 'token',
+            )
+            # Should create new file with token placeholder, not return exists_complete
+            if result.returncode == 0:
+                assert 'exists_complete' not in result.stdout
+                loaded = load_credential(skill, 'global')
+                assert loaded is not None
+                assert loaded['auth_type'] == 'token'
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()

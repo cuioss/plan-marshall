@@ -792,7 +792,24 @@ If user selects "Skip" → Continue to Step 16.
 
 **IMPORTANT**: Each AskUserQuestion below MUST be followed by the next step. Do NOT abort or skip if a user answer seems unexpected. Always proceed to Step 15e and run the configure command.
 
-1. Provider selection (only if multiple providers, otherwise use the single one):
+1. Credential scope:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Credential scope?"
+      header: "Scope"
+      options:
+        - label: "Global (Recommended)"
+          description: "Shared across all projects using plan-marshall"
+        - label: "Project"
+          description: "Specific to this project only"
+      multiSelect: false
+```
+
+Map selection to `--scope global` or `--scope project` for Step 15e.
+
+2. Provider selection (only if multiple providers, otherwise use the single one):
 
 ```
 AskUserQuestion:
@@ -806,7 +823,7 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-2. URL and auth type (use provider defaults as recommended options):
+3. URL and auth type (use provider defaults as recommended options):
 
 ```
 AskUserQuestion:
@@ -868,15 +885,16 @@ Build the command from collected values (no secret args — secrets go into the 
 ```bash
 # With extra fields:
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-  --skill {skill} --url {url} --auth-type {auth_type} \
+  --skill {skill} --url {url} --auth-type {auth_type} --scope {scope} \
   --extra organization={org} project_key={project_key}
 
 # Without extra fields:
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-  --skill {skill} --url {url} --auth-type {auth_type}
+  --skill {skill} --url {url} --auth-type {auth_type} --scope {scope}
 ```
 
 **CRITICAL**:
+- Include `--scope` from Step 15c (global or project).
 - Omit `--extra` if the provider has no `extra_fields` in the `list-providers` output.
 - The keys used in `--extra` (e.g., `organization`, `project_key`) must match the `key` field from the provider's `extra_fields` array returned by `list-providers`.
 
@@ -887,7 +905,7 @@ python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials con
 3. Run check to verify no placeholders remain:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill}
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill} --scope {scope}
 ```
 
 If check returns `incomplete`, tell user which placeholders remain and ask them to edit again.
