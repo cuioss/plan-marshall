@@ -40,6 +40,7 @@ def _load_module(name, filename):
 _npm_cmd_discover_mod = _load_module('_npm_cmd_discover', '_npm_cmd_discover.py')
 
 discover_npm_modules = _npm_cmd_discover_mod.discover_npm_modules
+discover_standalone_npm_module = _npm_cmd_discover_mod.discover_standalone_npm_module
 
 # =============================================================================
 # Test: Single Package Discovery
@@ -252,3 +253,72 @@ def test_no_readme():
         modules = discover_npm_modules(str(ctx.temp_dir))
 
         assert modules[0]['paths']['readme'] is None
+
+
+# =============================================================================
+# Test: Standalone Module Discovery
+# =============================================================================
+
+
+def test_discover_standalone_npm_module():
+    """Test standalone discovery of a nested package.json module."""
+    with BuildContext() as ctx:
+        # Create a nested directory with package.json (no root package.json)
+        nested_dir = ctx.temp_dir / 'e2e-playwright'
+        nested_dir.mkdir()
+        pkg = {'name': 'e2e-tests', 'version': '1.0.0', 'scripts': {'test': 'playwright test'}}
+        (nested_dir / 'package.json').write_text(json.dumps(pkg))
+
+        module = discover_standalone_npm_module(str(ctx.temp_dir), str(nested_dir))
+
+        assert module is not None
+        assert module['name'] == 'e2e-tests'
+        assert module['build_systems'] == ['npm']
+        assert module['paths']['module'] == 'e2e-playwright'
+
+
+def test_discover_standalone_npm_module_no_package_json():
+    """Test standalone discovery returns None when no package.json exists."""
+    with BuildContext() as ctx:
+        nested_dir = ctx.temp_dir / 'some-dir'
+        nested_dir.mkdir()
+
+        module = discover_standalone_npm_module(str(ctx.temp_dir), str(nested_dir))
+
+        assert module is None
+
+
+def test_standalone_module_uses_prefix():
+    """Test that standalone nested module commands use --prefix instead of --workspace."""
+    with BuildContext() as ctx:
+        nested_dir = ctx.temp_dir / 'e2e-playwright'
+        nested_dir.mkdir()
+        pkg = {'name': 'e2e-tests', 'scripts': {'test': 'playwright test', 'build': 'tsc'}}
+        (nested_dir / 'package.json').write_text(json.dumps(pkg))
+
+        module = discover_standalone_npm_module(str(ctx.temp_dir), str(nested_dir))
+
+        assert module is not None
+        # Standalone modules should use --prefix, not --workspace
+        assert '--prefix=e2e-playwright' in module['commands']['module-tests']
+        assert '--workspace=' not in module['commands']['module-tests']
+        assert '--prefix=e2e-playwright' in module['commands']['compile']
+
+
+def test_workspace_module_still_uses_workspace():
+    """Regression: workspace modules should still use --workspace flag."""
+    with BuildContext() as ctx:
+        root_pkg = {'name': 'monorepo', 'workspaces': ['packages/*']}
+        (ctx.temp_dir / 'package.json').write_text(json.dumps(root_pkg))
+
+        packages_dir = ctx.temp_dir / 'packages'
+        packages_dir.mkdir()
+        pkg_dir = packages_dir / 'my-pkg'
+        pkg_dir.mkdir()
+        (pkg_dir / 'package.json').write_text(json.dumps({'name': 'my-pkg', 'scripts': {'test': 'jest'}}))
+
+        modules = discover_npm_modules(str(ctx.temp_dir))
+        ws_module = next(m for m in modules if m['name'] == 'my-pkg')
+
+        assert '--workspace=my-pkg' in ws_module['commands']['module-tests']
+        assert '--prefix=' not in ws_module['commands']['module-tests']

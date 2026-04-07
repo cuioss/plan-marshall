@@ -90,6 +90,35 @@ def discover_npm_modules(project_root: str) -> list:
     return modules
 
 
+def discover_standalone_npm_module(project_root: str, module_path: str) -> dict | None:
+    """Discover a standalone npm module at a specific path.
+
+    Used for nested package.json files found inside modules of other build
+    systems (e.g., Playwright e2e tests inside a Maven project). These
+    modules are not part of any npm workspace configuration.
+
+    Args:
+        project_root: Absolute path to project root.
+        module_path: Absolute path to directory containing package.json.
+
+    Returns:
+        Module dict conforming to module-discovery.md contract, or None.
+    """
+    mod_dir = Path(module_path).resolve()
+    root = Path(project_root).resolve()
+    pkg_json = mod_dir / 'package.json'
+
+    if not pkg_json.exists():
+        return None
+
+    pkg_data = _load_package_json(pkg_json)
+    if pkg_data is None:
+        return None
+
+    log_entry('script', 'global', 'INFO', f'[NPM-DISCOVER] Standalone module at {module_path}')
+    return _build_module(mod_dir, root, pkg_data, is_root=False, standalone=True)
+
+
 # =============================================================================
 # Workspace Resolution
 # =============================================================================
@@ -178,7 +207,7 @@ def _resolve_pnpm_workspaces(root: Path) -> list[str]:
 # =============================================================================
 
 
-def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_root: bool) -> dict | None:
+def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_root: bool, standalone: bool = False) -> dict | None:
     """Build module dict from package.json data and file system analysis.
 
     Uses build_module_base() from extension-api for consistent name/path/README
@@ -189,6 +218,7 @@ def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_r
         project_root: Project root path.
         pkg_data: Parsed package.json data.
         is_root: Whether this is the root module.
+        standalone: Whether this is a standalone nested module (uses --prefix).
 
     Returns:
         Module dict conforming to module-discovery.md, or None.
@@ -224,7 +254,7 @@ def _build_module(module_path: Path, project_root: Path, pkg_data: dict, *, is_r
     dependencies = _extract_dependencies(pkg_data)
 
     # Commands
-    commands = _build_commands(name, scripts, relative_path)
+    commands = _build_commands(name, scripts, relative_path, standalone=standalone)
 
     return {
         'name': name,
@@ -271,7 +301,7 @@ def _extract_dependencies(pkg_data: dict) -> list[str]:
 # =============================================================================
 
 
-def _build_commands(module_name: str, scripts: dict, relative_path: str) -> dict:
+def _build_commands(module_name: str, scripts: dict, relative_path: str, *, standalone: bool = False) -> dict:
     """Build commands object with resolved canonical command strings.
 
     Commands are only generated for scripts that exist in package.json.
@@ -280,10 +310,16 @@ def _build_commands(module_name: str, scripts: dict, relative_path: str) -> dict
         module_name: Module name.
         scripts: package.json scripts object.
         relative_path: Path relative to project root.
+        standalone: Whether this is a standalone nested module (uses --prefix).
     """
     skill = 'plan-marshall:build-npm:npm'
     is_root = not relative_path or relative_path == '.'
-    ws_arg = '' if is_root else f' --workspace={module_name}'
+    if standalone and not is_root:
+        ws_arg = f' --prefix={relative_path}'
+    elif is_root:
+        ws_arg = ''
+    else:
+        ws_arg = f' --workspace={module_name}'
 
     cmd_map: dict[str, str] = {}
 

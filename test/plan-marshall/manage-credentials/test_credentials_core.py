@@ -13,9 +13,6 @@ import pytest
 
 # Import shared infrastructure
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import PlanContext  # noqa: E402
-
-# Direct imports — conftest sets up PYTHONPATH
 from _credentials_core import (  # type: ignore[import-not-found]  # noqa: E402
     CREDENTIALS_DIR,
     RestClient,
@@ -27,6 +24,7 @@ from _credentials_core import (  # type: ignore[import-not-found]  # noqa: E402
     save_credential,
 )
 
+import conftest  # noqa: E402, F401
 
 # =============================================================================
 # Path Resolution Tests
