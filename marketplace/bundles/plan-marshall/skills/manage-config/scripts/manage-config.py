@@ -91,6 +91,7 @@ def _add_phase_subparser(
         phase_add_step = phase_sub.add_parser('add-step', help='Add step to list')
         phase_add_step.add_argument('--step', required=True, help='Step reference')
         phase_add_step.add_argument('--position', type=int, help='Insert position (0-based, default: append)')
+        phase_add_step.add_argument('--after', help='Insert after this step name (takes precedence over --position)')
 
         phase_rm_step = phase_sub.add_parser('remove-step', help='Remove step from list')
         phase_rm_step.add_argument('--step', required=True, help='Step reference to remove')

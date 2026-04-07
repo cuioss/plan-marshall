@@ -492,13 +492,53 @@ AskUserQuestion:
 
 | Selection | Action |
 |-----------|--------|
-| configure | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure` |
-| edit | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit --skill {skill}` |
+| configure | Two-phase workflow (see below) |
+| edit | Two-phase workflow (see below) |
 | list | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list` |
 | verify | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill}` |
 | remove | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials remove --skill {skill}` |
 
 For `edit`, `verify`, and `remove`: if `--skill` is not known, first run `list` to show available skills, then ask the user which one to operate on.
+
+### Configure — Two-Phase Workflow
+
+1. Discover providers: `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list`
+2. Collect non-secret values via `AskUserQuestion`: skill, URL, auth type
+3. For `auth_type=none` — run via executor (no interactive input needed):
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+     --skill {skill} --url {url} --auth-type none --no-verify
+   ```
+4. For `auth_type=token` or `auth_type=basic` — tell user to run interactively via `!` prefix:
+   ```
+   ! python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+     --skill {skill} --url {url} --auth-type {auth_type} --verify
+   ```
+5. Run ensure-denied: `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project`
+6. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     plan phase-6-finalize get
+   ```
+   If `default:sonar-roundtrip` not in steps:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     plan phase-6-finalize add-step --step default:sonar-roundtrip --after default:automated-review
+   ```
+
+### Edit — Two-Phase Workflow
+
+1. Collect non-secret values via `AskUserQuestion`: URL, auth type (optional changes)
+2. For `auth_type=none` — run via executor:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
+     --skill {skill} --url {url} --auth-type none
+   ```
+3. For `auth_type=token` or `auth_type=basic` — tell user to run interactively via `!` prefix:
+   ```
+   ! python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
+     --skill {skill} --url {url} --auth-type {auth_type}
+   ```
 
 ---
 

@@ -30,12 +30,22 @@ def main() -> int:
     configure_parser.add_argument('--skill', help='Skill name (skips selection menu if provided)')
     configure_parser.add_argument('--scope', choices=['global', 'project'], default='global',
                                   help='Credential scope (default: global)')
+    configure_parser.add_argument('--url', help='Base URL (skips URL prompt)')
+    configure_parser.add_argument('--auth-type', choices=['none', 'token', 'basic'],
+                                  help='Auth type (skips auth type prompt)')
+    configure_parser.add_argument('--verify', action='store_true', default=None,
+                                  help='Verify connectivity after setup')
+    configure_parser.add_argument('--no-verify', dest='verify', action='store_false',
+                                  help='Skip connectivity verification')
 
     # edit
     edit_parser = subparsers.add_parser('edit', help='Edit existing credentials')
     edit_parser.add_argument('--skill', help='Skill name')
     edit_parser.add_argument('--scope', choices=['global', 'project'], default='global',
                              help='Credential scope (default: global)')
+    edit_parser.add_argument('--url', help='New base URL (skips URL prompt)')
+    edit_parser.add_argument('--auth-type', choices=['none', 'token', 'basic'],
+                             help='New auth type (skips auth type prompt)')
 
     # verify
     verify_parser = subparsers.add_parser('verify', help='Test credential connectivity')

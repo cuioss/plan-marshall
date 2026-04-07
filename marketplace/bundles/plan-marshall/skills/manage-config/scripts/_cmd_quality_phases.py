@@ -91,8 +91,14 @@ def cmd_phase(args, phase_section: str) -> dict:
         if step in steps:
             return error_exit(f"Step '{step}' already exists in {phase_section}")
 
+        after = getattr(args, 'after', None)
         position = getattr(args, 'position', None)
-        if position is not None:
+        if after is not None:
+            if after not in steps:
+                return error_exit(f"Step '{after}' not found in {phase_section} — cannot insert after it")
+            idx = steps.index(after)
+            steps.insert(idx + 1, step)
+        elif position is not None:
             steps.insert(position, step)
         else:
             steps.append(step)

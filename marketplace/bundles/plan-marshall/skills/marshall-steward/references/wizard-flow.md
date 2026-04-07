@@ -763,6 +763,14 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health per
 
 ## Step 15: Credential Setup (Optional)
 
+**Step 15a**: Discover available credential providers:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list
+```
+
+**Step 15b**: Ask user:
+
 ```
 AskUserQuestion:
   questions:
@@ -776,19 +784,67 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-If user selects "Configure now":
+If user selects "Skip" → Continue to Step 16.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure
+**Step 15c**: If user selects "Configure now":
+
+1. Collect non-secret values via `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Which credential provider?"
+      header: "Provider"
+      options:
+        # Dynamic from Step 15a provider list
+        - label: "{provider_display_name}"
+          description: "{provider_description}"
+      multiSelect: false
+    - question: "Base URL?"
+      header: "URL"
+      options:
+        - label: "{default_url} (Recommended)"
+          description: "Default URL for this provider"
+      multiSelect: false
+    - question: "Authentication type?"
+      header: "Auth"
+      options:
+        - label: "token"
+          description: "API token authentication"
+        - label: "basic"
+          description: "Username/password authentication"
+        - label: "none"
+          description: "No authentication needed"
+      multiSelect: false
 ```
 
-Then add deny rules:
+2. For `auth_type=none` — run via executor (no interactive input needed):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+  --skill {skill} --url {url} --auth-type none --no-verify
+```
+
+3. For `auth_type=token` or `auth_type=basic` — run interactively via `!` prefix (secrets need TTY):
+
+```
+Tell user to run:
+! python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+  --skill {skill} --url {url} --auth-type {auth_type} --verify
+```
+
+**Step 15d**: Add deny rules via executor:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project
 ```
 
-If user selects "Skip" → Continue to Step 16.
+**Step 15e**: If the configured skill was `workflow-integration-sonar`, add sonar-roundtrip to finalize steps:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize add-step --step default:sonar-roundtrip --after default:automated-review
+```
 
 ---
 
