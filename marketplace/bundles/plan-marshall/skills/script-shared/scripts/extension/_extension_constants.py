@@ -59,6 +59,7 @@ CANONICAL_COMMANDS = {
     CMD_E2E: {
         'aliases': [
             'e2e',
+            'e2e-tests',
             'acceptance',
             'end-to-end',
         ],
@@ -72,7 +73,6 @@ CANONICAL_COMMANDS = {
             'benchmarks',
             'jmh',
             'perf',
-            'stress',
             'load',
         ],
     },

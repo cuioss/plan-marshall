@@ -115,7 +115,7 @@ def test_profile_patterns_integration_tests():
 
 def test_profile_patterns_e2e():
     """E2E aliases map to CMD_E2E."""
-    aliases = ['e2e', 'acceptance', 'end-to-end']
+    aliases = ['e2e', 'e2e-tests', 'acceptance', 'end-to-end']
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_E2E
@@ -139,7 +139,7 @@ def test_profile_patterns_coverage():
 
 def test_profile_patterns_benchmark():
     """Benchmark aliases map to CMD_BENCHMARK."""
-    aliases = ['performance', 'jmh', 'perf', 'benchmarks', 'stress', 'load']
+    aliases = ['performance', 'jmh', 'perf', 'benchmarks', 'load']
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == CMD_BENCHMARK
