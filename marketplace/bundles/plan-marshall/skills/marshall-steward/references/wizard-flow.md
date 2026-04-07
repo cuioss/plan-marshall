@@ -766,8 +766,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health per
 **Step 15a**: Discover available credential providers:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
 ```
+
+Parse the `providers` array from output. If `count == 0`, skip to Step 16.
 
 **Step 15b**: Ask user:
 
@@ -786,9 +788,9 @@ AskUserQuestion:
 
 If user selects "Skip" → Continue to Step 16.
 
-**Step 15c**: If user selects "Configure now":
+**Step 15c**: If user selects "Configure now", collect ALL values via `AskUserQuestion`:
 
-1. Collect non-secret values via `AskUserQuestion`:
+1. Provider selection (from Step 15a results):
 
 ```
 AskUserQuestion:
@@ -800,6 +802,13 @@ AskUserQuestion:
         - label: "{provider_display_name}"
           description: "{provider_description}"
       multiSelect: false
+```
+
+2. URL and auth type:
+
+```
+AskUserQuestion:
+  questions:
     - question: "Base URL?"
       header: "URL"
       options:
@@ -809,37 +818,97 @@ AskUserQuestion:
     - question: "Authentication type?"
       header: "Auth"
       options:
-        - label: "token"
-          description: "API token authentication"
-        - label: "basic"
-          description: "Username/password authentication"
+        - label: "{provider_auth_type} (Recommended)"
+          description: "Default auth type for this provider"
         - label: "none"
           description: "No authentication needed"
       multiSelect: false
 ```
 
-2. For `auth_type=none` — run via executor (no interactive input needed):
+3. If `auth_type=token`, collect token:
 
+```
+AskUserQuestion:
+  questions:
+    - question: "API token?"
+      header: "Token"
+      options:
+        - label: "Enter token"
+          description: "Paste your API token"
+      multiSelect: false
+```
+
+The user types the token as custom text input (the "Other" option).
+
+4. If `auth_type=basic`, collect username and password via separate `AskUserQuestion` calls.
+
+**Step 15d**: Auto-detect extra fields (e.g., sonar organization and project key).
+
+If the selected provider has `extra_fields` in its declaration, auto-detect values:
+
+For `workflow-integration-sonar`:
+- Read CI config to get `repo_url`:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ci get
+  ```
+- Extract organization from `repo_url` (e.g., `https://github.com/cuioss/plan-marshall` → `cuioss`)
+- Derive project key as `{org}_{repo}` (e.g., `cuioss_plan-marshall`)
+- Ask user to confirm or override:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "SonarCloud organization?"
+      header: "Organization"
+      options:
+        - label: "{detected_org} (Recommended)"
+          description: "Detected from repository URL"
+      multiSelect: false
+    - question: "SonarCloud project key?"
+      header: "Project"
+      options:
+        - label: "{detected_project_key} (Recommended)"
+          description: "Detected from repository URL (format: org_repo)"
+      multiSelect: false
+```
+
+**Step 15e**: Run configure via executor (everything collected, no interactive input needed):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+  --skill {skill} --url {url} --auth-type {auth_type} \
+  --token {token} \
+  --extra organization={org} project_key={project_key} \
+  --no-verify
+```
+
+For `auth_type=none` (no `--token`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
   --skill {skill} --url {url} --auth-type none --no-verify
 ```
 
-3. For `auth_type=token` or `auth_type=basic` — run interactively via `!` prefix (secrets need TTY):
-
+For `auth_type=basic` (use `--username` and `--password` instead of `--token`):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+  --skill {skill} --url {url} --auth-type basic \
+  --username {username} --password {password} \
+  --no-verify
 ```
-Tell user to run:
-! python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-  --skill {skill} --url {url} --auth-type {auth_type} --verify
+
+**Step 15f**: Verify connectivity (optional, separate step):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill}
 ```
 
-**Step 15d**: Add deny rules via executor:
+**Step 15g**: Add deny rules via executor:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project
 ```
 
-**Step 15e**: If the configured skill was `workflow-integration-sonar`, add sonar-roundtrip to finalize steps:
+**Step 15h**: If the configured skill was `workflow-integration-sonar`, add sonar-roundtrip to finalize steps:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \

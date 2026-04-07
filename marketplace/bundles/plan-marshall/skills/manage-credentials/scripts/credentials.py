@@ -37,6 +37,11 @@ def main() -> int:
                                   help='Verify connectivity after setup')
     configure_parser.add_argument('--no-verify', dest='verify', action='store_false',
                                   help='Skip connectivity verification')
+    configure_parser.add_argument('--token', help='API token (skips interactive token prompt)')
+    configure_parser.add_argument('--username', help='Username for basic auth (skips interactive prompt)')
+    configure_parser.add_argument('--password', help='Password for basic auth (skips interactive prompt)')
+    configure_parser.add_argument('--extra', nargs='*', metavar='KEY=VALUE',
+                                  help='Extra fields as key=value pairs (e.g., --extra organization=cuioss project_key=cuioss_plan-marshall)')
 
     # edit
     edit_parser = subparsers.add_parser('edit', help='Edit existing credentials')
@@ -52,6 +57,9 @@ def main() -> int:
     verify_parser.add_argument('--skill', help='Skill name')
     verify_parser.add_argument('--scope', choices=['global', 'project'], default='global',
                                help='Credential scope (default: global)')
+
+    # list-providers
+    subparsers.add_parser('list-providers', help='List available credential providers from extensions')
 
     # list
     list_parser = subparsers.add_parser('list', help='List configured skills (no secrets)')
@@ -78,6 +86,9 @@ def main() -> int:
     elif args.command == 'edit':
         from _cred_edit import run_edit
         return run_edit(args)
+    elif args.command == 'list-providers':
+        from _cred_list_providers import run_list_providers
+        return run_list_providers(args)
     elif args.command == 'verify':
         from _cred_verify import run_verify
         return run_verify(args)

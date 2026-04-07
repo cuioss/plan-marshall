@@ -34,7 +34,8 @@ Credential management skill for plan-marshall. Stores credentials outside LLM re
 
 | Subcommand | Description |
 |------------|-------------|
-| `configure` | Interactive wizard for new credential setup |
+| `configure` | Credential setup (interactive or fully CLI-driven) |
+| `list-providers` | List available credential providers from extensions |
 | `edit` | Edit existing credentials (re-prompts, preserves defaults) |
 | `verify` | HTTP connectivity test, updates `verified_at` |
 | `list` | List configured skills (no secrets in output) |
@@ -70,9 +71,27 @@ plan-marshall:manage-credentials:credentials
 - `--skill <name>` — Skip provider selection menu
 - `--url <url>` — Skip URL prompt
 - `--auth-type none|token|basic` — Skip auth type prompt
+- `--token <token>` — API token (skips interactive token prompt)
+- `--username <user>` / `--password <pass>` — Basic auth credentials (skips interactive prompts)
 - `--verify` / `--no-verify` — Skip verify prompt
+- `--extra KEY=VALUE ...` — Extra fields (e.g., `--extra organization=cuioss project_key=cuioss_repo`)
+
+**Fully non-interactive example** (all values as CLI args, no TTY needed):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+  --skill workflow-integration-sonar --url https://sonarcloud.io --auth-type token \
+  --token {token} --extra organization=cuioss project_key=cuioss_plan-marshall --no-verify
+```
 
 Without `--skill` in interactive mode: discovers all available credential extensions, presents numbered selection menu.
+
+### List Available Providers
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
+```
+
+Returns available credential extensions (what CAN be configured), not what IS configured. Use this in wizard/menu workflows to discover providers.
 
 ### List Configured Skills
 

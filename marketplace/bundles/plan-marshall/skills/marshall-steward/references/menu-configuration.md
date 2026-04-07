@@ -500,22 +500,33 @@ AskUserQuestion:
 
 For `edit`, `verify`, and `remove`: if `--skill` is not known, first run `list` to show available skills, then ask the user which one to operate on.
 
-### Configure — Two-Phase Workflow
+### Configure Workflow
 
-1. Discover providers: `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list`
-2. Collect non-secret values via `AskUserQuestion`: skill, URL, auth type
-3. For `auth_type=none` — run via executor (no interactive input needed):
+All values are collected via `AskUserQuestion` and passed as CLI args — no interactive input needed.
+
+1. Discover providers:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
+   ```
+2. Collect all values via `AskUserQuestion`: skill, URL, auth type, and token/username/password
+3. For providers with `extra_fields` (e.g., sonar), auto-detect from CI config and confirm with user
+4. Run configure via executor with all values as CLI args:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-     --skill {skill} --url {url} --auth-type none --no-verify
+     --skill {skill} --url {url} --auth-type {auth_type} \
+     --token {token} \
+     --extra organization={org} project_key={project_key} \
+     --no-verify
    ```
-4. For `auth_type=token` or `auth_type=basic` — tell user to run interactively via `!` prefix:
+5. Optionally verify:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill}
    ```
-   ! python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-     --skill {skill} --url {url} --auth-type {auth_type} --verify
+6. Run ensure-denied:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project
    ```
-5. Run ensure-denied: `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project`
-6. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
+7. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
      plan phase-6-finalize get
@@ -526,19 +537,17 @@ For `edit`, `verify`, and `remove`: if `--skill` is not known, first run `list` 
      plan phase-6-finalize add-step --step default:sonar-roundtrip --after default:automated-review
    ```
 
-### Edit — Two-Phase Workflow
+### Edit Workflow
 
-1. Collect non-secret values via `AskUserQuestion`: URL, auth type (optional changes)
-2. For `auth_type=none` — run via executor:
+All values collected via `AskUserQuestion` — no interactive input needed.
+
+1. Collect values via `AskUserQuestion`: URL, auth type, token/password (optional changes)
+2. Run edit via executor with CLI args:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
-     --skill {skill} --url {url} --auth-type none
-   ```
-3. For `auth_type=token` or `auth_type=basic` — tell user to run interactively via `!` prefix:
-   ```
-   ! python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
      --skill {skill} --url {url} --auth-type {auth_type}
    ```
+   For token changes, the LLM cannot update secrets via edit — use `remove` + `configure` instead.
 
 ---
 

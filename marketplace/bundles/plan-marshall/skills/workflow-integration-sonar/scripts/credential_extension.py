@@ -18,4 +18,18 @@ def get_credential_providers():
         'verify_endpoint': '/api/system/status',
         'verify_method': 'GET',
         'description': 'SonarCloud/SonarQube code analysis platform',
+        'extra_fields': [
+            {
+                'key': 'organization',
+                'label': 'SonarCloud Organization',
+                'required': True,
+                'auto_detect': 'ci_org',
+            },
+            {
+                'key': 'project_key',
+                'label': 'SonarCloud Project Key',
+                'required': True,
+                'auto_detect': 'sonar_project_key',
+            },
+        ],
     }]
