@@ -107,7 +107,7 @@ class Extension(ExtensionBase):
         metadata = module_data.get('metadata', {})
         raw_profiles = metadata.get('profiles', [])
         # Profiles may be dicts ({"id": "...", "canonical": "..."}) or strings
-        maven_profiles = [p['id'] if isinstance(p, dict) else p for p in raw_profiles]
+        maven_profiles = [p.get('id', '') if isinstance(p, dict) else (p if isinstance(p, str) else '') for p in raw_profiles]
         module_name = module_data.get('name', '')
         deps = module_data.get('dependencies', [])
         dep_strings = [d if isinstance(d, str) else '' for d in deps]
