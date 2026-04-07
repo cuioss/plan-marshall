@@ -69,6 +69,7 @@ CANONICAL_COMMANDS = {
     },
     CMD_BENCHMARK: {
         'aliases': [
+            'benchmark',
             'performance',
             'benchmarks',
             'jmh',
