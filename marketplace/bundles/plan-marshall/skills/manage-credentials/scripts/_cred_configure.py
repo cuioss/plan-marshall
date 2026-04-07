@@ -93,7 +93,7 @@ def run_configure(args) -> int:
         data['header_value_template'] = provider.get('header_value_template', 'Bearer {token}')
         data['token'] = SECRET_PLACEHOLDERS['token']
     elif auth_type == 'basic':
-        data['username'] = ''
+        data['username'] = SECRET_PLACEHOLDERS['username']
         data['password'] = SECRET_PLACEHOLDERS['password']
 
     # Extra fields (e.g., organization, project_key for Sonar)
@@ -109,7 +109,7 @@ def run_configure(args) -> int:
     # Register metadata (no secrets)
     register_credential_metadata(skill_name, scope, str(path), verified=False)
 
-    needs_editing = auth_type in ('token', 'basic')
+    completeness = check_credential_completeness(skill_name, scope, project_name)
     result = {
         'status': 'created',
         'skill': skill_name,
@@ -117,11 +117,10 @@ def run_configure(args) -> int:
         'auth_type': auth_type,
         'url': url,
         'path': str(path),
-        'needs_editing': needs_editing,
+        'needs_editing': not completeness['complete'],
     }
-    if needs_editing:
-        placeholders = [k for k in SECRET_PLACEHOLDERS if k in data and data[k] == SECRET_PLACEHOLDERS[k]]
-        result['placeholders'] = placeholders
+    if not completeness['complete']:
+        result['placeholders'] = completeness['placeholders']
 
     output_toon(result)
     return 0

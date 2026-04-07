@@ -30,6 +30,7 @@ CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
 VALID_AUTH_TYPES = ('none', 'token', 'basic')
 SECRET_PLACEHOLDERS = {
     'token': 'REPLACE_WITH_YOUR_TOKEN',
+    'username': 'REPLACE_WITH_YOUR_USERNAME',
     'password': 'REPLACE_WITH_YOUR_PASSWORD',
 }
 _PROJECT_NAME_PATTERN = re.compile(r'[^a-zA-Z0-9._-]')
@@ -223,6 +224,17 @@ def check_credential_completeness(skill: str, scope: str = 'global',
         key for key, val in data.items()
         if isinstance(val, str) and val in placeholder_values
     ]
+
+    # Also check for missing or empty required fields based on auth type
+    auth_type = data.get('auth_type', 'none')
+    if auth_type == 'token':
+        if not data.get('token') and 'token' not in found_placeholders:
+            found_placeholders.append('token')
+    elif auth_type == 'basic':
+        if not data.get('username') and 'username' not in found_placeholders:
+            found_placeholders.append('username')
+        if not data.get('password') and 'password' not in found_placeholders:
+            found_placeholders.append('password')
 
     return {
         'exists': True,
@@ -578,6 +590,12 @@ def get_authenticated_client(skill_name: str,
             password = credential.get('password', '')
             if not username:
                 raise ValueError(f'Username missing in credentials for {skill_name}')
+            if username in placeholder_values:
+                path = resolve_credential_path(skill_name, 'auto', project_name)
+                raise ValueError(
+                    f'Credential for {skill_name} still has placeholder username. '
+                    f'Edit {path} and replace the placeholder with your actual username.'
+                )
             if password in placeholder_values:
                 path = resolve_credential_path(skill_name, 'auto', project_name)
                 raise ValueError(
