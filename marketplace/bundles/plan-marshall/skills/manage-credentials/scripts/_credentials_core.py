@@ -28,6 +28,10 @@ from typing import Any
 
 CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
 VALID_AUTH_TYPES = ('none', 'token', 'basic')
+SECRET_PLACEHOLDERS = {
+    'token': 'REPLACE_WITH_YOUR_TOKEN',
+    'password': 'REPLACE_WITH_YOUR_PASSWORD',
+}
 _PROJECT_NAME_PATTERN = re.compile(r'[^a-zA-Z0-9._-]')
 
 
@@ -193,6 +197,39 @@ def remove_credential(skill: str, scope: str = 'global',
         return False
     except ValueError:
         return False
+
+
+def check_credential_completeness(skill: str, scope: str = 'global',
+                                   project_name: str | None = None) -> dict:
+    """Check if a credential file exists and has all secrets filled in.
+
+    Returns:
+        Dict with keys: exists, complete, path, placeholders
+    """
+    try:
+        path = resolve_credential_path(skill, scope, project_name)
+    except ValueError:
+        return {'exists': False, 'complete': False, 'path': '', 'placeholders': []}
+
+    if not path.exists():
+        return {'exists': False, 'complete': False, 'path': str(path), 'placeholders': []}
+
+    data = load_credential(skill, scope, project_name)
+    if data is None:
+        return {'exists': True, 'complete': False, 'path': str(path), 'placeholders': []}
+
+    placeholder_values = set(SECRET_PLACEHOLDERS.values())
+    found_placeholders = [
+        key for key, val in data.items()
+        if isinstance(val, str) and val in placeholder_values
+    ]
+
+    return {
+        'exists': True,
+        'complete': len(found_placeholders) == 0,
+        'path': str(path),
+        'placeholders': found_placeholders,
+    }
 
 
 # === Run Configuration Metadata ===
@@ -520,12 +557,20 @@ def get_authenticated_client(skill_name: str,
         auth_type = credential.get('auth_type', 'none')
         headers: dict[str, str] = {}
 
+        placeholder_values = set(SECRET_PLACEHOLDERS.values())
+
         if auth_type == 'token':
             header_name = credential.get('header_name', 'Authorization')
             template = credential.get('header_value_template', 'Bearer {token}')
             token = credential.get('token', '')
             if not token:
                 raise ValueError(f'Token missing in credentials for {skill_name}')
+            if token in placeholder_values:
+                path = resolve_credential_path(skill_name, 'auto', project_name)
+                raise ValueError(
+                    f'Credential for {skill_name} still has placeholder token. '
+                    f'Edit {path} and replace the placeholder with your actual token.'
+                )
             headers[header_name] = template.format(token=token)
         elif auth_type == 'basic':
             import base64
@@ -533,6 +578,12 @@ def get_authenticated_client(skill_name: str,
             password = credential.get('password', '')
             if not username:
                 raise ValueError(f'Username missing in credentials for {skill_name}')
+            if password in placeholder_values:
+                path = resolve_credential_path(skill_name, 'auto', project_name)
+                raise ValueError(
+                    f'Credential for {skill_name} still has placeholder password. '
+                    f'Edit {path} and replace the placeholder with your actual password.'
+                )
             encoded = base64.b64encode(f'{username}:{password}'.encode()).decode()
             headers['Authorization'] = f'Basic {encoded}'
         # auth_type == 'none': no headers needed

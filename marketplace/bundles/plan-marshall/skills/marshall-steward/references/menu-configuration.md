@@ -502,32 +502,33 @@ For `edit`, `verify`, and `remove`: if `--skill` is not known, first run `list` 
 
 ### Configure Workflow
 
-All values collected via `AskUserQuestion` (user types secrets via "Other" option) and passed as CLI args.
+Non-secret values collected via `AskUserQuestion`. Secrets entered by user editing the credential file directly.
 
 1. Discover providers:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
    ```
 2. Collect URL, auth type via `AskUserQuestion` (use provider defaults as recommended)
-3. If `auth_type=token`: ask user to paste token via `AskUserQuestion` ("select Other and paste"). If skipped, use `auth_type=none` temporarily.
-4. If provider has `extra_fields` (check `list-providers` output): auto-detect from CI config, confirm with user
-5. **ALWAYS run** configure via executor with all collected values:
+3. If provider has `extra_fields` (check `list-providers` output): auto-detect from CI config, confirm with user
+4. Run configure to create credential file with placeholder secrets:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
      --skill {skill} --url {url} --auth-type {auth_type} \
-     --token {token} \
-     --extra organization={org} project_key={project_key} \
-     --no-verify
+     --extra organization={org} project_key={project_key}
    ```
-5. Optionally verify:
+5. If `needs_editing: true`: tell user to open `{path}` and replace placeholders with real secrets. Wait for confirmation, then check:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill}
+   ```
+6. Optionally verify:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill}
    ```
-6. Run ensure-denied:
+7. Run ensure-denied:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project
    ```
-7. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
+8. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
      plan phase-6-finalize get
@@ -540,15 +541,18 @@ All values collected via `AskUserQuestion` (user types secrets via "Other" optio
 
 ### Edit Workflow
 
-All values collected via `AskUserQuestion` — no interactive input needed.
+Non-secret field updates via CLI args. For secret changes, user edits the credential file directly.
 
-1. Collect values via `AskUserQuestion`: URL, auth type, token/password (optional changes)
+1. Collect URL and auth type changes via `AskUserQuestion`
 2. Run edit via executor with CLI args:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
      --skill {skill} --url {url} --auth-type {auth_type}
    ```
-   For token changes, the LLM cannot update secrets via edit — use `remove` + `configure` instead.
+3. If `needs_editing: true`: tell user to edit `{path}` for secret changes, then run check:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill}
+   ```
 
 ---
 

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Tests for _cred_configure.py module.
+"""Tests for _cred_configure.py and _cred_check.py modules.
 
-Tests the interactive configure wizard with mocked input/getpass.
+Tests the configure command with placeholder-based secret entry
+and the check command for credential completeness.
 """
 
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,11 +22,9 @@ class TestConfigureCLI:
 
     def test_configure_no_providers_fails(self, tmp_path):
         """Configure fails gracefully when no providers exist."""
-        # Point to empty bundles dir so no extensions are found
         result = run_script(
             SCRIPT_PATH, 'configure', '--skill', 'nonexistent',
         )
-        # Should fail because nonexistent skill has no extension
         assert result.returncode == 1
 
     def test_configure_help(self):
@@ -31,6 +32,12 @@ class TestConfigureCLI:
         result = run_script(SCRIPT_PATH, 'configure', '--help')
         assert result.returncode == 0
         assert 'configure' in result.stdout.lower() or 'usage' in result.stdout.lower()
+
+    def test_configure_no_skill_errors(self):
+        """Configure without --skill produces clear error."""
+        result = run_script(SCRIPT_PATH, 'configure')
+        assert result.returncode == 1
+        assert '--skill is required' in result.stdout
 
 
 class TestListProviders:
@@ -48,59 +55,6 @@ class TestListProviders:
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'workflow-integration-sonar' in result.stdout
-
-
-class TestConfigureWithCLIArgs:
-    """Tests for configure with CLI args (non-interactive mode)."""
-
-    def test_configure_no_skill_no_tty_errors(self):
-        """Configure without --skill in non-TTY mode produces clear error."""
-        result = run_script(SCRIPT_PATH, 'configure')
-        assert result.returncode == 1
-        assert '--skill is required when not running interactively' in result.stdout
-
-    def test_configure_auth_none_completes_without_interaction(self):
-        """Configure with auth_type=none and all CLI args needs no interactive input."""
-        result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', 'workflow-integration-sonar',
-            '--url', 'https://sonarcloud.io',
-            '--auth-type', 'none',
-            '--no-verify',
-        )
-        # Should succeed (auth_type=none needs no secret)
-        if result.returncode == 0:
-            assert 'success' in result.stdout
-        else:
-            # May fail if no provider found (test env), but should NOT be EOF
-            assert 'EOF' not in result.stderr
-
-    def test_configure_token_no_tty_no_token_arg_errors(self):
-        """Configure with auth_type=token in non-TTY mode without --token produces clear error."""
-        result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', 'workflow-integration-sonar',
-            '--url', 'https://sonarcloud.io',
-            '--auth-type', 'token',
-            '--no-verify',
-        )
-        # Should either error about missing token or about missing provider
-        if 'No credential extension found' not in result.stdout:
-            assert result.returncode == 1
-            assert 'Token is required' in result.stdout
-
-    def test_configure_basic_no_tty_no_username_arg_errors(self):
-        """Configure with auth_type=basic in non-TTY mode without --username produces clear error."""
-        result = run_script(
-            SCRIPT_PATH, 'configure',
-            '--skill', 'workflow-integration-sonar',
-            '--url', 'https://sonarcloud.io',
-            '--auth-type', 'basic',
-            '--no-verify',
-        )
-        if 'No credential extension found' not in result.stdout:
-            assert result.returncode == 1
-            assert 'Username is required' in result.stdout
 
 
 class TestConfigureLogic:
@@ -123,3 +77,96 @@ class TestConfigureLogic:
 
         providers = [{'skill_name': 'a'}]
         assert _find_provider(providers, 'missing') is None
+
+
+class TestCheckCLI:
+    """Tests for check subcommand via subprocess."""
+
+    def test_check_help(self):
+        """Check --help works."""
+        result = run_script(SCRIPT_PATH, 'check', '--help')
+        assert result.returncode == 0
+
+    def test_check_requires_skill(self):
+        """Check without --skill fails."""
+        result = run_script(SCRIPT_PATH, 'check')
+        assert result.returncode != 0
+
+    def test_check_not_found(self, tmp_path):
+        """Check returns not_found for unconfigured skill."""
+        result = run_script(
+            SCRIPT_PATH, 'check',
+            '--skill', 'nonexistent-skill-for-test',
+        )
+        assert result.returncode == 0
+        assert 'not_found' in result.stdout
+
+
+class TestCheckCompleteness:
+    """Tests for check_credential_completeness via direct import."""
+
+    def test_not_found(self, tmp_path):
+        """Returns exists=False when credential file does not exist."""
+        from _credentials_core import check_credential_completeness  # type: ignore[import-not-found]
+
+        result = check_credential_completeness('nonexistent', 'global')
+        # May or may not exist depending on system state
+        # Just verify the function returns the expected structure
+        assert 'exists' in result
+        assert 'complete' in result
+        assert 'path' in result
+        assert 'placeholders' in result
+
+    def test_complete_credential(self, tmp_path):
+        """Returns complete=True when no placeholders present."""
+        from _credentials_core import (  # type: ignore[import-not-found]
+            CREDENTIALS_DIR,
+            SECRET_PLACEHOLDERS,
+            check_credential_completeness,
+            save_credential,
+        )
+
+        skill = 'test-check-complete'
+        data = {
+            'skill': skill,
+            'url': 'https://example.com',
+            'auth_type': 'token',
+            'token': 'real-secret-value',
+        }
+        try:
+            save_credential(skill, data, 'global')
+            result = check_credential_completeness(skill, 'global')
+            assert result['exists'] is True
+            assert result['complete'] is True
+            assert result['placeholders'] == []
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+    def test_incomplete_credential(self, tmp_path):
+        """Returns complete=False when placeholders present."""
+        from _credentials_core import (  # type: ignore[import-not-found]
+            CREDENTIALS_DIR,
+            SECRET_PLACEHOLDERS,
+            check_credential_completeness,
+            save_credential,
+        )
+
+        skill = 'test-check-incomplete'
+        data = {
+            'skill': skill,
+            'url': 'https://example.com',
+            'auth_type': 'token',
+            'token': SECRET_PLACEHOLDERS['token'],
+        }
+        try:
+            save_credential(skill, data, 'global')
+            result = check_credential_completeness(skill, 'global')
+            assert result['exists'] is True
+            assert result['complete'] is False
+            assert 'token' in result['placeholders']
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
