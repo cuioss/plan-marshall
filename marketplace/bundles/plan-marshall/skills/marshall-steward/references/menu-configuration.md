@@ -508,27 +508,28 @@ Non-secret values collected via `AskUserQuestion`. Secrets entered by user editi
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
    ```
-2. Collect URL, auth type via `AskUserQuestion` (use provider defaults as recommended)
-3. If provider has `extra_fields` (check `list-providers` output): auto-detect from CI config, confirm with user
-4. Run configure to create credential file with placeholder secrets:
+2. Ask scope via `AskUserQuestion`: "Global" (shared across projects) or "Project" (this project only). Default: global.
+3. Collect URL, auth type via `AskUserQuestion` (use provider defaults as recommended)
+4. If provider has `extra_fields` (check `list-providers` output): auto-detect from CI config, confirm with user
+5. Run configure to create credential file with placeholder secrets (include `--scope` from step 2):
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
-     --skill {skill} --url {url} --auth-type {auth_type} \
+     --skill {skill} --url {url} --auth-type {auth_type} --scope {scope} \
      --extra organization={org} project_key={project_key}
    ```
-5. If `needs_editing: true`: tell user to open `{path}` and replace placeholders with real secrets. Wait for confirmation, then check:
+6. If `needs_editing: true`: tell user to open `{path}` and replace placeholders with real secrets. Wait for confirmation, then check:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill}
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill} --scope {scope}
    ```
-6. Optionally verify:
+7. Optionally verify:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill}
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill} --scope {scope}
    ```
-7. Run ensure-denied:
+8. Run ensure-denied:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project
    ```
-8. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
+9. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
      plan phase-6-finalize get

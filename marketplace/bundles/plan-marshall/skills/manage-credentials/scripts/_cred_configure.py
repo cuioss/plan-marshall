@@ -12,6 +12,7 @@ from _credentials_core import (
     check_credential_completeness,
     discover_credential_providers,
     get_project_name,
+    load_credential,
     register_credential_metadata,
     save_credential,
 )
@@ -42,44 +43,50 @@ def run_configure(args) -> int:
     skill_name = provider['skill_name']
     scope = args.scope
 
-    # Check if credential already exists
-    project_name = get_project_name() if scope == 'project' else None
-    completeness = check_credential_completeness(skill_name, scope, project_name)
+    # Resolve auth type and URL early — needed for exists check
+    default_auth = provider.get('auth_type', 'token')
+    auth_type = getattr(args, 'auth_type', None) or default_auth
+    if auth_type not in VALID_AUTH_TYPES:
+        output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
+        return 1
 
-    if completeness['exists']:
-        if completeness['complete']:
-            output_toon({
-                'status': 'exists_complete',
-                'skill': skill_name,
-                'scope': scope,
-                'path': completeness['path'],
-                'needs_editing': False,
-            })
-            return 0
-        else:
-            output_toon({
-                'status': 'exists_incomplete',
-                'skill': skill_name,
-                'scope': scope,
-                'path': completeness['path'],
-                'needs_editing': True,
-                'placeholders': completeness['placeholders'],
-            })
-            return 0
-
-    # Resolve URL
     default_url = provider.get('default_url', '')
     url = getattr(args, 'url', None) or default_url
     if not url:
         output_toon({'status': 'error', 'message': 'URL is required — provide --url'})
         return 1
 
-    # Resolve auth type
-    default_auth = provider.get('auth_type', 'token')
-    auth_type = getattr(args, 'auth_type', None) or default_auth
-    if auth_type not in VALID_AUTH_TYPES:
-        output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
-        return 1
+    # Check if credential already exists
+    project_name = get_project_name() if scope == 'project' else None
+    completeness = check_credential_completeness(skill_name, scope, project_name)
+
+    if completeness['exists']:
+        # Load existing to compare auth_type and URL — if mismatch, reconfigure
+        existing = load_credential(skill_name, scope, project_name)
+        existing_auth = existing.get('auth_type', 'none') if existing else 'none'
+        existing_url = existing.get('url', '') if existing else ''
+
+        if existing_auth == auth_type and existing_url == url:
+            if completeness['complete']:
+                output_toon({
+                    'status': 'exists_complete',
+                    'skill': skill_name,
+                    'scope': scope,
+                    'path': completeness['path'],
+                    'needs_editing': False,
+                })
+                return 0
+            else:
+                output_toon({
+                    'status': 'exists_incomplete',
+                    'skill': skill_name,
+                    'scope': scope,
+                    'path': completeness['path'],
+                    'needs_editing': True,
+                    'placeholders': completeness['placeholders'],
+                })
+                return 0
+        # auth_type or URL mismatch — fall through to reconfigure
 
     # Build credential data with placeholders for secrets
     data: dict = {
