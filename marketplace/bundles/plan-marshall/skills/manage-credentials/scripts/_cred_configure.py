@@ -43,11 +43,17 @@ def run_configure(args) -> int:
     skill_name = provider['skill_name']
     scope = args.scope
 
-    # Resolve auth type early — needed for exists check
+    # Resolve auth type and URL early — needed for exists check
     default_auth = provider.get('auth_type', 'token')
     auth_type = getattr(args, 'auth_type', None) or default_auth
     if auth_type not in VALID_AUTH_TYPES:
         output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
+        return 1
+
+    default_url = provider.get('default_url', '')
+    url = getattr(args, 'url', None) or default_url
+    if not url:
+        output_toon({'status': 'error', 'message': 'URL is required — provide --url'})
         return 1
 
     # Check if credential already exists
@@ -55,11 +61,12 @@ def run_configure(args) -> int:
     completeness = check_credential_completeness(skill_name, scope, project_name)
 
     if completeness['exists']:
-        # Load existing to compare auth_type — if mismatch, reconfigure
+        # Load existing to compare auth_type and URL — if mismatch, reconfigure
         existing = load_credential(skill_name, scope, project_name)
         existing_auth = existing.get('auth_type', 'none') if existing else 'none'
+        existing_url = existing.get('url', '') if existing else ''
 
-        if existing_auth == auth_type:
+        if existing_auth == auth_type and existing_url == url:
             if completeness['complete']:
                 output_toon({
                     'status': 'exists_complete',
@@ -79,14 +86,7 @@ def run_configure(args) -> int:
                     'placeholders': completeness['placeholders'],
                 })
                 return 0
-        # auth_type mismatch — fall through to reconfigure
-
-    # Resolve URL
-    default_url = provider.get('default_url', '')
-    url = getattr(args, 'url', None) or default_url
-    if not url:
-        output_toon({'status': 'error', 'message': 'URL is required — provide --url'})
-        return 1
+        # auth_type or URL mismatch — fall through to reconfigure
 
     # Build credential data with placeholders for secrets
     data: dict = {
