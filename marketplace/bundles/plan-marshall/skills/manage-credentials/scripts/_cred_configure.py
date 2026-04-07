@@ -37,11 +37,14 @@ def run_configure(args) -> int:
                 'available': [p['skill_name'] for p in providers],
             })
             return 1
-    else:
+    elif sys.stdin.isatty():
         provider = _select_provider(providers)
         if not provider:
             output_toon({'status': 'cancelled', 'message': 'No provider selected'})
             return 0
+    else:
+        output_toon({'status': 'error', 'message': '--skill is required when not running interactively'})
+        return 1
 
     skill_name = provider['skill_name']
     scope = args.scope
@@ -52,18 +55,28 @@ def run_configure(args) -> int:
     print(f'Scope: {scope}')
     print()
 
-    # URL
+    # URL — use CLI arg, else prompt if TTY, else use provider default
     default_url = provider.get('default_url', '')
-    url_prompt = f'Base URL [{default_url}]: ' if default_url else 'Base URL: '
-    url = input(url_prompt).strip() or default_url
+    if getattr(args, 'url', None):
+        url = args.url
+    elif sys.stdin.isatty():
+        url_prompt = f'Base URL [{default_url}]: ' if default_url else 'Base URL: '
+        url = input(url_prompt).strip() or default_url
+    else:
+        url = default_url
     if not url:
-        output_toon({'status': 'error', 'message': 'URL is required'})
+        output_toon({'status': 'error', 'message': 'URL is required — provide --url or run interactively'})
         return 1
 
-    # Auth type
+    # Auth type — use CLI arg, else prompt if TTY, else use provider default
     default_auth = provider.get('auth_type', 'token')
-    auth_prompt = f'Auth type ({", ".join(VALID_AUTH_TYPES)}) [{default_auth}]: '
-    auth_type = input(auth_prompt).strip() or default_auth
+    if getattr(args, 'auth_type', None):
+        auth_type = args.auth_type
+    elif sys.stdin.isatty():
+        auth_prompt = f'Auth type ({", ".join(VALID_AUTH_TYPES)}) [{default_auth}]: '
+        auth_type = input(auth_prompt).strip() or default_auth
+    else:
+        auth_type = default_auth
     if auth_type not in VALID_AUTH_TYPES:
         output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
         return 1
@@ -78,24 +91,36 @@ def run_configure(args) -> int:
     if auth_type == 'token':
         data['header_name'] = provider.get('header_name', 'Authorization')
         data['header_value_template'] = provider.get('header_value_template', 'Bearer {token}')
+        if not sys.stdin.isatty():
+            output_toon({'status': 'error', 'message': 'Token input requires interactive terminal — run with ! prefix'})
+            return 1
         token = getpass.getpass('Token: ')
         if not token:
             output_toon({'status': 'error', 'message': 'Token is required'})
             return 1
         data['token'] = token
     elif auth_type == 'basic':
+        if not sys.stdin.isatty():
+            output_toon({'status': 'error', 'message': 'Username/password input requires interactive terminal — run with ! prefix'})
+            return 1
         username = input('Username: ').strip()
         if not username:
             output_toon({'status': 'error', 'message': 'Username is required'})
             return 1
         data['username'] = username
         data['password'] = getpass.getpass('Password: ')
+    # auth_type == 'none': no secret needed, completes without interactive prompt
 
     # Optional verification
-    verify_prompt = input('\nVerify connectivity now? [Y/n]: ').strip().lower()
     verified = False
-    if verify_prompt != 'n':
+    if getattr(args, 'verify', None) is True:
         verified = _verify_connectivity(data, provider)
+    elif getattr(args, 'verify', None) is False:
+        pass  # --no-verify: skip
+    elif sys.stdin.isatty():
+        verify_prompt = input('\nVerify connectivity now? [Y/n]: ').strip().lower()
+        if verify_prompt != 'n':
+            verified = _verify_connectivity(data, provider)
 
     # Save credential file
     project_name = get_project_name() if scope == 'project' else None

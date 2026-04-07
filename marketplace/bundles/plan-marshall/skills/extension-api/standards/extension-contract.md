@@ -903,17 +903,56 @@ Some domain bundles are **additive** - they extend a base domain bundle rather t
 
 > **Note**: This table is a reference snapshot. For the authoritative live list, use `extension_discovery discover-all`.
 
-| Bundle | Domain Key | Triage | Outline Skill | Recipes | Verify Steps | Notes |
-|--------|------------|--------|---------------|---------|-------------|-------|
-| pm-dev-java | java | ext-triage-java | - | - | - | Base Java bundle |
-| pm-dev-java-cui | java-cui | - | - | - | - | Additive to pm-dev-java |
-| pm-dev-frontend | javascript | ext-triage-js | - | - | - | |
-| pm-dev-python | python | ext-triage-python | - | - | - | |
-| pm-dev-oci | oci-containers | ext-triage-oci | - | - | - | |
-| pm-documents | documentation | ext-triage-docs | - | - | - | Uses recipe for doc verification |
-| pm-requirements | requirements | ext-triage-reqs | - | - | - | |
-| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | |
-| plan-marshall | build, general-dev | - | - | 1 (refactor-to-profile-standards) | - | Multi-domain |
+| Bundle | Domain Key | Triage | Outline Skill | Recipes | Verify Steps | Credentials | Notes |
+|--------|------------|--------|---------------|---------|-------------|-------------|-------|
+| pm-dev-java | java | ext-triage-java | - | - | - | - | Base Java bundle |
+| pm-dev-java-cui | java-cui | - | - | - | - | - | Additive to pm-dev-java |
+| pm-dev-frontend | javascript | ext-triage-js | - | - | - | - | |
+| pm-dev-python | python | ext-triage-python | - | - | - | - | |
+| pm-dev-oci | oci-containers | ext-triage-oci | - | - | - | - | |
+| pm-documents | documentation | ext-triage-docs | - | - | - | - | Uses recipe for doc verification |
+| pm-requirements | requirements | ext-triage-reqs | - | - | - | - | |
+| pm-plugin-development | plan-marshall-plugin-dev | ext-triage-plugin | ext-outline-workflow | - | - | - | |
+| plan-marshall | build, general-dev | - | - | 1 (refactor-to-profile-standards) | - | workflow-integration-sonar | Multi-domain |
+
+---
+
+## Credential Extensions (Standalone)
+
+Separate from `ExtensionBase`, credential extensions declare external tool authentication needs. They are discovered by `_credentials_core.discover_credential_providers()` which scans all skill script directories for `credential_extension.py` files.
+
+### Convention
+
+- **File location**: `marketplace/bundles/{bundle}/skills/{skill}/scripts/credential_extension.py`
+- **Required function**: `get_credential_providers() -> list[dict]`
+- **Discovery**: Scans `skills/*/scripts/credential_extension.py` across all bundles (not just `plan-marshall-plugin/`)
+- **Consumer**: `manage-credentials` skill
+
+### Return Structure
+
+Each dict in the returned list must include:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `skill_name` | str | Skill identifier (e.g., `workflow-integration-sonar`) |
+| `display_name` | str | Human-readable name |
+| `auth_type` | str | Default auth type (`none`, `token`, `basic`) |
+| `default_url` | str | Default base URL |
+| `header_name` | str | HTTP header name for token auth |
+| `header_value_template` | str | Header value template (e.g., `Bearer {token}`) |
+| `verify_endpoint` | str | Endpoint for connectivity verification |
+| `verify_method` | str | HTTP method for verification |
+| `description` | str | Provider description |
+
+### Current Implementations
+
+| Bundle | Skill | Provider |
+|--------|-------|----------|
+| plan-marshall | workflow-integration-sonar | SonarCloud/SonarQube |
+
+### Why Not Part of ExtensionBase?
+
+Credential needs are per-skill (e.g., sonar skill), not per-domain-bundle. A domain bundle may have zero or many skills that need credentials. The `ExtensionBase` class models domain-level capabilities (skills, triage, recipes), while credential extensions model individual skill-level authentication requirements.
 
 ---
 

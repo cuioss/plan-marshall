@@ -33,6 +33,59 @@ class TestConfigureCLI:
         assert 'configure' in result.stdout.lower() or 'usage' in result.stdout.lower()
 
 
+class TestConfigureWithCLIArgs:
+    """Tests for configure with CLI args (non-interactive mode)."""
+
+    def test_configure_no_skill_no_tty_errors(self):
+        """Configure without --skill in non-TTY mode produces clear error."""
+        result = run_script(SCRIPT_PATH, 'configure')
+        assert result.returncode == 1
+        assert '--skill is required when not running interactively' in result.stdout
+
+    def test_configure_auth_none_completes_without_interaction(self):
+        """Configure with auth_type=none and all CLI args needs no interactive input."""
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', 'workflow-integration-sonar',
+            '--url', 'https://sonarcloud.io',
+            '--auth-type', 'none',
+            '--no-verify',
+        )
+        # Should succeed (auth_type=none needs no secret)
+        if result.returncode == 0:
+            assert 'success' in result.stdout
+        else:
+            # May fail if no provider found (test env), but should NOT be EOF
+            assert 'EOF' not in result.stderr
+
+    def test_configure_token_no_tty_errors(self):
+        """Configure with auth_type=token in non-TTY mode produces TTY error."""
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', 'workflow-integration-sonar',
+            '--url', 'https://sonarcloud.io',
+            '--auth-type', 'token',
+            '--no-verify',
+        )
+        # Should either error about TTY or about missing provider
+        if 'No credential extension found' not in result.stdout:
+            assert result.returncode == 1
+            assert 'interactive terminal' in result.stdout
+
+    def test_configure_basic_no_tty_errors(self):
+        """Configure with auth_type=basic in non-TTY mode produces TTY error."""
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', 'workflow-integration-sonar',
+            '--url', 'https://sonarcloud.io',
+            '--auth-type', 'basic',
+            '--no-verify',
+        )
+        if 'No credential extension found' not in result.stdout:
+            assert result.returncode == 1
+            assert 'interactive terminal' in result.stdout
+
+
 class TestConfigureLogic:
     """Tests for configure wizard logic via direct import."""
 

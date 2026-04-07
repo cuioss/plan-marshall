@@ -51,11 +51,28 @@ plan-marshall:manage-credentials:credentials
 
 ### Configure New Credentials
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure [--skill <name>] [--scope global|project]
-```
+**Two-phase workflow** — the LLM collects non-secret values, then the script runs interactively for secrets:
 
-Without `--skill`: discovers all available credential extensions, presents numbered selection menu.
+1. **LLM phase**: Collect provider, URL, and auth type via `AskUserQuestion`
+2. **Build command** with CLI args:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+     --skill {skill} --url {url} --auth-type {auth_type} [--verify|--no-verify] [--scope global|project]
+   ```
+3. **For `auth_type=none`**: Run via executor (no interactive input needed — completes without TTY)
+4. **For `auth_type=token` or `auth_type=basic`**: Run interactively via `!` prefix (secrets need TTY):
+   ```
+   ! python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+     --skill {skill} --url {url} --auth-type {auth_type} --verify
+   ```
+
+**CLI args** (skip corresponding prompts when provided):
+- `--skill <name>` — Skip provider selection menu
+- `--url <url>` — Skip URL prompt
+- `--auth-type none|token|basic` — Skip auth type prompt
+- `--verify` / `--no-verify` — Skip verify prompt
+
+Without `--skill` in interactive mode: discovers all available credential extensions, presents numbered selection menu.
 
 ### List Configured Skills
 
@@ -65,9 +82,18 @@ python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials lis
 
 ### Edit Existing Credentials
 
+Same two-phase pattern as configure:
+
+1. **LLM phase**: Collect URL and auth type changes via `AskUserQuestion`
+2. **For `auth_type=none`**: Run via executor
+3. **For `auth_type=token` or `auth_type=basic`**: Run interactively via `!` prefix
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit [--skill <name>] [--scope global|project]
+python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
+  --skill <name> [--url <url>] [--auth-type none|token|basic] [--scope global|project]
 ```
+
+In non-TTY mode, URL and auth type keep existing values if CLI args are not provided. Secrets keep existing values when not running interactively.
 
 ### Verify Connectivity
 

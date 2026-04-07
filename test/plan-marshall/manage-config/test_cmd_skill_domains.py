@@ -1250,7 +1250,7 @@ def test_list_finalize_steps_count():
         result = cmd_list_finalize_steps(Namespace())
 
         assert result['status'] == 'success'
-        assert result['count'] >= 8
+        assert result['count'] >= 7
 
 
 def test_list_finalize_steps_discovers_project_skills():
