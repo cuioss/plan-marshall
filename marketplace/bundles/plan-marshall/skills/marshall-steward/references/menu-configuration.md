@@ -502,15 +502,16 @@ For `edit`, `verify`, and `remove`: if `--skill` is not known, first run `list` 
 
 ### Configure Workflow
 
-All values are collected via `AskUserQuestion` and passed as CLI args — no interactive input needed.
+All values collected via `AskUserQuestion` (user types secrets via "Other" option) and passed as CLI args.
 
 1. Discover providers:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
    ```
-2. Collect all values via `AskUserQuestion`: skill, URL, auth type, and token/username/password
-3. For providers with `extra_fields` (e.g., sonar), auto-detect from CI config and confirm with user
-4. Run configure via executor with all values as CLI args:
+2. Collect URL, auth type via `AskUserQuestion` (use provider defaults as recommended)
+3. If `auth_type=token`: ask user to paste token via `AskUserQuestion` ("select Other and paste"). If skipped, use `auth_type=none` temporarily.
+4. If provider has `extra_fields` (check `list-providers` output): auto-detect from CI config, confirm with user
+5. **ALWAYS run** configure via executor with all collected values:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
      --skill {skill} --url {url} --auth-type {auth_type} \
