@@ -91,25 +91,44 @@ def run_configure(args) -> int:
     if auth_type == 'token':
         data['header_name'] = provider.get('header_name', 'Authorization')
         data['header_value_template'] = provider.get('header_value_template', 'Bearer {token}')
-        if not sys.stdin.isatty():
-            output_toon({'status': 'error', 'message': 'Token input requires interactive terminal — run with ! prefix'})
+        if getattr(args, 'token', None):
+            token = args.token
+        elif sys.stdin.isatty():
+            token = getpass.getpass('Token: ')
+        else:
+            output_toon({'status': 'error', 'message': 'Token is required — provide --token or run interactively'})
             return 1
-        token = getpass.getpass('Token: ')
         if not token:
             output_toon({'status': 'error', 'message': 'Token is required'})
             return 1
         data['token'] = token
     elif auth_type == 'basic':
-        if not sys.stdin.isatty():
-            output_toon({'status': 'error', 'message': 'Username/password input requires interactive terminal — run with ! prefix'})
+        if getattr(args, 'username', None):
+            username = args.username
+        elif sys.stdin.isatty():
+            username = input('Username: ').strip()
+        else:
+            output_toon({'status': 'error', 'message': 'Username is required — provide --username or run interactively'})
             return 1
-        username = input('Username: ').strip()
         if not username:
             output_toon({'status': 'error', 'message': 'Username is required'})
             return 1
         data['username'] = username
-        data['password'] = getpass.getpass('Password: ')
+        if getattr(args, 'password', None):
+            data['password'] = args.password
+        elif sys.stdin.isatty():
+            data['password'] = getpass.getpass('Password: ')
+        else:
+            output_toon({'status': 'error', 'message': 'Password is required — provide --password or run interactively'})
+            return 1
     # auth_type == 'none': no secret needed, completes without interactive prompt
+
+    # Extra fields (e.g., organization, project_key for Sonar)
+    extra_fields = getattr(args, 'extra', None) or []
+    for pair in extra_fields:
+        if '=' in pair:
+            key, value = pair.split('=', 1)
+            data[key] = value
 
     # Optional verification
     verified = False

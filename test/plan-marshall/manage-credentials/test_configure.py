@@ -33,6 +33,23 @@ class TestConfigureCLI:
         assert 'configure' in result.stdout.lower() or 'usage' in result.stdout.lower()
 
 
+class TestListProviders:
+    """Tests for list-providers subcommand."""
+
+    def test_list_providers_returns_success(self):
+        """list-providers returns success with providers array."""
+        result = run_script(SCRIPT_PATH, 'list-providers')
+        assert result.returncode == 0
+        assert 'success' in result.stdout
+        assert 'providers' in result.stdout
+
+    def test_list_providers_discovers_sonar(self):
+        """list-providers discovers the sonar credential extension."""
+        result = run_script(SCRIPT_PATH, 'list-providers')
+        assert result.returncode == 0
+        assert 'workflow-integration-sonar' in result.stdout
+
+
 class TestConfigureWithCLIArgs:
     """Tests for configure with CLI args (non-interactive mode)."""
 
@@ -58,8 +75,8 @@ class TestConfigureWithCLIArgs:
             # May fail if no provider found (test env), but should NOT be EOF
             assert 'EOF' not in result.stderr
 
-    def test_configure_token_no_tty_errors(self):
-        """Configure with auth_type=token in non-TTY mode produces TTY error."""
+    def test_configure_token_no_tty_no_token_arg_errors(self):
+        """Configure with auth_type=token in non-TTY mode without --token produces clear error."""
         result = run_script(
             SCRIPT_PATH, 'configure',
             '--skill', 'workflow-integration-sonar',
@@ -67,13 +84,13 @@ class TestConfigureWithCLIArgs:
             '--auth-type', 'token',
             '--no-verify',
         )
-        # Should either error about TTY or about missing provider
+        # Should either error about missing token or about missing provider
         if 'No credential extension found' not in result.stdout:
             assert result.returncode == 1
-            assert 'interactive terminal' in result.stdout
+            assert 'Token is required' in result.stdout
 
-    def test_configure_basic_no_tty_errors(self):
-        """Configure with auth_type=basic in non-TTY mode produces TTY error."""
+    def test_configure_basic_no_tty_no_username_arg_errors(self):
+        """Configure with auth_type=basic in non-TTY mode without --username produces clear error."""
         result = run_script(
             SCRIPT_PATH, 'configure',
             '--skill', 'workflow-integration-sonar',
@@ -83,7 +100,7 @@ class TestConfigureWithCLIArgs:
         )
         if 'No credential extension found' not in result.stdout:
             assert result.returncode == 1
-            assert 'interactive terminal' in result.stdout
+            assert 'Username is required' in result.stdout
 
 
 class TestConfigureLogic:
