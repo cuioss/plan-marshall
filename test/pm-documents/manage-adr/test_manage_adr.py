@@ -7,15 +7,12 @@ Tier 2 (direct import) tests with 2 subprocess CLI plumbing tests retained.
 import importlib.util
 import os
 import shutil
-import sys
 import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('pm-documents', 'manage-adr', 'manage-adr.py')

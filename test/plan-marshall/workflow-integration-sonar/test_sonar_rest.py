@@ -4,13 +4,9 @@
 Tests REST client subcommands with mocked HTTP responses.
 """
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'sonar_rest.py')
 

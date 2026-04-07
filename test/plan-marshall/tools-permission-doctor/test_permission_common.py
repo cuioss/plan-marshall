@@ -6,20 +6,14 @@ both permission_doctor and permission_fix scripts.
 """
 
 import json
-import sys
-from pathlib import Path
 
-# Import shared infrastructure — triggers PYTHONPATH setup for cross-skill imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from permission_common import (  # type: ignore[import-not-found]  # noqa: E402, I001
+from permission_common import (  # type: ignore[import-not-found]I001
     EXIT_SUCCESS,
     load_settings,
     load_settings_path,
     resolve_scope_to_paths,
     save_settings,
 )
-
 
 # =============================================================================
 # Test: load_settings

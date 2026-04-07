@@ -5,9 +5,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import PlanContext  # noqa: E402
+from conftest import PlanContext
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent

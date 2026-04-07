@@ -13,15 +13,12 @@ Tier 2 (direct import) with 2 subprocess tests for CLI plumbing.
 import importlib.util
 import os
 import re
-import sys
 import tempfile
 from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 # Script path for subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-memories', 'manage-memory.py')

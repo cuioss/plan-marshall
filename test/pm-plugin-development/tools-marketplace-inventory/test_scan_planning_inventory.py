@@ -10,14 +10,9 @@ import. The script's logic (marketplace inventory aggregation, categorization,
 statistics) is tightly coupled to argparse and output serialization within main().
 """
 
-import sys
-from pathlib import Path
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
-
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'tools-marketplace-inventory', 'scan-planning-inventory.py')

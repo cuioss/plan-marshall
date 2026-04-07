@@ -15,9 +15,7 @@ Run with:
 import sys
 from pathlib import Path
 
-# Import shared infrastructure (sets up PYTHONPATH for cross-skill imports)
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / 'test'))
 
 # Import Extension from pm-dev-java
 EXTENSION_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-dev-java' / 'skills' / 'plan-marshall-plugin'

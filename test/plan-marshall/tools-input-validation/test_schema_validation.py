@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 """Tests for schema_validation.py shared module."""
 
-import sys
-from pathlib import Path
 
-# Import shared infrastructure — triggers PYTHONPATH setup for cross-skill imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from schema_validation import (  # type: ignore[import-not-found]  # noqa: E402, I001
+from schema_validation import (  # type: ignore[import-not-found]I001
     validate_assessment,
     validate_finding,
     validate_references,
     validate_status,
     validate_task,
 )
-
 
 # =============================================================================
 # Test: validate_status

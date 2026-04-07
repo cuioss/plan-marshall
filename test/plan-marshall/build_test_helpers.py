@@ -8,13 +8,10 @@ Usage:
     from build_test_helpers import assert_coverage_missing_file, assert_coverage_high, ...
 """
 
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
-from conftest import run_script  # noqa: E402
+from conftest import run_script
 
 # =============================================================================
 # Coverage Report Test Helpers

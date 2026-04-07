@@ -10,12 +10,9 @@ Tests all Gradle build operations:
 """
 
 import json
-import sys
 import tempfile
 from pathlib import Path
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from conftest import get_script_path, run_script
 
 # Script under test - plan-marshall bundle

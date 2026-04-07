@@ -5,13 +5,10 @@ Tests deny rule management and settings file manipulation.
 """
 
 import json
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path  # noqa: E402
+from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-credentials', 'credentials.py')
 

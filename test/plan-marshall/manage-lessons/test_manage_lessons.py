@@ -15,16 +15,12 @@ Tier 2 (direct import) with 2 subprocess tests for CLI plumbing.
 
 import importlib.util
 import json
-import sys
 from argparse import Namespace
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = (

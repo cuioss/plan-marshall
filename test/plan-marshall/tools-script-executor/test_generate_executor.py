@@ -9,9 +9,7 @@ import time
 from datetime import date
 from pathlib import Path
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import _MARKETPLACE_SCRIPT_DIRS  # noqa: E402
+from conftest import _MARKETPLACE_SCRIPT_DIRS
 
 # Path to the script
 SCRIPTS_DIR = (

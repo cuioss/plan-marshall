@@ -5,12 +5,9 @@ Tests the resolve-workflow-skill-extension command for triage extensions.
 """
 
 import json
-import sys
 from pathlib import Path
 
-# Import shared infrastructure
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import PlanContext, get_script_path, run_script  # noqa: E402
+from conftest import PlanContext, get_script_path, run_script
 
 # Get script path for manage-config
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')

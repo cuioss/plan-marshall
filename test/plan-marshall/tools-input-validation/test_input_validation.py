@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
 """Tests for input_validation.py shared module."""
 
-import sys
-from pathlib import Path
 
 import pytest
-
-# Import shared infrastructure — triggers PYTHONPATH setup for cross-skill imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from input_validation import (  # type: ignore[import-not-found]  # noqa: E402, I001
+from input_validation import (  # type: ignore[import-not-found]I001
     is_valid_plan_id,
     is_valid_relative_path,
     validate_enum,
@@ -17,7 +12,6 @@ from input_validation import (  # type: ignore[import-not-found]  # noqa: E402, 
     validate_script_notation,
     validate_skill_notation,
 )
-
 
 # =============================================================================
 # Test: validate_plan_id / is_valid_plan_id
