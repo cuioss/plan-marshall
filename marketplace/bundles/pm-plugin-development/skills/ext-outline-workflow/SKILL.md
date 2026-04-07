@@ -2,6 +2,7 @@
 name: ext-outline-workflow
 description: Shared workflow steps and verification knowledge for plugin development outline, loaded by phase-3-outline skill
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-outline
 ---
 
 # Plugin Development Outline Workflow

@@ -1,6 +1,8 @@
 """
 Credential extension for SonarCloud/SonarQube integration.
 
+Extension point: plan-marshall:extension-api/standards/ext-point-credential
+
 Declares credential requirements for the workflow-integration-sonar skill.
 Discovered by manage-credentials via discover_credential_providers().
 """

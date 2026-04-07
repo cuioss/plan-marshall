@@ -33,6 +33,7 @@ def _load_module(name, filename):
 _cmd_extension_mod = _load_module('_cmd_extension', '_cmd_extension.py')
 
 cmd_extension = _cmd_extension_mod.cmd_extension
+validate_extension_contracts = _cmd_extension_mod.validate_extension_contracts
 
 
 def create_valid_extension(ext_path: Path) -> None:
@@ -260,6 +261,136 @@ def test_scan_marketplace_real():
     assert data['summary']['invalid'] == 0, (
         f'All should be valid, issues: {[e for e in data.get("extensions", []) if not e.get("valid")]}'
     )
+
+
+# =============================================================================
+# Contract Validation Tests (Tier 2 - direct import)
+# =============================================================================
+
+
+def _create_marketplace_with_implementors(base: Path) -> Path:
+    """Create a minimal marketplace with ext-triage implementor for contract tests."""
+    marketplace = base / 'marketplace'
+    bundles = marketplace / 'bundles'
+
+    # Create the contract document
+    contract_dir = bundles / 'plan-marshall' / 'skills' / 'extension-api' / 'standards'
+    contract_dir.mkdir(parents=True)
+    (contract_dir / 'ext-point-triage.md').write_text(
+        '# Extension Point: Triage\n\n## Parameters\n\n## Pre-Conditions\n\n## Post-Conditions\n'
+    )
+
+    # Create a triage implementor with correct frontmatter
+    triage_dir = bundles / 'test-bundle' / 'skills' / 'ext-triage-test'
+    triage_dir.mkdir(parents=True)
+    (triage_dir / 'SKILL.md').write_text(
+        '---\nname: ext-triage-test\ndescription: Test triage\n'
+        'user-invocable: false\nimplements: plan-marshall:extension-api/standards/ext-point-triage\n---\n'
+        '# Test Triage\n\n## Suppression Syntax\n\n## Severity Guidelines\n\n## Acceptable to Accept\n'
+    )
+
+    return marketplace
+
+
+def test_contract_validation_passes_for_valid_implementor():
+    """Test that a correctly configured implementor passes all checks."""
+    with tempfile.TemporaryDirectory() as td:
+        marketplace = _create_marketplace_with_implementors(Path(td))
+        result = validate_extension_contracts(marketplace)
+
+        assert result['status'] == 'success'
+        assert result['total_checked'] == 1
+        assert result['passed'] == 1
+        assert result['failed'] == 0
+
+
+def test_contract_validation_ec01_missing_implements():
+    """EC-01: implements field missing in frontmatter."""
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td)
+        marketplace = base / 'marketplace'
+        bundles = marketplace / 'bundles'
+
+        # Triage skill without implements field
+        triage_dir = bundles / 'test-bundle' / 'skills' / 'ext-triage-test'
+        triage_dir.mkdir(parents=True)
+        (triage_dir / 'SKILL.md').write_text(
+            '---\nname: ext-triage-test\ndescription: Test\nuser-invocable: false\n---\n# Test\n'
+        )
+
+        result = validate_extension_contracts(marketplace)
+        assert result['failed'] == 1
+        assert any(e['rule'] == 'EC-01' for e in result['errors'])
+
+
+def test_contract_validation_ec02_target_not_found():
+    """EC-02: implements target file does not exist."""
+    with tempfile.TemporaryDirectory() as td:
+        base = Path(td)
+        marketplace = base / 'marketplace'
+        bundles = marketplace / 'bundles'
+
+        # Triage skill pointing to nonexistent contract
+        triage_dir = bundles / 'test-bundle' / 'skills' / 'ext-triage-test'
+        triage_dir.mkdir(parents=True)
+        (triage_dir / 'SKILL.md').write_text(
+            '---\nname: ext-triage-test\ndescription: Test\nuser-invocable: false\n'
+            'implements: plan-marshall:extension-api/standards/ext-point-triage\n---\n# Test\n'
+        )
+
+        result = validate_extension_contracts(marketplace)
+        assert result['failed'] == 1
+        assert any(e['rule'] == 'EC-02' for e in result['errors'])
+
+
+def test_contract_validation_ec10_missing_triage_section():
+    """EC-10/11/12: triage skill missing required sections."""
+    with tempfile.TemporaryDirectory() as td:
+        marketplace = _create_marketplace_with_implementors(Path(td))
+        bundles = marketplace / 'bundles'
+
+        # Overwrite with missing sections
+        triage_md = bundles / 'test-bundle' / 'skills' / 'ext-triage-test' / 'SKILL.md'
+        triage_md.write_text(
+            '---\nname: ext-triage-test\ndescription: Test triage\n'
+            'user-invocable: false\nimplements: plan-marshall:extension-api/standards/ext-point-triage\n---\n'
+            '# Test Triage\n\n## Suppression Syntax\nContent here.\n'
+            # Missing: Severity Guidelines, Acceptable to Accept
+        )
+
+        result = validate_extension_contracts(marketplace)
+        assert result['failed'] == 1
+        ec_rules = [e['rule'] for e in result['errors']]
+        assert 'EC-11' in ec_rules  # Missing Severity Guidelines
+        assert 'EC-12' in ec_rules  # Missing Acceptable to Accept
+
+
+def test_contract_validation_real_marketplace():
+    """Test contract validation against real marketplace (all should pass)."""
+    marketplace_path = Path(__file__).parent.parent.parent.parent / 'marketplace'
+    if not marketplace_path.exists():
+        return
+
+    result = validate_extension_contracts(marketplace_path)
+
+    assert result['total_checked'] >= 17, f'Expected at least 17 implementors, got {result["total_checked"]}'
+    assert result['failed'] == 0, (
+        f'All implementors should pass: {result["errors"]}'
+    )
+
+
+def test_contract_validation_filter_by_type():
+    """Test filtering by extension type."""
+    with tempfile.TemporaryDirectory() as td:
+        marketplace = _create_marketplace_with_implementors(Path(td))
+
+        # Filter to triage only
+        result = validate_extension_contracts(marketplace, extension_type='triage')
+        assert result['total_checked'] == 1
+
+        # Filter to build (none in fixture)
+        result = validate_extension_contracts(marketplace, extension_type='build')
+        assert result['total_checked'] == 0
 
 
 # =============================================================================

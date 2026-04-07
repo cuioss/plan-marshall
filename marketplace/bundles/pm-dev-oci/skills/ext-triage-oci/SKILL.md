@@ -2,6 +2,7 @@
 name: ext-triage-oci
 description: Triage extension for OCI container findings during plan-finalize phase
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 
 # OCI Container Triage Extension
@@ -66,6 +67,6 @@ Registered via the `plan-marshall-plugin/extension.py` in this bundle. The `prov
 
 ## Related Documents
 
-- `plan-marshall:extension-api` - Triage extension contract
+
 - `pm-dev-oci:oci-standards` - OCI container standards
 - `pm-dev-oci:oci-security` - Container security best practices

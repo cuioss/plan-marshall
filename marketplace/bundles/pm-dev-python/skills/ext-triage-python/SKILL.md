@@ -2,6 +2,7 @@
 name: ext-triage-python
 description: Triage extension for Python findings during plan-finalize phase
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 
 # Python Triage Extension
@@ -78,5 +79,5 @@ Registered in marshal.json under the python domain:
 
 ## Related Documents
 
-- `plan-marshall:extension-api` - Triage extension contract
+
 - `pm-dev-python:python-core` - Core Python development standards

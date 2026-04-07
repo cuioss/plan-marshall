@@ -637,6 +637,275 @@ def scan_extensions(marketplace_root: Path) -> dict[str, Any]:
     return results
 
 
+# =============================================================================
+# Extension Point Contract Validation (EC-* rules)
+# =============================================================================
+
+
+def _parse_frontmatter(skill_path: Path) -> dict[str, str]:
+    """Parse YAML frontmatter from a SKILL.md file."""
+    try:
+        content = skill_path.read_text(encoding='utf-8')
+    except OSError:
+        return {}
+
+    if not content.startswith('---'):
+        return {}
+
+    end = content.find('---', 3)
+    if end == -1:
+        return {}
+
+    frontmatter: dict[str, str] = {}
+    for line in content[3:end].strip().split('\n'):
+        if ':' in line:
+            key, _, value = line.partition(':')
+            frontmatter[key.strip()] = value.strip()
+    return frontmatter
+
+
+def _has_section(file_path: Path, section_heading: str) -> bool:
+    """Check if a markdown file contains a specific heading."""
+    try:
+        content = file_path.read_text(encoding='utf-8')
+    except OSError:
+        return False
+    return f'## {section_heading}' in content
+
+
+def validate_extension_contracts(marketplace_root: Path, extension_type: str | None = None,
+                                  skill_filter: str | None = None) -> dict[str, Any]:
+    """Validate extension point contract compliance across all implementors.
+
+    Rules:
+        EC-01: implements field present for ext-*/recipe-* skills (Warning)
+        EC-02: implements target file exists (Error)
+        EC-03: implements value uses correct format: bundle:skill/path (Error)
+        EC-04: Contract document has required sections (Error)
+        EC-10: Triage skills: contains ## Suppression Syntax (Error)
+        EC-11: Triage skills: contains ## Severity Guidelines (Error)
+        EC-12: Triage skills: contains ## Acceptable to Accept (Error)
+        EC-20: Outline skills: standards/change-types.md exists (Error)
+        EC-40: Build skills: implements ExecuteConfig (Warning)
+        EC-50: Credential scripts: get_credential_providers() exists (Error)
+    """
+    bundles_path = marketplace_root / 'bundles'
+    errors: list[dict[str, str]] = []
+    total_checked = 0
+    passed = 0
+    failed = 0
+
+    # Collect all implementor SKILL.md files
+    implementors: list[tuple[Path, str]] = []  # (skill_path, detected_type)
+
+    for bundle_dir in sorted(bundles_path.iterdir()):
+        if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
+            continue
+
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+
+            skill_md = skill_dir / 'SKILL.md'
+            skill_name = skill_dir.name
+
+            # Detect extension type from naming convention
+            ext_type = None
+            if skill_name.startswith('ext-triage-'):
+                ext_type = 'triage'
+            elif skill_name.startswith('ext-outline-'):
+                ext_type = 'outline'
+            elif skill_name.startswith('recipe-'):
+                ext_type = 'recipe'
+            elif skill_name.startswith('build-'):
+                ext_type = 'build'
+
+            if ext_type is None:
+                continue
+
+            # Apply filters
+            if extension_type and ext_type != extension_type:
+                continue
+            if skill_filter:
+                full_name = f'{bundle_dir.name}:{skill_name}'
+                if skill_filter != full_name and skill_filter != skill_name:
+                    continue
+
+            if skill_md.exists():
+                implementors.append((skill_md, ext_type))
+
+    # Also check credential extensions
+    if not extension_type or extension_type == 'credential':
+        for bundle_dir in sorted(bundles_path.iterdir()):
+            if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
+                continue
+            for cred_path in bundle_dir.glob('skills/*/scripts/credential_extension.py'):
+                if skill_filter:
+                    skill_name = cred_path.parent.parent.name
+                    full_name = f'{bundle_dir.name}:{skill_name}'
+                    if skill_filter != full_name and skill_filter != skill_name:
+                        continue
+                implementors.append((cred_path, 'credential'))
+
+    # Validate each implementor
+    for impl_path, ext_type in implementors:
+        total_checked += 1
+        impl_errors: list[dict[str, str]] = []
+
+        if ext_type == 'credential':
+            # EC-50: credential scripts must have get_credential_providers()
+            try:
+                content = impl_path.read_text(encoding='utf-8')
+                if 'def get_credential_providers' not in content:
+                    impl_errors.append({
+                        'skill': str(impl_path.relative_to(bundles_path)),
+                        'rule': 'EC-50',
+                        'message': "Missing 'get_credential_providers()' function",
+                    })
+            except OSError:
+                impl_errors.append({
+                    'skill': str(impl_path),
+                    'rule': 'EC-50',
+                    'message': 'Cannot read credential extension file',
+                })
+        else:
+            # Parse frontmatter
+            fm = _parse_frontmatter(impl_path)
+            skill_name = impl_path.parent.name
+            bundle_name = impl_path.parent.parent.parent.name
+            skill_ref = f'{bundle_name}:{skill_name}'
+
+            # EC-01: implements field present
+            if 'implements' not in fm:
+                impl_errors.append({
+                    'skill': skill_ref,
+                    'rule': 'EC-01',
+                    'message': "Missing 'implements' field in frontmatter",
+                })
+            else:
+                impl_value = fm['implements']
+
+                # EC-03: format check
+                if ':' not in impl_value or '/' not in impl_value:
+                    impl_errors.append({
+                        'skill': skill_ref,
+                        'rule': 'EC-03',
+                        'message': f"Invalid implements format: '{impl_value}' (expected bundle:skill/path)",
+                    })
+                else:
+                    # EC-02: target file exists
+                    ref_bundle, ref_path = impl_value.split(':', 1)
+                    target_path = bundles_path / ref_bundle / 'skills' / (ref_path + '.md')
+                    if not target_path.exists():
+                        impl_errors.append({
+                            'skill': skill_ref,
+                            'rule': 'EC-02',
+                            'message': f"Implements target not found: {impl_value}",
+                        })
+                    else:
+                        # EC-04: contract doc has required sections
+                        for section in ['Parameters', 'Pre-Conditions', 'Post-Conditions']:
+                            if not _has_section(target_path, section):
+                                impl_errors.append({
+                                    'skill': skill_ref,
+                                    'rule': 'EC-04',
+                                    'message': f"Contract doc missing '## {section}' section",
+                                })
+
+            # Type-specific checks
+            if ext_type == 'triage':
+                # EC-10, EC-11, EC-12: check for required content in SKILL.md or standards/ files
+                skill_dir = impl_path.parent
+                for rule_id, patterns in [
+                    ('EC-10', ['Suppression Syntax', 'Suppression Methods', 'suppression']),
+                    ('EC-11', ['Severity Guidelines', 'Severity', 'severity']),
+                    ('EC-12', ['Acceptable to Accept']),
+                ]:
+                    found = False
+                    # Check SKILL.md for section headings (any heading level)
+                    try:
+                        content = impl_path.read_text(encoding='utf-8')
+                        for pattern in patterns:
+                            if f'# {pattern}' in content or f'## {pattern}' in content or f'### {pattern}' in content:
+                                found = True
+                                break
+                    except OSError:
+                        pass
+                    # Check standards/ directory for matching files
+                    if not found:
+                        standards_dir = skill_dir / 'standards'
+                        if standards_dir.is_dir():
+                            for std_file in standards_dir.glob('*.md'):
+                                for pattern in patterns:
+                                    if pattern.lower() in std_file.name.lower():
+                                        found = True
+                                        break
+                                    try:
+                                        std_content = std_file.read_text(encoding='utf-8')
+                                        if f'# {pattern}' in std_content or f'## {pattern}' in std_content:
+                                            found = True
+                                            break
+                                    except OSError:
+                                        pass
+                                if found:
+                                    break
+                    if not found:
+                        impl_errors.append({
+                            'skill': skill_ref,
+                            'rule': rule_id,
+                            'message': f"Missing suppression/severity/accept content (checked '{patterns[0]}')",
+                        })
+
+            elif ext_type == 'outline':
+                # EC-20: standards/change-types.md exists
+                change_types_path = impl_path.parent / 'standards' / 'change-types.md'
+                if not change_types_path.exists():
+                    impl_errors.append({
+                        'skill': skill_ref,
+                        'rule': 'EC-20',
+                        'message': "Missing 'standards/change-types.md' file",
+                    })
+
+            elif ext_type == 'build':
+                # EC-40: check for ExecuteConfig reference
+                # Look in scripts directory for ExecuteConfig usage
+                scripts_dir = impl_path.parent / 'scripts'
+                has_execute_config = False
+                if scripts_dir.is_dir():
+                    for py_file in scripts_dir.glob('*.py'):
+                        try:
+                            content = py_file.read_text(encoding='utf-8')
+                            if 'ExecuteConfig' in content:
+                                has_execute_config = True
+                                break
+                        except OSError:
+                            pass
+                if not has_execute_config:
+                    impl_errors.append({
+                        'skill': skill_ref,
+                        'rule': 'EC-40',
+                        'message': "No ExecuteConfig usage found in scripts",
+                    })
+
+        if impl_errors:
+            failed += 1
+            errors.extend(impl_errors)
+        else:
+            passed += 1
+
+    return {
+        'status': 'success' if failed == 0 else 'error',
+        'total_checked': total_checked,
+        'passed': passed,
+        'failed': failed,
+        'errors': errors,
+    }
+
+
 def cmd_extension(args) -> dict:
     """Validate extension.py files."""
     if args.extension_path:

@@ -2,6 +2,7 @@
 name: recipe-refactor-to-profile-standards
 description: Domain-invariant recipe for refactoring code to comply with configured profile standards, package by package
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 
 # Recipe: Refactor to Profile Standards

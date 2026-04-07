@@ -2,6 +2,7 @@
 name: ext-triage-docs
 description: Triage extension for documentation findings during plan-finalize phase
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 
 # Documentation Triage Extension
@@ -73,6 +74,6 @@ Registered in marshall.json under the documentation domain:
 
 ## Related Skills
 
-- `plan-marshall:extension-api` - Triage extension contract
+
 - `pm-documents:ref-asciidoc` - AsciiDoc formatting and validation
 - `pm-documents:ref-documentation` - Content quality and review

@@ -194,6 +194,25 @@ user-invocable: true
 
 Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`.
 
+**implements** (optional):
+
+Declares that this skill implements an extension point contract.
+
+- **Format**: `bundle:skill/path` — references the contract document relative to the skill's root
+- **Example**: `implements: plan-marshall:extension-api/standards/ext-point-triage`
+- **Validation**: plugin-doctor verifies the referenced contract exists and the skill satisfies its required sections
+- **Used by**: Marketplace inventory dependency tracking (`_dep_detection.py::detect_implements()`), plugin-doctor contract validation
+- **When to use**: Any skill that implements an extension point (triage, outline, recipe, build). For credential extensions (Python files, not SKILL.md), use a docstring reference instead.
+
+```yaml
+---
+name: ext-triage-java
+description: Java finding triage with suppression syntax and severity guidelines
+user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-triage
+---
+```
+
 ### User-Invocable Guidelines
 
 **Use `user-invocable: true` when**:

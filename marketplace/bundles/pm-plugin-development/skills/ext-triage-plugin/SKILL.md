@@ -2,6 +2,7 @@
 name: ext-triage-plugin
 description: Triage extension for marketplace plugin findings during plan-finalize phase
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 
 # Plugin Development Triage Extension
@@ -108,5 +109,5 @@ These findings frequently appear in plugin development but are typically accepta
 
 ## Related Documents
 
-- `plan-marshall:extension-api/standards/extension-contract.md` - Triage extension contract
+
 - `pm-plugin-development:plugin-architecture` - Plugin patterns

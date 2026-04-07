@@ -2,6 +2,7 @@
 name: build-python
 description: Python/pyprojectx build operations — mypy type-checking, ruff linting, pytest with Cobertura coverage, and test-directory-based module discovery
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-build
 ---
 
 # Build Python

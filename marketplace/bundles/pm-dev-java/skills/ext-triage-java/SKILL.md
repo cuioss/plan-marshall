@@ -2,6 +2,7 @@
 name: ext-triage-java
 description: Triage extension for Java findings during plan-finalize phase
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 
 # Java Triage Extension
@@ -74,5 +75,5 @@ Registered in marshal.json under the java domain:
 
 ## Related Documents
 
-- `plan-marshall:extension-api` → `standards/extension-contract.md` - Triage extension contract
+
 - `pm-dev-java:java-core` - Core Java patterns

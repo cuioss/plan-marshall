@@ -2,6 +2,7 @@
 name: recipe-cui-logging-enforce
 description: Recipe for enforcing CUI logging standards across all modules — migrate loggers, implement LogRecords, add test coverage
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-recipe
 ---
 
 # Recipe: Enforce CUI Logging Standards

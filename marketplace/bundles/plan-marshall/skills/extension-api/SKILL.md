@@ -62,10 +62,20 @@ extension-api/
 │   ├── _warnings_classify.py       # Warning categorization with matchers (co-located build utility)
 │   └── _module_aggregation.py      # Virtual module splitting
 └── standards/
-    ├── extension-contract.md       # Extension API contract (all methods, hooks, validation)
+    ├── extension-contract.md       # Extension API contract (core methods, overview, examples)
+    ├── ext-point-triage.md         # Triage extension point contract (7 implementations)
+    ├── ext-point-outline.md        # Outline extension point contract (1 implementation)
+    ├── ext-point-recipe.md         # Recipe extension point contract (4 implementations)
+    ├── ext-point-build.md          # Build system extension point contract (4 implementations)
+    ├── ext-point-credential.md     # Credential extension point contract (1 implementation)
+    ├── ext-point-verify-steps.md   # Verify steps extension point contract (0 implementations)
+    ├── ext-point-finalize-steps.md # Finalize steps extension point contract (0 implementations)
+    ├── marshal-json-reference.md   # Central marshal.json config path reference
     ├── module-discovery.md         # Module discovery contract + output specification
     ├── canonical-commands.md       # Command vocabulary and resolution
     ├── build-execution.md          # Build execution API + return structure
+    ├── build-api-reference.md      # Build API internal reference
+    ├── build-systems-common.md     # Common patterns across build systems
     ├── profiles.md                 # Profile override mechanism + profile contracts
     └── workflow-overview.md        # Architecture overview + phase contracts + user review gate
 ```
@@ -97,6 +107,24 @@ All extensions **must** inherit from `ExtensionBase` and implement required meth
 | `provides_outline_skill() -> str \| None` | `None` | Return domain-specific outline skill reference |
 | `provides_recipes() -> list[dict]` | `[]` | Return recipe definitions for predefined transformations |
 | `provides_verify_steps() -> list[dict]` | `[]` | Return domain-specific verification steps |
+
+---
+
+## Extension Points
+
+Each extension point has a dedicated contract document with formal parameters, pre-conditions, and post-conditions:
+
+| Extension Point | Hook Method | Contract | Implementations |
+|-----------------|-------------|----------|-----------------|
+| Build System | `discover_modules()` + `ExecuteConfig` | [ext-point-build.md](standards/ext-point-build.md) | 4 |
+| Triage | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) | 7 |
+| Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) | 1 |
+| Recipe | `provides_recipes()` | [ext-point-recipe.md](standards/ext-point-recipe.md) | 4 |
+| Credential | `credential_extension.py` | [ext-point-credential.md](standards/ext-point-credential.md) | 1 |
+| Verify Steps | `provides_verify_steps()` | [ext-point-verify-steps.md](standards/ext-point-verify-steps.md) | 0 |
+| Finalize Steps | `provides_finalize_steps()` | [ext-point-finalize-steps.md](standards/ext-point-finalize-steps.md) | 0 |
+
+For all extension-related configuration paths, see [marshal-json-reference.md](standards/marshal-json-reference.md).
 
 ---
 
@@ -145,10 +173,14 @@ For understanding the complete system architecture, reference these documents:
 
 | Document | Purpose | When to Read |
 |----------|---------|--------------|
-| [extension-contract.md](standards/extension-contract.md) | Complete extension API contract (all methods, hooks, validation) | Creating or modifying an extension |
+| [extension-contract.md](standards/extension-contract.md) | Core extension API contract (ExtensionBase, get_skill_domains, examples) | Creating or modifying an extension |
+| [ext-point-*.md](standards/) | Individual extension point contracts (7 documents) | Implementing a specific extension point |
+| [marshal-json-reference.md](standards/marshal-json-reference.md) | Central marshal.json config path reference | Understanding where extension config is stored |
 | [module-discovery.md](standards/module-discovery.md) | Module discovery + output specification | Implementing `discover_modules()` |
 | [canonical-commands.md](standards/canonical-commands.md) | Command vocabulary and resolution | Implementing `discover_modules()` commands |
 | [build-execution.md](standards/build-execution.md) | Build execution API + return structure | Running build commands, formatting output |
+| [build-api-reference.md](standards/build-api-reference.md) | Build API internal reference | Working with build script internals |
+| [build-systems-common.md](standards/build-systems-common.md) | Common patterns across build systems | Understanding shared build patterns |
 | [profiles.md](standards/profiles.md) | Profile override mechanism + contracts | Understanding/overriding profile skills |
 | [workflow-overview.md](standards/workflow-overview.md) | 6-phase workflow + user review gate | Understanding phase transitions and contracts |
 

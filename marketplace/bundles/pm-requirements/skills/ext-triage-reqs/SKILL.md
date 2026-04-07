@@ -2,6 +2,7 @@
 name: ext-triage-reqs
 description: Triage extension for requirements findings during plan-finalize phase
 user-invocable: false
+implements: plan-marshall:extension-api/standards/ext-point-triage
 ---
 
 # Requirements Triage Extension
@@ -70,5 +71,5 @@ Registered in marshal.json under the requirements domain:
 
 ## Related Documents
 
-- `plan-marshall:extension-api` - Triage extension contract
+
 - `pm-requirements:requirements-authoring` - Requirements authoring standards
