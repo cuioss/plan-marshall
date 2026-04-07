@@ -377,7 +377,6 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture r
   {- Benchmark: `{resolved benchmark executable}` — only if resolved on default}
   {- For each child-module-only command:}
   {- {Canonical} ({module_name}): `{resolved executable}` — only on {module_name}}
-  - Omit `{module}` to run against all modules
   - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
   - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
 ```
