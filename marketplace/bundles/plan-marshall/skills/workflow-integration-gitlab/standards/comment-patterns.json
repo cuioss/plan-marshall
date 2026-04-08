@@ -1,0 +1,94 @@
+{
+  "_note": "Regex patterns for PR comment classification. Pre-compiled at import time by pr.py for fetch-comments, triage, and triage-batch subcommands. Classification priority: code_change(high) > code_change(medium) > code_change(low) > ignore > explain. Priority vocabulary uses PRIORITY_LEVELS (low, medium, high, critical) from triage_helpers.",
+  "_category_rationale": {
+    "code_change.high": "Security and correctness issues that demand immediate code changes — bugs, crashes, vulnerabilities.",
+    "code_change.medium": "Actionable requests using directive language (please add/fix/change) or calling out specific incorrectness.",
+    "code_change.low": "Style and cosmetic suggestions — typos, naming, formatting. Lower urgency but still actionable.",
+    "explain.low": "Questions and clarification requests — reviewer wants understanding, not necessarily a code change.",
+    "ignore.low": "Pure acknowledgments (LGTM, approved) and bot comments — no human action needed."
+  },
+  "thresholds": {
+    "_rationale": "substantial_comment_length (100): below this, comments without keyword matches are typically drive-by acknowledgments. context_match_min_length (20): below this, comments are too short to contain meaningful code references for context matching. camel_case_min_length (4): minimum word length for camelCase identifier detection in context matching.",
+    "substantial_comment_length": 100,
+    "context_match_min_length": 20,
+    "camel_case_min_length": 4
+  },
+  "code_change": {
+    "high": [
+      "\\bsecurity\\b",
+      "\\bvulnerability\\b",
+      "\\binjection\\b",
+      "\\bxss\\b",
+      "\\bcsrf\\b",
+      "\\bbug\\b",
+      "\\berror\\s+(?:here|in|at|on)\\b",
+      "(?:please|must|need(?:s)?\\s+to|should)\\s+(?:be\\s+)?fix(?:ed|ing)?\\b",
+      "\\bbroken\\b",
+      "\\bcrash\\b",
+      "\\bnull pointer\\b",
+      "\\bmemory leak\\b",
+      "\\brace condition\\b",
+      "\\bthread.?safe\\b",
+      "\\bdeprecated\\b"
+    ],
+    "medium": [
+      "please\\s+(?:add|remove|change|fix|update)\\b",
+      "should\\s+(?:be|have|use)\\b",
+      "\\bmissing\\b",
+      "\\bincorrect\\b",
+      "\\bwrong\\b",
+      "\\bconsider\\s+(?:using|adding|removing|changing)\\b",
+      "\\bprefer\\b",
+      "\\bsuggest\\b",
+      "\\brecommend\\b",
+      "\\balternatively\\b"
+    ],
+    "low": [
+      "\\brenam(?:e|ing)\\b",
+      "\\bvariable name\\b",
+      "\\bnaming\\b",
+      "\\btypo\\b",
+      "\\bspelling\\b",
+      "\\bformatting\\b",
+      "\\bstyle\\b",
+      "\\bnit:",
+      "\\bnitpick:"
+    ]
+  },
+  "explain": {
+    "low": [
+      "\\bwhy\\b",
+      "\\bexplain\\b",
+      "\\breasoning\\b",
+      "\\brationale\\b",
+      "\\bhow does\\b",
+      "\\bwhat is\\b",
+      "\\bcan you clarify\\b",
+      "\\bwhat happens if\\b",
+      "\\bis this intentional\\b",
+      "\\bare we sure\\b",
+      "\\bcould this\\b",
+      "\\bmight this\\b",
+      "\\bcould you\\b",
+      "\\bwould you consider\\b",
+      "\\bhave you thought about\\b",
+      "\\bhave you considered\\b"
+    ]
+  },
+  "ignore": {
+    "low": [
+      "^lgtm",
+      "^approved",
+      "\\blooks good\\b",
+      "^\\s*nice\\b",
+      "^\\s*thanks\\b",
+      "^\\s*acknowledged\\b",
+      "^\\s*noted\\b",
+      "^\\s*ack\\b",
+      "^\\+1$",
+      "\\bship it\\b",
+      "\\bno objection\\b",
+      "\\[bot\\]"
+    ]
+  }
+}

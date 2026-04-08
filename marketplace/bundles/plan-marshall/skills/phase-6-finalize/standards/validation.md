@@ -25,7 +25,7 @@
 
 ## Automated Review (if PR created)
 
-- Monitor CI status via workflow-integration-ci
+- Monitor CI status via workflow-integration-github
 - Address review comments (iterative - may require looping back to execute)
 - Handle Sonar quality gate via workflow-integration-sonar
 - Create fix tasks and loop back to 5-execute if issues found (max 3 iterations)

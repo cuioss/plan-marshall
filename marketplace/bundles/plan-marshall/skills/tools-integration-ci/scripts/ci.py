@@ -59,19 +59,42 @@ def get_provider() -> str | None:
         return None
 
 
+PROVIDER_SKILLS = {
+    'github': 'workflow-integration-github',
+    'gitlab': 'workflow-integration-gitlab',
+}
+
+
 def main() -> int:
     provider = get_provider()
     if not provider:
         return output_error('router', 'CI provider not configured. Run /marshall-steward first.')
 
-    if provider == 'github':
-        from github import main as provider_main
-    elif provider == 'gitlab':
-        from gitlab import main as provider_main
-    else:
+    skill = PROVIDER_SKILLS.get(provider)
+    if not skill:
         return output_error('router', f'Unknown CI provider: {provider}')
 
-    return provider_main()
+    # Dispatch to provider script via subprocess — provider scripts now live
+    # in their own skill directories (workflow-integration-github, workflow-integration-gitlab)
+    import subprocess
+
+    args = sys.argv[1:]  # Pass through all arguments
+    script_path = Path(__file__).resolve().parent.parent.parent / skill / 'scripts' / f'{provider}.py'
+
+    if not script_path.exists():
+        return output_error('router', f'Provider script not found: {script_path}')
+
+    result = subprocess.run(
+        [sys.executable, str(script_path), *args],
+        capture_output=True,
+        text=True,
+        env={**__import__('os').environ, 'PYTHONPATH': ':'.join(sys.path)},
+    )
+    if result.stdout:
+        print(result.stdout, end='')
+    if result.stderr:
+        print(result.stderr, end='', file=sys.stderr)
+    return result.returncode
 
 
 if __name__ == '__main__':

@@ -50,7 +50,8 @@ Per the plugin.json registration convention documented in `frontmatter-standards
 
 | Skill | Registered | Purpose |
 |-------|-----------|---------|
-| workflow-integration-ci | yes | CI monitoring, review handling |
+| workflow-integration-github | yes | CI monitoring, review handling (GitHub) |
+| workflow-integration-gitlab | yes | CI monitoring, review handling (GitLab) |
 | workflow-integration-git | yes | Commit, push with conventional commits |
 | workflow-integration-sonar | yes | Sonar issue triage and fix/suppress |
 | workflow-permission-web | yes | WebFetch domain permission consolidation |

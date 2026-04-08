@@ -33,7 +33,7 @@ sleep {review_bot_buffer_seconds}
 
 ### Step 3: Fetch and Triage Comments
 
-Follow the workflow-integration-ci "Handle Review" workflow with these additions:
+Follow the workflow-integration-github "Handle Review" workflow with these additions:
 
 1. **Fetch comments**: `fetch-comments --pr {pr_number} --unresolved-only`
 2. **Batch triage**: `triage-batch --comments '[...]'`

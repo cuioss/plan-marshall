@@ -33,7 +33,8 @@ Unified CI provider abstraction using **static routing** - one script per provid
 ## Consumers
 
 This skill is a script-only library (not registered in plugin.json). It is consumed by:
-- `workflow-integration-ci` — PR review comment workflows (imports `ci.py`, `github.py`, `gitlab.py` via PYTHONPATH)
+- `workflow-integration-github` — GitHub PR review comment workflows
+- `workflow-integration-gitlab` — GitLab MR review comment workflows
 - `workflow-integration-git` — git commit workflows
 - `workflow-pr-doctor` — PR diagnosis workflows
 - `phase-6-finalize` — plan finalization with PR creation
