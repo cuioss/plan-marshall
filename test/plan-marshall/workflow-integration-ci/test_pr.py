@@ -587,7 +587,7 @@ class TestPRFetchComments(unittest.TestCase):
     def test_fetch_comments_no_provider_returns_error(self):
         """Test fetch-comments returns structured error when no provider configured."""
         stdout, _, code = run_pr_script(['fetch-comments', '--pr', '999'])
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 0)
         result = parse_toon(stdout)
         self.assertEqual(result['status'], 'error')
         self.assertIn('error', result)

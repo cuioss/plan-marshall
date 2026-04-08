@@ -62,15 +62,15 @@ def test_print_toon_success(capsys):
 
 
 def test_print_toon_failure(capsys):
-    """Test print_toon returns 1 for failure."""
+    """Test print_toon returns 0 for failure (exit code reserved for uncaught exceptions)."""
     rc = print_toon({'status': 'error', 'error': 'bad'})
-    assert rc == 1
+    assert rc == 0
 
 
 def test_print_toon_missing_status(capsys):
-    """Test print_toon returns 1 when status is missing."""
+    """Test print_toon returns 0 when status is missing."""
     rc = print_toon({'data': 'no status'})
-    assert rc == 1
+    assert rc == 0
 
 
 # =============================================================================
@@ -79,9 +79,9 @@ def test_print_toon_missing_status(capsys):
 
 
 def test_print_error(capsys):
-    """Test print_error always returns 1."""
+    """Test print_error always returns 0 (exit code reserved for uncaught exceptions)."""
     rc = print_error('oops', code=ErrorCode.INVALID_INPUT)
-    assert rc == 1
+    assert rc == 0
     captured = capsys.readouterr()
     result = parse_toon(captured.out)
     assert result['error'] == 'oops'

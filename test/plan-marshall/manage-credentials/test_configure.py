@@ -19,7 +19,7 @@ class TestConfigureCLI:
         result = run_script(
             SCRIPT_PATH, 'configure', '--skill', 'nonexistent',
         )
-        assert result.returncode == 1
+        assert result.returncode == 0
 
     def test_configure_help(self):
         """Configure --help works."""
@@ -30,7 +30,7 @@ class TestConfigureCLI:
     def test_configure_no_skill_errors(self):
         """Configure without --skill produces clear error."""
         result = run_script(SCRIPT_PATH, 'configure')
-        assert result.returncode == 1
+        assert result.returncode == 0
         assert '--skill is required' in result.stdout
 
 
@@ -200,7 +200,7 @@ class TestConfigureAuthTypeValidation:
             '--skill', 'workflow-integration-sonar',
             '--auth-type', 'none',
         )
-        assert result.returncode == 1
+        assert result.returncode == 0
         assert 'incompatible' in result.stdout.lower()
         assert 'token' in result.stdout
 
@@ -228,7 +228,7 @@ class TestConfigureAuthTypeValidation:
             '--skill', 'workflow-integration-sonar',
             '--auth-type', 'basic',
         )
-        assert result.returncode == 1
+        assert result.returncode == 0
         assert 'incompatible' in result.stdout.lower()
 
 

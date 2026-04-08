@@ -49,7 +49,7 @@ def run_ensure_denied(args) -> int:
             'status': 'error',
             'message': 'permission_common not available (missing from PYTHONPATH)',
         })
-        return 1
+        return 0
 
     # Verify credentials directory permissions first
     if CREDENTIALS_DIR.exists():

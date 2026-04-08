@@ -20,7 +20,6 @@ Output (JSON format):
 
 import argparse
 import re
-import sys
 from pathlib import Path
 
 from ci_base import run_cli  # type: ignore[import-not-found]
@@ -341,9 +340,8 @@ def main() -> int:
     handler = handlers.get(args.command)
     if handler:
         result = handler(args)
-        is_error = result.get('status') != 'success'
-        print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
-        return 1 if is_error else 0
+        print(serialize_toon(result))
+        return 0
 
     parser.print_help()
     return 1

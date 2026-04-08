@@ -16,6 +16,7 @@ from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 from plan_logging import log_entry
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 
 def get_plugin_cache_path() -> Path:
@@ -369,8 +370,8 @@ def cmd_apply_config_defaults(args) -> int:
 
     if not project_root.exists():
         log_entry('script', 'global', 'ERROR', f'[EXTENSION] Project directory not found: {project_root}')
-        print(f'error\tProject directory not found: {project_root}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': f'Project directory not found: {project_root}'}))
+        return 0
 
     results = apply_config_defaults(project_root)
 

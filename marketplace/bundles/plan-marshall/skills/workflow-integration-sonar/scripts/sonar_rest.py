@@ -44,7 +44,7 @@ def cmd_search(args) -> int:
             'status': 'error',
             'message': f'Sonar API error: HTTP {e.status}',
         })
-        return 1
+        return 0
 
     issues = result.get('issues', [])
     formatted = []
@@ -98,7 +98,7 @@ def cmd_transition(args) -> int:
             'message': f'Sonar API error: HTTP {e.status}',
             'issue_key': args.issue_key,
         })
-        return 1
+        return 0
 
     output_toon({
         'status': 'success',
@@ -127,7 +127,7 @@ def cmd_metrics(args) -> int:
             'status': 'error',
             'message': f'Sonar API error: HTTP {e.status}',
         })
-        return 1
+        return 0
 
     component = result.get('component', {})
     measures = {}
@@ -177,7 +177,8 @@ def main() -> int:
     elif args.command == 'metrics':
         return cmd_metrics(args)
 
-    return 1
+    output_toon({'status': 'error', 'error': f'Unknown command: {args.command}'})
+    return 0
 
 
 if __name__ == '__main__':

@@ -313,9 +313,8 @@ def main() -> int:
 
     from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
-    is_error = result.get('status') != 'success'
-    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
-    return 1 if is_error else 0
+    print(serialize_toon(result))
+    return 0
 
 
 if __name__ == '__main__':

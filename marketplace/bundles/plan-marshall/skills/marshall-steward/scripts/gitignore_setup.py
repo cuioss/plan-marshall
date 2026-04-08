@@ -173,9 +173,8 @@ def main() -> int:
         result = setup_gitignore(project_root, args.dry_run)
         result.setdefault('status', 'success')
 
-    is_error = result.get('status') == 'error'
-    print(serialize_toon(result), file=sys.stderr if is_error else sys.stdout)
-    return 1 if is_error else 0
+    print(serialize_toon(result))
+    return 0
 
 
 if __name__ == '__main__':

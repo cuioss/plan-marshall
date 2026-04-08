@@ -61,7 +61,7 @@ def cmd_find_project(args):
                 {'status': 'error', 'error': 'root_not_found', 'message': f'Root directory not found: {args.root}'}
             )
         )
-        return 1
+        return 0
 
     if args.project_path:
         dir_path = (
@@ -78,7 +78,7 @@ def cmd_find_project(args):
                     }
                 )
             )
-            return 1
+            return 0
         build_file = None
         for ext in ['.kts', '']:
             candidate = full_path / f'build.gradle{ext}'
@@ -95,7 +95,7 @@ def cmd_find_project(args):
                     }
                 )
             )
-            return 1
+            return 0
         gradle_path = ':' + dir_path.replace('/', ':')
         parts = dir_path.split('/')
         parent_projects = [':' + ':'.join(parts[:i]) for i in range(1, len(parts))]
@@ -157,7 +157,7 @@ def cmd_find_project(args):
                 }
             )
         )
-        return 1
+        return 0
     if len(matches) > 1:
         print(
             _format_output(
@@ -169,7 +169,7 @@ def cmd_find_project(args):
                 }
             )
         )
-        return 1
+        return 0
 
     project_path = matches[0]
     dir_path = project_path.lstrip(':').replace(':', '/')
