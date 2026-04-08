@@ -33,28 +33,6 @@ class Extension(ExtensionBase):
         ]
 ```
 
-### Return Structure
-
-Each recipe dict returned by `provides_recipes()`:
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `key` | str | Yes | Unique recipe identifier — used in `resolve-recipe --recipe {key}` |
-| `name` | str | Yes | Human-readable display name for UI |
-| `description` | str | Yes | Description shown during recipe selection |
-| `skill` | str | Yes | Fully-qualified skill reference (`bundle:recipe-skill`) |
-| `default_change_type` | str | Yes | Change type for phase-3-outline (e.g., `tech_debt`, `feature`) |
-| `scope` | str | Yes | Scope indicator (`codebase_wide`, `module`) |
-| `profile` | str | No | Target profile — omit if user selects at plan creation time |
-| `package_source` | str | No | Package source — omit if user selects at plan creation time |
-
-**Auto-assigned fields** (do NOT include in return value):
-
-| Field | Value | Source |
-|-------|-------|--------|
-| `domain` | First domain key from `get_skill_domains()` | Auto-extracted |
-| `source` | `'extension'` | Auto-assigned |
-
 ## Runtime Invocation Contract
 
 ### Parameters
@@ -108,6 +86,28 @@ def provides_recipes(self) -> list[dict]:
     Default: []
     """
 ```
+
+### Return Structure
+
+Each recipe dict returned by `provides_recipes()`:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `key` | str | Yes | Unique recipe identifier — used in `resolve-recipe --recipe {key}` |
+| `name` | str | Yes | Human-readable display name for UI |
+| `description` | str | Yes | Description shown during recipe selection |
+| `skill` | str | Yes | Fully-qualified skill reference (`bundle:recipe-skill`) |
+| `default_change_type` | str | Yes | Change type for phase-3-outline (e.g., `tech_debt`, `feature`) |
+| `scope` | str | Yes | Scope indicator (`codebase_wide`, `module`) |
+| `profile` | str | No | Target profile — omit if user selects at plan creation time |
+| `package_source` | str | No | Package source — omit if user selects at plan creation time |
+
+**Auto-assigned fields** (do NOT include in return value):
+
+| Field | Value | Source |
+|-------|-------|--------|
+| `domain` | First domain key from `get_skill_domains()` | Auto-extracted |
+| `source` | `'extension'` | Auto-assigned |
 
 ## Resolution
 

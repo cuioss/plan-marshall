@@ -10,7 +10,7 @@ Verify steps extensions declare domain-specific verification agents that run aft
 
 ### Interface Contract
 
-Each verify step skill receives `--plan-id` only. Retry logic is managed by the task runner (Step 9 triage loop), not by the step itself.
+Each verify step skill receives `--plan-id` and `--iteration` (current verification iteration, 1-based). Retry logic is managed by the task runner (Step 9 triage loop), not by the step itself.
 
 **Return Contract** (required TOON output):
 
