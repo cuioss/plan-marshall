@@ -71,6 +71,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `finalize-step` | `--plan-id --task --step --outcome [--reason]` | Complete step with outcome (done/skipped) |
 | `add-step` | `--plan-id --task --target [--after]` | Add step to task |
 | `remove-step` | `--plan-id --task --step` | Remove step from task |
+| `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 
 ### Add Command (--content CLI argument)
 
