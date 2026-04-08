@@ -20,6 +20,7 @@ Subcommands:
   finalize-step    - Complete a step with outcome (done/skipped)
   add-step         - Add a new step to a task
   remove-step      - Remove a step from a task
+  rename-path      - Record a path rename mapping
 
 Output: TOON format for all operations.
 
@@ -32,6 +33,7 @@ import argparse
 
 from _cmd_crud import cmd_add, cmd_remove, cmd_update
 from _cmd_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
+from _cmd_rename import cmd_rename_path
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
@@ -124,6 +126,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_remove_step.add_argument('--task', required=True, type=int, help='Task number')
     p_remove_step.add_argument('--step', required=True, type=int, help='Step number')
 
+    # rename-path
+    p_rename = subparsers.add_parser('rename-path', help='Record a path rename mapping')
+    add_plan_id_arg(p_rename)
+    p_rename.add_argument('--old-path', required=True, help='Original path before rename')
+    p_rename.add_argument('--new-path', required=True, help='New path after rename')
+
     return parser
 
 
@@ -141,6 +149,7 @@ COMMANDS = {
     'finalize-step': cmd_finalize_step,
     'add-step': cmd_add_step,
     'remove-step': cmd_remove_step,
+    'rename-path': cmd_rename_path,
 }
 
 

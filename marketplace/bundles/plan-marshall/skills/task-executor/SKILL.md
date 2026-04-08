@@ -30,6 +30,17 @@ Skill: plan-marshall:dev-general-practices
 
 All profiles share these steps. Profile-specific steps are documented in each profile section below.
 
+### Step: Resolve Stale Targets
+
+Check if a rename mapping exists and rewrite step targets before loading the task. This handles cases where earlier tasks renamed directories, making subsequent step targets stale.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files exists \
+  --plan-id {plan_id} --file work/rename_mapping.toon
+```
+
+If `exists: true`, the rename mapping has already been applied to task step targets at recording time (by the `rename-path` subcommand). No further action needed — proceed to Load Task Context. The mapping file serves as an audit trail of path changes during the plan.
+
 ### Step: Load Task Context
 
 ```bash
