@@ -6,26 +6,56 @@
 
 Triage extensions declare domain-specific finding decision-making knowledge: suppression syntax, severity guidelines, and acceptable-to-accept criteria. When verification produces findings (build warnings, test failures, Sonar issues), the triage skill for the relevant domain is loaded to decide the appropriate action for each finding.
 
-## Parameters
+## Implementor Requirements
+
+### Required Skill Sections
+
+The referenced triage skill MUST include these sections in its `SKILL.md`:
+
+| Section | Purpose | Content |
+|---------|---------|---------|
+| `## Suppression Syntax` | How to suppress findings | Annotation/comment syntax per finding type |
+| `## Severity Guidelines` | When to fix vs suppress vs accept | Decision table by severity |
+| `## Acceptable to Accept` | What can be accepted without fixing | Situations where accepting is appropriate |
+
+### Implementor Frontmatter
+
+All triage implementor skills must include in their SKILL.md frontmatter:
+
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-triage
+```
+
+### Implementation Pattern
+
+```python
+class Extension(ExtensionBase):
+    def provides_triage(self) -> str | None:
+        return "pm-dev-java:ext-triage-java"
+```
+
+## Runtime Invocation Contract
+
+### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `domain` | str | Yes | Domain key (e.g., `java`, `python`, `documentation`) |
 | `finding` | dict | Yes | Finding dict with `file`, `line`, `message`, `severity`, `source` |
 
-## Pre-Conditions
+### Pre-Conditions
 
 - Domain is registered in `marshal.json` under `skill_domains.{domain_key}`
 - Triage skill exists and is loadable via `resolve-workflow-skill-extension --domain {domain} --type triage`
 - Findings have been collected from verification (build, test, lint, Sonar)
 
-## Post-Conditions
+### Post-Conditions
 
 - Each finding gets a decision: **FIX**, **SUPPRESS**, or **ACCEPT** with rationale
 - Suppressions include syntax-correct annotation/comment for the domain
 - Decisions are logged to `decision.log`
 
-## Lifecycle
+### Lifecycle
 
 ```
 1. Run verification (build, test, lint, Sonar)
@@ -39,7 +69,9 @@ Triage extensions declare domain-specific finding decision-making knowledge: sup
 4. Apply fixes/suppressions -> re-run verification if changes made
 ```
 
-## Python API
+## Hook API
+
+### Python API
 
 ```python
 def provides_triage(self) -> str | None:
@@ -49,7 +81,7 @@ def provides_triage(self) -> str | None:
     """
 ```
 
-## Return Structure
+### Return Structure
 
 Returns a skill reference string (`bundle:skill`) or `None`.
 
@@ -57,16 +89,6 @@ Returns a skill reference string (`bundle:skill`) or `None`.
 |-------|---------|
 | `"pm-dev-java:ext-triage-java"` | Domain has a triage skill |
 | `None` | No triage skill; use default severity mapping |
-
-## Required Skill Sections
-
-The referenced triage skill MUST include these sections in its `SKILL.md`:
-
-| Section | Purpose | Content |
-|---------|---------|---------|
-| `## Suppression Syntax` | How to suppress findings | Annotation/comment syntax per finding type |
-| `## Severity Guidelines` | When to fix vs suppress vs accept | Decision table by severity |
-| `## Acceptable to Accept` | What can be accepted without fixing | Situations where accepting is appropriate |
 
 ## Storage in marshal.json
 
@@ -85,27 +107,11 @@ The referenced triage skill MUST include these sections in its `SKILL.md`:
 
 **Path**: `skill_domains.{domain_key}.workflow_skill_extensions.triage`
 
-## Resolution Commands
+## Resolution
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-workflow-skill-extension --domain {domain} --type triage
-```
-
-## Implementation Pattern
-
-```python
-class Extension(ExtensionBase):
-    def provides_triage(self) -> str | None:
-        return "pm-dev-java:ext-triage-java"
-```
-
-## Implementor Frontmatter
-
-All triage implementor skills must include in their SKILL.md frontmatter:
-
-```yaml
-implements: plan-marshall:extension-api/standards/ext-point-triage
 ```
 
 ## Current Implementations

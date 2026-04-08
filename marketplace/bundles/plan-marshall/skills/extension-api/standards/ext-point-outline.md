@@ -6,61 +6,9 @@
 
 Outline extensions declare domain-specific outline skills with change-type routing for solution outline creation. The skill provides `standards/change-types.md` (or individual `standards/change-{type}.md` files) with domain-specific discovery, analysis, and deliverable logic. When no domain outline skill exists, the generic `plan-marshall:phase-3-outline` standards are used as fallback.
 
-## Parameters
+## Implementor Requirements
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan_id` | str | Yes | Plan identifier |
-| `change_type` | enum | Yes | One of: `feature`, `enhancement`, `bug_fix`, `tech_debt`, `analysis`, `verification` |
-| `domain` | str | Yes | Domain key from `skill_domains` |
-
-## Pre-Conditions
-
-- Plan initialized with `request.md`
-- Change type detected by `detect-change-type-agent`
-- Domain has a registered outline skill via `provides_outline_skill()`, or falls back to generic `plan-marshall:phase-3-outline` standards
-
-## Post-Conditions
-
-- `solution_outline.md` written with deliverables
-- Each deliverable has scope, description, acceptance criteria, affected files, verification commands
-- Assessments logged to `artifacts/assessments.jsonl`
-
-## Lifecycle
-
-```
-1. phase-3-outline detects change type
-2. resolve-outline-skill --domain {domain}
-3. If domain_specific: load domain skill, read change-type instructions
-4. If generic: read plan-marshall:phase-3-outline/standards/change-{type}.md
-5. Execute discovery, analysis, deliverable creation
-6. Write solution_outline.md
-7. Q-Gate verification
-```
-
-## Python API
-
-```python
-def provides_outline_skill(self) -> str | None:
-    """Return domain-specific outline skill reference as 'bundle:skill', or None.
-
-    Fallback: If None, generic plan-marshall:phase-3-outline
-    standards are used.
-
-    Default: None
-    """
-```
-
-## Return Structure
-
-Returns a skill reference string (`bundle:skill`) or `None`.
-
-| Value | Meaning |
-|-------|---------|
-| `"pm-plugin-development:ext-outline-workflow"` | Domain has a custom outline skill |
-| `None` | Use generic `plan-marshall:phase-3-outline` standards |
-
-## Skill Structure Convention
+### Skill Structure Convention
 
 ```
 {bundle}/skills/{skill}/
@@ -80,6 +28,80 @@ Returns a skill reference string (`bundle:skill`) or `None`.
 
 Not all change types need coverage — unsupported types fall back to generic standards.
 
+### Implementor Frontmatter
+
+All outline implementor skills must include in their SKILL.md frontmatter:
+
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-outline
+```
+
+### Implementation Pattern
+
+```python
+class Extension(ExtensionBase):
+    def provides_outline_skill(self) -> str | None:
+        return "pm-plugin-development:ext-outline-workflow"
+```
+
+## Runtime Invocation Contract
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plan_id` | str | Yes | Plan identifier |
+| `change_type` | enum | Yes | One of: `feature`, `enhancement`, `bug_fix`, `tech_debt`, `analysis`, `verification` |
+| `domain` | str | Yes | Domain key from `skill_domains` |
+
+### Pre-Conditions
+
+- Plan initialized with `request.md`
+- Change type detected by `detect-change-type-agent`
+- Domain has a registered outline skill via `provides_outline_skill()`, or falls back to generic `plan-marshall:phase-3-outline` standards
+
+### Post-Conditions
+
+- `solution_outline.md` written with deliverables
+- Each deliverable has scope, description, acceptance criteria, affected files, verification commands
+- Assessments logged to `artifacts/assessments.jsonl`
+
+### Lifecycle
+
+```
+1. phase-3-outline detects change type
+2. resolve-outline-skill --domain {domain}
+3. If domain_specific: load domain skill, read change-type instructions
+4. If generic: read plan-marshall:phase-3-outline/standards/change-{type}.md
+5. Execute discovery, analysis, deliverable creation
+6. Write solution_outline.md
+7. Q-Gate verification
+```
+
+## Hook API
+
+### Python API
+
+```python
+def provides_outline_skill(self) -> str | None:
+    """Return domain-specific outline skill reference as 'bundle:skill', or None.
+
+    Fallback: If None, generic plan-marshall:phase-3-outline
+    standards are used.
+
+    Default: None
+    """
+```
+
+### Return Structure
+
+Returns a skill reference string (`bundle:skill`) or `None`.
+
+| Value | Meaning |
+|-------|---------|
+| `"pm-plugin-development:ext-outline-workflow"` | Domain has a custom outline skill |
+| `None` | Use generic `plan-marshall:phase-3-outline` standards |
+
 ## Storage in marshal.json
 
 ```json
@@ -98,7 +120,7 @@ Not all change types need coverage — unsupported types fall back to generic st
 
 **Path**: `skill_domains.{domain_key}.outline_skill`
 
-## Resolution Commands
+## Resolution
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -106,22 +128,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ```
 
 Returns `source: domain_specific` when a custom skill exists, or `source: generic_fallback` when using defaults.
-
-## Implementation Pattern
-
-```python
-class Extension(ExtensionBase):
-    def provides_outline_skill(self) -> str | None:
-        return "pm-plugin-development:ext-outline-workflow"
-```
-
-## Implementor Frontmatter
-
-All outline implementor skills must include in their SKILL.md frontmatter:
-
-```yaml
-implements: plan-marshall:extension-api/standards/ext-point-outline
-```
 
 ## Current Implementations
 

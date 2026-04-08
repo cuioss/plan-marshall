@@ -6,26 +6,61 @@
 
 Verify steps extensions declare domain-specific verification agents that run after implementation tasks complete. Steps are appended to the flat `steps` list in `plan.phase-5-execute.steps` and executed as holistic verification tasks.
 
-## Parameters
+## Implementor Requirements
+
+### Interface Contract
+
+Each verify step skill receives `--plan-id` and `--iteration` (current verification iteration, 1-based). Retry logic is managed by the task runner (Step 9 triage loop), not by the step itself.
+
+**Return Contract** (required TOON output):
+
+```toon
+status: passed|failed
+message: "Human-readable summary"
+
+# Optional — only when status: failed
+findings[N]{file,line,message,severity}:
+src/Foo.java,42,Unused import,warning
+```
+
+### Implementation Pattern
+
+```python
+class Extension(ExtensionBase):
+    def provides_verify_steps(self) -> list[dict]:
+        return [
+            {
+                'name': 'my-bundle:my-verify-step',
+                'skill': 'my-bundle:my-verify-step',
+                'description': 'Custom domain verification',
+            },
+        ]
+```
+
+## Runtime Invocation Contract
+
+### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | str | Yes | Plan identifier |
 | `iteration` | int | Yes | Current verification iteration (1-based) |
 
-## Pre-Conditions
+### Pre-Conditions
 
 - Plan has completed all implementation tasks
 - Steps registered in `marshal.json` under `plan.phase-5-execute.steps`
 - Built-in steps (`default:quality_check`, `default:build_verify`) execute first
 
-## Post-Conditions
+### Post-Conditions
 
 - Verification result with pass/fail status
 - Findings logged if failures detected
 - Failed findings triaged via domain triage extension (Step 9 of phase-5-execute)
 
-## Python API
+## Hook API
+
+### Python API
 
 ```python
 def provides_verify_steps(self) -> list[dict]:
@@ -40,7 +75,7 @@ def provides_verify_steps(self) -> list[dict]:
     """
 ```
 
-## Return Structure
+### Return Structure
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -70,7 +105,7 @@ Extension steps are appended to the flat `plan.phase-5-execute.steps` list after
 
 Built-in steps are always first. Extension steps follow in discovery order.
 
-## Manage Commands
+## Resolution
 
 ```bash
 # Add a verify step
@@ -87,35 +122,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 # List all available verify steps (built-in + extensions)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
-```
-
-## Interface Contract
-
-Each verify step skill receives `--plan-id` only. Retry logic is managed by the task runner (Step 9 triage loop), not by the step itself.
-
-**Return Contract** (required TOON output):
-
-```toon
-status: passed|failed
-message: "Human-readable summary"
-
-# Optional — only when status: failed
-findings[N]{file,line,message,severity}:
-src/Foo.java,42,Unused import,warning
-```
-
-## Implementation Pattern
-
-```python
-class Extension(ExtensionBase):
-    def provides_verify_steps(self) -> list[dict]:
-        return [
-            {
-                'name': 'my-bundle:my-verify-step',
-                'skill': 'my-bundle:my-verify-step',
-                'description': 'Custom domain verification',
-            },
-        ]
 ```
 
 ## Current Implementations
