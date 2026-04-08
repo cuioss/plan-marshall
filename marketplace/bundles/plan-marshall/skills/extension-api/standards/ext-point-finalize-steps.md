@@ -6,26 +6,64 @@
 
 Finalize steps extensions declare domain-specific steps that execute during the phase-6-finalize pipeline. Steps are discovered by marshall-steward and presented to the user for selection. Selected steps run in the configured order during plan finalization.
 
-## Parameters
+## Implementor Requirements
+
+### Interface Contract
+
+Each finalize step skill receives:
+
+| Parameter | Description |
+|-----------|-------------|
+| `--plan-id` | The plan being finalized |
+| `--iteration` | Current finalize iteration (1-based) |
+
+The step skill can access plan context via manage-* scripts.
+
+**Return Contract** (required TOON output):
+
+```toon
+status: passed|failed
+message: "Human-readable summary"
+```
+
+### Implementation Pattern
+
+```python
+class Extension(ExtensionBase):
+    def provides_finalize_steps(self) -> list[dict]:
+        return [
+            {
+                'name': 'pm-dev-java:java-post-pr',
+                'skill': 'pm-dev-java:java-post-pr',
+                'description': 'Java post-PR validation and artifact publishing',
+            },
+        ]
+```
+
+## Runtime Invocation Contract
+
+### Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `plan_id` | str | Yes | Plan being finalized |
 | `iteration` | int | Yes | Current finalize iteration (1-based) |
 
-## Pre-Conditions
+### Pre-Conditions
 
 - Plan has passed verification (phase-5-execute complete)
 - Steps registered in `marshal.json` under `plan.phase-6-finalize.steps`
 - User selected steps during `/marshall-steward` configuration
 
-## Post-Conditions
+### Post-Conditions
 
 - Domain-specific finalization complete
 - Step reports success/failure via TOON return contract
 - Findings logged if failures detected
 
-## Python API
+## Hook API
+
+### Python API
 
 ```python
 def provides_finalize_steps(self) -> list[dict]:
@@ -40,7 +78,7 @@ def provides_finalize_steps(self) -> list[dict]:
     """
 ```
 
-## Return Structure
+### Return Structure
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -71,38 +109,6 @@ Extension-contributed steps are added to the ordered `steps` list:
 **Path**: `plan.phase-6-finalize.steps`
 
 The step reference is the fully-qualified skill notation. Position determines execution order.
-
-## Interface Contract
-
-Each finalize step skill receives:
-
-| Parameter | Description |
-|-----------|-------------|
-| `--plan-id` | The plan being finalized |
-| `--iteration` | Current finalize iteration (1-based) |
-
-The step skill can access plan context via manage-* scripts.
-
-**Return Contract** (required TOON output):
-
-```toon
-status: passed|failed
-message: "Human-readable summary"
-```
-
-## Implementation Pattern
-
-```python
-class Extension(ExtensionBase):
-    def provides_finalize_steps(self) -> list[dict]:
-        return [
-            {
-                'name': 'pm-dev-java:java-post-pr',
-                'skill': 'pm-dev-java:java-post-pr',
-                'description': 'Java post-PR validation and artifact publishing',
-            },
-        ]
-```
 
 ## Current Implementations
 

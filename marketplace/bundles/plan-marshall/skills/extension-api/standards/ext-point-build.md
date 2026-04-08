@@ -8,59 +8,27 @@ Build system extensions provide module discovery and build command execution for
 
 This document is a unifying reference that links to the detailed specifications without duplicating them.
 
-## Parameters
+## Implementor Requirements
 
-### Discovery
+### Implementation Pattern
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `project_root` | str | Yes | Absolute path to project root |
+To create a new build skill:
 
-### Execution
+1. Create `skills/build-{tool}/` under `plan-marshall` bundle
+2. Implement `ExecuteConfig` with tool-specific wrapper/command
+3. Provide standard subcommands via `create_execute_handlers()`
+4. Register module discovery in `extension.py` `discover_modules()`
+5. Add `implements` frontmatter to SKILL.md
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `command_args` | str | Yes | Build command string (e.g., `compile module-name`) |
-| `module` | str | No | Module scope (varies by tool) |
+### Implementor Frontmatter
 
-## Pre-Conditions (Discovery)
+All build implementor skills must include in their SKILL.md frontmatter:
 
-- Project root contains recognizable descriptor files (e.g., `pom.xml`, `package.json`, `build.gradle`, `pyproject.toml`)
-- Build tool wrapper or system installation available
-
-## Post-Conditions (Discovery)
-
-- Module list with `name`, `build_systems`, `paths`, `metadata`, `commands`
-- All commands fully resolved with routing embedded
-- See [module-discovery.md](module-discovery.md) for complete output specification
-
-## Pre-Conditions (Execution)
-
-- Wrapper or system build tool available on PATH
-- Log directory writable (`.plan/logs/`)
-- Command resolved via `architecture resolve`
-
-## Post-Conditions (Execution)
-
-- Result dict with `status`, `exit_code`, `duration_seconds`, `log_file`, `command`
-- Log file persisted to `.plan/logs/`
-- Timeout learning updated in `run-configuration.json`
-- See [build-execution.md](build-execution.md) for complete execution API
-
-## Factory Pattern
-
-Build skills use the `ExecuteConfig` dataclass + `create_execute_handlers()` factory in `_build_execute_factory.py`:
-
-```python
-@dataclass
-class ExecuteConfig:
-    tool_name: str           # e.g., "maven", "gradle"
-    wrapper_names: list      # e.g., ["mvnw", "./mvnw"]
-    system_command: str      # e.g., "mvn"
-    descriptor_file: str     # e.g., "pom.xml"
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-build
 ```
 
-## CLI Contract
+### CLI Contract
 
 Standard subcommands for all build skills:
 
@@ -72,7 +40,7 @@ Standard subcommands for all build skills:
 | `coverage-report` | Parse coverage report (JaCoCo, etc.) |
 | `discover` | Discover project modules |
 
-## Detailed Specifications
+### Detailed Specifications
 
 | Document | Content |
 |----------|---------|
@@ -82,22 +50,58 @@ Standard subcommands for all build skills:
 | [build-api-reference.md](build-api-reference.md) | Internal API reference for build scripts |
 | [build-systems-common.md](build-systems-common.md) | Shared patterns across build systems |
 
-## Implementation Pattern
+## Runtime Invocation Contract
 
-To create a new build skill:
+### Parameters (Discovery)
 
-1. Create `skills/build-{tool}/` under `plan-marshall` bundle
-2. Implement `ExecuteConfig` with tool-specific wrapper/command
-3. Provide standard subcommands via `create_execute_handlers()`
-4. Register module discovery in `extension.py` `discover_modules()`
-5. Add `implements` frontmatter to SKILL.md
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root` | str | Yes | Absolute path to project root |
 
-## Implementor Frontmatter
+### Parameters (Execution)
 
-All build implementor skills must include in their SKILL.md frontmatter:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `command_args` | str | Yes | Build command string (e.g., `compile module-name`) |
+| `module` | str | No | Module scope (varies by tool) |
 
-```yaml
-implements: plan-marshall:extension-api/standards/ext-point-build
+### Pre-Conditions (Discovery)
+
+- Project root contains recognizable descriptor files (e.g., `pom.xml`, `package.json`, `build.gradle`, `pyproject.toml`)
+- Build tool wrapper or system installation available
+
+### Post-Conditions (Discovery)
+
+- Module list with `name`, `build_systems`, `paths`, `metadata`, `commands`
+- All commands fully resolved with routing embedded
+- See [module-discovery.md](module-discovery.md) for complete output specification
+
+### Pre-Conditions (Execution)
+
+- Wrapper or system build tool available on PATH
+- Log directory writable (`.plan/logs/`)
+- Command resolved via `architecture resolve`
+
+### Post-Conditions (Execution)
+
+- Result dict with `status`, `exit_code`, `duration_seconds`, `log_file`, `command`
+- Log file persisted to `.plan/logs/`
+- Timeout learning updated in `run-configuration.json`
+- See [build-execution.md](build-execution.md) for complete execution API
+
+## Hook API
+
+### Factory Pattern
+
+Build skills use the `ExecuteConfig` dataclass + `create_execute_handlers()` factory in `_build_execute_factory.py`:
+
+```python
+@dataclass
+class ExecuteConfig:
+    tool_name: str           # e.g., "maven", "gradle"
+    wrapper_names: list      # e.g., ["mvnw", "./mvnw"]
+    system_command: str      # e.g., "mvn"
+    descriptor_file: str     # e.g., "pom.xml"
 ```
 
 ## Current Implementations

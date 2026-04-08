@@ -6,28 +6,34 @@
 
 Recipe extensions declare predefined, repeatable transformations that bypass change-type detection and provide their own discovery, analysis, and deliverable patterns. Recipes are presented to users via `/plan-marshall action=recipe` and execute deterministic architecture-to-deliverable mappings.
 
-## Parameters
+## Implementor Requirements
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `plan_id` | str | Yes | Plan identifier |
-| `recipe_domain` | str | No | Domain key (user-selected or recipe-declared) |
-| `recipe_profile` | str | No | Target profile (`implementation`, `module_testing`) |
-| `recipe_package_source` | str | No | Package source (`packages`, `test_packages`) |
+### Implementor Frontmatter
 
-## Pre-Conditions
+All recipe implementor skills must include in their SKILL.md frontmatter:
 
-- Recipe resolved via `resolve-recipe --recipe {key}`
-- Plan initialized via phase-1-init
-- Domain extension loaded (for extension-sourced recipes)
+```yaml
+implements: plan-marshall:extension-api/standards/ext-point-recipe
+```
 
-## Post-Conditions
+### Implementation Pattern
 
-- `solution_outline.md` written with module-grouped deliverables
-- Recipe metadata stored in `status.json` (`recipe_key`, `recipe_skill`, `recipe_domain`, etc.)
-- Each deliverable has scope, affected files, verification commands
+```python
+class Extension(ExtensionBase):
+    def provides_recipes(self) -> list[dict]:
+        return [
+            {
+                'key': 'refactor-to-profile-standards',
+                'name': 'Refactor to Profile Standards',
+                'description': 'Refactor code to comply with configured profile standards',
+                'skill': 'plan-marshall:recipe-refactor-to-profile-standards',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+        ]
+```
 
-## Return Structure
+### Return Structure
 
 Each recipe dict returned by `provides_recipes()`:
 
@@ -49,7 +55,30 @@ Each recipe dict returned by `provides_recipes()`:
 | `domain` | First domain key from `get_skill_domains()` | Auto-extracted |
 | `source` | `'extension'` | Auto-assigned |
 
-## Lifecycle
+## Runtime Invocation Contract
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plan_id` | str | Yes | Plan identifier |
+| `recipe_domain` | str | No | Domain key (user-selected or recipe-declared) |
+| `recipe_profile` | str | No | Target profile (`implementation`, `module_testing`) |
+| `recipe_package_source` | str | No | Package source (`packages`, `test_packages`) |
+
+### Pre-Conditions
+
+- Recipe resolved via `resolve-recipe --recipe {key}`
+- Plan initialized via phase-1-init
+- Domain extension loaded (for extension-sourced recipes)
+
+### Post-Conditions
+
+- `solution_outline.md` written with module-grouped deliverables
+- Recipe metadata stored in `status.json` (`recipe_key`, `recipe_skill`, `recipe_domain`, etc.)
+- Each deliverable has scope, affected files, verification commands
+
+### Lifecycle
 
 ```
 1. /plan-marshall action=recipe
@@ -61,7 +90,16 @@ Each recipe dict returned by `provides_recipes()`:
 7. Recipe skill: discovery, deliverable creation, solution_outline.md
 ```
 
-## Python API
+### Recipe Discovery Sources
+
+Recipes are discovered from two sources (in order):
+
+1. **Extension `provides_recipes()`** — domain bundle recipes (source: `extension`)
+2. **Project `recipe-*` skills in `.claude/skills/`** — project-level recipes (source: `project`)
+
+## Hook API
+
+### Python API
 
 ```python
 def provides_recipes(self) -> list[dict]:
@@ -71,14 +109,7 @@ def provides_recipes(self) -> list[dict]:
     """
 ```
 
-## Recipe Discovery Sources
-
-Recipes are discovered from two sources (in order):
-
-1. **Extension `provides_recipes()`** — domain bundle recipes (source: `extension`)
-2. **Project `recipe-*` skills in `.claude/skills/`** — project-level recipes (source: `project`)
-
-## Resolution Commands
+## Resolution
 
 ```bash
 # List all recipes from all sources
@@ -87,31 +118,6 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-r
 # Resolve a specific recipe by key
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-recipe --recipe {key}
-```
-
-## Implementation Pattern
-
-```python
-class Extension(ExtensionBase):
-    def provides_recipes(self) -> list[dict]:
-        return [
-            {
-                'key': 'refactor-to-profile-standards',
-                'name': 'Refactor to Profile Standards',
-                'description': 'Refactor code to comply with configured profile standards',
-                'skill': 'plan-marshall:recipe-refactor-to-profile-standards',
-                'default_change_type': 'tech_debt',
-                'scope': 'codebase_wide',
-            },
-        ]
-```
-
-## Implementor Frontmatter
-
-All recipe implementor skills must include in their SKILL.md frontmatter:
-
-```yaml
-implements: plan-marshall:extension-api/standards/ext-point-recipe
 ```
 
 ## Current Implementations
