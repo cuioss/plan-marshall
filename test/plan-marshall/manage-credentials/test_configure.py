@@ -204,15 +204,17 @@ class TestConfigureAuthTypeValidation:
         assert 'incompatible' in result.stdout.lower()
         assert 'token' in result.stdout
 
-    def test_configure_accepts_matching_auth_type(self):
+    def test_configure_accepts_matching_auth_type(self, tmp_path):
         """Configure accepts auth_type that matches provider's declared auth_type."""
         from _credentials_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
 
+        (tmp_path / '.plan').mkdir()
         skill = 'workflow-integration-sonar'
         result = run_script(
             SCRIPT_PATH, 'configure',
             '--skill', skill,
             '--auth-type', 'token',
+            cwd=tmp_path,
         )
         try:
             assert result.returncode == 0
@@ -254,11 +256,12 @@ class TestConfigureMarshalJsonSeparation:
             '--skill', skill,
             '--auth-type', 'token',
             '--url', 'https://sonarcloud.io',
+            cwd=tmp_path,
         )
         try:
             assert result.returncode == 0
 
-            # URL should be in marshal.json
+            # URL should be in marshal.json (subprocess wrote to tmp_path/.plan/)
             provider_config = read_provider_config(skill)
             assert provider_config.get('url') == 'https://sonarcloud.io'
 
@@ -289,10 +292,12 @@ class TestConfigureMarshalJsonSeparation:
             '--skill', skill,
             '--auth-type', 'token',
             '--extra', 'organization=my-org', 'project_key=my-project',
+            cwd=tmp_path,
         )
         try:
             assert result.returncode == 0
 
+            # read_provider_config reads from cwd (monkeypatched to tmp_path)
             provider_config = read_provider_config(skill)
             assert provider_config.get('organization') == 'my-org'
             assert provider_config.get('project_key') == 'my-project'
@@ -311,7 +316,7 @@ class TestConfigureMarshalJsonSeparation:
 class TestConfigureAuthTypeMismatch:
     """Tests for configure reconfiguring when auth_type changes."""
 
-    def test_configure_reconfigures_on_auth_type_mismatch(self):
+    def test_configure_reconfigures_on_auth_type_mismatch(self, tmp_path):
         """Configure with token auth overwrites existing none credential."""
         from _credentials_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
@@ -319,6 +324,7 @@ class TestConfigureAuthTypeMismatch:
             save_credential,
         )
 
+        (tmp_path / '.plan').mkdir()
         skill = 'workflow-integration-sonar'
         # Pre-create with auth_type=none
         data = {
@@ -334,6 +340,7 @@ class TestConfigureAuthTypeMismatch:
                 '--skill', skill,
                 '--url', 'https://sonarcloud.io',
                 '--auth-type', 'token',
+                cwd=tmp_path,
             )
             # Should create new file with token placeholder, not return exists_complete
             if result.returncode == 0:
