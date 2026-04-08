@@ -68,7 +68,8 @@ def _discover_provider_tools() -> dict[str, str | None]:
             # Extract tool from verify_command: "gh auth status" -> "gh"
             verify_cmd = p.get('verify_command', '')
             if verify_cmd:
-                tool = verify_cmd.split()[0]
+                import shlex
+                tool = shlex.split(verify_cmd)[0]
                 mapping[provider_key] = tool
 
         # Only return if we found at least one CI provider

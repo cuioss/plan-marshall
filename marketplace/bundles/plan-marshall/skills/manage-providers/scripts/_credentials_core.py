@@ -703,8 +703,9 @@ def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
         }
 
     try:
+        import shlex
         result = subprocess.run(
-            verify_command.split(),
+            shlex.split(verify_command),
             capture_output=True,
             text=True,
             timeout=30,
