@@ -54,7 +54,8 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
         return {}
     try:
         config = json.loads(MARSHAL_JSON_PATH.read_text(encoding='utf-8'))
-        return config.get('credentials_config', {}).get(skill_name, {})
+        result: dict[str, Any] = config.get('credentials_config', {}).get(skill_name, {})
+        return result
     except (json.JSONDecodeError, KeyError):
         return {}
 
