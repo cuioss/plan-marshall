@@ -1,6 +1,6 @@
 # Security Considerations
 
-Reference document for the manage-credentials skill covering threat model, security boundaries, and implementation constraints.
+Reference document for the manage-providers skill covering threat model, security boundaries, and implementation constraints.
 
 ## Threat Model
 

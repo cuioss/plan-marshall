@@ -463,7 +463,7 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 
 ## Configuration: Credentials & Secrets
 
-Manage credentials for external tool authentication (SonarCloud, etc.).
+Manage credentials for external tool authentication (SonarCloud, etc.). System-authenticated providers (CI tools like `gh`/`glab` and `git`) are managed via Step 14 of the wizard and the Health Check menu. This section covers token/basic-auth providers only.
 
 ### Credentials Submenu
 
@@ -494,9 +494,9 @@ AskUserQuestion:
 |-----------|--------|
 | configure | Two-phase workflow (see below) |
 | edit | Two-phase workflow (see below) |
-| list | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list` |
-| verify | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill}` |
-| remove | `python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials remove --skill {skill}` |
+| list | `python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list` |
+| verify | `python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify --skill {skill}` |
+| remove | `python3 .plan/execute-script.py plan-marshall:manage-providers:credentials remove --skill {skill}` |
 
 For `edit`, `verify`, and `remove`: if `--skill` is not known, first run `list` to show available skills, then ask the user which one to operate on.
 
@@ -506,28 +506,28 @@ Non-secret values collected via `AskUserQuestion`. Secrets entered by user editi
 
 1. Discover providers:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
    ```
 2. Ask scope via `AskUserQuestion`: "Global" (shared across projects) or "Project" (this project only). Default: global.
 3. Collect URL, auth type via `AskUserQuestion` (use provider defaults as recommended)
 4. If provider has `extra_fields` (check `list-providers` output): auto-detect from CI config, confirm with user
 5. Run configure to create credential file with placeholder secrets (include `--scope` from step 2):
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials configure \
      --skill {skill} --url {url} --auth-type {auth_type} --scope {scope} \
      --extra organization={org} project_key={project_key}
    ```
 6. If `needs_editing: true`: tell user to open `{path}` and replace placeholders with real secrets. Wait for confirmation, then check:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill} --scope {scope}
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check --skill {skill} --scope {scope}
    ```
 7. Optionally verify:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill} --scope {scope}
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify --skill {skill} --scope {scope}
    ```
 8. Run ensure-denied:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied --target project
    ```
 9. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
    ```bash
@@ -547,12 +547,12 @@ Non-secret field updates via CLI args. For secret changes, user edits the creden
 1. Collect URL and auth type changes via `AskUserQuestion`
 2. Run edit via executor with CLI args:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials edit \
      --skill {skill} --url {url} --auth-type {auth_type}
    ```
 3. If `needs_editing: true`: tell user to edit `{path}` for secret changes, then run check:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill}
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check --skill {skill}
    ```
 
 ---

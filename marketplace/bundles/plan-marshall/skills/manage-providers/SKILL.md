@@ -1,6 +1,6 @@
 ---
-name: manage-credentials
-description: "Credential management for external tool authentication — secure storage, interactive configuration, and REST client infrastructure"
+name: manage-providers
+description: "Provider management for external tool authentication — secure storage, interactive configuration, and REST client infrastructure"
 user-invocable: false
 tools:
   - Bash
@@ -9,9 +9,9 @@ tools:
   - AskUserQuestion
 ---
 
-# Manage Credentials
+# Manage Providers
 
-Credential management skill for plan-marshall. Stores credentials outside LLM reach in `~/.plan-marshall-credentials/`, handles all user interaction via Python scripts (the LLM never sees secrets), and provides a `RestClient` for authenticated HTTP requests.
+Provider management skill for plan-marshall. Stores credentials outside LLM reach in `~/.plan-marshall-credentials/`, handles all user interaction via Python scripts (the LLM never sees secrets), and provides a `RestClient` for authenticated HTTP requests.
 
 ## Enforcement
 
@@ -46,7 +46,7 @@ Credential management skill for plan-marshall. Stores credentials outside LLM re
 ## Script Notation
 
 ```
-plan-marshall:manage-credentials:credentials
+plan-marshall:manage-providers:credentials
 ```
 
 ## Workflows
@@ -58,19 +58,19 @@ plan-marshall:manage-credentials:credentials
 1. **LLM phase**: Collect provider, URL, and auth type via `AskUserQuestion`
 2. **Run configure** to create credential file with placeholders:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials configure \
      --skill {skill} --url {url} --auth-type {auth_type} [--scope global|project] \
      [--extra KEY=VALUE ...]
    ```
 3. **If `needs_editing: true`**: Tell user to open the file path and replace placeholders with real secrets
 4. **After user confirms**: Run check to verify completeness:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check \
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check \
      --skill {skill} [--scope global|project]
    ```
 5. **Optionally verify** connectivity:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify \
+   python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify \
      --skill {skill} [--scope global|project]
    ```
 
@@ -88,7 +88,7 @@ plan-marshall:manage-credentials:credentials
 ### Check Credential Completeness
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check \
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check \
   --skill {skill} [--scope global|project]
 ```
 
@@ -97,7 +97,7 @@ Returns `complete`, `incomplete`, or `not_found`. Use after the user edits a cre
 ### List Available Providers
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
 Returns available credential extensions (what CAN be configured), not what IS configured. Use this in wizard/menu workflows to discover providers.
@@ -105,7 +105,7 @@ Returns available credential extensions (what CAN be configured), not what IS co
 ### List Configured Skills
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list [--scope global|project|all]
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list [--scope global|project|all]
 ```
 
 ### Edit Existing Credentials
@@ -113,7 +113,7 @@ python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials lis
 Updates non-secret fields (URL, auth type) via CLI args. For secret changes, the user edits the credential file directly.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials edit \
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials edit \
   --skill <name> [--url <url>] [--auth-type none|token|basic] [--scope global|project]
 ```
 
@@ -122,19 +122,19 @@ Returns `path` and `needs_editing` status. If secrets need updating, tell the us
 ### Verify Connectivity
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify [--skill <name>] [--scope global|project]
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify [--skill <name>] [--scope global|project]
 ```
 
 ### Remove Credentials
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials remove [--skill <name>] [--scope global|project]
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials remove [--skill <name>] [--scope global|project]
 ```
 
 ### Add Deny Rules
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied [--target global|project]
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied [--target global|project]
 ```
 
 ## Security Model

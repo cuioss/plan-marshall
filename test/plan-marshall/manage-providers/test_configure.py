@@ -8,7 +8,7 @@ and the check command for credential completeness.
 
 from conftest import get_script_path, run_script
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-credentials', 'credentials.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
 
 
 class TestConfigureCLI:
@@ -352,3 +352,179 @@ class TestConfigureAuthTypeMismatch:
             path = CREDENTIALS_DIR / f'{skill}.json'
             if path.exists():
                 path.unlink()
+
+
+# =============================================================================
+# Configure with auth_type=system Tests
+# =============================================================================
+
+
+class TestConfigureSystemAuth:
+    """Tests for configure with auth_type=system via direct import."""
+
+    def test_system_auth_creates_credential_without_secrets(self, tmp_path, monkeypatch):
+        """Configure with system auth creates credential file with no secret placeholders."""
+        from _cred_configure import run_configure  # type: ignore[import-not-found]
+        from _credentials_core import (  # type: ignore[import-not-found]
+            CREDENTIALS_DIR,
+            check_credential_completeness,
+            load_credential,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        (tmp_path / '.plan' / 'marshal.json').write_text('{}')
+
+        # Create a mock provider that declares system auth
+        mock_provider = {
+            'skill_name': 'test-system-provider',
+            'display_name': 'Test System CLI',
+            'auth_type': 'system',
+            'default_url': '',
+            'verify_command': 'echo ok',
+            'description': 'Test system auth provider',
+        }
+
+        class MockArgs:
+            skill = 'test-system-provider'
+            scope = 'global'
+            auth_type = 'system'
+            url = None
+            extra = None
+
+        try:
+            with monkeypatch.context() as m:
+                m.setattr(
+                    '_cred_configure.discover_credential_providers',
+                    lambda: [mock_provider],
+                )
+                run_configure(MockArgs())
+
+            loaded = load_credential('test-system-provider', 'global')
+            assert loaded is not None
+            assert loaded['auth_type'] == 'system'
+            # System auth should NOT have token, username, or password fields
+            assert 'token' not in loaded
+            assert 'username' not in loaded
+            assert 'password' not in loaded
+
+            completeness = check_credential_completeness('test-system-provider', 'global')
+            assert completeness['complete'] is True
+        finally:
+            path = CREDENTIALS_DIR / 'test-system-provider.json'
+            if path.exists():
+                path.unlink()
+
+    def test_system_auth_does_not_require_url(self, tmp_path, monkeypatch):
+        """Configure with system auth succeeds without --url."""
+        from _cred_configure import run_configure  # type: ignore[import-not-found]
+        from _credentials_core import CREDENTIALS_DIR, load_credential  # type: ignore[import-not-found]
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        (tmp_path / '.plan' / 'marshal.json').write_text('{}')
+
+        mock_provider = {
+            'skill_name': 'test-system-no-url',
+            'display_name': 'Test No URL',
+            'auth_type': 'system',
+            'default_url': '',
+            'verify_command': 'echo ok',
+            'description': 'System provider without URL',
+        }
+
+        class MockArgs:
+            skill = 'test-system-no-url'
+            scope = 'global'
+            auth_type = 'system'
+            url = None
+            extra = None
+
+        try:
+            with monkeypatch.context() as m:
+                m.setattr(
+                    '_cred_configure.discover_credential_providers',
+                    lambda: [mock_provider],
+                )
+                # Should not raise "URL is required"
+                ret = run_configure(MockArgs())
+
+            assert ret == 0
+            loaded = load_credential('test-system-no-url', 'global')
+            assert loaded is not None
+            assert loaded['auth_type'] == 'system'
+        finally:
+            path = CREDENTIALS_DIR / 'test-system-no-url.json'
+            if path.exists():
+                path.unlink()
+
+    def test_system_auth_rejects_incompatible_auth_type(self, tmp_path, monkeypatch):
+        """Configure rejects token auth when provider declares system."""
+        from _cred_configure import run_configure  # type: ignore[import-not-found]
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+
+        mock_provider = {
+            'skill_name': 'test-system-only',
+            'display_name': 'System Only Provider',
+            'auth_type': 'system',
+            'default_url': '',
+            'verify_command': 'echo ok',
+            'description': 'Only system auth allowed',
+        }
+
+        class MockArgs:
+            skill = 'test-system-only'
+            scope = 'global'
+            auth_type = 'token'
+            url = 'https://example.com'
+            extra = None
+
+        captured_output = {}
+
+        def mock_output(data):
+            captured_output.update(data)
+
+        with monkeypatch.context() as m:
+            m.setattr('_cred_configure.discover_credential_providers', lambda: [mock_provider])
+            m.setattr('_cred_configure.output_toon', mock_output)
+            run_configure(MockArgs())
+
+        assert captured_output.get('status') == 'error'
+        assert 'incompatible' in captured_output.get('message', '').lower()
+
+    def test_system_auth_invalid_auth_type_rejected(self, tmp_path, monkeypatch):
+        """Configure rejects invalid auth_type values."""
+        from _cred_configure import run_configure  # type: ignore[import-not-found]
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+
+        mock_provider = {
+            'skill_name': 'test-invalid',
+            'display_name': 'Test',
+            'auth_type': 'system',
+            'default_url': '',
+            'description': 'Test',
+        }
+
+        class MockArgs:
+            skill = 'test-invalid'
+            scope = 'global'
+            auth_type = 'oauth2'  # Not in VALID_AUTH_TYPES
+            url = None
+            extra = None
+
+        captured_output = {}
+
+        def mock_output(data):
+            captured_output.update(data)
+
+        with monkeypatch.context() as m:
+            m.setattr('_cred_configure.discover_credential_providers', lambda: [mock_provider])
+            m.setattr('_cred_configure.output_toon', mock_output)
+            run_configure(MockArgs())
+
+        assert captured_output.get('status') == 'error'
+        assert 'invalid auth type' in captured_output.get('message', '').lower()

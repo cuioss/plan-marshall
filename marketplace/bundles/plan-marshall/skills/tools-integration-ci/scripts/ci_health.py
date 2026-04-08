@@ -33,12 +33,56 @@ TOOLS = {
     'glab': True,
 }
 
-# Provider to required tool mapping
-PROVIDER_TOOLS = {
+# Fallback provider-to-tool mapping (used when provider discovery unavailable)
+_FALLBACK_PROVIDER_TOOLS = {
     'github': 'gh',
     'gitlab': 'glab',
     'unknown': None,
 }
+
+
+def _discover_provider_tools() -> dict[str, str | None]:
+    """Build provider-to-tool mapping from credential provider extensions.
+
+    Scans for system-authenticated CI credential extensions and derives the
+    tool name from each provider's verify_command. Falls back to hardcoded
+    mapping if discovery fails.
+
+    Returns:
+        Dict mapping provider name (github/gitlab/unknown) to CLI tool name.
+    """
+    try:
+        from _credentials_core import discover_credential_providers  # type: ignore[import-not-found]
+
+        providers = discover_credential_providers()
+        mapping: dict[str, str | None] = {'unknown': None}
+
+        for p in providers:
+            if p.get('auth_type') != 'system':
+                continue
+            skill_name = p.get('skill_name', '')
+            if not skill_name.startswith('tools-integration-ci-'):
+                continue
+            # Extract provider key: tools-integration-ci-github -> github
+            provider_key = skill_name.replace('tools-integration-ci-', '')
+            # Extract tool from verify_command: "gh auth status" -> "gh"
+            verify_cmd = p.get('verify_command', '')
+            if verify_cmd:
+                import shlex
+                tool = shlex.split(verify_cmd)[0]
+                mapping[provider_key] = tool
+
+        # Only return if we found at least one CI provider
+        if len(mapping) > 1:
+            return mapping
+    except (ImportError, Exception):
+        pass
+
+    return dict(_FALLBACK_PROVIDER_TOOLS)
+
+
+# Provider to required tool mapping (resolved at module load)
+PROVIDER_TOOLS = _discover_provider_tools()
 
 
 def run_command(cmd: list[str], cwd: str | None = None) -> tuple[int, str, str]:

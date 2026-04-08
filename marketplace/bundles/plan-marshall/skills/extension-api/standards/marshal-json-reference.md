@@ -47,8 +47,8 @@ Central reference for all extension-related configuration paths in `marshal.json
 | Data | Discovery | Used By | Extension Point Doc |
 |------|-----------|---------|---------------------|
 | Recipe list | `provides_recipes()` + project skills | `/plan-marshall action=recipe` | [ext-point-recipe.md](ext-point-recipe.md) |
-| Credential providers | `credential_extension.py` scan | `manage-credentials` | [ext-point-credential.md](ext-point-credential.md) |
+| Credential providers | `credential_extension.py` scan | `manage-providers` | [ext-point-provider.md](ext-point-provider.md) |
 
 ## Credential Storage
 
-Credentials are stored separately in `.plan/credentials/` (not in marshal.json). See [ext-point-credential.md](ext-point-credential.md) for the discovery and storage convention.
+Credentials are stored separately in `.plan/credentials/` (not in marshal.json). See [ext-point-provider.md](ext-point-provider.md) for the discovery and storage convention.

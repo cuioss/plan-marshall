@@ -10,13 +10,16 @@ from unittest.mock import patch
 import pytest
 from _credentials_core import (  # type: ignore[import-not-found]
     CREDENTIALS_DIR,
+    VALID_AUTH_TYPES,
     RestClient,
     discover_credential_providers,
+    get_authenticated_client,
     get_project_name,
     load_credential,
     remove_credential,
     resolve_credential_path,
     save_credential,
+    verify_system_auth,
 )
 
 import conftest  # noqa: F401
@@ -291,3 +294,218 @@ class TestDiscoverCredentialProviders:
         ]
         for field in required_fields:
             assert field in provider, f'Missing required field: {field}'
+
+
+# =============================================================================
+# VALID_AUTH_TYPES Tests
+# =============================================================================
+
+
+class TestValidAuthTypes:
+    """Tests for VALID_AUTH_TYPES constant."""
+
+    def test_system_in_valid_auth_types(self):
+        """The 'system' auth type must be included in VALID_AUTH_TYPES."""
+        assert 'system' in VALID_AUTH_TYPES
+
+    def test_all_expected_auth_types_present(self):
+        """All four auth types must be present: none, token, basic, system."""
+        expected = {'none', 'token', 'basic', 'system'}
+        assert set(VALID_AUTH_TYPES) == expected
+
+
+# =============================================================================
+# check_credential_completeness with auth_type=system
+# =============================================================================
+
+
+class TestCheckCompletenessSystem:
+    """Tests for check_credential_completeness with auth_type=system."""
+
+    def test_system_auth_reports_complete(self, tmp_path):
+        """auth_type=system credential with no secret fields reports complete."""
+        from _credentials_core import check_credential_completeness  # type: ignore[import-not-found]
+
+        skill = 'test-system-complete'
+        data = {
+            'skill': skill,
+            'auth_type': 'system',
+        }
+        try:
+            save_credential(skill, data, 'global')
+            result = check_credential_completeness(skill, 'global')
+            assert result['exists'] is True
+            assert result['complete'] is True
+            assert result['placeholders'] == []
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+    def test_system_auth_no_token_check(self, tmp_path):
+        """auth_type=system must not check for missing token field."""
+        from _credentials_core import check_credential_completeness  # type: ignore[import-not-found]
+
+        skill = 'test-system-no-token'
+        data = {
+            'skill': skill,
+            'auth_type': 'system',
+            # Deliberately no 'token' field
+        }
+        try:
+            save_credential(skill, data, 'global')
+            result = check_credential_completeness(skill, 'global')
+            assert result['complete'] is True
+            assert 'token' not in result['placeholders']
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+
+# =============================================================================
+# get_authenticated_client with auth_type=system
+# =============================================================================
+
+
+class TestGetAuthenticatedClientSystem:
+    """Tests for get_authenticated_client with auth_type=system."""
+
+    def test_system_auth_with_url_returns_client(self, tmp_path, monkeypatch):
+        """System auth with URL configured returns a RestClient with no auth headers."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+
+        skill = 'test-system-client'
+        data = {
+            'skill': skill,
+            'auth_type': 'system',
+        }
+        try:
+            save_credential(skill, data, 'global')
+            # Write URL to marshal.json provider config
+            from _credentials_core import write_provider_config  # type: ignore[import-not-found]
+            write_provider_config(skill, {'url': 'https://api.example.com'})
+
+            client = get_authenticated_client(skill)
+            # System auth should produce no Authorization header
+            assert 'Authorization' not in client._headers
+            assert client.url == 'https://api.example.com'
+            client.close()
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+    def test_system_auth_without_url_raises(self, tmp_path, monkeypatch):
+        """System auth without URL raises ValueError with helpful message."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        # Write empty provider config (no URL)
+        (tmp_path / '.plan' / 'marshal.json').write_text('{}')
+
+        skill = 'test-system-no-url'
+        data = {
+            'skill': skill,
+            'auth_type': 'system',
+        }
+        try:
+            save_credential(skill, data, 'global')
+            with pytest.raises(ValueError, match='no URL configured'):
+                get_authenticated_client(skill)
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+    def test_system_auth_no_secrets_in_credential(self, tmp_path, monkeypatch):
+        """System auth credential file should not contain token/username/password."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+
+        skill = 'test-system-no-secrets'
+        data = {
+            'skill': skill,
+            'auth_type': 'system',
+        }
+        try:
+            save_credential(skill, data, 'global')
+            loaded = load_credential(skill, 'global')
+            assert loaded is not None
+            assert 'token' not in loaded
+            assert 'username' not in loaded
+            assert 'password' not in loaded
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+
+# =============================================================================
+# verify_system_auth Tests
+# =============================================================================
+
+
+class TestVerifySystemAuth:
+    """Tests for verify_system_auth()."""
+
+    def test_successful_command(self):
+        """verify_system_auth returns success when command succeeds."""
+        provider = {
+            'skill_name': 'test-provider',
+            'verify_command': 'echo hello',
+        }
+        result = verify_system_auth(provider)
+        assert result['success'] is True
+        assert result['skill'] == 'test-provider'
+        assert result['exit_code'] == 0
+        assert 'hello' in result['output']
+
+    def test_failed_command(self):
+        """verify_system_auth returns failure when command fails."""
+        provider = {
+            'skill_name': 'test-provider',
+            'verify_command': 'false',
+        }
+        result = verify_system_auth(provider)
+        assert result['success'] is False
+        assert result['exit_code'] != 0
+
+    def test_missing_command(self):
+        """verify_system_auth returns failure when command is not found."""
+        provider = {
+            'skill_name': 'test-provider',
+            'verify_command': 'nonexistent-command-xyz-12345',
+        }
+        result = verify_system_auth(provider)
+        assert result['success'] is False
+        assert result['exit_code'] == -1
+        assert 'not found' in result['output'].lower()
+
+    def test_no_verify_command(self):
+        """verify_system_auth returns failure when no verify_command defined."""
+        provider = {
+            'skill_name': 'test-provider',
+        }
+        result = verify_system_auth(provider)
+        assert result['success'] is False
+        assert 'No verify_command' in result['output']
+
+    def test_empty_verify_command(self):
+        """verify_system_auth returns failure when verify_command is empty string."""
+        provider = {
+            'skill_name': 'test-provider',
+            'verify_command': '',
+        }
+        result = verify_system_auth(provider)
+        assert result['success'] is False
+
+    def test_output_truncated_to_500_chars(self):
+        """verify_system_auth truncates output to 500 characters."""
+        # Use python to generate long output
+        provider = {
+            'skill_name': 'test-provider',
+            'verify_command': 'python3 -c print("x"*1000)',
+        }
+        result = verify_system_auth(provider)
+        assert len(result['output']) <= 500

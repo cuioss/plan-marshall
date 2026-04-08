@@ -1,4 +1,4 @@
-# Extension Point: Credential
+# Extension Point: Provider
 
 > **Type**: Standalone Convention | **Hook**: `credential_extension.py` file | **Implementations**: 1 | **Status**: Active
 
@@ -13,20 +13,20 @@ Credential extensions declare external tool authentication needs for individual 
 - **File location**: `marketplace/bundles/{bundle}/skills/{skill}/scripts/credential_extension.py`
 - **Required function**: `get_credential_providers() -> list[dict]`
 - **Discovery**: `_credentials_core.discover_credential_providers()` scans `skills/*/scripts/credential_extension.py` across all bundles
-- **Consumer**: `manage-credentials` skill
+- **Consumer**: `manage-providers` skill
 
 ### Implementor Reference
 
 Credential extensions use a Python docstring reference (no SKILL.md frontmatter):
 
 ```python
-"""Extension point: plan-marshall:extension-api/standards/ext-point-credential"""
+"""Extension point: plan-marshall:extension-api/standards/ext-point-provider"""
 ```
 
 ### Implementation Pattern
 
 ```python
-"""Extension point: plan-marshall:extension-api/standards/ext-point-credential"""
+"""Extension point: plan-marshall:extension-api/standards/ext-point-provider"""
 
 def get_credential_providers() -> list[dict]:
     return [
@@ -62,7 +62,7 @@ None — discovery is automatic via filesystem scanning.
 ### Post-Conditions
 
 - Returns list of provider dicts with authentication configuration
-- Each provider is registerable by `manage-credentials`
+- Each provider is registerable by `manage-providers`
 - Credentials are stored in `.plan/credentials/`
 
 ## Hook API
