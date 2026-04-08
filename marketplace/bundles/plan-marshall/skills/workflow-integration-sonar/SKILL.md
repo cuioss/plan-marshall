@@ -32,7 +32,7 @@ Handles Sonar issue workflows - fetching issues from SonarQube, triaging them, a
 
 ## Prerequisites
 
-- Credentials configured via `manage-credentials` for `workflow-integration-sonar`
+- Credentials configured via `manage-providers` for `workflow-integration-sonar`
 - Script imports `triage_helpers` from `ref-toon-format` at runtime (see `ref-workflow-architecture` → "Shared Infrastructure")
 
 ## Architecture

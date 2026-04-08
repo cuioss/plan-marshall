@@ -67,7 +67,7 @@ extension-api/
     ├── ext-point-outline.md        # Outline extension point contract (1 implementation)
     ├── ext-point-recipe.md         # Recipe extension point contract (4 implementations)
     ├── ext-point-build.md          # Build system extension point contract (4 implementations)
-    ├── ext-point-credential.md     # Credential extension point contract (1 implementation)
+    ├── ext-point-provider.md     # Credential extension point contract (1 implementation)
     ├── ext-point-verify-steps.md   # Verify steps extension point contract (0 implementations)
     ├── ext-point-finalize-steps.md # Finalize steps extension point contract (0 implementations)
     ├── marshal-json-reference.md   # Central marshal.json config path reference
@@ -120,7 +120,7 @@ Each extension point has a dedicated contract document with formal parameters, p
 | Triage | `provides_triage()` | [ext-point-triage.md](standards/ext-point-triage.md) | 7 |
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](standards/ext-point-outline.md) | 1 |
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](standards/ext-point-recipe.md) | 4 |
-| Credential | `credential_extension.py` | [ext-point-credential.md](standards/ext-point-credential.md) | 1 |
+| Credential | `credential_extension.py` | [ext-point-provider.md](standards/ext-point-provider.md) | 1 |
 | Verify Steps | `provides_verify_steps()` | [ext-point-verify-steps.md](standards/ext-point-verify-steps.md) | 0 |
 | Finalize Steps | `provides_finalize_steps()` | [ext-point-finalize-steps.md](standards/ext-point-finalize-steps.md) | 0 |
 

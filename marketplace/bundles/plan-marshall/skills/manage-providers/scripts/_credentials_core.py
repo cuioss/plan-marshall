@@ -27,7 +27,7 @@ from typing import Any
 # === Constants ===
 
 CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
-VALID_AUTH_TYPES = ('none', 'token', 'basic')
+VALID_AUTH_TYPES = ('none', 'token', 'basic', 'system')
 SECRET_PLACEHOLDERS = {
     'token': 'REPLACE_WITH_YOUR_TOKEN',
     'username': 'REPLACE_WITH_YOUR_USERNAME',
@@ -654,6 +654,15 @@ def get_authenticated_client(skill_name: str,
                 )
             encoded = base64.b64encode(f'{username}:{password}'.encode()).decode()
             headers['Authorization'] = f'Basic {encoded}'
+        elif auth_type == 'system':
+            # System auth: no secrets, no HTTP headers.
+            # The tool is authenticated at the OS level (e.g., gh, git).
+            # Return a RestClient only if URL is provided; otherwise raise.
+            if not url:
+                raise ValueError(
+                    f'System-authenticated provider {skill_name} has no URL configured. '
+                    f'Use verify_system_auth() instead of RestClient for system providers.'
+                )
         # auth_type == 'none': no headers needed
 
         return RestClient(url, headers)
@@ -665,3 +674,61 @@ def get_authenticated_client(skill_name: str,
         raise ValueError(
             f'Failed to load credentials for {skill_name}'
         ) from None
+
+
+def verify_system_auth(provider: dict[str, Any]) -> dict[str, Any]:
+    """Verify system-authenticated provider by running its verify_command.
+
+    System providers (gh, git) are authenticated at the OS level.
+    Verification runs the provider's declared command and checks the exit code.
+
+    Args:
+        provider: Provider declaration dict with 'verify_command' and 'skill_name'
+
+    Returns:
+        Dict with keys: success, skill, command, exit_code, output
+    """
+    import subprocess
+
+    skill_name = provider.get('skill_name', 'unknown')
+    verify_command = provider.get('verify_command', '')
+
+    if not verify_command:
+        return {
+            'success': False,
+            'skill': skill_name,
+            'command': '',
+            'exit_code': -1,
+            'output': 'No verify_command defined for provider',
+        }
+
+    try:
+        result = subprocess.run(
+            verify_command.split(),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return {
+            'success': result.returncode == 0,
+            'skill': skill_name,
+            'command': verify_command,
+            'exit_code': result.returncode,
+            'output': (result.stdout or result.stderr or '').strip()[:500],
+        }
+    except FileNotFoundError:
+        return {
+            'success': False,
+            'skill': skill_name,
+            'command': verify_command,
+            'exit_code': -1,
+            'output': f'Command not found: {verify_command.split()[0]}',
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            'success': False,
+            'skill': skill_name,
+            'command': verify_command,
+            'exit_code': -1,
+            'output': 'Command timed out after 30 seconds',
+        }

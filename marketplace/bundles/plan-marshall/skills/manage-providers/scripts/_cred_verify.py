@@ -8,7 +8,9 @@ from _credentials_core import (
     discover_credential_providers,
     get_authenticated_client,
     get_project_name,
+    load_credential,
     update_verified_at,
+    verify_system_auth,
 )
 from file_ops import output_toon  # type: ignore[import-not-found]
 
@@ -30,6 +32,38 @@ def run_verify(args) -> int:
             provider = p
             break
 
+    # Determine auth_type from credential file or provider declaration
+    project_name = get_project_name() if scope == 'project' else None
+    credential = load_credential(skill, scope if scope != 'global' else 'auto', project_name)
+    auth_type = None
+    if credential:
+        auth_type = credential.get('auth_type')
+    if not auth_type and provider:
+        auth_type = provider.get('auth_type')
+
+    # System auth: run verify_command instead of HTTP connectivity check
+    if auth_type == 'system':
+        if not provider:
+            output_toon({
+                'status': 'error',
+                'message': f'No provider extension found for system-auth skill: {skill}',
+            })
+            return 0
+
+        result = verify_system_auth(provider)
+        if result['success']:
+            update_verified_at(skill)
+        output_toon({
+            'status': 'success' if result['success'] else 'error',
+            'skill': skill,
+            'verified': result['success'],
+            'auth_type': 'system',
+            'command': result['command'],
+            'exit_code': result['exit_code'],
+        })
+        return 0
+
+    # Token/basic/none auth: HTTP connectivity check
     verify_endpoint = '/'
     verify_method = 'GET'
     if provider:
@@ -37,7 +71,6 @@ def run_verify(args) -> int:
         verify_method = provider.get('verify_method', 'GET')
 
     try:
-        project_name = get_project_name() if scope == 'project' else None
         client = get_authenticated_client(skill, project_name)
 
         client.request(verify_method, verify_endpoint)

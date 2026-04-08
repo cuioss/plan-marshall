@@ -67,7 +67,7 @@ def run_configure(args) -> int:
 
     default_url = provider.get('default_url', '')
     url = getattr(args, 'url', None) or default_url
-    if not url:
+    if not url and auth_type != 'system':
         output_toon({'status': 'error', 'message': 'URL is required — provide --url'})
         return 0
 
@@ -107,7 +107,7 @@ def run_configure(args) -> int:
                 return 0
         # auth_type or URL mismatch — fall through to reconfigure
 
-    # Build credential data — secrets only
+    # Build credential data — secrets only (system auth has no secrets)
     data: dict = {
         'skill': skill_name,
         'auth_type': auth_type,
@@ -120,6 +120,7 @@ def run_configure(args) -> int:
     elif auth_type == 'basic':
         data['username'] = SECRET_PLACEHOLDERS['username']
         data['password'] = SECRET_PLACEHOLDERS['password']
+    # auth_type == 'system': no secrets needed, just skill + auth_type for registration
 
     # Save credential file (secrets only)
     path = save_credential(skill_name, data, scope, project_name)

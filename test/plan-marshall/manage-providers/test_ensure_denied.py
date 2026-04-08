@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from conftest import get_script_path
 
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-credentials', 'credentials.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
 
 
 class TestEnsureDeniedRules:

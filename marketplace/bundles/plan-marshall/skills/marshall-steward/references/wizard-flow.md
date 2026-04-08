@@ -742,17 +742,42 @@ Verify that all modules have responsibilities and key packages. Missing fields i
 
 ## Step 14: Detect CI Provider
 
-Detect CI provider and verify tools:
+Detect CI provider and verify system-authenticated tools using the unified provider model.
+
+**Step 14a: Discover system providers**
+
+Query all credential providers and filter for `auth_type: system` CI providers:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health status
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
+
+Parse the `providers` array. Filter entries where `auth_type == "system"` and `skill_name` starts with `tools-integration-ci-`. These are the CI provider declarations.
+
+**Step 14b: Detect CI provider from repository**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health detect
+```
+
+This detects the CI provider (github/gitlab) from the git remote URL and CI config files.
+
+**Step 14c: Verify the detected provider's CLI tool**
+
+Match the detected provider to its system provider declaration from Step 14a. Run the provider's `verify_command` to check authentication:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health verify --tool {required_tool}
+```
+
+Where `{required_tool}` is `gh` for GitHub or `glab` for GitLab (derived from the system provider's `verify_command`).
 
 Display detection result to user. If tool not authenticated, warn:
 - "GitHub detected but 'gh' not authenticated. Run 'gh auth login' for CI operations."
 - "GitLab detected but 'glab' not authenticated. Run 'glab auth login' for CI operations."
 
-Persist CI configuration to marshal.json:
+**Step 14d: Persist CI configuration**
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health persist
 ```
@@ -763,10 +788,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health per
 
 ## Step 15: Credential Setup (Optional)
 
-**Step 15a**: Discover available credential providers:
+**Step 15a**: Discover available providers (filter out `auth_type: system` providers since those are handled in Step 14):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials list-providers
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
 Parse the `providers` array from output. If `count == 0`, skip to Step 16.
@@ -884,12 +909,12 @@ Build the command from collected values (no secret args — secrets go into the 
 
 ```bash
 # With extra fields:
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials configure \
   --skill {skill} --url {url} --auth-type {auth_type} --scope {scope} \
   --extra organization={org} project_key={project_key}
 
 # Without extra fields:
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials configure \
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials configure \
   --skill {skill} --url {url} --auth-type {auth_type} --scope {scope}
 ```
 
@@ -905,7 +930,7 @@ python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials con
 3. Run check to verify no placeholders remain:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials check --skill {skill} --scope {scope}
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check --skill {skill} --scope {scope}
 ```
 
 If check returns `incomplete`, tell user which placeholders remain and ask them to edit again.
@@ -915,13 +940,13 @@ If configure returns `exists_complete`, ask user whether to reuse the existing c
 **Step 15f**: Verify connectivity (optional, separate step):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials verify --skill {skill}
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify --skill {skill}
 ```
 
 **Step 15g**: Add deny rules via executor:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-credentials:credentials ensure-denied --target project
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied --target project
 ```
 
 **Step 15h**: If the configured skill was `workflow-integration-sonar`, add sonar-roundtrip to finalize steps:
