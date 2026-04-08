@@ -50,7 +50,6 @@ Output: TOON format
 
 import argparse
 import json
-import sys
 from typing import Any
 
 from ci_base import (  # type: ignore[import-not-found]
@@ -908,9 +907,8 @@ def main() -> int:
     }
 
     result = dispatch(args, handlers, parser)
-    is_error = result.get('status') != 'success'
-    print(serialize_toon(result, table_separator='\t'), file=sys.stderr if is_error else sys.stdout)
-    return 1 if is_error else 0
+    print(serialize_toon(result, table_separator='\t'))
+    return 0
 
 
 if __name__ == '__main__':

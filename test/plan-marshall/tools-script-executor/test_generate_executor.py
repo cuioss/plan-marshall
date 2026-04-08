@@ -215,7 +215,7 @@ def test_verify_requires_executor():
             ['python3', str(GENERATE_SCRIPT), 'verify'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env()
         )
 
-        assert result.returncode == 1, f'Expected failure, got {result.returncode}'
+        assert result.returncode == 0, f'Expected exit 0 (error in TOON output), got {result.returncode}'
 
 
 def test_drift_requires_executor():
@@ -225,8 +225,8 @@ def test_drift_requires_executor():
             ['python3', str(GENERATE_SCRIPT), 'drift'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env()
         )
 
-        assert result.returncode == 1, f'Expected failure, got {result.returncode}'
-        assert 'Could not read executor mappings' in result.stderr
+        assert result.returncode == 0, f'Expected exit 0 (error in TOON output), got {result.returncode}'
+        assert 'Could not read executor mappings' in result.stdout
 
 
 def test_paths_requires_executor():
@@ -236,8 +236,8 @@ def test_paths_requires_executor():
             ['python3', str(GENERATE_SCRIPT), 'paths'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env()
         )
 
-        assert result.returncode == 1, f'Expected failure, got {result.returncode}'
-        assert 'Could not read executor mappings' in result.stderr
+        assert result.returncode == 0, f'Expected exit 0 (error in TOON output), got {result.returncode}'
+        assert 'Could not read executor mappings' in result.stdout
 
 
 def test_drift_help():

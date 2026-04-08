@@ -142,19 +142,20 @@ def make_error(message: str, *, code: str | None = None, **extra: Any) -> dict[s
 
 
 def print_toon(result: dict[str, Any]) -> int:
-    """Serialize a result dict to TOON, print it, and return an exit code.
+    """Serialize a result dict to TOON, print it, and return 0.
 
-    Returns 0 if ``result['status'] == 'success'``, 1 otherwise.
-    Replaces the repetitive ``print(serialize_toon(result)); return 0/1`` pattern.
+    Always returns 0 — callers read the ``status`` field in TOON output
+    to distinguish success from expected errors.  Exit 1 is reserved for
+    uncaught exceptions (handled by ``safe_main``).
     """
     print(serialize_toon(result))
-    return 0 if result.get('status') == 'success' else 1
+    return 0
 
 
 def print_error(message: str, *, code: str | None = None, **extra: Any) -> int:
-    """Shortcut: create an error payload, print it as TOON, and return 1.
+    """Shortcut: create an error payload, print it as TOON, and return 0.
 
-    Replaces the triple: ``print(serialize_toon(make_error(...))); return 1``.
+    Replaces the triple: ``print(serialize_toon(make_error(...))); return 0``.
     """
     return print_toon(make_error(message, code=code, **extra))
 

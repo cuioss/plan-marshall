@@ -333,8 +333,8 @@ class TestDepsSubcommand:
     def test_deps_requires_component(self):
         """Test that deps requires --component."""
         result = run_script(SCRIPT_PATH, 'deps')
-        assert result.returncode != 0
-        assert 'component is required' in result.stderr.lower()
+        assert result.returncode == 0
+        assert 'component is required' in result.stdout.lower()
 
     def test_deps_known_component(self):
         """Test deps for a known component."""
@@ -372,8 +372,8 @@ class TestRdepsSubcommand:
     def test_rdeps_requires_component(self):
         """Test that rdeps requires --component."""
         result = run_script(SCRIPT_PATH, 'rdeps')
-        assert result.returncode != 0
-        assert 'component is required' in result.stderr.lower()
+        assert result.returncode == 0
+        assert 'component is required' in result.stdout.lower()
 
     def test_rdeps_known_module(self):
         """Test rdeps for a commonly-used module."""
@@ -421,8 +421,8 @@ class TestTreeSubcommand:
     def test_tree_requires_component(self):
         """Test that tree requires --component."""
         result = run_script(SCRIPT_PATH, 'tree')
-        assert result.returncode != 0
-        assert 'component is required' in result.stderr.lower()
+        assert result.returncode == 0
+        assert 'component is required' in result.stdout.lower()
 
     def test_tree_produces_output(self):
         """Test tree produces visual output."""
@@ -500,8 +500,8 @@ class TestDepTypeFiltering:
             'invalid',
             '--direct-result',
         )
-        assert result.returncode != 0
-        assert 'invalid dependency type' in result.stderr.lower()
+        assert result.returncode == 0
+        assert 'invalid dependency type' in result.stdout.lower()
 
 
 # =============================================================================

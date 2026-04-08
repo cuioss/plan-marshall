@@ -124,8 +124,9 @@ def test_persist_no_marshal_json():
     """Test persist command fails without marshal.json."""
     with PlanContext(plan_id='test-persist') as ctx:
         result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
-        assert not result.success, 'Expected script to fail without marshal.json'
+        assert result.success, 'Expected exit 0 (error in TOON output)'
         data = result.toon_or_error()
+        assert data.get('status') != 'success', 'Expected error status in TOON output'
         assert 'error' in data
 
 

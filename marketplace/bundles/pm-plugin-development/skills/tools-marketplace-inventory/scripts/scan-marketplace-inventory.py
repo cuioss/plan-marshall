@@ -33,22 +33,19 @@ Script Output:
     the script executor (e.g., "plan-marshall:manage-files:manage-files").
 
 Exit codes:
-    0 - Success
-    1 - Error (invalid parameters, missing directory)
+    0 - Always (operational errors returned as TOON status: error on stdout)
 """
 
 import argparse
 import fnmatch
 import os
 import re
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from file_ops import safe_main  # type: ignore[import-not-found]
-
-# Note: toon_parser not needed - using custom serialize_inventory_toon for hierarchical output
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Constants
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
@@ -858,8 +855,8 @@ def main() -> int:
 
     # Content filtering requires paths - enforce --include-descriptions or --full
     if (content_include or content_exclude) and not (args.include_descriptions or args.full):
-        print('ERROR: --content-pattern/--content-exclude require --include-descriptions or --full', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': '--content-pattern/--content-exclude require --include-descriptions or --full'}))
+        return 0
 
     # Parse bundle filter
     bundle_filter = {b.strip() for b in args.bundles.split(',') if b.strip()} if args.bundles else set()
@@ -867,20 +864,19 @@ def main() -> int:
     # Parse resource types
     include, error = parse_resource_types(args.resource_types)
     if error:
-        print(f'ERROR: {error}', file=sys.stderr)
-        print(f'Valid values: {", ".join(VALID_RESOURCE_TYPES)}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': f'{error}. Valid values: {", ".join(VALID_RESOURCE_TYPES)}'}))
+        return 0
 
     # Get base path
     try:
         base_path = get_base_path(args.scope)
     except (FileNotFoundError, ValueError) as e:
-        print(f'ERROR: {e}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e)}))
+        return 0
 
     if not base_path.is_dir():
-        print(f'ERROR: Base path not found: {base_path}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': f'Base path not found: {base_path}'}))
+        return 0
 
     # Find and filter bundles
     bundle_dirs = find_bundles(base_path)
@@ -971,8 +967,8 @@ def main() -> int:
             _, summary_toon = write_file_output(output, output_dir, args.output, args.full)
             print(summary_toon)
         except OSError as e:
-            print(f'ERROR: Failed to write output file: {e}', file=sys.stderr)
-            return 1
+            print(serialize_toon({'status': 'error', 'error': f'Failed to write output file: {e}'}))
+            return 0
     return 0
 
 

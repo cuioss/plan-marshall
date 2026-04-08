@@ -27,11 +27,11 @@ def run_configure(args) -> int:
 
     if not providers:
         output_toon({'status': 'error', 'message': 'No credential extensions found in marketplace'})
-        return 1
+        return 0
 
     if not args.skill:
         output_toon({'status': 'error', 'message': '--skill is required'})
-        return 1
+        return 0
 
     provider = _find_provider(providers, args.skill)
     if not provider:
@@ -40,7 +40,7 @@ def run_configure(args) -> int:
             'message': f'No credential extension found for skill: {args.skill}',
             'available': [p['skill_name'] for p in providers],
         })
-        return 1
+        return 0
 
     skill_name = provider['skill_name']
     scope = args.scope
@@ -50,7 +50,7 @@ def run_configure(args) -> int:
     auth_type = getattr(args, 'auth_type', None) or default_auth
     if auth_type not in VALID_AUTH_TYPES:
         output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
-        return 1
+        return 0
 
     # Validate auth_type against provider's declared auth_type
     declared_auth = provider.get('auth_type')
@@ -63,13 +63,13 @@ def run_configure(args) -> int:
                 f'Provider requires: {declared_auth}'
             ),
         })
-        return 1
+        return 0
 
     default_url = provider.get('default_url', '')
     url = getattr(args, 'url', None) or default_url
     if not url:
         output_toon({'status': 'error', 'message': 'URL is required — provide --url'})
-        return 1
+        return 0
 
     # Check if credential already exists
     project_name = get_project_name() if scope == 'project' else None

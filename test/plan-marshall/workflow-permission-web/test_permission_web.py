@@ -501,7 +501,7 @@ class TestMain(unittest.TestCase):
                     str(path),
                 ]
             )
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0)
             result = parse_toon(stdout)
             self.assertEqual(result['status'], 'error')
             self.assertEqual(result['error_code'], 'INVALID_INPUT')

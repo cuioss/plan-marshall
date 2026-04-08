@@ -29,13 +29,11 @@ Component Notation:
     bundle:commands:name            Command (e.g., plan-marshall:commands:tools-fix-intellij-diagnostics)
 
 Exit codes:
-    0 - Success
-    1 - Error (invalid parameters, component not found)
+    0 - Always (operational errors returned as TOON status: error on stdout)
 """
 
 import argparse
 import json
-import sys
 from collections import defaultdict
 from typing import Any
 
@@ -364,22 +362,22 @@ def main() -> int:
 
     # Validate required arguments
     if args.subcommand in ('deps', 'rdeps', 'tree') and not args.component:
-        print(f'ERROR: --component is required for {args.subcommand}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': f'--component is required for {args.subcommand}'}))
+        return 0
 
     # Parse dependency types
     try:
         dep_types = parse_dep_types(args.dep_types)
     except ValueError as e:
-        print(f'ERROR: {e}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e)}))
+        return 0
 
     # Get base path
     try:
         base_path = get_base_path(args.scope)
     except (FileNotFoundError, ValueError) as e:
-        print(f'ERROR: {e}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e)}))
+        return 0
 
     # Build dependency index
     index = build_dependency_index(base_path, dep_types)
@@ -394,8 +392,8 @@ def main() -> int:
     elif args.subcommand == 'validate':
         result = cmd_validate(index, dep_types)
     else:
-        print(f'ERROR: Unknown subcommand: {args.subcommand}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': f'Unknown subcommand: {args.subcommand}'}))
+        return 0
 
     # Output result
     if args.format == 'json':

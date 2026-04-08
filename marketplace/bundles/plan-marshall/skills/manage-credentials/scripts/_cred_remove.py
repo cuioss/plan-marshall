@@ -13,7 +13,7 @@ def run_remove(args) -> int:
 
     if not skill:
         output_toon({'status': 'error', 'message': '--skill is required for remove'})
-        return 1
+        return 0
 
     project_name = get_project_name() if scope == 'project' else None
     removed = remove_credential(skill, scope, project_name)

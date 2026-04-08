@@ -17,6 +17,7 @@ from _architecture_core import (  # type: ignore[import-not-found]
 )
 from _config_core import ext_defaults_get  # type: ignore[import-not-found]
 from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Extension defaults keys for profile configuration
 EXT_KEY_PROFILES_SKIP = 'build.maven.profiles.skip'
@@ -290,12 +291,11 @@ def cmd_list(args: argparse.Namespace) -> int:
 
         return 0
     except DataNotFoundError as e:
-        print(f'error: {e}', file=sys.stderr)
-        print("resolution: Run 'architecture.py discover' first", file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e), 'resolution': "Run 'architecture.py discover' first"}))
+        return 0
     except Exception as e:
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e)}))
+        return 0
 
 
 def cmd_unmatched(args: argparse.Namespace) -> int:
@@ -309,11 +309,11 @@ def cmd_unmatched(args: argparse.Namespace) -> int:
 
         return 0
     except DataNotFoundError as e:
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e)}))
+        return 0
     except Exception as e:
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e)}))
+        return 0
 
 
 def cmd_classify(args: argparse.Namespace) -> int:
@@ -340,11 +340,11 @@ def cmd_suggest(args: argparse.Namespace) -> int:
 
         return 0
     except DataNotFoundError as e:
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e)}))
+        return 0
     except Exception as e:
-        print(f'error: {e}', file=sys.stderr)
-        return 1
+        print(serialize_toon({'status': 'error', 'error': str(e)}))
+        return 0
 
 
 # =============================================================================
@@ -384,8 +384,8 @@ def main() -> int:
     if handler:
         return handler(args)
     else:
-        parser.print_help()
-        return 1
+        print(serialize_toon({'status': 'error', 'error': f'Unknown command: {args.command}'}))
+        return 0
 
 
 if __name__ == '__main__':

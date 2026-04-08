@@ -767,13 +767,14 @@ def test_output_param_with_filters(tmp_path):
 def test_invalid_scope_returns_error():
     """Test invalid scope returns error."""
     result = run_script(SCRIPT_PATH, '--scope', 'invalid')
-    assert result.returncode != 0, 'Invalid scope should return error'
+    assert result.returncode != 0, 'Invalid scope should return error (argparse validation)'
 
 
 def test_invalid_resource_type_returns_error():
     """Test invalid resource type returns error."""
     result = run_script(SCRIPT_PATH, '--resource-types', 'invalid')
-    assert result.returncode != 0, 'Invalid resource type should return error'
+    assert result.returncode == 0, 'Expected exit 0 (error in TOON output)'
+    assert 'error' in result.stdout.lower()
 
 
 # =============================================================================
@@ -784,14 +785,14 @@ def test_invalid_resource_type_returns_error():
 def test_content_pattern_requires_descriptions_or_full():
     """Test --content-pattern without --include-descriptions or --full returns error."""
     result = run_script(SCRIPT_PATH, '--content-pattern', '```json', '--direct-result')
-    assert result.returncode != 0, 'Content pattern without --include-descriptions should error'
-    assert 'require --include-descriptions or --full' in result.stderr
+    assert result.returncode == 0, 'Expected exit 0 (error in TOON output)'
+    assert 'require --include-descriptions or --full' in result.stdout
 
 
 def test_content_exclude_requires_descriptions_or_full():
     """Test --content-exclude without --include-descriptions or --full returns error."""
     result = run_script(SCRIPT_PATH, '--content-exclude', '```json', '--direct-result')
-    assert result.returncode != 0, 'Content exclude without --include-descriptions should error'
+    assert result.returncode == 0, 'Expected exit 0 (error in TOON output)'
 
 
 def test_content_pattern_include_single_regex():

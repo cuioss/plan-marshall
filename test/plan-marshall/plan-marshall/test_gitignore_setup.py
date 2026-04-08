@@ -191,8 +191,8 @@ class TestGitignoreSetupCLI(ScriptTestCase):
         nonexistent = self.temp_dir / 'nonexistent'
 
         result = run_script(SCRIPT_PATH, '--project-root', str(nonexistent))
-        self.assert_failure(result)
-        self.assertIn('project_root_not_found', result.stderr)
+        self.assert_success(result)
+        self.assertIn('project_root_not_found', result.stdout)
 
     def test_toon_output_format(self):
         """Output should be valid TOON format."""

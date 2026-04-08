@@ -20,7 +20,7 @@ def run_verify(args) -> int:
 
     if not skill:
         output_toon({'status': 'error', 'message': '--skill is required for verify'})
-        return 1
+        return 0
 
     # Find provider for verify endpoint
     providers = discover_credential_providers()
@@ -58,7 +58,7 @@ def run_verify(args) -> int:
             'status': 'error',
             'message': f'No credentials configured for {skill}',
         })
-        return 1
+        return 0
     except Exception as e:
         # Don't expose credentials in error output
         output_toon({
@@ -67,4 +67,4 @@ def run_verify(args) -> int:
             'verified': False,
             'error_type': type(e).__name__,
         })
-        return 1
+        return 0

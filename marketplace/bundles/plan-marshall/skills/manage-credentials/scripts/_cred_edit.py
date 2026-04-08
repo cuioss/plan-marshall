@@ -24,7 +24,7 @@ def run_edit(args) -> int:
 
     if not skill:
         output_toon({'status': 'error', 'message': '--skill is required for edit'})
-        return 1
+        return 0
 
     existing = load_credential(skill, scope, project_name)
     if not existing:
@@ -32,14 +32,14 @@ def run_edit(args) -> int:
             'status': 'error',
             'message': f'No credentials found for {skill} (scope: {scope})',
         })
-        return 1
+        return 0
 
     # Update non-secret fields from CLI args, keep existing otherwise
     url = getattr(args, 'url', None) or existing.get('url', '')
     auth_type = getattr(args, 'auth_type', None) or existing.get('auth_type', 'token')
     if auth_type not in VALID_AUTH_TYPES:
         output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
-        return 1
+        return 0
 
     data = dict(existing)
     data['url'] = url
