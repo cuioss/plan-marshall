@@ -190,6 +190,124 @@ class TestCheckCompleteness:
                 path.unlink()
 
 
+class TestConfigureAuthTypeValidation:
+    """Tests for auth_type validation against provider declaration."""
+
+    def test_configure_rejects_incompatible_auth_type(self):
+        """Configure rejects auth_type that doesn't match provider's declared auth_type."""
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', 'workflow-integration-sonar',
+            '--auth-type', 'none',
+        )
+        assert result.returncode == 1
+        assert 'incompatible' in result.stdout.lower()
+        assert 'token' in result.stdout
+
+    def test_configure_accepts_matching_auth_type(self):
+        """Configure accepts auth_type that matches provider's declared auth_type."""
+        from _credentials_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
+
+        skill = 'workflow-integration-sonar'
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', skill,
+            '--auth-type', 'token',
+        )
+        try:
+            assert result.returncode == 0
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+    def test_configure_rejects_basic_for_token_provider(self):
+        """Configure rejects basic auth when provider declares token."""
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', 'workflow-integration-sonar',
+            '--auth-type', 'basic',
+        )
+        assert result.returncode == 1
+        assert 'incompatible' in result.stdout.lower()
+
+
+class TestConfigureMarshalJsonSeparation:
+    """Tests for non-secret fields written to marshal.json instead of credential file."""
+
+    def test_configure_writes_url_to_marshal_json(self, tmp_path, monkeypatch):
+        """Configure writes url to marshal.json, not to credential file."""
+        from _credentials_core import (  # type: ignore[import-not-found]
+            CREDENTIALS_DIR,
+            load_credential,
+            read_provider_config,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        # Create minimal marshal.json
+        (tmp_path / '.plan' / 'marshal.json').write_text('{}')
+
+        skill = 'workflow-integration-sonar'
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', skill,
+            '--auth-type', 'token',
+            '--url', 'https://sonarcloud.io',
+        )
+        try:
+            assert result.returncode == 0
+
+            # URL should be in marshal.json
+            provider_config = read_provider_config(skill)
+            assert provider_config.get('url') == 'https://sonarcloud.io'
+
+            # Credential file should NOT contain url
+            loaded = load_credential(skill, 'global')
+            assert loaded is not None
+            assert 'url' not in loaded
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+    def test_configure_writes_extra_fields_to_marshal_json(self, tmp_path, monkeypatch):
+        """Configure writes extra fields (organization, project_key) to marshal.json."""
+        from _credentials_core import (  # type: ignore[import-not-found]
+            CREDENTIALS_DIR,
+            load_credential,
+            read_provider_config,
+        )
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        (tmp_path / '.plan' / 'marshal.json').write_text('{}')
+
+        skill = 'workflow-integration-sonar'
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', skill,
+            '--auth-type', 'token',
+            '--extra', 'organization=my-org', 'project_key=my-project',
+        )
+        try:
+            assert result.returncode == 0
+
+            provider_config = read_provider_config(skill)
+            assert provider_config.get('organization') == 'my-org'
+            assert provider_config.get('project_key') == 'my-project'
+
+            # Extra fields should NOT be in credential file
+            loaded = load_credential(skill, 'global')
+            assert loaded is not None
+            assert 'organization' not in loaded
+            assert 'project_key' not in loaded
+        finally:
+            path = CREDENTIALS_DIR / f'{skill}.json'
+            if path.exists():
+                path.unlink()
+
+
 class TestConfigureAuthTypeMismatch:
     """Tests for configure reconfiguring when auth_type changes."""
 

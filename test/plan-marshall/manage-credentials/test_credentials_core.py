@@ -216,6 +216,59 @@ class TestRestClient:
 # =============================================================================
 
 
+class TestProviderConfig:
+    """Tests for marshal.json provider config read/write."""
+
+    def test_write_and_read_provider_config(self, tmp_path, monkeypatch):
+        """Write provider config to marshal.json and read it back."""
+        from _credentials_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+
+        write_provider_config('test-skill', {'url': 'https://example.com', 'org': 'my-org'})
+        config = read_provider_config('test-skill')
+        assert config['url'] == 'https://example.com'
+        assert config['org'] == 'my-org'
+
+    def test_read_returns_empty_when_no_marshal(self, tmp_path, monkeypatch):
+        """Returns empty dict when marshal.json does not exist."""
+        from _credentials_core import read_provider_config  # type: ignore[import-not-found]
+
+        monkeypatch.chdir(tmp_path)
+        config = read_provider_config('nonexistent')
+        assert config == {}
+
+    def test_write_preserves_existing_content(self, tmp_path, monkeypatch):
+        """Writing provider config preserves other marshal.json content."""
+        from _credentials_core import write_provider_config  # type: ignore[import-not-found]
+
+        monkeypatch.chdir(tmp_path)
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        marshal = plan_dir / 'marshal.json'
+        marshal.write_text(json.dumps({'ci': {'repo_url': 'https://github.com/org/repo'}}))
+
+        write_provider_config('test-skill', {'url': 'https://api.example.com'})
+
+        full_config = json.loads(marshal.read_text())
+        assert full_config['ci']['repo_url'] == 'https://github.com/org/repo'
+        assert full_config['credentials_config']['test-skill']['url'] == 'https://api.example.com'
+
+    def test_write_updates_existing_provider(self, tmp_path, monkeypatch):
+        """Writing to same provider overwrites previous config."""
+        from _credentials_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+
+        write_provider_config('test-skill', {'url': 'https://old.com'})
+        write_provider_config('test-skill', {'url': 'https://new.com'})
+
+        config = read_provider_config('test-skill')
+        assert config['url'] == 'https://new.com'
+
+
 class TestDiscoverCredentialProviders:
     """Tests for discover_credential_providers()."""
 

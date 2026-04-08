@@ -24,7 +24,7 @@ def get_credential_providers():
             {
                 'key': 'organization',
                 'label': 'SonarCloud Organization',
-                'required': True,
+                'required': False,
                 'auto_detect': 'ci_org',
             },
             {
