@@ -77,6 +77,7 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
         config['credentials_config'] = {}
     config['credentials_config'][skill_name] = provider_config
 
+    MARSHAL_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
     MARSHAL_JSON_PATH.write_text(
         json.dumps(config, indent=2, ensure_ascii=False) + '\n',
         encoding='utf-8',
