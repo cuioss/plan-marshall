@@ -36,6 +36,54 @@ SECRET_PLACEHOLDERS = {
 _PROJECT_NAME_PATTERN = re.compile(r'[^a-zA-Z0-9._-]')
 
 
+# === Marshal.json Provider Config ===
+
+MARSHAL_JSON_PATH = Path('.plan') / 'marshal.json'
+
+
+def read_provider_config(skill_name: str) -> dict[str, Any]:
+    """Read provider configuration from marshal.json.
+
+    Provider config is stored under `credentials_config.{skill_name}`.
+    Contains non-secret fields like url, organization, project_key.
+
+    Returns:
+        Dict with provider config fields, or empty dict if not found.
+    """
+    if not MARSHAL_JSON_PATH.exists():
+        return {}
+    try:
+        config = json.loads(MARSHAL_JSON_PATH.read_text(encoding='utf-8'))
+        result: dict[str, Any] = config.get('credentials_config', {}).get(skill_name, {})
+        return result
+    except (json.JSONDecodeError, KeyError):
+        return {}
+
+
+def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> None:
+    """Write provider configuration to marshal.json.
+
+    Stores non-secret fields under `credentials_config.{skill_name}`.
+    Creates or updates the marshal.json file, preserving existing content.
+    """
+    config: dict[str, Any] = {}
+    if MARSHAL_JSON_PATH.exists():
+        try:
+            config = json.loads(MARSHAL_JSON_PATH.read_text(encoding='utf-8'))
+        except json.JSONDecodeError:
+            config = {}
+
+    if 'credentials_config' not in config:
+        config['credentials_config'] = {}
+    config['credentials_config'][skill_name] = provider_config
+
+    MARSHAL_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MARSHAL_JSON_PATH.write_text(
+        json.dumps(config, indent=2, ensure_ascii=False) + '\n',
+        encoding='utf-8',
+    )
+
+
 # === Path Resolution ===
 
 
@@ -565,7 +613,9 @@ def get_authenticated_client(skill_name: str,
                 f'Run: credentials configure --skill {skill_name}'
             )
 
-        url = credential.get('url', '')
+        # Read URL from marshal.json provider config (preferred) or credential file (fallback)
+        provider_config = read_provider_config(skill_name)
+        url = provider_config.get('url', '') or credential.get('url', '')
         auth_type = credential.get('auth_type', 'none')
         headers: dict[str, str] = {}
 

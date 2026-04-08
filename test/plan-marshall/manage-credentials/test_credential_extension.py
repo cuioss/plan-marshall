@@ -41,3 +41,21 @@ class TestCredentialExtensionDiscovery:
         """discover_credential_providers always returns a list."""
         providers = discover_credential_providers()
         assert isinstance(providers, list)
+
+    def test_sonar_organization_is_optional(self):
+        """Sonar organization extra_field must be optional (required=False)."""
+        providers = discover_credential_providers()
+        sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
+
+        extra_fields = sonar.get('extra_fields', [])
+        org_field = next(f for f in extra_fields if f['key'] == 'organization')
+        assert org_field['required'] is False
+
+    def test_sonar_project_key_is_required(self):
+        """Sonar project_key extra_field must be required."""
+        providers = discover_credential_providers()
+        sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
+
+        extra_fields = sonar.get('extra_fields', [])
+        pk_field = next(f for f in extra_fields if f['key'] == 'project_key')
+        assert pk_field['required'] is True

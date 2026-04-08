@@ -13,8 +13,10 @@ from _credentials_core import (
     discover_credential_providers,
     get_project_name,
     load_credential,
+    read_provider_config,
     register_credential_metadata,
     save_credential,
+    write_provider_config,
 )
 from file_ops import output_toon  # type: ignore[import-not-found]
 
@@ -50,6 +52,19 @@ def run_configure(args) -> int:
         output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
         return 1
 
+    # Validate auth_type against provider's declared auth_type
+    declared_auth = provider.get('auth_type')
+    if declared_auth and auth_type != declared_auth:
+        output_toon({
+            'status': 'error',
+            'message': (
+                f'Auth type "{auth_type}" is incompatible with provider '
+                f'"{provider["display_name"]}". '
+                f'Provider requires: {declared_auth}'
+            ),
+        })
+        return 1
+
     default_url = provider.get('default_url', '')
     url = getattr(args, 'url', None) or default_url
     if not url:
@@ -64,7 +79,11 @@ def run_configure(args) -> int:
         # Load existing to compare auth_type and URL — if mismatch, reconfigure
         existing = load_credential(skill_name, scope, project_name)
         existing_auth = existing.get('auth_type', 'none') if existing else 'none'
-        existing_url = existing.get('url', '') if existing else ''
+        # URL is in marshal.json (preferred) or credential file (legacy fallback)
+        existing_provider_config = read_provider_config(skill_name)
+        existing_url = existing_provider_config.get('url', '') or (
+            existing.get('url', '') if existing else ''
+        )
 
         if existing_auth == auth_type and existing_url == url:
             if completeness['complete']:
@@ -88,10 +107,9 @@ def run_configure(args) -> int:
                 return 0
         # auth_type or URL mismatch — fall through to reconfigure
 
-    # Build credential data with placeholders for secrets
+    # Build credential data — secrets only
     data: dict = {
         'skill': skill_name,
-        'url': url,
         'auth_type': auth_type,
     }
 
@@ -103,15 +121,17 @@ def run_configure(args) -> int:
         data['username'] = SECRET_PLACEHOLDERS['username']
         data['password'] = SECRET_PLACEHOLDERS['password']
 
-    # Extra fields (e.g., organization, project_key for Sonar)
+    # Save credential file (secrets only)
+    path = save_credential(skill_name, data, scope, project_name)
+
+    # Write non-secret config to marshal.json
+    provider_config: dict[str, str] = {'url': url}
     extra_fields = getattr(args, 'extra', None) or []
     for pair in extra_fields:
         if '=' in pair:
             key, value = pair.split('=', 1)
-            data[key] = value
-
-    # Save credential file with placeholders
-    path = save_credential(skill_name, data, scope, project_name)
+            provider_config[key] = value
+    write_provider_config(skill_name, provider_config)
 
     # Register metadata (no secrets)
     register_credential_metadata(skill_name, scope, str(path), verified=False)
