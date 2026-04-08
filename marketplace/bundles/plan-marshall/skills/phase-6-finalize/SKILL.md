@@ -387,7 +387,7 @@ State checks (for present steps):
 | `plan-marshall:dev-general-practices` | Bash safety rules, tool usage patterns |
 | `plan-marshall:workflow-integration-git` | Commit, push workflow |
 | `plan-marshall:tools-integration-ci` | PR operations, CI status |
-| `plan-marshall:workflow-integration-ci` | CI monitoring, review handling |
+| `plan-marshall:workflow-integration-github` | CI monitoring, review handling (GitHub) |
 | `plan-marshall:workflow-integration-sonar` | Sonar quality gate |
 | `plan-marshall:phase-5-execute` | Loop-back target for fix task execution |
 | `plan-marshall:manage-memories` | Knowledge capture |

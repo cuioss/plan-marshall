@@ -172,7 +172,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   request clarify \
   --plan-id {plan_id} \
   --clarifications "**Q: Should JSON in workflow context be included?**
-Examples: manage-adr/SKILL.md, workflow-integration-ci/SKILL.md
+Examples: manage-adr/SKILL.md, workflow-integration-github/SKILL.md
 A: Exclude workflow JSON - Only include explicit ## Output sections" \
   --clarified-request "Migrate JSON output specifications to TOON format in all marketplace bundles.
 
@@ -223,7 +223,7 @@ Migrate agent/command/skill outputs from JSON to TOON format
 ## Clarifications
 
 **Q: Should files with JSON in workflow context be included?**
-Examples: manage-adr/SKILL.md, workflow-integration-ci/SKILL.md
+Examples: manage-adr/SKILL.md, workflow-integration-github/SKILL.md
 A: Exclude workflow JSON - Only include explicit ## Output sections
 
 ## Clarified Request

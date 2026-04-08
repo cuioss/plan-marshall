@@ -28,7 +28,7 @@ WORKFLOW_CONFIGS = {
         'required_keys': ['safe_patterns', 'uncertain_patterns', 'skip_dirs'],
         'non_empty_arrays': ['safe_patterns', 'skip_dirs'],
     },
-    'workflow-integration-ci': {
+    'workflow-integration-github': {
         'file': 'comment-patterns.json',
         'required_keys': ['code_change', 'explain', 'ignore', 'thresholds'],
         'non_empty_arrays': [],
@@ -102,7 +102,7 @@ class TestCommentPatternsRegexValid(unittest.TestCase):
     def test_all_patterns_compile(self):
         import re
 
-        config_path = WORKFLOW_SKILLS_DIR / 'workflow-integration-ci' / 'standards' / 'comment-patterns.json'
+        config_path = WORKFLOW_SKILLS_DIR / 'workflow-integration-github' / 'standards' / 'comment-patterns.json'
         data = json.loads(config_path.read_text())
 
         for category in ('code_change', 'explain', 'ignore'):

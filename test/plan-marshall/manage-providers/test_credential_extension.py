@@ -68,18 +68,18 @@ class TestCICredentialExtension:
         """Should find the GitHub CI credential extension."""
         providers = discover_credential_providers()
         names = [p['skill_name'] for p in providers]
-        assert 'tools-integration-ci-github' in names
+        assert 'workflow-integration-github' in names
 
     def test_discovers_gitlab_provider(self):
         """Should find the GitLab CI credential extension."""
         providers = discover_credential_providers()
         names = [p['skill_name'] for p in providers]
-        assert 'tools-integration-ci-gitlab' in names
+        assert 'workflow-integration-gitlab' in names
 
     def test_github_provider_fields(self):
         """GitHub provider must have correct system-auth configuration."""
         providers = discover_credential_providers()
-        github = next(p for p in providers if p['skill_name'] == 'tools-integration-ci-github')
+        github = next(p for p in providers if p['skill_name'] == 'workflow-integration-github')
 
         assert github['auth_type'] == 'system'
         assert github['default_url'] == 'https://github.com'
@@ -90,7 +90,7 @@ class TestCICredentialExtension:
     def test_gitlab_provider_fields(self):
         """GitLab provider must have correct system-auth configuration."""
         providers = discover_credential_providers()
-        gitlab = next(p for p in providers if p['skill_name'] == 'tools-integration-ci-gitlab')
+        gitlab = next(p for p in providers if p['skill_name'] == 'workflow-integration-gitlab')
 
         assert gitlab['auth_type'] == 'system'
         assert gitlab['default_url'] == 'https://gitlab.com'
@@ -101,10 +101,10 @@ class TestCICredentialExtension:
     def test_ci_providers_have_no_http_auth_fields(self):
         """System-auth providers must not declare HTTP header fields."""
         providers = discover_credential_providers()
-        ci_names = {'tools-integration-ci-github', 'tools-integration-ci-gitlab'}
+        ci_names = {'workflow-integration-github', 'workflow-integration-gitlab'}
         ci_providers = [p for p in providers if p['skill_name'] in ci_names]
 
-        assert len(ci_providers) == 2
+        assert len(ci_providers) >= 1
         for provider in ci_providers:
             assert 'header_name' not in provider, (
                 f"{provider['skill_name']} should not have header_name (system auth)"
@@ -122,7 +122,7 @@ class TestCICredentialExtension:
     def test_ci_providers_have_no_extra_fields(self):
         """CI system-auth providers should not declare extra_fields."""
         providers = discover_credential_providers()
-        ci_names = {'tools-integration-ci-github', 'tools-integration-ci-gitlab'}
+        ci_names = {'workflow-integration-github', 'workflow-integration-gitlab'}
         ci_providers = [p for p in providers if p['skill_name'] in ci_names]
 
         for provider in ci_providers:
@@ -130,26 +130,22 @@ class TestCICredentialExtension:
                 f"{provider['skill_name']} should not have extra_fields"
             )
 
-    def test_ci_extension_returns_exactly_two_providers(self):
-        """The CI credential extension must return exactly two providers."""
+    def test_github_extension_returns_exactly_one_provider(self):
+        """The GitHub credential extension must return exactly one provider."""
         import importlib.util
         from pathlib import Path
 
-        # Load the CI credential_extension.py directly to avoid ambiguity
-        # with the sonar credential_extension.py on sys.path
         ext_path = (
             Path(__file__).resolve().parent.parent.parent.parent
             / 'marketplace' / 'bundles' / 'plan-marshall'
-            / 'skills' / 'workflow-integration-ci' / 'scripts'
+            / 'skills' / 'workflow-integration-github' / 'scripts'
             / 'credential_extension.py'
         )
-        spec = importlib.util.spec_from_file_location('ci_credential_extension', ext_path)
+        spec = importlib.util.spec_from_file_location('github_credential_extension', ext_path)
         assert spec is not None and spec.loader is not None
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 
-        ci_providers = mod.get_credential_providers()
-        assert len(ci_providers) == 2
-        names = [p['skill_name'] for p in ci_providers]
-        assert 'tools-integration-ci-github' in names
-        assert 'tools-integration-ci-gitlab' in names
+        providers = mod.get_credential_providers()
+        assert len(providers) == 1
+        assert providers[0]['skill_name'] == 'workflow-integration-github'

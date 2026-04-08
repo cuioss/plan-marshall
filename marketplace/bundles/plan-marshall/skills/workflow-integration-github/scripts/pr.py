@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-PR workflow operations - fetch comments and triage them (provider-agnostic).
+GitHub PR workflow operations - fetch comments and triage them.
 
-Uses tools-integration-ci ci router for provider abstraction.
+Uses github.py directly for GitHub operations (no provider detection needed).
 
 Usage:
     pr.py fetch-comments [--pr <number>] [--unresolved-only]
@@ -34,6 +34,7 @@ import re
 import sys
 from typing import Any
 
+import github as _github  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     cmd_triage_batch_handler,
@@ -73,60 +74,9 @@ for _category in ('code_change', 'explain', 'ignore'):
 # FETCH-COMMENTS SUBCOMMAND (Provider-Agnostic via direct import)
 # ============================================================================
 
-# Provider resolution — imports ci.py's get_provider() to determine which
-# provider module to use, then imports the data-returning functions directly.
-# This avoids the previous subprocess chain (executor → pr.py → executor → ci.py)
-# while maintaining provider abstraction.
-#
-# Import coupling: This creates a compile-time dependency on tools-integration-ci
-# modules' internal API (get_provider(), view_pr_data(), fetch_pr_comments_data()).
-# If tools-integration-ci refactors these functions, pr.py must be updated in lockstep.
-
-
-def _get_provider_module():
-    """Resolve the CI provider and return the provider module.
-
-    Returns the provider module (github or gitlab), or None if not configured.
-
-    Contract: The returned module must expose these functions:
-    - view_pr_data() -> dict with 'status', 'pr_number' keys
-    - fetch_pr_comments_data(pr_number: int, unresolved_only: bool) -> dict with 'status', 'comments', 'total', 'unresolved' keys
-    If tools-integration-ci refactors these, pr.py must be updated in lockstep.
-    """
-    try:
-        from ci import get_provider  # type: ignore[import-not-found]
-    except ImportError as e:
-        print(f'WARNING: Cannot import ci module from tools-integration-ci: {e}', file=sys.stderr)
-        return None
-
-    provider = get_provider()
-    try:
-        if provider == 'github':
-            import github as mod  # type: ignore[import-not-found]
-        elif provider == 'gitlab':
-            import gitlab as mod  # type: ignore[import-not-found]
-        else:
-            return None
-    except ImportError as e:
-        print(f'WARNING: Cannot import {provider} module from tools-integration-ci: {e}', file=sys.stderr)
-        return None
-
-    # Validate contract: ensure required functions exist
-    for fn_name in ('view_pr_data', 'fetch_pr_comments_data'):
-        if not hasattr(mod, fn_name):
-            print(f'WARNING: {provider} module missing required function {fn_name}', file=sys.stderr)
-            return None
-
-    return mod
-
-
 def get_current_pr_number() -> int | None:
-    """Get PR number for current branch via provider's view_pr_data()."""
-    mod = _get_provider_module()
-    if not mod:
-        return None
-
-    result = mod.view_pr_data()
+    """Get PR number for current branch via GitHub's view_pr_data()."""
+    result = _github.view_pr_data()
     if result.get('status') != 'success':
         return None
 
@@ -140,14 +90,9 @@ def get_current_pr_number() -> int | None:
 
 
 def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
-    """Fetch review comments for a PR via provider's fetch_pr_comments_data()."""
-    mod = _get_provider_module()
-    if not mod:
-        return make_error(
-            'CI provider not configured. Run /marshall-steward first.', code=ErrorCode.PROVIDER_NOT_CONFIGURED
-        )
+    """Fetch review comments for a PR via GitHub's fetch_pr_comments_data()."""
 
-    result = mod.fetch_pr_comments_data(pr_number, unresolved_only)
+    result = _github.fetch_pr_comments_data(pr_number, unresolved_only)
 
     if result.get('status') != 'success':
         return make_error(result.get('error', 'Failed to fetch PR comments'), code=ErrorCode.FETCH_FAILURE)

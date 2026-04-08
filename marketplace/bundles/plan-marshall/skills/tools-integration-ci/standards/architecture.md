@@ -102,6 +102,13 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {domain} {
 | **Testing** | Test each provider independently |
 | **Router simplicity** | Just reads config and imports |
 
+### Provider Skills
+
+Each provider has its own skill with dedicated workflow scripts:
+
+- `workflow-integration-github` — GitHub operations via `gh` CLI, PR review workflows
+- `workflow-integration-gitlab` — GitLab operations via `glab` CLI, MR review workflows
+
 ### Provider Implementation Details
 
 - [github-impl.md](github-impl.md) — GitHub-specific CLI mappings and field names

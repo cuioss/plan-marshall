@@ -49,7 +49,7 @@ This skill operates in two modes based on invocation context:
 Load based on `checks` parameter — only load the skills you need:
 ```
 Skill: plan-marshall:workflow-integration-git   # Always (commit workflow)
-Skill: plan-marshall:workflow-integration-ci     # checks=reviews or checks=all
+Skill: plan-marshall:workflow-integration-github  # checks=reviews or checks=all
 Skill: plan-marshall:workflow-integration-sonar  # checks=sonar or checks=all
 ```
 
@@ -67,7 +67,7 @@ Delegates to skills:
 ```
 /workflow-pr-doctor (orchestrator)
   ├─> triage_helpers (ref-toon-format) — error handling, TOON serialization
-  ├─> workflow-integration-ci skill (Fetch Comments, Handle Review)
+  ├─> workflow-integration-github skill (Fetch Comments, Handle Review)
   │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
   ├─> workflow-integration-sonar skill (Fetch Issues, Fix Issues)
   │     └─> triage_helpers (ref-toon-format) — shared triage, error handling
@@ -188,7 +188,7 @@ Based on `checks` parameter:
 
 **Build**: `ci ci status --pr-number {pr}` → BUILD_FAILURE if `overall_status: failure`. If CI status check fails, report error and skip build diagnosis.
 
-**Reviews**: workflow-integration-ci (Fetch Comments) → REVIEW_COMMENTS ({count}). If fetch fails, report error and skip review diagnosis.
+**Reviews**: workflow-integration-github (Fetch Comments) → REVIEW_COMMENTS ({count}). If fetch fails, report error and skip review diagnosis.
 
 **Sonar**: workflow-integration-sonar (Fetch Issues) → SONAR_QUALITY ({count}/{severity}). If Sonar MCP is unavailable, skip Sonar checks and report as "skipped — MCP not connected".
 
@@ -237,7 +237,7 @@ Based on checks parameter:
    ```
    Use the returned `executable` to run verify.
 
-**REVIEW_COMMENTS**: Delegate to workflow-integration-ci "Handle Review" workflow. The CI skill handles fetching comments, batch triage, and classifying actions (code_change/explain/ignore). The pr-doctor processes each action and commits via the git skill.
+**REVIEW_COMMENTS**: Delegate to workflow-integration-github "Handle Review" workflow. The CI skill handles fetching comments, batch triage, and classifying actions (code_change/explain/ignore). The pr-doctor processes each action and commits via the git skill.
 
 **SONAR_QUALITY**: Delegate to workflow-integration-sonar "Fix Issues" workflow. The Sonar skill handles batch triage and fix-vs-suppress classification. The pr-doctor executes each action and commits via the git skill.
 
@@ -377,4 +377,4 @@ python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor parse
 
 ## Related
 
-See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Related skills: `plan-marshall:workflow-integration-ci` (PR comment fetch and triage), `plan-marshall:workflow-integration-sonar` (Sonar issue triage), `plan-marshall:workflow-integration-git` (commit workflow).
+See `ref-workflow-architecture` → "Workflow Skill Orchestration" for the full dependency graph and shared infrastructure documentation. Related skills: `plan-marshall:workflow-integration-github` (PR comment fetch and triage), `plan-marshall:workflow-integration-sonar` (Sonar issue triage), `plan-marshall:workflow-integration-git` (commit workflow).
