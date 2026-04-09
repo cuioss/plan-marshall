@@ -5,7 +5,7 @@ Reports whether a credential file exists and has all secrets filled in
 (no placeholder values remaining).
 """
 
-from _credentials_core import (
+from _providers_core import (
     check_credential_completeness,
     get_project_name,
 )

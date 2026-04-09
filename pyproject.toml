@@ -111,9 +111,4 @@ exclude = [
     # Duplicate module names across sibling skills (each is independent, loaded via PYTHONPATH at runtime)
     "manage-references/scripts/",
     "manage-status/scripts/",
-    "workflow-integration-github/scripts/credential_extension\\.py$",
-    "workflow-integration-github/scripts/pr\\.py$",
-    "workflow-integration-gitlab/scripts/credential_extension\\.py$",
-    "workflow-integration-gitlab/scripts/pr\\.py$",
-    "workflow-integration-git/scripts/credential_extension\\.py$",
 ]

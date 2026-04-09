@@ -90,7 +90,7 @@ def main() -> int:
         from _cred_edit import run_edit
         return run_edit(args)
     elif args.command == 'list-providers':
-        from _cred_list_providers import run_list_providers
+        from _list_providers import run_list_providers
         return run_list_providers(args)
     elif args.command == 'verify':
         from _cred_verify import run_verify

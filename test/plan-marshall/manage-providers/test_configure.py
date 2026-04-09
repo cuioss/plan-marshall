@@ -101,7 +101,7 @@ class TestCheckCompleteness:
 
     def test_not_found(self, tmp_path):
         """Returns exists=False when credential file does not exist."""
-        from _credentials_core import check_credential_completeness  # type: ignore[import-not-found]
+        from _providers_core import check_credential_completeness  # type: ignore[import-not-found]
 
         result = check_credential_completeness('nonexistent', 'global')
         # May or may not exist depending on system state
@@ -113,7 +113,7 @@ class TestCheckCompleteness:
 
     def test_complete_credential(self, tmp_path):
         """Returns complete=True when no placeholders present."""
-        from _credentials_core import (  # type: ignore[import-not-found]
+        from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             check_credential_completeness,
             save_credential,
@@ -139,7 +139,7 @@ class TestCheckCompleteness:
 
     def test_incomplete_credential(self, tmp_path):
         """Returns complete=False when placeholders present."""
-        from _credentials_core import (  # type: ignore[import-not-found]
+        from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             SECRET_PLACEHOLDERS,
             check_credential_completeness,
@@ -166,7 +166,7 @@ class TestCheckCompleteness:
 
     def test_auth_none_reports_complete(self, tmp_path):
         """auth_type=none with no secret fields reports complete."""
-        from _credentials_core import (  # type: ignore[import-not-found]
+        from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             check_credential_completeness,
             save_credential,
@@ -206,7 +206,7 @@ class TestConfigureAuthTypeValidation:
 
     def test_configure_accepts_matching_auth_type(self, tmp_path):
         """Configure accepts auth_type that matches provider's declared auth_type."""
-        from _credentials_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
+        from _providers_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
 
         (tmp_path / '.plan').mkdir()
         skill = 'workflow-integration-sonar'
@@ -239,7 +239,7 @@ class TestConfigureMarshalJsonSeparation:
 
     def test_configure_writes_url_to_marshal_json(self, tmp_path, monkeypatch):
         """Configure writes url to marshal.json, not to credential file."""
-        from _credentials_core import (  # type: ignore[import-not-found]
+        from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             load_credential,
             read_provider_config,
@@ -276,7 +276,7 @@ class TestConfigureMarshalJsonSeparation:
 
     def test_configure_writes_extra_fields_to_marshal_json(self, tmp_path, monkeypatch):
         """Configure writes extra fields (organization, project_key) to marshal.json."""
-        from _credentials_core import (  # type: ignore[import-not-found]
+        from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             load_credential,
             read_provider_config,
@@ -318,7 +318,7 @@ class TestConfigureAuthTypeMismatch:
 
     def test_configure_reconfigures_on_auth_type_mismatch(self, tmp_path):
         """Configure with token auth overwrites existing none credential."""
-        from _credentials_core import (  # type: ignore[import-not-found]
+        from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             load_credential,
             save_credential,
@@ -365,7 +365,7 @@ class TestConfigureSystemAuth:
     def test_system_auth_creates_credential_without_secrets(self, tmp_path, monkeypatch):
         """Configure with system auth creates credential file with no secret placeholders."""
         from _cred_configure import run_configure  # type: ignore[import-not-found]
-        from _credentials_core import (  # type: ignore[import-not-found]
+        from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             check_credential_completeness,
             load_credential,
@@ -395,7 +395,7 @@ class TestConfigureSystemAuth:
         try:
             with monkeypatch.context() as m:
                 m.setattr(
-                    '_cred_configure.discover_credential_providers',
+                    '_cred_configure.discover_provider_extensions',
                     lambda: [mock_provider],
                 )
                 run_configure(MockArgs())
@@ -418,7 +418,7 @@ class TestConfigureSystemAuth:
     def test_system_auth_does_not_require_url(self, tmp_path, monkeypatch):
         """Configure with system auth succeeds without --url."""
         from _cred_configure import run_configure  # type: ignore[import-not-found]
-        from _credentials_core import CREDENTIALS_DIR, load_credential  # type: ignore[import-not-found]
+        from _providers_core import CREDENTIALS_DIR, load_credential  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -443,7 +443,7 @@ class TestConfigureSystemAuth:
         try:
             with monkeypatch.context() as m:
                 m.setattr(
-                    '_cred_configure.discover_credential_providers',
+                    '_cred_configure.discover_provider_extensions',
                     lambda: [mock_provider],
                 )
                 # Should not raise "URL is required"
@@ -487,7 +487,7 @@ class TestConfigureSystemAuth:
             captured_output.update(data)
 
         with monkeypatch.context() as m:
-            m.setattr('_cred_configure.discover_credential_providers', lambda: [mock_provider])
+            m.setattr('_cred_configure.discover_provider_extensions', lambda: [mock_provider])
             m.setattr('_cred_configure.output_toon', mock_output)
             run_configure(MockArgs())
 
@@ -522,7 +522,7 @@ class TestConfigureSystemAuth:
             captured_output.update(data)
 
         with monkeypatch.context() as m:
-            m.setattr('_cred_configure.discover_credential_providers', lambda: [mock_provider])
+            m.setattr('_cred_configure.discover_provider_extensions', lambda: [mock_provider])
             m.setattr('_cred_configure.output_toon', mock_output)
             run_configure(MockArgs())
 

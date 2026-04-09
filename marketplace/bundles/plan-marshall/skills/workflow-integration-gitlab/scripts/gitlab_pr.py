@@ -34,7 +34,7 @@ import re
 import sys
 from typing import Any
 
-import gitlab as _gitlab  # type: ignore[import-not-found]
+import gitlab_ops as _gitlab  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     cmd_triage_batch_handler,

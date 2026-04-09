@@ -1,18 +1,18 @@
 """
-Credential extension for GitLab CI provider integration.
+Provider extension for GitLab CI provider integration.
 
 Extension point: plan-marshall:extension-api/standards/ext-point-provider
 
-Declares credential requirements for the workflow-integration-gitlab skill.
+Declares provider requirements for the workflow-integration-gitlab skill.
 GitLab uses system-level authentication (glab CLI login), not
 HTTP headers managed by plan-marshall.
 
-Discovered by manage-providers via discover_credential_providers().
+Discovered by manage-providers via discover_provider_extensions().
 """
 
 
-def get_credential_providers():
-    """Return credential provider declarations for GitLab CI integration."""
+def get_provider_declarations():
+    """Return provider declarations for GitLab CI integration."""
     return [
         {
             'skill_name': 'workflow-integration-gitlab',

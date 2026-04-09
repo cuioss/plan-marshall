@@ -10,7 +10,7 @@ These tests focus on the script interface, not live operations.
 from conftest import get_script_path, run_script
 
 # Get script path
-SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-gitlab', 'gitlab.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-gitlab', 'gitlab_ops.py')
 
 
 def test_help_flag():

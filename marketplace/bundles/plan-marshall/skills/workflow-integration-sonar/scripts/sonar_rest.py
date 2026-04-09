@@ -15,7 +15,7 @@ Usage:
 import argparse
 import sys
 
-from _credentials_core import RestClientError, get_authenticated_client  # type: ignore[import-not-found]
+from _providers_core import RestClientError, get_authenticated_client  # type: ignore[import-not-found]
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 SKILL_NAME = 'workflow-integration-sonar'

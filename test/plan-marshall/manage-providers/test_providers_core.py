@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for _credentials_core.py module.
+"""Tests for _providers_core.py module.
 
 Covers path resolution, credential file I/O, RestClient, and provider discovery.
 """
@@ -8,11 +8,11 @@ import json
 from unittest.mock import patch
 
 import pytest
-from _credentials_core import (  # type: ignore[import-not-found]
+from _providers_core import (  # type: ignore[import-not-found]
     CREDENTIALS_DIR,
     VALID_AUTH_TYPES,
     RestClient,
-    discover_credential_providers,
+    discover_provider_extensions,
     get_authenticated_client,
     get_project_name,
     load_credential,
@@ -68,7 +68,7 @@ class TestResolveCredentialPath:
 
     def test_rejects_symlink_escape(self, tmp_path):
         """Paths that escape CREDENTIALS_DIR via symlinks are rejected."""
-        with patch('_credentials_core.CREDENTIALS_DIR', tmp_path / 'creds'):
+        with patch('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds'):
             (tmp_path / 'creds').mkdir()
             # Create a symlink that points outside
             evil_link = tmp_path / 'creds' / 'evil'
@@ -87,7 +87,7 @@ class TestSaveAndLoadCredential:
 
     def test_save_creates_file_with_correct_permissions(self, tmp_path):
         """Saved credential files must have 0o600 permissions."""
-        with patch('_credentials_core.CREDENTIALS_DIR', tmp_path / 'creds'):
+        with patch('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds'):
             data = {'skill': 'test', 'url': 'https://example.com', 'auth_type': 'none'}
             path = save_credential('test', data, 'global')
             assert path.exists()
@@ -97,7 +97,7 @@ class TestSaveAndLoadCredential:
     def test_save_creates_directory_with_correct_permissions(self, tmp_path):
         """Credentials directory must have 0o700 permissions."""
         creds_dir = tmp_path / 'creds'
-        with patch('_credentials_core.CREDENTIALS_DIR', creds_dir):
+        with patch('_providers_core.CREDENTIALS_DIR', creds_dir):
             data = {'skill': 'test', 'url': 'https://example.com', 'auth_type': 'none'}
             save_credential('test', data, 'global')
             mode = creds_dir.stat().st_mode & 0o777
@@ -105,7 +105,7 @@ class TestSaveAndLoadCredential:
 
     def test_round_trip(self, tmp_path):
         """Save then load returns the same data."""
-        with patch('_credentials_core.CREDENTIALS_DIR', tmp_path / 'creds'):
+        with patch('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds'):
             data = {
                 'skill': 'test-skill',
                 'url': 'https://api.example.com',
@@ -120,7 +120,7 @@ class TestSaveAndLoadCredential:
 
     def test_load_returns_none_for_missing(self, tmp_path):
         """Loading a non-existent credential returns None."""
-        with patch('_credentials_core.CREDENTIALS_DIR', tmp_path / 'creds'):
+        with patch('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds'):
             (tmp_path / 'creds').mkdir(mode=0o700)
             result = load_credential('nonexistent', 'global')
             assert result is None
@@ -131,14 +131,14 @@ class TestSaveAndLoadCredential:
         creds_dir.mkdir(mode=0o700)
         bad_file = creds_dir / 'bad.json'
         bad_file.write_text('not json {{{')
-        with patch('_credentials_core.CREDENTIALS_DIR', creds_dir):
+        with patch('_providers_core.CREDENTIALS_DIR', creds_dir):
             result = load_credential('bad', 'global')
             assert result is None
 
     def test_auto_scope_project_first(self, tmp_path):
         """Auto scope checks project-scoped first, then global."""
         creds_dir = tmp_path / 'creds'
-        with patch('_credentials_core.CREDENTIALS_DIR', creds_dir):
+        with patch('_providers_core.CREDENTIALS_DIR', creds_dir):
             # Save global
             global_data = {'skill': 'test', 'url': 'https://global.com', 'auth_type': 'none'}
             save_credential('test', global_data, 'global')
@@ -155,7 +155,7 @@ class TestRemoveCredential:
 
     def test_removes_existing_file(self, tmp_path):
         """Remove deletes the credential file."""
-        with patch('_credentials_core.CREDENTIALS_DIR', tmp_path / 'creds'):
+        with patch('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds'):
             data = {'skill': 'test', 'url': 'https://example.com', 'auth_type': 'none'}
             path = save_credential('test', data, 'global')
             assert path.exists()
@@ -164,7 +164,7 @@ class TestRemoveCredential:
 
     def test_returns_false_for_missing(self, tmp_path):
         """Remove returns False for non-existent credential."""
-        with patch('_credentials_core.CREDENTIALS_DIR', tmp_path / 'creds'):
+        with patch('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds'):
             (tmp_path / 'creds').mkdir(mode=0o700)
             assert remove_credential('nonexistent', 'global') is False
 
@@ -224,7 +224,7 @@ class TestProviderConfig:
 
     def test_write_and_read_provider_config(self, tmp_path, monkeypatch):
         """Write provider config to marshal.json and read it back."""
-        from _credentials_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -236,7 +236,7 @@ class TestProviderConfig:
 
     def test_read_returns_empty_when_no_marshal(self, tmp_path, monkeypatch):
         """Returns empty dict when marshal.json does not exist."""
-        from _credentials_core import read_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         config = read_provider_config('nonexistent')
@@ -244,7 +244,7 @@ class TestProviderConfig:
 
     def test_write_preserves_existing_content(self, tmp_path, monkeypatch):
         """Writing provider config preserves other marshal.json content."""
-        from _credentials_core import write_provider_config  # type: ignore[import-not-found]
+        from _providers_core import write_provider_config  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         plan_dir = tmp_path / '.plan'
@@ -260,7 +260,7 @@ class TestProviderConfig:
 
     def test_write_updates_existing_provider(self, tmp_path, monkeypatch):
         """Writing to same provider overwrites previous config."""
-        from _credentials_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
+        from _providers_core import read_provider_config, write_provider_config  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -273,17 +273,17 @@ class TestProviderConfig:
 
 
 class TestDiscoverCredentialProviders:
-    """Tests for discover_credential_providers()."""
+    """Tests for discover_provider_extensions()."""
 
     def test_discovers_sonar_extension(self):
         """Should find the credential_extension.py in workflow-integration-sonar."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         skill_names = [p['skill_name'] for p in providers]
         assert 'workflow-integration-sonar' in skill_names
 
     def test_provider_has_required_fields(self):
         """Each provider must have all required fields."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         sonar = [p for p in providers if p['skill_name'] == 'workflow-integration-sonar']
         assert len(sonar) == 1
         provider = sonar[0]
@@ -324,7 +324,7 @@ class TestCheckCompletenessSystem:
 
     def test_system_auth_reports_complete(self, tmp_path):
         """auth_type=system credential with no secret fields reports complete."""
-        from _credentials_core import check_credential_completeness  # type: ignore[import-not-found]
+        from _providers_core import check_credential_completeness  # type: ignore[import-not-found]
 
         skill = 'test-system-complete'
         data = {
@@ -344,7 +344,7 @@ class TestCheckCompletenessSystem:
 
     def test_system_auth_no_token_check(self, tmp_path):
         """auth_type=system must not check for missing token field."""
-        from _credentials_core import check_credential_completeness  # type: ignore[import-not-found]
+        from _providers_core import check_credential_completeness  # type: ignore[import-not-found]
 
         skill = 'test-system-no-token'
         data = {
@@ -384,7 +384,7 @@ class TestGetAuthenticatedClientSystem:
         try:
             save_credential(skill, data, 'global')
             # Write URL to marshal.json provider config
-            from _credentials_core import write_provider_config  # type: ignore[import-not-found]
+            from _providers_core import write_provider_config  # type: ignore[import-not-found]
             write_provider_config(skill, {'url': 'https://api.example.com'})
 
             client = get_authenticated_client(skill)

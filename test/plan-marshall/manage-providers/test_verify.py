@@ -36,7 +36,7 @@ class TestVerifySystemAuth:
     def test_system_auth_routes_to_verify_command(self, tmp_path, monkeypatch):
         """Verify with system auth runs verify_command instead of HTTP check."""
         from _cred_verify import run_verify  # type: ignore[import-not-found]
-        from _credentials_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
+        from _providers_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -66,7 +66,7 @@ class TestVerifySystemAuth:
             save_credential(skill, data, 'global')
 
             with monkeypatch.context() as m:
-                m.setattr('_cred_verify.discover_credential_providers', lambda: [mock_provider])
+                m.setattr('_cred_verify.discover_provider_extensions', lambda: [mock_provider])
                 m.setattr('_cred_verify.output_toon', mock_output)
                 run_verify(MockArgs())
 
@@ -81,7 +81,7 @@ class TestVerifySystemAuth:
     def test_system_auth_failed_verify_command(self, tmp_path, monkeypatch):
         """Verify with system auth reports failure when verify_command fails."""
         from _cred_verify import run_verify  # type: ignore[import-not-found]
-        from _credentials_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
+        from _providers_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -111,7 +111,7 @@ class TestVerifySystemAuth:
             save_credential(skill, data, 'global')
 
             with monkeypatch.context() as m:
-                m.setattr('_cred_verify.discover_credential_providers', lambda: [mock_provider])
+                m.setattr('_cred_verify.discover_provider_extensions', lambda: [mock_provider])
                 m.setattr('_cred_verify.output_toon', mock_output)
                 run_verify(MockArgs())
 
@@ -126,7 +126,7 @@ class TestVerifySystemAuth:
     def test_system_auth_no_provider_extension(self, tmp_path, monkeypatch):
         """Verify with system auth reports error when no provider extension found."""
         from _cred_verify import run_verify  # type: ignore[import-not-found]
-        from _credentials_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
+        from _providers_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -149,7 +149,7 @@ class TestVerifySystemAuth:
 
             with monkeypatch.context() as m:
                 # No providers returned — extension not found
-                m.setattr('_cred_verify.discover_credential_providers', lambda: [])
+                m.setattr('_cred_verify.discover_provider_extensions', lambda: [])
                 m.setattr('_cred_verify.output_toon', mock_output)
                 run_verify(MockArgs())
 
@@ -164,7 +164,7 @@ class TestVerifySystemAuth:
     def test_system_auth_does_not_call_get_authenticated_client(self, tmp_path, monkeypatch):
         """Verify with system auth must NOT attempt HTTP connectivity check."""
         from _cred_verify import run_verify  # type: ignore[import-not-found]
-        from _credentials_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
+        from _providers_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
@@ -196,7 +196,7 @@ class TestVerifySystemAuth:
             save_credential(skill, data, 'global')
 
             with monkeypatch.context() as m:
-                m.setattr('_cred_verify.discover_credential_providers', lambda: [mock_provider])
+                m.setattr('_cred_verify.discover_provider_extensions', lambda: [mock_provider])
                 m.setattr('_cred_verify.get_authenticated_client', mock_get_client)
                 m.setattr('_cred_verify.output_toon', lambda d: None)
                 run_verify(MockArgs())

@@ -2,7 +2,7 @@
 """Tests for credential extension discovery across marketplace bundles."""
 
 
-from _credentials_core import discover_credential_providers  # type: ignore[import-not-found]
+from _providers_core import discover_provider_extensions  # type: ignore[import-not-found]
 
 import conftest  # noqa: F401
 
@@ -12,13 +12,13 @@ class TestCredentialExtensionDiscovery:
 
     def test_discovers_sonar_provider(self):
         """Should find the Sonar credential extension."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         names = [p['skill_name'] for p in providers]
         assert 'workflow-integration-sonar' in names
 
     def test_sonar_provider_fields(self):
         """Sonar provider must have correct configuration."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
 
         assert sonar['auth_type'] == 'token'
@@ -30,7 +30,7 @@ class TestCredentialExtensionDiscovery:
 
     def test_skill_name_matches_directory(self):
         """Provider skill_name must match the skill directory name."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         for provider in providers:
             skill_name = provider['skill_name']
             # The skill_name should be a valid directory name
@@ -38,13 +38,13 @@ class TestCredentialExtensionDiscovery:
             assert '\\' not in skill_name
 
     def test_returns_list(self):
-        """discover_credential_providers always returns a list."""
-        providers = discover_credential_providers()
+        """discover_provider_extensions always returns a list."""
+        providers = discover_provider_extensions()
         assert isinstance(providers, list)
 
     def test_sonar_organization_is_optional(self):
         """Sonar organization extra_field must be optional (required=False)."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
 
         extra_fields = sonar.get('extra_fields', [])
@@ -53,7 +53,7 @@ class TestCredentialExtensionDiscovery:
 
     def test_sonar_project_key_is_required(self):
         """Sonar project_key extra_field must be required."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
 
         extra_fields = sonar.get('extra_fields', [])
@@ -66,19 +66,19 @@ class TestCICredentialExtension:
 
     def test_discovers_github_provider(self):
         """Should find the GitHub CI credential extension."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         names = [p['skill_name'] for p in providers]
         assert 'workflow-integration-github' in names
 
     def test_discovers_gitlab_provider(self):
         """Should find the GitLab CI credential extension."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         names = [p['skill_name'] for p in providers]
         assert 'workflow-integration-gitlab' in names
 
     def test_github_provider_fields(self):
         """GitHub provider must have correct system-auth configuration."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         github = next(p for p in providers if p['skill_name'] == 'workflow-integration-github')
 
         assert github['auth_type'] == 'system'
@@ -89,7 +89,7 @@ class TestCICredentialExtension:
 
     def test_gitlab_provider_fields(self):
         """GitLab provider must have correct system-auth configuration."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         gitlab = next(p for p in providers if p['skill_name'] == 'workflow-integration-gitlab')
 
         assert gitlab['auth_type'] == 'system'
@@ -100,7 +100,7 @@ class TestCICredentialExtension:
 
     def test_ci_providers_have_no_http_auth_fields(self):
         """System-auth providers must not declare HTTP header fields."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         ci_names = {'workflow-integration-github', 'workflow-integration-gitlab'}
         ci_providers = [p for p in providers if p['skill_name'] in ci_names]
 
@@ -121,7 +121,7 @@ class TestCICredentialExtension:
 
     def test_ci_providers_have_no_extra_fields(self):
         """CI system-auth providers should not declare extra_fields."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         ci_names = {'workflow-integration-github', 'workflow-integration-gitlab'}
         ci_providers = [p for p in providers if p['skill_name'] in ci_names]
 
@@ -139,13 +139,13 @@ class TestCICredentialExtension:
             Path(__file__).resolve().parent.parent.parent.parent
             / 'marketplace' / 'bundles' / 'plan-marshall'
             / 'skills' / 'workflow-integration-github' / 'scripts'
-            / 'credential_extension.py'
+            / 'github_provider.py'
         )
-        spec = importlib.util.spec_from_file_location('github_credential_extension', ext_path)
+        spec = importlib.util.spec_from_file_location('github_provider', ext_path)
         assert spec is not None and spec.loader is not None
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 
-        providers = mod.get_credential_providers()
+        providers = mod.get_provider_declarations()
         assert len(providers) == 1
         assert providers[0]['skill_name'] == 'workflow-integration-github'

@@ -74,27 +74,16 @@ def main() -> int:
     if not skill:
         return output_error('router', f'Unknown CI provider: {provider}')
 
-    # Dispatch to provider script via subprocess — provider scripts now live
-    # in their own skill directories (workflow-integration-github, workflow-integration-gitlab)
-    import subprocess
+    # Direct import via executor PYTHONPATH — provider scripts use unique
+    # {provider}_ops.py names to avoid module collisions
+    if provider == 'github':
+        from github_ops import main as provider_main  # type: ignore[import-not-found]
+    elif provider == 'gitlab':
+        from gitlab_ops import main as provider_main  # type: ignore[import-not-found]
+    else:
+        return output_error('router', f'No import mapping for provider: {provider}')
 
-    args = sys.argv[1:]  # Pass through all arguments
-    script_path = Path(__file__).resolve().parent.parent.parent / skill / 'scripts' / f'{provider}.py'
-
-    if not script_path.exists():
-        return output_error('router', f'Provider script not found: {script_path}')
-
-    result = subprocess.run(
-        [sys.executable, str(script_path), *args],
-        capture_output=True,
-        text=True,
-        env={**__import__('os').environ, 'PYTHONPATH': ':'.join(sys.path)},
-    )
-    if result.stdout:
-        print(result.stdout, end='')
-    if result.stderr:
-        print(result.stderr, end='', file=sys.stderr)
-    return result.returncode
+    return provider_main()
 
 
 if __name__ == '__main__':

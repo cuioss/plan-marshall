@@ -373,11 +373,14 @@ def get_marketplace_bundles_path() -> Path:
     return script_path.parent.parent.parent.parent.parent / 'bundles'
 
 
-def discover_credential_providers() -> list[dict[str, Any]]:
-    """Scan marketplace bundles for credential_extension.py files.
+def discover_provider_extensions() -> list[dict[str, Any]]:
+    """Scan marketplace bundles for *_provider.py files.
+
+    Provider extensions use {provider}_provider.py naming to avoid
+    PYTHONPATH/mypy collisions across sibling skills.
 
     Returns:
-        List of provider declarations from get_credential_providers()
+        List of provider declarations from get_provider_declarations()
     """
     providers: list[dict[str, Any]] = []
     bundles_path = get_marketplace_bundles_path()
@@ -389,7 +392,7 @@ def discover_credential_providers() -> list[dict[str, Any]]:
         if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
             continue
 
-        # Search skills directories for credential_extension.py
+        # Search skills directories for *_provider.py
         skills_dir = bundle_dir / 'skills'
         if not skills_dir.is_dir():
             # Check versioned cache structure
@@ -404,28 +407,30 @@ def discover_credential_providers() -> list[dict[str, Any]]:
         for skill_dir in sorted(skills_dir.iterdir()):
             if not skill_dir.is_dir():
                 continue
-            ext_path = skill_dir / 'scripts' / 'credential_extension.py'
-            if ext_path.exists():
-                loaded = _load_credential_extension(ext_path, skill_dir.name)
+            scripts_dir = skill_dir / 'scripts'
+            if not scripts_dir.is_dir():
+                continue
+            for ext_path in sorted(scripts_dir.glob('*_provider.py')):
+                loaded = _load_provider_extension(ext_path, skill_dir.name)
                 if loaded:
                     providers.extend(loaded)
 
     return providers
 
 
-def _load_credential_extension(path: Path, skill_name: str) -> list[dict[str, Any]]:
-    """Load a credential_extension.py module and call get_credential_providers()."""
+def _load_provider_extension(path: Path, skill_name: str) -> list[dict[str, Any]]:
+    """Load a provider_extension.py module and call get_provider_declarations()."""
     try:
         spec = importlib.util.spec_from_file_location(
-            f'credential_extension_{skill_name}', path
+            f'provider_extension_{skill_name}', path
         )
         if spec is None or spec.loader is None:
             return []
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        if hasattr(module, 'get_credential_providers'):
-            result: list[dict[str, Any]] = module.get_credential_providers()
+        if hasattr(module, 'get_provider_declarations'):
+            result: list[dict[str, Any]] = module.get_provider_declarations()
             return result
         return []
     except Exception:

@@ -47,7 +47,7 @@ Central reference for all extension-related configuration paths in `marshal.json
 | Data | Discovery | Used By | Extension Point Doc |
 |------|-----------|---------|---------------------|
 | Recipe list | `provides_recipes()` + project skills | `/plan-marshall action=recipe` | [ext-point-recipe.md](ext-point-recipe.md) |
-| Credential providers | `credential_extension.py` scan | `manage-providers` | [ext-point-provider.md](ext-point-provider.md) |
+| Provider declarations | `*_provider.py` scan | `manage-providers` | [ext-point-provider.md](ext-point-provider.md) |
 
 ## Credential Storage
 

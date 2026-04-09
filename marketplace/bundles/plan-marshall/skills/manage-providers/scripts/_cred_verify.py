@@ -4,8 +4,8 @@ Verify credential connectivity.
 Makes a test request using RestClient and updates verified_at metadata.
 """
 
-from _credentials_core import (
-    discover_credential_providers,
+from _providers_core import (
+    discover_provider_extensions,
     get_authenticated_client,
     get_project_name,
     load_credential,
@@ -25,7 +25,7 @@ def run_verify(args) -> int:
         return 0
 
     # Find provider for verify endpoint
-    providers = discover_credential_providers()
+    providers = discover_provider_extensions()
     provider = None
     for p in providers:
         if p.get('skill_name') == skill:

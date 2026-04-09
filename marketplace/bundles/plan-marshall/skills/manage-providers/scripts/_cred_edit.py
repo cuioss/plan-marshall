@@ -5,7 +5,7 @@ Updates non-secret fields (URL, auth_type) via CLI args.
 For secret changes, the user edits the credential file directly.
 """
 
-from _credentials_core import (
+from _providers_core import (
     VALID_AUTH_TYPES,
     check_credential_completeness,
     get_project_name,
