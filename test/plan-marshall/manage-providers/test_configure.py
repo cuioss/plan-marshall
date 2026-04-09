@@ -10,6 +10,23 @@ from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
 
+# Sonar provider declaration for tests that need marshal.json seeded
+_SONAR_PROVIDER = {
+    'skill_name': 'workflow-integration-sonar',
+    'display_name': 'SonarCloud / SonarQube',
+    'auth_type': 'token',
+    'default_url': 'https://sonarcloud.io',
+    'header_name': 'Authorization',
+    'header_value_template': 'Bearer {token}',
+    'verify_endpoint': '/api/system/status',
+    'verify_method': 'GET',
+    'description': 'SonarCloud/SonarQube code analysis platform',
+    'extra_fields': [
+        {'key': 'organization', 'label': 'SonarCloud Organization', 'required': False},
+        {'key': 'project_key', 'label': 'SonarCloud Project Key', 'required': True},
+    ],
+}
+
 
 class TestConfigureCLI:
     """Tests for configure subcommand via subprocess."""
@@ -35,10 +52,16 @@ class TestConfigureCLI:
 
 
 class TestListProviders:
-    """Tests for list-providers subcommand."""
+    """Tests for list-providers subcommand.
+
+    list-providers reads from marshal.json's providers key (populated by
+    discover-and-persist). Tests run discover-and-persist first to populate.
+    """
 
     def test_list_providers_returns_success(self):
         """list-providers returns success with providers array."""
+        # Populate providers in marshal.json first
+        run_script(SCRIPT_PATH, 'discover-and-persist')
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'success' in result.stdout
@@ -46,6 +69,8 @@ class TestListProviders:
 
     def test_list_providers_discovers_sonar(self):
         """list-providers discovers the sonar credential extension."""
+        # Populate providers in marshal.json first
+        run_script(SCRIPT_PATH, 'discover-and-persist')
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'workflow-integration-sonar' in result.stdout
@@ -239,6 +264,8 @@ class TestConfigureMarshalJsonSeparation:
 
     def test_configure_writes_url_to_marshal_json(self, tmp_path, monkeypatch):
         """Configure writes url to marshal.json, not to credential file."""
+        import json as _json
+
         from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             load_credential,
@@ -247,8 +274,9 @@ class TestConfigureMarshalJsonSeparation:
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
-        # Create minimal marshal.json
-        (tmp_path / '.plan' / 'marshal.json').write_text('{}')
+        # Create marshal.json with sonar provider declaration
+        _marshal = {'providers': [_SONAR_PROVIDER]}
+        (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
 
         skill = 'workflow-integration-sonar'
         result = run_script(
@@ -276,6 +304,8 @@ class TestConfigureMarshalJsonSeparation:
 
     def test_configure_writes_extra_fields_to_marshal_json(self, tmp_path, monkeypatch):
         """Configure writes extra fields (organization, project_key) to marshal.json."""
+        import json as _json
+
         from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             load_credential,
@@ -284,7 +314,8 @@ class TestConfigureMarshalJsonSeparation:
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
-        (tmp_path / '.plan' / 'marshal.json').write_text('{}')
+        _marshal = {'providers': [_SONAR_PROVIDER]}
+        (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
 
         skill = 'workflow-integration-sonar'
         result = run_script(
@@ -318,6 +349,8 @@ class TestConfigureAuthTypeMismatch:
 
     def test_configure_reconfigures_on_auth_type_mismatch(self, tmp_path):
         """Configure with token auth overwrites existing none credential."""
+        import json as _json
+
         from _providers_core import (  # type: ignore[import-not-found]
             CREDENTIALS_DIR,
             load_credential,
@@ -325,6 +358,8 @@ class TestConfigureAuthTypeMismatch:
         )
 
         (tmp_path / '.plan').mkdir()
+        _marshal = {'providers': [_SONAR_PROVIDER]}
+        (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
         skill = 'workflow-integration-sonar'
         # Pre-create with auth_type=none
         data = {
@@ -395,7 +430,7 @@ class TestConfigureSystemAuth:
         try:
             with monkeypatch.context() as m:
                 m.setattr(
-                    '_cred_configure.discover_provider_extensions',
+                    '_cred_configure.load_declared_providers',
                     lambda: [mock_provider],
                 )
                 run_configure(MockArgs())
@@ -443,7 +478,7 @@ class TestConfigureSystemAuth:
         try:
             with monkeypatch.context() as m:
                 m.setattr(
-                    '_cred_configure.discover_provider_extensions',
+                    '_cred_configure.load_declared_providers',
                     lambda: [mock_provider],
                 )
                 # Should not raise "URL is required"
@@ -487,7 +522,7 @@ class TestConfigureSystemAuth:
             captured_output.update(data)
 
         with monkeypatch.context() as m:
-            m.setattr('_cred_configure.discover_provider_extensions', lambda: [mock_provider])
+            m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
             m.setattr('_cred_configure.output_toon', mock_output)
             run_configure(MockArgs())
 
@@ -522,7 +557,7 @@ class TestConfigureSystemAuth:
             captured_output.update(data)
 
         with monkeypatch.context() as m:
-            m.setattr('_cred_configure.discover_provider_extensions', lambda: [mock_provider])
+            m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
             m.setattr('_cred_configure.output_toon', mock_output)
             run_configure(MockArgs())
 

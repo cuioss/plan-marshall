@@ -8,7 +8,7 @@ Git uses system-level authentication (git CLI configured via global
 git config or OS credential helpers), not HTTP headers managed by
 plan-marshall.
 
-Discovered by manage-providers via discover_provider_extensions().
+Discovered by discover-and-persist and persisted to marshal.json.
 """
 
 

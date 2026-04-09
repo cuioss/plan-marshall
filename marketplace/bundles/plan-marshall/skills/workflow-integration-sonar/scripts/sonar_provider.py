@@ -4,7 +4,7 @@ Provider extension for SonarCloud/SonarQube integration.
 Extension point: plan-marshall:extension-api/standards/ext-point-provider
 
 Declares provider requirements for the workflow-integration-sonar skill.
-Discovered by manage-providers via discover_provider_extensions().
+Discovered by discover-and-persist and persisted to marshal.json.
 """
 
 

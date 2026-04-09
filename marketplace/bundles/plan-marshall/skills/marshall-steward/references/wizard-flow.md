@@ -126,7 +126,36 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 **Output**: "Created .plan/marshal.json with defaults"
 
-**Note**: marshal.json contains configuration only. Module list comes from derived-data.json (Step 5).
+**Note**: marshal.json contains configuration only. Module list comes from derived-data.json (Step 9).
+
+---
+
+## Step 5b: Populate Providers
+
+Scan executor SCRIPTS entries for `*_provider.py` files, load each module's `get_provider_declarations()`, and persist the combined declarations to `marshal.json` under the `providers` key. This must run after the executor is generated (Step 4) and marshal.json is initialized (Step 5), but before CI detection (Step 14) or credential setup (Step 15) which read from the providers list.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials discover-and-persist
+```
+
+**Output (TOON)**:
+```toon
+status: success
+action: discover-and-persist
+count: 4
+providers:
+  - workflow-integration-github
+  - workflow-integration-gitlab
+  - workflow-integration-sonar
+  - workflow-integration-git
+```
+
+| Field | Description |
+|-------|-------------|
+| `count` | Number of provider declarations discovered |
+| `providers` | List of `skill_name` values for each discovered provider |
+
+**Why here**: Steps 14 and 15 call `list-providers` and `load_declared_providers()`, both of which read from `marshal.json`. Without this step, the providers list would be empty and CI detection / credential setup would fail.
 
 ---
 
@@ -744,15 +773,15 @@ Verify that all modules have responsibilities and key packages. Missing fields i
 
 Detect CI provider and verify system-authenticated tools using the unified provider model.
 
-**Step 14a: Discover system providers**
+**Step 14a: Query system providers**
 
-Query all credential providers and filter for `auth_type: system` CI providers:
+Read provider declarations from marshal.json (populated by Step 5b) and filter for `auth_type: system` CI providers:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
-Parse the `providers` array. Filter entries where `auth_type == "system"` and `skill_name` starts with `tools-integration-ci-`. These are the CI provider declarations.
+Parse the `providers` array. Filter entries where `auth_type == "system"` and `skill_name` starts with `workflow-integration-gi`. These are the CI provider declarations.
 
 **Step 14b: Detect CI provider from repository**
 
@@ -788,7 +817,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health per
 
 ## Step 15: Credential Setup (Optional)
 
-**Step 15a**: Discover available providers (filter out `auth_type: system` providers since those are handled in Step 14):
+**Step 15a**: Read available providers from marshal.json (filter out `auth_type: system` providers since those are handled in Step 14):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
@@ -875,7 +904,7 @@ Check if the selected provider has `extra_fields` in the `list-providers` output
 
 For `workflow-integration-sonar` (has `extra_fields: organization, project_key`):
 
-1. Read CI config to get `repo_url`:
+1. Read `repo_url` from the CI provider entry in marshal.json (persisted during Step 14d):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ci get
 ```

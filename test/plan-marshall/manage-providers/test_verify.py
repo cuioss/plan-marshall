@@ -66,7 +66,7 @@ class TestVerifySystemAuth:
             save_credential(skill, data, 'global')
 
             with monkeypatch.context() as m:
-                m.setattr('_cred_verify.discover_provider_extensions', lambda: [mock_provider])
+                m.setattr('_cred_verify.load_declared_providers', lambda: [mock_provider])
                 m.setattr('_cred_verify.output_toon', mock_output)
                 run_verify(MockArgs())
 
@@ -111,7 +111,7 @@ class TestVerifySystemAuth:
             save_credential(skill, data, 'global')
 
             with monkeypatch.context() as m:
-                m.setattr('_cred_verify.discover_provider_extensions', lambda: [mock_provider])
+                m.setattr('_cred_verify.load_declared_providers', lambda: [mock_provider])
                 m.setattr('_cred_verify.output_toon', mock_output)
                 run_verify(MockArgs())
 
@@ -149,7 +149,7 @@ class TestVerifySystemAuth:
 
             with monkeypatch.context() as m:
                 # No providers returned — extension not found
-                m.setattr('_cred_verify.discover_provider_extensions', lambda: [])
+                m.setattr('_cred_verify.load_declared_providers', lambda: [])
                 m.setattr('_cred_verify.output_toon', mock_output)
                 run_verify(MockArgs())
 
@@ -196,7 +196,7 @@ class TestVerifySystemAuth:
             save_credential(skill, data, 'global')
 
             with monkeypatch.context() as m:
-                m.setattr('_cred_verify.discover_provider_extensions', lambda: [mock_provider])
+                m.setattr('_cred_verify.load_declared_providers', lambda: [mock_provider])
                 m.setattr('_cred_verify.get_authenticated_client', mock_get_client)
                 m.setattr('_cred_verify.output_toon', lambda d: None)
                 run_verify(MockArgs())

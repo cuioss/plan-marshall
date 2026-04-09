@@ -4,8 +4,12 @@ CI command handlers for manage-config.
 Handles: ci noun for reading/writing CI provider configuration.
 
 Storage split:
-- marshal.json (shared via git): provider, repo_url, detected_at
+- marshal.json providers[] (shared via git): provider, repo_url, detected_at on matching entry
 - run-configuration.json (local): authenticated_tools, verified_at
+
+CI data is stored as metadata on the matching provider entry in config['providers'].
+The CI provider is identified by auth_type=system and skill_name starting with
+'workflow-integration-gi' (covers github/gitlab).
 """
 
 from _config_core import (
@@ -27,28 +31,68 @@ def _get_timestamp() -> str:
     return now_utc_iso()
 
 
-def _handle_get(ci_config: dict) -> dict:
+def _find_ci_provider(providers: list[dict]) -> dict | None:
+    """Find the CI provider entry from the providers list.
+
+    CI providers have auth_type=system and skill_name starting with
+    'workflow-integration-gi' (covers workflow-integration-github and
+    workflow-integration-gitlab).
+
+    Returns:
+        The matching provider dict, or None if not found.
+    """
+    for p in providers:
+        if (
+            p.get('auth_type') == 'system'
+            and p.get('skill_name', '').startswith('workflow-integration-gi')
+        ):
+            return p
+    return None
+
+
+def _get_ci_data(providers: list[dict]) -> dict:
+    """Extract CI-relevant data from the providers list.
+
+    Returns a dict with provider, repo_url, detected_at keys
+    (matching the old ci section shape for backward-compatible output).
+    """
+    entry = _find_ci_provider(providers)
+    if entry is None:
+        return {}
+    return {
+        'provider': entry.get('provider', 'unknown'),
+        'repo_url': entry.get('repo_url'),
+        'detected_at': entry.get('detected_at'),
+    }
+
+
+def _handle_get(providers: list[dict]) -> dict:
     """Handle 'get' verb."""
-    return success_exit({'ci': ci_config})
+    ci_data = _get_ci_data(providers)
+    return success_exit({'ci': ci_data})
 
 
-def _handle_get_provider(ci_config: dict) -> dict:
+def _handle_get_provider(providers: list[dict]) -> dict:
     """Handle 'get-provider' verb."""
+    ci_data = _get_ci_data(providers)
     return success_exit(
         {
-            'provider': ci_config.get('provider', 'unknown'),
-            'repo_url': ci_config.get('repo_url'),
-            'confidence': 'persisted' if ci_config.get('detected_at') else 'unknown',
+            'provider': ci_data.get('provider', 'unknown'),
+            'repo_url': ci_data.get('repo_url'),
+            'confidence': 'persisted' if ci_data.get('detected_at') else 'unknown',
         }
     )
 
 
-def _handle_set_provider(args, config: dict, ci_config: dict) -> dict:
+def _handle_set_provider(args, config: dict, providers: list[dict]) -> dict:
     """Handle 'set-provider' verb."""
-    ci_config['provider'] = args.provider
-    ci_config['repo_url'] = args.repo_url
-    ci_config['detected_at'] = _get_timestamp()
-    config['ci'] = ci_config
+    entry = _find_ci_provider(providers)
+    if entry is None:
+        return error_exit('No CI provider found in providers list. Run discover-and-persist first.')
+
+    entry['provider'] = args.provider
+    entry['repo_url'] = args.repo_url
+    entry['detected_at'] = _get_timestamp()
     save_config(config)
     return success_exit({'provider': args.provider, 'repo_url': args.repo_url})
 
@@ -72,16 +116,16 @@ def _handle_get_tools() -> dict:
     return success_exit({'authenticated_tools': run_ci.get('authenticated_tools', [])})
 
 
-def _handle_persist(args, config: dict, ci_config: dict) -> dict:
+def _handle_persist(args, config: dict, providers: list[dict]) -> dict:
     """Handle 'persist' verb - full CI config persistence."""
-    ci_config['provider'] = args.provider
-    ci_config['repo_url'] = args.repo_url
-    ci_config['detected_at'] = _get_timestamp()
+    entry = _find_ci_provider(providers)
+    if entry is None:
+        return error_exit('No CI provider found in providers list. Run discover-and-persist first.')
 
-    # Remove legacy ci.commands if present (commands are resolved by ci.py router)
-    ci_config.pop('commands', None)
+    entry['provider'] = args.provider
+    entry['repo_url'] = args.repo_url
+    entry['detected_at'] = _get_timestamp()
 
-    config['ci'] = ci_config
     save_config(config)
 
     # Also update run-configuration.json if tools provided
@@ -107,16 +151,16 @@ def cmd_ci(args) -> dict:
         return error_exit(str(e))
 
     config = load_config()
-    ci_config = config.get('ci', {})
+    providers = config.get('providers', [])
 
-    # Handlers that need only ci_config
+    # Handlers that need only providers list
     simple_handlers = {
-        'get': lambda: _handle_get(ci_config),
-        'get-provider': lambda: _handle_get_provider(ci_config),
-        'set-provider': lambda: _handle_set_provider(args, config, ci_config),
+        'get': lambda: _handle_get(providers),
+        'get-provider': lambda: _handle_get_provider(providers),
+        'set-provider': lambda: _handle_set_provider(args, config, providers),
         'set-tools': lambda: _handle_set_tools(args),
         'get-tools': lambda: _handle_get_tools(),
-        'persist': lambda: _handle_persist(args, config, ci_config),
+        'persist': lambda: _handle_persist(args, config, providers),
     }
     handler = simple_handlers.get(args.verb)
     if handler:

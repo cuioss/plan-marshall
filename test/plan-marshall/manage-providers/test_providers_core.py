@@ -12,10 +12,10 @@ from _providers_core import (  # type: ignore[import-not-found]
     CREDENTIALS_DIR,
     VALID_AUTH_TYPES,
     RestClient,
-    discover_provider_extensions,
     get_authenticated_client,
     get_project_name,
     load_credential,
+    load_declared_providers,
     remove_credential,
     resolve_credential_path,
     save_credential,
@@ -37,7 +37,11 @@ class TestGetProjectName:
         marshal = tmp_path / '.plan' / 'marshal.json'
         marshal.parent.mkdir(parents=True)
         marshal.write_text(json.dumps({
-            'ci': {'repo_url': 'https://github.com/org/my../repo!name'}
+            'providers': [{
+                'skill_name': 'workflow-integration-github',
+                'auth_type': 'system',
+                'repo_url': 'https://github.com/org/my../repo!name',
+            }],
         }))
         monkeypatch.chdir(tmp_path)
         name = get_project_name()
@@ -250,12 +254,18 @@ class TestProviderConfig:
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal = plan_dir / 'marshal.json'
-        marshal.write_text(json.dumps({'ci': {'repo_url': 'https://github.com/org/repo'}}))
+        marshal.write_text(json.dumps({
+            'providers': [{
+                'skill_name': 'workflow-integration-github',
+                'auth_type': 'system',
+                'repo_url': 'https://github.com/org/repo',
+            }],
+        }))
 
         write_provider_config('test-skill', {'url': 'https://api.example.com'})
 
         full_config = json.loads(marshal.read_text())
-        assert full_config['ci']['repo_url'] == 'https://github.com/org/repo'
+        assert full_config['providers'][0]['repo_url'] == 'https://github.com/org/repo'
         assert full_config['credentials_config']['test-skill']['url'] == 'https://api.example.com'
 
     def test_write_updates_existing_provider(self, tmp_path, monkeypatch):
@@ -272,28 +282,44 @@ class TestProviderConfig:
         assert config['url'] == 'https://new.com'
 
 
-class TestDiscoverCredentialProviders:
-    """Tests for discover_provider_extensions()."""
+class TestLoadDeclaredProviders:
+    """Tests for load_declared_providers()."""
 
-    def test_discovers_sonar_extension(self):
-        """Should find the credential_extension.py in workflow-integration-sonar."""
-        providers = discover_provider_extensions()
-        skill_names = [p['skill_name'] for p in providers]
-        assert 'workflow-integration-sonar' in skill_names
+    def test_returns_empty_list_when_no_marshal_json(self, tmp_path, monkeypatch):
+        """Should return empty list when marshal.json does not exist."""
+        monkeypatch.chdir(tmp_path)
+        providers = load_declared_providers()
+        assert providers == []
 
-    def test_provider_has_required_fields(self):
-        """Each provider must have all required fields."""
-        providers = discover_provider_extensions()
-        sonar = [p for p in providers if p['skill_name'] == 'workflow-integration-sonar']
-        assert len(sonar) == 1
-        provider = sonar[0]
-        required_fields = [
-            'skill_name', 'display_name', 'auth_type', 'default_url',
-            'header_name', 'header_value_template', 'verify_endpoint',
-            'verify_method', 'description',
-        ]
-        for field in required_fields:
-            assert field in provider, f'Missing required field: {field}'
+    def test_returns_empty_list_when_no_providers_key(self, tmp_path, monkeypatch):
+        """Should return empty list when marshal.json has no providers key."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        (tmp_path / '.plan' / 'marshal.json').write_text('{"other": "data"}')
+        providers = load_declared_providers()
+        assert providers == []
+
+    def test_returns_providers_from_marshal_json(self, tmp_path, monkeypatch):
+        """Should return providers list from marshal.json."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        config = {
+            'providers': [
+                {'skill_name': 'test-provider', 'display_name': 'Test', 'auth_type': 'token'},
+            ],
+        }
+        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+        providers = load_declared_providers()
+        assert len(providers) == 1
+        assert providers[0]['skill_name'] == 'test-provider'
+
+    def test_handles_invalid_json(self, tmp_path, monkeypatch):
+        """Should return empty list on invalid JSON."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        (tmp_path / '.plan' / 'marshal.json').write_text('not json')
+        providers = load_declared_providers()
+        assert providers == []
 
 
 # =============================================================================

@@ -52,9 +52,9 @@ def _discover_provider_tools() -> dict[str, str | None]:
         Dict mapping provider name (github/gitlab/unknown) to CLI tool name.
     """
     try:
-        from _providers_core import discover_provider_extensions  # type: ignore[import-not-found]
+        from _providers_core import load_declared_providers  # type: ignore[import-not-found]
 
-        providers = discover_provider_extensions()
+        providers = load_declared_providers()
         mapping: dict[str, str | None] = {'unknown': None}
 
         for p in providers:
@@ -339,8 +339,8 @@ def cmd_persist(args: argparse.Namespace) -> dict:
     )
 
     config = load_config()
-    ci_config = config.get('ci', {})
-    persist_result = _handle_persist(persist_args, config, ci_config)
+    providers = config.get('providers', [])
+    persist_result = _handle_persist(persist_args, config, providers)
     if persist_result.get('status') != 'success':
         return {'status': 'error', 'error': 'Failed to persist CI config'}
 
