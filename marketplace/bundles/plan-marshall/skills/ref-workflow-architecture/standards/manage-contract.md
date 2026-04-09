@@ -21,7 +21,7 @@ python3 .plan/execute-script.py plan-marshall:{skill}:{script} {command} {args}
 - Scripts are invoked only through `python3 .plan/execute-script.py` with 3-part notation
 - Entry-point scripts use either hyphens (e.g., `manage-files.py`) or underscores (e.g., `manage_status.py`) — the filename must match the 3-part executor notation
 - Scripts imported as Python modules by other scripts use underscores (e.g., `run_config.py`, `plan_logging.py`)
-- Internal modules use underscore prefix (e.g., `_tasks_core.py`, `_cmd_crud.py`)
+- Internal modules use underscore prefix with `{skill}_{role}.py` convention (e.g., `_tasks_core.py`, `_tasks_crud.py`)
 - All script output uses TOON format (see `plan-marshall:ref-toon-format` for full specification)
 
 ## Script Implementation Patterns

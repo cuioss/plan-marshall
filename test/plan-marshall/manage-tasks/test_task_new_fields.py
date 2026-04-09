@@ -14,12 +14,18 @@ from conftest import PlanContext, get_script_path, run_script
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 
-# Tier 2 direct imports via importlib to avoid name collisions
-# (_cmd_query.py exists in both manage-status AND manage-tasks,
-#  _cmd_crud.py exists in both manage-tasks AND manage-references)
+# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
 import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-tasks' / 'scripts'
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-tasks'
+    / 'scripts'
+)
 
 
 def _load_module(name, filename):
@@ -29,13 +35,17 @@ def _load_module(name, filename):
     return mod
 
 
-_crud = _load_module('_tasks_cmd_crud_nf', '_cmd_crud.py')
-_query = _load_module('_tasks_cmd_query_nf', '_cmd_query.py')
+_crud = _load_module('_tasks_cmd_crud_nf', '_tasks_crud.py')
+_query = _load_module('_tasks_cmd_query_nf', '_tasks_query.py')
 _step = _load_module('_tasks_cmd_step_nf', '_cmd_step.py')
 
 cmd_add, cmd_update = _crud.cmd_add, _crud.cmd_update
 cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
-cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = _query.cmd_next_tasks, _query.cmd_tasks_by_domain, _query.cmd_tasks_by_profile
+cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
+    _query.cmd_next_tasks,
+    _query.cmd_tasks_by_domain,
+    _query.cmd_tasks_by_profile,
+)
 cmd_finalize_step = _step.cmd_finalize_step
 
 
@@ -103,14 +113,30 @@ def _next_ns(plan_id='test-plan', include_context=False, ignore_deps=False):
     return Namespace(plan_id=plan_id, include_context=include_context, ignore_deps=ignore_deps)
 
 
-def _update_ns(plan_id='test-plan', number=1, title=None, description=None,
-               depends_on=None, status=None, domain=None, profile=None,
-               skills=None, deliverable=None):
+def _update_ns(
+    plan_id='test-plan',
+    number=1,
+    title=None,
+    description=None,
+    depends_on=None,
+    status=None,
+    domain=None,
+    profile=None,
+    skills=None,
+    deliverable=None,
+):
     """Build Namespace for cmd_update."""
     return Namespace(
-        plan_id=plan_id, number=number, title=title, description=description,
-        depends_on=depends_on, status=status, domain=domain, profile=profile,
-        skills=skills, deliverable=deliverable,
+        plan_id=plan_id,
+        number=number,
+        title=title,
+        description=description,
+        depends_on=depends_on,
+        status=status,
+        domain=domain,
+        profile=profile,
+        skills=skills,
+        deliverable=deliverable,
     )
 
 
@@ -166,7 +192,10 @@ def test_add_with_testing_profile():
     with PlanContext(plan_id='nf-test-prof'):
         result = add_task_with_fields(
             plan_id='nf-test-prof',
-            title='Test task', deliverable=1, domain='java', profile='testing',
+            title='Test task',
+            deliverable=1,
+            domain='java',
+            profile='testing',
             skills=['pm-dev-java:junit-core'],
         )
 
@@ -212,8 +241,11 @@ def test_add_with_origin():
     with PlanContext(plan_id='nf-origin'):
         result = add_task_with_fields(
             plan_id='nf-origin',
-            title='Plan origin task', deliverable=1, domain='java',
-            profile='implementation', origin='plan',
+            title='Plan origin task',
+            deliverable=1,
+            domain='java',
+            profile='implementation',
+            origin='plan',
         )
 
         assert result['status'] == 'success'
@@ -321,7 +353,9 @@ def test_get_returns_profile():
 def test_get_returns_skills():
     """Get returns skills array."""
     with PlanContext(plan_id='nf-get-skills'):
-        add_task_with_fields(plan_id='nf-get-skills', title='Test', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi'])
+        add_task_with_fields(
+            plan_id='nf-get-skills', title='Test', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi']
+        )
         result = cmd_get(_get_ns(plan_id='nf-get-skills', number=1))
 
         assert result['status'] == 'success'
@@ -410,10 +444,13 @@ def test_update_skills():
     """Update skills field."""
     with PlanContext(plan_id='nf-upd-skills'):
         add_task_with_fields(plan_id='nf-upd-skills', title='Task', skills=['pm-dev-java:java-core'])
-        result = cmd_update(_update_ns(
-            plan_id='nf-upd-skills', number=1,
-            skills='pm-dev-java:java-cdi,pm-dev-java:java-lombok',
-        ))
+        result = cmd_update(
+            _update_ns(
+                plan_id='nf-upd-skills',
+                number=1,
+                skills='pm-dev-java:java-cdi,pm-dev-java:java-lombok',
+            )
+        )
 
         assert result['status'] == 'success'
 
@@ -466,9 +503,13 @@ def test_update_fails_with_invalid_skills():
     """Update fails with invalid skill format."""
     with PlanContext(plan_id='nf-upd-bad-skill'):
         add_task_with_fields(plan_id='nf-upd-bad-skill', title='Task', skills=['pm-dev-java:java-core'])
-        result = cmd_update(_update_ns(
-            plan_id='nf-upd-bad-skill', number=1, skills='invalid-no-colon',
-        ))
+        result = cmd_update(
+            _update_ns(
+                plan_id='nf-upd-bad-skill',
+                number=1,
+                skills='invalid-no-colon',
+            )
+        )
 
         assert result['status'] == 'error'
         msg = result.get('message', '').lower()
@@ -602,7 +643,9 @@ def test_next_tasks_includes_in_progress():
     """next-tasks includes in_progress tasks."""
     with PlanContext(plan_id='nf-next-inprog'):
         add_task_with_fields(
-            plan_id='nf-next-inprog', title='Task 1', depends_on='none',
+            plan_id='nf-next-inprog',
+            title='Task 1',
+            depends_on='none',
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
         )
         add_task_with_fields(plan_id='nf-next-inprog', title='Task 2', depends_on='none')

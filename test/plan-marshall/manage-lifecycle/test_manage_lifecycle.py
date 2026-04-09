@@ -13,8 +13,7 @@ from conftest import PlanContext, get_script_path, run_script
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
 
-# Tier 2 direct imports via importlib to avoid name collisions
-# (_cmd_query.py exists in both manage-status and manage-tasks)
+# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
 import importlib.util  # noqa: E402
 
 _SCRIPTS_DIR = (
@@ -36,12 +35,16 @@ def _load_module(name, filename):
 
 
 _lifecycle = _load_module('_lc_cmd_lifecycle', '_cmd_lifecycle.py')
-_query = _load_module('_lc_cmd_query', '_cmd_query.py')
+_query = _load_module('_lc_cmd_query', '_status_query.py')
 _routing = _load_module('_lc_cmd_routing', '_cmd_routing.py')
 
 cmd_archive, cmd_transition = _lifecycle.cmd_archive, _lifecycle.cmd_transition
 cmd_list = _query.cmd_list
-cmd_get_routing_context, cmd_route, cmd_self_test = _routing.cmd_get_routing_context, _routing.cmd_route, _routing.cmd_self_test
+cmd_get_routing_context, cmd_route, cmd_self_test = (
+    _routing.cmd_get_routing_context,
+    _routing.cmd_route,
+    _routing.cmd_self_test,
+)
 
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402

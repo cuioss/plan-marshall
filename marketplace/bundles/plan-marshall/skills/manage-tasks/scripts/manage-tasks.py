@@ -31,10 +31,10 @@ Add command usage (--content with \\n encoding):
 
 import argparse
 
-from _cmd_crud import cmd_add, cmd_remove, cmd_update
-from _cmd_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
 from _cmd_rename import cmd_rename_path
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
+from _tasks_crud import cmd_add, cmd_remove, cmd_update
+from _tasks_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 

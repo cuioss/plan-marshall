@@ -14,12 +14,18 @@ from conftest import PlanContext, get_script_path, run_script
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 
-# Tier 2 direct imports via importlib to avoid name collisions
-# (_cmd_query.py exists in both manage-status AND manage-tasks,
-#  _cmd_crud.py exists in both manage-tasks AND manage-references)
+# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
 import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-tasks' / 'scripts'
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-tasks'
+    / 'scripts'
+)
 
 
 def _load_module(name, filename):
@@ -29,13 +35,17 @@ def _load_module(name, filename):
     return mod
 
 
-_crud = _load_module('_tasks_cmd_crud', '_cmd_crud.py')
-_query = _load_module('_tasks_cmd_query', '_cmd_query.py')
+_crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')
+_query = _load_module('_tasks_cmd_query', '_tasks_query.py')
 _step = _load_module('_tasks_cmd_step', '_cmd_step.py')
 
 cmd_add, cmd_remove, cmd_update = _crud.cmd_add, _crud.cmd_remove, _crud.cmd_update
 cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
-cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = _query.cmd_next_tasks, _query.cmd_tasks_by_domain, _query.cmd_tasks_by_profile
+cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
+    _query.cmd_next_tasks,
+    _query.cmd_tasks_by_domain,
+    _query.cmd_tasks_by_profile,
+)
 cmd_add_step, cmd_finalize_step, cmd_remove_step = _step.cmd_add_step, _step.cmd_finalize_step, _step.cmd_remove_step
 
 
@@ -115,14 +125,30 @@ def _next_ns(plan_id='test-plan', include_context=False, ignore_deps=False):
     return Namespace(plan_id=plan_id, include_context=include_context, ignore_deps=ignore_deps)
 
 
-def _update_ns(plan_id='test-plan', number=1, title=None, description=None,
-               depends_on=None, status=None, domain=None, profile=None,
-               skills=None, deliverable=None):
+def _update_ns(
+    plan_id='test-plan',
+    number=1,
+    title=None,
+    description=None,
+    depends_on=None,
+    status=None,
+    domain=None,
+    profile=None,
+    skills=None,
+    deliverable=None,
+):
     """Build Namespace for cmd_update."""
     return Namespace(
-        plan_id=plan_id, number=number, title=title, description=description,
-        depends_on=depends_on, status=status, domain=domain, profile=profile,
-        skills=skills, deliverable=deliverable,
+        plan_id=plan_id,
+        number=number,
+        title=title,
+        description=description,
+        depends_on=depends_on,
+        status=status,
+        domain=domain,
+        profile=profile,
+        skills=skills,
+        deliverable=deliverable,
     )
 
 
@@ -161,13 +187,24 @@ def _next_tasks_ns(plan_id='test-plan'):
     return Namespace(plan_id=plan_id)
 
 
-def add_basic_task(plan_id='test-plan', title='Test task', deliverable=1,
-                   domain='java', description='Task description', steps=None,
-                   depends_on='none', origin=None):
+def add_basic_task(
+    plan_id='test-plan',
+    title='Test task',
+    deliverable=1,
+    domain='java',
+    description='Task description',
+    steps=None,
+    depends_on='none',
+    origin=None,
+):
     """Helper to add a task with minimal required params via direct import."""
     toon = build_task_toon(
-        title=title, deliverable=deliverable, domain=domain,
-        description=description, steps=steps, depends_on=depends_on,
+        title=title,
+        deliverable=deliverable,
+        domain=domain,
+        description=description,
+        steps=steps,
+        depends_on=depends_on,
         origin=origin,
     )
     return cmd_add(_add_ns(plan_id=plan_id, content=toon.replace('\n', '\\n')))
@@ -205,7 +242,9 @@ def test_add_sequential_numbering():
     with PlanContext(plan_id='add-seq'):
         add_basic_task(plan_id='add-seq', title='First', deliverable=1, steps=['src/main/java/First.java'])
         result = add_basic_task(
-            plan_id='add-seq', title='Second', deliverable=2,
+            plan_id='add-seq',
+            title='Second',
+            deliverable=2,
             steps=['src/main/java/Second.java', 'src/test/java/SecondTest.java'],
         )
 
@@ -472,7 +511,12 @@ def test_list_with_tasks():
     """List shows all tasks in table format with domain, profile and deliverables."""
     with PlanContext(plan_id='list-tasks'):
         add_basic_task(plan_id='list-tasks', title='First', deliverable=1, steps=['src/main/java/File.java'])
-        add_basic_task(plan_id='list-tasks', title='Second', deliverable=2, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+        add_basic_task(
+            plan_id='list-tasks',
+            title='Second',
+            deliverable=2,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
+        )
 
         result = cmd_list(_list_ns(plan_id='list-tasks'))
 
@@ -571,7 +615,12 @@ def test_next_returns_first_pending():
 def test_next_returns_in_progress_task():
     """Next prioritizes in_progress tasks."""
     with PlanContext(plan_id='next-inprog'):
-        add_basic_task(plan_id='next-inprog', title='First', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+        add_basic_task(
+            plan_id='next-inprog',
+            title='First',
+            deliverable=1,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
+        )
         add_basic_task(plan_id='next-inprog', title='Second', deliverable=2, steps=['src/main/java/File.java'])
         # Complete first step to put task in_progress (still has step 2)
         cmd_finalize_step(_finalize_step_ns(plan_id='next-inprog', task=1, step=1, outcome='done'))
@@ -696,7 +745,12 @@ def test_next_include_context():
 def test_finalize_step_done_marks_completed():
     """finalize-step --outcome done marks step as done."""
     with PlanContext(plan_id='fin-done'):
-        add_basic_task(plan_id='fin-done', title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+        add_basic_task(
+            plan_id='fin-done',
+            title='Task',
+            deliverable=1,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
+        )
 
         result = cmd_finalize_step(_finalize_step_ns(plan_id='fin-done', task=1, step=1, outcome='done'))
 
@@ -722,11 +776,22 @@ def test_finalize_step_done_completes_task():
 def test_finalize_step_skipped_marks_skipped():
     """finalize-step --outcome skipped marks step as skipped."""
     with PlanContext(plan_id='fin-skip'):
-        add_basic_task(plan_id='fin-skip', title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+        add_basic_task(
+            plan_id='fin-skip',
+            title='Task',
+            deliverable=1,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
+        )
 
-        result = cmd_finalize_step(_finalize_step_ns(
-            plan_id='fin-skip', task=1, step=1, outcome='skipped', reason='Already done',
-        ))
+        result = cmd_finalize_step(
+            _finalize_step_ns(
+                plan_id='fin-skip',
+                task=1,
+                step=1,
+                outcome='skipped',
+                reason='Already done',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['finalized']['outcome'] == 'skipped'
@@ -761,7 +826,9 @@ def test_finalize_step_returns_progress():
     """finalize-step returns progress indicator."""
     with PlanContext(plan_id='fin-prog'):
         add_basic_task(
-            plan_id='fin-prog', title='Task', deliverable=1,
+            plan_id='fin-prog',
+            title='Task',
+            deliverable=1,
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
         )
 
@@ -779,7 +846,12 @@ def test_finalize_step_returns_progress():
 def test_add_step_appends():
     """Add-step appends to end by default."""
     with PlanContext(plan_id='addstep-app'):
-        add_basic_task(plan_id='addstep-app', title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'])
+        add_basic_task(
+            plan_id='addstep-app',
+            title='Task',
+            deliverable=1,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
+        )
 
         result = cmd_add_step(_add_step_ns(plan_id='addstep-app', task=1, target='New Step'))
 
@@ -794,11 +866,21 @@ def test_add_step_appends():
 def test_add_step_after():
     """Add-step inserts after specified position."""
     with PlanContext(plan_id='addstep-aft'):
-        add_basic_task(plan_id='addstep-aft', title='Task', deliverable=1, steps=['src/main/java/FileA.java', 'src/main/java/FileC.java'])
+        add_basic_task(
+            plan_id='addstep-aft',
+            title='Task',
+            deliverable=1,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileC.java'],
+        )
 
-        result = cmd_add_step(_add_step_ns(
-            plan_id='addstep-aft', task=1, target='src/main/java/FileB.java', after=1,
-        ))
+        result = cmd_add_step(
+            _add_step_ns(
+                plan_id='addstep-aft',
+                task=1,
+                target='src/main/java/FileB.java',
+                after=1,
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['step'] == 2
@@ -820,7 +902,9 @@ def test_remove_step():
     """Remove-step removes and renumbers."""
     with PlanContext(plan_id='rmstep'):
         add_basic_task(
-            plan_id='rmstep', title='Task', deliverable=1,
+            plan_id='rmstep',
+            title='Task',
+            deliverable=1,
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
         )
 
@@ -951,7 +1035,9 @@ def test_progress_calculation():
     """Progress is correctly calculated in list output."""
     with PlanContext(plan_id='prog-calc'):
         add_basic_task(
-            plan_id='prog-calc', title='Task', deliverable=1,
+            plan_id='prog-calc',
+            title='Task',
+            deliverable=1,
             steps=['src/main/java/FileA.java', 'src/main/java/FileB.java', 'src/main/java/FileC.java'],
         )
         cmd_finalize_step(_finalize_step_ns(plan_id='prog-calc', task=1, step=1, outcome='done'))

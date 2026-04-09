@@ -26,8 +26,16 @@ Usage:
 import argparse
 
 from _cmd_lifecycle import cmd_archive, cmd_create, cmd_delete_plan, cmd_transition
-from _cmd_query import cmd_get_context, cmd_list, cmd_metadata, cmd_progress, cmd_read, cmd_set_phase, cmd_update_phase
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
+from _status_query import (
+    cmd_get_context,
+    cmd_list,
+    cmd_metadata,
+    cmd_progress,
+    cmd_read,
+    cmd_set_phase,
+    cmd_update_phase,
+)
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 

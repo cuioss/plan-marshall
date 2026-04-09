@@ -12,11 +12,18 @@ from conftest import PlanContext, get_script_path, run_script
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-references', 'manage-references.py')
 
-# Tier 2 direct imports via importlib to avoid name collisions
-# (_cmd_crud.py exists in both manage-references AND manage-tasks)
+# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
 import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-references' / 'scripts'
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-references'
+    / 'scripts'
+)
 
 
 def _load_module(name, filename):
@@ -26,12 +33,17 @@ def _load_module(name, filename):
     return mod
 
 
-_crud = _load_module('_refs_cmd_crud', '_cmd_crud.py')
+_crud = _load_module('_refs_cmd_crud', '_references_crud.py')
 _list = _load_module('_refs_cmd_list', '_cmd_list.py')
 _ctx = _load_module('_refs_cmd_context', '_cmd_context.py')
 
 cmd_create, cmd_get, cmd_read, cmd_set = _crud.cmd_create, _crud.cmd_get, _crud.cmd_read, _crud.cmd_set
-cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list = _list.cmd_add_file, _list.cmd_add_list, _list.cmd_remove_file, _list.cmd_set_list
+cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list = (
+    _list.cmd_add_file,
+    _list.cmd_add_list,
+    _list.cmd_remove_file,
+    _list.cmd_set_list,
+)
 cmd_get_context = _ctx.cmd_get_context
 
 
@@ -40,11 +52,9 @@ cmd_get_context = _ctx.cmd_get_context
 # =============================================================================
 
 
-def _create_ns(plan_id='test-plan', branch='feature/test', issue_url=None,
-               build_system=None, domains=None):
+def _create_ns(plan_id='test-plan', branch='feature/test', issue_url=None, build_system=None, domains=None):
     """Build Namespace for cmd_create."""
-    return Namespace(plan_id=plan_id, branch=branch, issue_url=issue_url,
-                     build_system=build_system, domains=domains)
+    return Namespace(plan_id=plan_id, branch=branch, issue_url=issue_url, build_system=build_system, domains=domains)
 
 
 def _read_ns(plan_id='test-plan'):
@@ -164,10 +174,12 @@ def test_add_file():
 def test_get_context():
     """Test get-context returns all relevant references in one call."""
     with PlanContext():
-        cmd_create(_create_ns(
-            issue_url='https://github.com/org/repo/issues/123',
-            build_system='maven',
-        ))
+        cmd_create(
+            _create_ns(
+                issue_url='https://github.com/org/repo/issues/123',
+                build_system='maven',
+            )
+        )
         cmd_add_file(_add_file_ns(file='src/Main.java'))
         cmd_add_file(_add_file_ns(file='src/Test.java'))
 
@@ -337,10 +349,12 @@ def test_create_without_domains():
 def test_create_with_domains_and_issue_url():
     """Test creating references with both domains and issue URL."""
     with PlanContext():
-        result = cmd_create(_create_ns(
-            domains='java',
-            issue_url='https://github.com/org/repo/issues/42',
-        ))
+        result = cmd_create(
+            _create_ns(
+                domains='java',
+                issue_url='https://github.com/org/repo/issues/42',
+            )
+        )
         assert 'domains' in result['fields']
         assert 'issue_url' in result['fields']
 
@@ -369,7 +383,12 @@ def test_cli_create_roundtrip():
 
     with PlanContext():
         create_result = run_script(
-            SCRIPT_PATH, 'create', '--plan-id', 'test-plan', '--branch', 'feature/test',
+            SCRIPT_PATH,
+            'create',
+            '--plan-id',
+            'test-plan',
+            '--branch',
+            'feature/test',
         )
         assert create_result.success, f'Script failed: {create_result.stderr}'
         data = parse_toon(create_result.stdout)

@@ -11,7 +11,15 @@ from pathlib import Path
 
 from conftest import PlanContext
 
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-tasks' / 'scripts'
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-tasks'
+    / 'scripts'
+)
 
 
 def _load_module(name, filename):
@@ -22,7 +30,7 @@ def _load_module(name, filename):
 
 
 _rename = _load_module('_tasks_cmd_rename', '_cmd_rename.py')
-_crud = _load_module('_tasks_cmd_crud', '_cmd_crud.py')
+_crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')
 
 cmd_rename_path = _rename.cmd_rename_path
 cmd_add = _crud.cmd_add
@@ -57,11 +65,13 @@ class TestRenamePath:
     def test_single_mapping(self):
         """Adding a single rename mapping records it correctly."""
         with PlanContext(plan_id='rename-single'):
-            result = cmd_rename_path(_rename_ns(
-                plan_id='rename-single',
-                old_path='providers/',
-                new_path='auth/providers/',
-            ))
+            result = cmd_rename_path(
+                _rename_ns(
+                    plan_id='rename-single',
+                    old_path='providers/',
+                    new_path='auth/providers/',
+                )
+            )
             assert result['status'] == 'success'
             assert result['mapping']['old_path'] == 'providers'
             assert result['mapping']['new_path'] == 'auth/providers'
@@ -70,27 +80,33 @@ class TestRenamePath:
     def test_multiple_mappings(self):
         """Adding multiple mappings accumulates them."""
         with PlanContext(plan_id='rename-multi'):
-            cmd_rename_path(_rename_ns(
-                plan_id='rename-multi',
-                old_path='old/a',
-                new_path='new/a',
-            ))
-            result = cmd_rename_path(_rename_ns(
-                plan_id='rename-multi',
-                old_path='old/b',
-                new_path='new/b',
-            ))
+            cmd_rename_path(
+                _rename_ns(
+                    plan_id='rename-multi',
+                    old_path='old/a',
+                    new_path='new/a',
+                )
+            )
+            result = cmd_rename_path(
+                _rename_ns(
+                    plan_id='rename-multi',
+                    old_path='old/b',
+                    new_path='new/b',
+                )
+            )
             assert result['status'] == 'success'
             assert result['mapping_count'] == 2
 
     def test_identical_paths_error(self):
         """Error when old and new paths are identical."""
         with PlanContext(plan_id='rename-identical'):
-            result = cmd_rename_path(_rename_ns(
-                plan_id='rename-identical',
-                old_path='same/path',
-                new_path='same/path',
-            ))
+            result = cmd_rename_path(
+                _rename_ns(
+                    plan_id='rename-identical',
+                    old_path='same/path',
+                    new_path='same/path',
+                )
+            )
             assert result['status'] == 'error'
 
     def test_rewrites_step_targets(self):
@@ -105,11 +121,13 @@ class TestRenamePath:
             cmd_add(_add_ns(plan_id='rename-rewrite', content=content))
 
             # Rename providers/ -> auth/providers/
-            result = cmd_rename_path(_rename_ns(
-                plan_id='rename-rewrite',
-                old_path='providers',
-                new_path='auth/providers',
-            ))
+            result = cmd_rename_path(
+                _rename_ns(
+                    plan_id='rename-rewrite',
+                    old_path='providers',
+                    new_path='auth/providers',
+                )
+            )
 
             assert result['status'] == 'success'
             assert result['rewritten_count'] == 2
@@ -136,11 +154,13 @@ class TestRenamePath:
             task_data['steps'][0]['status'] = 'done'
             task_file.write_text(json.dumps(task_data, indent=2))
 
-            result = cmd_rename_path(_rename_ns(
-                plan_id='rename-done-steps',
-                old_path='providers',
-                new_path='auth/providers',
-            ))
+            result = cmd_rename_path(
+                _rename_ns(
+                    plan_id='rename-done-steps',
+                    old_path='providers',
+                    new_path='auth/providers',
+                )
+            )
 
             assert result['status'] == 'success'
             assert result['rewritten_count'] == 0
@@ -148,11 +168,13 @@ class TestRenamePath:
     def test_mapping_file_toon_format(self):
         """Mapping file is written in valid TOON format."""
         with PlanContext(plan_id='rename-toon') as ctx:
-            cmd_rename_path(_rename_ns(
-                plan_id='rename-toon',
-                old_path='old/path',
-                new_path='new/path',
-            ))
+            cmd_rename_path(
+                _rename_ns(
+                    plan_id='rename-toon',
+                    old_path='old/path',
+                    new_path='new/path',
+                )
+            )
 
             mapping_path = ctx.plan_dir / 'work' / 'rename_mapping.toon'
             assert mapping_path.exists()
@@ -164,11 +186,13 @@ class TestRenamePath:
     def test_no_tasks_no_error(self):
         """Rename-path succeeds even when no tasks exist."""
         with PlanContext(plan_id='rename-no-tasks'):
-            result = cmd_rename_path(_rename_ns(
-                plan_id='rename-no-tasks',
-                old_path='old/path',
-                new_path='new/path',
-            ))
+            result = cmd_rename_path(
+                _rename_ns(
+                    plan_id='rename-no-tasks',
+                    old_path='old/path',
+                    new_path='new/path',
+                )
+            )
             assert result['status'] == 'success'
             assert result['rewritten_count'] == 0
             assert result['mapping_count'] == 1
