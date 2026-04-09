@@ -13,12 +13,13 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-import conftest  # noqa: F401
-from conftest import PlanContext
 from test_helpers import (
     create_marshal_json,
     patch_config_paths,
 )
+
+import conftest  # noqa: F401
+from conftest import PlanContext
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
