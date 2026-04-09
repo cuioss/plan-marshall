@@ -345,11 +345,9 @@ from extension_base import PROFILE_PATTERNS
 - conftest.py adds paths to sys.path for direct imports
 - IDE warnings about unresolved imports are expected (PYTHONPATH is set at runtime)
 
-### Colliding Module Names (importlib Pattern)
+### Internal Module Loading (importlib Pattern)
 
-When multiple skills have identically-named internal modules (e.g., `_cmd_query.py` in both `manage-status` and `manage-tasks`), Python's module cache prevents correct imports via `sys.path`. Once `_cmd_query` is imported from one location, subsequent imports from a different `sys.path` return the cached version.
-
-**Solution**: Use `importlib.util.spec_from_file_location` with unique synthetic module names:
+Internal script modules are loaded via `importlib.util.spec_from_file_location` with unique synthetic module names to avoid Python's module cache issues when tests span multiple skills:
 
 ```python
 import importlib.util
@@ -367,19 +365,12 @@ def _load_module(name, filename):
     spec.loader.exec_module(mod)
     return mod
 
-# Use unique prefixes to avoid cache collisions
-_crud = _load_module('_tasks_cmd_crud', '_cmd_crud.py')
-_query = _load_module('_tasks_cmd_query', '_cmd_query.py')
+# Use unique prefixes for synthetic module names
+_crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')
+_query = _load_module('_tasks_cmd_query', '_tasks_query.py')
 ```
 
-**When to use**: Only when the module filename exists in multiple skills' `scripts/` directories. For unique module names, standard `from _module import ...` works fine.
-
-**Known collisions**:
-
-| Module | Skills |
-|--------|--------|
-| `_cmd_query.py` | `manage-status`, `manage-tasks` |
-| `_cmd_crud.py` | `manage-references`, `manage-tasks` |
+**When to use**: For internal modules (underscore-prefixed) that are loaded from a specific skill's scripts directory. The `{skill}_{role}.py` naming convention ensures unique filenames across sibling skills.
 
 ## Naming Conventions
 

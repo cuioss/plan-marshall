@@ -12,11 +12,18 @@ from conftest import PlanContext, get_script_path, run_script
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage_status.py')
 
-# Tier 2 direct imports via importlib to avoid name collisions
-# (_cmd_query.py exists in both manage-status and manage-tasks)
+# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime)
 import importlib.util  # noqa: E402
 
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-status' / 'scripts'
+_SCRIPTS_DIR = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-status'
+    / 'scripts'
+)
 
 
 def _load_module(name, filename):
@@ -27,7 +34,7 @@ def _load_module(name, filename):
 
 
 _lifecycle = _load_module('_status_cmd_lifecycle', '_cmd_lifecycle.py')
-_query = _load_module('_status_cmd_query', '_cmd_query.py')
+_query = _load_module('_status_cmd_query', '_status_query.py')
 
 cmd_create, cmd_delete_plan = _lifecycle.cmd_create, _lifecycle.cmd_delete_plan
 cmd_get_context = _query.cmd_get_context
@@ -87,9 +94,7 @@ def test_create_status_already_exists():
     """Test create fails if status already exists without force."""
     with PlanContext(plan_id='exists-plan'):
         # Create first plan
-        cmd_create(
-            Namespace(plan_id='exists-plan', title='First Plan', phases='1-init,2-refine', force=False)
-        )
+        cmd_create(Namespace(plan_id='exists-plan', title='First Plan', phases='1-init,2-refine', force=False))
         # Try to create again without --force
         result = cmd_create(
             Namespace(plan_id='exists-plan', title='Second Plan', phases='1-init,2-refine', force=False)
@@ -102,9 +107,7 @@ def test_create_invalid_plan_id():
     """Test create fails with invalid plan_id (sys.exit(1) from require_valid_plan_id)."""
     with PlanContext():
         with pytest.raises(SystemExit) as exc_info:
-            cmd_create(
-                Namespace(plan_id='Invalid_Plan', title='Test', phases='1-init', force=False)
-            )
+            cmd_create(Namespace(plan_id='Invalid_Plan', title='Test', phases='1-init', force=False))
         assert exc_info.value.code == 0
 
 
@@ -116,9 +119,7 @@ def test_create_invalid_plan_id():
 def test_read_status():
     """Test reading status.json."""
     with PlanContext(plan_id='read-plan'):
-        cmd_create(
-            Namespace(plan_id='read-plan', title='Read Test', phases='1-init,2-refine,3-outline', force=False)
-        )
+        cmd_create(Namespace(plan_id='read-plan', title='Read Test', phases='1-init,2-refine,3-outline', force=False))
         result = cmd_read(Namespace(plan_id='read-plan'))
         assert result['status'] == 'success'
         assert 'plan' in result
@@ -158,9 +159,7 @@ def test_set_phase():
 def test_set_phase_invalid():
     """Test set-phase fails for invalid phase."""
     with PlanContext(plan_id='invalid-phase-plan'):
-        cmd_create(
-            Namespace(plan_id='invalid-phase-plan', title='Test', phases='1-init,2-refine', force=False)
-        )
+        cmd_create(Namespace(plan_id='invalid-phase-plan', title='Test', phases='1-init,2-refine', force=False))
         result = cmd_set_phase(Namespace(plan_id='invalid-phase-plan', phase='nonexistent'))
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_phase'
@@ -175,9 +174,7 @@ def test_update_phase():
     """Test updating a specific phase status."""
     with PlanContext(plan_id='update-phase-plan'):
         cmd_create(
-            Namespace(
-                plan_id='update-phase-plan', title='Update Test', phases='1-init,2-refine,3-outline', force=False
-            )
+            Namespace(plan_id='update-phase-plan', title='Update Test', phases='1-init,2-refine,3-outline', force=False)
         )
         result = cmd_update_phase(Namespace(plan_id='update-phase-plan', phase='1-init', status='done'))
         assert result['status'] == 'success'
@@ -188,9 +185,7 @@ def test_update_phase():
 def test_update_phase_not_found():
     """Test update-phase fails for non-existent phase."""
     with PlanContext(plan_id='update-notfound-plan'):
-        cmd_create(
-            Namespace(plan_id='update-notfound-plan', title='Test', phases='1-init,2-refine', force=False)
-        )
+        cmd_create(Namespace(plan_id='update-notfound-plan', title='Test', phases='1-init,2-refine', force=False))
         result = cmd_update_phase(Namespace(plan_id='update-notfound-plan', phase='nonexistent', status='done'))
         assert result['status'] == 'error'
         assert result['error'] == 'phase_not_found'
@@ -205,8 +200,9 @@ def test_progress_initial():
     """Test progress calculation for initial state."""
     with PlanContext(plan_id='progress-plan'):
         cmd_create(
-            Namespace(plan_id='progress-plan', title='Progress Test', phases='1-init,2-refine,3-outline,4-plan',
-                      force=False)
+            Namespace(
+                plan_id='progress-plan', title='Progress Test', phases='1-init,2-refine,3-outline,4-plan', force=False
+            )
         )
         result = cmd_progress(Namespace(plan_id='progress-plan'))
         assert result['status'] == 'success'
@@ -242,9 +238,7 @@ def test_progress_after_completion():
 def test_metadata_set():
     """Test setting a metadata field."""
     with PlanContext(plan_id='metadata-plan'):
-        cmd_create(
-            Namespace(plan_id='metadata-plan', title='Metadata Test', phases='1-init,2-refine', force=False)
-        )
+        cmd_create(Namespace(plan_id='metadata-plan', title='Metadata Test', phases='1-init,2-refine', force=False))
         result = cmd_metadata(
             Namespace(plan_id='metadata-plan', set=True, get=False, field='change_type', value='feature')
         )
@@ -256,13 +250,9 @@ def test_metadata_set():
 def test_metadata_get():
     """Test getting a metadata field."""
     with PlanContext(plan_id='metadata-get-plan'):
-        cmd_create(
-            Namespace(plan_id='metadata-get-plan', title='Metadata Test', phases='1-init,2-refine', force=False)
-        )
+        cmd_create(Namespace(plan_id='metadata-get-plan', title='Metadata Test', phases='1-init,2-refine', force=False))
         # Set metadata first
-        cmd_metadata(
-            Namespace(plan_id='metadata-get-plan', set=True, get=False, field='change_type', value='bug_fix')
-        )
+        cmd_metadata(Namespace(plan_id='metadata-get-plan', set=True, get=False, field='change_type', value='bug_fix'))
         # Get metadata
         result = cmd_metadata(
             Namespace(plan_id='metadata-get-plan', set=False, get=True, field='change_type', value=None)
@@ -275,9 +265,7 @@ def test_metadata_get():
 def test_metadata_get_not_found():
     """Test getting a non-existent metadata field."""
     with PlanContext(plan_id='metadata-notfound-plan'):
-        cmd_create(
-            Namespace(plan_id='metadata-notfound-plan', title='Test', phases='1-init', force=False)
-        )
+        cmd_create(Namespace(plan_id='metadata-notfound-plan', title='Test', phases='1-init', force=False))
         result = cmd_metadata(
             Namespace(plan_id='metadata-notfound-plan', set=False, get=True, field='nonexistent', value=None)
         )
@@ -288,9 +276,7 @@ def test_metadata_get_not_found():
 def test_metadata_update_existing():
     """Test updating an existing metadata field."""
     with PlanContext(plan_id='metadata-update-plan'):
-        cmd_create(
-            Namespace(plan_id='metadata-update-plan', title='Test', phases='1-init', force=False)
-        )
+        cmd_create(Namespace(plan_id='metadata-update-plan', title='Test', phases='1-init', force=False))
         # Set initial value
         cmd_metadata(
             Namespace(plan_id='metadata-update-plan', set=True, get=False, field='change_type', value='feature')
@@ -320,9 +306,7 @@ def test_get_context():
             )
         )
         # Set some metadata
-        cmd_metadata(
-            Namespace(plan_id='context-plan', set=True, get=False, field='change_type', value='feature')
-        )
+        cmd_metadata(Namespace(plan_id='context-plan', set=True, get=False, field='change_type', value='feature'))
         # Mark first phase as done
         cmd_update_phase(Namespace(plan_id='context-plan', phase='1-init', status='done'))
         cmd_set_phase(Namespace(plan_id='context-plan', phase='2-refine'))
@@ -353,9 +337,7 @@ def test_get_context_not_found():
 def test_json_storage_format():
     """Test that status is stored in JSON format."""
     with PlanContext(plan_id='json-plan') as ctx:
-        cmd_create(
-            Namespace(plan_id='json-plan', title='JSON Test', phases='1-init,2-refine,3-outline', force=False)
-        )
+        cmd_create(Namespace(plan_id='json-plan', title='JSON Test', phases='1-init,2-refine,3-outline', force=False))
         # Directly read the status.json file
         status_file = ctx.plan_dir / 'status.json'
         assert status_file.exists(), 'status.json should exist'
@@ -387,12 +369,8 @@ def test_json_phases_structure():
 def test_json_metadata_structure():
     """Test that metadata is stored correctly."""
     with PlanContext(plan_id='metadata-json-plan') as ctx:
-        cmd_create(
-            Namespace(plan_id='metadata-json-plan', title='Metadata Test', phases='1-init', force=False)
-        )
-        cmd_metadata(
-            Namespace(plan_id='metadata-json-plan', set=True, get=False, field='change_type', value='feature')
-        )
+        cmd_create(Namespace(plan_id='metadata-json-plan', title='Metadata Test', phases='1-init', force=False))
+        cmd_metadata(Namespace(plan_id='metadata-json-plan', set=True, get=False, field='change_type', value='feature'))
 
         status_file = ctx.plan_dir / 'status.json'
         content = json.loads(status_file.read_text(encoding='utf-8'))

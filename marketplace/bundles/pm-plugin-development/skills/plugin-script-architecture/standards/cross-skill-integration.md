@@ -286,30 +286,30 @@ Scripts can be split into entry points and internal modules.
 skills/my-skill/scripts/
 ├── manage_tasks.py      # Entry point - registered in executor
 ├── _manage_tasks_shared.py  # Internal - shared utilities
-├── _cmd_crud.py         # Internal - CRUD command handlers
-├── _cmd_query.py        # Internal - query command handlers
+├── _tasks_crud.py       # Internal - CRUD command handlers
+├── _tasks_query.py      # Internal - query command handlers
 └── _cmd_step.py         # Internal - step command handlers
 ```
 
-### Collision Risk
+### Naming Convention
 
-Generic internal module names like `_cmd_crud.py` or `_cmd_query.py` may exist in multiple skills. At runtime this is fine (the executor runs one script at a time), but in **tests** it causes module cache collisions — see "Colliding Module Names" in `testing-standards.md` for the `importlib` workaround.
+Internal modules use the `{skill}_{role}.py` convention to ensure unique filenames across sibling skills. For example, `_tasks_crud.py` and `_tasks_query.py` in manage-tasks vs `_references_crud.py` in manage-references. This prevents module cache collisions in tests.
 
 ### Import Pattern
 
 Entry point imports from internal modules:
 
 ```python
-# manage_tasks.py (entry point)
+# manage-tasks.py (entry point)
 from _manage_tasks_shared import parse_task_file, format_task_file
-from _cmd_crud import cmd_add, cmd_remove
-from _cmd_query import cmd_list, cmd_get
+from _tasks_crud import cmd_add, cmd_remove
+from _tasks_query import cmd_list, cmd_get
 ```
 
 Internal modules import from each other or from cross-skill APIs:
 
 ```python
-# _cmd_crud.py (internal module)
+# _tasks_crud.py (internal module)
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
 from _manage_tasks_shared import parse_task_file, format_task_file
 ```

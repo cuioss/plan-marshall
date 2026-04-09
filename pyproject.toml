@@ -108,7 +108,4 @@ exclude = [
     "test/.*/plan-marshall-plugin/",
     "test/plan-marshall/tools-permission-fix/test_permission\\.py$",
     "test/.*/integration/",
-    # Duplicate module names across sibling skills (each is independent, loaded via PYTHONPATH at runtime)
-    "manage-references/scripts/",
-    "manage-status/scripts/",
 ]
