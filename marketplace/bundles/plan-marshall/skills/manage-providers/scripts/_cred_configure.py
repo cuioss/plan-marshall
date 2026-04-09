@@ -6,11 +6,11 @@ The user edits the file directly to add real secrets.
 No interactive input, no secrets through the LLM.
 """
 
-from _credentials_core import (
+from _providers_core import (
     SECRET_PLACEHOLDERS,
     VALID_AUTH_TYPES,
     check_credential_completeness,
-    discover_credential_providers,
+    discover_provider_extensions,
     get_project_name,
     load_credential,
     read_provider_config,
@@ -23,7 +23,7 @@ from file_ops import output_toon  # type: ignore[import-not-found]
 
 def run_configure(args) -> int:
     """Execute the configure subcommand."""
-    providers = discover_credential_providers()
+    providers = discover_provider_extensions()
 
     if not providers:
         output_toon({'status': 'error', 'message': 'No credential extensions found in marketplace'})

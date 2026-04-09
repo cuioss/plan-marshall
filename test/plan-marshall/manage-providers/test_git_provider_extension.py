@@ -2,7 +2,7 @@
 """Tests for the Git credential extension provider (workflow-integration-git)."""
 
 
-from _credentials_core import discover_credential_providers  # type: ignore[import-not-found]
+from _providers_core import discover_provider_extensions  # type: ignore[import-not-found]
 
 import conftest  # noqa: F401
 
@@ -12,13 +12,13 @@ class TestGitCredentialExtension:
 
     def test_discovers_git_provider(self):
         """Should find the Git credential extension via discovery."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         names = [p['skill_name'] for p in providers]
         assert 'workflow-integration-git' in names
 
     def test_git_provider_fields(self):
         """Git provider must have correct system-auth configuration."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         git = next(p for p in providers if p['skill_name'] == 'workflow-integration-git')
 
         assert git['auth_type'] == 'system'
@@ -29,7 +29,7 @@ class TestGitCredentialExtension:
 
     def test_git_provider_has_no_http_auth_fields(self):
         """System-auth provider must not declare HTTP header fields."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         git = next(p for p in providers if p['skill_name'] == 'workflow-integration-git')
 
         assert 'header_name' not in git, (
@@ -47,7 +47,7 @@ class TestGitCredentialExtension:
 
     def test_git_provider_has_no_extra_fields(self):
         """Git system-auth provider should not declare extra_fields."""
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         git = next(p for p in providers if p['skill_name'] == 'workflow-integration-git')
 
         assert 'extra_fields' not in git, (
@@ -63,13 +63,13 @@ class TestGitCredentialExtension:
             Path(__file__).resolve().parent.parent.parent.parent
             / 'marketplace' / 'bundles' / 'plan-marshall'
             / 'skills' / 'workflow-integration-git' / 'scripts'
-            / 'credential_extension.py'
+            / 'git_provider.py'
         )
-        spec = importlib.util.spec_from_file_location('git_credential_extension', ext_path)
+        spec = importlib.util.spec_from_file_location('git_provider', ext_path)
         assert spec is not None and spec.loader is not None
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 
-        git_providers = mod.get_credential_providers()
+        git_providers = mod.get_provider_declarations()
         assert len(git_providers) == 1
         assert git_providers[0]['skill_name'] == 'workflow-integration-git'

@@ -9,7 +9,7 @@ fundamentally incomplete (blocklist approach).
 import os
 import sys
 
-from _credentials_core import CREDENTIALS_DIR
+from _providers_core import CREDENTIALS_DIR
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 # Expand ~ to absolute path to cover both forms

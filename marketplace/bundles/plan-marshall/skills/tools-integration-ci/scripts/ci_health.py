@@ -52,9 +52,9 @@ def _discover_provider_tools() -> dict[str, str | None]:
         Dict mapping provider name (github/gitlab/unknown) to CLI tool name.
     """
     try:
-        from _credentials_core import discover_credential_providers  # type: ignore[import-not-found]
+        from _providers_core import discover_provider_extensions  # type: ignore[import-not-found]
 
-        providers = discover_credential_providers()
+        providers = discover_provider_extensions()
         mapping: dict[str, str | None] = {'unknown': None}
 
         for p in providers:

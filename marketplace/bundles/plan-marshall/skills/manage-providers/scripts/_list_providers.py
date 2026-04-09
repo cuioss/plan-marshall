@@ -1,17 +1,17 @@
 """
-List available credential providers from marketplace extensions.
+List available providers from marketplace extensions.
 
-Discovers credential_extension.py files across all bundles and returns
+Discovers provider_extension.py files across all bundles and returns
 provider declarations — what CAN be configured, not what IS configured.
 """
 
-from _credentials_core import discover_credential_providers
+from _providers_core import discover_provider_extensions
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
 def run_list_providers(args) -> int:
     """Execute the list-providers subcommand."""
-    providers = discover_credential_providers()
+    providers = discover_provider_extensions()
 
     formatted = []
     for p in providers:

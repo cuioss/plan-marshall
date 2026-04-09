@@ -4,7 +4,7 @@ List configured credential skills.
 Outputs metadata only — never includes credential values.
 """
 
-from _credentials_core import list_credential_metadata
+from _providers_core import list_credential_metadata
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 

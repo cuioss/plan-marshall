@@ -2,7 +2,7 @@
 Remove credential file and metadata.
 """
 
-from _credentials_core import get_project_name, remove_credential, unregister_credential_metadata
+from _providers_core import get_project_name, remove_credential, unregister_credential_metadata
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 

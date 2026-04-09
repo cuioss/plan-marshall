@@ -687,7 +687,7 @@ def validate_extension_contracts(marketplace_root: Path, extension_type: str | N
         EC-12: Triage skills: contains ## Acceptable to Accept (Error)
         EC-20: Outline skills: standards/change-types.md exists (Error)
         EC-40: Build skills: implements ExecuteConfig (Warning)
-        EC-50: Credential scripts: get_credential_providers() exists (Error)
+        EC-50: Provider scripts: get_provider_declarations() exists (Error)
     """
     bundles_path = marketplace_root / 'bundles'
     errors: list[dict[str, str]] = []
@@ -738,39 +738,39 @@ def validate_extension_contracts(marketplace_root: Path, extension_type: str | N
             if skill_md.exists():
                 implementors.append((skill_md, ext_type))
 
-    # Also check credential extensions
-    if not extension_type or extension_type == 'credential':
+    # Also check provider extensions
+    if not extension_type or extension_type == 'provider':
         for bundle_dir in sorted(bundles_path.iterdir()):
             if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
                 continue
-            for cred_path in bundle_dir.glob('skills/*/scripts/credential_extension.py'):
+            for prov_path in bundle_dir.glob('skills/*/scripts/*_provider.py'):
                 if skill_filter:
-                    skill_name = cred_path.parent.parent.name
+                    skill_name = prov_path.parent.parent.name
                     full_name = f'{bundle_dir.name}:{skill_name}'
                     if skill_filter != full_name and skill_filter != skill_name:
                         continue
-                implementors.append((cred_path, 'credential'))
+                implementors.append((prov_path, 'provider'))
 
     # Validate each implementor
     for impl_path, ext_type in implementors:
         total_checked += 1
         impl_errors: list[dict[str, str]] = []
 
-        if ext_type == 'credential':
-            # EC-50: credential scripts must have get_credential_providers()
+        if ext_type == 'provider':
+            # EC-50: provider scripts must have get_provider_declarations()
             try:
                 content = impl_path.read_text(encoding='utf-8')
-                if 'def get_credential_providers' not in content:
+                if 'def get_provider_declarations' not in content:
                     impl_errors.append({
                         'skill': str(impl_path.relative_to(bundles_path)),
                         'rule': 'EC-50',
-                        'message': "Missing 'get_credential_providers()' function",
+                        'message': "Missing 'get_provider_declarations()' function",
                     })
             except OSError:
                 impl_errors.append({
                     'skill': str(impl_path),
                     'rule': 'EC-50',
-                    'message': 'Cannot read credential extension file',
+                    'message': 'Cannot read provider extension file',
                 })
         else:
             # Parse frontmatter

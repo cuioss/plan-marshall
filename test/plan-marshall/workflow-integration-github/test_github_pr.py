@@ -14,7 +14,7 @@ from unittest.mock import patch
 from conftest import get_script_path, run_script
 
 # Script under test (for subprocess CLI plumbing tests)
-SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-github', 'pr.py')
+SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
 
 # Tier 2 direct imports — use explicit path to avoid module name collision
 # with workflow-integration-gitlab/scripts/pr.py

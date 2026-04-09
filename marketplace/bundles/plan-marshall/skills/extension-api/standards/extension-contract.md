@@ -295,7 +295,7 @@ Each extension point has its own contract document with formal parameters, pre-c
 | Triage | `provides_triage()` | [ext-point-triage.md](ext-point-triage.md) | 7 |
 | Outline | `provides_outline_skill()` | [ext-point-outline.md](ext-point-outline.md) | 1 |
 | Recipe | `provides_recipes()` | [ext-point-recipe.md](ext-point-recipe.md) | 4 |
-| Credential | `credential_extension.py` | [ext-point-provider.md](ext-point-provider.md) | 1 |
+| Provider | `*_provider.py` | [ext-point-provider.md](ext-point-provider.md) | 4 |
 | Verify Steps | `provides_verify_steps()` | [ext-point-verify-steps.md](ext-point-verify-steps.md) | 0 |
 | Finalize Steps | `provides_finalize_steps()` | [ext-point-finalize-steps.md](ext-point-finalize-steps.md) | 0 |
 

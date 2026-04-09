@@ -1,15 +1,15 @@
 """
-Credential extension for SonarCloud/SonarQube integration.
+Provider extension for SonarCloud/SonarQube integration.
 
 Extension point: plan-marshall:extension-api/standards/ext-point-provider
 
-Declares credential requirements for the workflow-integration-sonar skill.
-Discovered by manage-providers via discover_credential_providers().
+Declares provider requirements for the workflow-integration-sonar skill.
+Discovered by manage-providers via discover_provider_extensions().
 """
 
 
-def get_credential_providers():
-    """Return credential provider declarations for Sonar integration."""
+def get_provider_declarations():
+    """Return provider declarations for Sonar integration."""
     return [{
         'skill_name': 'workflow-integration-sonar',
         'display_name': 'SonarCloud / SonarQube',
