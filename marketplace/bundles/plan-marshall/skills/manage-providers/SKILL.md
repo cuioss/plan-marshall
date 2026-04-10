@@ -30,13 +30,23 @@ Provider management skill for plan-marshall. Stores credentials outside LLM reac
 - All path resolution validates via `os.path.realpath()` (symlink protection)
 - All project names sanitized via `re.sub(r'[^a-zA-Z0-9._-]', '', name)` (path traversal protection)
 
+## Architecture
+
+Provider discovery uses a two-phase approach based on `marshal.json` declarations:
+
+1. **Setup time** (`discover-and-persist`): Scans PYTHONPATH for `*_provider.py` files, calls `get_provider_declarations()` on each, and persists the combined declarations to `marshal.json` under the `providers` key. The marshall-steward wizard runs this during project setup.
+2. **Runtime** (`list-providers`): Reads provider declarations directly from `marshal.json`. No filesystem scanning occurs at runtime.
+
+Each provider module exports `get_provider_declarations()` returning a list of declaration dicts with fields: `skill_name`, `display_name`, `auth_type`, `default_url`, `description`, and optional `extra_fields`.
+
 ## Subcommands
 
 | Subcommand | Description |
 |------------|-------------|
 | `configure` | Create credential file with placeholder secrets |
 | `check` | Check if credential is complete (no placeholders remaining) |
-| `list-providers` | List available credential providers from extensions |
+| `discover-and-persist` | Scan PYTHONPATH for provider modules and persist declarations to marshal.json |
+| `list-providers` | List available credential providers from marshal.json |
 | `edit` | Update non-secret fields (URL, auth type) |
 | `verify` | HTTP connectivity test, updates `verified_at` |
 | `list` | List configured skills (no secrets in output) |
@@ -94,13 +104,27 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check
 
 Returns `complete`, `incomplete`, or `not_found`. Use after the user edits a credential file.
 
+### Discover and Persist Providers
+
+Run during project setup (typically by the marshall-steward wizard) to scan for provider modules and populate `marshal.json`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials discover-and-persist
+```
+
+Scans all PYTHONPATH directories (set by the executor) for `*_provider.py` files, loads each module, calls `get_provider_declarations()`, and writes the combined list to `marshal.json` under the `providers` key.
+
+**Return fields**: `status`, `action`, `count`, `providers` (list of skill names).
+
 ### List Available Providers
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
-Returns available credential extensions (what CAN be configured), not what IS configured. Use this in wizard/menu workflows to discover providers.
+Reads the `providers` list from `marshal.json` (populated by `discover-and-persist`). Returns available credential providers (what CAN be configured), not what IS configured. Use this in wizard/menu workflows to discover providers.
+
+If no providers are found, the output includes a hint to run `discover-and-persist` first.
 
 ### List Configured Skills
 

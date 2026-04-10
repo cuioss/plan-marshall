@@ -5,10 +5,10 @@ Makes a test request using RestClient and updates verified_at metadata.
 """
 
 from _providers_core import (
-    discover_provider_extensions,
     get_authenticated_client,
     get_project_name,
     load_credential,
+    load_declared_providers,
     update_verified_at,
     verify_system_auth,
 )
@@ -25,7 +25,7 @@ def run_verify(args) -> int:
         return 0
 
     # Find provider for verify endpoint
-    providers = discover_provider_extensions()
+    providers = load_declared_providers()
     provider = None
     for p in providers:
         if p.get('skill_name') == skill:

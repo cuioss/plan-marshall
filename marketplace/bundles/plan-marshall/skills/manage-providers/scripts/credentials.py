@@ -10,6 +10,8 @@ Usage:
     credentials.py check --skill <name> [--scope global|project]
     credentials.py edit --skill <name> [--scope global|project]
     credentials.py verify [--skill <name>] [--scope global|project]
+    credentials.py discover-and-persist
+    credentials.py list-providers
     credentials.py list [--scope global|project|all]
     credentials.py remove [--skill <name>] [--scope global|project]
     credentials.py ensure-denied [--target global|project]
@@ -58,8 +60,12 @@ def main() -> int:
     verify_parser.add_argument('--scope', choices=['global', 'project'], default='global',
                                help='Credential scope (default: global)')
 
+    # discover-and-persist
+    subparsers.add_parser('discover-and-persist',
+                          help='Scan PYTHONPATH for provider declarations and persist to marshal.json')
+
     # list-providers
-    subparsers.add_parser('list-providers', help='List available credential providers from extensions')
+    subparsers.add_parser('list-providers', help='List available credential providers from marshal.json')
 
     # list
     list_parser = subparsers.add_parser('list', help='List configured skills (no secrets)')
@@ -89,6 +95,9 @@ def main() -> int:
     elif args.command == 'edit':
         from _cred_edit import run_edit
         return run_edit(args)
+    elif args.command == 'discover-and-persist':
+        from _list_providers import run_discover_and_persist
+        return run_discover_and_persist(args)
     elif args.command == 'list-providers':
         from _list_providers import run_list_providers
         return run_list_providers(args)

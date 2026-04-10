@@ -98,11 +98,19 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                     ],
                 },
             },
-            'ci': {
-                'repo_url': 'https://github.com/test/repo',
-                'provider': 'github',
-                'detected_at': '2025-01-15T10:30:00Z',
-            },
+            'providers': [
+                {
+                    'skill_name': 'workflow-integration-github',
+                    'display_name': 'GitHub CLI (gh)',
+                    'auth_type': 'system',
+                    'default_url': 'https://github.com',
+                    'description': 'GitHub CI provider via gh CLI',
+                    'verify_command': 'gh auth status',
+                    'provider': 'github',
+                    'repo_url': 'https://github.com/test/repo',
+                    'detected_at': '2025-01-15T10:30:00Z',
+                },
+            ],
         }
     marshal_path = fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2))
@@ -191,7 +199,19 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 ],
             },
         },
-        'ci': {'repo_url': None, 'provider': 'unknown', 'detected_at': None},
+        'providers': [
+            {
+                'skill_name': 'workflow-integration-github',
+                'display_name': 'GitHub CLI (gh)',
+                'auth_type': 'system',
+                'default_url': 'https://github.com',
+                'description': 'GitHub CI provider via gh CLI',
+                'verify_command': 'gh auth status',
+                'provider': 'unknown',
+                'repo_url': None,
+                'detected_at': None,
+            },
+        ],
     }
     marshal_path = fixture_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(config, indent=2))

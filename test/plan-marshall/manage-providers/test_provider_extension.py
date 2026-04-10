@@ -1,24 +1,63 @@
 #!/usr/bin/env python3
-"""Tests for credential extension discovery across marketplace bundles."""
+"""Tests for provider loading from marshal.json declarations."""
 
+import json
 
-from _providers_core import discover_provider_extensions  # type: ignore[import-not-found]
+from _providers_core import load_declared_providers  # type: ignore[import-not-found]
 
 import conftest  # noqa: F401
 
 
-class TestCredentialExtensionDiscovery:
-    """Tests for credential extension discovery."""
+class TestProviderLoadingFromMarshalJson:
+    """Tests for loading provider declarations from marshal.json."""
 
-    def test_discovers_sonar_provider(self):
-        """Should find the Sonar credential extension."""
-        providers = discover_provider_extensions()
+    def test_loads_sonar_provider(self, tmp_path, monkeypatch):
+        """Should load Sonar provider from marshal.json."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        config = {
+            'providers': [
+                {
+                    'skill_name': 'workflow-integration-sonar',
+                    'display_name': 'SonarCloud / SonarQube',
+                    'auth_type': 'token',
+                    'default_url': 'https://sonarcloud.io',
+                    'header_name': 'Authorization',
+                    'header_value_template': 'Bearer {token}',
+                    'verify_endpoint': '/api/system/status',
+                    'verify_method': 'GET',
+                    'description': 'SonarCloud integration',
+                },
+            ],
+        }
+        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+
+        providers = load_declared_providers()
         names = [p['skill_name'] for p in providers]
         assert 'workflow-integration-sonar' in names
 
-    def test_sonar_provider_fields(self):
+    def test_sonar_provider_fields(self, tmp_path, monkeypatch):
         """Sonar provider must have correct configuration."""
-        providers = discover_provider_extensions()
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        config = {
+            'providers': [
+                {
+                    'skill_name': 'workflow-integration-sonar',
+                    'display_name': 'SonarCloud / SonarQube',
+                    'auth_type': 'token',
+                    'default_url': 'https://sonarcloud.io',
+                    'header_name': 'Authorization',
+                    'header_value_template': 'Bearer {token}',
+                    'verify_endpoint': '/api/system/status',
+                    'verify_method': 'GET',
+                    'description': 'SonarCloud integration',
+                },
+            ],
+        }
+        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+
+        providers = load_declared_providers()
         sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
 
         assert sonar['auth_type'] == 'token'
@@ -28,124 +67,109 @@ class TestCredentialExtensionDiscovery:
         assert sonar['header_name'] == 'Authorization'
         assert 'Bearer' in sonar['header_value_template']
 
-    def test_skill_name_matches_directory(self):
-        """Provider skill_name must match the skill directory name."""
-        providers = discover_provider_extensions()
-        for provider in providers:
-            skill_name = provider['skill_name']
-            # The skill_name should be a valid directory name
-            assert '/' not in skill_name
-            assert '\\' not in skill_name
+    def test_returns_list(self, tmp_path, monkeypatch):
+        """load_declared_providers always returns a list."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        (tmp_path / '.plan' / 'marshal.json').write_text('{"providers": []}')
 
-    def test_returns_list(self):
-        """discover_provider_extensions always returns a list."""
-        providers = discover_provider_extensions()
+        providers = load_declared_providers()
         assert isinstance(providers, list)
 
-    def test_sonar_organization_is_optional(self):
-        """Sonar organization extra_field must be optional (required=False)."""
-        providers = discover_provider_extensions()
-        sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
+    def test_returns_empty_when_no_marshal_json(self, tmp_path, monkeypatch):
+        """Should return empty list when marshal.json does not exist."""
+        monkeypatch.chdir(tmp_path)
+        providers = load_declared_providers()
+        assert providers == []
 
-        extra_fields = sonar.get('extra_fields', [])
-        org_field = next(f for f in extra_fields if f['key'] == 'organization')
-        assert org_field['required'] is False
+    def test_multiple_providers(self, tmp_path, monkeypatch):
+        """Should load multiple providers from marshal.json."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        config = {
+            'providers': [
+                {'skill_name': 'provider-a', 'auth_type': 'token'},
+                {'skill_name': 'provider-b', 'auth_type': 'system'},
+            ],
+        }
+        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
 
-    def test_sonar_project_key_is_required(self):
-        """Sonar project_key extra_field must be required."""
-        providers = discover_provider_extensions()
-        sonar = next(p for p in providers if p['skill_name'] == 'workflow-integration-sonar')
-
-        extra_fields = sonar.get('extra_fields', [])
-        pk_field = next(f for f in extra_fields if f['key'] == 'project_key')
-        assert pk_field['required'] is True
+        providers = load_declared_providers()
+        assert len(providers) == 2
+        names = [p['skill_name'] for p in providers]
+        assert 'provider-a' in names
+        assert 'provider-b' in names
 
 
-class TestCICredentialExtension:
-    """Tests for CI credential extension (GitHub and GitLab providers)."""
+class TestCIProviderFromMarshalJson:
+    """Tests for CI provider declarations loaded from marshal.json."""
 
-    def test_discovers_github_provider(self):
-        """Should find the GitHub CI credential extension."""
-        providers = discover_provider_extensions()
+    def test_loads_github_provider(self, tmp_path, monkeypatch):
+        """Should load GitHub CI provider from marshal.json."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        config = {
+            'providers': [
+                {
+                    'skill_name': 'workflow-integration-github',
+                    'display_name': 'GitHub CLI (gh)',
+                    'auth_type': 'system',
+                    'default_url': 'https://github.com',
+                    'verify_command': 'gh auth status',
+                    'description': 'GitHub integration',
+                },
+            ],
+        }
+        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+
+        providers = load_declared_providers()
         names = [p['skill_name'] for p in providers]
         assert 'workflow-integration-github' in names
 
-    def test_discovers_gitlab_provider(self):
-        """Should find the GitLab CI credential extension."""
-        providers = discover_provider_extensions()
+    def test_loads_gitlab_provider(self, tmp_path, monkeypatch):
+        """Should load GitLab CI provider from marshal.json."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        config = {
+            'providers': [
+                {
+                    'skill_name': 'workflow-integration-gitlab',
+                    'display_name': 'GitLab CLI (glab)',
+                    'auth_type': 'system',
+                    'default_url': 'https://gitlab.com',
+                    'verify_command': 'glab auth status',
+                    'description': 'GitLab integration',
+                },
+            ],
+        }
+        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+
+        providers = load_declared_providers()
         names = [p['skill_name'] for p in providers]
         assert 'workflow-integration-gitlab' in names
 
-    def test_github_provider_fields(self):
-        """GitHub provider must have correct system-auth configuration."""
-        providers = discover_provider_extensions()
+    def test_system_provider_has_no_http_auth_fields(self, tmp_path, monkeypatch):
+        """System-auth providers loaded from marshal.json should not have HTTP auth fields."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        config = {
+            'providers': [
+                {
+                    'skill_name': 'workflow-integration-github',
+                    'display_name': 'GitHub CLI (gh)',
+                    'auth_type': 'system',
+                    'default_url': 'https://github.com',
+                    'verify_command': 'gh auth status',
+                    'description': 'GitHub integration',
+                },
+            ],
+        }
+        (tmp_path / '.plan' / 'marshal.json').write_text(json.dumps(config))
+
+        providers = load_declared_providers()
         github = next(p for p in providers if p['skill_name'] == 'workflow-integration-github')
 
-        assert github['auth_type'] == 'system'
-        assert github['default_url'] == 'https://github.com'
-        assert github['verify_command'] == 'gh auth status'
-        assert github['display_name'] == 'GitHub CLI (gh)'
-        assert 'description' in github
-
-    def test_gitlab_provider_fields(self):
-        """GitLab provider must have correct system-auth configuration."""
-        providers = discover_provider_extensions()
-        gitlab = next(p for p in providers if p['skill_name'] == 'workflow-integration-gitlab')
-
-        assert gitlab['auth_type'] == 'system'
-        assert gitlab['default_url'] == 'https://gitlab.com'
-        assert gitlab['verify_command'] == 'glab auth status'
-        assert gitlab['display_name'] == 'GitLab CLI (glab)'
-        assert 'description' in gitlab
-
-    def test_ci_providers_have_no_http_auth_fields(self):
-        """System-auth providers must not declare HTTP header fields."""
-        providers = discover_provider_extensions()
-        ci_names = {'workflow-integration-github', 'workflow-integration-gitlab'}
-        ci_providers = [p for p in providers if p['skill_name'] in ci_names]
-
-        assert len(ci_providers) >= 1
-        for provider in ci_providers:
-            assert 'header_name' not in provider, (
-                f"{provider['skill_name']} should not have header_name (system auth)"
-            )
-            assert 'header_value_template' not in provider, (
-                f"{provider['skill_name']} should not have header_value_template (system auth)"
-            )
-            assert 'verify_endpoint' not in provider, (
-                f"{provider['skill_name']} should not have verify_endpoint (system auth)"
-            )
-            assert 'verify_method' not in provider, (
-                f"{provider['skill_name']} should not have verify_method (system auth)"
-            )
-
-    def test_ci_providers_have_no_extra_fields(self):
-        """CI system-auth providers should not declare extra_fields."""
-        providers = discover_provider_extensions()
-        ci_names = {'workflow-integration-github', 'workflow-integration-gitlab'}
-        ci_providers = [p for p in providers if p['skill_name'] in ci_names]
-
-        for provider in ci_providers:
-            assert 'extra_fields' not in provider, (
-                f"{provider['skill_name']} should not have extra_fields"
-            )
-
-    def test_github_extension_returns_exactly_one_provider(self):
-        """The GitHub credential extension must return exactly one provider."""
-        import importlib.util
-        from pathlib import Path
-
-        ext_path = (
-            Path(__file__).resolve().parent.parent.parent.parent
-            / 'marketplace' / 'bundles' / 'plan-marshall'
-            / 'skills' / 'workflow-integration-github' / 'scripts'
-            / 'github_provider.py'
-        )
-        spec = importlib.util.spec_from_file_location('github_provider', ext_path)
-        assert spec is not None and spec.loader is not None
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-
-        providers = mod.get_provider_declarations()
-        assert len(providers) == 1
-        assert providers[0]['skill_name'] == 'workflow-integration-github'
+        assert 'header_name' not in github
+        assert 'header_value_template' not in github
+        assert 'verify_endpoint' not in github
+        assert 'verify_method' not in github

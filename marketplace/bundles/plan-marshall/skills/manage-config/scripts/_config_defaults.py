@@ -147,6 +147,7 @@ def get_default_config() -> dict:
     system_domain = copy.deepcopy(DEFAULT_SYSTEM_DOMAIN)
     validate_domain_invariants(system_domain)
     return {
+        'providers': [],
         'skill_domains': {'system': system_domain},
         'system': {'retention': copy.deepcopy(DEFAULT_SYSTEM_RETENTION)},
         'plan': {

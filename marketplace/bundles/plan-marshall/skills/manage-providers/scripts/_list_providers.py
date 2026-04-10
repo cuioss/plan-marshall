@@ -1,17 +1,115 @@
 """
-List available providers from marketplace extensions.
+List and discover providers using marshal.json declarations.
 
-Discovers provider_extension.py files across all bundles and returns
-provider declarations — what CAN be configured, not what IS configured.
+discover-and-persist: Scans PYTHONPATH directories for *_provider.py files,
+loads each module, calls get_provider_declarations(), and persists the
+combined declarations to marshal.json under the 'providers' key.
+
+list-providers: Reads the 'providers' list from marshal.json and outputs it.
+No filesystem scanning at runtime.
 """
 
-from _providers_core import discover_provider_extensions
+import importlib.util
+import os
+from pathlib import Path
+from typing import Any
+
+from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
+def _scan_pythonpath_for_providers() -> list[dict[str, Any]]:
+    """Scan PYTHONPATH directories for *_provider.py files.
+
+    For each file found, loads the module and calls get_provider_declarations().
+    Uses PYTHONPATH set by the executor (execute-script.py) which includes
+    all skill script directories.
+
+    Returns:
+        List of provider declaration dicts.
+    """
+    providers: list[dict[str, Any]] = []
+    pythonpath = os.environ.get('PYTHONPATH', '')
+    if not pythonpath:
+        return providers
+
+    seen_paths: set[str] = set()
+
+    for dir_str in pythonpath.split(os.pathsep):
+        dir_path = Path(dir_str)
+        if not dir_path.is_dir():
+            continue
+
+        for provider_file in sorted(dir_path.glob('*_provider.py')):
+            # Deduplicate by resolved path (executor may list dirs multiple times)
+            real_path = str(provider_file.resolve())
+            if real_path in seen_paths:
+                continue
+            seen_paths.add(real_path)
+
+            loaded = _load_provider_module(provider_file)
+            if loaded:
+                providers.extend(loaded)
+
+    return providers
+
+
+def _load_provider_module(path: Path) -> list[dict[str, Any]]:
+    """Load a *_provider.py module and call get_provider_declarations().
+
+    Args:
+        path: Absolute path to the provider module.
+
+    Returns:
+        List of provider declaration dicts, or empty list on failure.
+    """
+    try:
+        module_name = f'provider_{path.stem}'
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            return []
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        if hasattr(module, 'get_provider_declarations'):
+            result: list[dict[str, Any]] = module.get_provider_declarations()
+            return result
+        return []
+    except Exception:
+        return []
+
+
+def run_discover_and_persist(args) -> int:
+    """Execute the discover-and-persist subcommand.
+
+    Scans PYTHONPATH for *_provider.py files, collects declarations,
+    and writes them to marshal.json under the 'providers' key.
+    """
+    require_initialized()
+    providers = _scan_pythonpath_for_providers()
+
+    config = load_config()
+    config['providers'] = providers
+    save_config(config)
+
+    output_toon({
+        'status': 'success',
+        'action': 'discover-and-persist',
+        'count': len(providers),
+        'providers': [p.get('skill_name', '') for p in providers],
+    })
+    return 0
+
+
 def run_list_providers(args) -> int:
-    """Execute the list-providers subcommand."""
-    providers = discover_provider_extensions()
+    """Execute the list-providers subcommand.
+
+    Reads the 'providers' list from marshal.json. If not present,
+    outputs an empty list with a hint to run discover-and-persist.
+    """
+    require_initialized()
+    config = load_config()
+    providers: list[dict[str, Any]] = config.get('providers', [])
 
     formatted = []
     for p in providers:

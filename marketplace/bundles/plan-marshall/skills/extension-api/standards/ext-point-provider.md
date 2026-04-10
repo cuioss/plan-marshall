@@ -12,7 +12,7 @@ Provider extensions declare external tool authentication needs for individual sk
 
 - **File location**: `marketplace/bundles/{bundle}/skills/{skill}/scripts/{provider}_provider.py`
 - **Required function**: `get_provider_declarations() -> list[dict]`
-- **Discovery**: `_providers_core.discover_provider_extensions()` scans `skills/*/scripts/*_provider.py` across all bundles
+- **Discovery**: `_list_providers.run_discover_and_persist()` scans PYTHONPATH for `*_provider.py` and persists to marshal.json; `_providers_core.load_declared_providers()` reads from marshal.json at runtime
 - **Consumer**: `manage-providers` skill
 
 ### Implementor Reference
@@ -95,7 +95,7 @@ Each dict in the returned list:
 
 ## Storage
 
-Credentials are stored in `.plan/credentials/` (not in marshal.json). Discovery results are not persisted — they are resolved at runtime by `_providers_core.discover_provider_extensions()`.
+Credentials are stored in `~/.plan-marshall-credentials/` (not in marshal.json). Provider declarations are persisted to marshal.json by `discover-and-persist` and loaded at runtime by `_providers_core.load_declared_providers()`.
 
 ## Current Implementations
 

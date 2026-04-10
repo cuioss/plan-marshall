@@ -7,7 +7,7 @@ Declares provider requirements for the workflow-integration-github skill.
 GitHub uses system-level authentication (gh CLI login), not
 HTTP headers managed by plan-marshall.
 
-Discovered by manage-providers via discover_provider_extensions().
+Discovered by discover-and-persist and persisted to marshal.json.
 """
 
 

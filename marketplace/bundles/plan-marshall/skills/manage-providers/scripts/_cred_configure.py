@@ -10,9 +10,9 @@ from _providers_core import (
     SECRET_PLACEHOLDERS,
     VALID_AUTH_TYPES,
     check_credential_completeness,
-    discover_provider_extensions,
     get_project_name,
     load_credential,
+    load_declared_providers,
     read_provider_config,
     register_credential_metadata,
     save_credential,
@@ -23,7 +23,7 @@ from file_ops import output_toon  # type: ignore[import-not-found]
 
 def run_configure(args) -> int:
     """Execute the configure subcommand."""
-    providers = discover_provider_extensions()
+    providers = load_declared_providers()
 
     if not providers:
         output_toon({'status': 'error', 'message': 'No credential extensions found in marketplace'})

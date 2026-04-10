@@ -1,7 +1,7 @@
 """
 Core credential management infrastructure.
 
-Provides path resolution, credential file I/O, provider discovery,
+Provides path resolution, credential file I/O, provider loading,
 authenticated REST client, and the RestClient class.
 
 Security constraints:
@@ -13,7 +13,6 @@ Security constraints:
 """
 
 import http.client
-import importlib.util
 import json
 import os
 import re
@@ -98,8 +97,15 @@ def get_project_name() -> str:
     if marshal_path.exists():
         try:
             config = json.loads(marshal_path.read_text(encoding='utf-8'))
-            ci_config = config.get('ci', {})
-            repo_url = ci_config.get('repo_url', '')
+            # Find CI provider in providers list (auth_type=system, workflow-integration-gi*)
+            repo_url = ''
+            for p in config.get('providers', []):
+                if (
+                    p.get('auth_type') == 'system'
+                    and p.get('skill_name', '').startswith('workflow-integration-gi')
+                ):
+                    repo_url = p.get('repo_url', '')
+                    break
             if repo_url:
                 # Extract repo name from URL (last path segment, strip .git)
                 name = repo_url.rstrip('/').rsplit('/', 1)[-1]
@@ -344,96 +350,25 @@ def list_credential_metadata() -> dict:
     return result
 
 
-# === Provider Discovery ===
+# === Provider Loading (from marshal.json) ===
 
 
-def get_marketplace_bundles_path() -> Path:
-    """Get the path to marketplace bundles directory.
+def load_declared_providers() -> list[dict[str, Any]]:
+    """Load provider declarations from marshal.json.
 
-    Same resolution logic as extension_discovery.py.
-    """
-    script_path = Path(__file__).resolve()
-
-    current = script_path.parent
-    for _ in range(10):
-        candidate = current / 'bundles'
-        if candidate.is_dir() and (candidate / 'plan-marshall').is_dir():
-            return candidate
-        if current.name == 'bundles' and (current / 'plan-marshall').is_dir():
-            return current
-        current = current.parent
-        if current == current.parent:
-            break
-
-    # Fallback: plugin cache
-    cache_path = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
-    if cache_path.is_dir():
-        return cache_path
-
-    return script_path.parent.parent.parent.parent.parent / 'bundles'
-
-
-def discover_provider_extensions() -> list[dict[str, Any]]:
-    """Scan marketplace bundles for *_provider.py files.
-
-    Provider extensions use {provider}_provider.py naming to avoid
-    PYTHONPATH/mypy collisions across sibling skills.
+    Reads the 'providers' list persisted by the discover-and-persist
+    command. No filesystem scanning at runtime.
 
     Returns:
-        List of provider declarations from get_provider_declarations()
+        List of provider declaration dicts, or empty list if not found.
     """
-    providers: list[dict[str, Any]] = []
-    bundles_path = get_marketplace_bundles_path()
-
-    if not bundles_path.is_dir():
-        return providers
-
-    for bundle_dir in sorted(bundles_path.iterdir()):
-        if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
-            continue
-
-        # Search skills directories for *_provider.py
-        skills_dir = bundle_dir / 'skills'
-        if not skills_dir.is_dir():
-            # Check versioned cache structure
-            for version_dir in bundle_dir.iterdir():
-                if version_dir.is_dir() and not version_dir.name.startswith('.'):
-                    skills_dir = version_dir / 'skills'
-                    if skills_dir.is_dir():
-                        break
-            else:
-                continue
-
-        for skill_dir in sorted(skills_dir.iterdir()):
-            if not skill_dir.is_dir():
-                continue
-            scripts_dir = skill_dir / 'scripts'
-            if not scripts_dir.is_dir():
-                continue
-            for ext_path in sorted(scripts_dir.glob('*_provider.py')):
-                loaded = _load_provider_extension(ext_path, skill_dir.name)
-                if loaded:
-                    providers.extend(loaded)
-
-    return providers
-
-
-def _load_provider_extension(path: Path, skill_name: str) -> list[dict[str, Any]]:
-    """Load a provider_extension.py module and call get_provider_declarations()."""
-    try:
-        spec = importlib.util.spec_from_file_location(
-            f'provider_extension_{skill_name}', path
-        )
-        if spec is None or spec.loader is None:
-            return []
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        if hasattr(module, 'get_provider_declarations'):
-            result: list[dict[str, Any]] = module.get_provider_declarations()
-            return result
+    if not MARSHAL_JSON_PATH.exists():
         return []
-    except Exception:
+    try:
+        config = json.loads(MARSHAL_JSON_PATH.read_text(encoding='utf-8'))
+        result: list[dict[str, Any]] = config.get('providers', [])
+        return result
+    except (json.JSONDecodeError, KeyError):
         return []
 
 
