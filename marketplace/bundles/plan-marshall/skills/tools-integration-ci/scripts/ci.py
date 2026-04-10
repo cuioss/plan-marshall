@@ -59,7 +59,7 @@ def get_provider() -> str | None:
                 skill_name = entry.get('skill_name', '')
                 provider = _SKILL_TO_PROVIDER.get(skill_name)
                 if provider:
-                    return entry.get('provider', provider)
+                    return str(entry.get('provider', provider))
             return None
     except (OSError, json.JSONDecodeError) as e:
         print(f'Warning: Failed to read marshal.json: {e}', file=sys.stderr)
