@@ -34,6 +34,7 @@ _scan_pythonpath_for_providers = _list_providers._scan_pythonpath_for_providers
 _load_provider_module = _list_providers._load_provider_module
 run_discover_and_persist = _list_providers.run_discover_and_persist
 run_list_providers = _list_providers.run_list_providers
+_validate_provider_selection = _list_providers._validate_provider_selection
 
 
 # =============================================================================
@@ -179,6 +180,82 @@ class TestLoadProviderModule:
 
 
 # =============================================================================
+# _validate_provider_selection Tests
+# =============================================================================
+
+
+def _make_provider(skill_name: str, category: str) -> dict:
+    """Create a minimal provider dict with skill_name and category."""
+    return {'skill_name': skill_name, 'category': category}
+
+
+class TestValidateProviderSelection:
+    """Tests for _validate_provider_selection()."""
+
+    def test_valid_all_categories(self):
+        """git + github + sonar passes validation (empty errors)."""
+        providers = [
+            _make_provider('git', 'version-control'),
+            _make_provider('github', 'ci'),
+            _make_provider('sonar', 'other'),
+        ]
+        errors = _validate_provider_selection(providers, ['git', 'github', 'sonar'])
+        assert errors == []
+
+    def test_valid_git_and_ci_only(self):
+        """git + github passes (CI is optional, no other required)."""
+        providers = [
+            _make_provider('git', 'version-control'),
+            _make_provider('github', 'ci'),
+        ]
+        errors = _validate_provider_selection(providers, ['git', 'github'])
+        assert errors == []
+
+    def test_valid_git_only(self):
+        """git alone passes (no CI is valid)."""
+        providers = [
+            _make_provider('git', 'version-control'),
+            _make_provider('github', 'ci'),
+        ]
+        errors = _validate_provider_selection(providers, ['git'])
+        assert errors == []
+
+    def test_missing_version_control(self):
+        """github only fails with version-control error."""
+        providers = [
+            _make_provider('git', 'version-control'),
+            _make_provider('github', 'ci'),
+        ]
+        errors = _validate_provider_selection(providers, ['github'])
+        assert len(errors) == 1
+        assert 'version-control' in errors[0]
+
+    def test_both_ci_providers_selected(self):
+        """git + github + gitlab fails with ci error."""
+        providers = [
+            _make_provider('git', 'version-control'),
+            _make_provider('github', 'ci'),
+            _make_provider('gitlab', 'ci'),
+        ]
+        errors = _validate_provider_selection(providers, ['git', 'github', 'gitlab'])
+        assert len(errors) == 1
+        assert 'ci' in errors[0]
+
+    def test_multiple_other_providers_valid(self):
+        """git + github + sonar + another_other passes (other has no limit)."""
+        providers = [
+            _make_provider('git', 'version-control'),
+            _make_provider('github', 'ci'),
+            _make_provider('sonar', 'other'),
+            _make_provider('custom-tool', 'other'),
+        ]
+        errors = _validate_provider_selection(
+            providers, ['git', 'github', 'sonar', 'custom-tool'],
+        )
+        assert errors == []
+
+
+# =============================================================================
 # run_discover_and_persist Tests
 # =============================================================================
 
@@ -202,7 +279,7 @@ class TestRunDiscoverAndPersist:
         provider_dir.mkdir()
         (provider_dir / 'sample_provider.py').write_text(
             'def get_provider_declarations():\n'
-            '    return [{"skill_name": "sample-skill", "auth_type": "token"}]\n'
+            '    return [{"skill_name": "sample-skill", "auth_type": "token", "category": "version-control"}]\n'
         )
         monkeypatch.setenv('PYTHONPATH', str(provider_dir))
 
@@ -214,8 +291,8 @@ class TestRunDiscoverAndPersist:
         assert len(config['providers']) == 1
         assert config['providers'][0]['skill_name'] == 'sample-skill'
 
-    def test_persists_empty_when_no_providers(self, tmp_path, monkeypatch):
-        """Writes empty providers list when nothing found."""
+    def test_rejects_when_no_providers_discovered(self, tmp_path, monkeypatch):
+        """Returns validation error when no providers are discovered."""
         import _config_core
 
         plan_dir = tmp_path / '.plan'
@@ -229,10 +306,38 @@ class TestRunDiscoverAndPersist:
         monkeypatch.setenv('PYTHONPATH', '')
 
         exit_code = run_discover_and_persist(Namespace(providers='nonexistent'))
-        assert exit_code == 0
+        assert exit_code == 1
 
+        # Verify providers were NOT persisted
         config = json.loads(marshal_path.read_text())
-        assert config['providers'] == []
+        assert 'providers' not in config
+
+    def test_rejects_invalid_provider_selection(self, tmp_path, monkeypatch, capsys):
+        """discover-and-persist returns error when validation fails (no VC provider)."""
+        import _config_core
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        marshal_path = plan_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps({'skill_domains': {}}))
+
+        _config_core.PLAN_BASE_DIR = tmp_path
+        _config_core.MARSHAL_PATH = marshal_path
+
+        provider_dir = tmp_path / 'ext'
+        provider_dir.mkdir()
+        (provider_dir / 'ci_provider.py').write_text(
+            'def get_provider_declarations():\n'
+            '    return [{"skill_name": "github", "category": "ci", "auth_type": "token"}]\n'
+        )
+        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+
+        exit_code = run_discover_and_persist(Namespace(providers='github'))
+        assert exit_code == 1
+
+        # Verify providers were NOT persisted
+        config = json.loads(marshal_path.read_text())
+        assert 'providers' not in config
 
     def test_preserves_existing_config(self, tmp_path, monkeypatch):
         """discover-and-persist does not destroy other marshal.json keys."""

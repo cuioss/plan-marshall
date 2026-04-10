@@ -77,9 +77,9 @@ class TestListProviders:
         assert discover.returncode == 0
         # Sonar provider must be discoverable
         assert 'workflow-integration-sonar' in discover.stdout
-        # Activate and persist
+        # Activate and persist (must include version-control provider for validation)
         run_script(SCRIPT_PATH, 'discover-and-persist',
-                   '--providers', 'workflow-integration-sonar')
+                   '--providers', 'workflow-integration-git,workflow-integration-sonar')
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'workflow-integration-sonar' in result.stdout
@@ -231,7 +231,7 @@ class TestConfigureAuthTypeValidation:
     def setup_class(cls):
         """Ensure sonar provider is persisted in marshal.json."""
         run_script(SCRIPT_PATH, 'discover-and-persist',
-                   '--providers', 'workflow-integration-sonar')
+                   '--providers', 'workflow-integration-git,workflow-integration-sonar')
 
     def test_configure_rejects_incompatible_auth_type(self):
         """Configure rejects auth_type that doesn't match provider's declared auth_type."""

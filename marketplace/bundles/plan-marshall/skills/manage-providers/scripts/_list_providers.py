@@ -79,6 +79,62 @@ def _load_provider_module(path: Path) -> list[dict[str, Any]]:
         return []
 
 
+def _validate_provider_selection(
+    providers: list[dict[str, Any]],
+    selected_names: list[str],
+) -> list[str]:
+    """Validate selected providers against category cardinality rules.
+
+    Groups selected providers by their ``category`` field and enforces:
+    - ``version-control``: exactly 1 required
+    - ``ci``: 0 or 1 allowed
+    - ``other``: 0..N (no constraints)
+
+    Args:
+        providers: Full list of discovered provider dicts (must contain ``category``).
+        selected_names: Skill names the user selected for activation.
+
+    Returns:
+        List of validation error strings. Empty list means valid.
+    """
+    selected_set = set(selected_names)
+    selected_providers = [
+        p for p in providers if p.get('skill_name', '') in selected_set
+    ]
+
+    # Group by category
+    by_category: dict[str, list[str]] = {}
+    for p in selected_providers:
+        cat = p.get('category', 'other')
+        by_category.setdefault(cat, []).append(p.get('skill_name', ''))
+
+    errors: list[str] = []
+
+    # version-control: exactly 1 required
+    vc_providers = by_category.get('version-control', [])
+    if len(vc_providers) == 0:
+        errors.append(
+            'Category version-control: exactly 1 provider required but none selected'
+        )
+    elif len(vc_providers) > 1:
+        errors.append(
+            f'Category version-control: exactly 1 provider required but '
+            f'{len(vc_providers)} selected: {", ".join(vc_providers)}'
+        )
+
+    # ci: 0 or 1
+    ci_providers = by_category.get('ci', [])
+    if len(ci_providers) > 1:
+        errors.append(
+            f'Category ci: at most 1 provider allowed but '
+            f'{len(ci_providers)} selected: {", ".join(ci_providers)}'
+        )
+
+    # other: no constraints
+
+    return errors
+
+
 def run_discover_and_persist(args) -> int:
     """Execute the discover-and-persist subcommand.
 
@@ -109,6 +165,16 @@ def run_discover_and_persist(args) -> int:
     discovered_names = {p.get('skill_name', '') for p in providers}
     activated = [p for p in providers if p.get('skill_name', '') in selected_set]
     unknown = [n for n in selected_names if n not in discovered_names]
+
+    # Validate category cardinality before persisting
+    validation_errors = _validate_provider_selection(providers, selected_names)
+    if validation_errors:
+        output_toon({
+            'status': 'error',
+            'action': 'discover-and-persist',
+            'validation_errors': validation_errors,
+        })
+        return 1
 
     config = load_config()
     config['providers'] = activated

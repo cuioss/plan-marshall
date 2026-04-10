@@ -32,6 +32,7 @@ def get_provider_declarations() -> list[dict]:
     return [
         {
             'skill_name': 'workflow-integration-sonar',
+            'category': 'other',
             'display_name': 'SonarCloud/SonarQube',
             'auth_type': 'token',
             'default_url': 'https://sonarcloud.io',
@@ -92,6 +93,19 @@ Each dict in the returned list:
 | `verify_endpoint` | str | Endpoint for connectivity verification |
 | `verify_method` | str | HTTP method for verification |
 | `description` | str | Provider description |
+| `category` | str | Provider category for cardinality enforcement (`version-control`, `ci`, `other`) |
+
+## Categories and Cardinality
+
+Provider declarations include a `category` field that determines cardinality rules during activation:
+
+| Category | Cardinality | Enforcement |
+|----------|-------------|-------------|
+| `version-control` | Exactly 1 | Auto-selected (git always active) |
+| `ci` | 0 or 1 | Single-select (GitHub XOR GitLab) |
+| `other` | 0..N | MultiSelect |
+
+The `discover-and-persist` command validates these rules before persisting to marshal.json. Invalid combinations (e.g., missing git, both CI providers) are rejected with validation errors.
 
 ## Storage
 
