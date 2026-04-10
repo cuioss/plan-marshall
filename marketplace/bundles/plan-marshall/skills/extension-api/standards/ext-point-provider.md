@@ -31,10 +31,9 @@ Provider extensions use a Python docstring reference (no SKILL.md frontmatter):
 def get_provider_declarations() -> list[dict]:
     return [
         {
-            'skill_name': 'workflow-integration-sonar',
+            'skill_name': 'plan-marshall:workflow-integration-sonar',
             'category': 'other',
             'display_name': 'SonarCloud/SonarQube',
-            'auth_type': 'token',
             'default_url': 'https://sonarcloud.io',
             'header_name': 'Authorization',
             'header_value_template': 'Bearer {token}',
@@ -84,9 +83,8 @@ Each dict in the returned list:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `skill_name` | str | Skill identifier (e.g., `workflow-integration-sonar`) |
+| `skill_name` | str | Bundle-prefixed skill identifier (e.g., `plan-marshall:workflow-integration-sonar`) |
 | `display_name` | str | Human-readable name |
-| `auth_type` | str | Default auth type (`none`, `token`, `basic`, `system`) |
 | `default_url` | str | Default base URL |
 | `header_name` | str | HTTP header name for token auth |
 | `header_value_template` | str | Header value template (e.g., `Bearer {token}`) |
@@ -94,6 +92,17 @@ Each dict in the returned list:
 | `verify_method` | str | HTTP method for verification |
 | `description` | str | Provider description |
 | `category` | str | Provider category for cardinality enforcement (`version-control`, `ci`, `other`) |
+
+## Persisted vs Wizard-time Fields
+
+Provider declarations contain both persisted and transient fields. Only a subset is written to `marshal.json` by `discover-and-persist`:
+
+| Persistence | Fields | Purpose |
+|-------------|--------|---------|
+| **Persisted to marshal.json** | `skill_name`, `category`, `verify_command` | Runtime provider identity, cardinality enforcement, health checks |
+| **Wizard-time only (NOT persisted)** | `display_name`, `description`, `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`, `extra_fields` | Used during interactive setup (credential configuration, connectivity verification) but not stored in marshal.json |
+
+The wizard reads transient fields from the provider declaration functions at setup time. After setup, only the 3-field persist contract remains in marshal.json.
 
 ## Categories and Cardinality
 

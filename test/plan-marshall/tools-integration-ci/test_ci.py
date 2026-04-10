@@ -48,9 +48,8 @@ def test_get_provider_reads_from_providers_array(tmp_path):
     marshal = {
         'providers': [
             {
-                'skill_name': 'workflow-integration-github',
+                'skill_name': 'plan-marshall:workflow-integration-github',
                 'auth_type': 'system',
-                'provider': 'github',
             },
         ],
     }
@@ -69,7 +68,7 @@ def test_get_provider_returns_none_without_ci_entry(tmp_path):
     marshal = {
         'providers': [
             {
-                'skill_name': 'workflow-integration-sonar',
+                'skill_name': 'plan-marshall:workflow-integration-sonar',
                 'auth_type': 'token',
             },
         ],
@@ -88,7 +87,7 @@ def test_get_provider_derives_from_skill_name(tmp_path):
     marshal = {
         'providers': [
             {
-                'skill_name': 'workflow-integration-gitlab',
+                'skill_name': 'plan-marshall:workflow-integration-gitlab',
                 'auth_type': 'system',
             },
         ],

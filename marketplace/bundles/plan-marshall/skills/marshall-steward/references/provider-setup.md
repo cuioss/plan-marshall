@@ -16,7 +16,7 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials disco
 
 ### Step 5b-2: Group discovered providers by category
 
-Partition the discovered providers into three categories based on each provider's `category` field:
+Partition the discovered providers into three categories based on each provider's `category` field. Provider `skill_name` values use bundle-prefixed format (e.g., `plan-marshall:workflow-integration-github`):
 
 | Category | Providers | Selection behavior |
 |----------|-----------|-------------------|
@@ -74,7 +74,13 @@ Build the combined provider list from: auto-selected git + user-selected CI (if 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials discover-and-persist \
-  --providers {comma-separated skill_names from combined selection}
+  --providers {comma-separated bundle-prefixed skill_names from combined selection}
+```
+
+Example with bundle-prefixed names:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials discover-and-persist \
+  --providers plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-github
 ```
 
 **Output (TOON)**:
@@ -84,15 +90,15 @@ action: discover-and-persist
 discovered: 4
 activated: 2
 providers:
-  - workflow-integration-github
-  - workflow-integration-git
+  - plan-marshall:workflow-integration-github
+  - plan-marshall:workflow-integration-git
 ```
 
 | Field | Description |
 |-------|-------------|
 | `discovered` | Number of provider declarations found |
 | `activated` | Number of providers the user selected (including auto-selected) |
-| `providers` | List of `skill_name` values for activated providers |
+| `providers` | List of bundle-prefixed `skill_name` values for activated providers |
 
 **Why here**: Steps 14 and 15 call `list-providers` and `load_declared_providers()`, both of which read from `marshal.json`. Without this step, the providers list would be empty and CI detection / credential setup would fail.
 
@@ -104,13 +110,13 @@ Detect CI provider and verify system-authenticated tools using the unified provi
 
 ### Step 14a: Query system providers
 
-Read provider declarations from marshal.json (populated by Step 5b) and filter for `auth_type: system` CI providers:
+Read provider declarations from marshal.json (populated by Step 5b). Provider `skill_name` values use bundle-prefixed format:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
 
-Parse the `providers` array. Filter entries where `auth_type == "system"` and `skill_name` is `workflow-integration-github` or `workflow-integration-gitlab`. These are the CI provider declarations. Only activated providers (persisted in Step 5b) appear in this list.
+Parse the `providers` array. Filter entries where `skill_name` is `plan-marshall:workflow-integration-github` or `plan-marshall:workflow-integration-gitlab`. These are the CI provider declarations. Only activated providers (persisted in Step 5b) appear in this list.
 
 ### Step 14b: Detect CI provider from repository
 
@@ -148,7 +154,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health per
 
 ### Step 15a: Read activated providers
 
-Read activated providers from marshal.json (only providers selected by the user in Step 5b are present; filter out `auth_type: system` providers since those are handled in Step 14):
+Read activated providers from marshal.json (only providers selected by the user in Step 5b are present; filter out CI providers like `plan-marshall:workflow-integration-github` and `plan-marshall:workflow-integration-gitlab` since those are handled in Step 14):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers

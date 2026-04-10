@@ -11,10 +11,9 @@ Discovered by discover-and-persist and persisted to marshal.json.
 def get_provider_declarations():
     """Return provider declarations for Sonar integration."""
     return [{
-        'skill_name': 'workflow-integration-sonar',
+        'skill_name': 'plan-marshall:workflow-integration-sonar',
         'category': 'other',
         'display_name': 'SonarCloud / SonarQube',
-        'auth_type': 'token',
         'default_url': 'https://sonarcloud.io',
         'header_name': 'Authorization',
         'header_value_template': 'Bearer {token}',

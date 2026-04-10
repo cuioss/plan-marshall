@@ -177,7 +177,10 @@ def run_discover_and_persist(args) -> int:
         return 1
 
     config = load_config()
-    config['providers'] = activated
+    config['providers'] = [
+        {k: p[k] for k in ('skill_name', 'category', 'verify_command') if k in p}
+        for p in activated
+    ]
     save_config(config)
 
     result: dict[str, Any] = {
@@ -204,18 +207,14 @@ def run_list_providers(args) -> int:
     config = load_config()
     providers: list[dict[str, Any]] = config.get('providers', [])
 
-    formatted = []
-    for p in providers:
-        entry: dict = {
+    formatted = [
+        {
             'skill_name': p.get('skill_name', ''),
-            'display_name': p.get('display_name', ''),
-            'auth_type': p.get('auth_type', 'token'),
-            'default_url': p.get('default_url', ''),
-            'description': p.get('description', ''),
+            'category': p.get('category', ''),
+            'verify_command': p.get('verify_command', ''),
         }
-        if p.get('extra_fields'):
-            entry['extra_fields'] = p['extra_fields']
-        formatted.append(entry)
+        for p in providers
+    ]
 
     output_toon({
         'status': 'success',

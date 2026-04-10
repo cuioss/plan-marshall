@@ -102,7 +102,7 @@ def get_project_name() -> str:
             for p in config.get('providers', []):
                 if (
                     p.get('auth_type') == 'system'
-                    and p.get('skill_name', '').startswith('workflow-integration-gi')
+                    and p.get('skill_name', '').startswith('plan-marshall:workflow-integration-gi')
                 ):
                     repo_url = p.get('repo_url', '')
                     break
@@ -133,6 +133,10 @@ def resolve_credential_path(skill: str, scope: str = 'global',
     Raises:
         ValueError: If resolved path escapes CREDENTIALS_DIR
     """
+    # Strip bundle prefix for filesystem path (skill_name may be "plan-marshall:workflow-integration-sonar")
+    if ':' in skill:
+        skill = skill.split(':', 1)[1]
+
     if scope == 'project':
         if not project_name:
             project_name = get_project_name()
