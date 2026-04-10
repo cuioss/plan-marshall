@@ -68,7 +68,7 @@ def save_config(config: dict) -> None:
         if key not in ordered:
             ordered[key] = config[key]
 
-    MARSHAL_PATH.write_text(json.dumps(ordered, indent=2), encoding='utf-8')
+    MARSHAL_PATH.write_text(json.dumps(ordered, indent=2, ensure_ascii=False), encoding='utf-8')
 
 
 def load_run_config() -> dict:

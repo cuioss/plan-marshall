@@ -206,7 +206,7 @@ class TestRunDiscoverAndPersist:
         )
         monkeypatch.setenv('PYTHONPATH', str(provider_dir))
 
-        exit_code = run_discover_and_persist(Namespace())
+        exit_code = run_discover_and_persist(Namespace(providers='sample-skill'))
         assert exit_code == 0
 
         config = json.loads(marshal_path.read_text())
@@ -228,7 +228,7 @@ class TestRunDiscoverAndPersist:
 
         monkeypatch.setenv('PYTHONPATH', '')
 
-        exit_code = run_discover_and_persist(Namespace())
+        exit_code = run_discover_and_persist(Namespace(providers='nonexistent'))
         assert exit_code == 0
 
         config = json.loads(marshal_path.read_text())
@@ -250,7 +250,7 @@ class TestRunDiscoverAndPersist:
         _config_core.MARSHAL_PATH = marshal_path
         monkeypatch.setenv('PYTHONPATH', '')
 
-        run_discover_and_persist(Namespace())
+        run_discover_and_persist(Namespace(providers='nonexistent'))
 
         config = json.loads(marshal_path.read_text())
         assert config['custom_key'] == 'preserved'

@@ -82,22 +82,49 @@ def _load_provider_module(path: Path) -> list[dict[str, Any]]:
 def run_discover_and_persist(args) -> int:
     """Execute the discover-and-persist subcommand.
 
-    Scans PYTHONPATH for *_provider.py files, collects declarations,
-    and writes them to marshal.json under the 'providers' key.
+    Scans PYTHONPATH for *_provider.py files and collects declarations.
+    If --providers is given, persists only the selected subset to marshal.json.
+    Otherwise, outputs the discovered list without persisting (discovery-only mode).
     """
     require_initialized()
     providers = _scan_pythonpath_for_providers()
 
+    selected_names = [n.strip() for n in args.providers.split(',') if n.strip()] if getattr(args, 'providers', None) is not None else None
+
+    if selected_names is None:
+        # Discovery-only mode: output what was found, don't persist
+        output_toon({
+            'status': 'success',
+            'action': 'discover',
+            'count': len(providers),
+            'providers': [
+                {'skill_name': p.get('skill_name', ''), 'display_name': p.get('display_name', '')}
+                for p in providers
+            ],
+        })
+        return 0
+
+    # Activation mode: persist only selected providers
+    selected_set = set(selected_names)
+    discovered_names = {p.get('skill_name', '') for p in providers}
+    activated = [p for p in providers if p.get('skill_name', '') in selected_set]
+    unknown = [n for n in selected_names if n not in discovered_names]
+
     config = load_config()
-    config['providers'] = providers
+    config['providers'] = activated
     save_config(config)
 
-    output_toon({
+    result: dict[str, Any] = {
         'status': 'success',
         'action': 'discover-and-persist',
-        'count': len(providers),
-        'providers': [p.get('skill_name', '') for p in providers],
-    })
+        'discovered': len(providers),
+        'activated': len(activated),
+        'providers': [p.get('skill_name', '') for p in activated],
+    }
+    if unknown:
+        result['unknown'] = unknown
+
+    output_toon(result)
     return 0
 
 
