@@ -6,13 +6,13 @@ Architecture for CI operations using a provider-agnostic router pattern.
 
 ## Design Decision: Router Pattern for CI
 
-CI operations use a **router pattern**: the `ci.py` router reads `ci.provider` from marshal.json and delegates to the correct provider script (`github.py` or `gitlab.py`). Unlike build commands, CI has no per-module variation — one provider per repo, fixed operation set.
+CI operations use a **router pattern**: the `ci.py` router finds the CI provider from the `providers[]` array in marshal.json (matching `auth_type=system` + known CI skill_name) and delegates to the correct provider script (`github.py` or `gitlab.py`). Unlike build commands, CI has no per-module variation — one provider per repo, fixed operation set.
 
 | Aspect | Build | CI |
 |--------|-------|-----|
 | **Per-module variation** | Yes (paths, profiles, goals) | No (project-global) |
-| **Config stores** | Full command strings per module | Provider name only |
-| **Resolution** | `architecture resolve --command X` | `ci.py` router reads `ci.provider` |
+| **Config stores** | Full command strings per module | Provider entry in `providers[]` array |
+| **Resolution** | `architecture resolve --command X` | `ci.py` router finds system CI entry in `providers[]` |
 | **Scripts** | `maven`, `gradle`, `npm` | `github`, `gitlab` |
 
 **Caller pattern** (all skills use this):
@@ -24,7 +24,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {domain} {
 - Provider-agnostic — same notation works for GitHub and GitLab
 - No `eval` or `jq` needed in skill instructions
 - Provider determined once during `/marshall-steward`, used transparently thereafter
-- Minimal config — only `ci.provider` and `ci.repo_url` stored
+- Uses unified provider model — CI provider stored alongside other providers in `providers[]`
 
 ---
 
@@ -61,16 +61,18 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {domain} {
     ┌─────────────────────────────────────────────────────────────┐
     │                      marshal.json                           │
     │  ┌─────────────────────────────────────────────────────┐    │
-    │  │  "ci": {                                            │    │
-    │  │    "provider": "github",                            │    │
-    │  │    "repo_url": "https://github.com/org/repo"        │    │
-    │  │  }                                                  │    │
+    │  │  "providers": [                                     │    │
+    │  │    { "skill_name": "workflow-integration-github",   │    │
+    │  │      "auth_type": "system",                         │    │
+    │  │      "provider": "github",                          │    │
+    │  │      "repo_url": "https://github.com/org/repo" }   │    │
+    │  │  ]                                                  │    │
     │  └─────────────────────────────────────────────────────┘    │
     └─────────────────────────────────────────────────────────────┘
                               │
                     ┌─────────┴─────────┐
-                    │  ci.py reads      │
-                    │  ci.provider      │
+                    │  ci.py finds      │
+                    │  system CI entry  │
                     └─────────┬─────────┘
                               │
               ┌───────────────┴───────────────┐
@@ -143,7 +145,7 @@ Example wizard step:
 1. Call: `plan-marshall:tools-integration-ci:ci_health detect`
 2. Present detected provider to user
 3. Call: `plan-marshall:tools-integration-ci:ci_health persist`
-   (stores ci.provider and ci.repo_url)
+   (stores provider and repo_url in the providers[] array entry)
 ```
 
 ---
@@ -158,7 +160,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create 
 ```
 
 The router:
-1. Reads `ci.provider` from marshal.json
+1. Finds the CI provider entry in the `providers[]` array (auth_type=system, known CI skill_name)
 2. Imports the correct provider module (`github.py` or `gitlab.py`)
 3. Passes all arguments through transparently
 

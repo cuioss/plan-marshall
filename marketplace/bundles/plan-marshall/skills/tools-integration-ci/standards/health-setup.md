@@ -86,10 +86,10 @@ repo_url	https://github.com/org/repo
 
 | File | Content | Shared |
 |------|---------|--------|
-| `.plan/marshal.json` | `ci.provider`, `ci.repo_url`, `ci.detected_at` | Yes (git) |
+| `.plan/marshal.json` | CI provider entry in `providers[]` array (`provider`, `repo_url`, `detected_at`) | Yes (git) |
 | `.plan/run-configuration.json` | `ci.authenticated_tools`, command timeouts | No (local) |
 
-CI operations are resolved at runtime by the `ci.py` router which reads `ci.provider` from marshal.json and delegates to the correct provider script.
+CI operations are resolved at runtime by the `ci.py` router which finds the system CI entry in the `providers[]` array of marshal.json and delegates to the correct provider script.
 
 ---
 

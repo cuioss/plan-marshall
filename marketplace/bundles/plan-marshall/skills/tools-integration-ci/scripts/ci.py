@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Provider-agnostic CI router.
 
-Reads ci.provider from marshal.json and delegates to the correct
-provider script (github.py or gitlab.py). All arguments are passed
-through transparently.
+Reads CI provider from the providers array in marshal.json and delegates
+to the correct provider script (github.py or gitlab.py). All arguments
+are passed through transparently.
 
 Usage:
     python3 ci.py pr create --title "Title" --body "Body"
@@ -23,7 +23,10 @@ from pathlib import Path
 
 from ci_base import output_error  # type: ignore[import-not-found]
 
-KNOWN_PROVIDERS = ('github', 'gitlab')
+_SKILL_TO_PROVIDER = {
+    'workflow-integration-github': 'github',
+    'workflow-integration-gitlab': 'gitlab',
+}
 
 
 def find_plan_dir() -> Path | None:
@@ -37,7 +40,11 @@ def find_plan_dir() -> Path | None:
 
 
 def get_provider() -> str | None:
-    """Read ci.provider from marshal.json and validate against known providers."""
+    """Find CI provider from the providers array in marshal.json.
+
+    Looks for an entry with auth_type=system and a skill_name matching
+    a known CI provider skill. Returns the provider key (github/gitlab).
+    """
     plan_dir = find_plan_dir()
     if not plan_dir:
         return None
@@ -46,14 +53,14 @@ def get_provider() -> str | None:
     try:
         with open(marshal_path) as f:
             config = json.load(f)
-            provider = config.get('ci', {}).get('provider')
-            if not provider:
-                return None
-            provider_str = str(provider)
-            if provider_str not in KNOWN_PROVIDERS:
-                print(f'Warning: Unknown CI provider in marshal.json: {provider_str}', file=sys.stderr)
-                return None
-            return provider_str
+            for entry in config.get('providers', []):
+                if entry.get('auth_type') != 'system':
+                    continue
+                skill_name = entry.get('skill_name', '')
+                provider = _SKILL_TO_PROVIDER.get(skill_name)
+                if provider:
+                    return entry.get('provider', provider)
+            return None
     except (OSError, json.JSONDecodeError) as e:
         print(f'Warning: Failed to read marshal.json: {e}', file=sys.stderr)
         return None
