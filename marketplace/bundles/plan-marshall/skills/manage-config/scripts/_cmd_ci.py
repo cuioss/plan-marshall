@@ -31,12 +31,17 @@ def _get_timestamp() -> str:
     return now_utc_iso()
 
 
+_CI_PROVIDER_SKILLS = frozenset({
+    'workflow-integration-github',
+    'workflow-integration-gitlab',
+})
+
+
 def _find_ci_provider(providers: list[dict]) -> dict | None:
     """Find the CI provider entry from the providers list.
 
-    CI providers have auth_type=system and skill_name starting with
-    'workflow-integration-gi' (covers workflow-integration-github and
-    workflow-integration-gitlab).
+    CI providers have auth_type=system and skill_name matching a known
+    CI provider (workflow-integration-github or workflow-integration-gitlab).
 
     Returns:
         The matching provider dict, or None if not found.
@@ -44,7 +49,7 @@ def _find_ci_provider(providers: list[dict]) -> dict | None:
     for p in providers:
         if (
             p.get('auth_type') == 'system'
-            and p.get('skill_name', '').startswith('workflow-integration-gi')
+            and p.get('skill_name', '') in _CI_PROVIDER_SKILLS
         ):
             return p
     return None

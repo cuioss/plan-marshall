@@ -61,8 +61,9 @@ def main() -> int:
                                help='Credential scope (default: global)')
 
     # discover-and-persist
-    subparsers.add_parser('discover-and-persist',
-                          help='Scan PYTHONPATH for provider declarations and persist to marshal.json')
+    dap_parser = subparsers.add_parser('discover-and-persist',
+                                       help='Scan PYTHONPATH for provider declarations and persist to marshal.json')
+    dap_parser.add_argument('--providers', help='Comma-separated skill names to activate (omit for discovery-only)')
 
     # list-providers
     subparsers.add_parser('list-providers', help='List available credential providers from marshal.json')

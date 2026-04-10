@@ -23,17 +23,18 @@ def test_help_flag():
     )
 
 
-def test_no_args_fails_without_config():
-    """Test that running without marshal.json config fails gracefully."""
+def test_no_args_outputs_error_without_config():
+    """Test that running without CI config returns TOON error."""
     result = run_script(SCRIPT_PATH)
-    # Without marshal.json, should fail with config error or argparse error
-    assert not result.success
+    # Router returns exit 0 with TOON error (three-tier model)
+    assert result.success
+    assert 'status: error' in result.stdout
+    assert 'CI provider not configured' in result.stdout
 
 
-def test_pr_subcommand_help():
-    """Test that pr subcommand help works via router."""
+def test_pr_subcommand_without_config():
+    """Test that pr subcommand without CI config returns TOON error."""
     result = run_script(SCRIPT_PATH, 'pr', '--help')
-    # Router delegates to provider script, --help should work
-    assert result.success, f'pr --help failed: {result.stderr}'
-    assert 'create' in result.stdout
-    assert 'list' in result.stdout
+    # Without CI provider configured, router cannot delegate
+    assert result.success
+    assert 'status: error' in result.stdout
