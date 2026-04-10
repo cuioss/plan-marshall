@@ -60,8 +60,11 @@ class TestListProviders:
 
     def test_list_providers_returns_success(self):
         """list-providers returns success with providers array."""
-        # Populate providers in marshal.json first
-        run_script(SCRIPT_PATH, 'discover-and-persist')
+        # Populate providers in marshal.json first (activate all discovered)
+        discover = run_script(SCRIPT_PATH, 'discover-and-persist')
+        if 'workflow-integration-sonar' in discover.stdout:
+            run_script(SCRIPT_PATH, 'discover-and-persist',
+                       '--providers', 'workflow-integration-sonar')
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'success' in result.stdout
@@ -69,8 +72,14 @@ class TestListProviders:
 
     def test_list_providers_discovers_sonar(self):
         """list-providers discovers the sonar credential extension."""
-        # Populate providers in marshal.json first
-        run_script(SCRIPT_PATH, 'discover-and-persist')
+        # Discover providers first (discovery-only mode)
+        discover = run_script(SCRIPT_PATH, 'discover-and-persist')
+        assert discover.returncode == 0
+        # Sonar provider must be discoverable
+        assert 'workflow-integration-sonar' in discover.stdout
+        # Activate and persist
+        run_script(SCRIPT_PATH, 'discover-and-persist',
+                   '--providers', 'workflow-integration-sonar')
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'workflow-integration-sonar' in result.stdout
@@ -217,6 +226,12 @@ class TestCheckCompleteness:
 
 class TestConfigureAuthTypeValidation:
     """Tests for auth_type validation against provider declaration."""
+
+    @classmethod
+    def setup_class(cls):
+        """Ensure sonar provider is persisted in marshal.json."""
+        run_script(SCRIPT_PATH, 'discover-and-persist',
+                   '--providers', 'workflow-integration-sonar')
 
     def test_configure_rejects_incompatible_auth_type(self):
         """Configure rejects auth_type that doesn't match provider's declared auth_type."""
