@@ -24,8 +24,8 @@ from pathlib import Path
 from ci_base import output_error  # type: ignore[import-not-found]
 
 _SKILL_TO_PROVIDER = {
-    'workflow-integration-github': 'github',
-    'workflow-integration-gitlab': 'gitlab',
+    'plan-marshall:workflow-integration-github': 'github',
+    'plan-marshall:workflow-integration-gitlab': 'gitlab',
 }
 
 
@@ -54,12 +54,12 @@ def get_provider() -> str | None:
         with open(marshal_path) as f:
             config = json.load(f)
             for entry in config.get('providers', []):
-                if not isinstance(entry, dict) or entry.get('auth_type') != 'system':
+                if not isinstance(entry, dict) or entry.get('category') != 'ci':
                     continue
                 skill_name = entry.get('skill_name', '')
                 provider = _SKILL_TO_PROVIDER.get(skill_name)
                 if provider:
-                    return str(entry.get('provider', provider))
+                    return provider
             return None
     except (OSError, json.JSONDecodeError) as e:
         print(f'Warning: Failed to read marshal.json: {e}', file=sys.stderr)
@@ -67,8 +67,8 @@ def get_provider() -> str | None:
 
 
 PROVIDER_SKILLS = {
-    'github': 'workflow-integration-github',
-    'gitlab': 'workflow-integration-gitlab',
+    'github': 'plan-marshall:workflow-integration-github',
+    'gitlab': 'plan-marshall:workflow-integration-gitlab',
 }
 
 

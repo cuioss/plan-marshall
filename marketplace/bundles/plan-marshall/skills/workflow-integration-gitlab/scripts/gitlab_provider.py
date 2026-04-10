@@ -15,10 +15,9 @@ def get_provider_declarations():
     """Return provider declarations for GitLab CI integration."""
     return [
         {
-            'skill_name': 'workflow-integration-gitlab',
+            'skill_name': 'plan-marshall:workflow-integration-gitlab',
             'category': 'ci',
             'display_name': 'GitLab CLI (glab)',
-            'auth_type': 'system',
             'default_url': 'https://gitlab.com',
             'description': 'GitLab CI provider via glab CLI — MRs, issues, CI status, reviews',
             'verify_command': 'glab auth status',

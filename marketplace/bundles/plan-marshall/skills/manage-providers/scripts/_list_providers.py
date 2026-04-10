@@ -11,6 +11,7 @@ No filesystem scanning at runtime.
 
 import importlib.util
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +78,35 @@ def _load_provider_module(path: Path) -> list[dict[str, Any]]:
         return []
     except Exception:
         return []
+
+
+def _get_git_remote_url() -> str:
+    """Get the git remote origin URL, or empty string if unavailable."""
+    try:
+        result = subprocess.run(
+            ['git', 'remote', 'get-url', 'origin'],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ''
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ''
+
+
+def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
+    """Build a minimal provider entry for marshal.json persistence.
+
+    Persists: skill_name, category, verify_command, url, description.
+    Maps default_url to url. For version-control providers without
+    default_url, resolves url from git remote origin.
+    """
+    entry = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
+    if p.get('default_url'):
+        entry['url'] = p['default_url']
+    elif p.get('category') == 'version-control':
+        remote_url = _get_git_remote_url()
+        if remote_url:
+            entry['url'] = remote_url
+    return entry
 
 
 def _validate_provider_selection(
@@ -177,7 +207,9 @@ def run_discover_and_persist(args) -> int:
         return 1
 
     config = load_config()
-    config['providers'] = activated
+    config['providers'] = [
+        _build_persisted_entry(p) for p in activated
+    ]
     save_config(config)
 
     result: dict[str, Any] = {
@@ -204,18 +236,16 @@ def run_list_providers(args) -> int:
     config = load_config()
     providers: list[dict[str, Any]] = config.get('providers', [])
 
-    formatted = []
-    for p in providers:
-        entry: dict = {
+    formatted = [
+        {
             'skill_name': p.get('skill_name', ''),
-            'display_name': p.get('display_name', ''),
-            'auth_type': p.get('auth_type', 'token'),
-            'default_url': p.get('default_url', ''),
+            'category': p.get('category', ''),
+            'verify_command': p.get('verify_command', ''),
+            'url': p.get('url', ''),
             'description': p.get('description', ''),
         }
-        if p.get('extra_fields'):
-            entry['extra_fields'] = p['extra_fields']
-        formatted.append(entry)
+        for p in providers
+    ]
 
     output_toon({
         'status': 'success',

@@ -97,14 +97,11 @@ def get_project_name() -> str:
     if marshal_path.exists():
         try:
             config = json.loads(marshal_path.read_text(encoding='utf-8'))
-            # Find CI provider in providers list (auth_type=system, workflow-integration-gi*)
+            # Find version-control provider for repo URL
             repo_url = ''
             for p in config.get('providers', []):
-                if (
-                    p.get('auth_type') == 'system'
-                    and p.get('skill_name', '').startswith('workflow-integration-gi')
-                ):
-                    repo_url = p.get('repo_url', '')
+                if p.get('category') == 'version-control':
+                    repo_url = p.get('url', '')
                     break
             if repo_url:
                 # Extract repo name from URL (last path segment, strip .git)
@@ -133,6 +130,10 @@ def resolve_credential_path(skill: str, scope: str = 'global',
     Raises:
         ValueError: If resolved path escapes CREDENTIALS_DIR
     """
+    # Strip bundle prefix for filesystem path (skill_name may be "plan-marshall:workflow-integration-sonar")
+    if ':' in skill:
+        skill = skill.split(':', 1)[1]
+
     if scope == 'project':
         if not project_name:
             project_name = get_project_name()

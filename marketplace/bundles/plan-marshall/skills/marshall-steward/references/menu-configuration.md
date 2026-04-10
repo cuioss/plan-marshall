@@ -463,7 +463,7 @@ This regenerates `.plan/project-architecture/derived-data.json` from current bui
 
 ## Configuration: Credentials & Secrets
 
-Manage credentials for external tool authentication (SonarCloud, etc.). System-authenticated providers (CI tools like `gh`/`glab` and `git`) are managed via Step 14 of the wizard and the Health Check menu. This section covers token/basic-auth providers only.
+Manage credentials for external tool authentication (SonarCloud, etc.). System-authenticated providers (CI tools like `gh`/`glab` and `git`) are managed via Step 14 of the wizard and the Health Check menu. This section covers token/basic-auth providers only. All provider `skill_name` values use bundle-prefixed format (e.g., `plan-marshall:workflow-integration-sonar`).
 
 ### Credentials Submenu
 
@@ -529,7 +529,7 @@ Non-secret values collected via `AskUserQuestion`. Secrets entered by user editi
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied --target project
    ```
-9. If the configured skill was `workflow-integration-sonar`, check and add sonar-roundtrip:
+9. If the configured skill was `plan-marshall:workflow-integration-sonar`, check and add sonar-roundtrip:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
      plan phase-6-finalize get

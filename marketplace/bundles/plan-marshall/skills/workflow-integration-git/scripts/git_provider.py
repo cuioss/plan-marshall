@@ -16,11 +16,9 @@ def get_provider_declarations():
     """Return provider declarations for Git integration."""
     return [
         {
-            'skill_name': 'workflow-integration-git',
+            'skill_name': 'plan-marshall:workflow-integration-git',
             'category': 'version-control',
             'display_name': 'Git CLI',
-            'auth_type': 'system',
-            'default_url': None,
             'description': 'Git version control via git CLI — commit, push, branch operations',
             'verify_command': 'git config user.name',
         },

@@ -65,12 +65,12 @@ class TestScanPythonpathForProviders:
         provider_file = provider_dir / 'test_provider.py'
         provider_file.write_text(
             'def get_provider_declarations():\n'
-            '    return [{"skill_name": "test-skill", "auth_type": "token"}]\n'
+            '    return [{"skill_name": "plan-marshall:workflow-integration-git", "category": "version-control"}]\n'
         )
         monkeypatch.setenv('PYTHONPATH', str(provider_dir))
         result = _scan_pythonpath_for_providers()
         assert len(result) == 1
-        assert result[0]['skill_name'] == 'test-skill'
+        assert result[0]['skill_name'] == 'plan-marshall:workflow-integration-git'
 
     def test_skips_nonexistent_directories(self, tmp_path, monkeypatch):
         """Skips directories that do not exist."""
@@ -145,11 +145,11 @@ class TestLoadProviderModule:
         pf = tmp_path / 'valid_provider.py'
         pf.write_text(
             'def get_provider_declarations():\n'
-            '    return [{"skill_name": "valid", "auth_type": "none"}]\n'
+            '    return [{"skill_name": "plan-marshall:workflow-integration-git", "category": "version-control"}]\n'
         )
         result = _load_provider_module(pf)
         assert len(result) == 1
-        assert result[0]['skill_name'] == 'valid'
+        assert result[0]['skill_name'] == 'plan-marshall:workflow-integration-git'
 
     def test_returns_empty_for_missing_function(self, tmp_path):
         """Returns empty list when module has no get_provider_declarations."""
@@ -195,62 +195,82 @@ class TestValidateProviderSelection:
     def test_valid_all_categories(self):
         """git + github + sonar passes validation (empty errors)."""
         providers = [
-            _make_provider('git', 'version-control'),
-            _make_provider('github', 'ci'),
-            _make_provider('sonar', 'other'),
+            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
+            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
+            _make_provider('plan-marshall:workflow-integration-sonar', 'other'),
         ]
-        errors = _validate_provider_selection(providers, ['git', 'github', 'sonar'])
+        errors = _validate_provider_selection(providers, [
+            'plan-marshall:workflow-integration-git',
+            'plan-marshall:workflow-integration-github',
+            'plan-marshall:workflow-integration-sonar',
+        ])
         assert errors == []
 
     def test_valid_git_and_ci_only(self):
         """git + github passes (CI is optional, no other required)."""
         providers = [
-            _make_provider('git', 'version-control'),
-            _make_provider('github', 'ci'),
+            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
+            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
         ]
-        errors = _validate_provider_selection(providers, ['git', 'github'])
+        errors = _validate_provider_selection(providers, [
+            'plan-marshall:workflow-integration-git',
+            'plan-marshall:workflow-integration-github',
+        ])
         assert errors == []
 
     def test_valid_git_only(self):
         """git alone passes (no CI is valid)."""
         providers = [
-            _make_provider('git', 'version-control'),
-            _make_provider('github', 'ci'),
+            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
+            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
         ]
-        errors = _validate_provider_selection(providers, ['git'])
+        errors = _validate_provider_selection(providers, [
+            'plan-marshall:workflow-integration-git',
+        ])
         assert errors == []
 
     def test_missing_version_control(self):
         """github only fails with version-control error."""
         providers = [
-            _make_provider('git', 'version-control'),
-            _make_provider('github', 'ci'),
+            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
+            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
         ]
-        errors = _validate_provider_selection(providers, ['github'])
+        errors = _validate_provider_selection(providers, [
+            'plan-marshall:workflow-integration-github',
+        ])
         assert len(errors) == 1
         assert 'version-control' in errors[0]
 
     def test_both_ci_providers_selected(self):
         """git + github + gitlab fails with ci error."""
         providers = [
-            _make_provider('git', 'version-control'),
-            _make_provider('github', 'ci'),
-            _make_provider('gitlab', 'ci'),
+            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
+            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
+            _make_provider('plan-marshall:workflow-integration-gitlab', 'ci'),
         ]
-        errors = _validate_provider_selection(providers, ['git', 'github', 'gitlab'])
+        errors = _validate_provider_selection(providers, [
+            'plan-marshall:workflow-integration-git',
+            'plan-marshall:workflow-integration-github',
+            'plan-marshall:workflow-integration-gitlab',
+        ])
         assert len(errors) == 1
         assert 'ci' in errors[0]
 
     def test_multiple_other_providers_valid(self):
         """git + github + sonar + another_other passes (other has no limit)."""
         providers = [
-            _make_provider('git', 'version-control'),
-            _make_provider('github', 'ci'),
-            _make_provider('sonar', 'other'),
-            _make_provider('custom-tool', 'other'),
+            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
+            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
+            _make_provider('plan-marshall:workflow-integration-sonar', 'other'),
+            _make_provider('plan-marshall:custom-tool', 'other'),
         ]
         errors = _validate_provider_selection(
-            providers, ['git', 'github', 'sonar', 'custom-tool'],
+            providers, [
+                'plan-marshall:workflow-integration-git',
+                'plan-marshall:workflow-integration-github',
+                'plan-marshall:workflow-integration-sonar',
+                'plan-marshall:custom-tool',
+            ],
         )
         assert errors == []
 
@@ -264,7 +284,7 @@ class TestRunDiscoverAndPersist:
     """Tests for run_discover_and_persist()."""
 
     def test_persists_providers_to_marshal_json(self, tmp_path, monkeypatch):
-        """Writes discovered providers to marshal.json."""
+        """Writes discovered providers to marshal.json with only persisted fields."""
         import _config_core
 
         plan_dir = tmp_path / '.plan'
@@ -279,17 +299,34 @@ class TestRunDiscoverAndPersist:
         provider_dir.mkdir()
         (provider_dir / 'sample_provider.py').write_text(
             'def get_provider_declarations():\n'
-            '    return [{"skill_name": "sample-skill", "auth_type": "token", "category": "version-control"}]\n'
+            '    return [{\n'
+            '        "skill_name": "plan-marshall:workflow-integration-git",\n'
+            '        "category": "version-control",\n'
+            '        "verify_command": "git --version",\n'
+            '        "display_name": "Git",\n'
+            '        "description": "Git version control",\n'
+            '        "default_url": "https://github.com",\n'
+            '    }]\n'
         )
         monkeypatch.setenv('PYTHONPATH', str(provider_dir))
 
-        exit_code = run_discover_and_persist(Namespace(providers='sample-skill'))
+        exit_code = run_discover_and_persist(Namespace(providers='plan-marshall:workflow-integration-git'))
         assert exit_code == 0
 
         config = json.loads(marshal_path.read_text())
         assert 'providers' in config
         assert len(config['providers']) == 1
-        assert config['providers'][0]['skill_name'] == 'sample-skill'
+        persisted = config['providers'][0]
+        assert persisted['skill_name'] == 'plan-marshall:workflow-integration-git'
+        assert persisted['category'] == 'version-control'
+        assert persisted['verify_command'] == 'git --version'
+        # Verify runtime fields ARE persisted
+        assert 'description' in persisted
+        assert persisted['url'] == 'https://github.com'  # mapped from default_url
+        # Verify wizard-only fields are NOT persisted
+        assert 'display_name' not in persisted
+        assert 'auth_type' not in persisted
+        assert 'default_url' not in persisted
 
     def test_rejects_when_no_providers_discovered(self, tmp_path, monkeypatch):
         """Returns validation error when no providers are discovered."""
@@ -328,11 +365,11 @@ class TestRunDiscoverAndPersist:
         provider_dir.mkdir()
         (provider_dir / 'ci_provider.py').write_text(
             'def get_provider_declarations():\n'
-            '    return [{"skill_name": "github", "category": "ci", "auth_type": "token"}]\n'
+            '    return [{"skill_name": "plan-marshall:workflow-integration-github", "category": "ci"}]\n'
         )
         monkeypatch.setenv('PYTHONPATH', str(provider_dir))
 
-        exit_code = run_discover_and_persist(Namespace(providers='github'))
+        exit_code = run_discover_and_persist(Namespace(providers='plan-marshall:workflow-integration-github'))
         assert exit_code == 1
 
         # Verify providers were NOT persisted
@@ -371,7 +408,7 @@ class TestRunListProviders:
     """Tests for run_list_providers()."""
 
     def test_returns_success_with_providers(self, tmp_path, capsys):
-        """Lists providers from marshal.json."""
+        """Lists providers from marshal.json with skill_name, category, verify_command."""
         import _config_core
 
         plan_dir = tmp_path / '.plan'
@@ -380,11 +417,9 @@ class TestRunListProviders:
         marshal_path.write_text(json.dumps({
             'providers': [
                 {
-                    'skill_name': 'test-provider',
-                    'display_name': 'Test Provider',
-                    'auth_type': 'token',
-                    'default_url': 'https://test.com',
-                    'description': 'A test provider',
+                    'skill_name': 'plan-marshall:workflow-integration-git',
+                    'category': 'version-control',
+                    'verify_command': 'git --version',
                 },
             ],
         }))
@@ -394,6 +429,11 @@ class TestRunListProviders:
 
         exit_code = run_list_providers(Namespace())
         assert exit_code == 0
+
+        captured = capsys.readouterr()
+        assert 'plan-marshall:workflow-integration-git' in captured.out
+        assert 'version-control' in captured.out
+        assert 'git --version' in captured.out
 
     def test_returns_empty_when_no_providers_key(self, tmp_path, capsys):
         """Returns empty list when marshal.json has no providers key."""
@@ -410,8 +450,8 @@ class TestRunListProviders:
         exit_code = run_list_providers(Namespace())
         assert exit_code == 0
 
-    def test_includes_extra_fields_when_present(self, tmp_path, capsys):
-        """Extra fields from provider declarations are included in output."""
+    def test_outputs_persisted_fields(self, tmp_path, capsys):
+        """Output contains persisted fields including url and description."""
         import _config_core
 
         plan_dir = tmp_path / '.plan'
@@ -420,14 +460,11 @@ class TestRunListProviders:
         marshal_path.write_text(json.dumps({
             'providers': [
                 {
-                    'skill_name': 'sonar',
-                    'display_name': 'Sonar',
-                    'auth_type': 'token',
-                    'default_url': 'https://sonar.io',
-                    'description': 'Sonar provider',
-                    'extra_fields': [
-                        {'key': 'org', 'label': 'Organization'},
-                    ],
+                    'skill_name': 'plan-marshall:workflow-integration-sonar',
+                    'category': 'other',
+                    'verify_command': 'sonar --version',
+                    'url': 'https://sonarcloud.io',
+                    'description': 'SonarCloud code analysis',
                 },
             ],
         }))
@@ -437,3 +474,12 @@ class TestRunListProviders:
 
         exit_code = run_list_providers(Namespace())
         assert exit_code == 0
+
+        captured = capsys.readouterr()
+        assert 'plan-marshall:workflow-integration-sonar' in captured.out
+        assert 'other' in captured.out
+        assert 'sonarcloud.io' in captured.out
+        assert 'SonarCloud code analysis' in captured.out
+        # Verify wizard-only fields are NOT in output
+        assert 'display_name' not in captured.out
+        assert 'auth_type' not in captured.out

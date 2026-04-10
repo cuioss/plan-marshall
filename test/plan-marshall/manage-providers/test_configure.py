@@ -12,7 +12,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.
 
 # Sonar provider declaration for tests that need marshal.json seeded
 _SONAR_PROVIDER = {
-    'skill_name': 'workflow-integration-sonar',
+    'skill_name': 'plan-marshall:workflow-integration-sonar',
     'display_name': 'SonarCloud / SonarQube',
     'auth_type': 'token',
     'default_url': 'https://sonarcloud.io',
@@ -64,7 +64,7 @@ class TestListProviders:
         discover = run_script(SCRIPT_PATH, 'discover-and-persist')
         if 'workflow-integration-sonar' in discover.stdout:
             run_script(SCRIPT_PATH, 'discover-and-persist',
-                       '--providers', 'workflow-integration-sonar')
+                       '--providers', 'plan-marshall:workflow-integration-sonar')
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'success' in result.stdout
@@ -79,7 +79,7 @@ class TestListProviders:
         assert 'workflow-integration-sonar' in discover.stdout
         # Activate and persist (must include version-control provider for validation)
         run_script(SCRIPT_PATH, 'discover-and-persist',
-                   '--providers', 'workflow-integration-git,workflow-integration-sonar')
+                   '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar')
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'workflow-integration-sonar' in result.stdout
@@ -231,25 +231,24 @@ class TestConfigureAuthTypeValidation:
     def setup_class(cls):
         """Ensure sonar provider is persisted in marshal.json."""
         run_script(SCRIPT_PATH, 'discover-and-persist',
-                   '--providers', 'workflow-integration-git,workflow-integration-sonar')
+                   '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar')
 
-    def test_configure_rejects_incompatible_auth_type(self):
-        """Configure rejects auth_type that doesn't match provider's declared auth_type."""
+    def test_configure_accepts_any_auth_type_without_declared(self):
+        """Configure accepts any auth_type when provider has no declared auth_type."""
         result = run_script(
             SCRIPT_PATH, 'configure',
-            '--skill', 'workflow-integration-sonar',
+            '--skill', 'plan-marshall:workflow-integration-sonar',
             '--auth-type', 'none',
         )
         assert result.returncode == 0
-        assert 'incompatible' in result.stdout.lower()
-        assert 'token' in result.stdout
+        assert 'incompatible' not in result.stdout.lower()
 
     def test_configure_accepts_matching_auth_type(self, tmp_path):
         """Configure accepts auth_type that matches provider's declared auth_type."""
         from _providers_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
 
         (tmp_path / '.plan').mkdir()
-        skill = 'workflow-integration-sonar'
+        skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
             SCRIPT_PATH, 'configure',
             '--skill', skill,
@@ -259,19 +258,20 @@ class TestConfigureAuthTypeValidation:
         try:
             assert result.returncode == 0
         finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
+            # Credential file uses unprefixed name (resolve_credential_path strips prefix)
+            path = CREDENTIALS_DIR / 'workflow-integration-sonar.json'
             if path.exists():
                 path.unlink()
 
-    def test_configure_rejects_basic_for_token_provider(self):
-        """Configure rejects basic auth when provider declares token."""
+    def test_configure_accepts_basic_without_declared_auth(self):
+        """Configure accepts basic auth when provider has no declared auth_type."""
         result = run_script(
             SCRIPT_PATH, 'configure',
-            '--skill', 'workflow-integration-sonar',
+            '--skill', 'plan-marshall:workflow-integration-sonar',
             '--auth-type', 'basic',
         )
         assert result.returncode == 0
-        assert 'incompatible' in result.stdout.lower()
+        assert 'incompatible' not in result.stdout.lower()
 
 
 class TestConfigureMarshalJsonSeparation:
@@ -293,7 +293,7 @@ class TestConfigureMarshalJsonSeparation:
         _marshal = {'providers': [_SONAR_PROVIDER]}
         (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
 
-        skill = 'workflow-integration-sonar'
+        skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
             SCRIPT_PATH, 'configure',
             '--skill', skill,
@@ -313,7 +313,8 @@ class TestConfigureMarshalJsonSeparation:
             assert loaded is not None
             assert 'url' not in loaded
         finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
+            # Credential file uses unprefixed name (resolve_credential_path strips prefix)
+            path = CREDENTIALS_DIR / 'workflow-integration-sonar.json'
             if path.exists():
                 path.unlink()
 
@@ -332,7 +333,7 @@ class TestConfigureMarshalJsonSeparation:
         _marshal = {'providers': [_SONAR_PROVIDER]}
         (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
 
-        skill = 'workflow-integration-sonar'
+        skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
             SCRIPT_PATH, 'configure',
             '--skill', skill,
@@ -354,7 +355,8 @@ class TestConfigureMarshalJsonSeparation:
             assert 'organization' not in loaded
             assert 'project_key' not in loaded
         finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
+            # Credential file uses unprefixed name (resolve_credential_path strips prefix)
+            path = CREDENTIALS_DIR / 'workflow-integration-sonar.json'
             if path.exists():
                 path.unlink()
 
@@ -375,7 +377,7 @@ class TestConfigureAuthTypeMismatch:
         (tmp_path / '.plan').mkdir()
         _marshal = {'providers': [_SONAR_PROVIDER]}
         (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
-        skill = 'workflow-integration-sonar'
+        skill = 'plan-marshall:workflow-integration-sonar'
         # Pre-create with auth_type=none
         data = {
             'skill': skill,
@@ -399,7 +401,8 @@ class TestConfigureAuthTypeMismatch:
                 assert loaded is not None
                 assert loaded['auth_type'] == 'token'
         finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
+            # Credential file uses unprefixed name (resolve_credential_path strips prefix)
+            path = CREDENTIALS_DIR / 'workflow-integration-sonar.json'
             if path.exists():
                 path.unlink()
 

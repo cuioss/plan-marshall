@@ -59,7 +59,7 @@ def run_configure(args) -> int:
             'status': 'error',
             'message': (
                 f'Auth type "{auth_type}" is incompatible with provider '
-                f'"{provider["display_name"]}". '
+                f'"{provider.get("display_name", skill_name)}". '
                 f'Provider requires: {declared_auth}'
             ),
         })
