@@ -322,9 +322,11 @@ class TestRunDiscoverAndPersist:
         assert persisted['verify_command'] == 'git --version'
         # Verify runtime fields ARE persisted
         assert 'description' in persisted
+        assert persisted['url'] == 'https://github.com'  # mapped from default_url
         # Verify wizard-only fields are NOT persisted
         assert 'display_name' not in persisted
         assert 'auth_type' not in persisted
+        assert 'default_url' not in persisted
 
     def test_rejects_when_no_providers_discovered(self, tmp_path, monkeypatch):
         """Returns validation error when no providers are discovered."""
@@ -449,7 +451,7 @@ class TestRunListProviders:
         assert exit_code == 0
 
     def test_outputs_persisted_fields(self, tmp_path, capsys):
-        """Output contains persisted fields including default_url and description."""
+        """Output contains persisted fields including url and description."""
         import _config_core
 
         plan_dir = tmp_path / '.plan'
@@ -461,7 +463,7 @@ class TestRunListProviders:
                     'skill_name': 'plan-marshall:workflow-integration-sonar',
                     'category': 'other',
                     'verify_command': 'sonar --version',
-                    'default_url': 'https://sonarcloud.io',
+                    'url': 'https://sonarcloud.io',
                     'description': 'SonarCloud code analysis',
                 },
             ],

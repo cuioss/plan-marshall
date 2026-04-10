@@ -178,7 +178,10 @@ def run_discover_and_persist(args) -> int:
 
     config = load_config()
     config['providers'] = [
-        {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'default_url', 'description') if k in p}
+        {
+            **{k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p},
+            **(({'url': p['default_url']}) if p.get('default_url') else {}),
+        }
         for p in activated
     ]
     save_config(config)
@@ -212,7 +215,7 @@ def run_list_providers(args) -> int:
             'skill_name': p.get('skill_name', ''),
             'category': p.get('category', ''),
             'verify_command': p.get('verify_command', ''),
-            'default_url': p.get('default_url', ''),
+            'url': p.get('url', ''),
             'description': p.get('description', ''),
         }
         for p in providers
