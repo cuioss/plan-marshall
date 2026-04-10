@@ -320,10 +320,10 @@ class TestRunDiscoverAndPersist:
         assert persisted['skill_name'] == 'plan-marshall:workflow-integration-git'
         assert persisted['category'] == 'version-control'
         assert persisted['verify_command'] == 'git --version'
-        # Verify stripped fields are NOT persisted
+        # Verify runtime fields ARE persisted
+        assert 'description' in persisted
+        # Verify wizard-only fields are NOT persisted
         assert 'display_name' not in persisted
-        assert 'description' not in persisted
-        assert 'default_url' not in persisted
         assert 'auth_type' not in persisted
 
     def test_rejects_when_no_providers_discovered(self, tmp_path, monkeypatch):
@@ -448,8 +448,8 @@ class TestRunListProviders:
         exit_code = run_list_providers(Namespace())
         assert exit_code == 0
 
-    def test_outputs_only_persisted_fields(self, tmp_path, capsys):
-        """Output contains only skill_name, category, verify_command -- no extra fields."""
+    def test_outputs_persisted_fields(self, tmp_path, capsys):
+        """Output contains persisted fields including default_url and description."""
         import _config_core
 
         plan_dir = tmp_path / '.plan'
@@ -461,6 +461,8 @@ class TestRunListProviders:
                     'skill_name': 'plan-marshall:workflow-integration-sonar',
                     'category': 'other',
                     'verify_command': 'sonar --version',
+                    'default_url': 'https://sonarcloud.io',
+                    'description': 'SonarCloud code analysis',
                 },
             ],
         }))
@@ -474,8 +476,8 @@ class TestRunListProviders:
         captured = capsys.readouterr()
         assert 'plan-marshall:workflow-integration-sonar' in captured.out
         assert 'other' in captured.out
-        # Verify no legacy fields leak into output
+        assert 'sonarcloud.io' in captured.out
+        assert 'SonarCloud code analysis' in captured.out
+        # Verify wizard-only fields are NOT in output
         assert 'display_name' not in captured.out
         assert 'auth_type' not in captured.out
-        assert 'default_url' not in captured.out
-        assert 'description' not in captured.out
