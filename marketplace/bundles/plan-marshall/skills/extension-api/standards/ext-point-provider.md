@@ -99,10 +99,10 @@ Provider declarations contain both persisted and transient fields. Only a subset
 
 | Persistence | Fields | Purpose |
 |-------------|--------|---------|
-| **Persisted to marshal.json** | `skill_name`, `category`, `verify_command` | Runtime provider identity, cardinality enforcement, health checks |
-| **Wizard-time only (NOT persisted)** | `display_name`, `description`, `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`, `extra_fields` | Used during interactive setup (credential configuration, connectivity verification) but not stored in marshal.json |
+| **Persisted to marshal.json** | `skill_name`, `category`, `verify_command`, `url`, `description` | Runtime provider identity, cardinality, health checks, API endpoint, display |
+| **Wizard-time only (NOT persisted)** | `display_name`, `default_url`, `header_name`, `header_value_template`, `verify_endpoint`, `verify_method`, `extra_fields` | Used during interactive setup only. `default_url` is mapped to `url` on persist; git providers resolve `url` from `git remote get-url origin` |
 
-The wizard reads transient fields from the provider declaration functions at setup time. After setup, only the 3-field persist contract remains in marshal.json.
+The wizard reads transient fields from the provider declaration functions at setup time. After setup, only the 5-field persist contract remains in marshal.json.
 
 ## Categories and Cardinality
 
