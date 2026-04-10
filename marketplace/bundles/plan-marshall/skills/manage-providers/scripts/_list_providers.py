@@ -89,7 +89,7 @@ def run_discover_and_persist(args) -> int:
     require_initialized()
     providers = _scan_pythonpath_for_providers()
 
-    selected_names = args.providers.split(',') if getattr(args, 'providers', None) else None
+    selected_names = [n.strip() for n in args.providers.split(',') if n.strip()] if getattr(args, 'providers', None) is not None else None
 
     if selected_names is None:
         # Discovery-only mode: output what was found, don't persist
@@ -105,8 +105,10 @@ def run_discover_and_persist(args) -> int:
         return 0
 
     # Activation mode: persist only selected providers
-    activated = [p for p in providers if p.get('skill_name', '') in selected_names]
-    unknown = [n for n in selected_names if n not in {p.get('skill_name', '') for p in providers}]
+    selected_set = set(selected_names)
+    discovered_names = {p.get('skill_name', '') for p in providers}
+    activated = [p for p in providers if p.get('skill_name', '') in selected_set]
+    unknown = [n for n in selected_names if n not in discovered_names]
 
     config = load_config()
     config['providers'] = activated
