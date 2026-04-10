@@ -4,7 +4,7 @@ Extracted provider-related wizard logic covering discovery, activation, CI detec
 
 ## Provider Discovery and Activation (Step 5b)
 
-Scan executor SCRIPTS entries for `*_provider.py` files, present discovered providers to the user for selection, and persist only the activated subset to `marshal.json`. This must run after the executor is generated (Step 4) and marshal.json is initialized (Step 5), but before CI detection (Step 14) or credential setup (Step 15) which read from the providers list.
+Scan executor SCRIPTS entries for `*_provider.py` files, group discovered providers by category, and persist only the activated subset to `marshal.json`. This must run after the executor is generated (Step 4) and marshal.json is initialized (Step 5), but before CI detection (Step 14) or credential setup (Step 15) which read from the providers list.
 
 ### Step 5b-1: Discover available providers
 
@@ -14,25 +14,67 @@ Discovery-only mode — no persistence:
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials discover-and-persist
 ```
 
-### Step 5b-2: Present providers for user selection
+### Step 5b-2: Group discovered providers by category
+
+Partition the discovered providers into three categories based on each provider's `category` field:
+
+| Category | Providers | Selection behavior |
+|----------|-----------|-------------------|
+| `version-control` | git | Auto-selected (exactly 1 required) |
+| `ci` | github, gitlab | Single-select with skip option |
+| `other` | sonar, etc. | Multi-select |
+
+### Step 5b-3: Auto-select version-control providers
+
+The `version-control` category requires exactly one provider and is always active. Inform the user without prompting:
+
+> "Git provider is always active (version-control category requires exactly 1)."
+
+No `AskUserQuestion` for this category.
+
+### Step 5b-4: Present CI providers as single-select
+
+Present CI-category providers with a "Skip" option for projects that do not use CI:
 
 ```
 AskUserQuestion:
   questions:
-    - question: "Which providers should be activated for this project?"
-      header: "Providers"
+    - question: "Which CI provider should be activated?"
+      header: "CI Provider"
       options:
-        # Dynamic options from discovered providers:
+        # Dynamic from ci-category providers:
+        - label: "{display_name}"
+          description: "{skill_name} — {description}"
+        - label: "Skip"
+          description: "No CI provider for this project"
+      multiSelect: false
+```
+
+If user selects "Skip", no CI provider is activated.
+
+### Step 5b-5: Present other providers as multiSelect
+
+Only present this step if the `other` category contains at least one provider:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "Which additional providers should be activated?"
+      header: "Other"
+      options:
+        # Dynamic from other-category providers:
         - label: "{display_name}"
           description: "{skill_name} — {description}"
       multiSelect: true
 ```
 
-### Step 5b-3: Persist activated providers
+### Step 5b-6: Persist activated providers
+
+Build the combined provider list from: auto-selected git + user-selected CI (if any) + user-selected others. Call discover-and-persist with the combined list:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials discover-and-persist \
-  --providers {comma-separated skill_names from user selection}
+  --providers {comma-separated skill_names from combined selection}
 ```
 
 **Output (TOON)**:
@@ -49,7 +91,7 @@ providers:
 | Field | Description |
 |-------|-------------|
 | `discovered` | Number of provider declarations found |
-| `activated` | Number of providers the user selected |
+| `activated` | Number of providers the user selected (including auto-selected) |
 | `providers` | List of `skill_name` values for activated providers |
 
 **Why here**: Steps 14 and 15 call `list-providers` and `load_declared_providers()`, both of which read from `marshal.json`. Without this step, the providers list would be empty and CI detection / credential setup would fail.

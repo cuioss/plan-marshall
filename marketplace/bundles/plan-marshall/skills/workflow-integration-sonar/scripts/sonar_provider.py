@@ -12,6 +12,7 @@ def get_provider_declarations():
     """Return provider declarations for Sonar integration."""
     return [{
         'skill_name': 'workflow-integration-sonar',
+        'category': 'other',
         'display_name': 'SonarCloud / SonarQube',
         'auth_type': 'token',
         'default_url': 'https://sonarcloud.io',

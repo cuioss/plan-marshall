@@ -16,6 +16,7 @@ def get_provider_declarations():
     return [
         {
             'skill_name': 'workflow-integration-github',
+            'category': 'ci',
             'display_name': 'GitHub CLI (gh)',
             'auth_type': 'system',
             'default_url': 'https://github.com',
