@@ -54,7 +54,7 @@ def get_provider() -> str | None:
         with open(marshal_path) as f:
             config = json.load(f)
             for entry in config.get('providers', []):
-                if not isinstance(entry, dict) or entry.get('auth_type') != 'system':
+                if not isinstance(entry, dict) or entry.get('category') != 'ci':
                     continue
                 skill_name = entry.get('skill_name', '')
                 provider = _SKILL_TO_PROVIDER.get(skill_name)

@@ -61,13 +61,13 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {domain} {
     ┌─────────────────────────────────────────────────────────────┐
     │                      marshal.json                           │
     │  ┌─────────────────────────────────────────────────────┐    │
-    │  │  "providers": [                                          │    │
-    │  │    { "skill_name": "plan-marshall:workflow-integration-github",│    │
-    │  │      "category": "ci",                                │    │
-    │  │      "verify_command": "gh auth status",              │    │
-    │  │      "provider": "github",                            │    │
-    │  │      "repo_url": "https://github.com/org/repo" }     │    │
-    │  │  ]                                                    │    │
+    │  │  "providers": [                                     │    │
+    │  │    { "skill_name": "plan-marshall:w...-github",  │    │
+    │  │      "category": "ci",                           │    │
+    │  │      "verify_command": "gh auth status",         │    │
+    │  │      "url": "https://api.github.com",            │    │
+    │  │      "description": "GitHub CI provider..." }    │    │
+    │  │  ]                                               │    │
     │  └─────────────────────────────────────────────────────┘    │
     └─────────────────────────────────────────────────────────────┘
                               │
@@ -146,7 +146,7 @@ Example wizard step:
 1. Call: `plan-marshall:tools-integration-ci:ci_health detect`
 2. Present detected provider to user
 3. Call: `plan-marshall:tools-integration-ci:ci_health persist`
-   (stores provider and repo_url in the providers[] array entry)
+   (stores provider and repo_url in the ci section of marshal.json)
 ```
 
 ---

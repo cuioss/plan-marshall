@@ -97,14 +97,11 @@ def get_project_name() -> str:
     if marshal_path.exists():
         try:
             config = json.loads(marshal_path.read_text(encoding='utf-8'))
-            # Find CI provider in providers list (auth_type=system, workflow-integration-gi*)
+            # Find version-control provider for repo URL
             repo_url = ''
             for p in config.get('providers', []):
-                if (
-                    p.get('auth_type') == 'system'
-                    and p.get('skill_name', '').startswith('plan-marshall:workflow-integration-gi')
-                ):
-                    repo_url = p.get('repo_url', '')
+                if p.get('category') == 'version-control':
+                    repo_url = p.get('url', '')
                     break
             if repo_url:
                 # Extract repo name from URL (last path segment, strip .git)
