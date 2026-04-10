@@ -11,6 +11,7 @@ No filesystem scanning at runtime.
 
 import importlib.util
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +78,35 @@ def _load_provider_module(path: Path) -> list[dict[str, Any]]:
         return []
     except Exception:
         return []
+
+
+def _get_git_remote_url() -> str:
+    """Get the git remote origin URL, or empty string if unavailable."""
+    try:
+        result = subprocess.run(
+            ['git', 'remote', 'get-url', 'origin'],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ''
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return ''
+
+
+def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
+    """Build a minimal provider entry for marshal.json persistence.
+
+    Persists: skill_name, category, verify_command, url, description.
+    Maps default_url to url. For version-control providers without
+    default_url, resolves url from git remote origin.
+    """
+    entry = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
+    if p.get('default_url'):
+        entry['url'] = p['default_url']
+    elif p.get('category') == 'version-control':
+        remote_url = _get_git_remote_url()
+        if remote_url:
+            entry['url'] = remote_url
+    return entry
 
 
 def _validate_provider_selection(
@@ -178,11 +208,7 @@ def run_discover_and_persist(args) -> int:
 
     config = load_config()
     config['providers'] = [
-        {
-            **{k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p},
-            **(({'url': p['default_url']}) if p.get('default_url') else {}),
-        }
-        for p in activated
+        _build_persisted_entry(p) for p in activated
     ]
     save_config(config)
 
