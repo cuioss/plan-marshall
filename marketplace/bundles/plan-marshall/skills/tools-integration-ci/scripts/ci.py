@@ -61,7 +61,7 @@ def get_provider() -> str | None:
             ci_config = config.get('ci', {})
             if isinstance(ci_config, dict):
                 provider = ci_config.get('provider')
-                if provider and provider in _KNOWN_PROVIDERS:
+                if isinstance(provider, str) and provider in _KNOWN_PROVIDERS:
                     return provider
 
             # Fallback: scan providers[] by category
