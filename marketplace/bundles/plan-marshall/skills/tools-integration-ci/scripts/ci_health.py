@@ -33,23 +33,27 @@ TOOLS = {
     'glab': True,
 }
 
-# Fallback provider-to-tool mapping (used when provider discovery unavailable)
-_FALLBACK_PROVIDER_TOOLS = {
-    'github': 'gh',
-    'gitlab': 'glab',
-    'unknown': None,
-}
+def _derive_provider_key(skill_name: str) -> str | None:
+    """Derive provider key from skill_name dynamically.
+
+    Pattern: 'plan-marshall:workflow-integration-{provider}' -> '{provider}'
+    Also handles unprefixed: 'workflow-integration-{provider}' -> '{provider}'
+    """
+    name = skill_name.split(':')[-1] if ':' in skill_name else skill_name
+    prefix = 'workflow-integration-'
+    if name.startswith(prefix):
+        return name[len(prefix):]
+    return None
 
 
 def _discover_provider_tools() -> dict[str, str | None]:
     """Build provider-to-tool mapping from CI category providers.
 
     Uses find_by_category('ci') to locate CI providers and derives the
-    tool name from each provider's verify_command. Falls back to hardcoded
-    mapping if discovery fails.
+    tool name from each provider's verify_command.
 
     Returns:
-        Dict mapping provider name (github/gitlab/unknown) to CLI tool name.
+        Dict mapping provider name to CLI tool name.
     """
     try:
         from _list_providers import find_by_category  # type: ignore[import-not-found]
@@ -58,16 +62,9 @@ def _discover_provider_tools() -> dict[str, str | None]:
         mapping: dict[str, str | None] = {'unknown': None}
 
         for p in ci_providers:
-            skill_name = p.get('skill_name', '')
-            # Extract provider key from skill_name
-            # plan-marshall:workflow-integration-github -> github
-            if 'github' in skill_name:
-                provider_key = 'github'
-            elif 'gitlab' in skill_name:
-                provider_key = 'gitlab'
-            else:
+            provider_key = _derive_provider_key(p.get('skill_name', ''))
+            if not provider_key:
                 continue
-            # Extract tool from verify_command: "gh auth status" -> "gh"
             verify_cmd = p.get('verify_command', '')
             if verify_cmd:
                 import shlex
@@ -79,7 +76,7 @@ def _discover_provider_tools() -> dict[str, str | None]:
     except (ImportError, Exception):
         pass
 
-    return dict(_FALLBACK_PROVIDER_TOOLS)
+    return {'unknown': None}
 
 
 # Provider to required tool mapping (resolved at module load)
