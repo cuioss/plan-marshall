@@ -38,14 +38,12 @@ def _load_module(name, filename):
     return mod
 
 
-_cmd_ci = _load_module('_cmd_ci', '_cmd_ci.py')
 _cmd_ext_defaults = _load_module('_cmd_ext_defaults', '_cmd_ext_defaults.py')
 _cmd_init_mod = _load_module('_cmd_init', '_cmd_init.py')
 _cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
 _cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
 _cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
 
-cmd_ci = _cmd_ci.cmd_ci
 cmd_ext_defaults = _cmd_ext_defaults.cmd_ext_defaults
 cmd_init = _cmd_init_mod.cmd_init
 cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
@@ -184,72 +182,8 @@ def test_error_without_marshal_json():
         assert result['status'] == 'error'
 
 
-def test_ci_get():
-    """Test ci get returns full CI config."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_ci(Namespace(verb='get'))
-
-        assert result['status'] == 'success'
-        assert 'ci' in result
-        assert result['ci']['provider'] == 'github'
-        assert 'repo_url' in result['ci']
-
-
-def test_ci_get_provider():
-    """Test ci get-provider returns provider info."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_ci(Namespace(verb='get-provider'))
-
-        assert result['status'] == 'success'
-        assert result['provider'] == 'github'
-
-
-def test_ci_get_tools():
-    """Test ci get-tools returns authenticated tools from run-configuration.json."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        create_run_config(ctx.fixture_dir)  # Tools are stored in run-configuration.json
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_ci(Namespace(verb='get-tools'))
-
-        assert result['status'] == 'success'
-        assert 'git' in result['authenticated_tools']
-        assert 'gh' in result['authenticated_tools']
-
-
-def test_ci_set_provider():
-    """Test ci set-provider updates provider."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_ci(Namespace(
-            verb='set-provider',
-            provider='gitlab',
-            repo_url='https://gitlab.com/test/repo',
-        ))
-
-        assert result['status'] == 'success'
-        assert result['provider'] == 'gitlab'
-
-
-def test_ci_set_tools():
-    """Test ci set-tools updates authenticated tools."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_ci(Namespace(verb='set-tools', tools='git,glab,python3'))
-
-        assert result['status'] == 'success'
-        assert 'glab' in result['authenticated_tools']
+# CI tests removed — CI config now owned by tools-integration-ci/ci_health.py
+# See test/plan-marshall/tools-integration-ci/test_ci_health.py
 
 
 # =============================================================================
@@ -443,15 +377,7 @@ def test_cli_ext_defaults_help():
     assert 'set-default' in result.stdout
 
 
-def test_cli_ci_get():
-    """Test CLI plumbing: ci get outputs TOON."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'ci', 'get')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'github' in result.stdout
+# test_cli_ci_get removed — CI config now owned by tools-integration-ci
 
 
 # =============================================================================

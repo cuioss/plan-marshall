@@ -39,11 +39,14 @@ def find_plan_dir() -> Path | None:
     return None
 
 
-def get_provider() -> str | None:
-    """Find CI provider from the providers array in marshal.json.
+_KNOWN_PROVIDERS = {'github', 'gitlab'}
 
-    Looks for an entry with auth_type=system and a skill_name matching
-    a known CI provider skill. Returns the provider key (github/gitlab).
+
+def get_provider() -> str | None:
+    """Find CI provider from marshal.json.
+
+    Primary: reads config['ci']['provider'].
+    Fallback: scans providers[] for category=ci, derives provider key from skill_name.
     """
     plan_dir = find_plan_dir()
     if not plan_dir:
@@ -53,6 +56,15 @@ def get_provider() -> str | None:
     try:
         with open(marshal_path) as f:
             config = json.load(f)
+
+            # Primary: config['ci']['provider']
+            ci_config = config.get('ci', {})
+            if isinstance(ci_config, dict):
+                provider = ci_config.get('provider')
+                if provider and provider in _KNOWN_PROVIDERS:
+                    return provider
+
+            # Fallback: scan providers[] by category
             for entry in config.get('providers', []):
                 if not isinstance(entry, dict) or entry.get('category') != 'ci':
                     continue

@@ -34,6 +34,8 @@ _scan_pythonpath_for_providers = _list_providers._scan_pythonpath_for_providers
 _load_provider_module = _list_providers._load_provider_module
 run_discover_and_persist = _list_providers.run_discover_and_persist
 run_list_providers = _list_providers.run_list_providers
+run_find_by_category = _list_providers.run_find_by_category
+find_by_category = _list_providers.find_by_category
 _validate_provider_selection = _list_providers._validate_provider_selection
 
 
@@ -483,3 +485,86 @@ class TestRunListProviders:
         # Verify wizard-only fields are NOT in output
         assert 'display_name' not in captured.out
         assert 'auth_type' not in captured.out
+
+
+# =============================================================================
+# find_by_category Tests
+# =============================================================================
+
+
+class TestFindByCategory:
+    """Tests for find_by_category()."""
+
+    def test_returns_matching_providers(self, tmp_path):
+        """Returns providers matching the given category."""
+        import _config_core
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        marshal_path = plan_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps({
+            'providers': [
+                {'skill_name': 'git', 'category': 'version-control'},
+                {'skill_name': 'github', 'category': 'ci'},
+                {'skill_name': 'sonar', 'category': 'other'},
+            ],
+        }))
+        _config_core.PLAN_BASE_DIR = tmp_path
+        _config_core.MARSHAL_PATH = marshal_path
+
+        result = find_by_category('ci')
+        assert len(result) == 1
+        assert result[0]['skill_name'] == 'github'
+
+    def test_returns_empty_for_unknown_category(self, tmp_path):
+        """Returns empty list when no providers match."""
+        import _config_core
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        marshal_path = plan_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps({
+            'providers': [
+                {'skill_name': 'git', 'category': 'version-control'},
+            ],
+        }))
+        _config_core.PLAN_BASE_DIR = tmp_path
+        _config_core.MARSHAL_PATH = marshal_path
+
+        result = find_by_category('nonexistent')
+        assert result == []
+
+    def test_returns_empty_when_no_providers(self, tmp_path):
+        """Returns empty list when no providers configured."""
+        import _config_core
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        marshal_path = plan_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps({}))
+        _config_core.PLAN_BASE_DIR = tmp_path
+        _config_core.MARSHAL_PATH = marshal_path
+
+        result = find_by_category('ci')
+        assert result == []
+
+    def test_run_find_by_category_cli(self, tmp_path, capsys):
+        """CLI subcommand outputs TOON with matching providers."""
+        import _config_core
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        marshal_path = plan_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps({
+            'providers': [
+                {'skill_name': 'github', 'category': 'ci'},
+            ],
+        }))
+        _config_core.PLAN_BASE_DIR = tmp_path
+        _config_core.MARSHAL_PATH = marshal_path
+
+        exit_code = run_find_by_category(Namespace(category='ci'))
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert 'github' in captured.out
+        assert 'count: 1' in captured.out

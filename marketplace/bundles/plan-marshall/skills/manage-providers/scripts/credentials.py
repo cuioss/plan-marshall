@@ -68,6 +68,10 @@ def main() -> int:
     # list-providers
     subparsers.add_parser('list-providers', help='List available credential providers from marshal.json')
 
+    # find-by-category
+    fbc_parser = subparsers.add_parser('find-by-category', help='Find providers by category')
+    fbc_parser.add_argument('--category', required=True, help='Provider category (e.g., ci, version-control)')
+
     # list
     list_parser = subparsers.add_parser('list', help='List configured skills (no secrets)')
     list_parser.add_argument('--scope', choices=['global', 'project', 'all'], default='all',
@@ -102,6 +106,9 @@ def main() -> int:
     elif args.command == 'list-providers':
         from _list_providers import run_list_providers
         return run_list_providers(args)
+    elif args.command == 'find-by-category':
+        from _list_providers import run_find_by_category
+        return run_find_by_category(args)
     elif args.command == 'verify':
         from _cred_verify import run_verify
         return run_verify(args)

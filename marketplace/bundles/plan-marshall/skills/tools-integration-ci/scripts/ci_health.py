@@ -42,9 +42,9 @@ _FALLBACK_PROVIDER_TOOLS = {
 
 
 def _discover_provider_tools() -> dict[str, str | None]:
-    """Build provider-to-tool mapping from credential provider extensions.
+    """Build provider-to-tool mapping from CI category providers.
 
-    Scans for system-authenticated CI credential extensions and derives the
+    Uses find_by_category('ci') to locate CI providers and derives the
     tool name from each provider's verify_command. Falls back to hardcoded
     mapping if discovery fails.
 
@@ -52,19 +52,21 @@ def _discover_provider_tools() -> dict[str, str | None]:
         Dict mapping provider name (github/gitlab/unknown) to CLI tool name.
     """
     try:
-        from _providers_core import load_declared_providers  # type: ignore[import-not-found]
+        from _list_providers import find_by_category  # type: ignore[import-not-found]
 
-        providers = load_declared_providers()
+        ci_providers = find_by_category('ci')
         mapping: dict[str, str | None] = {'unknown': None}
 
-        for p in providers:
-            if p.get('auth_type') != 'system':
-                continue
+        for p in ci_providers:
             skill_name = p.get('skill_name', '')
-            if not skill_name.startswith('tools-integration-ci-'):
+            # Extract provider key from skill_name
+            # plan-marshall:workflow-integration-github -> github
+            if 'github' in skill_name:
+                provider_key = 'github'
+            elif 'gitlab' in skill_name:
+                provider_key = 'gitlab'
+            else:
                 continue
-            # Extract provider key: tools-integration-ci-github -> github
-            provider_key = skill_name.replace('tools-integration-ci-', '')
             # Extract tool from verify_command: "gh auth status" -> "gh"
             verify_cmd = p.get('verify_command', '')
             if verify_cmd:
@@ -72,7 +74,6 @@ def _discover_provider_tools() -> dict[str, str | None]:
                 tool = shlex.split(verify_cmd)[0]
                 mapping[provider_key] = tool
 
-        # Only return if we found at least one CI provider
         if len(mapping) > 1:
             return mapping
     except (ImportError, Exception):
@@ -289,60 +290,106 @@ def cmd_status(args: argparse.Namespace) -> dict:
     }
 
 
+def _load_ci_modules():
+    """Lazy-load config modules (PYTHONPATH set by executor)."""
+    from _config_core import load_config, load_run_config, save_config, save_run_config  # type: ignore[import-not-found]  # noqa: I001
+    return load_config, save_config, load_run_config, save_run_config
+
+
+def cmd_ci_get(args: argparse.Namespace) -> dict:
+    """Handle 'ci-get' subcommand — read config['ci']."""
+    load_config, _, _, _ = _load_ci_modules()
+    import os
+    if hasattr(args, 'plan_dir'):
+        os.environ['PLAN_BASE_DIR'] = str(args.plan_dir)
+    config = load_config()
+    ci_data = config.get('ci', {})
+    return {'status': 'success', 'ci': ci_data}
+
+
+def cmd_ci_get_provider(args: argparse.Namespace) -> dict:
+    """Handle 'ci-get-provider' subcommand — read config['ci']['provider']."""
+    load_config, _, _, _ = _load_ci_modules()
+    import os
+    if hasattr(args, 'plan_dir'):
+        os.environ['PLAN_BASE_DIR'] = str(args.plan_dir)
+    config = load_config()
+    ci_data = config.get('ci', {})
+    return {
+        'status': 'success',
+        'provider': ci_data.get('provider', 'unknown'),
+        'repo_url': ci_data.get('repo_url'),
+    }
+
+
+def cmd_ci_set_tools(args: argparse.Namespace) -> dict:
+    """Handle 'ci-set-tools' subcommand — write run-config['ci']['authenticated_tools']."""
+    _, _, load_run_config, save_run_config = _load_ci_modules()
+    import os
+    if hasattr(args, 'plan_dir'):
+        os.environ['PLAN_BASE_DIR'] = str(args.plan_dir)
+    run_config = load_run_config()
+    run_ci = run_config.get('ci', {})
+    tools = [t.strip() for t in args.tools.split(',') if t.strip()]
+    run_ci['authenticated_tools'] = tools
+    run_config['ci'] = run_ci
+    save_run_config(run_config)
+    return {'status': 'success', 'authenticated_tools': tools}
+
+
+def cmd_ci_get_tools(args: argparse.Namespace) -> dict:
+    """Handle 'ci-get-tools' subcommand — read run-config['ci']['authenticated_tools']."""
+    _, _, load_run_config, _ = _load_ci_modules()
+    import os
+    if hasattr(args, 'plan_dir'):
+        os.environ['PLAN_BASE_DIR'] = str(args.plan_dir)
+    run_config = load_run_config()
+    run_ci = run_config.get('ci', {})
+    return {'status': 'success', 'authenticated_tools': run_ci.get('authenticated_tools', [])}
+
+
 def cmd_persist(args: argparse.Namespace) -> dict:
     """Handle the 'persist' subcommand.
 
-    Delegates to manage-config ci persist for centralized marshal.json writes.
+    Self-contained CI config persistence — no cross-skill imports.
+    Writes config['ci'] (provider, repo_url) and run-config['ci'] (authenticated_tools).
     """
+    import os
+
     plan_dir = Path(args.plan_dir)
     marshal_path = plan_dir / 'marshal.json'
 
     if not marshal_path.exists():
         return {'status': 'error', 'error': f'marshal.json not found at {marshal_path}. Run /marshall-steward first.'}
 
+    os.environ['PLAN_BASE_DIR'] = str(plan_dir)
+
     # Detect provider
     provider_result = detect_provider()
 
     # Verify all tools and collect authenticated ones
     authenticated_tools = []
-    git_present = False
     for tool in TOOLS:
         tool_status = verify_tool(tool)
         if tool_status['installed'] and tool_status['authenticated']:
             authenticated_tools.append(tool)
-        if tool == 'git' and tool_status['installed']:
-            git_present = True
 
-    # Direct import of ci persist logic (PYTHONPATH set by executor)
-    # Set PLAN_BASE_DIR before importing to ensure correct path resolution
-    import os
-
-    os.environ['PLAN_BASE_DIR'] = str(plan_dir)
-
-    # Import after setting env var so paths resolve correctly
-    from _cmd_ci import _handle_persist  # type: ignore[import-not-found]
-    from _config_core import load_config  # type: ignore[import-not-found]
-
-    # Create args-like object for _handle_persist
-    class PersistArgs:
-        def __init__(self, provider, repo_url, tools, git_present_str):
-            self.provider = provider
-            self.repo_url = repo_url
-            self.tools = tools
-            self.git_present = git_present_str
-
-    persist_args = PersistArgs(
-        provider=provider_result['provider'],
-        repo_url=provider_result['repo_url'] or '',
-        tools=','.join(authenticated_tools) if authenticated_tools else None,
-        git_present_str=str(git_present).lower() if authenticated_tools else None,
-    )
-
+    # Persist to config['ci'] (marshal.json)
+    load_config, save_config, load_run_config, save_run_config = _load_ci_modules()
     config = load_config()
-    providers = config.get('providers', [])
-    persist_result = _handle_persist(persist_args, config, providers)
-    if persist_result.get('status') != 'success':
-        return {'status': 'error', 'error': 'Failed to persist CI config'}
+    config['ci'] = {
+        'provider': provider_result['provider'],
+        'repo_url': provider_result['repo_url'] or '',
+    }
+    save_config(config)
+
+    # Persist to run-config['ci'] (run-configuration.json)
+    if authenticated_tools:
+        run_config = load_run_config()
+        run_ci = run_config.get('ci', {})
+        run_ci['authenticated_tools'] = authenticated_tools
+        run_config['ci'] = run_ci
+        save_run_config(run_config)
 
     return {
         'status': 'success',
@@ -372,6 +419,23 @@ def main() -> int:
         '--plan-dir', type=str, default='.plan', help='Path to .plan directory (default: .plan)'
     )
 
+    # ci-get subcommand
+    ci_get_parser = subparsers.add_parser('ci-get', help='Read CI config from marshal.json')
+    ci_get_parser.add_argument('--plan-dir', type=str, default='.plan')
+
+    # ci-get-provider subcommand
+    ci_gp_parser = subparsers.add_parser('ci-get-provider', help='Read CI provider from marshal.json')
+    ci_gp_parser.add_argument('--plan-dir', type=str, default='.plan')
+
+    # ci-set-tools subcommand
+    ci_st_parser = subparsers.add_parser('ci-set-tools', help='Write authenticated tools to run-config')
+    ci_st_parser.add_argument('--tools', required=True, help='Comma-separated tool names')
+    ci_st_parser.add_argument('--plan-dir', type=str, default='.plan')
+
+    # ci-get-tools subcommand
+    ci_gt_parser = subparsers.add_parser('ci-get-tools', help='Read authenticated tools from run-config')
+    ci_gt_parser.add_argument('--plan-dir', type=str, default='.plan')
+
     args = parser.parse_args()
 
     handlers = {
@@ -379,6 +443,10 @@ def main() -> int:
         'verify': cmd_verify,
         'status': cmd_status,
         'persist': cmd_persist,
+        'ci-get': cmd_ci_get,
+        'ci-get-provider': cmd_ci_get_provider,
+        'ci-set-tools': cmd_ci_set_tools,
+        'ci-get-tools': cmd_ci_get_tools,
     }
 
     handler = handlers.get(args.command)

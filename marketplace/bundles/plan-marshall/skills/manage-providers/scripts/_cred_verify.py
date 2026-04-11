@@ -7,7 +7,6 @@ Makes a test request using RestClient and updates verified_at metadata.
 from _providers_core import (
     get_authenticated_client,
     get_project_name,
-    load_credential,
     load_declared_providers,
     update_verified_at,
     verify_system_auth,
@@ -32,17 +31,13 @@ def run_verify(args) -> int:
             provider = p
             break
 
-    # Determine auth_type from credential file or provider declaration
+    # Infer auth type from convention (no explicit auth_type field)
     project_name = get_project_name() if scope == 'project' else None
-    credential = load_credential(skill, scope if scope != 'global' else 'auto', project_name)
-    auth_type = None
-    if credential:
-        auth_type = credential.get('auth_type')
-    if not auth_type and provider:
-        auth_type = provider.get('auth_type')
 
-    # System auth: run verify_command instead of HTTP connectivity check
-    if auth_type == 'system':
+    # Convention: verify_command present → system auth
+    is_system_auth = bool(provider and provider.get('verify_command'))
+
+    if is_system_auth:
         if not provider:
             output_toon({
                 'status': 'error',
