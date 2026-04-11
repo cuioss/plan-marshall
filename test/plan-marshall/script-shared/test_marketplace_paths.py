@@ -1,14 +1,10 @@
 """Tests for marketplace_paths shared module."""
 
-import os
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-
 from marketplace_paths import (
     CLAUDE_DIR,
-    MARKETPLACE_BUNDLES_PATH,
     PLUGIN_CACHE_SUBPATH,
     find_marketplace_path,
     get_base_path,

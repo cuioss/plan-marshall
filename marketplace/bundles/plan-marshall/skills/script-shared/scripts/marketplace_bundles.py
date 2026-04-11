@@ -73,28 +73,26 @@ def collect_script_dirs(base_path: Path) -> list[str]:
         if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
             continue
 
+        # Determine base directories to scan for skills:
+        # versioned (plugin-cache) -> each version subdir; non-versioned -> bundle itself
         has_version_dirs = any(
             d.is_dir() and not d.name.startswith('.') and (d / 'skills').is_dir() for d in bundle_dir.iterdir()
         )
-
+        scan_roots = []
         if has_version_dirs:
-            for version_dir in bundle_dir.iterdir():
-                if version_dir.is_dir() and not version_dir.name.startswith('.'):
-                    skills_dir = version_dir / 'skills'
-                    if skills_dir.exists():
-                        for skill_dir in skills_dir.iterdir():
-                            if skill_dir.is_dir():
-                                scripts_dir = skill_dir / 'scripts'
-                                if scripts_dir.exists():
-                                    script_dirs.append(str(scripts_dir))
+            scan_roots = [d for d in bundle_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
         else:
-            skills_dir = bundle_dir / 'skills'
-            if skills_dir.exists():
-                for skill_dir in skills_dir.iterdir():
-                    if skill_dir.is_dir():
-                        scripts_dir = skill_dir / 'scripts'
-                        if scripts_dir.exists():
-                            script_dirs.append(str(scripts_dir))
+            scan_roots = [bundle_dir]
+
+        for root in scan_roots:
+            skills_dir = root / 'skills'
+            if not skills_dir.exists():
+                continue
+            for skill_dir in skills_dir.iterdir():
+                if skill_dir.is_dir():
+                    scripts_dir = skill_dir / 'scripts'
+                    if scripts_dir.exists():
+                        script_dirs.append(str(scripts_dir))
 
     subdirs: list[str] = []
     for scripts_path in script_dirs:

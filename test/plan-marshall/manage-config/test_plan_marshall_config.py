@@ -20,7 +20,6 @@ from test_helpers import (
     SCRIPT_PATH,
     create_marshal_json,
     create_nested_marshal_json,
-    create_run_config,
     patch_config_paths,
 )
 

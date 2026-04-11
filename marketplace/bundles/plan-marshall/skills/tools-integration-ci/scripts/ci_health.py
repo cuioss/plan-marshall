@@ -369,10 +369,13 @@ def cmd_persist(args: argparse.Namespace) -> dict:
 
     # Verify all tools and collect authenticated ones
     authenticated_tools = []
+    git_present = False
     for tool in TOOLS:
         tool_status = verify_tool(tool)
         if tool_status['installed'] and tool_status['authenticated']:
             authenticated_tools.append(tool)
+        if tool == 'git' and tool_status['installed']:
+            git_present = True
 
     # Persist to config['ci'] (marshal.json)
     load_config, save_config, load_run_config, save_run_config = _load_ci_modules()
@@ -388,6 +391,7 @@ def cmd_persist(args: argparse.Namespace) -> dict:
         run_config = load_run_config()
         run_ci = run_config.get('ci', {})
         run_ci['authenticated_tools'] = authenticated_tools
+        run_ci['git_present'] = git_present
         run_config['ci'] = run_ci
         save_run_config(run_config)
 
