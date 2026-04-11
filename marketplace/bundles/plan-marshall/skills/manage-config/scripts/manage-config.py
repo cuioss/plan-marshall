@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 
-from _cmd_ci import cmd_ci
 from _cmd_ext_defaults import cmd_ext_defaults
 from _cmd_init import cmd_init
 from _cmd_skill_domains import (
@@ -204,27 +203,6 @@ def main() -> int:
     _add_phase_subparser(plan_sub, 'phase-5-execute', 'Execute phase settings', has_scalar=True, has_list_steps=True)
     _add_phase_subparser(plan_sub, 'phase-6-finalize', 'Finalize phase settings', has_scalar=True, has_list_steps=True)
 
-    # --- ci ---
-    p_ci = subparsers.add_parser('ci', help='Manage CI provider configuration')
-    ci_sub = p_ci.add_subparsers(dest='verb', required=True, help='Operation')
-
-    ci_sub.add_parser('get', help='Get full CI config')
-    ci_sub.add_parser('get-provider', help='Get CI provider')
-    ci_sub.add_parser('get-tools', help='Get authenticated tools')
-
-    ci_set_prov = ci_sub.add_parser('set-provider', help='Set CI provider')
-    ci_set_prov.add_argument('--provider', required=True, help='Provider name (github, gitlab, unknown)')
-    ci_set_prov.add_argument('--repo-url', required=True, help='Repository URL')
-
-    ci_set_tools = ci_sub.add_parser('set-tools', help='Set authenticated tools')
-    ci_set_tools.add_argument('--tools', required=True, help='Comma-separated tool names')
-
-    ci_persist = ci_sub.add_parser('persist', help='Persist CI config (provider, tools)')
-    ci_persist.add_argument('--provider', required=True, help='Provider name (github, gitlab, unknown)')
-    ci_persist.add_argument('--repo-url', required=True, help='Repository URL')
-    ci_persist.add_argument('--tools', help='Comma-separated authenticated tool names')
-    ci_persist.add_argument('--git-present', help='Whether git is present (true/false)')
-
     # --- ext-defaults ---
     p_ext = subparsers.add_parser('ext-defaults', help='Manage extension defaults (shared config)')
     ext_sub = p_ext.add_subparsers(dest='verb', required=True, help='Operation')
@@ -314,11 +292,6 @@ def main() -> int:
             p_plan.print_help()
             return 2
         result = cmd_plan(args)
-    elif args.noun == 'ci':
-        if not args.verb:
-            p_ci.print_help()
-            return 2
-        result = cmd_ci(args)
     elif args.noun == 'ext-defaults':
         if not args.verb:
             p_ext.print_help()

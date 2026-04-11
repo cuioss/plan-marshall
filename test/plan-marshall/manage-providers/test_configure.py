@@ -14,7 +14,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.
 _SONAR_PROVIDER = {
     'skill_name': 'plan-marshall:workflow-integration-sonar',
     'display_name': 'SonarCloud / SonarQube',
-    'auth_type': 'token',
     'default_url': 'https://sonarcloud.io',
     'header_name': 'Authorization',
     'header_value_template': 'Bearer {token}',
@@ -511,24 +510,24 @@ class TestConfigureSystemAuth:
             if path.exists():
                 path.unlink()
 
-    def test_system_auth_rejects_incompatible_auth_type(self, tmp_path, monkeypatch):
-        """Configure rejects token auth when provider declares system."""
+    def test_system_auth_override_accepted(self, tmp_path, monkeypatch):
+        """Configure accepts explicit --auth-type override for system provider."""
         from _cred_configure import run_configure  # type: ignore[import-not-found]
+        from _providers_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
 
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
 
         mock_provider = {
-            'skill_name': 'test-system-only',
-            'display_name': 'System Only Provider',
-            'auth_type': 'system',
+            'skill_name': 'test-system-override',
+            'display_name': 'System Provider',
             'default_url': '',
             'verify_command': 'echo ok',
-            'description': 'Only system auth allowed',
+            'description': 'System auth via convention',
         }
 
         class MockArgs:
-            skill = 'test-system-only'
+            skill = 'test-system-override'
             scope = 'global'
             auth_type = 'token'
             url = 'https://example.com'
@@ -539,45 +538,15 @@ class TestConfigureSystemAuth:
         def mock_output(data):
             captured_output.update(data)
 
-        with monkeypatch.context() as m:
-            m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
-            m.setattr('_cred_configure.output_toon', mock_output)
-            run_configure(MockArgs())
+        try:
+            with monkeypatch.context() as m:
+                m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
+                m.setattr('_cred_configure.output_toon', mock_output)
+                run_configure(MockArgs())
 
-        assert captured_output.get('status') == 'error'
-        assert 'incompatible' in captured_output.get('message', '').lower()
-
-    def test_system_auth_invalid_auth_type_rejected(self, tmp_path, monkeypatch):
-        """Configure rejects invalid auth_type values."""
-        from _cred_configure import run_configure  # type: ignore[import-not-found]
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
-
-        mock_provider = {
-            'skill_name': 'test-invalid',
-            'display_name': 'Test',
-            'auth_type': 'system',
-            'default_url': '',
-            'description': 'Test',
-        }
-
-        class MockArgs:
-            skill = 'test-invalid'
-            scope = 'global'
-            auth_type = 'oauth2'  # Not in VALID_AUTH_TYPES
-            url = None
-            extra = None
-
-        captured_output = {}
-
-        def mock_output(data):
-            captured_output.update(data)
-
-        with monkeypatch.context() as m:
-            m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
-            m.setattr('_cred_configure.output_toon', mock_output)
-            run_configure(MockArgs())
-
-        assert captured_output.get('status') == 'error'
-        assert 'invalid auth type' in captured_output.get('message', '').lower()
+            # With convention-based inference, CLI override is accepted
+            assert captured_output.get('status') in ('created', 'exists_complete', 'exists_incomplete')
+        finally:
+            path = CREDENTIALS_DIR / 'test-system-override.json'
+            if path.exists():
+                path.unlink()

@@ -226,6 +226,33 @@ def run_discover_and_persist(args) -> int:
     return 0
 
 
+def find_by_category(category: str) -> list[dict[str, Any]]:
+    """Find providers by category from marshal.json.
+
+    Args:
+        category: Category to filter by (e.g., 'ci', 'version-control')
+
+    Returns:
+        List of provider dicts matching the category.
+    """
+    config = load_config()
+    return [p for p in config.get('providers', []) if p.get('category') == category]
+
+
+def run_find_by_category(args) -> int:
+    """Execute the find-by-category subcommand."""
+    require_initialized()
+    results = find_by_category(args.category)
+
+    output_toon({
+        'status': 'success',
+        'category': args.category,
+        'count': len(results),
+        'providers': results,
+    })
+    return 0
+
+
 def run_list_providers(args) -> int:
     """Execute the list-providers subcommand.
 

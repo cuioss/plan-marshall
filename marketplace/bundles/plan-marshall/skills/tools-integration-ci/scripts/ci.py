@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Provider-agnostic CI router.
 
-Reads CI provider from the providers array in marshal.json and delegates
-to the correct provider script (github.py or gitlab.py). All arguments
-are passed through transparently.
+Reads CI provider from config['ci']['provider'] in marshal.json, falling back
+to dynamic discovery via providers[] category=ci. Delegates to the matching
+provider script ({provider}_ops.py). All arguments are passed through.
 
 Usage:
     python3 ci.py pr create --title "Title" --body "Body"
@@ -17,16 +17,12 @@ This eliminates the need for eval or jq in skill instructions.
 Output: TOON format (from provider script)
 """
 
+import importlib
 import json
 import sys
 from pathlib import Path
 
 from ci_base import output_error  # type: ignore[import-not-found]
-
-_SKILL_TO_PROVIDER = {
-    'plan-marshall:workflow-integration-github': 'github',
-    'plan-marshall:workflow-integration-gitlab': 'gitlab',
-}
 
 
 def find_plan_dir() -> Path | None:
@@ -39,11 +35,25 @@ def find_plan_dir() -> Path | None:
     return None
 
 
-def get_provider() -> str | None:
-    """Find CI provider from the providers array in marshal.json.
+def _derive_provider_key(skill_name: str) -> str | None:
+    """Derive provider key from skill_name dynamically.
 
-    Looks for an entry with auth_type=system and a skill_name matching
-    a known CI provider skill. Returns the provider key (github/gitlab).
+    Pattern: 'plan-marshall:workflow-integration-{provider}' -> '{provider}'
+    Also handles unprefixed: 'workflow-integration-{provider}' -> '{provider}'
+    """
+    # Strip bundle prefix if present
+    name = skill_name.split(':')[-1] if ':' in skill_name else skill_name
+    prefix = 'workflow-integration-'
+    if name.startswith(prefix):
+        return name[len(prefix):]
+    return None
+
+
+def get_provider() -> str | None:
+    """Find CI provider from marshal.json.
+
+    Primary: reads config['ci']['provider'] (persisted by ci_health.py persist).
+    Fallback: scans providers[] for category=ci, derives provider key from skill_name.
     """
     plan_dir = find_plan_dir()
     if not plan_dir:
@@ -53,23 +63,26 @@ def get_provider() -> str | None:
     try:
         with open(marshal_path) as f:
             config = json.load(f)
+
+            # Primary: config['ci']['provider']
+            ci_config = config.get('ci', {})
+            if isinstance(ci_config, dict):
+                provider = ci_config.get('provider')
+                if isinstance(provider, str) and provider != 'unknown':
+                    return provider
+
+            # Fallback: scan providers[] by category, derive key dynamically
             for entry in config.get('providers', []):
                 if not isinstance(entry, dict) or entry.get('category') != 'ci':
                     continue
                 skill_name = entry.get('skill_name', '')
-                provider = _SKILL_TO_PROVIDER.get(skill_name)
-                if provider:
-                    return provider
+                key = _derive_provider_key(skill_name)
+                if key:
+                    return key
             return None
     except (OSError, json.JSONDecodeError) as e:
         print(f'Warning: Failed to read marshal.json: {e}', file=sys.stderr)
         return None
-
-
-PROVIDER_SKILLS = {
-    'github': 'plan-marshall:workflow-integration-github',
-    'gitlab': 'plan-marshall:workflow-integration-gitlab',
-}
 
 
 def main() -> int:
@@ -77,20 +90,15 @@ def main() -> int:
     if not provider:
         return output_error('router', 'CI provider not configured. Run /marshall-steward first.')
 
-    skill = PROVIDER_SKILLS.get(provider)
-    if not skill:
-        return output_error('router', f'Unknown CI provider: {provider}')
+    # Dynamic import via executor PYTHONPATH — provider scripts use
+    # {provider}_ops.py naming convention to avoid module collisions
+    module_name = f'{provider}_ops'
+    try:
+        provider_module = importlib.import_module(module_name)
+    except ModuleNotFoundError:
+        return output_error('router', f'No provider module found: {module_name}')
 
-    # Direct import via executor PYTHONPATH — provider scripts use unique
-    # {provider}_ops.py names to avoid module collisions
-    if provider == 'github':
-        from github_ops import main as provider_main  # type: ignore[import-not-found]
-    elif provider == 'gitlab':
-        from gitlab_ops import main as provider_main  # type: ignore[import-not-found]
-    else:
-        return output_error('router', f'No import mapping for provider: {provider}')
-
-    return provider_main()
+    return provider_module.main()  # type: ignore[no-any-return]
 
 
 if __name__ == '__main__':

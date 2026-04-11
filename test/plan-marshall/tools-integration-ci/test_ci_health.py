@@ -131,45 +131,15 @@ def test_persist_no_marshal_json():
 
 
 def test_persist_with_marshal_json():
-    """Test persist command succeeds with marshal.json containing providers."""
+    """Test persist command succeeds and writes config['ci']."""
     with PlanContext(plan_id='test-persist-success') as ctx:
-        # Create marshal.json with a CI provider entry in providers list
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({
             'version': 1,
             'providers': [{
-                'skill_name': 'workflow-integration-github',
-                'auth_type': 'system',
-                'default_url': 'https://github.com',
-            }],
-        }))
-
-        result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
-        assert result.success, f'Script failed: {result.stderr}'
-
-        # Verify marshal.json providers entry was updated
-        updated = json.loads(marshal_path.read_text())
-        assert 'providers' in updated
-        ci_entry = next(
-            (p for p in updated['providers']
-             if p.get('skill_name', '').startswith('workflow-integration-gi')),
-            None,
-        )
-        assert ci_entry is not None
-        assert 'provider' in ci_entry
-
-
-def test_persist_stores_provider_only():
-    """Test persist stores provider and repo_url on providers entry."""
-    with PlanContext(plan_id='test-commands') as ctx:
-        # Create marshal.json with a CI provider entry
-        marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({
-            'version': 1,
-            'providers': [{
-                'skill_name': 'workflow-integration-github',
-                'auth_type': 'system',
-                'default_url': 'https://github.com',
+                'skill_name': 'plan-marshall:workflow-integration-github',
+                'category': 'ci',
+                'verify_command': 'gh auth status',
             }],
         }))
 
@@ -177,52 +147,30 @@ def test_persist_stores_provider_only():
         assert result.success, f'Script failed: {result.stderr}'
 
         updated = json.loads(marshal_path.read_text())
-        ci_entry = next(
-            (p for p in updated['providers']
-             if p.get('skill_name', '').startswith('workflow-integration-gi')),
-            None,
-        )
-        assert ci_entry is not None
-        assert 'provider' in ci_entry
-        assert 'detected_at' in ci_entry
+        assert 'ci' in updated
+        assert 'provider' in updated['ci']
+        assert 'repo_url' in updated['ci']
 
 
-def test_persist_key_ordering():
-    """Test persist maintains canonical key ordering in marshal.json.
-
-    Canonical order: plan, providers, skill_domains, system
-    """
-    with PlanContext(plan_id='test-ordering') as ctx:
-        # Create marshal.json with keys in WRONG order and a CI provider
+def test_persist_stores_ci_section():
+    """Test persist stores provider and repo_url in config['ci']."""
+    with PlanContext(plan_id='test-ci-section') as ctx:
         marshal_path = ctx.fixture_dir / 'marshal.json'
-        marshal_path.write_text(
-            json.dumps(
-                {
-                    'system': {'retention': {}},
-                    'plan': {'defaults': {}},
-                    'skill_domains': {'system': {}},
-                    'providers': [{
-                        'skill_name': 'workflow-integration-github',
-                        'auth_type': 'system',
-                        'default_url': 'https://github.com',
-                    }],
-                },
-                indent=2,
-            )
-        )
+        marshal_path.write_text(json.dumps({
+            'version': 1,
+            'providers': [{
+                'skill_name': 'plan-marshall:workflow-integration-github',
+                'category': 'ci',
+                'verify_command': 'gh auth status',
+            }],
+        }))
 
         result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
         assert result.success, f'Script failed: {result.stderr}'
 
-        # Verify key ordering
         updated = json.loads(marshal_path.read_text())
-        actual_keys = list(updated.keys())
-
-        # Expected canonical order (no ci key — data lives in providers)
-        expected_order = ['plan', 'providers', 'skill_domains', 'system']
-
-        # Filter to only keys that exist
-        actual_order = [k for k in actual_keys if k in expected_order]
-        expected_filtered = [k for k in expected_order if k in actual_keys]
-
-        assert actual_order == expected_filtered, f'Key order should be {expected_filtered}, got {actual_order}'
+        ci = updated.get('ci', {})
+        assert ci.get('provider') in ('github', 'gitlab', 'unknown')
+        # No detected_at or verified_at in CI section
+        assert 'detected_at' not in ci
+        assert 'verified_at' not in ci

@@ -38,7 +38,6 @@ Exit codes:
 
 import argparse
 import fnmatch
-import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -54,42 +53,18 @@ PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 DEFAULT_OUTPUT_SUBDIR = 'tools-marketplace-inventory'
 
 
-def get_plan_dir() -> Path:
-    """Get the .plan directory path, respecting PLAN_BASE_DIR override."""
-    base = os.environ.get('PLAN_BASE_DIR', '.plan')
-    return Path(base)
-
-
-def get_temp_dir(subdir: str) -> Path:
-    """Get temp directory under .plan/temp/{subdir}."""
-    return get_plan_dir() / 'temp' / subdir
-
-
 # Script-relative path discovery (works regardless of cwd)
 # Script is at: marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/
 # So bundles directory is 5 levels up from script
 SCRIPT_DIR = Path(__file__).resolve().parent
 _BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
 
-
-def safe_relative_path(path: Path) -> str:
-    """Return path relative to cwd if possible, otherwise absolute path."""
-    try:
-        return str(path.relative_to(Path.cwd()))
-    except ValueError:
-        # Path is not under cwd, return absolute
-        return str(path)
+# Shared path resolution (from script-shared)
+from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402, I001
+from marketplace_paths import get_base_path as _shared_get_base_path, get_temp_dir, safe_relative_path  # noqa: E402, I001
 
 
-def find_bundles(base_path: Path) -> list[Path]:
-    """Find all bundle directories by locating plugin.json files."""
-    bundles = []
-    for plugin_json in base_path.rglob('.claude-plugin/plugin.json'):
-        # Bundle is two levels up from plugin.json
-        bundle_dir = plugin_json.parent.parent
-        if bundle_dir not in bundles:
-            bundles.append(bundle_dir)
-    return sorted(bundles)
+# find_bundles imported from marketplace_bundles
 
 
 def extract_description(file_path: Path) -> str | None:
@@ -511,18 +486,8 @@ def parse_resource_types(resource_types_str: str) -> tuple[dict, str | None]:
     return include, None
 
 
-def _extract_bundle_name(bundle_dir: Path) -> str:
-    """Extract bundle name, handling versioned plugin-cache structure.
-
-    For versioned structure (plugin-cache): .../plan-marshall/0.1-BETA/ -> "plan-marshall"
-    For non-versioned structure (marketplace): .../plan-marshall/ -> "plan-marshall"
-    """
-    name = bundle_dir.name
-    # If name looks like a version (e.g., "1.0.0", "0.1-BETA", "2.0.0-rc1"), use parent name
-    # Pattern: starts with digit.digit, optionally followed by more version info
-    if re.match(r'^\d+\.\d+', name):
-        return bundle_dir.parent.name
-    return name
+# extract_bundle_name imported from marketplace_bundles
+_extract_bundle_name = extract_bundle_name
 
 
 def process_bundle(
@@ -596,66 +561,9 @@ def process_bundle(
     return bundle, total_stats
 
 
-def _find_marketplace_path() -> Path | None:
-    """Find marketplace/bundles directory relative to cwd or script.
-
-    First checks cwd-based discovery (supports test fixtures),
-    then falls back to script-relative path (works regardless of cwd).
-    """
-    # First try cwd-based discovery (allows tests to use fixture directories)
-    if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
-        return Path.cwd() / MARKETPLACE_BUNDLES_PATH
-    if (Path.cwd().parent / MARKETPLACE_BUNDLES_PATH).is_dir():
-        return Path.cwd().parent / MARKETPLACE_BUNDLES_PATH
-    # Fallback to script-relative path (works regardless of cwd)
-    if _BUNDLES_FROM_SCRIPT.is_dir():
-        return _BUNDLES_FROM_SCRIPT
-    return None
-
-
-def _get_plugin_cache_path() -> Path | None:
-    """Get plugin cache path if it exists."""
-    cache_path = Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
-    return cache_path if cache_path.is_dir() else None
-
-
 def get_base_path(scope: str) -> Path:
-    """Determine base path based on scope.
-
-    The 'auto' scope (default) tries marketplace first, then falls back to plugin-cache.
-    This enables the script to work both in the marketplace repo and in other projects.
-    """
-    if scope == 'auto':
-        marketplace = _find_marketplace_path()
-        if marketplace:
-            return marketplace
-        cache = _get_plugin_cache_path()
-        if cache:
-            return cache
-        raise FileNotFoundError(
-            f'Neither {MARKETPLACE_BUNDLES_PATH} nor plugin cache found. '
-            f'Run from marketplace repo or ensure plugin is installed.'
-        )
-
-    if scope == 'marketplace':
-        marketplace = _find_marketplace_path()
-        if marketplace:
-            return marketplace
-        raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} directory not found')
-
-    if scope == 'global':
-        return Path.home() / CLAUDE_DIR
-
-    if scope == 'project':
-        return Path.cwd() / CLAUDE_DIR
-
-    if scope == 'plugin-cache':
-        cache = _get_plugin_cache_path()
-        if cache:
-            return cache
-        raise FileNotFoundError(f'Plugin cache not found: {Path.home() / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH}')
-
-    raise ValueError(f'Invalid scope: {scope}')
+    """Determine base path based on scope. Delegates to shared module."""
+    return _shared_get_base_path(scope, script_bundles_dir=_BUNDLES_FROM_SCRIPT)
 
 
 def serialize_inventory_toon(data: dict, full: bool = False) -> str:

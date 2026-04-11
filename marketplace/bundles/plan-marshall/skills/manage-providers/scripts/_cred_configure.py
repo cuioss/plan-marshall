@@ -8,7 +8,6 @@ No interactive input, no secrets through the LLM.
 
 from _providers_core import (
     SECRET_PLACEHOLDERS,
-    VALID_AUTH_TYPES,
     check_credential_completeness,
     get_project_name,
     load_credential,
@@ -45,25 +44,18 @@ def run_configure(args) -> int:
     skill_name = provider['skill_name']
     scope = args.scope
 
-    # Resolve auth type and URL early — needed for exists check
-    default_auth = provider.get('auth_type', 'token')
-    auth_type = getattr(args, 'auth_type', None) or default_auth
-    if auth_type not in VALID_AUTH_TYPES:
-        output_toon({'status': 'error', 'message': f'Invalid auth type: {auth_type}'})
-        return 0
-
-    # Validate auth_type against provider's declared auth_type
-    declared_auth = provider.get('auth_type')
-    if declared_auth and auth_type != declared_auth:
-        output_toon({
-            'status': 'error',
-            'message': (
-                f'Auth type "{auth_type}" is incompatible with provider '
-                f'"{provider.get("display_name", skill_name)}". '
-                f'Provider requires: {declared_auth}'
-            ),
-        })
-        return 0
+    # Infer auth type from convention:
+    # - verify_command present → system auth (CLI tool)
+    # - header_name present → token auth (API with auth header)
+    # - Otherwise → token (default for HTTP APIs)
+    # CLI --auth-type override is still respected if provided
+    if provider.get('verify_command'):
+        inferred_auth = 'system'
+    elif provider.get('header_name'):
+        inferred_auth = 'token'
+    else:
+        inferred_auth = 'token'
+    auth_type = getattr(args, 'auth_type', None) or inferred_auth
 
     default_url = provider.get('default_url', '')
     url = getattr(args, 'url', None) or default_url

@@ -124,7 +124,7 @@ class TestVerifySystemAuth:
                 path.unlink()
 
     def test_system_auth_no_provider_extension(self, tmp_path, monkeypatch):
-        """Verify with system auth reports error when no provider extension found."""
+        """Verify without provider extension reports error (convention inference fails gracefully)."""
         from _cred_verify import run_verify  # type: ignore[import-not-found]
         from _providers_core import CREDENTIALS_DIR, save_credential  # type: ignore[import-not-found]
 
@@ -148,14 +148,14 @@ class TestVerifySystemAuth:
             save_credential(skill, data, 'global')
 
             with monkeypatch.context() as m:
-                # No providers returned — extension not found
+                # No providers returned — no convention signals available
                 m.setattr('_cred_verify.load_declared_providers', lambda: [])
                 m.setattr('_cred_verify.output_toon', mock_output)
                 run_verify(MockArgs())
 
+            # Without provider extension, convention can't detect system auth,
+            # so it falls through to HTTP path and fails
             assert captured_output.get('status') == 'error'
-            assert 'system-auth' in captured_output.get('message', '').lower() or \
-                   'no provider' in captured_output.get('message', '').lower()
         finally:
             path = CREDENTIALS_DIR / f'{skill}.json'
             if path.exists():

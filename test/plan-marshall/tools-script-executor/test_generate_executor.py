@@ -450,7 +450,7 @@ def test_collect_script_dirs_includes_subdirectories():
         (scripts_dir / 'build' / '_build_shared.py').write_text('# shared')
         (scripts_dir / 'extension' / 'extension_base.py').write_text('# ext')
 
-        dirs = module._collect_script_dirs(base)
+        dirs = module.collect_script_dirs(base)
 
         # Should contain the parent scripts dir
         assert str(scripts_dir) in dirs, f'Expected {scripts_dir} in {dirs}'
@@ -471,7 +471,7 @@ def test_collect_script_dirs_skips_pycache():
         (scripts_dir / 'real_subdir').mkdir(parents=True)
         (scripts_dir / 'main.py').write_text('# main')
 
-        dirs = module._collect_script_dirs(base)
+        dirs = module.collect_script_dirs(base)
 
         pycache_str = str(scripts_dir / '__pycache__')
         real_str = str(scripts_dir / 'real_subdir')
@@ -491,7 +491,7 @@ def test_collect_script_dirs_skips_hidden_subdirectories():
         (scripts_dir / 'visible').mkdir(parents=True)
         (scripts_dir / 'main.py').write_text('# main')
 
-        dirs = module._collect_script_dirs(base)
+        dirs = module.collect_script_dirs(base)
 
         hidden_str = str(scripts_dir / '.hidden')
         visible_str = str(scripts_dir / 'visible')
@@ -500,7 +500,7 @@ def test_collect_script_dirs_skips_hidden_subdirectories():
 
 
 def test_build_pythonpath_includes_subdirectories():
-    """_build_pythonpath includes subdirectory paths in the PYTHONPATH string."""
+    """build_pythonpath includes subdirectory paths in the PYTHONPATH string."""
     module = load_module()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -511,7 +511,7 @@ def test_build_pythonpath_includes_subdirectories():
         (scripts_dir / 'build').mkdir(parents=True)
         (scripts_dir / 'build' / '_helper.py').write_text('# helper')
 
-        pythonpath = module._build_pythonpath(base)
+        pythonpath = module.build_pythonpath(base)
 
         assert str(scripts_dir) in pythonpath, f'Parent dir missing from PYTHONPATH: {pythonpath}'
         assert str(scripts_dir / 'build') in pythonpath, f'Subdir missing from PYTHONPATH: {pythonpath}'
@@ -529,7 +529,7 @@ def test_collect_script_dirs_versioned_includes_subdirectories():
         (scripts_dir / 'build').mkdir(parents=True)
         (scripts_dir / 'build' / '_build_shared.py').write_text('# shared')
 
-        dirs = module._collect_script_dirs(base)
+        dirs = module.collect_script_dirs(base)
 
         assert str(scripts_dir) in dirs, f'Expected versioned scripts dir in {dirs}'
         assert str(scripts_dir / 'build') in dirs, f'Expected versioned build subdir in {dirs}'
