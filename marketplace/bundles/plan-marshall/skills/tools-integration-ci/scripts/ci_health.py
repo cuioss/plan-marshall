@@ -143,47 +143,109 @@ def verify_tool(tool: str) -> dict:
     return {'installed': True, 'authenticated': authenticated, 'version': version}
 
 
-def is_gitlab_enterprise(url: str) -> bool:
-    """Check if URL matches GitLab enterprise patterns."""
-    gitlab_patterns = [
-        r'gitlab\.',
-        r'\.gitlab\.',
-    ]
-    url_lower = url.lower()
-    return any(re.search(pattern, url_lower) for pattern in gitlab_patterns)
+def _discover_detection_patterns() -> list[dict]:
+    """Build detection patterns from CI provider declarations.
+
+    Loads CI providers via find_by_category('ci') and collects their
+    'detection' dicts alongside the derived provider key.
+
+    Returns:
+        List of dicts with 'provider_key' and detection fields
+        (url_patterns, directory_markers, enterprise_patterns).
+    """
+    try:
+        from _list_providers import find_by_category  # type: ignore[import-not-found]
+
+        ci_providers = find_by_category('ci')
+        patterns: list[dict] = []
+
+        for p in ci_providers:
+            provider_key = _derive_provider_key(p.get('skill_name', ''))
+            detection = p.get('detection', {})
+            if not provider_key or not detection:
+                continue
+            patterns.append({
+                'provider_key': provider_key,
+                'url_patterns': detection.get('url_patterns', []),
+                'directory_markers': detection.get('directory_markers', []),
+                'enterprise_patterns': detection.get('enterprise_patterns', []),
+            })
+
+        if patterns:
+            return patterns
+    except (ImportError, Exception):
+        pass
+
+    return []
+
+
+# Detection patterns resolved at module load
+DETECTION_PATTERNS = _discover_detection_patterns()
+
+
+def _match_url(repo_url: str, patterns: list[dict]) -> dict | None:
+    """Match a repo URL against provider detection patterns.
+
+    Checks url_patterns first, then enterprise_patterns.
+
+    Returns:
+        Matching pattern dict, or None.
+    """
+    url_lower = repo_url.lower()
+    for p in patterns:
+        for url_pat in p['url_patterns']:
+            if re.search(url_pat, url_lower):
+                return p
+        for ent_pat in p.get('enterprise_patterns', []):
+            if re.search(ent_pat, url_lower):
+                return p
+    return None
+
+
+def _match_directory(check_path: Path, patterns: list[dict]) -> dict | None:
+    """Match directory markers against the filesystem.
+
+    Returns:
+        First matching pattern dict, or None.
+    """
+    for p in patterns:
+        for marker in p['directory_markers']:
+            if (check_path / marker).exists():
+                return p
+    return None
 
 
 def detect_provider(cwd: str | None = None) -> dict:
     """
     Detect CI provider from repository configuration.
 
+    Uses detection patterns declared by CI providers (via find_by_category).
+    No hardcoded provider knowledge — patterns come from *_provider.py files.
+
     Returns: {"provider": str, "repo_url": str | None, "confidence": str}
     """
+    check_path = Path(cwd) if cwd else Path.cwd()
+
     # Get remote URL
     returncode, stdout, _ = run_command(['git', 'remote', 'get-url', 'origin'], cwd=cwd)
     if returncode != 0:
-        # Check for provider-specific files as fallback
-        check_path = Path(cwd) if cwd else Path.cwd()
-        if (check_path / '.github').exists():
-            return {'provider': 'github', 'repo_url': None, 'confidence': 'medium'}
-        elif (check_path / '.gitlab-ci.yml').exists():
-            return {'provider': 'gitlab', 'repo_url': None, 'confidence': 'medium'}
+        # No remote URL — fall back to directory markers
+        match = _match_directory(check_path, DETECTION_PATTERNS)
+        if match:
+            return {'provider': match['provider_key'], 'repo_url': None, 'confidence': 'medium'}
         return {'provider': 'unknown', 'repo_url': None, 'confidence': 'none'}
 
     repo_url = stdout.strip()
 
-    # Check URL patterns
-    if 'github.com' in repo_url:
-        return {'provider': 'github', 'repo_url': repo_url, 'confidence': 'high'}
-    elif 'gitlab.com' in repo_url or is_gitlab_enterprise(repo_url):
-        return {'provider': 'gitlab', 'repo_url': repo_url, 'confidence': 'high'}
+    # Check URL patterns (including enterprise patterns)
+    match = _match_url(repo_url, DETECTION_PATTERNS)
+    if match:
+        return {'provider': match['provider_key'], 'repo_url': repo_url, 'confidence': 'high'}
 
-    # Check for provider-specific files
-    check_path = Path(cwd) if cwd else Path.cwd()
-    if (check_path / '.github').exists():
-        return {'provider': 'github', 'repo_url': repo_url, 'confidence': 'medium'}
-    elif (check_path / '.gitlab-ci.yml').exists():
-        return {'provider': 'gitlab', 'repo_url': repo_url, 'confidence': 'medium'}
+    # Fall back to directory markers
+    match = _match_directory(check_path, DETECTION_PATTERNS)
+    if match:
+        return {'provider': match['provider_key'], 'repo_url': repo_url, 'confidence': 'medium'}
 
     return {'provider': 'unknown', 'repo_url': repo_url, 'confidence': 'none'}
 

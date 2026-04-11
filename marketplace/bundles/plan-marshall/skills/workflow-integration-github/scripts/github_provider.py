@@ -21,5 +21,9 @@ def get_provider_declarations():
             'default_url': 'https://api.github.com',
             'description': 'GitHub CI provider via gh CLI — PRs, issues, CI status, reviews',
             'verify_command': 'gh auth status',
+            'detection': {
+                'url_patterns': [r'github\.com'],
+                'directory_markers': ['.github'],
+            },
         },
     ]

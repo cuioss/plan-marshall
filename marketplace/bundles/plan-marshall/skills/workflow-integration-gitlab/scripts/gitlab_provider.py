@@ -21,5 +21,10 @@ def get_provider_declarations():
             'default_url': 'https://gitlab.com',
             'description': 'GitLab CI provider via glab CLI — MRs, issues, CI status, reviews',
             'verify_command': 'glab auth status',
+            'detection': {
+                'url_patterns': [r'gitlab\.com'],
+                'directory_markers': ['.gitlab-ci.yml'],
+                'enterprise_patterns': [r'gitlab\.', r'\.gitlab\.'],
+            },
         },
     ]
