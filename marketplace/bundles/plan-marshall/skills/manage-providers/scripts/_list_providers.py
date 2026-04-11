@@ -128,9 +128,14 @@ def _validate_provider_selection(
         List of validation error strings. Empty list means valid.
     """
     selected_set = set(selected_names)
-    selected_providers = [
-        p for p in providers if p.get('skill_name', '') in selected_set
-    ]
+    # Deduplicate by skill_name (scan may find same provider via multiple PYTHONPATH entries)
+    seen_skills: set[str] = set()
+    selected_providers: list[dict[str, Any]] = []
+    for p in providers:
+        skill = p.get('skill_name', '')
+        if skill in selected_set and skill not in seen_skills:
+            seen_skills.add(skill)
+            selected_providers.append(p)
 
     # Group by category
     by_category: dict[str, list[str]] = {}
@@ -190,10 +195,16 @@ def run_discover_and_persist(args) -> int:
         })
         return 0
 
-    # Activation mode: persist only selected providers
+    # Activation mode: persist only selected providers (deduplicate by skill_name)
     selected_set = set(selected_names)
     discovered_names = {p.get('skill_name', '') for p in providers}
-    activated = [p for p in providers if p.get('skill_name', '') in selected_set]
+    activated_seen: set[str] = set()
+    activated: list[dict[str, Any]] = []
+    for p in providers:
+        skill = p.get('skill_name', '')
+        if skill in selected_set and skill not in activated_seen:
+            activated_seen.add(skill)
+            activated.append(p)
     unknown = [n for n in selected_names if n not in discovered_names]
 
     # Validate category cardinality before persisting

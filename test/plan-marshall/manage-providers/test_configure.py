@@ -54,32 +54,49 @@ class TestListProviders:
     """Tests for list-providers subcommand.
 
     list-providers reads from marshal.json's providers key (populated by
-    discover-and-persist). Tests run discover-and-persist first to populate.
+    discover-and-persist). Tests use isolated fixture dirs via tmp_path.
     """
 
-    def test_list_providers_returns_success(self):
+    def test_list_providers_returns_success(self, tmp_path, monkeypatch):
         """list-providers returns success with providers array."""
-        # Populate providers in marshal.json first (activate all discovered)
-        discover = run_script(SCRIPT_PATH, 'discover-and-persist')
-        if 'workflow-integration-sonar' in discover.stdout:
-            run_script(SCRIPT_PATH, 'discover-and-persist',
-                       '--providers', 'plan-marshall:workflow-integration-sonar')
-        result = run_script(SCRIPT_PATH, 'list-providers')
+        import json as _json
+
+        monkeypatch.chdir(tmp_path)
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        (plan_dir / 'marshal.json').write_text(_json.dumps({'skill_domains': {}}))
+
+        # Activate git provider (minimum valid selection)
+        persist = run_script(SCRIPT_PATH, 'discover-and-persist',
+                             '--providers', 'plan-marshall:workflow-integration-git',
+                             cwd=tmp_path)
+        assert persist.returncode == 0, f'Persist failed: {persist.stdout}'
+        result = run_script(SCRIPT_PATH, 'list-providers', cwd=tmp_path)
         assert result.returncode == 0
         assert 'success' in result.stdout
         assert 'providers' in result.stdout
 
-    def test_list_providers_discovers_sonar(self):
-        """list-providers discovers the sonar credential extension."""
-        # Discover providers first (discovery-only mode)
-        discover = run_script(SCRIPT_PATH, 'discover-and-persist')
+    def test_list_providers_discovers_sonar(self, tmp_path, monkeypatch):
+        """Sonar provider is discoverable and persistable via full roundtrip."""
+        import json as _json
+
+        monkeypatch.chdir(tmp_path)
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        (plan_dir / 'marshal.json').write_text(_json.dumps({'skill_domains': {}}))
+
+        # Discovery-only mode: scans PYTHONPATH for *_provider.py files
+        discover = run_script(SCRIPT_PATH, 'discover-and-persist', cwd=tmp_path)
         assert discover.returncode == 0
-        # Sonar provider must be discoverable
-        assert 'workflow-integration-sonar' in discover.stdout
+        assert 'workflow-integration-sonar' in discover.stdout, (
+            f'Sonar not discovered. Found: {discover.stdout}'
+        )
         # Activate and persist (must include version-control provider for validation)
-        run_script(SCRIPT_PATH, 'discover-and-persist',
-                   '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar')
-        result = run_script(SCRIPT_PATH, 'list-providers')
+        persist = run_script(SCRIPT_PATH, 'discover-and-persist',
+                             '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar',
+                             cwd=tmp_path)
+        assert persist.returncode == 0, f'Persist failed: {persist.stdout}'
+        result = run_script(SCRIPT_PATH, 'list-providers', cwd=tmp_path)
         assert result.returncode == 0
         assert 'workflow-integration-sonar' in result.stdout
 
