@@ -11,13 +11,22 @@ import json
 from argparse import Namespace
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+from unittest.mock import patch
+
 from conftest import PlanContext, get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'tools-integration-ci', 'ci_health.py')
 
 # Tier 2 direct imports
-from ci_health import cmd_detect, cmd_status, cmd_verify  # type: ignore[import-not-found]  # noqa: E402
+from ci_health import (  # type: ignore[import-not-found]  # noqa: E402
+    _match_directory,
+    _match_url,
+    cmd_detect,
+    cmd_status,
+    cmd_verify,
+    detect_provider,
+)
 
 # =============================================================================
 # Tier 2: Direct import tests for cmd_detect
@@ -82,6 +91,138 @@ def test_status_returns_comprehensive_output():
     assert 'tools' in result
     assert 'overall' in result
     assert result['overall'] in ('healthy', 'degraded', 'unknown')
+
+
+# =============================================================================
+# Tier 2: Declarative detection pattern tests
+# =============================================================================
+
+GITHUB_PATTERN = {
+    'provider_key': 'github',
+    'url_patterns': [r'github\.com'],
+    'directory_markers': ['.github'],
+    'enterprise_patterns': [],
+}
+
+GITLAB_PATTERN = {
+    'provider_key': 'gitlab',
+    'url_patterns': [r'gitlab\.com'],
+    'directory_markers': ['.gitlab-ci.yml'],
+    'enterprise_patterns': [r'gitlab\.', r'\.gitlab\.'],
+}
+
+TEST_PATTERNS = [GITHUB_PATTERN, GITLAB_PATTERN]
+
+
+def test_match_url_github():
+    """Test URL matching for github.com."""
+    match = _match_url('https://github.com/org/repo.git', TEST_PATTERNS)
+    assert match is not None
+    assert match['provider_key'] == 'github'
+
+
+def test_match_url_gitlab():
+    """Test URL matching for gitlab.com."""
+    match = _match_url('https://gitlab.com/org/repo.git', TEST_PATTERNS)
+    assert match is not None
+    assert match['provider_key'] == 'gitlab'
+
+
+def test_match_url_gitlab_enterprise():
+    """Test URL matching for GitLab enterprise (self-hosted)."""
+    match = _match_url('https://gitlab.example.com/org/repo.git', TEST_PATTERNS)
+    assert match is not None
+    assert match['provider_key'] == 'gitlab'
+
+
+def test_match_url_unknown():
+    """Test URL matching returns None for unknown providers."""
+    match = _match_url('https://bitbucket.org/org/repo.git', TEST_PATTERNS)
+    assert match is None
+
+
+def test_match_directory_github(tmp_path):
+    """Test directory marker matching for .github."""
+    (tmp_path / '.github').mkdir()
+    match = _match_directory(tmp_path, TEST_PATTERNS)
+    assert match is not None
+    assert match['provider_key'] == 'github'
+
+
+def test_match_directory_gitlab(tmp_path):
+    """Test directory marker matching for .gitlab-ci.yml."""
+    (tmp_path / '.gitlab-ci.yml').touch()
+    match = _match_directory(tmp_path, TEST_PATTERNS)
+    assert match is not None
+    assert match['provider_key'] == 'gitlab'
+
+
+def test_match_directory_unknown(tmp_path):
+    """Test directory marker returns None when no markers found."""
+    match = _match_directory(tmp_path, TEST_PATTERNS)
+    assert match is None
+
+
+@patch('ci_health.DETECTION_PATTERNS', TEST_PATTERNS)
+@patch('ci_health.run_command')
+def test_detect_provider_github_url(mock_run):
+    """Test detect_provider matches GitHub via URL patterns."""
+    mock_run.return_value = (0, 'https://github.com/org/repo.git\n', '')
+    result = detect_provider()
+    assert result['provider'] == 'github'
+    assert result['confidence'] == 'high'
+
+
+@patch('ci_health.DETECTION_PATTERNS', TEST_PATTERNS)
+@patch('ci_health.run_command')
+def test_detect_provider_gitlab_enterprise_url(mock_run):
+    """Test detect_provider matches GitLab enterprise via enterprise patterns."""
+    mock_run.return_value = (0, 'https://gitlab.mycompany.com/org/repo.git\n', '')
+    result = detect_provider()
+    assert result['provider'] == 'gitlab'
+    assert result['confidence'] == 'high'
+
+
+@patch('ci_health.DETECTION_PATTERNS', TEST_PATTERNS)
+@patch('ci_health.run_command')
+def test_detect_provider_directory_fallback(mock_run, tmp_path):
+    """Test detect_provider falls back to directory markers when URL unknown."""
+    mock_run.return_value = (0, 'https://unknown.example.com/repo.git\n', '')
+    (tmp_path / '.github').mkdir()
+    result = detect_provider(cwd=str(tmp_path))
+    assert result['provider'] == 'github'
+    assert result['confidence'] == 'medium'
+
+
+@patch('ci_health.DETECTION_PATTERNS', TEST_PATTERNS)
+@patch('ci_health.run_command')
+def test_detect_provider_no_remote_with_markers(mock_run, tmp_path):
+    """Test detect_provider uses directory markers when no git remote."""
+    mock_run.return_value = (1, '', 'fatal: not a git repository')
+    (tmp_path / '.gitlab-ci.yml').touch()
+    result = detect_provider(cwd=str(tmp_path))
+    assert result['provider'] == 'gitlab'
+    assert result['confidence'] == 'medium'
+
+
+@patch('ci_health.DETECTION_PATTERNS', TEST_PATTERNS)
+@patch('ci_health.run_command')
+def test_detect_provider_unknown(mock_run, tmp_path):
+    """Test detect_provider returns unknown when nothing matches."""
+    mock_run.return_value = (0, 'https://bitbucket.org/org/repo.git\n', '')
+    result = detect_provider(cwd=str(tmp_path))
+    assert result['provider'] == 'unknown'
+    assert result['confidence'] == 'none'
+
+
+@patch('ci_health.DETECTION_PATTERNS', [])
+@patch('ci_health.run_command')
+def test_detect_provider_no_patterns(mock_run):
+    """Test detect_provider returns unknown when no patterns configured."""
+    mock_run.return_value = (0, 'https://github.com/org/repo.git\n', '')
+    result = detect_provider()
+    assert result['provider'] == 'unknown'
+    assert result['confidence'] == 'none'
 
 
 # =============================================================================
