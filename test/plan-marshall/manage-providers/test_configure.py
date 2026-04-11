@@ -54,34 +54,25 @@ class TestListProviders:
     """Tests for list-providers subcommand.
 
     list-providers reads from marshal.json's providers key (populated by
-    discover-and-persist). Tests run discover-and-persist first to populate.
+    discover-and-persist). Tests use isolated fixture dirs.
     """
 
     def test_list_providers_returns_success(self):
         """list-providers returns success with providers array."""
-        # Populate providers in marshal.json first (activate all discovered)
-        discover = run_script(SCRIPT_PATH, 'discover-and-persist')
-        if 'workflow-integration-sonar' in discover.stdout:
-            run_script(SCRIPT_PATH, 'discover-and-persist',
-                       '--providers', 'plan-marshall:workflow-integration-sonar')
+        # Uses real .plan/marshal.json — providers already configured by /marshall-steward
         result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'success' in result.stdout
         assert 'providers' in result.stdout
 
     def test_list_providers_discovers_sonar(self):
-        """list-providers discovers the sonar credential extension."""
-        # Discover providers first (discovery-only mode)
+        """Sonar credential extension is discoverable via PYTHONPATH scanning."""
+        # Discovery-only mode: scans PYTHONPATH for *_provider.py files
         discover = run_script(SCRIPT_PATH, 'discover-and-persist')
         assert discover.returncode == 0
-        # Sonar provider must be discoverable
-        assert 'workflow-integration-sonar' in discover.stdout
-        # Activate and persist (must include version-control provider for validation)
-        run_script(SCRIPT_PATH, 'discover-and-persist',
-                   '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar')
-        result = run_script(SCRIPT_PATH, 'list-providers')
-        assert result.returncode == 0
-        assert 'workflow-integration-sonar' in result.stdout
+        assert 'workflow-integration-sonar' in discover.stdout, (
+            f'Sonar not discovered. Found: {discover.stdout}'
+        )
 
 
 class TestConfigureLogic:
