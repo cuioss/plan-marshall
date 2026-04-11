@@ -1,6 +1,7 @@
 """Tests for marketplace_bundles shared module."""
 
 from pathlib import Path
+
 from marketplace_bundles import (
     build_pythonpath,
     collect_script_dirs,
