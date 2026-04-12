@@ -19,6 +19,13 @@ from file_ops import output_toon  # type: ignore[import-not-found]
 from marketplace_bundles import collect_script_dirs  # type: ignore[import-not-found]
 from marketplace_paths import get_base_path  # type: ignore[import-not-found]
 
+# Script-relative bundles path. Script lives at:
+#   marketplace/bundles/plan-marshall/skills/manage-providers/scripts/_list_providers.py
+# So the bundles directory is 5 levels up.
+_SCRIPT_DIR = Path(__file__).parent.resolve()
+_BUNDLES_CANDIDATE = _SCRIPT_DIR.parent.parent.parent.parent.parent
+_BUNDLES_FROM_SCRIPT: Path | None = _BUNDLES_CANDIDATE if _BUNDLES_CANDIDATE.name == 'bundles' and _BUNDLES_CANDIDATE.is_dir() else None
+
 
 def _scan_for_providers() -> list[dict[str, Any]]:
     """Scan marketplace bundle script directories for *_provider.py files.
@@ -31,7 +38,7 @@ def _scan_for_providers() -> list[dict[str, Any]]:
         List of provider declaration dicts.
     """
     providers: list[dict[str, Any]] = []
-    base_path = get_base_path()
+    base_path = get_base_path(script_bundles_dir=_BUNDLES_FROM_SCRIPT)
     script_dirs = collect_script_dirs(base_path)
 
     seen_paths: set[str] = set()

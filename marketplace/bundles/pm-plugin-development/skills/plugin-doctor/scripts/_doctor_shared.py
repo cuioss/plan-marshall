@@ -71,20 +71,34 @@ def ensure_report_dir(report_dir: Path) -> Path:
 
 
 def find_marketplace_root() -> Path | None:
-    """Find the marketplace/bundles directory.
+    """Find the marketplace root directory deterministically.
 
-    First checks cwd-based discovery (supports test fixtures),
-    then falls back to script-relative path (works regardless of cwd).
+    Discovery order (deterministic, not cwd-sensitive by default):
+
+    1. ``PM_MARKETPLACE_ROOT`` environment variable — explicit override used
+       by callers that cannot rely on script-relative resolution (tests with
+       fake marketplaces, CLI invocations against alternate trees).
+    2. Script-relative resolution — walks up from ``__file__`` to the
+       ancestor ``marketplace`` directory. This is the canonical path when
+       the script lives inside a marketplace checkout.
+    3. cwd fallback — only reached when the script is executed from outside
+       a marketplace source tree (e.g. installed plugin cache). Kept last
+       so production behavior does not depend on the caller's cwd.
     """
-    # First try cwd-based discovery (allows tests to use fixture directories)
+    override = os.environ.get('PM_MARKETPLACE_ROOT')
+    if override:
+        override_path = Path(override)
+        if override_path.is_dir():
+            return override_path
+    # Script-relative path is the canonical source-of-truth discovery.
+    if _BUNDLES_FROM_SCRIPT.is_dir():
+        return _BUNDLES_FROM_SCRIPT
+    # Last-resort cwd fallback for out-of-tree execution (plugin cache).
     cwd = Path.cwd()
     if (cwd / MARKETPLACE_BUNDLES_PATH).is_dir():
         return cwd / MARKETPLACE_BUNDLES_PATH
     if (cwd.parent / MARKETPLACE_BUNDLES_PATH).is_dir():
         return cwd.parent / MARKETPLACE_BUNDLES_PATH
-    # Fallback to script-relative path (works regardless of cwd)
-    if _BUNDLES_FROM_SCRIPT.is_dir():
-        return _BUNDLES_FROM_SCRIPT
     return None
 
 

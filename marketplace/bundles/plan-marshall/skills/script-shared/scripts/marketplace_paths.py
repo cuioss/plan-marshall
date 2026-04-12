@@ -36,22 +36,26 @@ def safe_relative_path(path: Path) -> str:
 
 
 def find_marketplace_path(script_bundles_dir: Path | None = None) -> Path | None:
-    """Find marketplace/bundles directory relative to cwd or script.
+    """Find marketplace/bundles directory.
 
-    First checks cwd-based discovery (supports test fixtures),
-    then falls back to script-relative path (works regardless of cwd).
+    When ``script_bundles_dir`` is provided, it is used directly — the caller
+    has resolved the path from ``__file__`` (typically 5 levels up from the
+    script) so it is correct regardless of the current working directory.
+
+    When ``script_bundles_dir`` is ``None`` (e.g. the script lives outside
+    the marketplace source tree, such as when executed from the plugin
+    cache), fall back to cwd-based discovery.
 
     Args:
-        script_bundles_dir: Optional path resolved from script location
-                           (typically 5 levels up from script file).
-                           If None, only cwd-based discovery is used.
+        script_bundles_dir: Script-relative bundles path resolved from
+                            ``__file__``. Preferred when available.
     """
+    if script_bundles_dir and script_bundles_dir.is_dir():
+        return script_bundles_dir
     if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
         return Path.cwd() / MARKETPLACE_BUNDLES_PATH
     if (Path.cwd().parent / MARKETPLACE_BUNDLES_PATH).is_dir():
         return Path.cwd().parent / MARKETPLACE_BUNDLES_PATH
-    if script_bundles_dir and script_bundles_dir.is_dir():
-        return script_bundles_dir
     return None
 
 

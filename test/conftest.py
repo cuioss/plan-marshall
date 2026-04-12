@@ -171,7 +171,12 @@ class ScriptResult:
 
 
 def run_script(
-    script_path: str | Path, *args: str, input_data: str | None = None, cwd: str | Path | None = None, timeout: int = 30
+    script_path: str | Path,
+    *args: str,
+    input_data: str | None = None,
+    cwd: str | Path | None = None,
+    timeout: int = 30,
+    env_overrides: dict[str, str] | None = None,
 ) -> ScriptResult:
     """
     Run a Python script and capture its output.
@@ -197,6 +202,9 @@ def run_script(
     if 'PYTHONPATH' in env:
         pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
     env['PYTHONPATH'] = pythonpath
+
+    if env_overrides:
+        env.update(env_overrides)
 
     result = subprocess.run(
         [sys.executable, str(script_path)] + list(args),
