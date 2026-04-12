@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for _list_providers.py module.
 
-Covers discover-and-persist (PYTHONPATH scanning + marshal.json persistence)
+Covers discover-and-persist (bundle script directory scanning + marshal.json persistence)
 and list-providers (reading from marshal.json).
 
 Tier 2 (direct import) tests.
@@ -30,7 +30,7 @@ def _load_module(name, filename):
 
 
 _list_providers = _load_module('_list_providers_test', str(_SCRIPTS_DIR / '_list_providers.py'))
-_scan_pythonpath_for_providers = _list_providers._scan_pythonpath_for_providers
+_scan_for_providers = _list_providers._scan_for_providers
 _load_provider_module = _list_providers._load_provider_module
 run_discover_and_persist = _list_providers.run_discover_and_persist
 run_list_providers = _list_providers.run_list_providers
@@ -42,45 +42,49 @@ _validate_provider_selection = _list_providers._validate_provider_selection
 
 
 # =============================================================================
-# _scan_pythonpath_for_providers Tests
+# _scan_for_providers Tests
 # =============================================================================
 
 
-class TestScanPythonpathForProviders:
-    """Tests for _scan_pythonpath_for_providers()."""
+def _mock_collect_and_base(monkeypatch, dirs):
+    """Mock collect_script_dirs and get_base_path on the loaded module.
 
-    def test_returns_empty_when_pythonpath_empty(self, monkeypatch):
-        """Returns empty list when PYTHONPATH is empty."""
-        monkeypatch.setenv('PYTHONPATH', '')
-        result = _scan_pythonpath_for_providers()
-        assert result == []
+    Args:
+        monkeypatch: pytest monkeypatch fixture
+        dirs: list of directory path strings to return from collect_script_dirs
+    """
+    monkeypatch.setattr(_list_providers, 'get_base_path', lambda: Path('/fake/base'))
+    monkeypatch.setattr(_list_providers, 'collect_script_dirs', lambda _base: dirs)
 
-    def test_returns_empty_when_pythonpath_unset(self, monkeypatch):
-        """Returns empty list when PYTHONPATH is not set."""
-        monkeypatch.delenv('PYTHONPATH', raising=False)
-        result = _scan_pythonpath_for_providers()
+
+class TestScanForProviders:
+    """Tests for _scan_for_providers()."""
+
+    def test_returns_empty_when_no_script_dirs(self, monkeypatch):
+        """Returns empty list when collect_script_dirs returns empty."""
+        _mock_collect_and_base(monkeypatch, [])
+        result = _scan_for_providers()
         assert result == []
 
     def test_discovers_provider_files(self, tmp_path, monkeypatch):
-        """Finds *_provider.py files in PYTHONPATH directories."""
+        """Finds *_provider.py files in script directories."""
         provider_dir = tmp_path / 'providers'
         provider_dir.mkdir()
-        # Create a valid provider module
         provider_file = provider_dir / 'test_provider.py'
         provider_file.write_text(
             'def get_provider_declarations():\n'
             '    return [{"skill_name": "plan-marshall:workflow-integration-git", "category": "version-control"}]\n'
         )
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
-        result = _scan_pythonpath_for_providers()
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
+        result = _scan_for_providers()
         assert len(result) == 1
         assert result[0]['skill_name'] == 'plan-marshall:workflow-integration-git'
 
     def test_skips_nonexistent_directories(self, tmp_path, monkeypatch):
         """Skips directories that do not exist."""
         nonexistent = str(tmp_path / 'does-not-exist')
-        monkeypatch.setenv('PYTHONPATH', nonexistent)
-        result = _scan_pythonpath_for_providers()
+        _mock_collect_and_base(monkeypatch, [nonexistent])
+        result = _scan_for_providers()
         assert result == []
 
     def test_deduplicates_by_resolved_path(self, tmp_path, monkeypatch):
@@ -92,9 +96,8 @@ class TestScanPythonpathForProviders:
             'def get_provider_declarations():\n'
             '    return [{"skill_name": "dup-skill"}]\n'
         )
-        # List same directory twice
-        monkeypatch.setenv('PYTHONPATH', f'{provider_dir}{__import__("os").pathsep}{provider_dir}')
-        result = _scan_pythonpath_for_providers()
+        _mock_collect_and_base(monkeypatch, [str(provider_dir), str(provider_dir)])
+        result = _scan_for_providers()
         assert len(result) == 1
 
     def test_skips_modules_without_get_provider_declarations(self, tmp_path, monkeypatch):
@@ -102,8 +105,8 @@ class TestScanPythonpathForProviders:
         provider_dir = tmp_path / 'providers'
         provider_dir.mkdir()
         (provider_dir / 'empty_provider.py').write_text('x = 1\n')
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
-        result = _scan_pythonpath_for_providers()
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
+        result = _scan_for_providers()
         assert result == []
 
     def test_skips_modules_that_raise_on_import(self, tmp_path, monkeypatch):
@@ -111,12 +114,12 @@ class TestScanPythonpathForProviders:
         provider_dir = tmp_path / 'providers'
         provider_dir.mkdir()
         (provider_dir / 'broken_provider.py').write_text('raise RuntimeError("boom")\n')
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
-        result = _scan_pythonpath_for_providers()
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
+        result = _scan_for_providers()
         assert result == []
 
     def test_collects_from_multiple_directories(self, tmp_path, monkeypatch):
-        """Collects providers from multiple PYTHONPATH directories."""
+        """Collects providers from multiple script directories."""
         dir_a = tmp_path / 'a'
         dir_b = tmp_path / 'b'
         dir_a.mkdir()
@@ -129,8 +132,8 @@ class TestScanPythonpathForProviders:
             'def get_provider_declarations():\n'
             '    return [{"skill_name": "beta"}]\n'
         )
-        monkeypatch.setenv('PYTHONPATH', f'{dir_a}{__import__("os").pathsep}{dir_b}')
-        result = _scan_pythonpath_for_providers()
+        _mock_collect_and_base(monkeypatch, [str(dir_a), str(dir_b)])
+        result = _scan_for_providers()
         names = [p['skill_name'] for p in result]
         assert 'alpha' in names
         assert 'beta' in names
@@ -312,7 +315,7 @@ class TestRunDiscoverAndPersist:
             '        "default_url": "https://github.com",\n'
             '    }]\n'
         )
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
 
         exit_code = run_discover_and_persist(Namespace(providers='plan-marshall:workflow-integration-git'))
         assert exit_code == 0
@@ -367,7 +370,7 @@ class TestRunDiscoverAndPersist:
             '        "extra_fields": [{"key": "project_key", "required": True}],\n'
             '    }]\n'
         )
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
 
         exit_code = run_discover_and_persist(
             Namespace(providers='plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar'),
@@ -399,7 +402,7 @@ class TestRunDiscoverAndPersist:
         _config_core.PLAN_BASE_DIR = tmp_path
         _config_core.MARSHAL_PATH = marshal_path
 
-        monkeypatch.setenv('PYTHONPATH', '')
+        _mock_collect_and_base(monkeypatch, [])
 
         exit_code = run_discover_and_persist(Namespace(providers='nonexistent'))
         assert exit_code == 1
@@ -426,7 +429,7 @@ class TestRunDiscoverAndPersist:
             'def get_provider_declarations():\n'
             '    return [{"skill_name": "plan-marshall:workflow-integration-github", "category": "ci"}]\n'
         )
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
 
         exit_code = run_discover_and_persist(Namespace(providers='plan-marshall:workflow-integration-github'))
         assert exit_code == 1
@@ -449,7 +452,7 @@ class TestRunDiscoverAndPersist:
 
         _config_core.PLAN_BASE_DIR = tmp_path
         _config_core.MARSHAL_PATH = marshal_path
-        monkeypatch.setenv('PYTHONPATH', '')
+        _mock_collect_and_base(monkeypatch, [])
 
         run_discover_and_persist(Namespace(providers='nonexistent'))
 
@@ -633,10 +636,10 @@ class TestFindByCategory:
 
 
 class TestFindFullProvider:
-    """Tests for PYTHONPATH-based full provider lookup."""
+    """Tests for bundle-script-directory-based full provider lookup."""
 
     def test_finds_provider_with_all_fields(self, tmp_path, monkeypatch):
-        """find_full_provider returns complete declaration from PYTHONPATH."""
+        """find_full_provider returns complete declaration from bundle script dirs."""
         provider_dir = tmp_path / 'ext'
         provider_dir.mkdir()
         (provider_dir / 'test_provider.py').write_text(
@@ -650,7 +653,7 @@ class TestFindFullProvider:
             '        "header_name": "X-Auth",\n'
             '    }]\n'
         )
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
 
         result = find_full_provider('test:my-provider')
         assert result is not None
@@ -663,12 +666,12 @@ class TestFindFullProvider:
         """find_full_provider returns None when skill not found."""
         provider_dir = tmp_path / 'ext'
         provider_dir.mkdir()
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
 
         result = find_full_provider('nonexistent:provider')
         assert result is None
 
-    def test_finds_by_category_from_pythonpath(self, tmp_path, monkeypatch):
+    def test_finds_by_category_from_script_dirs(self, tmp_path, monkeypatch):
         """find_full_providers_by_category returns full declarations filtered by category."""
         provider_dir = tmp_path / 'ext'
         provider_dir.mkdir()
@@ -679,7 +682,7 @@ class TestFindFullProvider:
             '        {"skill_name": "test:github", "category": "ci", "detection": {"url_patterns": ["github"]}},\n'
             '    ]\n'
         )
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+        _mock_collect_and_base(monkeypatch, [str(provider_dir)])
 
         result = find_full_providers_by_category('ci')
         assert len(result) == 1

@@ -61,17 +61,16 @@ class TestListProviders:
         """list-providers returns success with providers array."""
         import json as _json
 
-        monkeypatch.chdir(tmp_path)
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         (plan_dir / 'marshal.json').write_text(_json.dumps({'skill_domains': {}}))
+        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
         # Activate git provider (minimum valid selection)
         persist = run_script(SCRIPT_PATH, 'discover-and-persist',
-                             '--providers', 'plan-marshall:workflow-integration-git',
-                             cwd=tmp_path)
+                             '--providers', 'plan-marshall:workflow-integration-git')
         assert persist.returncode == 0, f'Persist failed: {persist.stdout}'
-        result = run_script(SCRIPT_PATH, 'list-providers', cwd=tmp_path)
+        result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'success' in result.stdout
         assert 'providers' in result.stdout
@@ -80,23 +79,22 @@ class TestListProviders:
         """Sonar provider is discoverable and persistable via full roundtrip."""
         import json as _json
 
-        monkeypatch.chdir(tmp_path)
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         (plan_dir / 'marshal.json').write_text(_json.dumps({'skill_domains': {}}))
+        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-        # Discovery-only mode: scans PYTHONPATH for *_provider.py files
-        discover = run_script(SCRIPT_PATH, 'discover-and-persist', cwd=tmp_path)
+        # Discovery-only mode: scans bundle script directories for *_provider.py files
+        discover = run_script(SCRIPT_PATH, 'discover-and-persist')
         assert discover.returncode == 0
         assert 'workflow-integration-sonar' in discover.stdout, (
             f'Sonar not discovered. Found: {discover.stdout}'
         )
         # Activate and persist (must include version-control provider for validation)
         persist = run_script(SCRIPT_PATH, 'discover-and-persist',
-                             '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar',
-                             cwd=tmp_path)
+                             '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar')
         assert persist.returncode == 0, f'Persist failed: {persist.stdout}'
-        result = run_script(SCRIPT_PATH, 'list-providers', cwd=tmp_path)
+        result = run_script(SCRIPT_PATH, 'list-providers')
         assert result.returncode == 0
         assert 'workflow-integration-sonar' in result.stdout
 
@@ -303,11 +301,12 @@ class TestConfigureMarshalJsonSeparation:
             read_provider_config,
         )
 
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
         # Create marshal.json with sonar provider declaration
         _marshal = {'providers': [_SONAR_PROVIDER]}
-        (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
+        (plan_dir / 'marshal.json').write_text(_json.dumps(_marshal))
+        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
@@ -315,7 +314,6 @@ class TestConfigureMarshalJsonSeparation:
             '--skill', skill,
             '--auth-type', 'token',
             '--url', 'https://sonarcloud.io',
-            cwd=tmp_path,
         )
         try:
             assert result.returncode == 0
@@ -344,10 +342,11 @@ class TestConfigureMarshalJsonSeparation:
             read_provider_config,
         )
 
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
         _marshal = {'providers': [_SONAR_PROVIDER]}
-        (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
+        (plan_dir / 'marshal.json').write_text(_json.dumps(_marshal))
+        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
@@ -355,7 +354,6 @@ class TestConfigureMarshalJsonSeparation:
             '--skill', skill,
             '--auth-type', 'token',
             '--extra', 'organization=my-org', 'project_key=my-project',
-            cwd=tmp_path,
         )
         try:
             assert result.returncode == 0
