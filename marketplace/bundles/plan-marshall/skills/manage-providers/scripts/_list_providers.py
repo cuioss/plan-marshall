@@ -10,6 +10,7 @@ No filesystem scanning at runtime.
 """
 
 import importlib.util
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -20,19 +21,34 @@ from marketplace_bundles import collect_script_dirs  # type: ignore[import-not-f
 from marketplace_paths import get_base_path  # type: ignore[import-not-found]
 
 
+def _resolve_script_dirs() -> list[str]:
+    """Resolve script directories for provider discovery.
+
+    Primary: use collect_script_dirs() from marketplace_bundles infrastructure.
+    Fallback: use PYTHONPATH (for subprocess/CI contexts where cwd is not
+    the marketplace repo root).
+    """
+    try:
+        base_path = get_base_path()
+        return collect_script_dirs(base_path)
+    except FileNotFoundError:
+        pythonpath = os.environ.get('PYTHONPATH', '')
+        return pythonpath.split(os.pathsep) if pythonpath else []
+
+
 def _scan_for_providers() -> list[dict[str, Any]]:
     """Scan marketplace bundle script directories for *_provider.py files.
 
     Uses collect_script_dirs() from marketplace_bundles to discover all
     skill script directories, then loads each *_provider.py module and
-    calls get_provider_declarations().
+    calls get_provider_declarations(). Falls back to PYTHONPATH when
+    marketplace bundles directory is not available.
 
     Returns:
         List of provider declaration dicts.
     """
     providers: list[dict[str, Any]] = []
-    base_path = get_base_path()
-    script_dirs = collect_script_dirs(base_path)
+    script_dirs = _resolve_script_dirs()
 
     seen_paths: set[str] = set()
 
