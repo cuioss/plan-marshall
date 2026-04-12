@@ -6,6 +6,7 @@ The user edits the file directly to add real secrets.
 No interactive input, no secrets through the LLM.
 """
 
+from _list_providers import find_provider_with_details  # type: ignore[import-not-found]
 from _providers_core import (
     SECRET_PLACEHOLDERS,
     check_credential_completeness,
@@ -32,7 +33,7 @@ def run_configure(args) -> int:
         output_toon({'status': 'error', 'message': '--skill is required'})
         return 0
 
-    provider = _find_provider(providers, args.skill)
+    provider = find_provider_with_details(args.skill)
     if not provider:
         output_toon({
             'status': 'error',

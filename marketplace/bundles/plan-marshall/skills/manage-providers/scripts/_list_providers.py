@@ -18,14 +18,6 @@ from typing import Any
 from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
 
-# Optional fields persisted from provider declarations to marshal.json.
-# Used by _build_persisted_entry() and run_list_providers() to keep
-# persistence and output in sync.
-_OPTIONAL_PERSISTED_FIELDS = (
-    'detection', 'verify_endpoint', 'verify_method',
-    'header_name', 'header_value_template', 'extra_fields',
-)
-
 
 def _scan_pythonpath_for_providers() -> list[dict[str, Any]]:
     """Scan PYTHONPATH directories for *_provider.py files.
@@ -101,26 +93,24 @@ def _get_git_remote_url() -> str:
 
 
 def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
-    """Build a provider entry for marshal.json persistence.
+    """Build a minimal provider entry for marshal.json persistence.
 
-    Persists all fields needed by runtime consumers: core identity,
-    URL, detection patterns, and HTTP-auth configuration.
+    Persists only project activation config: skill_name, category,
+    verify_command, url, description. Implementation details
+    (detection, verify_endpoint, header_name, extra_fields) are NOT
+    persisted — consumers load those from *_provider.py at runtime
+    via find_full_provider().
+
     Maps default_url to url. For version-control providers without
     default_url, resolves url from git remote origin.
     """
-    # Core fields
     entry = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
-    # URL mapping
     if p.get('default_url'):
         entry['url'] = p['default_url']
     elif p.get('category') == 'version-control':
         remote_url = _get_git_remote_url()
         if remote_url:
             entry['url'] = remote_url
-    # Optional structured fields (persisted when present)
-    for key in _OPTIONAL_PERSISTED_FIELDS:
-        if p.get(key):
-            entry[key] = p[key]
     return entry
 
 
@@ -265,6 +255,58 @@ def find_by_category(category: str) -> list[dict[str, Any]]:
     return [p for p in config.get('providers', []) if p.get('category') == category]
 
 
+def find_provider_with_details(skill_name: str) -> dict[str, Any] | None:
+    """Find provider with full implementation details.
+
+    Tries PYTHONPATH first (complete declaration), falls back to
+    marshal.json (minimal activation config).
+    """
+    full = find_full_provider(skill_name)
+    if full:
+        return full
+    # Fallback to marshal.json
+    config = load_config()
+    providers: list[dict[str, Any]] = config.get('providers', [])
+    for p in providers:
+        if p.get('skill_name') == skill_name:
+            return p
+    return None
+
+
+def find_full_provider(skill_name: str) -> dict[str, Any] | None:
+    """Find full provider declaration by skill_name from PYTHONPATH.
+
+    Scans *_provider.py modules on PYTHONPATH for the complete
+    declaration including implementation details (detection, verify_endpoint,
+    header_name, extra_fields) that are not persisted to marshal.json.
+
+    Args:
+        skill_name: Bundle-prefixed skill name (e.g., 'plan-marshall:workflow-integration-github')
+
+    Returns:
+        Full provider declaration dict, or None if not found.
+    """
+    for p in _scan_pythonpath_for_providers():
+        if p.get('skill_name') == skill_name:
+            return p
+    return None
+
+
+def find_full_providers_by_category(category: str) -> list[dict[str, Any]]:
+    """Find full provider declarations by category from PYTHONPATH.
+
+    Like find_by_category() but returns complete declarations from
+    *_provider.py modules instead of minimal entries from marshal.json.
+
+    Args:
+        category: Category to filter by (e.g., 'ci', 'version-control')
+
+    Returns:
+        List of full provider declaration dicts matching the category.
+    """
+    return [p for p in _scan_pythonpath_for_providers() if p.get('category') == category]
+
+
 def run_find_by_category(args) -> int:
     """Execute the find-by-category subcommand."""
     require_initialized()
@@ -289,19 +331,16 @@ def run_list_providers(args) -> int:
     config = load_config()
     providers: list[dict[str, Any]] = config.get('providers', [])
 
-    formatted = []
-    for p in providers:
-        entry: dict[str, Any] = {
+    formatted = [
+        {
             'skill_name': p.get('skill_name', ''),
             'category': p.get('category', ''),
             'verify_command': p.get('verify_command', ''),
             'url': p.get('url', ''),
             'description': p.get('description', ''),
         }
-        for key in _OPTIONAL_PERSISTED_FIELDS:
-            if p.get(key):
-                entry[key] = p[key]
-        formatted.append(entry)
+        for p in providers
+    ]
 
     output_toon({
         'status': 'success',

@@ -4,10 +4,10 @@ Verify credential connectivity.
 Makes a test request using RestClient and updates verified_at metadata.
 """
 
+from _list_providers import find_provider_with_details  # type: ignore[import-not-found]
 from _providers_core import (
     get_authenticated_client,
     get_project_name,
-    load_declared_providers,
     update_verified_at,
     verify_system_auth,
 )
@@ -23,13 +23,8 @@ def run_verify(args) -> int:
         output_toon({'status': 'error', 'message': '--skill is required for verify'})
         return 0
 
-    # Find provider for verify endpoint
-    providers = load_declared_providers()
-    provider = None
-    for p in providers:
-        if p.get('skill_name') == skill:
-            provider = p
-            break
+    # Find provider with full details (PYTHONPATH first, marshal.json fallback)
+    provider = find_provider_with_details(skill)
 
     # Infer auth type from convention (no explicit auth_type field)
     project_name = get_project_name() if scope == 'project' else None
