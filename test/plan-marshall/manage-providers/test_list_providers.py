@@ -330,6 +330,54 @@ class TestRunDiscoverAndPersist:
         assert 'auth_type' not in persisted
         assert 'default_url' not in persisted
 
+    def test_persists_detection_patterns(self, tmp_path, monkeypatch):
+        """Detection patterns are persisted to marshal.json for runtime use."""
+        import _config_core
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        marshal_path = plan_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps({'skill_domains': {}}))
+
+        _config_core.PLAN_BASE_DIR = tmp_path
+        _config_core.MARSHAL_PATH = marshal_path
+
+        provider_dir = tmp_path / 'ext'
+        provider_dir.mkdir()
+        (provider_dir / 'sample_provider.py').write_text(
+            'def get_provider_declarations():\n'
+            '    return [{\n'
+            '        "skill_name": "plan-marshall:workflow-integration-git",\n'
+            '        "category": "version-control",\n'
+            '        "verify_command": "git --version",\n'
+            '        "description": "Git version control",\n'
+            '        "default_url": "https://github.com",\n'
+            '    }, {\n'
+            '        "skill_name": "plan-marshall:workflow-integration-github",\n'
+            '        "category": "ci",\n'
+            '        "verify_command": "gh auth status",\n'
+            '        "description": "GitHub CI",\n'
+            '        "default_url": "https://api.github.com",\n'
+            '        "detection": {\n'
+            '            "url_patterns": ["github\\\\.com"],\n'
+            '            "directory_markers": [".github"],\n'
+            '        },\n'
+            '    }]\n'
+        )
+        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+
+        exit_code = run_discover_and_persist(
+            Namespace(providers='plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-github'),
+        )
+        assert exit_code == 0
+
+        config = json.loads(marshal_path.read_text())
+        ci_providers = [p for p in config['providers'] if p['category'] == 'ci']
+        assert len(ci_providers) == 1
+        assert 'detection' in ci_providers[0]
+        assert ci_providers[0]['detection']['url_patterns'] == ['github\\.com']
+        assert ci_providers[0]['detection']['directory_markers'] == ['.github']
+
     def test_rejects_when_no_providers_discovered(self, tmp_path, monkeypatch):
         """Returns validation error when no providers are discovered."""
         import _config_core
