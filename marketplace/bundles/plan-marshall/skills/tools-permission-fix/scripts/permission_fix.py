@@ -649,8 +649,11 @@ def scan_marketplace_dir(marketplace_dir: str) -> dict:
     if not marketplace_json.exists():
         return {'status': 'error', 'error': f'marketplace.json not found at {marketplace_json}'}
 
-    with open(marketplace_json) as f:
-        marketplace = json.load(f)
+    try:
+        with open(marketplace_json, encoding='utf-8') as f:
+            marketplace = json.load(f)
+    except json.JSONDecodeError as e:
+        return {'status': 'error', 'error': f'Invalid JSON in {marketplace_json}: {e}'}
 
     bundles = []
     for plugin in marketplace.get('plugins', []):
@@ -662,11 +665,16 @@ def scan_marketplace_dir(marketplace_dir: str) -> dict:
 
         bundle_entry: dict[str, Any] = {'name': bundle_name}
         if plugin_json_path.exists():
-            with open(plugin_json_path) as pf:
-                plugin_data = json.load(pf)
-            bundle_entry['skills'] = [{'name': Path(s).stem} for s in plugin_data.get('skills', [])]
-            bundle_entry['commands'] = [{'name': Path(c).stem} for c in plugin_data.get('commands', [])]
-            bundle_entry['scripts'] = []  # Scripts not listed in plugin.json
+            try:
+                with open(plugin_json_path, encoding='utf-8') as pf:
+                    plugin_data = json.load(pf)
+                bundle_entry['skills'] = [{'name': Path(s).stem} for s in plugin_data.get('skills', [])]
+                bundle_entry['commands'] = [{'name': Path(c).stem} for c in plugin_data.get('commands', [])]
+                bundle_entry['scripts'] = []  # Scripts not listed in plugin.json
+            except json.JSONDecodeError:
+                bundle_entry['skills'] = []
+                bundle_entry['commands'] = []
+                bundle_entry['scripts'] = []
         else:
             bundle_entry['skills'] = []
             bundle_entry['commands'] = []
