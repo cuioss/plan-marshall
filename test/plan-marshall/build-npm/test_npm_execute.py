@@ -153,8 +153,8 @@ def test_scope_fn_prefix():
 
 
 def test_command_key_fn_run():
-    """Extracts 'run' from 'run test'."""
-    assert _CONFIG.command_key_fn('run test') == 'run'
+    """Scope-aware: full args normalized, so 'run test' and 'run' differ."""
+    assert _CONFIG.command_key_fn('run test') == 'run_test'
 
 
 def test_command_key_fn_install():

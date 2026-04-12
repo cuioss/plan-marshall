@@ -39,13 +39,21 @@ from _build_shared import cmd_run_common  # noqa: E402
 
 
 def default_command_key_fn(command_args: str) -> str:
-    """Default command key extraction: first token, normalized to underscores.
+    """Scope-aware command key: full args normalized to underscores.
+
+    Prevents run-config key collisions between full-scope and
+    module-scoped invocations (e.g., 'module-tests' vs
+    'module-tests plan-marshall'), so adaptive timeouts learn
+    per-scope values.
 
     Works for Maven goals, npm scripts, and pyprojectx commands.
     Gradle should override to strip leading colons.
     """
-    first_token = command_args.split()[0] if command_args else 'default'
-    return first_token.replace(' ', '_').replace('-', '_')
+    if command_args is not None:
+        tokens = command_args.strip().split()
+        if tokens:
+            return '_'.join(tokens).replace('-', '_')
+    return 'default'
 
 
 def default_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[list[str], str]:
