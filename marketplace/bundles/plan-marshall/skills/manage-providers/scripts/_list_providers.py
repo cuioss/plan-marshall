@@ -1,48 +1,47 @@
 """
 List and discover providers using marshal.json declarations.
 
-discover-and-persist: Scans PYTHONPATH directories for *_provider.py files,
-loads each module, calls get_provider_declarations(), and persists the
-combined declarations to marshal.json under the 'providers' key.
+discover-and-persist: Scans marketplace bundle script directories for
+*_provider.py files, loads each module, calls get_provider_declarations(),
+and persists the combined declarations to marshal.json under the 'providers' key.
 
 list-providers: Reads the 'providers' list from marshal.json and outputs it.
 No filesystem scanning at runtime.
 """
 
 import importlib.util
-import os
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
+from marketplace_bundles import collect_script_dirs  # type: ignore[import-not-found]
+from marketplace_paths import get_base_path  # type: ignore[import-not-found]
 
 
-def _scan_pythonpath_for_providers() -> list[dict[str, Any]]:
-    """Scan PYTHONPATH directories for *_provider.py files.
+def _scan_for_providers() -> list[dict[str, Any]]:
+    """Scan marketplace bundle script directories for *_provider.py files.
 
-    For each file found, loads the module and calls get_provider_declarations().
-    Uses PYTHONPATH set by the executor (execute-script.py) which includes
-    all skill script directories.
+    Uses collect_script_dirs() from marketplace_bundles to discover all
+    skill script directories, then loads each *_provider.py module and
+    calls get_provider_declarations().
 
     Returns:
         List of provider declaration dicts.
     """
     providers: list[dict[str, Any]] = []
-    pythonpath = os.environ.get('PYTHONPATH', '')
-    if not pythonpath:
-        return providers
+    base_path = get_base_path()
+    script_dirs = collect_script_dirs(base_path)
 
     seen_paths: set[str] = set()
 
-    for dir_str in pythonpath.split(os.pathsep):
+    for dir_str in script_dirs:
         dir_path = Path(dir_str)
         if not dir_path.is_dir():
             continue
 
         for provider_file in sorted(dir_path.glob('*_provider.py')):
-            # Deduplicate by resolved path (executor may list dirs multiple times)
             real_path = str(provider_file.resolve())
             if real_path in seen_paths:
                 continue
@@ -133,7 +132,7 @@ def _validate_provider_selection(
         List of validation error strings. Empty list means valid.
     """
     selected_set = set(selected_names)
-    # Deduplicate by skill_name (scan may find same provider via multiple PYTHONPATH entries)
+    # Deduplicate by skill_name (scan may find same provider via multiple script directories)
     seen_skills: set[str] = set()
     selected_providers: list[dict[str, Any]] = []
     for p in providers:
@@ -183,7 +182,7 @@ def run_discover_and_persist(args) -> int:
     Otherwise, outputs the discovered list without persisting (discovery-only mode).
     """
     require_initialized()
-    providers = _scan_pythonpath_for_providers()
+    providers = _scan_for_providers()
 
     selected_names = [n.strip() for n in args.providers.split(',') if n.strip()] if getattr(args, 'providers', None) is not None else None
 
@@ -258,8 +257,8 @@ def find_by_category(category: str) -> list[dict[str, Any]]:
 def find_provider_with_details(skill_name: str) -> dict[str, Any] | None:
     """Find provider with full implementation details.
 
-    Tries PYTHONPATH first (complete declaration), falls back to
-    marshal.json (minimal activation config).
+    Tries bundle script directories first (complete declaration),
+    falls back to marshal.json (minimal activation config).
     """
     full = find_full_provider(skill_name)
     if full:
@@ -274,11 +273,12 @@ def find_provider_with_details(skill_name: str) -> dict[str, Any] | None:
 
 
 def find_full_provider(skill_name: str) -> dict[str, Any] | None:
-    """Find full provider declaration by skill_name from PYTHONPATH.
+    """Find full provider declaration by skill_name from bundle script directories.
 
-    Scans *_provider.py modules on PYTHONPATH for the complete
-    declaration including implementation details (detection, verify_endpoint,
-    header_name, extra_fields) that are not persisted to marshal.json.
+    Scans *_provider.py modules in marketplace bundle script directories for
+    the complete declaration including implementation details (detection,
+    verify_endpoint, header_name, extra_fields) that are not persisted to
+    marshal.json.
 
     Args:
         skill_name: Bundle-prefixed skill name (e.g., 'plan-marshall:workflow-integration-github')
@@ -286,14 +286,14 @@ def find_full_provider(skill_name: str) -> dict[str, Any] | None:
     Returns:
         Full provider declaration dict, or None if not found.
     """
-    for p in _scan_pythonpath_for_providers():
+    for p in _scan_for_providers():
         if p.get('skill_name') == skill_name:
             return p
     return None
 
 
 def find_full_providers_by_category(category: str) -> list[dict[str, Any]]:
-    """Find full provider declarations by category from PYTHONPATH.
+    """Find full provider declarations by category from bundle script directories.
 
     Like find_by_category() but returns complete declarations from
     *_provider.py modules instead of minimal entries from marshal.json.
@@ -304,7 +304,7 @@ def find_full_providers_by_category(category: str) -> list[dict[str, Any]]:
     Returns:
         List of full provider declaration dicts matching the category.
     """
-    return [p for p in _scan_pythonpath_for_providers() if p.get('category') == category]
+    return [p for p in _scan_for_providers() if p.get('category') == category]
 
 
 def run_find_by_category(args) -> int:
