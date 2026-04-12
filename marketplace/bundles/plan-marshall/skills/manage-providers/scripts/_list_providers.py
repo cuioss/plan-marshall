@@ -18,6 +18,14 @@ from typing import Any
 from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
 
+# Optional fields persisted from provider declarations to marshal.json.
+# Used by _build_persisted_entry() and run_list_providers() to keep
+# persistence and output in sync.
+_OPTIONAL_PERSISTED_FIELDS = (
+    'detection', 'verify_endpoint', 'verify_method',
+    'header_name', 'header_value_template', 'extra_fields',
+)
+
 
 def _scan_pythonpath_for_providers() -> list[dict[str, Any]]:
     """Scan PYTHONPATH directories for *_provider.py files.
@@ -93,21 +101,26 @@ def _get_git_remote_url() -> str:
 
 
 def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
-    """Build a minimal provider entry for marshal.json persistence.
+    """Build a provider entry for marshal.json persistence.
 
-    Persists: skill_name, category, verify_command, url, description,
-    detection. Maps default_url to url. For version-control providers
-    without default_url, resolves url from git remote origin.
+    Persists all fields needed by runtime consumers: core identity,
+    URL, detection patterns, and HTTP-auth configuration.
+    Maps default_url to url. For version-control providers without
+    default_url, resolves url from git remote origin.
     """
+    # Core fields
     entry = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
+    # URL mapping
     if p.get('default_url'):
         entry['url'] = p['default_url']
     elif p.get('category') == 'version-control':
         remote_url = _get_git_remote_url()
         if remote_url:
             entry['url'] = remote_url
-    if p.get('detection'):
-        entry['detection'] = p['detection']
+    # Optional structured fields (persisted when present)
+    for key in _OPTIONAL_PERSISTED_FIELDS:
+        if p.get(key):
+            entry[key] = p[key]
     return entry
 
 
@@ -285,8 +298,9 @@ def run_list_providers(args) -> int:
             'url': p.get('url', ''),
             'description': p.get('description', ''),
         }
-        if p.get('detection'):
-            entry['detection'] = p['detection']
+        for key in _OPTIONAL_PERSISTED_FIELDS:
+            if p.get(key):
+                entry[key] = p[key]
         formatted.append(entry)
 
     output_toon({

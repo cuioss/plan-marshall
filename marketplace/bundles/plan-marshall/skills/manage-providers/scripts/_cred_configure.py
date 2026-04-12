@@ -57,7 +57,7 @@ def run_configure(args) -> int:
         inferred_auth = 'token'
     auth_type = getattr(args, 'auth_type', None) or inferred_auth
 
-    default_url = provider.get('default_url', '')
+    default_url = provider.get('url', '') or provider.get('default_url', '')
     url = getattr(args, 'url', None) or default_url
     if not url and auth_type != 'system':
         output_toon({'status': 'error', 'message': 'URL is required — provide --url'})

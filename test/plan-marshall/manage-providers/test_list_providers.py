@@ -378,6 +378,57 @@ class TestRunDiscoverAndPersist:
         assert ci_providers[0]['detection']['url_patterns'] == ['github\\.com']
         assert ci_providers[0]['detection']['directory_markers'] == ['.github']
 
+    def test_persists_http_auth_fields(self, tmp_path, monkeypatch):
+        """HTTP-auth fields are persisted to marshal.json for runtime use."""
+        import _config_core
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        marshal_path = plan_dir / 'marshal.json'
+        marshal_path.write_text(json.dumps({'skill_domains': {}}))
+
+        _config_core.PLAN_BASE_DIR = tmp_path
+        _config_core.MARSHAL_PATH = marshal_path
+
+        provider_dir = tmp_path / 'ext'
+        provider_dir.mkdir()
+        (provider_dir / 'sample_provider.py').write_text(
+            'def get_provider_declarations():\n'
+            '    return [{\n'
+            '        "skill_name": "plan-marshall:workflow-integration-git",\n'
+            '        "category": "version-control",\n'
+            '        "verify_command": "git --version",\n'
+            '        "description": "Git",\n'
+            '        "default_url": "https://github.com",\n'
+            '    }, {\n'
+            '        "skill_name": "plan-marshall:workflow-integration-sonar",\n'
+            '        "category": "other",\n'
+            '        "description": "Sonar",\n'
+            '        "default_url": "https://sonarcloud.io",\n'
+            '        "header_name": "Authorization",\n'
+            '        "header_value_template": "Bearer {token}",\n'
+            '        "verify_endpoint": "/api/system/status",\n'
+            '        "verify_method": "GET",\n'
+            '        "extra_fields": [{"key": "project_key", "required": True}],\n'
+            '    }]\n'
+        )
+        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+
+        exit_code = run_discover_and_persist(
+            Namespace(providers='plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar'),
+        )
+        assert exit_code == 0
+
+        config = json.loads(marshal_path.read_text())
+        sonar = [p for p in config['providers'] if p['category'] == 'other'][0]
+        assert sonar['verify_endpoint'] == '/api/system/status'
+        assert sonar['verify_method'] == 'GET'
+        assert sonar['header_name'] == 'Authorization'
+        assert sonar['header_value_template'] == 'Bearer {token}'
+        assert sonar['extra_fields'] == [{'key': 'project_key', 'required': True}]
+        # Wizard-only fields still dropped
+        assert 'display_name' not in sonar
+
     def test_rejects_when_no_providers_discovered(self, tmp_path, monkeypatch):
         """Returns validation error when no providers are discovered."""
         import _config_core
