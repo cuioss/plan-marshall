@@ -463,10 +463,8 @@ class TestConfigureSystemAuth:
 
         try:
             with monkeypatch.context() as m:
-                m.setattr(
-                    '_cred_configure.load_declared_providers',
-                    lambda: [mock_provider],
-                )
+                m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
+                m.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
                 run_configure(MockArgs())
 
             loaded = load_credential('test-system-provider', 'global')
@@ -511,10 +509,8 @@ class TestConfigureSystemAuth:
 
         try:
             with monkeypatch.context() as m:
-                m.setattr(
-                    '_cred_configure.load_declared_providers',
-                    lambda: [mock_provider],
-                )
+                m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
+                m.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
                 # Should not raise "URL is required"
                 ret = run_configure(MockArgs())
 
@@ -558,6 +554,7 @@ class TestConfigureSystemAuth:
         try:
             with monkeypatch.context() as m:
                 m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
+                m.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
                 m.setattr('_cred_configure.output_toon', mock_output)
                 run_configure(MockArgs())
 

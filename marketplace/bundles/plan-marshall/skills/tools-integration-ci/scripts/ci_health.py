@@ -55,28 +55,22 @@ def _discover_provider_tools() -> dict[str, str | None]:
     Returns:
         Dict mapping provider name to CLI tool name.
     """
-    try:
-        from _list_providers import find_full_providers_by_category  # type: ignore[import-not-found]
+    from _list_providers import find_full_providers_by_category  # type: ignore[import-not-found]
 
-        ci_providers = find_full_providers_by_category('ci')
-        mapping: dict[str, str | None] = {'unknown': None}
+    ci_providers = find_full_providers_by_category('ci')
+    mapping: dict[str, str | None] = {'unknown': None}
 
-        for p in ci_providers:
-            provider_key = _derive_provider_key(p.get('skill_name', ''))
-            if not provider_key:
-                continue
-            verify_cmd = p.get('verify_command', '')
-            if verify_cmd:
-                import shlex
-                tool = shlex.split(verify_cmd)[0]
-                mapping[provider_key] = tool
+    for p in ci_providers:
+        provider_key = _derive_provider_key(p.get('skill_name', ''))
+        if not provider_key:
+            continue
+        verify_cmd = p.get('verify_command', '')
+        if verify_cmd:
+            import shlex
+            tool = shlex.split(verify_cmd)[0]
+            mapping[provider_key] = tool
 
-        if len(mapping) > 1:
-            return mapping
-    except (ImportError, Exception):
-        pass
-
-    return {'unknown': None}
+    return mapping
 
 
 # Provider to required tool mapping (resolved at module load)
@@ -154,30 +148,24 @@ def _discover_detection_patterns() -> list[dict]:
         List of dicts with 'provider_key' and detection fields
         (url_patterns, directory_markers, enterprise_patterns).
     """
-    try:
-        from _list_providers import find_full_providers_by_category  # type: ignore[import-not-found]
+    from _list_providers import find_full_providers_by_category  # type: ignore[import-not-found]
 
-        ci_providers = find_full_providers_by_category('ci')
-        patterns: list[dict] = []
+    ci_providers = find_full_providers_by_category('ci')
+    patterns: list[dict] = []
 
-        for p in ci_providers:
-            provider_key = _derive_provider_key(p.get('skill_name', ''))
-            detection = p.get('detection', {})
-            if not provider_key or not detection:
-                continue
-            patterns.append({
-                'provider_key': provider_key,
-                'url_patterns': detection.get('url_patterns', []),
-                'directory_markers': detection.get('directory_markers', []),
-                'enterprise_patterns': detection.get('enterprise_patterns', []),
-            })
+    for p in ci_providers:
+        provider_key = _derive_provider_key(p.get('skill_name', ''))
+        detection = p.get('detection', {})
+        if not provider_key or not detection:
+            continue
+        patterns.append({
+            'provider_key': provider_key,
+            'url_patterns': detection.get('url_patterns', []),
+            'directory_markers': detection.get('directory_markers', []),
+            'enterprise_patterns': detection.get('enterprise_patterns', []),
+        })
 
-        if patterns:
-            return patterns
-    except (ImportError, Exception):
-        pass
-
-    return []
+    return patterns
 
 
 # Detection patterns resolved at module load

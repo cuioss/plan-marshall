@@ -18,7 +18,6 @@ from typing import Any
 from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
 
-
 def _scan_pythonpath_for_providers() -> list[dict[str, Any]]:
     """Scan PYTHONPATH directories for *_provider.py files.
 
@@ -253,6 +252,23 @@ def find_by_category(category: str) -> list[dict[str, Any]]:
     """
     config = load_config()
     return [p for p in config.get('providers', []) if p.get('category') == category]
+
+
+def find_provider_with_details(skill_name: str) -> dict[str, Any] | None:
+    """Find provider with full implementation details.
+
+    Tries PYTHONPATH first (complete declaration), falls back to
+    marshal.json (minimal activation config).
+    """
+    full = find_full_provider(skill_name)
+    if full:
+        return full
+    # Fallback to marshal.json
+    config = load_config()
+    for p in config.get('providers', []):
+        if p.get('skill_name') == skill_name:
+            return p
+    return None
 
 
 def find_full_provider(skill_name: str) -> dict[str, Any] | None:
