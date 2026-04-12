@@ -265,7 +265,8 @@ def find_provider_with_details(skill_name: str) -> dict[str, Any] | None:
         return full
     # Fallback to marshal.json
     config = load_config()
-    for p in config.get('providers', []):
+    providers: list[dict[str, Any]] = config.get('providers', [])
+    for p in providers:
         if p.get('skill_name') == skill_name:
             return p
     return None
