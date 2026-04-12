@@ -95,9 +95,9 @@ def _get_git_remote_url() -> str:
 def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
     """Build a minimal provider entry for marshal.json persistence.
 
-    Persists: skill_name, category, verify_command, url, description.
-    Maps default_url to url. For version-control providers without
-    default_url, resolves url from git remote origin.
+    Persists: skill_name, category, verify_command, url, description,
+    detection. Maps default_url to url. For version-control providers
+    without default_url, resolves url from git remote origin.
     """
     entry = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
     if p.get('default_url'):
@@ -106,6 +106,8 @@ def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
         remote_url = _get_git_remote_url()
         if remote_url:
             entry['url'] = remote_url
+    if p.get('detection'):
+        entry['detection'] = p['detection']
     return entry
 
 
