@@ -18,6 +18,14 @@ from typing import Any
 from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
 
+# Optional fields persisted from provider declarations to marshal.json.
+# Used by _build_persisted_entry() and run_list_providers() to keep
+# persistence and output in sync.
+_OPTIONAL_PERSISTED_FIELDS = (
+    'detection', 'verify_endpoint', 'verify_method',
+    'header_name', 'header_value_template', 'extra_fields',
+)
+
 
 def _scan_pythonpath_for_providers() -> list[dict[str, Any]]:
     """Scan PYTHONPATH directories for *_provider.py files.
@@ -110,8 +118,7 @@ def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
         if remote_url:
             entry['url'] = remote_url
     # Optional structured fields (persisted when present)
-    for key in ('detection', 'verify_endpoint', 'verify_method',
-                'header_name', 'header_value_template', 'extra_fields'):
+    for key in _OPTIONAL_PERSISTED_FIELDS:
         if p.get(key):
             entry[key] = p[key]
     return entry
@@ -291,8 +298,7 @@ def run_list_providers(args) -> int:
             'url': p.get('url', ''),
             'description': p.get('description', ''),
         }
-        for key in ('detection', 'verify_endpoint', 'verify_method',
-                    'header_name', 'header_value_template', 'extra_fields'):
+        for key in _OPTIONAL_PERSISTED_FIELDS:
             if p.get(key):
                 entry[key] = p[key]
         formatted.append(entry)
