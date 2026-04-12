@@ -49,9 +49,11 @@ def default_command_key_fn(command_args: str) -> str:
     Works for Maven goals, npm scripts, and pyprojectx commands.
     Gradle should override to strip leading colons.
     """
-    if not command_args:
-        return 'default'
-    return command_args.strip().replace(' ', '_').replace('-', '_')
+    if command_args is not None:
+        tokens = command_args.strip().split()
+        if tokens:
+            return '_'.join(tokens).replace('-', '_')
+    return 'default'
 
 
 def default_build_command_fn(wrapper: str, args: str, log_file: str) -> tuple[list[str], str]:
