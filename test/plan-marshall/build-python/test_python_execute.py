@@ -75,8 +75,9 @@ def test_command_key_fn_verify():
 
 
 def test_command_key_fn_module_tests():
-    """Extracts first token, normalizes hyphens."""
-    assert _CONFIG.command_key_fn('module-tests core') == 'module_tests'
+    """Scope-aware: module suffix included so full-scope and module-scoped
+    invocations learn distinct adaptive timeouts."""
+    assert _CONFIG.command_key_fn('module-tests core') == 'module_tests_core'
 
 
 def test_command_key_fn_empty():

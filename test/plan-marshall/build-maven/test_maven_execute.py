@@ -72,13 +72,13 @@ def test_command_key_fn_verify():
 
 
 def test_command_key_fn_clean_install():
-    """Extracts first goal 'clean' from multi-goal command."""
-    assert _CONFIG.command_key_fn('clean install') == 'clean'
+    """Scope-aware: full args normalized to underscores."""
+    assert _CONFIG.command_key_fn('clean install') == 'clean_install'
 
 
 def test_command_key_fn_module_tests():
-    """Extracts first goal, normalizes hyphens."""
-    assert _CONFIG.command_key_fn('test -pl core') == 'test'
+    """Scope-aware: module scope preserved in key to avoid cross-scope collisions."""
+    assert _CONFIG.command_key_fn('test -pl core') == 'test__pl_core'
 
 
 def test_command_key_fn_empty():
