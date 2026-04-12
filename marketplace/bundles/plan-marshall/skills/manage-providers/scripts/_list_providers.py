@@ -18,6 +18,7 @@ from typing import Any
 from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
 
+
 def _scan_pythonpath_for_providers() -> list[dict[str, Any]]:
     """Scan PYTHONPATH directories for *_provider.py files.
 
