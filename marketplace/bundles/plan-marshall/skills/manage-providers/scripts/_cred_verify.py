@@ -14,6 +14,27 @@ from _providers_core import (
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
+def _find_provider_with_details(skill: str) -> dict | None:
+    """Find provider with full implementation details.
+
+    Tries PYTHONPATH first (has verify_endpoint, verify_method, etc.),
+    falls back to marshal.json (minimal activation config).
+    """
+    try:
+        from _list_providers import find_full_provider  # type: ignore[import-not-found]
+
+        full = find_full_provider(skill)
+        if full:
+            return full
+    except (ImportError, Exception):
+        pass
+    # Fallback to marshal.json
+    for p in load_declared_providers():
+        if p.get('skill_name') == skill:
+            return p
+    return None
+
+
 def run_verify(args) -> int:
     """Execute the verify subcommand."""
     skill = args.skill
@@ -23,13 +44,8 @@ def run_verify(args) -> int:
         output_toon({'status': 'error', 'message': '--skill is required for verify'})
         return 0
 
-    # Find provider for verify endpoint
-    providers = load_declared_providers()
-    provider = None
-    for p in providers:
-        if p.get('skill_name') == skill:
-            provider = p
-            break
+    # Find provider with full details from PYTHONPATH
+    provider = _find_provider_with_details(skill)
 
     # Infer auth type from convention (no explicit auth_type field)
     project_name = get_project_name() if scope == 'project' else None

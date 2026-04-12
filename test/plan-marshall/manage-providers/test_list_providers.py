@@ -36,6 +36,8 @@ run_discover_and_persist = _list_providers.run_discover_and_persist
 run_list_providers = _list_providers.run_list_providers
 run_find_by_category = _list_providers.run_find_by_category
 find_by_category = _list_providers.find_by_category
+find_full_provider = _list_providers.find_full_provider
+find_full_providers_by_category = _list_providers.find_full_providers_by_category
 _validate_provider_selection = _list_providers._validate_provider_selection
 
 
@@ -330,56 +332,8 @@ class TestRunDiscoverAndPersist:
         assert 'auth_type' not in persisted
         assert 'default_url' not in persisted
 
-    def test_persists_detection_patterns(self, tmp_path, monkeypatch):
-        """Detection patterns are persisted to marshal.json for runtime use."""
-        import _config_core
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({'skill_domains': {}}))
-
-        _config_core.PLAN_BASE_DIR = tmp_path
-        _config_core.MARSHAL_PATH = marshal_path
-
-        provider_dir = tmp_path / 'ext'
-        provider_dir.mkdir()
-        (provider_dir / 'sample_provider.py').write_text(
-            'def get_provider_declarations():\n'
-            '    return [{\n'
-            '        "skill_name": "plan-marshall:workflow-integration-git",\n'
-            '        "category": "version-control",\n'
-            '        "verify_command": "git --version",\n'
-            '        "description": "Git version control",\n'
-            '        "default_url": "https://github.com",\n'
-            '    }, {\n'
-            '        "skill_name": "plan-marshall:workflow-integration-github",\n'
-            '        "category": "ci",\n'
-            '        "verify_command": "gh auth status",\n'
-            '        "description": "GitHub CI",\n'
-            '        "default_url": "https://api.github.com",\n'
-            '        "detection": {\n'
-            '            "url_patterns": ["github\\\\.com"],\n'
-            '            "directory_markers": [".github"],\n'
-            '        },\n'
-            '    }]\n'
-        )
-        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
-
-        exit_code = run_discover_and_persist(
-            Namespace(providers='plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-github'),
-        )
-        assert exit_code == 0
-
-        config = json.loads(marshal_path.read_text())
-        ci_providers = [p for p in config['providers'] if p['category'] == 'ci']
-        assert len(ci_providers) == 1
-        assert 'detection' in ci_providers[0]
-        assert ci_providers[0]['detection']['url_patterns'] == ['github\\.com']
-        assert ci_providers[0]['detection']['directory_markers'] == ['.github']
-
-    def test_persists_http_auth_fields(self, tmp_path, monkeypatch):
-        """HTTP-auth fields are persisted to marshal.json for runtime use."""
+    def test_does_not_persist_implementation_details(self, tmp_path, monkeypatch):
+        """Implementation details (detection, verify_endpoint, header_name, etc.) are NOT persisted."""
         import _config_core
 
         plan_dir = tmp_path / '.plan'
@@ -409,6 +363,7 @@ class TestRunDiscoverAndPersist:
             '        "header_value_template": "Bearer {token}",\n'
             '        "verify_endpoint": "/api/system/status",\n'
             '        "verify_method": "GET",\n'
+            '        "detection": {"url_patterns": ["sonar"]},\n'
             '        "extra_fields": [{"key": "project_key", "required": True}],\n'
             '    }]\n'
         )
@@ -421,13 +376,16 @@ class TestRunDiscoverAndPersist:
 
         config = json.loads(marshal_path.read_text())
         sonar = [p for p in config['providers'] if p['category'] == 'other'][0]
-        assert sonar['verify_endpoint'] == '/api/system/status'
-        assert sonar['verify_method'] == 'GET'
-        assert sonar['header_name'] == 'Authorization'
-        assert sonar['header_value_template'] == 'Bearer {token}'
-        assert sonar['extra_fields'] == [{'key': 'project_key', 'required': True}]
-        # Wizard-only fields still dropped
-        assert 'display_name' not in sonar
+        # Only activation config persisted
+        assert sonar['skill_name'] == 'plan-marshall:workflow-integration-sonar'
+        assert sonar['url'] == 'https://sonarcloud.io'
+        # Implementation details NOT persisted
+        assert 'detection' not in sonar
+        assert 'verify_endpoint' not in sonar
+        assert 'verify_method' not in sonar
+        assert 'header_name' not in sonar
+        assert 'header_value_template' not in sonar
+        assert 'extra_fields' not in sonar
 
     def test_rejects_when_no_providers_discovered(self, tmp_path, monkeypatch):
         """Returns validation error when no providers are discovered."""
@@ -667,3 +625,63 @@ class TestFindByCategory:
         captured = capsys.readouterr()
         assert 'github' in captured.out
         assert 'count: 1' in captured.out
+
+
+# =============================================================================
+# find_full_provider / find_full_providers_by_category Tests
+# =============================================================================
+
+
+class TestFindFullProvider:
+    """Tests for PYTHONPATH-based full provider lookup."""
+
+    def test_finds_provider_with_all_fields(self, tmp_path, monkeypatch):
+        """find_full_provider returns complete declaration from PYTHONPATH."""
+        provider_dir = tmp_path / 'ext'
+        provider_dir.mkdir()
+        (provider_dir / 'test_provider.py').write_text(
+            'def get_provider_declarations():\n'
+            '    return [{\n'
+            '        "skill_name": "test:my-provider",\n'
+            '        "category": "ci",\n'
+            '        "verify_command": "test --version",\n'
+            '        "detection": {"url_patterns": ["test\\\\.com"]},\n'
+            '        "verify_endpoint": "/api/status",\n'
+            '        "header_name": "X-Auth",\n'
+            '    }]\n'
+        )
+        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+
+        result = find_full_provider('test:my-provider')
+        assert result is not None
+        assert result['skill_name'] == 'test:my-provider'
+        assert result['detection'] == {'url_patterns': ['test\\.com']}
+        assert result['verify_endpoint'] == '/api/status'
+        assert result['header_name'] == 'X-Auth'
+
+    def test_returns_none_for_unknown_skill(self, tmp_path, monkeypatch):
+        """find_full_provider returns None when skill not found."""
+        provider_dir = tmp_path / 'ext'
+        provider_dir.mkdir()
+        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+
+        result = find_full_provider('nonexistent:provider')
+        assert result is None
+
+    def test_finds_by_category_from_pythonpath(self, tmp_path, monkeypatch):
+        """find_full_providers_by_category returns full declarations filtered by category."""
+        provider_dir = tmp_path / 'ext'
+        provider_dir.mkdir()
+        (provider_dir / 'test_provider.py').write_text(
+            'def get_provider_declarations():\n'
+            '    return [\n'
+            '        {"skill_name": "test:git", "category": "version-control"},\n'
+            '        {"skill_name": "test:github", "category": "ci", "detection": {"url_patterns": ["github"]}},\n'
+            '    ]\n'
+        )
+        monkeypatch.setenv('PYTHONPATH', str(provider_dir))
+
+        result = find_full_providers_by_category('ci')
+        assert len(result) == 1
+        assert result[0]['skill_name'] == 'test:github'
+        assert 'detection' in result[0]

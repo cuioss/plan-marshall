@@ -49,16 +49,16 @@ def _derive_provider_key(skill_name: str) -> str | None:
 def _discover_provider_tools() -> dict[str, str | None]:
     """Build provider-to-tool mapping from CI category providers.
 
-    Uses find_by_category('ci') to locate CI providers and derives the
-    tool name from each provider's verify_command.
+    Scans PYTHONPATH for *_provider.py modules with category 'ci'
+    and derives the tool name from each provider's verify_command.
 
     Returns:
         Dict mapping provider name to CLI tool name.
     """
     try:
-        from _list_providers import find_by_category  # type: ignore[import-not-found]
+        from _list_providers import find_full_providers_by_category  # type: ignore[import-not-found]
 
-        ci_providers = find_by_category('ci')
+        ci_providers = find_full_providers_by_category('ci')
         mapping: dict[str, str | None] = {'unknown': None}
 
         for p in ci_providers:
@@ -146,17 +146,18 @@ def verify_tool(tool: str) -> dict:
 def _discover_detection_patterns() -> list[dict]:
     """Build detection patterns from CI provider declarations.
 
-    Loads CI providers via find_by_category('ci') and collects their
-    'detection' dicts alongside the derived provider key.
+    Scans PYTHONPATH for *_provider.py modules with category 'ci'
+    and collects their 'detection' dicts alongside the derived
+    provider key.
 
     Returns:
         List of dicts with 'provider_key' and detection fields
         (url_patterns, directory_markers, enterprise_patterns).
     """
     try:
-        from _list_providers import find_by_category  # type: ignore[import-not-found]
+        from _list_providers import find_full_providers_by_category  # type: ignore[import-not-found]
 
-        ci_providers = find_by_category('ci')
+        ci_providers = find_full_providers_by_category('ci')
         patterns: list[dict] = []
 
         for p in ci_providers:

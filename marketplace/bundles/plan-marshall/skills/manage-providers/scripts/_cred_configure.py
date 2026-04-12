@@ -20,6 +20,27 @@ from _providers_core import (
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
+def _find_provider_with_details(skill: str) -> dict | None:
+    """Find provider with full implementation details.
+
+    Tries PYTHONPATH first (has header_name, header_value_template, etc.),
+    falls back to marshal.json (minimal activation config).
+    """
+    try:
+        from _list_providers import find_full_provider  # type: ignore[import-not-found]
+
+        full = find_full_provider(skill)
+        if full:
+            return full
+    except (ImportError, Exception):
+        pass
+    # Fallback to marshal.json
+    for p in load_declared_providers():
+        if p.get('skill_name') == skill:
+            return p
+    return None
+
+
 def run_configure(args) -> int:
     """Execute the configure subcommand."""
     providers = load_declared_providers()
@@ -32,7 +53,7 @@ def run_configure(args) -> int:
         output_toon({'status': 'error', 'message': '--skill is required'})
         return 0
 
-    provider = _find_provider(providers, args.skill)
+    provider = _find_provider_with_details(args.skill)
     if not provider:
         output_toon({
             'status': 'error',
