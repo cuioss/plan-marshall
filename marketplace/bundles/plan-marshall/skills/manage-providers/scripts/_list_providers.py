@@ -21,9 +21,10 @@ from marketplace_paths import get_base_path  # type: ignore[import-not-found]
 
 # Script-relative bundles path. Script lives at:
 #   marketplace/bundles/plan-marshall/skills/manage-providers/scripts/_list_providers.py
-# So the bundles directory is 5 levels up.
+# So the bundles directory is 4 levels up from the scripts directory
+# (scripts -> manage-providers -> skills -> plan-marshall -> bundles).
 _SCRIPT_DIR = Path(__file__).parent.resolve()
-_BUNDLES_CANDIDATE = _SCRIPT_DIR.parent.parent.parent.parent.parent
+_BUNDLES_CANDIDATE = _SCRIPT_DIR.parent.parent.parent.parent
 _BUNDLES_FROM_SCRIPT: Path | None = _BUNDLES_CANDIDATE if _BUNDLES_CANDIDATE.name == 'bundles' and _BUNDLES_CANDIDATE.is_dir() else None
 
 

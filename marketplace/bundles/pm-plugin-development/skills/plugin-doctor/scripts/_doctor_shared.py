@@ -14,11 +14,12 @@ from pathlib import Path
 
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 
-# Script-relative path discovery (works regardless of cwd)
+# Script-relative bundles path discovery (works regardless of cwd).
 # Script is at: marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/
-# So bundles directory is 5 levels up from script
+# So the bundles directory is 4 levels up from the scripts directory
+# (scripts -> plugin-doctor -> skills -> pm-plugin-development -> bundles).
 SCRIPT_DIR = Path(__file__).resolve().parent
-_BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
+_BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent
 REPORT_SUBDIR = 'plugin-doctor-report'
 
 
