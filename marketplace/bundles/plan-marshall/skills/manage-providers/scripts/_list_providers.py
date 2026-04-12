@@ -93,21 +93,27 @@ def _get_git_remote_url() -> str:
 
 
 def _build_persisted_entry(p: dict[str, Any]) -> dict[str, Any]:
-    """Build a minimal provider entry for marshal.json persistence.
+    """Build a provider entry for marshal.json persistence.
 
-    Persists: skill_name, category, verify_command, url, description,
-    detection. Maps default_url to url. For version-control providers
-    without default_url, resolves url from git remote origin.
+    Persists all fields needed by runtime consumers: core identity,
+    URL, detection patterns, and HTTP-auth configuration.
+    Maps default_url to url. For version-control providers without
+    default_url, resolves url from git remote origin.
     """
+    # Core fields
     entry = {k: p[k] for k in ('skill_name', 'category', 'verify_command', 'description') if k in p}
+    # URL mapping
     if p.get('default_url'):
         entry['url'] = p['default_url']
     elif p.get('category') == 'version-control':
         remote_url = _get_git_remote_url()
         if remote_url:
             entry['url'] = remote_url
-    if p.get('detection'):
-        entry['detection'] = p['detection']
+    # Optional structured fields (persisted when present)
+    for key in ('detection', 'verify_endpoint', 'verify_method',
+                'header_name', 'header_value_template', 'extra_fields'):
+        if p.get(key):
+            entry[key] = p[key]
     return entry
 
 
@@ -285,8 +291,10 @@ def run_list_providers(args) -> int:
             'url': p.get('url', ''),
             'description': p.get('description', ''),
         }
-        if p.get('detection'):
-            entry['detection'] = p['detection']
+        for key in ('detection', 'verify_endpoint', 'verify_method',
+                    'header_name', 'header_value_template', 'extra_fields'):
+            if p.get(key):
+                entry[key] = p[key]
         formatted.append(entry)
 
     output_toon({
