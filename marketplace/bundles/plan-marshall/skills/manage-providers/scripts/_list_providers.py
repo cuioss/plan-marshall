@@ -276,16 +276,18 @@ def run_list_providers(args) -> int:
     config = load_config()
     providers: list[dict[str, Any]] = config.get('providers', [])
 
-    formatted = [
-        {
+    formatted = []
+    for p in providers:
+        entry: dict[str, Any] = {
             'skill_name': p.get('skill_name', ''),
             'category': p.get('category', ''),
             'verify_command': p.get('verify_command', ''),
             'url': p.get('url', ''),
             'description': p.get('description', ''),
         }
-        for p in providers
-    ]
+        if p.get('detection'):
+            entry['detection'] = p['detection']
+        formatted.append(entry)
 
     output_toon({
         'status': 'success',
