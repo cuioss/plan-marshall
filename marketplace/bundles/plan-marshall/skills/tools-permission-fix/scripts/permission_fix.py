@@ -638,18 +638,72 @@ def build_bundle_summary(bundles: list[dict]) -> list[dict]:
     return summaries
 
 
+def scan_marketplace_dir(marketplace_dir: str) -> dict:
+    """Scan a marketplace directory to build inventory from plugin.json files.
+
+    Reads marketplace.json to discover bundles, then reads each bundle's
+    plugin.json to extract skills, commands, and scripts counts.
+    """
+    base = Path(marketplace_dir)
+    marketplace_json = base / '.claude-plugin' / 'marketplace.json'
+    if not marketplace_json.exists():
+        return {'status': 'error', 'error': f'marketplace.json not found at {marketplace_json}'}
+
+    with open(marketplace_json) as f:
+        marketplace = json.load(f)
+
+    bundles = []
+    for plugin in marketplace.get('plugins', []):
+        bundle_name = plugin.get('name', '')
+        source = plugin.get('source', '')
+        # Resolve bundle path relative to marketplace dir
+        bundle_dir = (base / source).resolve() if source else base / 'bundles' / bundle_name
+        plugin_json_path = bundle_dir / '.claude-plugin' / 'plugin.json'
+
+        bundle_entry: dict[str, Any] = {'name': bundle_name}
+        if plugin_json_path.exists():
+            with open(plugin_json_path) as pf:
+                plugin_data = json.load(pf)
+            bundle_entry['skills'] = [{'name': Path(s).stem} for s in plugin_data.get('skills', [])]
+            bundle_entry['commands'] = [{'name': Path(c).stem} for c in plugin_data.get('commands', [])]
+            bundle_entry['scripts'] = []  # Scripts not listed in plugin.json
+        else:
+            bundle_entry['skills'] = []
+            bundle_entry['commands'] = []
+            bundle_entry['scripts'] = []
+
+        bundles.append(bundle_entry)
+
+    total_skills = sum(len(b.get('skills', [])) for b in bundles)
+    total_commands = sum(len(b.get('commands', [])) for b in bundles)
+
+    return {
+        'bundles': bundles,
+        'statistics': {
+            'total_bundles': len(bundles),
+            'total_skills': total_skills,
+            'total_commands': total_commands,
+        },
+    }
+
+
 def cmd_generate_wildcards(args) -> dict:
     """Handle generate-wildcards subcommand."""
-    try:
-        if args.input:
-            with open(args.input) as f:
-                inventory = json.load(f)
-        else:
-            inventory = json.load(sys.stdin)
-    except json.JSONDecodeError as e:
-        return {'status': 'error', 'error': f'Invalid JSON input: {e}'}
-    except FileNotFoundError:
-        return {'status': 'error', 'error': f'Input file not found: {args.input}'}
+    if args.marketplace_dir:
+        inventory = scan_marketplace_dir(args.marketplace_dir)
+        if inventory.get('status') == 'error':
+            return inventory
+    else:
+        try:
+            if args.input:
+                with open(args.input) as f:
+                    inventory = json.load(f)
+            else:
+                inventory = json.load(sys.stdin)
+        except json.JSONDecodeError as e:
+            return {'status': 'error', 'error': f'Invalid JSON input: {e}'}
+        except FileNotFoundError:
+            return {'status': 'error', 'error': f'Input file not found: {args.input}'}
 
     bundles = inventory.get('bundles', [])
 
@@ -921,7 +975,9 @@ def main():
 
     # generate-wildcards subcommand
     p_gen = subparsers.add_parser('generate-wildcards', help='Generate permission wildcards from marketplace inventory')
-    p_gen.add_argument('--input', '-i', help='Input JSON file (default: stdin)')
+    p_gen_group = p_gen.add_mutually_exclusive_group()
+    p_gen_group.add_argument('--marketplace-dir', help='Marketplace directory to scan (reads plugin.json files)')
+    p_gen_group.add_argument('--input', '-i', help='Input JSON file (default: stdin)')
     p_gen.set_defaults(func=cmd_generate_wildcards)
 
     # ensure-executor subcommand

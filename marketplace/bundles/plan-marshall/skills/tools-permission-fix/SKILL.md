@@ -192,12 +192,11 @@ Recommended workflow:
 Generate Skill and SlashCommand wildcards from marketplace inventory.
 
 ```bash
-# Read inventory from stdin
-python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --scope marketplace --resource-types skills,commands | \
-python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix generate-wildcards
+# Scan marketplace directory directly
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix generate-wildcards \
+  --marketplace-dir marketplace
 
-# Or from file
+# Or from pre-existing inventory JSON file
 python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix generate-wildcards \
   --input inventory.json
 ```

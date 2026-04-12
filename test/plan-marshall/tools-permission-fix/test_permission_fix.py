@@ -33,6 +33,7 @@ from permission_fix import (  # type: ignore[import-not-found]  # noqa: E402
     cmd_consolidate,
     cmd_ensure_wildcards,
     cmd_generate_wildcards,
+    scan_marketplace_dir,
 )
 
 # =============================================================================
@@ -330,7 +331,7 @@ class TestGenerateWildcards(ScriptTestCase):
             )
         )
 
-        result = cmd_generate_wildcards(Namespace(input=str(inventory_file)))
+        result = cmd_generate_wildcards(Namespace(input=str(inventory_file), marketplace_dir=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertIn('permissions', result)
@@ -354,7 +355,7 @@ class TestGenerateWildcards(ScriptTestCase):
             )
         )
 
-        result = cmd_generate_wildcards(Namespace(input=str(inventory_file)))
+        result = cmd_generate_wildcards(Namespace(input=str(inventory_file), marketplace_dir=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertIn('permissions', result)
@@ -372,11 +373,148 @@ class TestGenerateWildcards(ScriptTestCase):
             )
         )
 
-        result = cmd_generate_wildcards(Namespace(input=str(inventory_file)))
+        result = cmd_generate_wildcards(Namespace(input=str(inventory_file), marketplace_dir=None))
 
         self.assertEqual(result['status'], 'success')
         self.assertIn('statistics', result)
         self.assertIn('bundles_scanned', result['statistics'])
+
+
+# =============================================================================
+# Tier 2: Tests for scan_marketplace_dir and generate-wildcards --marketplace-dir
+# =============================================================================
+
+
+class TestScanMarketplaceDir(ScriptTestCase):
+    """Test scan_marketplace_dir function and generate-wildcards --marketplace-dir."""
+
+    bundle = 'plan-marshall'
+    skill = 'tools-permission-fix'
+    script = 'permission_fix.py'
+
+    def _create_marketplace(self, bundles: dict[str, dict]) -> str:
+        """Create a marketplace directory structure for testing.
+
+        Args:
+            bundles: dict of bundle_name -> {skills: [...], commands: [...]}
+
+        Returns:
+            Path to marketplace directory.
+        """
+        marketplace_dir = self.temp_dir / 'marketplace'
+        plugin_dir = marketplace_dir / '.claude-plugin'
+        plugin_dir.mkdir(parents=True)
+
+        plugins = []
+        for name, data in bundles.items():
+            bundle_dir = marketplace_dir / 'bundles' / name
+            bundle_plugin_dir = bundle_dir / '.claude-plugin'
+            bundle_plugin_dir.mkdir(parents=True)
+
+            plugin_json = {
+                'name': name,
+                'skills': data.get('skills', []),
+                'commands': data.get('commands', []),
+            }
+            (bundle_plugin_dir / 'plugin.json').write_text(json.dumps(plugin_json))
+            plugins.append({'name': name, 'source': f'./bundles/{name}'})
+
+        marketplace_json = {'plugins': plugins}
+        (plugin_dir / 'marketplace.json').write_text(json.dumps(marketplace_json))
+        return str(marketplace_dir)
+
+    def test_scans_bundles_with_skills_and_commands(self):
+        """Should discover skills and commands from plugin.json files."""
+        mkt_dir = self._create_marketplace({
+            'my-bundle': {
+                'skills': ['./skills/skill-a', './skills/skill-b'],
+                'commands': ['./commands/cmd-x.md'],
+            },
+        })
+
+        result = scan_marketplace_dir(mkt_dir)
+
+        self.assertEqual(len(result['bundles']), 1)
+        bundle = result['bundles'][0]
+        self.assertEqual(bundle['name'], 'my-bundle')
+        self.assertEqual(len(bundle['skills']), 2)
+        self.assertEqual(len(bundle['commands']), 1)
+
+    def test_returns_error_for_missing_marketplace_json(self):
+        """Should return error when marketplace.json is missing."""
+        result = scan_marketplace_dir(str(self.temp_dir / 'nonexistent'))
+
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('marketplace.json not found', result['error'])
+
+    def test_handles_bundle_without_plugin_json(self):
+        """Should return empty skills/commands for bundles missing plugin.json."""
+        marketplace_dir = self.temp_dir / 'marketplace'
+        plugin_dir = marketplace_dir / '.claude-plugin'
+        plugin_dir.mkdir(parents=True)
+
+        # Bundle dir exists but no plugin.json
+        bundle_dir = marketplace_dir / 'bundles' / 'empty-bundle'
+        bundle_dir.mkdir(parents=True)
+
+        marketplace_json = {'plugins': [{'name': 'empty-bundle', 'source': './bundles/empty-bundle'}]}
+        (plugin_dir / 'marketplace.json').write_text(json.dumps(marketplace_json))
+
+        result = scan_marketplace_dir(str(marketplace_dir))
+
+        self.assertEqual(len(result['bundles']), 1)
+        bundle = result['bundles'][0]
+        self.assertEqual(bundle['skills'], [])
+        self.assertEqual(bundle['commands'], [])
+
+    def test_statistics_counts(self):
+        """Should compute correct statistics from scanned bundles."""
+        mkt_dir = self._create_marketplace({
+            'bundle-a': {
+                'skills': ['./skills/s1', './skills/s2'],
+                'commands': ['./commands/c1.md'],
+            },
+            'bundle-b': {
+                'skills': ['./skills/s3'],
+                'commands': [],
+            },
+        })
+
+        result = scan_marketplace_dir(mkt_dir)
+
+        stats = result['statistics']
+        self.assertEqual(stats['total_bundles'], 2)
+        self.assertEqual(stats['total_skills'], 3)
+        self.assertEqual(stats['total_commands'], 1)
+
+    def test_generate_wildcards_from_marketplace_dir(self):
+        """generate-wildcards --marketplace-dir should produce wildcards."""
+        mkt_dir = self._create_marketplace({
+            'plan-marshall': {
+                'skills': ['./skills/manage-status'],
+                'commands': ['./commands/plan-manage.md'],
+            },
+            'pm-dev-java': {
+                'skills': ['./skills/java-core'],
+                'commands': [],
+            },
+        })
+
+        result = cmd_generate_wildcards(Namespace(marketplace_dir=mkt_dir, input=None))
+
+        self.assertEqual(result['status'], 'success')
+        skill_wildcards = result['permissions']['skill_wildcards']
+        cmd_wildcards = result['permissions']['command_bundle_wildcards']
+        self.assertIn('Skill(plan-marshall:*)', skill_wildcards)
+        self.assertIn('Skill(pm-dev-java:*)', cmd_wildcards + skill_wildcards)
+        self.assertIn('SlashCommand(/plan-marshall:*)', cmd_wildcards)
+
+    def test_generate_wildcards_marketplace_dir_error(self):
+        """generate-wildcards --marketplace-dir with bad path should return error."""
+        result = cmd_generate_wildcards(Namespace(marketplace_dir='/nonexistent/path', input=None))
+
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('marketplace.json not found', result['error'])
 
 
 # =============================================================================
