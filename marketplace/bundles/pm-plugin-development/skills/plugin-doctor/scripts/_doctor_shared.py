@@ -8,18 +8,15 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from marketplace_bundles import resolve_bundles_root
+
 # =============================================================================
 # Constants
 # =============================================================================
 
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 
-# Script-relative bundles path discovery (works regardless of cwd).
-# Script is at: marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/
-# So the bundles directory is 4 levels up from the scripts directory
-# (scripts -> plugin-doctor -> skills -> pm-plugin-development -> bundles).
-SCRIPT_DIR = Path(__file__).resolve().parent
-_BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent
+_BUNDLES_FROM_SCRIPT = resolve_bundles_root(Path(__file__))
 REPORT_SUBDIR = 'plugin-doctor-report'
 
 

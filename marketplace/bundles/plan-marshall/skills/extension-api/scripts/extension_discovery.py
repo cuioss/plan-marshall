@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
+from marketplace_bundles import resolve_bundles_root  # type: ignore[import-not-found]
 from plan_logging import log_entry
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
@@ -30,33 +31,21 @@ def get_plugin_cache_path() -> Path:
 def get_marketplace_bundles_path() -> Path:
     """Get the path to marketplace bundles directory.
 
-    Searches for marketplace bundles in:
-    1. Source: marketplace/bundles relative to script (development)
-    2. Cache: ~/.claude/plugins/cache/plan-marshall (installed)
+    Resolves via ``resolve_bundles_root`` (walks parents looking for a
+    plan-marshall bundle ancestor). If no source-tree ancestor exists
+    (e.g. running outside the marketplace checkout), falls back to the
+    plugin cache.
 
     Returns:
         Path to bundles directory
     """
-    script_path = Path(__file__).resolve()
-
-    # Walk up from script location to find bundles directory
-    current = script_path.parent
-    for _ in range(10):  # Safety limit
-        candidate = current / 'bundles'
-        if candidate.is_dir() and (candidate / 'plan-marshall').is_dir():
-            return candidate
-        if current.name == 'bundles' and (current / 'plan-marshall').is_dir():
-            return current
-        current = current.parent
-        if current == current.parent:
-            break
-
-    # Fallback: check plugin cache
-    cache_path = get_plugin_cache_path()
-    if cache_path.is_dir():
-        return cache_path
-
-    return script_path.parent.parent.parent.parent.parent / 'bundles'
+    try:
+        return resolve_bundles_root(Path(__file__))
+    except RuntimeError:
+        cache_path = get_plugin_cache_path()
+        if cache_path.is_dir():
+            return cache_path
+        raise
 
 
 def get_extension_api_scripts_path() -> Path:

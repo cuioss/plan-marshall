@@ -11,9 +11,11 @@ from pathlib import Path
 # Direct imports - PYTHONPATH set by executor
 from constants import FILE_MARSHAL  # type: ignore[import-not-found]
 from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
+from marketplace_bundles import resolve_bundles_root  # type: ignore[import-not-found]
 
-# Bundle path for skill description resolution
-BUNDLES_DIR = Path(__file__).parent.parent.parent.parent.parent  # .../bundles/
+# Bundle path for skill description resolution. Resolved by walking up to a
+# plan-marshall bundle ancestor instead of relying on a hard-coded depth.
+BUNDLES_DIR = resolve_bundles_root(Path(__file__))
 
 # File location - derived from file_ops.get_base_dir() for env-var consistency
 PLAN_BASE_DIR = get_base_dir()

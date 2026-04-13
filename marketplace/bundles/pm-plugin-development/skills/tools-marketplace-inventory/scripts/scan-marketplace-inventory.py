@@ -53,15 +53,11 @@ PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 DEFAULT_OUTPUT_SUBDIR = 'tools-marketplace-inventory'
 
 
-# Script-relative path discovery (works regardless of cwd)
-# Script is at: marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/
-# So bundles directory is 5 levels up from script
-SCRIPT_DIR = Path(__file__).resolve().parent
-_BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
-
 # Shared path resolution (from script-shared)
-from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402, I001
+from marketplace_bundles import extract_bundle_name, find_bundles, resolve_bundles_root  # noqa: E402, I001
 from marketplace_paths import get_base_path as _shared_get_base_path, get_temp_dir, safe_relative_path  # noqa: E402, I001
+
+_BUNDLES_FROM_SCRIPT = resolve_bundles_root(Path(__file__))
 
 
 # find_bundles imported from marketplace_bundles

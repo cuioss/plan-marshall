@@ -16,16 +16,16 @@ from typing import Any
 
 from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
-from marketplace_bundles import collect_script_dirs  # type: ignore[import-not-found]
+from marketplace_bundles import collect_script_dirs, resolve_bundles_root  # type: ignore[import-not-found]
 from marketplace_paths import get_base_path  # type: ignore[import-not-found]
 
-# Script-relative bundles path. Script lives at:
-#   marketplace/bundles/plan-marshall/skills/manage-providers/scripts/_list_providers.py
-# So the bundles directory is 4 levels up from the scripts directory
-# (scripts -> manage-providers -> skills -> plan-marshall -> bundles).
-_SCRIPT_DIR = Path(__file__).parent.resolve()
-_BUNDLES_CANDIDATE = _SCRIPT_DIR.parent.parent.parent.parent
-_BUNDLES_FROM_SCRIPT: Path | None = _BUNDLES_CANDIDATE if _BUNDLES_CANDIDATE.name == 'bundles' and _BUNDLES_CANDIDATE.is_dir() else None
+# Script-relative bundles root, resolved by walking up to a plan-marshall bundle ancestor.
+# Falls back to None when the script lives outside a marketplace tree (e.g. plugin cache),
+# which lets get_base_path() drop back to cwd-based discovery.
+try:
+    _BUNDLES_FROM_SCRIPT: Path | None = resolve_bundles_root(Path(__file__))
+except RuntimeError:
+    _BUNDLES_FROM_SCRIPT = None
 
 
 def _scan_for_providers() -> list[dict[str, Any]]:

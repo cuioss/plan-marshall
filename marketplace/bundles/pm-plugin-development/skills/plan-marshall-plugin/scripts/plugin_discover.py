@@ -27,10 +27,10 @@ import sys
 from pathlib import Path
 
 # Allow direct invocation and testing — executor sets PYTHONPATH for production.
-# Resolve extension-api scripts via relative path traversal from this script's location:
-#   scripts/ -> plan-marshall-plugin/ -> skills/ -> pm-plugin-development/ -> bundles/
-#   then into plan-marshall/skills/extension-api/scripts/
-_BUNDLES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
+# Resolve extension-api scripts via the validated bundles-root helper.
+from marketplace_bundles import resolve_bundles_root  # noqa: E402
+
+_BUNDLES_DIR = resolve_bundles_root(Path(__file__))
 EXTENSION_API_DIR = _BUNDLES_DIR / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
 if str(EXTENSION_API_DIR) not in sys.path:
     sys.path.insert(0, str(EXTENSION_API_DIR))
