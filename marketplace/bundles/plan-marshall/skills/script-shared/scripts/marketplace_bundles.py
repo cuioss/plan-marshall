@@ -105,6 +105,85 @@ def collect_script_dirs(base_path: Path) -> list[str]:
     return script_dirs
 
 
+def resolve_bundles_root(script_file: Path) -> Path:
+    """Resolve the bundles root directory by walking up from a script file.
+
+    Walks parents of ``script_file`` and returns the first ancestor that
+    contains a ``plan-marshall`` bundle — detected by the presence of either:
+
+    - ``plan-marshall/.claude-plugin/plugin.json`` (marketplace/source layout)
+    - ``plan-marshall/<version>/.claude-plugin/plugin.json`` (plugin-cache layout)
+
+    Uses identity walking (no index arithmetic). Raises ``RuntimeError`` with
+    the full walked parent chain if no such ancestor exists, so import-time
+    misconfiguration fails loudly instead of silently returning a wrong path.
+
+    Args:
+        script_file: Path to the calling script (typically ``Path(__file__)``).
+
+    Returns:
+        The bundles root directory (e.g. ``.../marketplace/bundles``).
+
+    Raises:
+        RuntimeError: If no ancestor contains a ``plan-marshall`` bundle.
+    """
+    start = Path(script_file).resolve()
+    walked: list[Path] = []
+    for ancestor in start.parents:
+        walked.append(ancestor)
+        candidate = ancestor / 'plan-marshall'
+        if not candidate.is_dir():
+            continue
+        if (candidate / '.claude-plugin' / 'plugin.json').is_file():
+            return ancestor
+        for version_dir in candidate.iterdir():
+            if (
+                version_dir.is_dir()
+                and not version_dir.name.startswith('.')
+                and (version_dir / '.claude-plugin' / 'plugin.json').is_file()
+            ):
+                return ancestor
+    chain = '\n  '.join(str(p) for p in walked)
+    raise RuntimeError(
+        f"resolve_bundles_root: could not locate a 'plan-marshall' bundle "
+        f"above {start}. Walked parents:\n  {chain}"
+    )
+
+
+def resolve_skills_root(script_file: Path) -> Path:
+    """Resolve the ``skills`` directory anchor by walking up from a script file.
+
+    Walks parents of ``script_file`` and returns the first ancestor named
+    ``skills`` whose parent contains a ``.claude-plugin/plugin.json`` (i.e. is
+    a bundle directory). Uses identity walking (no index arithmetic). Raises
+    ``RuntimeError`` with the full walked parent chain if no such ancestor
+    exists, so import-time misconfiguration fails loudly.
+
+    Args:
+        script_file: Path to the calling script (typically ``Path(__file__)``).
+
+    Returns:
+        The ``skills`` directory inside the owning bundle.
+
+    Raises:
+        RuntimeError: If no ``skills`` ancestor with a sibling bundle manifest
+            is found.
+    """
+    start = Path(script_file).resolve()
+    walked: list[Path] = []
+    for ancestor in start.parents:
+        walked.append(ancestor)
+        if ancestor.name != 'skills':
+            continue
+        if (ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
+            return ancestor
+    chain = '\n  '.join(str(p) for p in walked)
+    raise RuntimeError(
+        f"resolve_skills_root: could not locate a 'skills' directory inside "
+        f"a bundle above {start}. Walked parents:\n  {chain}"
+    )
+
+
 def build_pythonpath(base_path: Path) -> str:
     """Build PYTHONPATH from all skill script directories.
 

@@ -55,13 +55,23 @@ LOGS_DIR = PLAN_DIR / 'logs'
 
 # Script-relative paths (resolved at runtime)
 SCRIPT_DIR = Path(__file__).parent.resolve()
-# Script is at: marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/
-# So bundles directory is 5 levels up from script
-_BUNDLES_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
 
 # Shared path resolution (from script-shared)
-from marketplace_bundles import build_pythonpath, collect_script_dirs, resolve_bundle_path  # noqa: E402, I001
+from marketplace_bundles import (  # noqa: E402, I001
+    build_pythonpath,
+    collect_script_dirs,
+    resolve_bundle_path,
+    resolve_bundles_root,
+)
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402, I001
+
+# Script-relative bundles root, resolved by walking up to a plan-marshall bundle
+# ancestor. Falls back to None when running from a context without an ancestor
+# bundle, in which case get_base_path() drops back to cwd-based discovery.
+try:
+    _BUNDLES_FROM_SCRIPT: Path | None = resolve_bundles_root(Path(__file__))
+except RuntimeError:
+    _BUNDLES_FROM_SCRIPT = None
 
 
 # ============================================================================

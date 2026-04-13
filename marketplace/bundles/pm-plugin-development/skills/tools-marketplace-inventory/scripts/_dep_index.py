@@ -22,6 +22,7 @@ from _dep_detection import (  # type: ignore[import-not-found]
     detect_all_dependencies,
     extract_frontmatter,
 )
+from marketplace_bundles import resolve_bundles_root
 
 # Constants for path discovery
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
@@ -340,9 +341,8 @@ def get_base_path(scope: str) -> Path:
     Raises:
         FileNotFoundError: If the specified scope cannot be found
     """
-    # Script-relative path to marketplace
-    script_dir = Path(__file__).resolve().parent
-    marketplace_from_script = script_dir.parent.parent.parent.parent.parent
+    # Script-relative path to bundles root, validated by anchor helper.
+    marketplace_from_script = resolve_bundles_root(Path(__file__))
 
     if scope == 'auto':
         # Try marketplace first

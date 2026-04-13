@@ -18,11 +18,9 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
-# Script-relative path discovery (works regardless of cwd)
-# Script is at: marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/
-# So marketplace directory is 5 levels up from script
-SCRIPT_DIR = Path(__file__).resolve().parent
-_MARKETPLACE_FROM_SCRIPT = SCRIPT_DIR.parent.parent.parent.parent.parent
+from marketplace_bundles import resolve_bundles_root
+
+_MARKETPLACE_FROM_SCRIPT = resolve_bundles_root(Path(__file__)).parent
 
 # Required methods for Extension class (self is implicit, not listed)
 # Only get_skill_domains is required as an abstract method
