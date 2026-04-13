@@ -441,7 +441,7 @@ def _git_main_checkout_root():
     return Path(common).parent if common else None
 
 
-def _project_dir_name(root):
+def _project_dir_name(root: Path) -> str:
     abs_path = str(root.resolve())
     digest = hashlib.sha256(abs_path.encode("utf-8")).hexdigest()[:8]
     return f"{root.name}-{digest}"

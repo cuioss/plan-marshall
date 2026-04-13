@@ -54,10 +54,11 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
     Returns:
         Dict with provider config fields, or empty dict if not found.
     """
-    if not _marshal_path().exists():
+    marshal_path = _marshal_path()
+    if not marshal_path.exists():
         return {}
     try:
-        config = json.loads(_marshal_path().read_text(encoding='utf-8'))
+        config = json.loads(marshal_path.read_text(encoding='utf-8'))
         result: dict[str, Any] = config.get('credentials_config', {}).get(skill_name, {})
         return result
     except (json.JSONDecodeError, KeyError):
@@ -70,10 +71,11 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
     Stores non-secret fields under `credentials_config.{skill_name}`.
     Creates or updates the marshal.json file, preserving existing content.
     """
+    marshal_path = _marshal_path()
     config: dict[str, Any] = {}
-    if _marshal_path().exists():
+    if marshal_path.exists():
         try:
-            config = json.loads(_marshal_path().read_text(encoding='utf-8'))
+            config = json.loads(marshal_path.read_text(encoding='utf-8'))
         except json.JSONDecodeError:
             config = {}
 
@@ -81,8 +83,8 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
         config['credentials_config'] = {}
     config['credentials_config'][skill_name] = provider_config
 
-    _marshal_path().parent.mkdir(parents=True, exist_ok=True)
-    _marshal_path().write_text(
+    marshal_path.parent.mkdir(parents=True, exist_ok=True)
+    marshal_path.write_text(
         json.dumps(config, indent=2, ensure_ascii=False) + '\n',
         encoding='utf-8',
     )
@@ -368,10 +370,11 @@ def load_declared_providers() -> list[dict[str, Any]]:
     Returns:
         List of provider declaration dicts, or empty list if not found.
     """
-    if not _marshal_path().exists():
+    marshal_path = _marshal_path()
+    if not marshal_path.exists():
         return []
     try:
-        config = json.loads(_marshal_path().read_text(encoding='utf-8'))
+        config = json.loads(marshal_path.read_text(encoding='utf-8'))
         result: list[dict[str, Any]] = config.get('providers', [])
         return result
     except (json.JSONDecodeError, KeyError):
