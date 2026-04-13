@@ -4,11 +4,12 @@ Bootstrap script for detecting and caching the plugin root path.
 
 This script solves the chicken-and-egg problem of locating plugin scripts
 before the executor is available. It detects the plugin installation path
-and caches it in .plan/marshall-state.toon for subsequent use.
+and caches it in marshall-state.toon (inside the per-project plan-marshall
+base directory) for subsequent use.
 
-Note: The state file (.plan/marshall-state.toon) is separate from manage-config's
-marshal.json — bootstrap state is needed before the executor/config system is
-available, so it uses its own lightweight caching mechanism.
+Note: The state file is separate from manage-config's marshal.json —
+bootstrap state is needed before the executor/config system is available,
+so it uses its own lightweight caching mechanism.
 
 Usage:
     python3 bootstrap_plugin.py get-root [--refresh]
@@ -27,11 +28,10 @@ Output (TOON format):
         resolved_path	/Users/user/.claude/plugins/cache/plan-marshall/plan-marshall/1.0.0/skills/...
 
 Environment:
-    PLAN_BASE_DIR   Override .plan directory location (for testing)
+    PLAN_BASE_DIR   Override the plan-marshall base directory (for testing)
 """
 
 import argparse
-import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -54,7 +54,7 @@ for _lib in ('ref-toon-format', 'tools-file-ops'):
     if _lib_path not in sys.path:
         sys.path.insert(0, _lib_path)
 
-from file_ops import output_toon, safe_main  # type: ignore[import-not-found]  # noqa: E402
+from file_ops import get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]  # noqa: E402
 
 # Default plugin name to search for
 PLUGIN_NAME = 'plan-marshall'
@@ -66,15 +66,9 @@ MARKER_FILE = '.claude-plugin/plugin.json'
 STATE_FILE = 'marshall-state.toon'
 
 
-def get_plan_dir() -> Path:
-    """Get the .plan directory path, respecting PLAN_BASE_DIR override."""
-    base = os.environ.get('PLAN_BASE_DIR', '.plan')
-    return Path(base)
-
-
 def get_state_file() -> Path:
-    """Get the state file path."""
-    return get_plan_dir() / STATE_FILE
+    """Get the state file path inside the plan-marshall base directory."""
+    return get_base_dir() / STATE_FILE
 
 
 def read_state() -> dict[str, str]:

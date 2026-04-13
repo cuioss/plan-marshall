@@ -23,6 +23,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from file_ops import get_marshal_path  # type: ignore[import-not-found]
+
 # === Constants ===
 
 CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
@@ -36,8 +38,11 @@ _PROJECT_NAME_PATTERN = re.compile(r'[^a-zA-Z0-9._-]')
 
 
 # === Marshal.json Provider Config ===
+# marshal.json is tracked in the repo under .plan/; resolved via file_ops.
 
-MARSHAL_JSON_PATH = Path('.plan') / 'marshal.json'
+
+def _marshal_path() -> Path:
+    return get_marshal_path()
 
 
 def read_provider_config(skill_name: str) -> dict[str, Any]:
@@ -49,10 +54,10 @@ def read_provider_config(skill_name: str) -> dict[str, Any]:
     Returns:
         Dict with provider config fields, or empty dict if not found.
     """
-    if not MARSHAL_JSON_PATH.exists():
+    if not _marshal_path().exists():
         return {}
     try:
-        config = json.loads(MARSHAL_JSON_PATH.read_text(encoding='utf-8'))
+        config = json.loads(_marshal_path().read_text(encoding='utf-8'))
         result: dict[str, Any] = config.get('credentials_config', {}).get(skill_name, {})
         return result
     except (json.JSONDecodeError, KeyError):
@@ -66,9 +71,9 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
     Creates or updates the marshal.json file, preserving existing content.
     """
     config: dict[str, Any] = {}
-    if MARSHAL_JSON_PATH.exists():
+    if _marshal_path().exists():
         try:
-            config = json.loads(MARSHAL_JSON_PATH.read_text(encoding='utf-8'))
+            config = json.loads(_marshal_path().read_text(encoding='utf-8'))
         except json.JSONDecodeError:
             config = {}
 
@@ -76,8 +81,8 @@ def write_provider_config(skill_name: str, provider_config: dict[str, Any]) -> N
         config['credentials_config'] = {}
     config['credentials_config'][skill_name] = provider_config
 
-    MARSHAL_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    MARSHAL_JSON_PATH.write_text(
+    _marshal_path().parent.mkdir(parents=True, exist_ok=True)
+    _marshal_path().write_text(
         json.dumps(config, indent=2, ensure_ascii=False) + '\n',
         encoding='utf-8',
     )
@@ -91,7 +96,7 @@ def get_project_name() -> str:
 
     Sanitizes the name to prevent path traversal attacks.
     """
-    marshal_path = Path('.plan') / 'marshal.json'
+    marshal_path = _marshal_path()
     name = Path.cwd().name  # fallback
 
     if marshal_path.exists():
@@ -363,10 +368,10 @@ def load_declared_providers() -> list[dict[str, Any]]:
     Returns:
         List of provider declaration dicts, or empty list if not found.
     """
-    if not MARSHAL_JSON_PATH.exists():
+    if not _marshal_path().exists():
         return []
     try:
-        config = json.loads(MARSHAL_JSON_PATH.read_text(encoding='utf-8'))
+        config = json.loads(_marshal_path().read_text(encoding='utf-8'))
         result: list[dict[str, Any]] = config.get('providers', [])
         return result
     except (json.JSONDecodeError, KeyError):

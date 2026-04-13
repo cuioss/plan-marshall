@@ -346,10 +346,8 @@ def _load_ci_modules():
 
 def cmd_ci_get(args: argparse.Namespace) -> dict:
     """Handle 'ci-get' subcommand — read config['ci']."""
+    del args  # plan_dir is accepted for backward compatibility but unused.
     load_config, _, _, _ = _load_ci_modules()
-    import os
-    if hasattr(args, 'plan_dir'):
-        os.environ['PLAN_BASE_DIR'] = str(args.plan_dir)
     config = load_config()
     ci_data = config.get('ci', {})
     return {'status': 'success', 'ci': ci_data}
@@ -357,10 +355,8 @@ def cmd_ci_get(args: argparse.Namespace) -> dict:
 
 def cmd_ci_get_provider(args: argparse.Namespace) -> dict:
     """Handle 'ci-get-provider' subcommand — read config['ci']['provider']."""
+    del args
     load_config, _, _, _ = _load_ci_modules()
-    import os
-    if hasattr(args, 'plan_dir'):
-        os.environ['PLAN_BASE_DIR'] = str(args.plan_dir)
     config = load_config()
     ci_data = config.get('ci', {})
     return {
@@ -373,9 +369,6 @@ def cmd_ci_get_provider(args: argparse.Namespace) -> dict:
 def cmd_ci_set_tools(args: argparse.Namespace) -> dict:
     """Handle 'ci-set-tools' subcommand — write run-config['ci']['authenticated_tools']."""
     _, _, load_run_config, save_run_config = _load_ci_modules()
-    import os
-    if hasattr(args, 'plan_dir'):
-        os.environ['PLAN_BASE_DIR'] = str(args.plan_dir)
     run_config = load_run_config()
     run_ci = run_config.get('ci', {})
     tools = [t.strip() for t in args.tools.split(',') if t.strip()]
@@ -387,10 +380,8 @@ def cmd_ci_set_tools(args: argparse.Namespace) -> dict:
 
 def cmd_ci_get_tools(args: argparse.Namespace) -> dict:
     """Handle 'ci-get-tools' subcommand — read run-config['ci']['authenticated_tools']."""
+    del args
     _, _, load_run_config, _ = _load_ci_modules()
-    import os
-    if hasattr(args, 'plan_dir'):
-        os.environ['PLAN_BASE_DIR'] = str(args.plan_dir)
     run_config = load_run_config()
     run_ci = run_config.get('ci', {})
     return {'status': 'success', 'authenticated_tools': run_ci.get('authenticated_tools', [])}
@@ -399,18 +390,19 @@ def cmd_ci_get_tools(args: argparse.Namespace) -> dict:
 def cmd_persist(args: argparse.Namespace) -> dict:
     """Handle the 'persist' subcommand.
 
-    Self-contained CI config persistence — no cross-skill imports.
-    Writes config['ci'] (provider, repo_url) and run-config['ci'] (authenticated_tools).
+    Writes config['ci'] (provider, repo_url) to marshal.json and
+    run-config['ci'] (authenticated_tools) to run-configuration.json.
+    Path resolution honours PLAN_BASE_DIR / PLAN_TRACKED_CONFIG_DIR via
+    the file_ops helpers, so tests that pre-set PLAN_BASE_DIR work as
+    before.
     """
-    import os
+    del args  # plan_dir is accepted for backward compatibility but unused.
 
-    plan_dir = Path(args.plan_dir)
-    marshal_path = plan_dir / 'marshal.json'
+    from file_ops import get_marshal_path  # type: ignore[import-not-found]
 
+    marshal_path = get_marshal_path()
     if not marshal_path.exists():
         return {'status': 'error', 'error': f'marshal.json not found at {marshal_path}. Run /marshall-steward first.'}
-
-    os.environ['PLAN_BASE_DIR'] = str(plan_dir)
 
     # Detect provider
     provider_result = detect_provider()

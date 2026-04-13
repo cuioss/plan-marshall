@@ -127,7 +127,7 @@ def test_checksum_is_8_chars():
 # =============================================================================
 
 
-def test_cleanup_deletes_old_logs():
+def test_cleanup_deletes_old_logs(monkeypatch):
     """Cleanup deletes logs older than max_age_days."""
     module = load_module()
 
@@ -143,19 +143,16 @@ def test_cleanup_deletes_old_logs():
         old_time = time.time() - (30 * 86400)
         os.utime(old_log, (old_time, old_time))
 
-        # Patch LOGS_DIR
-        original = module.LOGS_DIR
-        module.LOGS_DIR = logs_dir
+        # Route the module's logs_dir() helper at the test's temp directory
+        # by pointing PLAN_BASE_DIR at tmp (logs live under {base}/logs).
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp))
 
-        try:
-            deleted = module.cleanup_old_logs(max_age_days=7)
-            assert deleted == 1, f'Expected 1 deleted, got {deleted}'
-            assert not old_log.exists(), 'Old log should be deleted'
-        finally:
-            module.LOGS_DIR = original
+        deleted = module.cleanup_old_logs(max_age_days=7)
+        assert deleted == 1, f'Expected 1 deleted, got {deleted}'
+        assert not old_log.exists(), 'Old log should be deleted'
 
 
-def test_cleanup_preserves_recent_logs():
+def test_cleanup_preserves_recent_logs(monkeypatch):
     """Cleanup preserves recent logs."""
     module = load_module()
 
@@ -166,15 +163,11 @@ def test_cleanup_preserves_recent_logs():
         recent_log = logs_dir / f'script-execution-{date.today()}.log'
         recent_log.write_text('recent')
 
-        original = module.LOGS_DIR
-        module.LOGS_DIR = logs_dir
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp))
 
-        try:
-            deleted = module.cleanup_old_logs(max_age_days=7)
-            assert deleted == 0, f'Expected 0 deleted, got {deleted}'
-            assert recent_log.exists(), 'Recent log should be preserved'
-        finally:
-            module.LOGS_DIR = original
+        deleted = module.cleanup_old_logs(max_age_days=7)
+        assert deleted == 0, f'Expected 0 deleted, got {deleted}'
+        assert recent_log.exists(), 'Recent log should be preserved'
 
 
 # =============================================================================
@@ -221,8 +214,10 @@ def test_verify_requires_executor():
 def test_drift_requires_executor():
     """Drift fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
+        env = _subprocess_env()
+        env['PLAN_BASE_DIR'] = tmp
         result = subprocess.run(
-            ['python3', str(GENERATE_SCRIPT), 'drift'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env()
+            ['python3', str(GENERATE_SCRIPT), 'drift'], capture_output=True, text=True, cwd=tmp, env=env
         )
 
         assert result.returncode == 0, f'Expected exit 0 (error in TOON output), got {result.returncode}'
@@ -232,8 +227,10 @@ def test_drift_requires_executor():
 def test_paths_requires_executor():
     """Paths fails when executor doesn't exist."""
     with tempfile.TemporaryDirectory() as tmp:
+        env = _subprocess_env()
+        env['PLAN_BASE_DIR'] = tmp
         result = subprocess.run(
-            ['python3', str(GENERATE_SCRIPT), 'paths'], capture_output=True, text=True, cwd=tmp, env=_subprocess_env()
+            ['python3', str(GENERATE_SCRIPT), 'paths'], capture_output=True, text=True, cwd=tmp, env=env
         )
 
         assert result.returncode == 0, f'Expected exit 0 (error in TOON output), got {result.returncode}'

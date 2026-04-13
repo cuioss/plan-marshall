@@ -28,8 +28,12 @@ from unittest import TestCase
 TEST_ROOT = Path(__file__).parent
 PROJECT_ROOT = TEST_ROOT.parent
 MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
-PLAN_DIR_NAME = '.plan'  # Configurable plan directory name
-TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
+PLAN_DIR_NAME = '.plan'  # Tracked config sub-directory inside the repo.
+# Standalone test fixtures live in the per-project global plan-marshall dir
+# so they don't pollute the repo-local .plan/ (which only holds tracked
+# config after PR1). Falls back to ~/.plan-marshall/<repo-basename>/temp/
+# test-fixture/ when PLAN_BASE_DIR isn't set.
+TEST_FIXTURE_BASE = Path.home() / '.plan-marshall' / PROJECT_ROOT.name / 'temp' / 'test-fixture'
 
 
 # =============================================================================
@@ -786,6 +790,14 @@ class BuildContext:
         self.plan_dir = self.temp_dir / '.plan'
         self.plan_dir.mkdir()
 
+        # Isolate plan-marshall runtime state to this test's tmp dir.
+        # file_ops.get_base_dir() honours PLAN_BASE_DIR and falls back the
+        # tracked config dir to the same value — so marshal.json (staged at
+        # {temp_dir}/.plan/marshal.json) and runtime state both land inside
+        # the fixture tree, not the user's ~/.plan-marshall/<project>/.
+        self._original_plan_base_dir = os.environ.get('PLAN_BASE_DIR')
+        os.environ['PLAN_BASE_DIR'] = str(self.plan_dir)
+
         # Create initial marshal.json
         create_marshal_json(self.temp_dir)
 
@@ -799,6 +811,10 @@ class BuildContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Clean up the test context."""
+        if getattr(self, '_original_plan_base_dir', None) is None:
+            os.environ.pop('PLAN_BASE_DIR', None)
+        else:
+            os.environ['PLAN_BASE_DIR'] = self._original_plan_base_dir
         if self.temp_dir and self.temp_dir.exists():
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 

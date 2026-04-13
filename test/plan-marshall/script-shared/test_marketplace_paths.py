@@ -16,20 +16,26 @@ from marketplace_paths import (
 
 
 class TestGetPlanDir:
-    def test_default(self):
-        result = get_plan_dir()
-        assert result == Path('.plan')
-
     def test_plan_base_dir_override(self, monkeypatch):
         monkeypatch.setenv('PLAN_BASE_DIR', '/tmp/custom-plan')
         result = get_plan_dir()
         assert result == Path('/tmp/custom-plan')
 
+    def test_default_resolves_global_dir_inside_git_repo(self, monkeypatch):
+        """Without an env override, the default resolves to
+        ~/.plan-marshall/{project-name} when called from inside a git repo.
+        """
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        result = get_plan_dir()
+        # Running in this repo: main checkout basename is 'plan-marshall'.
+        assert result == Path.home() / '.plan-marshall' / 'plan-marshall'
+
 
 class TestGetTempDir:
-    def test_returns_subdir_under_plan_temp(self):
+    def test_returns_subdir_under_plan_temp(self, monkeypatch):
+        monkeypatch.setenv('PLAN_BASE_DIR', '/tmp/base-dir')
         result = get_temp_dir('my-tool')
-        assert result == Path('.plan') / 'temp' / 'my-tool'
+        assert result == Path('/tmp/base-dir') / 'temp' / 'my-tool'
 
 
 class TestSafeRelativePath:

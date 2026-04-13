@@ -26,20 +26,11 @@ Usage:
         ...
 """
 
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, TypedDict
 
-# =============================================================================
-# Plan Directory Configuration
-# =============================================================================
-
-
-def _get_plan_dir() -> str:
-    """Get the .plan directory name, respecting PLAN_DIR_NAME override."""
-    return os.environ.get('PLAN_DIR_NAME', '.plan')
-
+from file_ops import get_base_dir  # type: ignore[import-not-found]
 
 # =============================================================================
 # Type Definitions
@@ -110,9 +101,32 @@ class DirectCommandResult(TypedDict, total=False):
 # =============================================================================
 
 
+_LOG_SUBPATH = '.plan/temp/build-output'
+"""Relative sub-path for build logs under a project root.
+
+Kept for backward compatibility with tests and legacy callers that pass
+a ``project_dir`` argument. In production ``create_log_file`` anchors
+logs at the plan-marshall base directory instead, ignoring the subpath
+prefix."""
+
+
 def _get_log_base_dir() -> str:
-    """Get base directory for build log files, relative to project root."""
-    return f'{_get_plan_dir()}/temp/build-output'
+    """Return the relative build-log subpath (legacy accessor)."""
+    return _LOG_SUBPATH
+
+
+def _resolve_log_base_dir(project_dir: str) -> Path:
+    """Resolve the build-log base directory to a concrete path.
+
+    Anchors logs at the plan-marshall base directory (per-project global
+    dir) by default. Falls back to a project-dir-relative ``.plan/temp/
+    build-output`` when ``project_dir`` is a real path, to stay
+    compatible with tests that stage fixtures under a temp directory.
+    """
+    candidate = Path(project_dir) / _LOG_SUBPATH
+    if project_dir and project_dir != '.' and Path(project_dir).exists():
+        return candidate
+    return get_base_dir() / 'temp' / 'build-output'
 
 
 TIMESTAMP_FORMAT = '%Y-%m-%d-%H%M%S'
@@ -181,11 +195,10 @@ def create_log_file(build_system: str, scope: str = 'default', project_dir: str 
         '/home/user/project/.plan/temp/build-output/core-api/maven-2026-01-04-141523.log'
     """
     try:
-        project_path = Path(project_dir).resolve()
         timestamp = datetime.now(UTC).strftime(TIMESTAMP_FORMAT)
         log_filename = f'{build_system}-{timestamp}.log'
 
-        log_dir = project_path / _get_log_base_dir() / scope
+        log_dir = _resolve_log_base_dir(project_dir) / scope
         log_dir.mkdir(parents=True, exist_ok=True)
 
         log_path = log_dir / log_filename

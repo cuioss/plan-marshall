@@ -7,6 +7,7 @@ that need to locate marketplace infrastructure.
 """
 
 import os
+import subprocess
 from pathlib import Path
 
 # Central configuration
@@ -14,12 +15,47 @@ PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 CLAUDE_DIR = '.claude'
 PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
+GLOBAL_PLAN_MARSHALL_ROOT = Path.home() / '.plan-marshall'
+
+
+def _git_main_checkout_root() -> Path | None:
+    """Return the main git checkout root, or None if not in a git repo.
+
+    Worktree-safe: uses --git-common-dir so worktrees resolve to the same
+    main checkout as the primary working tree.
+    """
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    common_dir = result.stdout.strip()
+    if not common_dir:
+        return None
+    return Path(common_dir).parent
 
 
 def get_plan_dir() -> Path:
-    """Get the .plan directory path, respecting PLAN_BASE_DIR override."""
-    base = os.environ.get('PLAN_BASE_DIR', PLAN_DIR_NAME)
-    return Path(base)
+    """Get the plan-marshall base directory.
+
+    Resolution order mirrors tools-file-ops.get_base_dir():
+        1. PLAN_BASE_DIR environment variable (tests, user override).
+        2. Per-project global directory ~/.plan-marshall/{project-name}/
+           when inside a git repository.
+        3. Repo-local .plan/ fallback (outside a git repo).
+    """
+    env_dir = os.environ.get('PLAN_BASE_DIR')
+    if env_dir:
+        return Path(env_dir)
+    root = _git_main_checkout_root()
+    if root is not None:
+        return GLOBAL_PLAN_MARSHALL_ROOT / root.name
+    return Path(PLAN_DIR_NAME)
 
 
 def get_temp_dir(subdir: str) -> Path:

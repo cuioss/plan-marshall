@@ -14,12 +14,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES, DIR_TEMP, FILE_MARSHAL  # type: ignore[import-not-found]
-from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
+from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES, DIR_TEMP  # type: ignore[import-not-found]
+from file_ops import get_base_dir, get_marshal_path, output_toon  # type: ignore[import-not-found]
 
-# Configuration - delegate to file_ops for consistent path resolution
+# Configuration - delegate to file_ops for consistent path resolution.
+# PLAN_BASE_DIR holds runtime state (temp/, logs/, archived-plans/, memory/).
+# marshal.json is tracked in the repo under .plan/ — resolved separately.
 PLAN_BASE_DIR = get_base_dir()
-MARSHAL_JSON = PLAN_BASE_DIR / FILE_MARSHAL
+MARSHAL_JSON = get_marshal_path()
 
 
 @dataclass

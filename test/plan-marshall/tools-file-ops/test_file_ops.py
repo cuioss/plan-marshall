@@ -17,6 +17,8 @@ import sys
 from io import StringIO
 from pathlib import Path
 
+import file_ops
+import pytest
 from file_ops import (
     atomic_write_file,
     base_path,
@@ -32,6 +34,20 @@ from file_ops import (
     update_markdown_metadata,
 )
 from toon_parser import parse_toon
+
+
+@pytest.fixture(autouse=True)
+def _reset_base_dir_override():
+    """Ensure no test leaks file_ops._BASE_DIR_OVERRIDE across tests.
+
+    Several tests in this file call set_base_dir() without restoring the
+    previous value. After get_base_dir() grew a per-project global default
+    (resolved via git), a stale override from one test would shadow the
+    default for every subsequent test in the suite.
+    """
+    original = file_ops._BASE_DIR_OVERRIDE
+    yield
+    file_ops._BASE_DIR_OVERRIDE = original
 
 # =============================================================================
 # get_temp_dir tests
@@ -336,7 +352,7 @@ def test_roundtrip_metadata():
 
 
 def test_get_base_dir_default():
-    """Test get_base_dir returns default .plan path."""
+    """Test get_base_dir returns the explicit override when one is set."""
     set_base_dir('.plan')
     result = get_base_dir()
     assert result == Path('.plan')
