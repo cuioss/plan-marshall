@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,11 +24,21 @@ TEST_DIR = Path('test')
 CLAUDE_DIR = Path('.claude')
 
 
-def run(cmd: list[str], description: str) -> int:
+# Single source of truth: delegate to collect_script_dirs so mypy_path matches runtime PYTHONPATH.
+def _compute_mypypath() -> str:
+    bundles_root = Path(__file__).parent / 'marketplace' / 'bundles'
+    shared_scripts = str(bundles_root / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts')
+    if shared_scripts not in sys.path:
+        sys.path.insert(0, shared_scripts)
+    from marketplace_bundles import collect_script_dirs
+    return os.pathsep.join(collect_script_dirs(bundles_root))
+
+
+def run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
     """Run a command and return exit code."""
     print(f'>>> {description}')
     print(f'    {" ".join(cmd)}')
-    result = subprocess.run(cmd)
+    result = subprocess.run(cmd, env=env)
     return result.returncode
 
 
@@ -56,18 +67,19 @@ def get_test_path(module: str | None) -> str:
 def cmd_compile(module: str | None) -> int:
     """Run mypy on production sources."""
     path = get_bundle_path(module)
-    # Include .claude/ scripts when running full compile (no module filter)
+    mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
     if module:
-        return run(['uv', 'run', 'mypy', path], f'compile: mypy {path}')
+        return run(['uv', 'run', 'mypy', path], f'compile: mypy {path}', env=mypy_env)
     else:
         paths = [path, str(CLAUDE_DIR)]
-        return run(['uv', 'run', 'mypy'] + paths, f'compile: mypy {" ".join(paths)}')
+        return run(['uv', 'run', 'mypy'] + paths, f'compile: mypy {" ".join(paths)}', env=mypy_env)
 
 
 def cmd_test_compile(module: str | None) -> int:
     """Run mypy on test sources."""
     path = get_test_path(module)
-    return run(['uv', 'run', 'mypy', path], f'test-compile: mypy {path}')
+    mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
+    return run(['uv', 'run', 'mypy', path], f'test-compile: mypy {path}', env=mypy_env)
 
 
 def cmd_module_tests(module: str | None, parallel: bool = False) -> int:
