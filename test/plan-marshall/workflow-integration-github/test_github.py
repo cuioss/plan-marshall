@@ -244,6 +244,146 @@ def test_no_subcommand():
     assert not result.success, 'Expected failure without subcommand'
 
 
+def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch):
+    """Regression: cmd_pr_thread_reply must use addPullRequestReviewThreadReply
+    with exactly {threadId, body} variables, and MUST NOT shell out to gh pr view
+    for a PR id. The follow-up PENDING-review check must see zero stuck reviews."""
+    import argparse
+
+    import github_ops  # type: ignore[import-not-found]
+
+    graphql_calls: list[tuple[str, dict]] = []
+    gh_calls: list[list[str]] = []
+
+    def fake_run_graphql(query: str, variables: dict):
+        graphql_calls.append((query, variables))
+        if 'addPullRequestReviewThreadReply' in query:
+            return 0, {'addPullRequestReviewThreadReply': {'comment': {'id': 'C_1', 'databaseId': 1}}}, ''
+        if 'viewer' in query:
+            return 0, {'viewer': {'login': 'octocat'}}, ''
+        if 'reviews(states: [PENDING]' in query:
+            return 0, {'repository': {'pullRequest': {'reviews': {'nodes': []}}}}, ''
+        raise AssertionError(f'Unexpected GraphQL query: {query}')
+
+    def fake_run_gh(args, capture_json=False, timeout=60):
+        gh_calls.append(list(args))
+        if args[:1] == ['auth']:
+            return 0, '', ''
+        if args[:2] == ['repo', 'view']:
+            return 0, '{"owner": {"login": "octo"}, "name": "repo"}', ''
+        raise AssertionError(f'Unexpected gh call: {args}')
+
+    monkeypatch.setattr(github_ops, 'run_graphql', fake_run_graphql)
+    monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
+
+    ns = argparse.Namespace(pr_number=42, thread_id='PRRT_abc', body='Fixed it')
+    result = github_ops.cmd_pr_thread_reply(ns)
+
+    assert result['status'] == 'success', f'Expected success, got: {result}'
+    # Assert mutation and variables
+    reply_call = next((q, v) for q, v in graphql_calls if 'addPullRequestReviewThreadReply' in q)
+    assert 'addPullRequestReviewThreadReply' in reply_call[0]
+    assert set(reply_call[1].keys()) == {'threadId', 'body'}, (
+        f'Unexpected variables: {reply_call[1].keys()}'
+    )
+    assert 'prId' not in reply_call[1]
+    assert 'inReplyTo' not in reply_call[1]
+    # Assert NO gh pr view call
+    assert not any(c[:2] == ['pr', 'view'] for c in gh_calls), (
+        f'Unexpected gh pr view call: {gh_calls}'
+    )
+
+
+def test_pr_thread_reply_fails_when_pending_review_remains(monkeypatch):
+    """Regression: if a PENDING review owned by the viewer remains after the
+    mutation, the handler must return status: error naming the stuck review id,
+    NOT status: success."""
+    import argparse
+
+    import github_ops  # type: ignore[import-not-found]
+
+    def fake_run_graphql(query: str, variables: dict):
+        if 'addPullRequestReviewThreadReply' in query:
+            return 0, {'addPullRequestReviewThreadReply': {'comment': {'id': 'C_1', 'databaseId': 1}}}, ''
+        if 'viewer' in query:
+            return 0, {'viewer': {'login': 'octocat'}}, ''
+        if 'reviews(states: [PENDING]' in query:
+            return (
+                0,
+                {
+                    'repository': {
+                        'pullRequest': {
+                            'reviews': {
+                                'nodes': [
+                                    {'id': 'PRR_stuck', 'author': {'login': 'octocat'}},
+                                ]
+                            }
+                        }
+                    }
+                },
+                '',
+            )
+        raise AssertionError(f'Unexpected GraphQL query: {query}')
+
+    def fake_run_gh(args, capture_json=False, timeout=60):
+        if args[:1] == ['auth']:
+            return 0, '', ''
+        if args[:2] == ['repo', 'view']:
+            return 0, '{"owner": {"login": "octo"}, "name": "repo"}', ''
+        raise AssertionError(f'Unexpected gh call: {args}')
+
+    monkeypatch.setattr(github_ops, 'run_graphql', fake_run_graphql)
+    monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
+
+    ns = argparse.Namespace(pr_number=42, thread_id='PRRT_abc', body='Fixed it')
+    result = github_ops.cmd_pr_thread_reply(ns)
+
+    assert result['status'] == 'error', f'Expected error, got: {result}'
+    assert 'PRR_stuck' in (result.get('error', '') + result.get('context', '')), (
+        f'Stuck review id missing from error payload: {result}'
+    )
+
+
+def test_pr_submit_review_calls_submit_mutation(monkeypatch):
+    """Regression: cmd_pr_submit_review must call submitPullRequestReview with
+    exactly {reviewId, event} variables and return the state field."""
+    import argparse
+
+    import github_ops  # type: ignore[import-not-found]
+
+    captured: dict = {}
+
+    def fake_run_graphql(query: str, variables: dict):
+        captured['query'] = query
+        captured['variables'] = variables
+        return (
+            0,
+            {
+                'submitPullRequestReview': {
+                    'pullRequestReview': {'id': 'PRR_xyz', 'state': 'COMMENTED'}
+                }
+            },
+            '',
+        )
+
+    def fake_run_gh(args, capture_json=False, timeout=60):
+        if args[:1] == ['auth']:
+            return 0, '', ''
+        raise AssertionError(f'Unexpected gh call: {args}')
+
+    monkeypatch.setattr(github_ops, 'run_graphql', fake_run_graphql)
+    monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
+
+    ns = argparse.Namespace(review_id='PRR_xyz', event='COMMENT')
+    result = github_ops.cmd_pr_submit_review(ns)
+
+    assert result['status'] == 'success', f'Expected success, got: {result}'
+    assert 'submitPullRequestReview' in captured['query']
+    assert set(captured['variables'].keys()) == {'reviewId', 'event'}
+    assert result['state'] == 'COMMENTED'
+    assert result['review_id'] == 'PRR_xyz'
+
+
 def test_pr_comments_no_body_truncation():
     """Regression: comment body must not be truncated (was [:100])."""
     with open(SCRIPT_PATH) as f:

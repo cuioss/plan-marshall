@@ -109,6 +109,22 @@ Load the relevant standard when performing specific operations:
 
 ---
 
+## PR Comment Vocabulary
+
+GitHub and GitLab expose several overlapping concepts for "commenting on a PR".
+Use the exact subcommand that matches the intent — they are NOT interchangeable:
+
+| Subcommand | Target | Publishing | Notes |
+|------------|--------|------------|-------|
+| `pr comment` / `pr reply` | Top-level issue comment on the PR | Immediate | Not attached to any line of code or review thread. |
+| `pr thread-reply` | Inline reply on an existing code-review thread | Immediate | Uses `addPullRequestReviewThreadReply` on GitHub and the `/discussions/{id}/notes` endpoint on GitLab. Requires a real thread id (`PRRT_*` on GitHub). Does NOT create or extend a pending review. |
+| `pr resolve-thread` | Collapse a review thread | Immediate | Independent of replies — resolving a thread neither posts nor requires a reply. |
+| `pr submit-review` | Publish a pending draft review | Immediate | **GitHub-only safety net.** Use when a previous call accidentally queued a reply into a draft `PullRequestReview`. GitLab has no equivalent — discussions are always immediate, so the GitLab handler returns an explicit error. |
+
+**Breaking change note**: `pr thread-reply --thread-id` requires a real review-thread node id (`PRRT_*`). Passing a review-comment id (`PRRC_*`) is no longer supported and will fail loudly — previous behavior silently queued replies into a PENDING draft review.
+
+---
+
 ## Error Handling
 
 All operations return TOON error format on failure:

@@ -222,6 +222,16 @@ def build_parser(
     pr_ready = pr_sub.add_parser('ready', help='Mark draft PR as ready for review')
     pr_ready.add_argument('--pr-number', required=True, type=int, help='PR number')
 
+    # pr submit-review (GitHub safety net for recovering draft reviews)
+    pr_submit = pr_sub.add_parser('submit-review', help='Submit a pending review')
+    pr_submit.add_argument('--review-id', required=True, help='Pending PullRequestReview node id (PRR_*)')
+    pr_submit.add_argument(
+        '--event',
+        default='COMMENT',
+        choices=['COMMENT', 'APPROVE', 'REQUEST_CHANGES'],
+        help='Review event (default: COMMENT)',
+    )
+
     # pr edit
     pr_edit = pr_sub.add_parser('edit', help='Edit PR title and/or body')
     pr_edit.add_argument('--pr-number', required=True, type=int, help='PR number')
