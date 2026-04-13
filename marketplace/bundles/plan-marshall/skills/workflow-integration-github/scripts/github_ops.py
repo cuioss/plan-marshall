@@ -10,6 +10,7 @@ Subcommands:
     pr reply        Reply to a PR with a comment
     pr resolve-thread  Resolve a review thread
     pr thread-reply    Reply to a specific review thread
+    pr submit-review   Submit a pending PR review (safety net)
     pr merge        Merge a pull request
     pr auto-merge   Enable auto-merge on a pull request
     pr close        Close a pull request
@@ -32,6 +33,7 @@ Usage:
     python3 github.py pr reply --pr-number 123 --body "Comment text"
     python3 github.py pr resolve-thread --thread-id PRRT_abc123
     python3 github.py pr thread-reply --pr-number 123 --thread-id PRRT_abc123 --body "Fixed"
+    python3 github.py pr submit-review --review-id PRR_abc123 [--event COMMENT|APPROVE|REQUEST_CHANGES]
     python3 github.py pr merge --pr-number 123 [--strategy squash] [--delete-branch]
     python3 github.py pr auto-merge --pr-number 123 [--strategy squash]
     python3 github.py pr close --pr-number 123
@@ -309,12 +311,44 @@ mutation($threadId: ID!) {
 
 
 THREAD_REPLY_MUTATION = """
-mutation($prId: ID!, $body: String!, $inReplyTo: ID!) {
-  addPullRequestReviewComment(input: {pullRequestId: $prId, body: $body, inReplyTo: $inReplyTo}) {
-    comment { id }
+mutation($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $threadId, body: $body}) {
+    comment { id databaseId }
   }
 }
 """
+
+
+VIEWER_LOGIN_QUERY = """
+query { viewer { login } }
+"""
+
+
+PENDING_REVIEWS_QUERY = """
+query($owner: String!, $repo: String!, $pr: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviews(states: [PENDING], first: 20) {
+        nodes { id author { login } }
+      }
+    }
+  }
+}
+"""
+
+
+def get_viewer_login() -> tuple[str | None, str]:
+    """Return the authenticated viewer's login, or (None, error_message)."""
+    returncode, data, err = run_graphql(VIEWER_LOGIN_QUERY, {})
+    if returncode != 0 or data is None:
+        return None, err or 'Failed to resolve viewer login'
+    try:
+        login = data['viewer']['login']
+    except (KeyError, TypeError):
+        return None, 'viewer.login missing from GraphQL response'
+    if not login:
+        return None, 'viewer.login empty'
+    return login, ''
 
 
 def cmd_pr_resolve_thread(args: argparse.Namespace) -> dict:
@@ -335,37 +369,117 @@ def cmd_pr_resolve_thread(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
-    """Handle 'pr thread-reply' subcommand - reply to a specific review thread."""
+    """Handle 'pr thread-reply' subcommand - reply to a specific review thread.
+
+    Uses addPullRequestReviewThreadReply which publishes replies immediately and
+    takes a real review-thread node id (``PRRT_*``). No PR node-id lookup is
+    needed — the thread already belongs to a PR. After a successful reply we
+    verify that no PENDING review remains for the authenticated viewer; the
+    presence of one indicates the reply silently landed in a draft review and
+    callers need to recover it explicitly.
+    """
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('pr_thread_reply', err)
 
-    # Get PR node ID (GraphQL requires it)
-    returncode, stdout, stderr = run_gh(['pr', 'view', str(args.pr_number), '--json', 'id'])
-    if returncode != 0:
-        return make_error('pr_thread_reply', f'Failed to get PR {args.pr_number}', stderr.strip())
-
-    try:
-        pr_data = json.loads(stdout)
-        pr_id = pr_data.get('id', '')
-    except json.JSONDecodeError:
-        return make_error('pr_thread_reply', 'Failed to parse PR data', stdout[:100])
-
-    if not pr_id:
-        return make_error('pr_thread_reply', 'Could not determine PR node ID')
-
     returncode, data, err = run_graphql(
         THREAD_REPLY_MUTATION,
-        {'prId': pr_id, 'body': args.body, 'inReplyTo': args.thread_id},
+        {'threadId': args.thread_id, 'body': args.body},
     )
     if returncode != 0 or data is None:
         return make_error('pr_thread_reply', f'Failed to reply to thread: {err}')
+
+    # Post-call regression check: a successful addPullRequestReviewThreadReply
+    # must not leave a PENDING review owned by the current viewer. If it does,
+    # the reply is queued into a draft review and is invisible to reviewers.
+    viewer_login, viewer_err = get_viewer_login()
+    if viewer_login is None:
+        return make_error(
+            'pr_thread_reply',
+            f'Reply sent but viewer.login lookup failed: {viewer_err}',
+        )
+
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return make_error(
+            'pr_thread_reply',
+            'Reply sent but could not determine repository owner/name for PENDING-review check',
+        )
+
+    rc2, pending_data, pending_err = run_graphql(
+        PENDING_REVIEWS_QUERY,
+        {'owner': owner, 'repo': repo, 'pr': args.pr_number},
+    )
+    if rc2 != 0 or pending_data is None:
+        return make_error(
+            'pr_thread_reply',
+            f'Reply sent but PENDING-review check failed: {pending_err}',
+        )
+
+    try:
+        pending_nodes = pending_data['repository']['pullRequest']['reviews']['nodes'] or []
+    except (KeyError, TypeError):
+        pending_nodes = []
+
+    stuck = [
+        n for n in pending_nodes
+        if (n.get('author') or {}).get('login') == viewer_login
+    ]
+    if stuck:
+        stuck_ids = ', '.join(n.get('id', '<unknown>') for n in stuck)
+        return make_error(
+            'pr_thread_reply',
+            (
+                f'Reply queued into PENDING review owned by {viewer_login}; '
+                f"run 'ci pr submit-review --review-id <id>' to publish it. "
+                f'Stuck review id(s): {stuck_ids}'
+            ),
+            stuck_ids,
+        )
 
     return {
         'status': 'success',
         'operation': 'pr_thread_reply',
         'pr_number': args.pr_number,
         'thread_id': args.thread_id,
+    }
+
+
+SUBMIT_REVIEW_MUTATION = """
+mutation($reviewId: ID!, $event: PullRequestReviewEvent!) {
+  submitPullRequestReview(input: {pullRequestReviewId: $reviewId, event: $event}) {
+    pullRequestReview { id state }
+  }
+}
+"""
+
+
+def cmd_pr_submit_review(args: argparse.Namespace) -> dict:
+    """Handle 'pr submit-review' subcommand - publish a pending review."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('pr_submit_review', err)
+
+    returncode, data, err = run_graphql(
+        SUBMIT_REVIEW_MUTATION,
+        {'reviewId': args.review_id, 'event': args.event},
+    )
+    if returncode != 0 or data is None:
+        return make_error('pr_submit_review', f'Failed to submit review: {err}')
+
+    try:
+        review = data['submitPullRequestReview']['pullRequestReview']
+        review_id = review.get('id', args.review_id)
+        state = review.get('state', 'unknown')
+    except (KeyError, TypeError):
+        return make_error('pr_submit_review', 'Malformed GraphQL response', str(data)[:200])
+
+    return {
+        'status': 'success',
+        'operation': 'pr_submit_review',
+        'review_id': review_id,
+        'event': args.event,
+        'state': state,
     }
 
 
@@ -890,6 +1004,7 @@ def main() -> int:
         ('pr', 'reply'): cmd_pr_reply,
         ('pr', 'resolve-thread'): cmd_pr_resolve_thread,
         ('pr', 'thread-reply'): cmd_pr_thread_reply,
+        ('pr', 'submit-review'): cmd_pr_submit_review,
         ('pr', 'reviews'): cmd_pr_reviews,
         ('pr', 'comments'): cmd_pr_comments,
         ('pr', 'merge'): cmd_pr_merge,
