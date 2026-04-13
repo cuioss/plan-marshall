@@ -858,6 +858,24 @@ def cmd_cleanup(args) -> dict:
     return {'status': 'success', 'deleted': deleted}
 
 
+def cmd_write_shim(args) -> dict:
+    """Write the executor shim into a target checkout's .plan/ directory.
+
+    Used by phase-1-init when creating a git worktree: the worktree gets a
+    fresh (empty) ``.plan/`` — this command drops the same shim template
+    used by the main checkout so ``python3 .plan/execute-script.py ...``
+    works identically from inside the worktree. The shim resolves the real
+    executor via ``git rev-parse --git-common-dir``, which returns the
+    SAME main-checkout root whether called from main or from a worktree.
+    """
+    target = Path(args.target).resolve()
+    if not target.is_dir():
+        return {'status': 'error', 'error': f'Target directory does not exist: {target}'}
+    shim_path = target / PLAN_DIR_NAME / 'execute-script.py'
+    write_shim(shim_path)
+    return {'status': 'success', 'shim_path': str(shim_path)}
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -898,6 +916,14 @@ def main() -> int:
     cleanup_parser = subparsers.add_parser('cleanup', help='Clean up old global logs')
     cleanup_parser.add_argument('--max-age-days', type=int, default=7, help='Max age in days (default: 7)')
     cleanup_parser.set_defaults(func=cmd_cleanup)
+
+    # write-shim subcommand
+    shim_parser = subparsers.add_parser(
+        'write-shim',
+        help='Write the executor shim into a target checkout (used by phase-1-init for worktrees)',
+    )
+    shim_parser.add_argument('--target', required=True, help='Target checkout root (worktree or main checkout)')
+    shim_parser.set_defaults(func=cmd_write_shim)
 
     args = parser.parse_args()
     result = args.func(args)

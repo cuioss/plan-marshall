@@ -12,6 +12,30 @@ Switch back to base branch and clean up after plan completion. Behavior adapts b
 - **Single-branch-only**: Only the plan's own feature branch (`{head_branch}` from references) may be deleted. Never delete any other local branches, regardless of their state or name.
 - **No broad cleanup**: Never run bulk branch deletion commands such as `git branch | grep -v {base_branch} | xargs git branch -d`, `git fetch --prune`, `git remote prune`, or similar patterns that affect multiple branches.
 - **No improvisation**: Do not add git cleanup steps beyond what is explicitly documented in the execution sections below.
+- **Worktree removal is non-force**: Never pass `--force` to `git worktree remove`. Only clean worktrees may be removed. If the worktree has uncommitted changes, abort cleanup and surface the error — the user may still want to salvage the work.
+- **Failure leaves worktree in place**: On any plan abort or failure path, do NOT auto-remove the worktree. Worktree removal happens only during successful branch-cleanup.
+
+## Worktree Awareness
+
+If the plan was created with `use_worktree: true` (the default for `branch_strategy == feature`), the plan ran inside a git worktree at `{worktree_path}` rooted under `~/.plan-marshall/{project}/worktrees/{plan_id}/`.
+
+Before any branch deletion, the worktree MUST be removed. The order is:
+
+1. Read `worktree_path` from references (may be null if `use_worktree` was false).
+2. If set: `cd` to the main checkout root, remove the worktree via `manage-worktree remove`.
+3. Proceed with base branch checkout and local branch deletion as before.
+
+Read `worktree_path` at the top of each execution section below:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+  --plan-id {plan_id} \
+  --field worktree_path
+```
+
+If the command returns `error: field_not_found`, treat `worktree_path` as absent (pre-worktree plan or `use_worktree == false`).
+
+If set, capture the value as `{worktree_path}` for use below.
 
 ## Mode Detection
 
@@ -156,6 +180,40 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: post-merge CI failed — continuing with branch cleanup"
 ```
 
+### Remove Worktree (if any)
+
+**Only if `{worktree_path}` is set** (from the Worktree Awareness section).
+
+The worktree must be removed BEFORE switching branches or deleting the local branch — `git worktree remove` refuses to operate on a worktree that is the current working directory, and the local branch cannot be deleted while still checked out in a worktree.
+
+First, switch the shell out of the worktree back to the main checkout root:
+
+```bash
+git rev-parse --path-format=absolute --git-common-dir
+```
+
+Extract the common dir, then `cd` to its parent (the main checkout root). Use the absolute path, not `cd ..`, because we may be several levels deep inside the worktree tree.
+
+Then remove the worktree via manage-worktree (non-force):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-worktree:manage-worktree remove \
+  --plan-id {plan_id}
+```
+
+Parse the TOON output:
+
+- `status: success, action: removed` → continue.
+- `status: success, action: noop` → worktree already gone (possibly manual cleanup), continue.
+- `status: error, error: worktree_remove_failed` → ABORT cleanup. The worktree has uncommitted changes or is otherwise not clean. Log the error:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: worktree remove failed at {worktree_path} - {error}. Salvage any uncommitted work and run 'git worktree remove --force {worktree_path}' manually."
+```
+
+Then return — do NOT proceed with branch deletion while the worktree still exists.
+
 ### Switch to Base Branch and Pull (state-dependent)
 
 **If `state == open`** (we just merged with `--delete-branch`):
@@ -245,6 +303,25 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: user declined (local-only mode)"
 ```
 → Done, return.
+
+### Remove Worktree (if any)
+
+**Only if `{worktree_path}` is set** (from the Worktree Awareness section).
+
+Switch out of the worktree to the main checkout root first:
+
+```bash
+git rev-parse --path-format=absolute --git-common-dir
+```
+
+`cd` to its parent, then:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-worktree:manage-worktree remove \
+  --plan-id {plan_id}
+```
+
+On `status: error`, log and abort as in PR mode. Do not proceed with branch deletion while the worktree remains.
 
 ### Switch to Base Branch, Pull, and Clean Up
 

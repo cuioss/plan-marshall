@@ -204,15 +204,64 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --issue-url {issue_url}
 ```
 
-**Branch Strategy** — read `branch_strategy` from marshal.json phase-1-init config:
+**Branch Strategy** — read `branch_strategy` and `use_worktree` from marshal.json phase-1-init config:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --trace-plan-id {plan_id}
 ```
 
-**IF `branch_strategy == "feature"`**:
-1. Create and switch to a feature branch:
+Extract `branch_strategy` (default: `feature`) and `use_worktree` (default: `true`).
+
+**IF `branch_strategy == "feature"` AND `use_worktree == true`** (default):
+
+Create an isolated git worktree with the feature branch. The worktree lives under `~/.plan-marshall/{project}/worktrees/{plan-id}/` and gets its own executor shim so all subsequent phases can run inside it without touching the main checkout.
+
+1. Create the worktree + feature branch + shim in one operation:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-worktree:manage-worktree create \
+  --plan-id {plan_id} \
+  --branch feature/{plan_id} \
+  --base {branch_name}
+```
+
+Parse the TOON output. Extract `worktree_path` — this is the absolute path of the new worktree.
+
+2. Update references.json with the new branch, base branch, and worktree path:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field branch \
+  --value feature/{plan_id}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field base_branch \
+  --value {branch_name}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+  --plan-id {plan_id} \
+  --field worktree_path \
+  --value {worktree_path}
+```
+
+3. Log the decision:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Created feature branch and worktree: feature/{plan_id} at {worktree_path} (base: {branch_name})"
+```
+
+4. **CRITICAL cwd directive for subsequent phases**: Emit the following instruction verbatim in the phase completion output (see Step 12). The LLM driving the plan MUST `cd` into `{worktree_path}` before running any plan commands:
+
+   > _"This plan runs in an isolated git worktree. All subsequent commands for plan `{plan_id}` MUST execute with `cwd = {worktree_path}`. Do not modify files in the original checkout."_
+
+**IF `branch_strategy == "feature"` AND `use_worktree == false`** (opt-out):
+
+1. Create and switch to a feature branch in the main checkout:
 ```bash
 git checkout -b feature/{plan_id}
 ```
@@ -233,10 +282,10 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 4. Log the decision:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Created feature branch: feature/{plan_id} (base: {branch_name})"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Created feature branch: feature/{plan_id} (base: {branch_name}, worktree disabled)"
 ```
 
-**IF `branch_strategy == "direct"` (default)**: Keep current branch — no action needed.
+**IF `branch_strategy == "direct"`**: Keep current branch — no action needed. `use_worktree` is ignored in direct mode.
 
 ### Step 7: Detect Domain
 
@@ -331,6 +380,7 @@ status: success
 plan_id: {plan_id}
 domain: {domain}
 next_phase: 2-refine
+worktree_path: {worktree_path|null}
 
 source:
   type: {description|lesson|issue}
@@ -341,6 +391,8 @@ artifacts:
   status: status.json
   references: references.json
 ```
+
+**If `worktree_path` is set**, append the cwd directive from Step 6 verbatim after the TOON output so the orchestrating LLM executes all subsequent phases with `cwd = worktree_path`.
 
 ---
 

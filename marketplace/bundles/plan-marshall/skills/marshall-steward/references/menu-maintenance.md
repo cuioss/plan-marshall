@@ -19,7 +19,9 @@ AskUserQuestion:
       description: "Re-detect project structure and extensions"
     - label: "4. Cleanup"
       description: "Clean temp, old logs, archived plans, memory"
-    - label: "5. Back"
+    - label: "5. Worktree Cleanup"
+      description: "Reconcile git worktrees against active/archived plans"
+    - label: "6. Back"
       description: "Return to main menu"
   multiSelect: false
 ```
@@ -32,7 +34,8 @@ AskUserQuestion:
 | "2. Regenerate Executor" | Execute Operation: Regenerate Executor (below) | → Return to Main Menu |
 | "3. Regenerate Architecture" | Execute Operation: Regenerate Architecture (below) | → Return to Main Menu |
 | "4. Cleanup" | Execute Operation: Cleanup (below) | → Return to Main Menu |
-| "5. Back" | Do nothing | → Return to Main Menu |
+| "5. Worktree Cleanup" | Execute Operation: Worktree Cleanup (below) | → Return to Main Menu |
+| "6. Back" | Do nothing | → Return to Main Menu |
 
 ---
 
@@ -181,6 +184,70 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config clean
 ```
 
 **NOTE**: The `.plan/temp/` directory is the default temp directory for ALL temporary files. It is covered by the existing `Write(.plan/**)` permission (avoiding permission prompts for `/tmp/`) and cleaned during maintenance.
+
+---
+
+## Operation: Worktree Cleanup
+
+Reconcile git worktrees under `~/.plan-marshall/{project}/worktrees/` against active and archived plans. Orphaned worktrees (plans that no longer exist in either `plans/` or `archived-plans/`) are reported; worktrees whose plan is archived (finalized) are offered for removal.
+
+### Step 1: List managed worktrees
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-worktree:manage-worktree list
+```
+
+Parse the TOON output. Each worktree entry has `plan_id`, `path`, and `branch`.
+
+### Step 2: Cross-reference against plans
+
+For each worktree entry, check whether a plan with that id is still active:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
+```
+
+Categorize:
+
+- **Active** (`status: success`, phase not `complete`) → leave alone.
+- **Archived** (`status: error, error: plan_not_found`, but a matching directory exists under archived-plans) → candidate for removal.
+- **Orphaned** (plan missing from both active and archived dirs) → report but do NOT auto-remove. The user must explicitly confirm removal because the plan may have been manually relocated or the worktree may hold salvageable work.
+
+### Step 3: Confirm and remove archived worktrees
+
+For each archived candidate, ask the user:
+
+```
+AskUserQuestion:
+  question: "Remove worktree for archived plan '{plan_id}' at {path}?"
+  options:
+    - label: "Yes, remove"
+    - label: "No, keep"
+  multiSelect: false
+```
+
+On "Yes, remove":
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-worktree:manage-worktree remove \
+  --plan-id {plan_id}
+```
+
+If the removal fails with `worktree_remove_failed` (non-clean worktree), surface the error and do NOT retry with `--force`. The user must manually inspect and recover.
+
+### Step 4: Report orphans
+
+Emit a summary of orphaned worktrees without removing them:
+
+```
+Orphaned worktrees (plan not found in active or archived dirs):
+  - {plan_id} at {path}
+  ...
+
+To remove manually after verifying no salvageable work:
+  git worktree remove {path}
+```
 
 ---
 
