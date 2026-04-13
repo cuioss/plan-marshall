@@ -132,7 +132,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 ## Step 5b: Discover and Activate Providers
 
-See [provider-setup.md](provider-setup.md#provider-discovery-and-activation-step-5b) for the full discovery, user selection, and activation workflow.
+See [provider-setup.md](provider-setup.md#provider-discovery-and-activation-step-5b) for the full discovery and activation workflow; Step 5b-4 auto-selects the CI provider when `ci_health detect` returns high confidence and the matched skill is in the discovered ci-category providers, and otherwise falls back to the manual single-select prompt.
 
 ---
 
