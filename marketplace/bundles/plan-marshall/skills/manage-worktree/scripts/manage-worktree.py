@@ -20,6 +20,7 @@ Output: TOON format.
 """
 
 import argparse
+import os
 import subprocess
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from file_ops import get_base_dir, output_toon, output_toon_error, safe_main  # 
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 
 WORKTREES_SUBDIR = 'worktrees'
+PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 
 def _worktrees_root() -> Path:
@@ -54,10 +56,8 @@ def _run_generate_executor_write_shim(target: Path) -> tuple[bool, str]:
     rather than re-implementing shim writing here. This guarantees every
     worktree gets the canonical shim template.
     """
-    from pathlib import Path as _P
-
     # Locate generate_executor.py alongside this script's sibling skill.
-    script_dir = _P(__file__).resolve().parent.parent.parent
+    script_dir = Path(__file__).resolve().parent.parent.parent
     gen = script_dir / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
     if not gen.is_file():
         return False, f'generate_executor.py not found at {gen}'
@@ -127,7 +127,7 @@ def cmd_create(args: argparse.Namespace) -> None:
             'plan_id': args.plan_id,
             'worktree_path': str(target),
             'branch': args.branch,
-            'shim_path': str(target / '.plan' / 'execute-script.py'),
+            'shim_path': str(target / PLAN_DIR_NAME / 'execute-script.py'),
         }
     )
 
@@ -183,7 +183,7 @@ def cmd_list(_args: argparse.Namespace) -> None:
                 entries.append(current)
             current = {'path': line[len('worktree ') :]}
         elif line.startswith('branch '):
-            current['branch'] = line[len('branch ') :]
+            current['branch'] = line[len('branch ') :].removeprefix('refs/heads/')
         elif line == '':
             if current:
                 entries.append(current)
