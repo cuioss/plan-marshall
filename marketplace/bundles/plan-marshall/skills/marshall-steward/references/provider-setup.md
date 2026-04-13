@@ -32,7 +32,38 @@ The `version-control` category requires exactly one provider and is always activ
 
 No `AskUserQuestion` for this category.
 
-### Step 5b-4: Present CI providers as single-select
+### Step 5b-4: Auto-select CI provider with manual fallback
+
+Begin with a pre-prompt CI detection. When detection returns high confidence and the matched provider is present in the ci-category providers from Step 5b-2, auto-select it and skip the prompt. Otherwise, fall back to the manual single-select block.
+
+**Step 5b-4a: Detect CI provider**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health detect
+```
+
+Capture `provider` and `confidence` from the output. Map the detected provider to its bundle-prefixed `skill_name`:
+
+| Detected `provider` | Mapped `skill_name` |
+|---------------------|---------------------|
+| `github` | `plan-marshall:workflow-integration-github` |
+| `gitlab` | `plan-marshall:workflow-integration-gitlab` |
+
+**Step 5b-4b: Decide auto-select vs prompt**
+
+- **IF** `confidence == high` **AND** the mapped `skill_name` is present in the ci-category providers list from Step 5b-2:
+  - Auto-select that provider (add it to the activated CI selection).
+  - Log the decision via `manage-logging`:
+    ```bash
+    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+      decision --component "plan-marshall:marshall-steward" \
+      --message "Auto-selected CI provider {skill_name}" \
+      --detail "detected={provider}, confidence={confidence}, matched_skill={skill_name}"
+    ```
+  - **Skip** the AskUserQuestion block in Step 5b-4c.
+- **ELSE** (confidence is `medium` or `none`, or detected provider not in the ci-category list): proceed to Step 5b-4c.
+
+**Step 5b-4c: Manual fallback prompt**
 
 Present CI-category providers with a "Skip" option for projects that do not use CI:
 
@@ -51,6 +82,8 @@ AskUserQuestion:
 ```
 
 If user selects "Skip", no CI provider is activated.
+
+**Note**: Step 14b intentionally re-runs `ci_health detect` for its own verification and persistence responsibilities (verifying the CLI tool and persisting CI configuration to `marshal.json`). The duplicate detect call is cheap and keeps Step 14 self-contained.
 
 ### Step 5b-5: Present other providers as multiSelect
 
