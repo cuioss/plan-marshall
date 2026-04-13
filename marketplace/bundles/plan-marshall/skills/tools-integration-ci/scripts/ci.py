@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Provider-agnostic CI router.
 
-Reads CI provider from config['ci']['provider'] in marshal.json, falling back
-to dynamic discovery via providers[] category=ci. Delegates to the matching
-provider script ({provider}_ops.py). All arguments are passed through.
+Resolves the CI provider by scanning providers[] in marshal.json for
+category=ci and deriving the provider key from skill_name. Delegates to the
+matching provider script ({provider}_ops.py). All arguments are passed through.
 
 Usage:
     python3 ci.py pr create --title "Title" --body "Body"
@@ -52,8 +52,8 @@ def _derive_provider_key(skill_name: str) -> str | None:
 def get_provider() -> str | None:
     """Find CI provider from marshal.json.
 
-    Primary: reads config['ci']['provider'] (persisted by ci_health.py persist).
-    Fallback: scans providers[] for category=ci, derives provider key from skill_name.
+    Scans providers[] for the entry with category=ci and derives the provider
+    key from its skill_name. This is the canonical (and only) resolution path.
     """
     plan_dir = find_plan_dir()
     if not plan_dir:
@@ -64,14 +64,6 @@ def get_provider() -> str | None:
         with open(marshal_path) as f:
             config = json.load(f)
 
-            # Primary: config['ci']['provider']
-            ci_config = config.get('ci', {})
-            if isinstance(ci_config, dict):
-                provider = ci_config.get('provider')
-                if isinstance(provider, str) and provider != 'unknown':
-                    return provider
-
-            # Fallback: scan providers[] by category, derive key dynamically
             for entry in config.get('providers', []):
                 if not isinstance(entry, dict) or entry.get('category') != 'ci':
                     continue
