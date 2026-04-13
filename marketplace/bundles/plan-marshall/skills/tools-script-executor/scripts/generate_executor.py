@@ -409,13 +409,15 @@ This shim exists so the documented call site
     python3 .plan/execute-script.py {{notation}} [args...]
 
 keeps working after the real executor was relocated to the per-project
-global directory at ~/.plan-marshall/{{project-name}}/execute-script.py.
+global directory at ~/.plan-marshall/{{basename}}-{{hash}}/execute-script.py.
 
 Resolution mirrors file_ops.get_base_dir(): honours PLAN_BASE_DIR env var,
 otherwise derives the project name from the main git checkout root (using
---git-common-dir so worktrees resolve to the main checkout).
+--git-common-dir so worktrees resolve to the main checkout) and appends a
+short path hash to disambiguate repos that share a basename.
 """
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -424,7 +426,7 @@ from pathlib import Path
 GLOBAL_ROOT = Path.home() / '.plan-marshall'
 
 
-def _git_main_checkout_root() -> Path | None:
+def _git_main_checkout_root():
     try:
         result = subprocess.run(
             ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
@@ -439,13 +441,19 @@ def _git_main_checkout_root() -> Path | None:
     return Path(common).parent if common else None
 
 
+def _project_dir_name(root):
+    abs_path = str(root.resolve())
+    digest = hashlib.sha256(abs_path.encode("utf-8")).hexdigest()[:8]
+    return f"{root.name}-{digest}"
+
+
 def _resolve_executor() -> Path:
     env_override = os.environ.get('PLAN_BASE_DIR')
     if env_override:
         return Path(env_override) / 'execute-script.py'
     root = _git_main_checkout_root()
     if root is not None:
-        return GLOBAL_ROOT / root.name / 'execute-script.py'
+        return GLOBAL_ROOT / _project_dir_name(root) / 'execute-script.py'
     # Fallback: look beside the shim itself.
     return Path(__file__).resolve().parent / 'execute-script.py'
 

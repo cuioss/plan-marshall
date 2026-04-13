@@ -23,12 +23,16 @@ class TestGetPlanDir:
 
     def test_default_resolves_global_dir_inside_git_repo(self, monkeypatch):
         """Without an env override, the default resolves to
-        ~/.plan-marshall/{project-name} when called from inside a git repo.
+        ~/.plan-marshall/{basename}-{path-hash} when called from inside a
+        git repo. The hash suffix prevents collisions when two repos
+        share a basename.
         """
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         result = get_plan_dir()
-        # Running in this repo: main checkout basename is 'plan-marshall'.
-        assert result == Path.home() / '.plan-marshall' / 'plan-marshall'
+        assert result.parent == Path.home() / '.plan-marshall'
+        # basename + 8-char hex digest separated by a dash
+        import re
+        assert re.fullmatch(r'.+-[0-9a-f]{8}', result.name), result.name
 
 
 class TestGetTempDir:

@@ -21,6 +21,8 @@ Usage:
     )
 """
 
+import functools
+import hashlib
 import json
 import os
 import subprocess
@@ -102,13 +104,16 @@ def format_duration(seconds: float) -> str:
     return f'{h}h{m}m'
 
 
-def _git_main_checkout_root() -> Path | None:
-    """Return the main git checkout root, or None if not in a git repo.
+@functools.lru_cache(maxsize=8)
+def _resolve_git_main_checkout_root(cwd_marker: str) -> Path | None:
+    """Cached worker for _git_main_checkout_root.
 
-    Uses --git-common-dir so this resolves to the SAME directory whether
-    called from the main checkout or from a linked worktree. The main .git
-    directory's parent is the main working tree.
+    Cache key is the resolved absolute cwd at call time, so a test that
+    monkeypatches ``os.chdir`` into a different directory gets a fresh
+    lookup. ``maxsize=8`` is enough to absorb cwd-juggling test loops
+    while keeping production (single cwd) effectively cache-of-one.
     """
+    del cwd_marker  # only used as the cache key
     try:
         result = subprocess.run(
             ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
@@ -126,16 +131,33 @@ def _git_main_checkout_root() -> Path | None:
     return git_common_dir.parent
 
 
+def _git_main_checkout_root() -> Path | None:
+    """Return the main git checkout root, or None if not in a git repo.
+
+    Uses --git-common-dir so this resolves to the SAME directory whether
+    called from the main checkout or from a linked worktree. The main .git
+    directory's parent is the main working tree. Result is cached per cwd
+    (see _resolve_git_main_checkout_root) to avoid spawning a git
+    subprocess on every base-dir lookup.
+    """
+    return _resolve_git_main_checkout_root(os.getcwd())
+
+
 def get_project_name() -> str | None:
     """Return the project name used to scope the global plan-marshall directory.
 
-    The project name is the basename of the main git checkout root. Returns
-    None when not inside a git repository.
+    Format: ``<basename>-<8-char-hash>`` where the hash is derived from
+    the absolute path of the main git checkout root. The basename keeps
+    the directory human-readable; the hash suffix prevents collisions
+    when two repos share a basename (e.g. ``~/work/app`` vs
+    ``~/personal/app``). Returns None when not inside a git repository.
     """
     root = _git_main_checkout_root()
     if root is None:
         return None
-    return root.name
+    abs_path = str(root.resolve())
+    digest = hashlib.sha256(abs_path.encode('utf-8')).hexdigest()[:8]
+    return f'{root.name}-{digest}'
 
 
 def get_global_dir() -> Path | None:
@@ -274,14 +296,17 @@ def get_tracked_config_dir() -> Path:
     this normally points at the repo — not the per-project global directory.
 
     Resolution order:
-        1. PLAN_TRACKED_CONFIG_DIR environment variable (tests, fine-grained
+        1. Explicit set_base_dir() override (tests).
+        2. PLAN_TRACKED_CONFIG_DIR environment variable (tests, fine-grained
            override).
-        2. PLAN_BASE_DIR environment variable (backward compatibility for
+        3. PLAN_BASE_DIR environment variable (backward compatibility for
            tests that already stage both runtime state AND marshal.json in
            the same fixture directory).
-        3. {git-main-checkout-root}/.plan when inside a git repo.
-        4. ./.plan relative to cwd (fallback).
+        4. {git-main-checkout-root}/.plan when inside a git repo.
+        5. ./.plan relative to cwd (fallback).
     """
+    if _BASE_DIR_OVERRIDE is not None:
+        return _BASE_DIR_OVERRIDE
     env_tracked = os.environ.get('PLAN_TRACKED_CONFIG_DIR')
     if env_tracked:
         return Path(env_tracked)

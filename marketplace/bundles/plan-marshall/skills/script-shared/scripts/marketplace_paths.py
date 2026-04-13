@@ -6,6 +6,8 @@ Used by generate_executor.py, scan-marketplace-inventory.py, and other scripts
 that need to locate marketplace infrastructure.
 """
 
+import functools
+import hashlib
 import os
 import subprocess
 from pathlib import Path
@@ -18,12 +20,10 @@ PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 GLOBAL_PLAN_MARSHALL_ROOT = Path.home() / '.plan-marshall'
 
 
-def _git_main_checkout_root() -> Path | None:
-    """Return the main git checkout root, or None if not in a git repo.
-
-    Worktree-safe: uses --git-common-dir so worktrees resolve to the same
-    main checkout as the primary working tree.
-    """
+@functools.lru_cache(maxsize=8)
+def _resolve_git_main_checkout_root(cwd_marker: str) -> Path | None:
+    """Cached worker for _git_main_checkout_root (see file_ops for rationale)."""
+    del cwd_marker  # only used as the cache key
     try:
         result = subprocess.run(
             ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
@@ -40,13 +40,35 @@ def _git_main_checkout_root() -> Path | None:
     return Path(common_dir).parent
 
 
+def _git_main_checkout_root() -> Path | None:
+    """Return the main git checkout root, or None if not in a git repo.
+
+    Worktree-safe: uses --git-common-dir so worktrees resolve to the same
+    main checkout as the primary working tree. Result is cached per cwd
+    to avoid spawning a git subprocess on every base-dir lookup.
+    """
+    return _resolve_git_main_checkout_root(os.getcwd())
+
+
+def _project_dir_name(root: Path) -> str:
+    """Compute the per-project directory name (basename + path hash).
+
+    Mirrors tools-file-ops.get_project_name(): basename keeps the path
+    human-readable; the 8-char hash suffix prevents collisions across
+    repos that share a basename.
+    """
+    abs_path = str(root.resolve())
+    digest = hashlib.sha256(abs_path.encode('utf-8')).hexdigest()[:8]
+    return f'{root.name}-{digest}'
+
+
 def get_plan_dir() -> Path:
     """Get the plan-marshall base directory.
 
     Resolution order mirrors tools-file-ops.get_base_dir():
         1. PLAN_BASE_DIR environment variable (tests, user override).
         2. Per-project global directory ~/.plan-marshall/{project-name}/
-           when inside a git repository.
+           when inside a git repository (basename + path hash suffix).
         3. Repo-local .plan/ fallback (outside a git repo).
     """
     env_dir = os.environ.get('PLAN_BASE_DIR')
@@ -54,7 +76,7 @@ def get_plan_dir() -> Path:
         return Path(env_dir)
     root = _git_main_checkout_root()
     if root is not None:
-        return GLOBAL_PLAN_MARSHALL_ROOT / root.name
+        return GLOBAL_PLAN_MARSHALL_ROOT / _project_dir_name(root)
     return Path(PLAN_DIR_NAME)
 
 
