@@ -28,9 +28,11 @@ Skill: plan-marshall:dev-general-practices
 - Never access `.plan/` files directly — use manage-* scripts via Bash (Edit/Write tools trigger permission prompts on `.plan/` directories)
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
+- Never target file paths outside the active git worktree. When a plan runs in an isolated worktree, all Edit/Write/Read tool calls during execution MUST use the worktree's absolute path (e.g., `/Users/oliver/.plan-marshall/.../worktrees/{plan_id}/...`), never the main checkout (e.g., `/Users/oliver/git/{repo}/...`). Editing the main checkout pollutes uncommitted state, bypasses worktree isolation, and lets tests silently load stale source via PYTHONPATH.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- On phase entry (Step 3), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run. Every subsequent Edit/Write/Read must reference that path as the root.
 
 ---
 
@@ -148,7 +150,7 @@ src/Bar.java,10,Missing null check,error
 
 ---
 
-### Step 3: Log Phase Start (Once per phase)
+### Step 3: Log Phase Start and Surface Active Worktree (Once per phase)
 
 At the start of execute or finalize phase:
 
@@ -156,6 +158,22 @@ At the start of execute or finalize phase:
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Starting {phase} phase"
 ```
+
+**Surface the active worktree absolute path** so it remains visible in model context for every subsequent Edit/Write/Read call. Read the worktree path from status metadata:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
+```
+
+Extract `worktree_path` from the output. If present (plan runs in an isolated worktree), emit:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Active worktree: {worktree_path} — all Edit/Write/Read tool calls MUST target this path, NOT the main checkout"
+```
+
+If `worktree_path` is absent (plan runs against the main checkout), skip emission. From this point on, every file path used in Edit/Write/Read MUST be resolved against `{worktree_path}` rather than the main checkout.
 
 For each task in current phase:
 
