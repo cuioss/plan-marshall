@@ -173,13 +173,13 @@ Display detection result to user. If tool not authenticated, warn:
 - "GitHub detected but 'gh' not authenticated. Run 'gh auth login' for CI operations."
 - "GitLab detected but 'glab' not authenticated. Run 'glab auth login' for CI operations."
 
-### Step 14d: Persist CI configuration
+### Step 14d: Verify CI tool
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health persist
 ```
 
-**Output**: CI configuration persisted to marshal.json with detected provider and authenticated tools.
+**Output**: Authenticated tool list persisted to `run-configuration.json` under `ci.authenticated_tools`. The CI provider identity and repo URL are derived at read time from the `providers[]` entries in marshal.json — no `config["ci"]` block is written.
 
 ---
 
@@ -276,10 +276,11 @@ Check if the selected provider has `extra_fields` in the `list-providers` output
 
 For `workflow-integration-sonar` (has `extra_fields: organization, project_key`):
 
-1. Read `repo_url` from the CI provider entry in marshal.json (persisted during Step 14d):
+1. Read `repo_url` from the version-control provider entry in `providers[]` (the canonical source — marshal.json no longer stores a separate `config["ci"]` block):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config ci get
+python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```
+Parse the output and locate the entry with `category == "version-control"`; its `url` field is the `repo_url`.
 
 2. Extract organization from `repo_url` (e.g., `https://github.com/cuioss/plan-marshall` -> org=`cuioss`, repo=`plan-marshall`)
 3. Derive project key as `{org}_{repo}` (e.g., `cuioss_plan-marshall`)

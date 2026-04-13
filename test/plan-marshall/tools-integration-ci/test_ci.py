@@ -41,10 +41,11 @@ def test_pr_subcommand_returns_success():
     assert result.success
 
 
-def test_get_provider_reads_from_ci_config(tmp_path):
-    """Test that get_provider() reads from config['ci']['provider'] (primary path)."""
+def test_get_provider_ignores_legacy_ci_config(tmp_path):
+    """Test that get_provider() ignores legacy config['ci'] and requires providers[]."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
+    # Legacy config['ci'] present but providers[] empty — resolver must ignore it.
     marshal = {
         'ci': {'provider': 'github', 'repo_url': 'https://github.com/org/repo'},
         'providers': [],
@@ -52,13 +53,12 @@ def test_get_provider_reads_from_ci_config(tmp_path):
     (plan_dir / 'marshal.json').write_text(json.dumps(marshal))
 
     result = run_script(SCRIPT_PATH, cwd=tmp_path)
-    # Should detect github provider and fail on missing subcommand (exit 2),
-    # not on "CI provider not configured" (exit 0 with error TOON)
-    assert result.returncode == 2 or 'not configured' not in result.stdout
+    assert result.success
+    assert 'not configured' in result.stdout
 
 
-def test_get_provider_falls_back_to_providers_array(tmp_path):
-    """Test that get_provider() falls back to providers array when config['ci'] not set."""
+def test_get_provider_resolves_from_providers_array(tmp_path):
+    """Test that get_provider() resolves from providers[] (canonical path)."""
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
     marshal = {

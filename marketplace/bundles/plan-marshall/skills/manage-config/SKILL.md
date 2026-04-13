@@ -162,9 +162,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Workflow: CI Operations
 
-CI operations use the provider-agnostic `ci` router. The router reads `ci.provider` from marshal.json and delegates to the correct provider script (github.py or gitlab.py).
+CI operations use the provider-agnostic `ci` router. The router resolves the active provider by scanning `providers[]` in marshal.json for the entry with `category == "ci"` and deriving the key from its `skill_name` (e.g., `plan-marshall:workflow-integration-github` -> `github`), then delegates to the matching provider script.
 
-**Note**: CI commands use a different notation — they route through `tools-integration-ci`, not `manage-config`. The config skill only stores the CI provider/tools settings; actual CI operations are in the `workflow-integration-github` (or `workflow-integration-gitlab`) and `workflow-integration-git` skills.
+**Note**: CI commands use a different notation — they route through `tools-integration-ci`, not `manage-config`. `providers[]` is the single source of truth for CI provider identity; `manage-config` does not store a separate CI provider block. Actual CI operations live in the `workflow-integration-github` (or `workflow-integration-gitlab`) and `workflow-integration-git` skills.
 
 ### Example: View Issue
 
