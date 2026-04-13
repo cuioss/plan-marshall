@@ -355,6 +355,12 @@
             "test_manage_metrics.py"
           ]
         },
+        "plan-marshall.manage-worktree": {
+          "path": "test/plan-marshall/manage-worktree",
+          "files": [
+            "test_manage_worktree.py"
+          ]
+        },
         "plan-marshall.workflow-integration-gitlab": {
           "path": "test/plan-marshall/workflow-integration-gitlab",
           "files": [
@@ -533,7 +539,7 @@
       "dependencies": [],
       "stats": {
         "source_files": 0,
-        "test_files": 162
+        "test_files": 163
       },
       "commands": {
         "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean\"",
