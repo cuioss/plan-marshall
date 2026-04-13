@@ -336,6 +336,8 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
         return make_error('pr_thread_reply', 'Could not determine project path')
 
     encoded_path = quote(project_path, safe='')
+    # GitLab's discussion notes endpoint publishes replies immediately —
+    # there is no pending/draft state here, unlike GitHub's PR review flow.
     endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions/{args.thread_id}/notes'
 
     returncode, stdout, stderr = run_glab(['api', '-X', 'POST', endpoint, '-f', f'body={args.body}'])
@@ -348,6 +350,21 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
         'pr_number': args.pr_number,
         'thread_id': args.thread_id,
     }
+
+
+def cmd_pr_submit_review(args: argparse.Namespace) -> dict:
+    """Handle 'pr submit-review' subcommand.
+
+    GitLab discussion replies are published immediately via the notes endpoint
+    (see ``cmd_pr_thread_reply`` above), so there is no pending-review draft
+    state on GitLab and no equivalent to GitHub's submitPullRequestReview.
+    We deliberately return an explicit error rather than a silent success so
+    that cross-provider callers notice the mismatch.
+    """
+    return make_error(
+        'pr_submit_review',
+        'Not supported on GitLab — discussion replies are immediate (no draft review state)',
+    )
 
 
 def cmd_pr_reviews(args: argparse.Namespace) -> dict:
@@ -918,6 +935,7 @@ def main() -> int:
         ('pr', 'reply'): cmd_pr_reply,
         ('pr', 'resolve-thread'): cmd_pr_resolve_thread,
         ('pr', 'thread-reply'): cmd_pr_thread_reply,
+        ('pr', 'submit-review'): cmd_pr_submit_review,
         ('pr', 'reviews'): cmd_pr_reviews,
         ('pr', 'comments'): cmd_pr_comments,
         ('pr', 'merge'): cmd_pr_merge,
