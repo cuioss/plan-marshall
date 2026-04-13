@@ -188,6 +188,7 @@ These rules apply to ALL work in this repository — ad-hoc tasks, plan executio
 - **Workflow steps: no improvisation** — When following a skill or workflow, execute ONLY the commands documented in it. Never add discovery steps, invent arguments, or skip documented steps.
 - **CI operations: use abstraction layer** — All CI/Git provider operations (PRs, issues, CI status, reviews) MUST go through `plan-marshall:tools-integration-ci:ci` scripts. Never use `gh` or `glab` directly.
 - **Build commands: resolve via architecture** — Never hard-code `./pw`, `mvn`, `npm`, or `gradle`. Always resolve via `plan-marshall:manage-architecture:architecture resolve` first, then execute the returned `executable`.
+- **PR review: validate bot suggestions against plan intent** — Before accepting any automated review comment (gemini-code-assist, Copilot, Sonar bots, etc.), check it against the plan's stated intent and any driving lessons. If a suggestion contradicts the change's purpose (e.g., reintroducing the exact anti-pattern the plan was removing), reply with the rationale and resolve the thread — do NOT create a loop-back fix task.
 
 ### Plugin Cache Sync
 
