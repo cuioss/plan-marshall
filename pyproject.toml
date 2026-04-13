@@ -100,6 +100,20 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 explicit_package_bases = true
+# Keep in sync with runtime PYTHONPATH from collect_script_dirs() in
+# script-shared/scripts/marketplace_bundles.py — bundle-scoped mypy runs
+# resolve cross-bundle imports through this list.
+mypy_path = [
+    "marketplace/bundles/plan-marshall/skills/script-shared/scripts",
+    "marketplace/bundles/plan-marshall/skills/script-shared/scripts/build",
+    "marketplace/bundles/plan-marshall/skills/script-shared/scripts/extension",
+    "marketplace/bundles/plan-marshall/skills/script-shared/scripts/workflow",
+    "marketplace/bundles/plan-marshall/skills/script-shared/scripts/query",
+    "marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts",
+    "marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts",
+    "marketplace/bundles/plan-marshall/skills/tools-input-validation/scripts",
+    "marketplace/bundles/plan-marshall/skills/manage-logging/scripts",
+]
 # Exclude extension.py files in plan-marshall-plugin directories - they are dynamically loaded
 # and mypy can't distinguish them by path (all named "extension")
 # Also exclude test/*/plan-marshall-plugin/ directories - invalid Python package name (contains dashes)
