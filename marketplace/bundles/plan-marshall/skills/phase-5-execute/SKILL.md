@@ -32,7 +32,7 @@ Skill: plan-marshall:dev-general-practices
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
-- On phase entry (Step 3), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run. Every subsequent Edit/Write/Read must reference that path as the root.
+- On phase entry (Step 3), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run. If present, every subsequent Edit/Write/Read must reference that path as the root.
 
 ---
 
@@ -173,7 +173,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Active worktree: {worktree_path} — all Edit/Write/Read tool calls MUST target this path, NOT the main checkout"
 ```
 
-If `worktree_path` is absent (plan runs against the main checkout), skip emission. From this point on, every file path used in Edit/Write/Read MUST be resolved against `{worktree_path}` rather than the main checkout.
+If `worktree_path` is absent (plan runs against the main checkout), skip emission. If present, every file path used in Edit/Write/Read from this point on MUST be resolved against `{worktree_path}` rather than the main checkout.
 
 For each task in current phase:
 
