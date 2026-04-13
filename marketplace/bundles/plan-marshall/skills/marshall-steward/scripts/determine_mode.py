@@ -127,17 +127,20 @@ def determine_mode(plan_dir: Path) -> tuple[str, str]:
     """
     Determine operational mode based on existing files.
 
+    Both files live in the repo-local ``.plan/`` directory: marshal.json
+    is tracked, and ``execute-script.py`` is the repo-local shim that
+    marshall-steward writes alongside the real global executor. The shim
+    is the authoritative bootstrap marker — if it exists, the system has
+    been initialized for this checkout.
+
     Args:
-        plan_dir: Path to the .plan directory
+        plan_dir: Path to the repo-local ``.plan/`` directory.
 
     Returns:
         Tuple of (mode, reason) where mode is 'wizard' or 'menu'
     """
-    executor_path = plan_dir / 'execute-script.py'
-    marshal_path = plan_dir / 'marshal.json'
-
-    executor_exists = executor_path.exists()
-    marshal_exists = marshal_path.exists()
+    executor_exists = (plan_dir / 'execute-script.py').exists()
+    marshal_exists = (plan_dir / 'marshal.json').exists()
 
     if not executor_exists:
         return 'wizard', 'executor_missing'

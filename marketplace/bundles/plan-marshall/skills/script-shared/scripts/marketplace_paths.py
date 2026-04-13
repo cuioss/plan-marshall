@@ -6,7 +6,10 @@ Used by generate_executor.py, scan-marketplace-inventory.py, and other scripts
 that need to locate marketplace infrastructure.
 """
 
+import functools
+import hashlib
 import os
+import subprocess
 from pathlib import Path
 
 # Central configuration
@@ -14,17 +17,102 @@ PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 CLAUDE_DIR = '.claude'
 PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
+GLOBAL_PLAN_MARSHALL_ROOT = Path.home() / '.plan-marshall'
+
+
+# =============================================================================
+# Canonical git-root + project-dir-name resolver
+# =============================================================================
+# These primitives live here (in script-shared, the foundation bundle) and are
+# imported by tools-file-ops/file_ops.py. Do NOT duplicate them — the lesson
+# from PR #160 review was to consolidate, not maintain parallel copies.
+
+
+@functools.lru_cache(maxsize=8)
+def _resolve_git_main_checkout_root(cwd_marker: str) -> Path | None:
+    """Cached worker for git_main_checkout_root.
+
+    Cache key is the resolved absolute cwd at call time, so a test that
+    monkeypatches ``os.chdir`` into a different directory gets a fresh
+    lookup. ``maxsize=8`` is enough to absorb cwd-juggling test loops
+    while keeping production (single cwd) effectively cache-of-one.
+    """
+    del cwd_marker  # only used as the cache key
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    common_dir = result.stdout.strip()
+    if not common_dir:
+        return None
+    return Path(common_dir).parent
+
+
+def git_main_checkout_root() -> Path | None:
+    """Return the main git checkout root, or None if not in a git repo.
+
+    Worktree-safe: uses ``git rev-parse --git-common-dir`` so worktrees
+    resolve to the same main checkout as the primary working tree. The
+    result is cached per cwd to avoid spawning a git subprocess on every
+    base-dir lookup.
+    """
+    return _resolve_git_main_checkout_root(os.getcwd())
+
+
+def project_dir_name(root: Path) -> str:
+    """Compute the per-project directory name (basename + path hash).
+
+    Format: ``{root.name}-{8-char sha256(abs path)}``. The basename keeps
+    the directory human-readable; the hash suffix prevents collisions
+    when two repos share a basename (e.g. ``~/work/app`` vs
+    ``~/personal/app``).
+    """
+    abs_path = str(root.resolve())
+    digest = hashlib.sha256(abs_path.encode('utf-8')).hexdigest()[:8]
+    return f'{root.name}-{digest}'
 
 
 def get_plan_dir() -> Path:
-    """Get the .plan directory path, respecting PLAN_BASE_DIR override."""
-    base = os.environ.get('PLAN_BASE_DIR', PLAN_DIR_NAME)
-    return Path(base)
+    """Get the plan-marshall base directory.
+
+    Resolution order mirrors tools-file-ops.get_base_dir():
+        1. PLAN_BASE_DIR environment variable (tests, user override).
+        2. Per-project global directory ~/.plan-marshall/{project-name}/
+           when inside a git repository (basename + path hash suffix).
+        3. Repo-local .plan/ fallback (outside a git repo).
+    """
+    env_dir = os.environ.get('PLAN_BASE_DIR')
+    if env_dir:
+        return Path(env_dir)
+    root = git_main_checkout_root()
+    if root is not None:
+        return GLOBAL_PLAN_MARSHALL_ROOT / project_dir_name(root)
+    return Path(PLAN_DIR_NAME)
 
 
 def get_temp_dir(subdir: str) -> Path:
-    """Get temp directory under .plan/temp/{subdir}."""
-    return get_plan_dir() / 'temp' / subdir
+    """Get temp directory under the repo-local .plan/temp/{subdir}.
+
+    temp/ intentionally stays project-local (unlike runtime state under
+    get_plan_dir()) so each worktree keeps its own isolated temp and the
+    existing ``Write(.plan/**)`` permission keeps covering it.
+
+    When PLAN_BASE_DIR is set (tests), it takes precedence and temp lands
+    under that override directory for consistency with file_ops.get_temp_dir.
+    """
+    env_dir = os.environ.get('PLAN_BASE_DIR')
+    if env_dir:
+        return Path(env_dir) / 'temp' / subdir
+    root = git_main_checkout_root()
+    if root is not None:
+        return root / '.plan' / 'temp' / subdir
+    return Path(PLAN_DIR_NAME) / 'temp' / subdir
 
 
 def safe_relative_path(path: Path) -> str:

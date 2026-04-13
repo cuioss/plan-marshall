@@ -350,8 +350,8 @@ def test_report_returns_valid_toon():
     assert 'report_file' in data, 'Should have report_file field'
     assert 'findings_file' in data, 'Should have findings_file field'
     assert 'summary' in data, 'Should have summary field'
-    assert str(data['report_dir']).endswith('.plan/temp/plugin-doctor-report'), (
-        f'Report dir should end with .plan/temp/plugin-doctor-report, got {data["report_dir"]}'
+    assert str(data['report_dir']).endswith('temp/plugin-doctor-report'), (
+        f'Report dir should end with temp/plugin-doctor-report, got {data["report_dir"]}'
     )
 
 

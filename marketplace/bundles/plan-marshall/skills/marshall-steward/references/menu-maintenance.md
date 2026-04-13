@@ -63,9 +63,34 @@ python3 -m py_compile .plan/execute-script.py && echo "Executor syntax OK"
 
 **Output (TOON)**:
 ```toon
-status	scripts_discovered	executor_generated	logs_cleaned
-success	47	.plan/execute-script.py	0
+status: success
+scripts_discovered: 47
+executor_generated: /Users/<user>/.plan-marshall/<project>/execute-script.py
+shim_generated: /path/to/repo/.plan/execute-script.py
+logs_cleaned: 0
 ```
+
+The real executor now lives in the per-project global directory at
+`~/.plan-marshall/<project>/execute-script.py`; the repo-local
+`.plan/execute-script.py` is a thin shim that exec's it. Every documented
+call site (`python3 .plan/execute-script.py …`) still works unchanged.
+
+**Legacy drift detection**: if the repo-local `.plan/` still contains any
+of the runtime entries that moved to the global dir in PR1 (`plans/`,
+`archived-plans/`, `lessons-learned/`, `archived-lessons/`, `memory/`,
+`logs/`, `temp/`, `run-configuration.json`, `marshall-state.toon`, the
+pre-shim `execute-script.py`), `generate` adds two extra fields to the
+output and prints a notice on stderr:
+
+```toon
+legacy_drift_count: 1
+legacy_drift[1]:
+  - temp
+```
+
+These entries are no longer read and are safe to delete. Cleanup is
+manual on purpose — the clean-slate migration intentionally does not
+move or delete them automatically.
 
 ---
 

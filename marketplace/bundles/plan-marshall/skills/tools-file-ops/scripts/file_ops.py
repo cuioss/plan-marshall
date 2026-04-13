@@ -23,17 +23,47 @@ Usage:
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+# Bootstrap sys.path so script-shared/scripts is importable. file_ops needs
+# git_main_checkout_root + project_dir_name from script-shared.marketplace_paths
+# (the canonical implementation lives there to avoid byte-for-byte duplication
+# between the two bundles — see PR #160 review). The walk locates the bundle's
+# skills/ root from this script's own __file__ and inserts script-shared/scripts
+# at the front of sys.path. Doing this in module init means callers (tests,
+# bootstrap scripts) don't have to remember to set up PYTHONPATH first.
+_THIS_FILE = Path(__file__).resolve()
+for _ancestor in _THIS_FILE.parents:
+    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
+        _shared_scripts = str(_ancestor / 'script-shared' / 'scripts')
+        if _shared_scripts not in sys.path:
+            sys.path.insert(0, _shared_scripts)
+        break
 
-# Default base directory for workflow files
-# Can be overridden via PLAN_BASE_DIR environment variable for testing
-_BASE_DIR = Path(os.environ.get('PLAN_BASE_DIR', '.plan'))
+from marketplace_paths import (  # type: ignore[import-not-found]  # noqa: E402
+    git_main_checkout_root,
+    project_dir_name,
+)
+from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+
+# Global plan-marshall root: per-project runtime state lives under
+# ~/.plan-marshall/{project-name}/. The project name is derived from the
+# main git checkout root (basename + path-hash suffix), resolved via
+# --git-common-dir so worktrees share the same global directory as the
+# main checkout. See script-shared.marketplace_paths for the resolver.
+GLOBAL_ROOT = Path.home() / '.plan-marshall'
+
+# Fallback base directory used when not inside a git repository.
+_FALLBACK_BASE_DIR = Path('.plan')
+
+# Runtime-overridable base directory (set by set_base_dir for tests).
+# None means "resolve from environment / git on each call".
+_BASE_DIR_OVERRIDE: Path | None = None
 
 
 def now_utc_iso() -> str:
@@ -92,6 +122,31 @@ def format_duration(seconds: float) -> str:
     return f'{h}h{m}m'
 
 
+def get_project_name() -> str | None:
+    """Return the project name used to scope the global plan-marshall directory.
+
+    Delegates to ``script-shared.marketplace_paths.project_dir_name`` for the
+    canonical derivation: ``{basename}-{8-char sha256(abs path)}``. Returns
+    ``None`` when not inside a git repository.
+    """
+    root = git_main_checkout_root()
+    if root is None:
+        return None
+    return project_dir_name(root)
+
+
+def get_global_dir() -> Path | None:
+    """Return the per-project global plan-marshall directory, or None.
+
+    Returns ~/.plan-marshall/{project-name}/ when inside a git repo. Callers
+    that need a guaranteed path should use get_base_dir() instead.
+    """
+    name = get_project_name()
+    if name is None:
+        return None
+    return GLOBAL_ROOT / name
+
+
 def normalize_to_repo_relative(path: str) -> str:
     """Normalize absolute file paths to repository-relative paths.
 
@@ -107,8 +162,6 @@ def normalize_to_repo_relative(path: str) -> str:
     if not path.startswith('/'):
         return path
     try:
-        import subprocess
-
         result = subprocess.run(
             ['git', 'rev-parse', '--show-toplevel'],
             capture_output=True,
@@ -125,19 +178,24 @@ def normalize_to_repo_relative(path: str) -> str:
 
 
 def get_base_dir() -> Path:
-    """Get the base directory for workflow files.
+    """Get the base directory for plan-marshall runtime state.
 
-    Returns:
-        Path object for the workflow base directory (default: .plan)
-
-    Note:
-        Can be overridden via PLAN_BASE_DIR environment variable.
+    Resolution order:
+        1. Explicit set_base_dir() override (tests).
+        2. PLAN_BASE_DIR environment variable (tests, user override).
+        3. Per-project global directory ~/.plan-marshall/{project-name}/
+           when inside a git repository.
+        4. Repo-local .plan/ fallback (outside a git repo).
     """
-    # Check env var each time to support runtime changes in tests
+    if _BASE_DIR_OVERRIDE is not None:
+        return _BASE_DIR_OVERRIDE
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir)
-    return _BASE_DIR
+    global_dir = get_global_dir()
+    if global_dir is not None:
+        return global_dir
+    return _FALLBACK_BASE_DIR
 
 
 def set_base_dir(path: Path | str) -> None:
@@ -148,10 +206,10 @@ def set_base_dir(path: Path | str) -> None:
 
     Note:
         This is primarily for testing purposes. In production,
-        the default .plan directory should be used.
+        the default per-project global directory should be used.
     """
-    global _BASE_DIR
-    _BASE_DIR = Path(path)
+    global _BASE_DIR_OVERRIDE
+    _BASE_DIR_OVERRIDE = Path(path)
 
 
 def base_path(*parts: str) -> Path:
@@ -171,21 +229,23 @@ def base_path(*parts: str) -> Path:
 
 
 def get_temp_dir(subdir: str | None = None) -> Path:
-    """Get temp directory under .plan/temp/{subdir}.
+    """Get temp directory under the repo-local tracked config dir.
 
     Args:
         subdir: Optional subdirectory name within temp
 
     Returns:
-        Path to temp directory (respects PLAN_BASE_DIR env var)
+        Path to ``.plan/temp[/subdir]`` inside the repo checkout.
 
-    Example:
-        >>> get_temp_dir()
-        PosixPath('.plan/temp')
-        >>> get_temp_dir('tools-marketplace-inventory')
-        PosixPath('.plan/temp/tools-marketplace-inventory')
+    Note:
+        temp/ intentionally stays project-local (unlike the runtime state
+        under get_base_dir()) so each worktree gets its own isolated temp,
+        build logs sit next to the source they came from, and the existing
+        ``Write(.plan/**)`` permission keeps covering it. Resolution
+        honours PLAN_TRACKED_CONFIG_DIR / PLAN_BASE_DIR overrides via
+        get_tracked_config_dir().
     """
-    temp_path = get_base_dir() / 'temp'
+    temp_path = get_tracked_config_dir() / 'temp'
     if subdir:
         return temp_path / subdir
     return temp_path
@@ -198,9 +258,50 @@ def get_plan_dir(plan_id: str) -> Path:
         plan_id: Plan identifier
 
     Returns:
-        Path to .plan/plans/{plan_id}/
+        Path to {base_dir}/plans/{plan_id}/
     """
     return base_path('plans', plan_id)
+
+
+def get_tracked_config_dir() -> Path:
+    """Get the repo-local tracked configuration directory.
+
+    Returns the repo-local ``.plan/`` directory where tracked files live
+    (``marshal.json`` and ``project-architecture/``). Unlike get_base_dir(),
+    this normally points at the repo — not the per-project global directory.
+
+    Resolution order:
+        1. Explicit set_base_dir() override (tests).
+        2. PLAN_TRACKED_CONFIG_DIR environment variable (tests, fine-grained
+           override).
+        3. PLAN_BASE_DIR environment variable (backward compatibility for
+           tests that already stage both runtime state AND marshal.json in
+           the same fixture directory).
+        4. {git-main-checkout-root}/.plan when inside a git repo.
+        5. ./.plan relative to cwd (fallback).
+    """
+    if _BASE_DIR_OVERRIDE is not None:
+        return _BASE_DIR_OVERRIDE
+    env_tracked = os.environ.get('PLAN_TRACKED_CONFIG_DIR')
+    if env_tracked:
+        return Path(env_tracked)
+    env_base = os.environ.get('PLAN_BASE_DIR')
+    if env_base:
+        return Path(env_base)
+    root = git_main_checkout_root()
+    if root is not None:
+        return root / '.plan'
+    return Path('.plan')
+
+
+def get_marshal_path() -> Path:
+    """Path to the tracked marshal.json file."""
+    return get_tracked_config_dir() / 'marshal.json'
+
+
+def get_project_architecture_dir() -> Path:
+    """Path to the tracked project-architecture/ directory."""
+    return get_tracked_config_dir() / 'project-architecture'
 
 
 def read_json(path: str | Path, default: Any = None) -> Any:

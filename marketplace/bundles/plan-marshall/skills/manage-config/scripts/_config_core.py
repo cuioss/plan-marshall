@@ -9,17 +9,23 @@ import json
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from constants import FILE_MARSHAL  # type: ignore[import-not-found]
-from file_ops import get_base_dir, output_toon  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    get_base_dir,
+    get_marshal_path,
+    get_tracked_config_dir,
+    output_toon,
+)
 from marketplace_bundles import resolve_bundles_root  # type: ignore[import-not-found]
 
 # Bundle path for skill description resolution. Resolved by walking up to a
 # plan-marshall bundle ancestor instead of relying on a hard-coded depth.
 BUNDLES_DIR = resolve_bundles_root(Path(__file__))
 
-# File location - derived from file_ops.get_base_dir() for env-var consistency
+# marshal.json is tracked in the repo under .plan/; runtime state
+# (run-configuration.json) lives in the per-project global directory.
 PLAN_BASE_DIR = get_base_dir()
-MARSHAL_PATH = PLAN_BASE_DIR / FILE_MARSHAL
+TRACKED_CONFIG_DIR = get_tracked_config_dir()
+MARSHAL_PATH = get_marshal_path()
 # Note: uses 'run-configuration.json', distinct from constants.FILE_RUN_CONFIG ('run-config.json')
 RUN_CONFIG_PATH = PLAN_BASE_DIR / 'run-configuration.json'
 
@@ -37,9 +43,9 @@ def is_initialized() -> bool:
 
 def require_initialized() -> None:
     """Raise exception if marshal.json doesn't exist."""
-    if not PLAN_BASE_DIR.exists():
+    if not TRACKED_CONFIG_DIR.exists():
         raise MarshalNotInitializedError(
-            f"Directory '{PLAN_BASE_DIR}' does not exist. Run command /marshall-steward first"
+            f"Directory '{TRACKED_CONFIG_DIR}' does not exist. Run command /marshall-steward first"
         )
     if not MARSHAL_PATH.exists():
         raise MarshalNotInitializedError('marshal.json not found. Run command /marshall-steward first')

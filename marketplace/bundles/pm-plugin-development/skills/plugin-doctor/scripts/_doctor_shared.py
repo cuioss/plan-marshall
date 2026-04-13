@@ -8,6 +8,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from file_ops import get_temp_dir  # type: ignore[import-not-found]
 from marketplace_bundles import resolve_bundles_root
 
 # =============================================================================
@@ -20,23 +21,9 @@ _BUNDLES_FROM_SCRIPT = resolve_bundles_root(Path(__file__))
 REPORT_SUBDIR = 'plugin-doctor-report'
 
 
-def _get_plan_dir() -> Path:
-    """Get the .plan directory path, respecting PLAN_BASE_DIR override."""
-    base = os.environ.get('PLAN_BASE_DIR', '.plan')
-    return Path(base)
-
-
-def _get_temp_dir(subdir: str | None = None) -> Path:
-    """Get temp directory under .plan/temp/{subdir}."""
-    temp_path = _get_plan_dir() / 'temp'
-    if subdir:
-        return temp_path / subdir
-    return temp_path
-
-
 def get_report_dir() -> Path:
-    """Get the fixed report directory path: .plan/temp/plugin-doctor-report/."""
-    return _get_temp_dir(REPORT_SUBDIR)
+    """Get the plugin-doctor report directory under the plan-marshall temp dir."""
+    return Path(get_temp_dir(REPORT_SUBDIR))
 
 
 def get_report_filename(timestamp: str | None = None, scope: str | None = None) -> str:

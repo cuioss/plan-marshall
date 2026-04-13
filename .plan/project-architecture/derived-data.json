@@ -375,6 +375,7 @@
             "test_build_config_contract.py",
             "test_build_discover.py",
             "test_build_execute.py",
+            "test_build_execute_factory.py",
             "test_build_format.py",
             "test_build_parse.py",
             "test_build_result.py",
@@ -532,7 +533,7 @@
       "dependencies": [],
       "stats": {
         "source_files": 0,
-        "test_files": 161
+        "test_files": 162
       },
       "commands": {
         "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean\"",

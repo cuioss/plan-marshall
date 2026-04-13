@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from constants import DIR_ARCHITECTURE, FILE_DERIVED_DATA, FILE_LLM_ENRICHED  # type: ignore[import-not-found]
-from file_ops import (  # type: ignore[import-not-found]
-    get_base_dir,
-)
 
 # Data sub-directory for architecture files (appended to base dir / project_dir)
 _ARCHITECTURE_SUBDIR = DIR_ARCHITECTURE
+
+# project-architecture/ lives under the *tracked* .plan/ directory in the repo,
+# not the runtime base dir — it is checked in alongside marshal.json.
+_TRACKED_CONFIG_SUBDIR = '.plan'
 
 # File names
 DERIVED_DATA_FILE = FILE_DERIVED_DATA
@@ -55,13 +56,19 @@ class CommandNotFoundError(ArchitectureError):
 # =============================================================================
 
 
+# Relative sub-path for project-architecture inside a repo checkout. Kept
+# relative (not absolute) so callers can compose it with project_dir.
+DATA_DIR = Path(_TRACKED_CONFIG_SUBDIR) / _ARCHITECTURE_SUBDIR
+
+
 def get_data_dir(project_dir: str = '.') -> Path:
-    """Get the data directory path."""
-    return Path(project_dir) / get_base_dir() / _ARCHITECTURE_SUBDIR
+    """Get the project-architecture data directory path.
 
-
-# Backward-compatible alias used by tests
-DATA_DIR = get_base_dir() / _ARCHITECTURE_SUBDIR
+    project-architecture/ lives under the tracked .plan/ directory of the
+    repository — the same location as marshal.json. The project_dir
+    parameter identifies which repo root to look in (tests pass a tmp dir).
+    """
+    return Path(project_dir) / DATA_DIR
 
 
 def get_derived_path(project_dir: str = '.') -> Path:
