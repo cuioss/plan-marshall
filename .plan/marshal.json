@@ -41,10 +41,11 @@
   },
   "providers": [
     {
-      "skill_name": "plan-marshall:workflow-integration-sonar",
-      "category": "other",
-      "description": "SonarCloud/SonarQube code analysis platform",
-      "url": "https://sonarcloud.io"
+      "skill_name": "plan-marshall:workflow-integration-github",
+      "category": "ci",
+      "verify_command": "gh auth status",
+      "description": "GitHub CI provider via gh CLI — PRs, issues, CI status, reviews",
+      "url": "https://api.github.com"
     },
     {
       "skill_name": "plan-marshall:workflow-integration-git",
@@ -64,12 +65,6 @@
         "module_testing": "plan-marshall:task-module_testing"
       }
     },
-    "build": {
-      "bundle": "plan-marshall"
-    },
-    "general-dev": {
-      "bundle": "plan-marshall"
-    },
     "documentation": {
       "bundle": "pm-documents",
       "workflow_skill_extensions": {
@@ -82,7 +77,12 @@
       "workflow_skill_extensions": {
         "triage": "pm-plugin-development:ext-triage-plugin"
       }
-    }
+    },
+    "active_profiles": [
+      "implementation",
+      "module_testing",
+      "quality"
+    ]
   },
   "system": {
     "retention": {
@@ -95,12 +95,5 @@
   "ci": {
     "provider": "github",
     "repo_url": "https://github.com/cuioss/plan-marshall.git"
-  },
-  "credentials_config": {
-    "plan-marshall:workflow-integration-sonar": {
-      "url": "https://sonarcloud.io",
-      "organization": "my-org",
-      "project_key": "my-project"
-    }
   }
 }

@@ -164,15 +164,19 @@ Tests use pytest via the `pw` (Pyprojectx) wrapper. Only Python 3 is required on
 - Use `.plan/temp/` for ALL temporary and generated files (covered by `Write(.plan/**)` permission - avoids permission prompts)
 - Use proper tools (Edit, Read, Write) instead of shell commands (echo, cat)
 - Never use Bash for file operations (find, grep, cat, ls) — use Glob, Read, Grep tools instead
+- Use `gh` tool for GitHub access, not MCP
+
+### Build Commands
+
 - Never hard-code build commands (./pw, mvn, npm, gradle) — use these resolved commands instead:
-  - Compile: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "compile {module}"`
-  - Quality gate: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate {module}"`
-  - Tests: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests {module}"`
-  - Full verify: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "verify {module}"`
-  - Omit `{module}` to run against all modules
+  - Compile: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "compile"`
+  - Quality gate: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "quality-gate"`
+  - Tests: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests"`
+  - Full verify: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "verify"`
+  - Coverage: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "coverage"`
+  - Append a module name (e.g. `"verify plan-marshall"`) to scope the command to a single bundle module.
   - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
   - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
-- Use `gh` tool for GitHub access, not MCP
 
 ### Workflow Discipline (Hard Rules)
 
