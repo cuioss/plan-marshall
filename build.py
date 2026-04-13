@@ -27,22 +27,18 @@ CLAUDE_DIR = Path('.claude')
 # Single source of truth: delegate to collect_script_dirs so mypy_path matches runtime PYTHONPATH.
 def _compute_mypypath() -> str:
     bundles_root = Path(__file__).parent / 'marketplace' / 'bundles'
-    sys.path.insert(
-        0,
-        str(Path(__file__).parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts'),
-    )
+    shared_scripts = str(bundles_root / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts')
+    if shared_scripts not in sys.path:
+        sys.path.insert(0, shared_scripts)
     from marketplace_bundles import collect_script_dirs
     return os.pathsep.join(collect_script_dirs(bundles_root))
 
 
-def run(cmd: list[str], description: str, env: dict | None = None) -> int:
+def run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
     """Run a command and return exit code."""
     print(f'>>> {description}')
     print(f'    {" ".join(cmd)}')
-    if env is None:
-        result = subprocess.run(cmd)
-    else:
-        result = subprocess.run(cmd, env=env)
+    result = subprocess.run(cmd, env=env)
     return result.returncode
 
 
