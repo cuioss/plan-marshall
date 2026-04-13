@@ -53,7 +53,7 @@ def _mock_collect_and_base(monkeypatch, dirs):
         monkeypatch: pytest monkeypatch fixture
         dirs: list of directory path strings to return from collect_script_dirs
     """
-    monkeypatch.setattr(_list_providers, 'get_base_path', lambda: Path('/fake/base'))
+    monkeypatch.setattr(_list_providers, 'get_base_path', lambda *args, **kwargs: Path('/fake/base'))
     monkeypatch.setattr(_list_providers, 'collect_script_dirs', lambda _base: dirs)
 
 

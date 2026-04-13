@@ -9,10 +9,12 @@ Tests the hybrid Phase 1 script that provides automated batch operations:
 
 Output format: TOON (parsed via toon_parser).
 
-NOTE: Most tests remain Tier 3 (subprocess) because the cmd_* functions in
-doctor-marketplace.py use find_marketplace_root() which depends on Path.cwd().
-The subprocess tests pass cwd= to control this discovery, which cannot be
-replicated cleanly with direct import without os.chdir().
+Marketplace discovery in these tests:
+- Real-marketplace tests rely on script-relative discovery inside
+  ``find_marketplace_root`` and therefore need no cwd/env setup.
+- Fixture tests that construct a fake marketplace under ``tmp_path`` pass
+  ``PM_MARKETPLACE_ROOT`` via ``env_overrides`` so the script targets the
+  fixture deterministically instead of the real tree.
 """
 
 import json
@@ -85,7 +87,7 @@ def test_scan_returns_valid_toon():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
     data = parse_output(result)
@@ -100,7 +102,7 @@ def test_scan_finds_bundles():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     data = parse_output(result)
 
     assert data['total_bundles'] > 0, 'Should find at least one bundle'
@@ -112,7 +114,7 @@ def test_scan_bundle_structure():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     data = parse_output(result)
 
     for bundle in data['bundles']:
@@ -131,7 +133,7 @@ def test_scan_bundle_filter():
         return  # Skip if marketplace not available
 
     # First get a valid bundle name
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     data = parse_output(result)
     if not data['bundles']:
         return  # No bundles to test
@@ -139,7 +141,7 @@ def test_scan_bundle_filter():
     first_bundle = data['bundles'][0]['name']
 
     # Now filter to just that bundle
-    result = run_script(SCRIPT_PATH, 'scan', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan', '--bundles', first_bundle)
     filtered = parse_output(result)
 
     assert filtered['total_bundles'] == 1, 'Should have exactly one bundle'
@@ -165,14 +167,14 @@ def test_analyze_returns_valid_toon():
         return  # Skip if marketplace not available
 
     # Analyze just one bundle for speed
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle)
     assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
     data = parse_output(result)
@@ -187,14 +189,14 @@ def test_analyze_summary_structure():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle)
     data = parse_output(result)
 
     assert 'total_components' in data, 'Should have total_components'
@@ -209,14 +211,14 @@ def test_analyze_categorized_structure():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle)
     data = parse_output(result)
 
     assert 'categorized_safe' in data, 'Should have categorized_safe'
@@ -229,14 +231,14 @@ def test_analyze_type_filter():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, '--type', 'agents', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, '--type', 'agents')
     data = parse_output(result)
 
     # All analyzed components should be agents — check via analysis table rows
@@ -266,14 +268,14 @@ def test_fix_dry_run_returns_valid_toon():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run')
     assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
     data = parse_output(result)
@@ -288,7 +290,7 @@ def test_fix_dry_run_no_changes():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
@@ -302,7 +304,7 @@ def test_fix_dry_run_no_changes():
         mtimes_before[str(md_file)] = md_file.stat().st_mtime
 
     # Run fix with dry-run
-    result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'fix', '--bundles', first_bundle, '--dry-run')
 
     # Verify no files changed
     for md_file in bundle_path.rglob('*.md'):
@@ -330,14 +332,14 @@ def test_report_returns_valid_toon():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle)
     assert result.returncode == 0, f'Report failed: {result.stderr}'
 
     data = parse_output(result)
@@ -358,14 +360,14 @@ def test_report_summary_structure():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle)
     data = parse_output(result)
 
     summary = data['summary']
@@ -381,14 +383,14 @@ def test_report_has_llm_review_items():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle)
     response = parse_output(result)
 
     report_path = Path(PROJECT_ROOT) / response['report_file']
@@ -406,7 +408,7 @@ def test_report_to_custom_dir():
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan', cwd=str(PROJECT_ROOT))
+    result = run_script(SCRIPT_PATH, 'scan')
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
@@ -417,7 +419,7 @@ def test_report_to_custom_dir():
 
     try:
         result = run_script(
-            SCRIPT_PATH, 'report', '--bundles', first_bundle, '--output', output_dir, cwd=str(PROJECT_ROOT)
+            SCRIPT_PATH, 'report', '--bundles', first_bundle, '--output', output_dir
         )
         assert result.returncode == 0, f'Report failed: {result.stderr}'
 
@@ -509,7 +511,7 @@ def test_fixture_scan():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'scan', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'scan', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
         data = parse_output(result)
@@ -525,7 +527,7 @@ def test_fixture_analyze_finds_issues():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -541,7 +543,7 @@ def test_fixture_fix_dry_run():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'fix', '--dry-run', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'fix', '--dry-run', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
         data = parse_output(result)
@@ -556,7 +558,7 @@ def test_fixture_report():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'report', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'report', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Report failed: {result.stderr}'
 
         response = parse_output(result)
@@ -613,7 +615,7 @@ Read `references/guide.md` for standards.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -664,7 +666,7 @@ Read `references/bloated-guide.md` for standards.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -689,7 +691,7 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
     (skill_refs_dir / 'small-guide.md').write_text('# Small Guide\n\nJust a few lines.\n')
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -718,7 +720,7 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -746,7 +748,7 @@ def test_fixture_analyze_detects_rule_11():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -773,7 +775,7 @@ def test_fixture_analyze_no_rule_11_with_skill():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -796,7 +798,7 @@ def test_fixture_analyze_no_rule_11_without_tools():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -831,7 +833,7 @@ This skill provides testing capabilities.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', cwd=str(temp_dir))
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)

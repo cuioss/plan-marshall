@@ -942,16 +942,13 @@ def cmd_extension(args) -> dict:
         return result
 
     else:
-        # Default: scan from cwd first (supports test fixtures), then script-relative
-        marketplace_path = Path.cwd() / 'marketplace'
-        if marketplace_path.is_dir():
-            pass  # use marketplace_path
-        elif Path.cwd().is_dir() and (Path.cwd() / 'bundles').is_dir():
-            marketplace_path = Path.cwd()
-        elif _MARKETPLACE_FROM_SCRIPT.is_dir():
-            marketplace_path = _MARKETPLACE_FROM_SCRIPT
-        else:
-            marketplace_path = Path.cwd()
+        # Default: delegate to the canonical discovery helper in _doctor_shared,
+        # which is deterministic regardless of cwd (env override → script-relative
+        # → cwd fallback only for out-of-tree execution).
+        from _doctor_shared import find_marketplace_root
+
+        discovered = find_marketplace_root()
+        marketplace_path = discovered if discovered is not None else _MARKETPLACE_FROM_SCRIPT
 
         result = scan_extensions(marketplace_path)
 
