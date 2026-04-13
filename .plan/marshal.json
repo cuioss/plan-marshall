@@ -1,9 +1,4 @@
 {
-  "ci": {
-    "provider": "github",
-    "repo_url": "https://github.com/cuioss/plan-marshall.git",
-    "detected_at": "2026-03-27T10:13:11Z"
-  },
   "plan": {
     "phase-1-init": {
       "branch_strategy": "feature"
@@ -25,12 +20,13 @@
       "steps": [
         "default:quality_check",
         "default:build_verify",
-        "pm-documents:doc-verify"
+        "default:coverage_check"
       ]
     },
     "phase-6-finalize": {
       "max_iterations": 3,
       "review_bot_buffer_seconds": 300,
+      "pr_merge_strategy": "squash",
       "steps": [
         "default:commit-push",
         "default:create-pr",
@@ -38,10 +34,26 @@
         "default:knowledge-capture",
         "default:lessons-capture",
         "default:branch-cleanup",
+        "default:record-metrics",
         "default:archive-plan"
       ]
     }
   },
+  "providers": [
+    {
+      "skill_name": "plan-marshall:workflow-integration-sonar",
+      "category": "other",
+      "description": "SonarCloud/SonarQube code analysis platform",
+      "url": "https://sonarcloud.io"
+    },
+    {
+      "skill_name": "plan-marshall:workflow-integration-git",
+      "category": "version-control",
+      "verify_command": "git config user.name",
+      "description": "Git version control via git CLI — commit, push, branch operations",
+      "url": "https://github.com/cuioss/plan-marshall.git"
+    }
+  ],
   "skill_domains": {
     "system": {
       "defaults": [],
@@ -50,12 +62,13 @@
         "documentation": "plan-marshall:task-documentation",
         "implementation": "plan-marshall:task-implementation",
         "module_testing": "plan-marshall:task-module_testing"
-      },
-      "project_skills": [
-        "project:recipe-plugin-compliance",
-        "project:sync-plugin-cache",
-        "project:verify-workflow"
-      ]
+      }
+    },
+    "build": {
+      "bundle": "plan-marshall"
+    },
+    "general-dev": {
+      "bundle": "plan-marshall"
     },
     "documentation": {
       "bundle": "pm-documents",
@@ -69,12 +82,7 @@
       "workflow_skill_extensions": {
         "triage": "pm-plugin-development:ext-triage-plugin"
       }
-    },
-    "active_profiles": [
-      "implementation",
-      "module_testing",
-      "quality"
-    ]
+    }
   },
   "system": {
     "retention": {
@@ -82,6 +90,17 @@
       "archived_plans_days": 5,
       "memory_days": 5,
       "temp_on_maintenance": true
+    }
+  },
+  "ci": {
+    "provider": "github",
+    "repo_url": "https://github.com/cuioss/plan-marshall.git"
+  },
+  "credentials_config": {
+    "plan-marshall:workflow-integration-sonar": {
+      "url": "https://sonarcloud.io",
+      "organization": "my-org",
+      "project_key": "my-project"
     }
   }
 }

@@ -289,6 +289,7 @@ def test_skill_domains_detect_runs():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -335,6 +336,7 @@ def test_skill_domains_detect_no_overwrite():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -605,6 +607,7 @@ def test_get_available_uses_discovery():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -669,6 +672,7 @@ def test_configure_domains():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -715,6 +719,7 @@ def test_configure_always_adds_system():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -868,6 +873,7 @@ def test_get_available_works_without_skill_domains():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -907,6 +913,7 @@ def test_configure_works_without_skill_domains():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -951,6 +958,7 @@ def test_list_requires_skill_domains():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -1132,6 +1140,7 @@ def test_configure_preserves_project_skills():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -1179,6 +1188,7 @@ def test_configure_drops_project_skills_for_removed_domains():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -1228,6 +1238,7 @@ def test_get_nested_includes_project_skills():
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
@@ -1261,6 +1272,7 @@ def test_list_finalize_steps_returns_built_in():
         step_names = [s['name'] for s in result['steps']]
         assert 'default:commit-push' in step_names
         assert 'default:create-pr' in step_names
+        assert 'default:record-metrics' in step_names
         assert 'default:archive-plan' in step_names
         assert 'default:branch-cleanup' in step_names
 

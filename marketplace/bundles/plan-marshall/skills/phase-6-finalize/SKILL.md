@@ -104,6 +104,7 @@ Three step types are supported, distinguished by prefix notation:
 | `default:knowledge-capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
+| `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |
 | `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
 
 ### Interface Contract for External Steps
@@ -196,7 +197,7 @@ Iterate over the `steps` list from config. For each step reference:
 - `create-pr`, `automated-review`, `sonar-roundtrip`, `knowledge-capture`, `lessons-capture`
 
 **Inline-only built-in steps** (require user interaction or sequential dependency):
-- `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `archive-plan` (must be last, moves plan files)
+- `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
 **Token aggregation**: Initialize `phase_total_tokens = 0`, `phase_tool_uses = 0`, `phase_duration_ms = 0` before the loop. After each agent-dispatched step completes, add its `<usage>` tag values to the running sums.
 
@@ -229,6 +230,7 @@ END FOR
 
 **Built-in step notes**:
 - `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
+- `default:record-metrics`: MUST immediately precede `default:archive-plan`. `manage-metrics generate` writes `metrics.md` inside the live plan directory; if archive runs first, the target directory no longer exists.
 - `default:archive-plan`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
 
 ### Step 4: Mark Plan Complete
@@ -239,31 +241,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
   --completed 6-finalize
 ```
 
-### Step 5: Generate Final Metrics Report
+### Step 5: Log Phase Completion
 
-Generate the final metrics.md and read the summary for the completion output.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
-  --plan-id {plan_id}
-```
-
-Read the metrics summary from the generate output. Extract `total_duration_seconds` and `total_tokens` for the completion message. The `metrics.md` file will be included when the plan is archived to `.plan/archived-plans/{date}-{plan_id}/metrics.md`.
-
-### Step 6: Log Completion with Metrics
-
-Display the plan completion summary including core metrics:
-
-```
-## Plan Complete: {plan_id}
-
-| Metric | Value |
-|--------|-------|
-| Total Duration | {formatted total_duration from metrics} |
-| Total Tokens | {total_tokens from metrics} |
-| PR | #{pr_number} |
-| Metrics | .plan/archived-plans/{date}-{plan_id}/metrics.md |
-```
+Final metrics are already recorded inside the Step 3 pipeline by `default:record-metrics` (which runs immediately before `default:archive-plan`). This step only logs phase completion to work.log.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -274,6 +254,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
+
+**Note**: `manage-logging` operates on log files, not the plan directory, so these calls remain valid after `default:archive-plan` has moved the plan state.
 
 ---
 
@@ -365,6 +347,7 @@ State checks (for present steps):
 | `standards/knowledge-capture.md` | `default:knowledge-capture` | manage-memories save command |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
+| `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |

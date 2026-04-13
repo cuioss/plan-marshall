@@ -210,7 +210,15 @@ def test_init_includes_phase_6_finalize():
         assert 'steps' in finalize, 'Should have steps list'
         assert isinstance(finalize['steps'], list)
         assert 'default:commit-push' in finalize['steps']
+        assert 'default:record-metrics' in finalize['steps']
         assert 'default:archive-plan' in finalize['steps']
+        # Ordering invariant: record-metrics must run immediately before archive-plan,
+        # because archive moves the plan directory and would leave metrics nowhere to write.
+        record_idx = finalize['steps'].index('default:record-metrics')
+        archive_idx = finalize['steps'].index('default:archive-plan')
+        assert record_idx + 1 == archive_idx, (
+            'default:record-metrics must immediately precede default:archive-plan'
+        )
         assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 
 

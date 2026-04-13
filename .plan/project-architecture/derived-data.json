@@ -11,31 +11,535 @@
       "paths": {
         "module": ".",
         "descriptor": "pyproject.toml",
-        "sources": [
-          "marketplace/bundles"
-        ],
+        "sources": null,
         "tests": [
           "test"
         ],
         "readme": "README.adoc"
       },
       "metadata": {
-        "build_tool": "pyprojectx",
-        "package_manager": "uv"
+        "name": "plan-marshall",
+        "version": "0.1.0",
+        "requires_python": ">=3.12"
       },
       "packages": {},
+      "test_packages": {
+        "pm-dev-java.fixtures": {
+          "path": "test/pm-dev-java/fixtures",
+          "files": [
+            "sample-logging-compliant.java",
+            "sample-logging-violations.java",
+            "sample-logmessages.java"
+          ]
+        },
+        "pm-dev-java.logging": {
+          "path": "test/pm-dev-java/logging",
+          "files": [
+            "empty-holder.java",
+            "logrecord-sample.java",
+            "valid-logger-usage.java",
+            "violation-examples.java"
+          ]
+        },
+        "plan-marshall.build-gradle.fixtures.source-no-markers.src.main.java": {
+          "path": "test/plan-marshall/build-gradle/fixtures/source-no-markers/src/main/java",
+          "files": [
+            "CleanFile.java"
+          ]
+        },
+        "plan-marshall.build-gradle.fixtures.source-with-markers.src.main.java.com.example": {
+          "path": "test/plan-marshall/build-gradle/fixtures/source-with-markers/src/main/java/com/example",
+          "files": [
+            "CleanService.java",
+            "HandlerWithMarker.java",
+            "ServiceWithMarkers.java"
+          ]
+        },
+        "plan-marshall.build-maven.fixtures.source-no-markers.src.main.java": {
+          "path": "test/plan-marshall/build-maven/fixtures/source-no-markers/src/main/java",
+          "files": [
+            "CleanFile.java"
+          ]
+        },
+        "plan-marshall.build-maven.fixtures.source-with-markers.src.main.java.com.example": {
+          "path": "test/plan-marshall/build-maven/fixtures/source-with-markers/src/main/java/com/example",
+          "files": [
+            "CleanService.java",
+            "HandlerWithMarker.java",
+            "ServiceWithMarkers.java"
+          ]
+        },
+        "plan-marshall": {
+          "path": "test/plan-marshall",
+          "files": [
+            "build_test_helpers.py",
+            "discovery_test_helpers.py"
+          ]
+        },
+        "adapters": {
+          "path": "test/adapters",
+          "files": [
+            "__init__.py",
+            "conftest.py",
+            "test_adapter_base.py",
+            "test_opencode_adapter.py"
+          ]
+        },
+        "pm-dev-frontend": {
+          "path": "test/pm-dev-frontend",
+          "files": [
+            "test_jsdoc.py"
+          ]
+        },
+        "verify-workflow": {
+          "path": "test/verify-workflow",
+          "files": [
+            "conftest.py",
+            "test_collect_artifacts.py",
+            "test_verify_structure.py"
+          ]
+        },
+        "pm-dev-frontend-cui": {
+          "path": "test/pm-dev-frontend-cui",
+          "files": [
+            "test_cui_js_extension.py"
+          ]
+        },
+        "integration_common": {
+          "path": "test/integration_common",
+          "files": [
+            "__init__.py"
+          ]
+        },
+        "pm-dev-java.maven-profile-management": {
+          "path": "test/pm-dev-java/maven-profile-management",
+          "files": [
+            "test_profiles.py"
+          ]
+        },
+        "pm-plugin-development.plugin-doctor": {
+          "path": "test/pm-plugin-development/plugin-doctor",
+          "files": [
+            "test_analyze.py",
+            "test_doctor_marketplace.py",
+            "test_fix.py",
+            "test_plugin_doctor_extension.py",
+            "test_validate.py"
+          ]
+        },
+        "pm-plugin-development.plan-marshall-plugin": {
+          "path": "test/pm-plugin-development/plan-marshall-plugin",
+          "files": [
+            "__init__.py",
+            "test_discover.py"
+          ]
+        },
+        "pm-plugin-development.plugin-create": {
+          "path": "test/pm-plugin-development/plugin-create",
+          "files": [
+            "test_component.py",
+            "test_validate_generate.py"
+          ]
+        },
+        "pm-plugin-development.plugin-maintain": {
+          "path": "test/pm-plugin-development/plugin-maintain",
+          "files": [
+            "test_maintain.py",
+            "test_maintain_subcommands.py"
+          ]
+        },
+        "pm-plugin-development.tools-marketplace-inventory": {
+          "path": "test/pm-plugin-development/tools-marketplace-inventory",
+          "files": [
+            "test_resolve_dependencies.py",
+            "test_scan_marketplace_inventory.py",
+            "test_scan_planning_inventory.py"
+          ]
+        },
+        "pm-plugin-development.plugin-doctor.fixtures.skill-structure.table-references.scripts": {
+          "path": "test/pm-plugin-development/plugin-doctor/fixtures/skill-structure/table-references/scripts",
+          "files": [
+            "validate-input.py"
+          ]
+        },
+        "pm-documents.manage-adr": {
+          "path": "test/pm-documents/manage-adr",
+          "files": [
+            "test_manage_adr.py"
+          ]
+        },
+        "pm-documents.manage-interface": {
+          "path": "test/pm-documents/manage-interface",
+          "files": [
+            "test_manage_interface.py"
+          ]
+        },
+        "pm-documents.ref-documentation": {
+          "path": "test/pm-documents/ref-documentation",
+          "files": [
+            "test_docs.py"
+          ]
+        },
+        "pm-documents.ref-asciidoc": {
+          "path": "test/pm-documents/ref-asciidoc",
+          "files": [
+            "test_asciidoc.py"
+          ]
+        },
+        "plan-marshall.manage-status": {
+          "path": "test/plan-marshall/manage-status",
+          "files": [
+            "test_manage_status.py"
+          ]
+        },
+        "plan-marshall.tools-permission-fix": {
+          "path": "test/plan-marshall/tools-permission-fix",
+          "files": [
+            "test_permission_fix.py"
+          ]
+        },
+        "plan-marshall.phase-6-finalize": {
+          "path": "test/plan-marshall/phase-6-finalize",
+          "files": [
+            "test_triage_extension.py",
+            "test_triage_integration.py"
+          ]
+        },
+        "plan-marshall.manage-run-config": {
+          "path": "test/plan-marshall/manage-run-config",
+          "files": [
+            "test_cleanup.py",
+            "test_run_config.py",
+            "test_warning_api.py"
+          ]
+        },
+        "plan-marshall.workflow-integration-sonar": {
+          "path": "test/plan-marshall/workflow-integration-sonar",
+          "files": [
+            "test_sonar.py",
+            "test_sonar_rest.py"
+          ]
+        },
+        "plan-marshall.plan-marshall": {
+          "path": "test/plan-marshall/plan-marshall",
+          "files": [
+            "test_determine_mode.py",
+            "test_gitignore_setup.py",
+            "test_lifecycle_and_status.py",
+            "test_lifecycle_status.py"
+          ]
+        },
+        "plan-marshall.manage-providers": {
+          "path": "test/plan-marshall/manage-providers",
+          "files": [
+            "test_configure.py",
+            "test_ensure_denied.py",
+            "test_git_provider_extension.py",
+            "test_list_providers.py",
+            "test_provider_extension.py",
+            "test_providers_core.py",
+            "test_verify.py"
+          ]
+        },
+        "plan-marshall.manage-files": {
+          "path": "test/plan-marshall/manage-files",
+          "files": [
+            "test_manage_files.py"
+          ]
+        },
+        "plan-marshall.tools-file-ops": {
+          "path": "test/plan-marshall/tools-file-ops",
+          "files": [
+            "test_file_ops.py"
+          ]
+        },
+        "plan-marshall.manage-lifecycle": {
+          "path": "test/plan-marshall/manage-lifecycle",
+          "files": [
+            "test_manage_lifecycle.py"
+          ]
+        },
+        "plan-marshall.tools-input-validation": {
+          "path": "test/plan-marshall/tools-input-validation",
+          "files": [
+            "test_input_validation.py",
+            "test_schema_validation.py"
+          ]
+        },
+        "plan-marshall.build-operations": {
+          "path": "test/plan-marshall/build-operations",
+          "files": [
+            "test_extension_implementations.py"
+          ]
+        },
+        "plan-marshall.tools-integration-ci": {
+          "path": "test/plan-marshall/tools-integration-ci",
+          "files": [
+            "test_ci.py",
+            "test_ci_base.py",
+            "test_ci_health.py"
+          ]
+        },
+        "plan-marshall.integration": {
+          "path": "test/plan-marshall/integration",
+          "files": [
+            "__init__.py"
+          ]
+        },
+        "plan-marshall.manage-config": {
+          "path": "test/plan-marshall/manage-config",
+          "files": [
+            "test_cmd_init.py",
+            "test_cmd_quality_phases.py",
+            "test_cmd_recipes.py",
+            "test_cmd_skill_domains.py",
+            "test_cmd_system_plan.py",
+            "test_config_detection.py",
+            "test_detection.py",
+            "test_helpers.py",
+            "test_plan_marshall_config.py"
+          ]
+        },
+        "plan-marshall.build-npm": {
+          "path": "test/plan-marshall/build-npm",
+          "files": [
+            "test_js_coverage.py",
+            "test_npm.py",
+            "test_npm_coverage_report.py",
+            "test_npm_discover.py",
+            "test_npm_discover_modules.py",
+            "test_npm_execute.py",
+            "test_npm_parsers.py",
+            "test_npm_run.py"
+          ]
+        },
+        "plan-marshall.manage-plan-documents": {
+          "path": "test/plan-marshall/manage-plan-documents",
+          "files": [
+            "test_manage_plan_documents.py"
+          ]
+        },
+        "plan-marshall.manage-architecture": {
+          "path": "test/plan-marshall/manage-architecture",
+          "files": [
+            "test_architecture_core.py",
+            "test_cmd_client.py",
+            "test_cmd_enrich.py",
+            "test_cmd_manage.py",
+            "test_cmd_suggest.py",
+            "test_enrich_add_domain.py"
+          ]
+        },
+        "plan-marshall.build-python": {
+          "path": "test/plan-marshall/build-python",
+          "files": [
+            "test_python_build.py",
+            "test_python_cmd_parse.py",
+            "test_python_coverage_report.py",
+            "test_python_execute.py",
+            "test_python_extension.py"
+          ]
+        },
+        "plan-marshall.tools-script-executor": {
+          "path": "test/plan-marshall/tools-script-executor",
+          "files": [
+            "test_await_until.py",
+            "test_execute_script.py",
+            "test_executor_integration.py",
+            "test_generate_executor.py"
+          ]
+        },
+        "plan-marshall.manage-metrics": {
+          "path": "test/plan-marshall/manage-metrics",
+          "files": [
+            "test_manage_metrics.py"
+          ]
+        },
+        "plan-marshall.workflow-integration-gitlab": {
+          "path": "test/plan-marshall/workflow-integration-gitlab",
+          "files": [
+            "test_gitlab.py",
+            "test_gitlab_pr.py"
+          ]
+        },
+        "plan-marshall.manage-references": {
+          "path": "test/plan-marshall/manage-references",
+          "files": [
+            "test_manage_references.py"
+          ]
+        },
+        "plan-marshall.script-shared": {
+          "path": "test/plan-marshall/script-shared",
+          "files": [
+            "test_build_check_warnings.py",
+            "test_build_config_contract.py",
+            "test_build_discover.py",
+            "test_build_execute.py",
+            "test_build_format.py",
+            "test_build_parse.py",
+            "test_build_result.py",
+            "test_build_shared.py",
+            "test_build_wrapper.py",
+            "test_cmd_run_common.py",
+            "test_extension.py",
+            "test_extension_base.py",
+            "test_markers_search.py",
+            "test_marketplace_bundles.py",
+            "test_marketplace_paths.py",
+            "test_triage_helpers.py",
+            "test_warnings_classify.py"
+          ]
+        },
+        "plan-marshall.ref-toon-format": {
+          "path": "test/plan-marshall/ref-toon-format",
+          "files": [
+            "test_measure_toon_savings.py",
+            "test_toon_parser.py",
+            "test_validate_toon_syntax.py"
+          ]
+        },
+        "plan-marshall.manage-logging": {
+          "path": "test/plan-marshall/manage-logging",
+          "files": [
+            "test_logging.py",
+            "test_manage_logging.py"
+          ]
+        },
+        "plan-marshall.workflow-pr-doctor": {
+          "path": "test/plan-marshall/workflow-pr-doctor",
+          "files": [
+            "test_pr_doctor.py"
+          ]
+        },
+        "plan-marshall.manage-findings": {
+          "path": "test/plan-marshall/manage-findings",
+          "files": [
+            "test_findings_store.py",
+            "test_manage_assessments.py",
+            "test_manage_findings.py"
+          ]
+        },
+        "plan-marshall.workflow-shared": {
+          "path": "test/plan-marshall/workflow-shared",
+          "files": [
+            "test_config_validation.py"
+          ]
+        },
+        "plan-marshall.build-maven": {
+          "path": "test/plan-marshall/build-maven",
+          "files": [
+            "test_discover_modules.py",
+            "test_discover_packages.py",
+            "test_maven.py",
+            "test_maven_cmd_parse.py",
+            "test_maven_coverage_report.py",
+            "test_maven_execute.py",
+            "test_maven_run.py"
+          ]
+        },
+        "plan-marshall.marshall-steward": {
+          "path": "test/plan-marshall/marshall-steward",
+          "files": [
+            "test_bootstrap_plugin.py"
+          ]
+        },
+        "plan-marshall.manage-tasks": {
+          "path": "test/plan-marshall/manage-tasks",
+          "files": [
+            "test_manage_tasks.py",
+            "test_manage_tasks_rename.py",
+            "test_task_new_fields.py"
+          ]
+        },
+        "plan-marshall.workflow-integration-github": {
+          "path": "test/plan-marshall/workflow-integration-github",
+          "files": [
+            "test_github.py",
+            "test_github_pr.py"
+          ]
+        },
+        "plan-marshall.workflow-permission-web": {
+          "path": "test/plan-marshall/workflow-permission-web",
+          "files": [
+            "test_permission_web.py"
+          ]
+        },
+        "plan-marshall.manage-solution-outline": {
+          "path": "test/plan-marshall/manage-solution-outline",
+          "files": [
+            "test_manage_solution_outline.py"
+          ]
+        },
+        "plan-marshall.tools-permission-doctor": {
+          "path": "test/plan-marshall/tools-permission-doctor",
+          "files": [
+            "test_permission.py",
+            "test_permission_common.py"
+          ]
+        },
+        "plan-marshall.manage-lessons": {
+          "path": "test/plan-marshall/manage-lessons",
+          "files": [
+            "test_manage_lessons.py"
+          ]
+        },
+        "plan-marshall.manage-memories": {
+          "path": "test/plan-marshall/manage-memories",
+          "files": [
+            "test_manage_memory.py"
+          ]
+        },
+        "plan-marshall.workflow-integration-git": {
+          "path": "test/plan-marshall/workflow-integration-git",
+          "files": [
+            "test_git_workflow.py"
+          ]
+        },
+        "plan-marshall.build-gradle": {
+          "path": "test/plan-marshall/build-gradle",
+          "files": [
+            "test_gradle.py",
+            "test_gradle_cmd_parse.py",
+            "test_gradle_coverage_report.py",
+            "test_gradle_discover_modules.py",
+            "test_gradle_execute.py",
+            "test_gradle_find_project.py",
+            "test_gradle_run.py"
+          ]
+        },
+        "plan-marshall.extension-api": {
+          "path": "test/plan-marshall/extension-api",
+          "files": [
+            "test_coverage_parse.py"
+          ]
+        },
+        "plan-marshall.integration.discover_modules": {
+          "path": "test/plan-marshall/integration/discover_modules",
+          "files": [
+            "__init__.py",
+            "test_gradle_discover_modules_integration.py",
+            "test_maven_discover_modules.py"
+          ]
+        },
+        "plan-marshall.integration.module_aggregation": {
+          "path": "test/plan-marshall/integration/module_aggregation",
+          "files": [
+            "__init__.py",
+            "test_hybrid_merge.py"
+          ]
+        }
+      },
       "dependencies": [],
       "stats": {
-        "source_files": 146,
-        "test_files": 116
+        "source_files": 0,
+        "test_files": 161
       },
       "commands": {
+        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean\"",
         "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile\"",
-        "test-compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"test-compile\"",
-        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests\"",
         "quality-gate": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"quality-gate\"",
         "verify": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"verify\"",
-        "clean": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"clean\"",
+        "module-tests": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests\"",
         "coverage": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"coverage\""
       }
     },
@@ -83,6 +587,16 @@
           "path": "skills/manage-architecture",
           "type": "skill",
           "description": "LLM-based architectural analysis that transforms raw project data into meaningful structure"
+        },
+        "skill:manage-providers": {
+          "path": "skills/manage-providers",
+          "type": "skill",
+          "description": "Provider management for external tool authentication \u2014 secure storage, interactive configuration, and REST client infrastructure"
+        },
+        "skill:manage-findings": {
+          "path": "skills/manage-findings",
+          "type": "skill",
+          "description": "Unified JSONL storage for plan-scoped findings, phase-scoped Q-Gate findings, and component assessments"
         },
         "skill:manage-lessons": {
           "path": "skills/manage-lessons",
@@ -159,25 +673,15 @@
           "type": "skill",
           "description": "Centralized architecture documentation for the plan-marshall bundle with visual diagrams"
         },
-        "skill:task-implementation": {
-          "path": "skills/task-implementation",
+        "skill:task-executor": {
+          "path": "skills/task-executor",
           "type": "skill",
-          "description": "Domain-agnostic implementation task execution with two-tier skill loading"
+          "description": "Domain-agnostic task execution with profile-based workflow selection (implementation, module_testing, verification)"
         },
-        "skill:task-module-testing": {
-          "path": "skills/task-module-testing",
+        "skill:tools-integration-ci": {
+          "path": "skills/tools-integration-ci",
           "type": "skill",
-          "description": "Domain-agnostic module testing task execution with two-tier skill loading"
-        },
-        "skill:task-standalone": {
-          "path": "skills/task-standalone",
-          "type": "skill",
-          "description": "Implement GitHub issues or standalone tasks with full verification"
-        },
-        "skill:task-verification": {
-          "path": "skills/task-verification",
-          "type": "skill",
-          "description": "Verification-only task execution \u2014 runs commands without modifying files"
+          "description": "CI provider abstraction with unified API for GitHub and GitLab operations (PR, issues, CI status)"
         },
         "skill:tools-permission-doctor": {
           "path": "skills/tools-permission-doctor",
@@ -187,17 +691,22 @@
         "skill:tools-permission-fix": {
           "path": "skills/tools-permission-fix",
           "type": "skill",
-          "description": "Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes."
+          "description": "Write operations for fixing and managing Claude Code permissions - add, remove, consolidate, ensure, apply-fixes, executor migration, wildcard generation."
         },
-        "skill:tools-permission-web": {
-          "path": "skills/tools-permission-web",
+        "skill:workflow-permission-web": {
+          "path": "skills/workflow-permission-web",
           "type": "skill",
           "description": "Analyze and consolidate WebFetch domain permissions across projects with security research and validation"
         },
-        "skill:workflow-integration-ci": {
-          "path": "skills/workflow-integration-ci",
+        "skill:workflow-integration-github": {
+          "path": "skills/workflow-integration-github",
           "type": "skill",
-          "description": "PR review response workflow - fetch comments, triage, and respond to review feedback (GitHub and GitLab)"
+          "description": "GitHub provider for PR review workflows \u2014 fetch comments, triage, and respond to review feedback via gh CLI"
+        },
+        "skill:workflow-integration-gitlab": {
+          "path": "skills/workflow-integration-gitlab",
+          "type": "skill",
+          "description": "GitLab provider for MR review workflows \u2014 fetch comments, triage, and respond to review feedback via glab CLI"
         },
         "skill:workflow-integration-git": {
           "path": "skills/workflow-integration-git",
@@ -207,12 +716,7 @@
         "skill:workflow-integration-sonar": {
           "path": "skills/workflow-integration-sonar",
           "type": "skill",
-          "description": "Sonar issue workflow - fetch issues, triage, and fix or suppress based on context"
-        },
-        "skill:workflow-outline-change-type": {
-          "path": "skills/workflow-outline-change-type",
-          "type": "skill",
-          "description": "Common workflow for change-type outline creation with conditional routing by change_type and domain"
+          "description": "SonarQube/SonarCloud issue workflow - fetch issues, triage, and fix or suppress based on context"
         },
         "skill:workflow-pr-doctor": {
           "path": "skills/workflow-pr-doctor",
@@ -222,17 +726,12 @@
         "skill:dev-general-module-testing": {
           "path": "skills/dev-general-module-testing",
           "type": "skill",
-          "description": "Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, and determinism"
-        },
-        "skill:dev-general-code-documentation": {
-          "path": "skills/dev-general-code-documentation",
-          "type": "skill",
-          "description": "Language-agnostic code documentation principles covering what, when, and how to document public APIs"
+          "description": "Language-agnostic testing methodology covering AAA pattern, test structure, organization, coverage, property-based testing, test doubles, and determinism"
         },
         "skill:dev-general-code-quality": {
           "path": "skills/dev-general-code-quality",
           "type": "skill",
-          "description": "Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, and error handling"
+          "description": "Language-agnostic code quality principles covering SRP, CQS, complexity thresholds, refactoring triggers, error handling, and documentation standards"
         },
         "skill:dev-general-practices": {
           "path": "skills/dev-general-practices",
@@ -272,7 +771,7 @@
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 33,
+        "skill_count": 32,
         "agent_count": 4,
         "command_count": 2
       },
@@ -310,22 +809,32 @@
         "skill:ext-triage-js": {
           "path": "skills/ext-triage-js",
           "type": "skill",
-          "description": "Triage extension for JavaScript/TypeScript findings during plan-finalize phase"
+          "description": "Triage extension for JavaScript findings during plan-finalize phase"
         },
         "skill:javascript": {
           "path": "skills/javascript",
           "type": "skill",
-          "description": "Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, and tooling"
+          "description": "Core JavaScript development standards covering ES modules, modern patterns, code quality, async programming, JSDoc documentation, and tooling"
         },
         "skill:lint-config": {
           "path": "skills/lint-config",
           "type": "skill",
-          "description": "ESLint v10, Prettier, and Stylelint configuration and rule standards for JavaScript projects"
+          "description": "ESLint flat config, Prettier, and Stylelint configuration, rule customization, and build integration standards for JavaScript projects"
+        },
+        "skill:css": {
+          "path": "skills/css",
+          "type": "skill",
+          "description": "Modern CSS standards covering native nesting, cascade layers, Container Queries, custom properties, responsive design, accessibility, and PostCSS/Stylelint tooling"
+        },
+        "skill:jest-testing": {
+          "path": "skills/jest-testing",
+          "type": "skill",
+          "description": "JavaScript unit testing standards covering Jest framework, DOM and web component testing, mocking patterns, async testing, and coverage configuration"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 3,
+        "skill_count": 5,
         "agent_count": 0,
         "command_count": 0
       },
@@ -391,8 +900,7 @@
         "module": "marketplace/bundles/pm-dev-java",
         "descriptor": "marketplace/bundles/pm-dev-java/.claude-plugin/plugin.json",
         "sources": [
-          "marketplace/bundles/pm-dev-java/skills",
-          "marketplace/bundles/pm-dev-java/agents"
+          "marketplace/bundles/pm-dev-java/skills"
         ],
         "tests": [
           "test/pm-dev-java"
@@ -463,22 +971,12 @@
           "path": "skills/manage-maven-profiles",
           "type": "skill",
           "description": "Maven build profile classification and user workflow for unmatched profiles"
-        },
-        "agent:java-coverage-agent": {
-          "path": "agents/java-coverage-agent.md",
-          "type": "agent",
-          "description": "Analyze test coverage and identify gaps (read-only)."
-        },
-        "agent:java-verify-agent": {
-          "path": "agents/java-verify-agent.md",
-          "type": "agent",
-          "description": "Verify Java code standards compliance (read-only)."
         }
       },
       "dependencies": [],
       "stats": {
         "skill_count": 12,
-        "agent_count": 2,
+        "agent_count": 0,
         "command_count": 0
       },
       "commands": {
@@ -527,25 +1025,20 @@
           "type": "skill",
           "description": "CUI test library standards for test data generation, value object contracts, and JUL log testing"
         },
-        "skill:cui-testing-http": {
-          "path": "skills/cui-testing-http",
+        "skill:cui-http-testing": {
+          "path": "skills/cui-http-testing",
           "type": "skill",
           "description": "CUI MockWebServer standards for HTTP client testing with JUnit 5 integration"
         },
-        "skill:java-enforce-logrecords": {
-          "path": "skills/java-enforce-logrecords",
+        "skill:recipe-cui-logging-enforce": {
+          "path": "skills/recipe-cui-logging-enforce",
           "type": "skill",
-          "description": "Enforce CUI logging standards by validating LogRecord usage, testing coverage, and identifier organization"
-        },
-        "skill:java-maintain-logger": {
-          "path": "skills/java-maintain-logger",
-          "type": "skill",
-          "description": "Execute systematic logging standards maintenance with plan tracking and comprehensive test coverage"
+          "description": "Recipe for enforcing CUI logging standards across all modules \u2014 migrate loggers, implement LogRecords, add test coverage"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 6,
+        "skill_count": 5,
         "agent_count": 0,
         "command_count": 0
       },
@@ -583,17 +1076,22 @@
         "skill:oci-standards": {
           "path": "skills/oci-standards",
           "type": "skill",
-          "description": "General OCI container standards covering image building, Dockerfile best practices, multi-platform builds, and distroless health probes"
+          "description": "Use when writing, reviewing, or debugging Dockerfiles and Containerfiles \u2014 covers base image selection, multi-stage builds, version pinning, .dockerignore, multi-platform builds, OCI labels, certificate management, and Quarkus distroless health probes. Activate for any container image building task."
         },
         "skill:oci-security": {
           "path": "skills/oci-security",
           "type": "skill",
-          "description": "OCI container security best practices covering runtime hardening, supply chain security, and OWASP container controls"
+          "description": "Use when hardening container runtime configuration, scanning for vulnerabilities, securing the image supply chain, or auditing against OWASP Docker Top 10. Covers capability dropping, read-only filesystems, image signing, SBOMs, and Trivy/Cosign/Syft workflows."
+        },
+        "skill:ext-triage-oci": {
+          "path": "skills/ext-triage-oci",
+          "type": "skill",
+          "description": "Triage extension for OCI container findings during plan-finalize phase"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 2,
+        "skill_count": 3,
         "agent_count": 0,
         "command_count": 0
       },
@@ -628,15 +1126,25 @@
         "description": "Python domain extension with pyprojectx build operations"
       },
       "packages": {
-        "skill:python-best-practices": {
-          "path": "skills/python-best-practices",
+        "skill:python-core": {
+          "path": "skills/python-core",
           "type": "skill",
-          "description": "Modern Python development patterns and best practices"
+          "description": "Use when writing, reviewing, or refactoring Python 3.10+ code \u2014 covers type annotations, data structures, error handling, resource management, async patterns, naming conventions, and imports. Activate for any Python production code task. Also use when working with pathlib, dataclass, pydantic, match statements, or structural pattern matching."
+        },
+        "skill:pytest-testing": {
+          "path": "skills/pytest-testing",
+          "type": "skill",
+          "description": "Use when writing, reviewing, or debugging Python tests \u2014 covers pytest framework, AAA pattern, fixtures, parametrization, isolation, mocking, assertions, and coverage configuration. Activate for any Python testing task."
+        },
+        "skill:ext-triage-python": {
+          "path": "skills/ext-triage-python",
+          "type": "skill",
+          "description": "Triage extension for Python findings during plan-finalize phase"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 1,
+        "skill_count": 3,
         "agent_count": 0,
         "command_count": 0
       },
@@ -659,8 +1167,7 @@
         "module": "marketplace/bundles/pm-documents",
         "descriptor": "marketplace/bundles/pm-documents/.claude-plugin/plugin.json",
         "sources": [
-          "marketplace/bundles/pm-documents/skills",
-          "marketplace/bundles/pm-documents/commands"
+          "marketplace/bundles/pm-documents/skills"
         ],
         "tests": [
           "test/pm-documents"
@@ -677,6 +1184,16 @@
           "type": "skill",
           "description": "Triage extension for documentation findings during plan-finalize phase"
         },
+        "skill:manage-adr": {
+          "path": "skills/manage-adr",
+          "type": "skill",
+          "description": "Manage Architectural Decision Records (ADRs) with CRUD operations, automatic numbering, and AsciiDoc formatting"
+        },
+        "skill:manage-interface": {
+          "path": "skills/manage-interface",
+          "type": "skill",
+          "description": "Manage Interface specifications with CRUD operations, automatic numbering, and AsciiDoc formatting"
+        },
         "skill:ref-asciidoc": {
           "path": "skills/ref-asciidoc",
           "type": "skill",
@@ -686,18 +1203,13 @@
           "path": "skills/ref-documentation",
           "type": "skill",
           "description": "Content quality, tone analysis, organization standards, and review orchestration for technical documentation"
-        },
-        "command:tools-verify-architecture-diagrams": {
-          "path": "commands/tools-verify-architecture-diagrams.md",
-          "type": "command",
-          "description": "Analyze and update PlantUML diagrams to reflect current codebase state and regenerate PNG images"
         }
       },
       "dependencies": [],
       "stats": {
-        "skill_count": 3,
+        "skill_count": 5,
         "agent_count": 0,
-        "command_count": 1
+        "command_count": 0
       },
       "commands": {
         "compile": "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"compile pm-documents\"",
@@ -735,7 +1247,7 @@
         "skill:ext-outline-workflow": {
           "path": "skills/ext-outline-workflow",
           "type": "skill",
-          "description": "Shared workflow steps and verification knowledge for plugin development outline, loaded by workflow-outline-change-type skill"
+          "description": "Shared workflow steps and verification knowledge for plugin development outline, loaded by phase-3-outline skill"
         },
         "skill:ext-triage-plugin": {
           "path": "skills/ext-triage-plugin",
@@ -843,8 +1355,7 @@
         "module": "marketplace/bundles/pm-requirements",
         "descriptor": "marketplace/bundles/pm-requirements/.claude-plugin/plugin.json",
         "sources": [
-          "marketplace/bundles/pm-requirements/skills",
-          "marketplace/bundles/pm-requirements/commands"
+          "marketplace/bundles/pm-requirements/skills"
         ],
         "tests": [
           "test/pm-requirements"
@@ -853,7 +1364,7 @@
       },
       "metadata": {
         "bundle_name": "pm-requirements",
-        "description": "Requirements engineering and specification standards for CUI projects"
+        "description": "Requirements engineering and specification standards"
       },
       "packages": {
         "skill:ext-triage-reqs": {
@@ -874,7 +1385,7 @@
         "skill:setup": {
           "path": "skills/setup",
           "type": "skill",
-          "description": "Standards for setting up requirements and specification documentation in new CUI projects with proper directory structure and initial documents"
+          "description": "Standards for setting up requirements and specification documentation in new projects with proper directory structure and initial documents"
         },
         "skill:traceability": {
           "path": "skills/traceability",
