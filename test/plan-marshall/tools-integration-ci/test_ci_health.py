@@ -272,7 +272,7 @@ def test_persist_no_marshal_json():
 
 
 def test_persist_with_marshal_json():
-    """Test persist command succeeds and writes config['ci']."""
+    """Test persist command succeeds and does NOT write config['ci']."""
     with PlanContext(plan_id='test-persist-success') as ctx:
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({
@@ -288,30 +288,28 @@ def test_persist_with_marshal_json():
         assert result.success, f'Script failed: {result.stderr}'
 
         updated = json.loads(marshal_path.read_text())
-        assert 'ci' in updated
-        assert 'provider' in updated['ci']
-        assert 'repo_url' in updated['ci']
+        # providers[] is the canonical source — persist must not write config['ci']
+        assert 'ci' not in updated, f"persist should not write config['ci'], got: {updated.get('ci')}"
+        assert updated['providers'][0]['category'] == 'ci'
 
 
-def test_persist_stores_ci_section():
-    """Test persist stores provider and repo_url in config['ci']."""
+def test_persist_leaves_providers_intact():
+    """Test persist leaves providers[] untouched (single source of truth)."""
     with PlanContext(plan_id='test-ci-section') as ctx:
         marshal_path = ctx.fixture_dir / 'marshal.json'
+        original_providers = [{
+            'skill_name': 'plan-marshall:workflow-integration-github',
+            'category': 'ci',
+            'verify_command': 'gh auth status',
+        }]
         marshal_path.write_text(json.dumps({
             'version': 1,
-            'providers': [{
-                'skill_name': 'plan-marshall:workflow-integration-github',
-                'category': 'ci',
-                'verify_command': 'gh auth status',
-            }],
+            'providers': original_providers,
         }))
 
         result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
         assert result.success, f'Script failed: {result.stderr}'
 
         updated = json.loads(marshal_path.read_text())
-        ci = updated.get('ci', {})
-        assert ci.get('provider') in ('github', 'gitlab', 'unknown')
-        # No detected_at or verified_at in CI section
-        assert 'detected_at' not in ci
-        assert 'verified_at' not in ci
+        assert 'ci' not in updated
+        assert updated['providers'] == original_providers

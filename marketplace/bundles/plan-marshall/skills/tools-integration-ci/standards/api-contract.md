@@ -106,7 +106,7 @@ gh	true	true
 
 ### persist
 
-Persist configuration to marshal.json with static commands.
+Verify the CI tool and persist `authenticated_tools` to `run-configuration.json`. Provider identity and repo URL are canonically read from `providers[]` in marshal.json — this command does NOT write a `config["ci"]` block.
 
 **Command**:
 ```bash
@@ -116,11 +116,12 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health per
 **Success Output**:
 ```toon
 status: success
-persisted_to: marshal.json
-
-ci_config{key,value}:
-provider	github
-repo_url	https://github.com/org/repo
+persisted_to: run-configuration.json
+provider: github
+repo_url: https://github.com/org/repo
+authenticated_tools[2]:
+  - git
+  - gh
 ```
 
 ---

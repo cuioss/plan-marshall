@@ -6,7 +6,7 @@ Subcommands:
     detect      Detect CI provider from repository configuration
     verify      Verify CLI tools are installed and authenticated
     status      Full health check (detect + verify)
-    persist     Detect and persist CI configuration to marshal.json
+    persist     Verify CI tool and persist authenticated_tools to run-configuration.json
 
 Usage:
     python3 ci-health.py detect
@@ -344,28 +344,6 @@ def _load_ci_modules():
     return load_config, save_config, load_run_config, save_run_config
 
 
-def cmd_ci_get(args: argparse.Namespace) -> dict:
-    """Handle 'ci-get' subcommand — read config['ci']."""
-    del args  # plan_dir is accepted for backward compatibility but unused.
-    load_config, _, _, _ = _load_ci_modules()
-    config = load_config()
-    ci_data = config.get('ci', {})
-    return {'status': 'success', 'ci': ci_data}
-
-
-def cmd_ci_get_provider(args: argparse.Namespace) -> dict:
-    """Handle 'ci-get-provider' subcommand — read config['ci']['provider']."""
-    del args
-    load_config, _, _, _ = _load_ci_modules()
-    config = load_config()
-    ci_data = config.get('ci', {})
-    return {
-        'status': 'success',
-        'provider': ci_data.get('provider', 'unknown'),
-        'repo_url': ci_data.get('repo_url'),
-    }
-
-
 def cmd_ci_set_tools(args: argparse.Namespace) -> dict:
     """Handle 'ci-set-tools' subcommand — write run-config['ci']['authenticated_tools']."""
     _, _, load_run_config, save_run_config = _load_ci_modules()
@@ -390,11 +368,10 @@ def cmd_ci_get_tools(args: argparse.Namespace) -> dict:
 def cmd_persist(args: argparse.Namespace) -> dict:
     """Handle the 'persist' subcommand.
 
-    Writes config['ci'] (provider, repo_url) to marshal.json and
-    run-config['ci'] (authenticated_tools) to run-configuration.json.
-    Path resolution honours PLAN_BASE_DIR / PLAN_TRACKED_CONFIG_DIR via
-    the file_ops helpers, so tests that pre-set PLAN_BASE_DIR work as
-    before.
+    Verifies the CI provider and tools, then persists authenticated_tools
+    (and git_present) to run-configuration.json. The provider identity and
+    repo URL are canonically sourced from providers[] in marshal.json — this
+    command no longer writes a config['ci'] block.
     """
     del args  # plan_dir is accepted for backward compatibility but unused.
 
@@ -404,7 +381,7 @@ def cmd_persist(args: argparse.Namespace) -> dict:
     if not marshal_path.exists():
         return {'status': 'error', 'error': f'marshal.json not found at {marshal_path}. Run /marshall-steward first.'}
 
-    # Detect provider
+    # Detect provider (for report payload — not persisted to config['ci'])
     provider_result = detect_provider()
 
     # Verify all tools and collect authenticated ones
@@ -417,16 +394,8 @@ def cmd_persist(args: argparse.Namespace) -> dict:
         if tool == 'git' and tool_status['installed']:
             git_present = True
 
-    # Persist to config['ci'] (marshal.json)
-    load_config, save_config, load_run_config, save_run_config = _load_ci_modules()
-    config = load_config()
-    config['ci'] = {
-        'provider': provider_result['provider'],
-        'repo_url': provider_result['repo_url'] or '',
-    }
-    save_config(config)
-
     # Persist to run-config['ci'] (run-configuration.json)
+    _, _, load_run_config, save_run_config = _load_ci_modules()
     if authenticated_tools:
         run_config = load_run_config()
         run_ci = run_config.get('ci', {})
@@ -437,9 +406,10 @@ def cmd_persist(args: argparse.Namespace) -> dict:
 
     return {
         'status': 'success',
-        'persisted_to': 'marshal.json',
+        'persisted_to': 'run-configuration.json',
         'provider': provider_result['provider'],
         'repo_url': provider_result['repo_url'] or 'none',
+        'authenticated_tools': authenticated_tools,
     }
 
 
@@ -458,18 +428,10 @@ def main() -> int:
     subparsers.add_parser('status', help='Full health check (detect + verify)')
 
     # persist subcommand
-    persist_parser = subparsers.add_parser('persist', help='Detect and persist CI configuration to marshal.json')
+    persist_parser = subparsers.add_parser('persist', help='Verify CI tools and persist authenticated_tools to run-configuration.json')
     persist_parser.add_argument(
         '--plan-dir', type=str, default='.plan', help='Path to .plan directory (default: .plan)'
     )
-
-    # ci-get subcommand
-    ci_get_parser = subparsers.add_parser('ci-get', help='Read CI config from marshal.json')
-    ci_get_parser.add_argument('--plan-dir', type=str, default='.plan')
-
-    # ci-get-provider subcommand
-    ci_gp_parser = subparsers.add_parser('ci-get-provider', help='Read CI provider from marshal.json')
-    ci_gp_parser.add_argument('--plan-dir', type=str, default='.plan')
 
     # ci-set-tools subcommand
     ci_st_parser = subparsers.add_parser('ci-set-tools', help='Write authenticated tools to run-config')
@@ -487,8 +449,6 @@ def main() -> int:
         'verify': cmd_verify,
         'status': cmd_status,
         'persist': cmd_persist,
-        'ci-get': cmd_ci_get,
-        'ci-get-provider': cmd_ci_get_provider,
         'ci-set-tools': cmd_ci_set_tools,
         'ci-get-tools': cmd_ci_get_tools,
     }
