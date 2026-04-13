@@ -29,11 +29,10 @@ TEST_ROOT = Path(__file__).parent
 PROJECT_ROOT = TEST_ROOT.parent
 MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 PLAN_DIR_NAME = '.plan'  # Tracked config sub-directory inside the repo.
-# Standalone test fixtures live in the per-project global plan-marshall dir
-# so they don't pollute the repo-local .plan/ (which only holds tracked
-# config after PR1). Falls back to ~/.plan-marshall/<repo-basename>/temp/
-# test-fixture/ when PLAN_BASE_DIR isn't set.
-TEST_FIXTURE_BASE = Path.home() / '.plan-marshall' / PROJECT_ROOT.name / 'temp' / 'test-fixture'
+# Standalone test fixtures live under the repo-local .plan/temp/ so each
+# worktree keeps its own isolated fixture tree and the existing
+# ``Write(.plan/**)`` permission keeps covering them.
+TEST_FIXTURE_BASE = PROJECT_ROOT / PLAN_DIR_NAME / 'temp' / 'test-fixture'
 
 
 # =============================================================================

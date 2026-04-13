@@ -498,33 +498,16 @@ success\t{timestamp}\t{script_count}\t{checksum}\t{logs_cleaned}
 # Legacy drift detection
 # ----------------------------------------------------------------------------
 
-# Names under repo-local .plan/ that, post-migration, should only exist in
-# the per-project global directory. If present, they are leftovers from
-# pre-PR1 state and can be safely deleted.
-_LEGACY_DRIFT_NAMES = (
-    'execute-script.py',  # pre-shim real executor (the shim lives here post-PR1
-                          # and is overwritten on every generate, so this entry
-                          # is skipped at runtime — see detect_legacy_drift).
-    'run-configuration.json',
-    'marshall-state.toon',
-    'plans',
-    'archived-plans',
-    'lessons-learned',
-    'archived-lessons',
-    'memory',
-    'logs',
-    'temp',
-)
-
-
 def detect_legacy_drift() -> list[str]:
     """Scan the repo-local .plan/ directory for legacy runtime files.
 
-    After PR1, all runtime state moved to ~/.plan-marshall/{project}/. The
-    repo-local .plan/ should only contain tracked files (marshal.json,
-    project-architecture/) and the executor shim (execute-script.py). This
-    helper reports any OTHER entries so marshall-steward can surface them
-    to the user as "safe to delete" drift.
+    After PR1, all runtime state except ``temp/`` moved to
+    ``~/.plan-marshall/{project}/``. The repo-local ``.plan/`` should
+    only contain tracked files (``marshal.json``, ``project-architecture/``),
+    the executor shim (``execute-script.py``), and the still-local
+    ``temp/`` subtree (build output, test fixtures, plugin-doctor
+    reports). This helper reports any OTHER entries so marshall-steward
+    can surface them to the user as "safe to delete" drift.
 
     Returns:
         Sorted list of drifted paths, relative to the repo-local .plan/.
@@ -533,10 +516,10 @@ def detect_legacy_drift() -> list[str]:
     if not repo_plan.is_dir():
         return []
     drift: list[str] = []
-    # Known-tracked files and the shim itself are NOT drift.
-    tracked = {'marshal.json', 'project-architecture', 'execute-script.py'}
+    # Known-expected entries: tracked files, the shim, and temp/ (project-local).
+    expected = {'marshal.json', 'project-architecture', 'execute-script.py', 'temp'}
     for entry in sorted(repo_plan.iterdir()):
-        if entry.name in tracked:
+        if entry.name in expected:
             continue
         if entry.name.startswith('.') or entry.name == '__pycache__':
             continue

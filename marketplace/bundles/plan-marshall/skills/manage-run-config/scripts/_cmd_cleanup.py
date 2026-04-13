@@ -14,14 +14,21 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES, DIR_TEMP  # type: ignore[import-not-found]
-from file_ops import get_base_dir, get_marshal_path, output_toon  # type: ignore[import-not-found]
+from constants import DIR_ARCHIVED, DIR_LOGS, DIR_MEMORIES  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    get_base_dir,
+    get_marshal_path,
+    get_temp_dir,
+    output_toon,
+)
 
-# Configuration - delegate to file_ops for consistent path resolution.
-# PLAN_BASE_DIR holds runtime state (temp/, logs/, archived-plans/, memory/).
-# marshal.json is tracked in the repo under .plan/ — resolved separately.
+# Configuration — delegate to file_ops for consistent path resolution.
+# PLAN_BASE_DIR holds runtime state (logs/, archived-plans/, memory/) in
+# the per-project global plan-marshall directory. temp/ stays project-local
+# under the tracked config dir (.plan/), and marshal.json is also tracked.
 PLAN_BASE_DIR = get_base_dir()
 MARSHAL_JSON = get_marshal_path()
+TEMP_DIR = get_temp_dir()
 
 
 @dataclass
@@ -84,7 +91,7 @@ def clean_temp(dry_run: bool = False) -> tuple[int, int]:
     Returns:
         (files_deleted, bytes_freed)
     """
-    temp_dir = PLAN_BASE_DIR / DIR_TEMP
+    temp_dir = TEMP_DIR
     if not temp_dir.exists():
         return 0, 0
 
@@ -238,7 +245,7 @@ def get_status() -> dict | None:
         return None
 
     # Temp stats
-    temp_dir = PLAN_BASE_DIR / DIR_TEMP
+    temp_dir = TEMP_DIR
     temp_files = 0
     temp_bytes = 0
     if temp_dir.exists():

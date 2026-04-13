@@ -232,16 +232,23 @@ def base_path(*parts: str) -> Path:
 
 
 def get_temp_dir(subdir: str | None = None) -> Path:
-    """Get temp directory under the plan-marshall base dir.
+    """Get temp directory under the repo-local tracked config dir.
 
     Args:
         subdir: Optional subdirectory name within temp
 
     Returns:
-        Path to temp directory (respects PLAN_BASE_DIR env var and the
-        per-project global directory defaults; see get_base_dir).
+        Path to ``.plan/temp[/subdir]`` inside the repo checkout.
+
+    Note:
+        temp/ intentionally stays project-local (unlike the runtime state
+        under get_base_dir()) so each worktree gets its own isolated temp,
+        build logs sit next to the source they came from, and the existing
+        ``Write(.plan/**)`` permission keeps covering it. Resolution
+        honours PLAN_TRACKED_CONFIG_DIR / PLAN_BASE_DIR overrides via
+        get_tracked_config_dir().
     """
-    temp_path = get_base_dir() / 'temp'
+    temp_path = get_tracked_config_dir() / 'temp'
     if subdir:
         return temp_path / subdir
     return temp_path

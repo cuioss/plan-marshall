@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from file_ops import get_base_dir  # type: ignore[import-not-found]
+from file_ops import get_temp_dir  # type: ignore[import-not-found]
 
 # =============================================================================
 # Type Definitions
@@ -104,10 +104,11 @@ class DirectCommandResult(TypedDict, total=False):
 _LOG_SUBPATH = '.plan/temp/build-output'
 """Relative sub-path for build logs under a project root.
 
-Kept for backward compatibility with tests and legacy callers that pass
-a ``project_dir`` argument. In production ``create_log_file`` anchors
-logs at the plan-marshall base directory instead, ignoring the subpath
-prefix."""
+Retained for the legacy test accessor ``_get_log_base_dir``. Production
+callers should use ``_resolve_log_base_dir`` / ``get_temp_dir`` instead —
+build logs live under ``.plan/temp/build-output`` in the caller's
+project root (not the per-project global plan-marshall directory) so
+each worktree keeps its own isolated build output."""
 
 
 def _get_log_base_dir() -> str:
@@ -118,15 +119,15 @@ def _get_log_base_dir() -> str:
 def _resolve_log_base_dir(project_dir: str) -> Path:
     """Resolve the build-log base directory to a concrete path.
 
-    Anchors logs at the plan-marshall base directory (per-project global
-    dir) by default. Falls back to a project-dir-relative ``.plan/temp/
-    build-output`` when ``project_dir`` is a real path, to stay
-    compatible with tests that stage fixtures under a temp directory.
+    Prefers a ``{project_dir}/.plan/temp/build-output`` layout when the
+    caller supplied a concrete project root (tests and production alike
+    pass one). Falls back to ``get_temp_dir('build-output')`` which
+    resolves against the repo-local tracked config dir. Either way the
+    logs stay project-local — never in the per-project global dir.
     """
-    candidate = Path(project_dir) / _LOG_SUBPATH
     if project_dir and project_dir != '.' and Path(project_dir).exists():
-        return candidate
-    return get_base_dir() / 'temp' / 'build-output'
+        return Path(project_dir) / _LOG_SUBPATH
+    return get_temp_dir('build-output')
 
 
 TIMESTAMP_FORMAT = '%Y-%m-%d-%H%M%S'

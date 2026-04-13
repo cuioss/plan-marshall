@@ -6,6 +6,8 @@ and the check command for credential completeness.
 """
 
 
+import pytest
+
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
@@ -239,13 +241,26 @@ class TestCheckCompleteness:
 
 
 class TestConfigureAuthTypeValidation:
-    """Tests for auth_type validation against provider declaration."""
+    """Tests for auth_type validation against provider declaration.
 
-    @classmethod
-    def setup_class(cls):
-        """Ensure sonar provider is persisted in marshal.json."""
-        run_script(SCRIPT_PATH, 'discover-and-persist',
-                   '--providers', 'plan-marshall:workflow-integration-git,plan-marshall:workflow-integration-sonar')
+    Each test runs against an isolated ``tmp_path/.plan/marshal.json``
+    staged with the sonar provider declaration. PLAN_BASE_DIR is set so
+    the subprocess resolves marshal.json inside the fixture tree — never
+    the real repo-local .plan/marshal.json.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolated_marshal(self, tmp_path, monkeypatch):
+        import json as _json
+
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        (plan_dir / 'marshal.json').write_text(
+            _json.dumps({'providers': [_SONAR_PROVIDER]})
+        )
+        monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        self._plan_dir = plan_dir
+        yield
 
     def test_configure_accepts_any_auth_type_without_declared(self):
         """Configure accepts any auth_type when provider has no declared auth_type."""
@@ -257,17 +272,15 @@ class TestConfigureAuthTypeValidation:
         assert result.returncode == 0
         assert 'incompatible' not in result.stdout.lower()
 
-    def test_configure_accepts_matching_auth_type(self, tmp_path):
+    def test_configure_accepts_matching_auth_type(self):
         """Configure accepts auth_type that matches provider's declared auth_type."""
         from _providers_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
 
-        (tmp_path / '.plan').mkdir()
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
             SCRIPT_PATH, 'configure',
             '--skill', skill,
             '--auth-type', 'token',
-            cwd=tmp_path,
         )
         try:
             assert result.returncode == 0

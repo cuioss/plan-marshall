@@ -59,8 +59,22 @@ def get_plan_dir() -> Path:
 
 
 def get_temp_dir(subdir: str) -> Path:
-    """Get temp directory under .plan/temp/{subdir}."""
-    return get_plan_dir() / 'temp' / subdir
+    """Get temp directory under the repo-local .plan/temp/{subdir}.
+
+    temp/ intentionally stays project-local (unlike runtime state under
+    get_plan_dir()) so each worktree keeps its own isolated temp and the
+    existing ``Write(.plan/**)`` permission keeps covering it.
+
+    When PLAN_BASE_DIR is set (tests), it takes precedence and temp lands
+    under that override directory for consistency with file_ops.get_temp_dir.
+    """
+    env_dir = os.environ.get('PLAN_BASE_DIR')
+    if env_dir:
+        return Path(env_dir) / 'temp' / subdir
+    root = _git_main_checkout_root()
+    if root is not None:
+        return root / '.plan' / 'temp' / subdir
+    return Path(PLAN_DIR_NAME) / 'temp' / subdir
 
 
 def safe_relative_path(path: Path) -> str:
