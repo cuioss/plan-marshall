@@ -61,7 +61,7 @@ Capture `provider` and `confidence` from the output. Map the detected provider t
       --detail "detected={provider}, confidence={confidence}, matched_skill={skill_name}"
     ```
   - **Skip** the AskUserQuestion block in Step 5b-4c.
-- **ELSE** (confidence is `medium`/`low`, no detected provider, or detected provider not in the ci-category list): proceed to Step 5b-4c.
+- **ELSE** (confidence is `medium` or `none`, or detected provider not in the ci-category list): proceed to Step 5b-4c.
 
 **Step 5b-4c: Manual fallback prompt**
 
