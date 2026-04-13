@@ -179,16 +179,16 @@ def cmd_list(_args: argparse.Namespace) -> None:
     current: dict = {}
     for line in out.splitlines():
         if line.startswith('worktree '):
-            if current:
+            if current.get('path'):
                 entries.append(current)
-            current = {'path': line[len('worktree ') :]}
+            current = {'path': line[len('worktree ') :].strip()}
         elif line.startswith('branch '):
-            current['branch'] = line[len('branch ') :].removeprefix('refs/heads/')
+            current['branch'] = line[len('branch ') :].strip().removeprefix('refs/heads/')
         elif line == '':
-            if current:
+            if current.get('path'):
                 entries.append(current)
                 current = {}
-    if current:
+    if current.get('path'):
         entries.append(current)
 
     managed = []
