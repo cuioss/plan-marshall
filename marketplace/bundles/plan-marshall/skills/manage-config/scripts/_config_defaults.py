@@ -102,6 +102,7 @@ BUILT_IN_FINALIZE_STEPS = [
     'default:knowledge-capture',
     'default:lessons-capture',
     'default:branch-cleanup',
+    'default:record-metrics',
     'default:archive-plan',
 ]
 
@@ -114,6 +115,7 @@ BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:knowledge-capture': 'Capture learnings to memory',
     'default:lessons-capture': 'Record lessons learned',
     'default:branch-cleanup': 'Merge PR (with --delete-branch) and pull latest',
+    'default:record-metrics': 'Record final plan metrics before archive',
     'default:archive-plan': 'Archive the completed plan',
 }
 

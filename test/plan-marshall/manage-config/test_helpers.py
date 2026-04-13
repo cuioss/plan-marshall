@@ -94,6 +94,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
                         'default:knowledge-capture',
                         'default:lessons-capture',
                         'default:branch-cleanup',
+                        'default:record-metrics',
                         'default:archive-plan',
                     ],
                 },
