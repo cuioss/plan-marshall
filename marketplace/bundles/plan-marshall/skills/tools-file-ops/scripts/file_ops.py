@@ -21,8 +21,6 @@ Usage:
     )
 """
 
-import functools
-import hashlib
 import json
 import os
 import subprocess
@@ -32,12 +30,32 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+# Bootstrap sys.path so script-shared/scripts is importable. file_ops needs
+# git_main_checkout_root + project_dir_name from script-shared.marketplace_paths
+# (the canonical implementation lives there to avoid byte-for-byte duplication
+# between the two bundles — see PR #160 review). The walk locates the bundle's
+# skills/ root from this script's own __file__ and inserts script-shared/scripts
+# at the front of sys.path. Doing this in module init means callers (tests,
+# bootstrap scripts) don't have to remember to set up PYTHONPATH first.
+_THIS_FILE = Path(__file__).resolve()
+for _ancestor in _THIS_FILE.parents:
+    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
+        _shared_scripts = str(_ancestor / 'script-shared' / 'scripts')
+        if _shared_scripts not in sys.path:
+            sys.path.insert(0, _shared_scripts)
+        break
+
+from marketplace_paths import (  # type: ignore[import-not-found]  # noqa: E402
+    git_main_checkout_root,
+    project_dir_name,
+)
+from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
 
 # Global plan-marshall root: per-project runtime state lives under
-# ~/.plan-marshall/{project-name}/. The project name is the basename of the
-# git top-level directory, resolved via --git-common-dir so worktrees share
-# the same global directory as the main checkout.
+# ~/.plan-marshall/{project-name}/. The project name is derived from the
+# main git checkout root (basename + path-hash suffix), resolved via
+# --git-common-dir so worktrees share the same global directory as the
+# main checkout. See script-shared.marketplace_paths for the resolver.
 GLOBAL_ROOT = Path.home() / '.plan-marshall'
 
 # Fallback base directory used when not inside a git repository.
@@ -104,60 +122,17 @@ def format_duration(seconds: float) -> str:
     return f'{h}h{m}m'
 
 
-@functools.lru_cache(maxsize=8)
-def _resolve_git_main_checkout_root(cwd_marker: str) -> Path | None:
-    """Cached worker for _git_main_checkout_root.
-
-    Cache key is the resolved absolute cwd at call time, so a test that
-    monkeypatches ``os.chdir`` into a different directory gets a fresh
-    lookup. ``maxsize=8`` is enough to absorb cwd-juggling test loops
-    while keeping production (single cwd) effectively cache-of-one.
-    """
-    del cwd_marker  # only used as the cache key
-    try:
-        result = subprocess.run(
-            ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    git_common_dir = Path(result.stdout.strip())
-    if not git_common_dir:
-        return None
-    # git_common_dir is typically .../<repo>/.git; its parent is the main checkout.
-    return git_common_dir.parent
-
-
-def _git_main_checkout_root() -> Path | None:
-    """Return the main git checkout root, or None if not in a git repo.
-
-    Uses --git-common-dir so this resolves to the SAME directory whether
-    called from the main checkout or from a linked worktree. The main .git
-    directory's parent is the main working tree. Result is cached per cwd
-    (see _resolve_git_main_checkout_root) to avoid spawning a git
-    subprocess on every base-dir lookup.
-    """
-    return _resolve_git_main_checkout_root(os.getcwd())
-
-
 def get_project_name() -> str | None:
     """Return the project name used to scope the global plan-marshall directory.
 
-    Format: ``<basename>-<8-char-hash>`` where the hash is derived from
-    the absolute path of the main git checkout root. The basename keeps
-    the directory human-readable; the hash suffix prevents collisions
-    when two repos share a basename (e.g. ``~/work/app`` vs
-    ``~/personal/app``). Returns None when not inside a git repository.
+    Delegates to ``script-shared.marketplace_paths.project_dir_name`` for the
+    canonical derivation: ``{basename}-{8-char sha256(abs path)}``. Returns
+    ``None`` when not inside a git repository.
     """
-    root = _git_main_checkout_root()
+    root = git_main_checkout_root()
     if root is None:
         return None
-    abs_path = str(root.resolve())
-    digest = hashlib.sha256(abs_path.encode('utf-8')).hexdigest()[:8]
-    return f'{root.name}-{digest}'
+    return project_dir_name(root)
 
 
 def get_global_dir() -> Path | None:
@@ -313,7 +288,7 @@ def get_tracked_config_dir() -> Path:
     env_base = os.environ.get('PLAN_BASE_DIR')
     if env_base:
         return Path(env_base)
-    root = _git_main_checkout_root()
+    root = git_main_checkout_root()
     if root is not None:
         return root / '.plan'
     return Path('.plan')

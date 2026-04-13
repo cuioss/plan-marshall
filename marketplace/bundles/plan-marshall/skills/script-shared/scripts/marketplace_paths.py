@@ -20,9 +20,23 @@ PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 GLOBAL_PLAN_MARSHALL_ROOT = Path.home() / '.plan-marshall'
 
 
+# =============================================================================
+# Canonical git-root + project-dir-name resolver
+# =============================================================================
+# These primitives live here (in script-shared, the foundation bundle) and are
+# imported by tools-file-ops/file_ops.py. Do NOT duplicate them — the lesson
+# from PR #160 review was to consolidate, not maintain parallel copies.
+
+
 @functools.lru_cache(maxsize=8)
 def _resolve_git_main_checkout_root(cwd_marker: str) -> Path | None:
-    """Cached worker for _git_main_checkout_root (see file_ops for rationale)."""
+    """Cached worker for git_main_checkout_root.
+
+    Cache key is the resolved absolute cwd at call time, so a test that
+    monkeypatches ``os.chdir`` into a different directory gets a fresh
+    lookup. ``maxsize=8`` is enough to absorb cwd-juggling test loops
+    while keeping production (single cwd) effectively cache-of-one.
+    """
     del cwd_marker  # only used as the cache key
     try:
         result = subprocess.run(
@@ -40,22 +54,24 @@ def _resolve_git_main_checkout_root(cwd_marker: str) -> Path | None:
     return Path(common_dir).parent
 
 
-def _git_main_checkout_root() -> Path | None:
+def git_main_checkout_root() -> Path | None:
     """Return the main git checkout root, or None if not in a git repo.
 
-    Worktree-safe: uses --git-common-dir so worktrees resolve to the same
-    main checkout as the primary working tree. Result is cached per cwd
-    to avoid spawning a git subprocess on every base-dir lookup.
+    Worktree-safe: uses ``git rev-parse --git-common-dir`` so worktrees
+    resolve to the same main checkout as the primary working tree. The
+    result is cached per cwd to avoid spawning a git subprocess on every
+    base-dir lookup.
     """
     return _resolve_git_main_checkout_root(os.getcwd())
 
 
-def _project_dir_name(root: Path) -> str:
+def project_dir_name(root: Path) -> str:
     """Compute the per-project directory name (basename + path hash).
 
-    Mirrors tools-file-ops.get_project_name(): basename keeps the path
-    human-readable; the 8-char hash suffix prevents collisions across
-    repos that share a basename.
+    Format: ``{root.name}-{8-char sha256(abs path)}``. The basename keeps
+    the directory human-readable; the hash suffix prevents collisions
+    when two repos share a basename (e.g. ``~/work/app`` vs
+    ``~/personal/app``).
     """
     abs_path = str(root.resolve())
     digest = hashlib.sha256(abs_path.encode('utf-8')).hexdigest()[:8]
@@ -74,9 +90,9 @@ def get_plan_dir() -> Path:
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir)
-    root = _git_main_checkout_root()
+    root = git_main_checkout_root()
     if root is not None:
-        return GLOBAL_PLAN_MARSHALL_ROOT / _project_dir_name(root)
+        return GLOBAL_PLAN_MARSHALL_ROOT / project_dir_name(root)
     return Path(PLAN_DIR_NAME)
 
 
@@ -93,7 +109,7 @@ def get_temp_dir(subdir: str) -> Path:
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir) / 'temp' / subdir
-    root = _git_main_checkout_root()
+    root = git_main_checkout_root()
     if root is not None:
         return root / '.plan' / 'temp' / subdir
     return Path(PLAN_DIR_NAME) / 'temp' / subdir
