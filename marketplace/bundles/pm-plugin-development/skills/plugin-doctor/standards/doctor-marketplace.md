@@ -16,10 +16,11 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marke
 python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace report
 ```
 
-Otherwise, use bootstrap pattern with `${PLUGIN_ROOT}` (see `script-executor` skill):
+Otherwise, use the bootstrap pattern with `${PLUGIN_ROOT}` (see `script-executor` skill):
 ```bash
-python3 ${PLUGIN_ROOT}/pm-plugin-development/*/skills/plugin-doctor/scripts/doctor-marketplace.py fix
-python3 ${PLUGIN_ROOT}/pm-plugin-development/*/skills/plugin-doctor/scripts/doctor-marketplace.py report
+DOCTOR_SCRIPT=$(ls ${PLUGIN_ROOT}/pm-plugin-development/*/skills/plugin-doctor/scripts/doctor-marketplace.py | head -n 1)
+python3 "$DOCTOR_SCRIPT" fix
+python3 "$DOCTOR_SCRIPT" report
 ```
 
 Parse the JSON output to get:

@@ -337,147 +337,23 @@ This improves readability but has no functional impact.
 
 ### Issue 1: Grep Breaking Bash Tool Parsing
 
-**Problem**: Including `Grep` in tools array can break Bash tool parsing when combined with parameterized Bash declarations.
-
-**Evidence**:
-- Agent with `tools: Read, Glob, Grep, Bash(./.claude/skills/script.sh:*)` reports "Bash tool not available"
-- Agent with `tools: Read, Glob, Bash(./.claude/skills/script.sh:*)` works correctly
-
-**Root Cause**: Undocumented edge case in Claude Code's frontmatter parser where Grep interferes with subsequent Bash permission parsing.
-
-**Fix**: Remove Grep from frontmatter tools declaration.
-
-**Workaround**: Grep can still be used in workflow instructions without frontmatter declaration.
-
-PASS **CORRECT** (no Grep in frontmatter):
-```yaml
-tools: Read, Glob, Bash(./.claude/skills/script.sh:*)
-```
-
-Workflow can still use Grep:
-```markdown
-### Step 2: Search for patterns
-
-Use Grep to find violations:
-```
-Grep: pattern="LOGGER\\.error" files="src/**/*.java"
-```
-```
-
-FAIL **INCORRECT** (Grep breaks Bash):
-```yaml
-tools: Read, Glob, Grep, Bash(./.claude/skills/script.sh:*)
-```
+An undocumented edge case in Claude Code's frontmatter parser: listing `Grep` alongside a parameterized `Bash(...)` entry causes the Bash permission to fail ("Bash tool not available"). **Fix**: remove `Grep` from the frontmatter tools declaration — workflow steps can still use Grep without declaring it. Correct: `tools: Read, Glob, Bash(./.claude/skills/script.sh:*)`.
 
 ### Issue 2: Array Syntax vs Comma-Separated
 
-**Problem**: Many existing files use array syntax `[Read, Write]` which works but is not the documented standard.
-
-**Why This Matters**:
-- Official docs specify comma-separated format
-- Array syntax may not parse correctly in all contexts
-- Consistency with documentation prevents future issues
-
-**Fix**: Convert to comma-separated format.
-
-**Before**:
-```yaml
-tools: [Read, Write, Edit, Bash, Grep, Glob]
-```
-
-**After**:
-```yaml
-tools: Read, Write, Edit, Bash, Grep, Glob
-```
+Use the documented comma-separated form (`tools: Read, Write, Edit, Bash, Grep, Glob`) rather than YAML array form (`tools: [Read, Write, Edit, Bash, Grep, Glob]`).
 
 ### Issue 3: Task Tool in Agents
 
-**Problem**: Agents declare `Task` tool in frontmatter.
-
-**Why This Fails**:
-- Claude Code intentionally restricts Task tool from sub-agents
-- Agent will report "I don't have access to a 'Task' tool" when executed
-- Architectural violation: Commands orchestrate, agents execute
-
-**Fix**: Remove Task from agent frontmatter. If orchestration needed, use a command instead.
-
-FAIL **INCORRECT** (Task in agent):
-```yaml
----
-name: my-agent
-tools: Read, Task
----
-```
-
-PASS **CORRECT** (use command for orchestration):
-```yaml
----
-name: my-command
-tools: Read, Task
----
-
-Call agent via Task tool:
-```
-Task:
-  subagent_type: pm-plugin-development:my-agent
-  description: Execute analysis
-```
-```
+Agents must not declare `Task` — Claude Code restricts Task from sub-agents and the agent will error at runtime. If orchestration is needed, create a command (commands may declare `Task` and invoke agents via `Task: subagent_type: {bundle}:{agent}`).
 
 ### Issue 4: Unsupported Fields in Skills
 
-**Problem**: Skills declare `allowed-tools` or `tools` which are not supported by the plugin schema.
-
-**Why This Fails**: The skill schema only supports: `name`, `description`, `user-invocable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`. Any other field is silently ignored.
-
-**Fix**: Remove the field entirely. Skills do not have tool declarations.
-
-FAIL **INCORRECT**:
-```yaml
----
-name: my-skill
-description: My skill
-user-invocable: true
-allowed-tools: Read, Write
----
-```
-
-PASS **CORRECT**:
-```yaml
----
-name: my-skill
-description: My skill
-user-invocable: true
----
-```
+Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`. Any other field is silently ignored — remove it.
 
 ### Issue 5: Invalid Tool Names
 
-**Problem**: Using tool names that don't exist or are misspelled.
-
-**Valid Tools**:
-- `Read` - Read files
-- `Write` - Write files
-- `Edit` - Edit files
-- `Bash` - Execute bash commands
-- `Grep` - Search file contents
-- `Glob` - Find files by pattern
-- `Task` - Invoke agents (commands only)
-- `Skill` - Load skills (commands/agents only)
-
-**Case Sensitive**: Tool names are case-sensitive. Use exact capitalization.
-
-FAIL **INCORRECT**:
-```yaml
-tools: read, write, bash  # lowercase
-tools: READ, WRITE, BASH  # uppercase
-tools: File, Search       # wrong names
-```
-
-PASS **CORRECT**:
-```yaml
-tools: Read, Write, Bash
-```
+Tool names are case-sensitive. Use exactly: `Read`, `Write`, `Edit`, `Bash`, `Grep`, `Glob`, `Task` (commands only), `Skill` (commands/agents only). Lowercase, uppercase, and invented names (`File`, `Search`) are invalid.
 
 ## Validation Rules
 

@@ -81,7 +81,7 @@ PASS python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add
 
 **Prohibited**:
 ```markdown
-FAIL python ~/project/scripts/analyzer.py        # Absolute path
+FAIL python ~/project/scr1pts/analyzer.py        # Absolute path
 FAIL python3 scripts/analyzer.py                 # Direct script path (bypasses executor)
 ```
 
@@ -205,7 +205,7 @@ Follow architecture rules from loaded skill
 **Prohibited**:
 ```markdown
 FAIL Read ../other-skill/SKILL.md     # Direct file access
-FAIL bash ../other-skill/scripts/*.sh # Cross-skill script
+FAIL bash ../other-skill/scr1pts/*.sh # Cross-skill script
 ```
 
 ## Prohibited Patterns
@@ -215,7 +215,7 @@ FAIL bash ../other-skill/scripts/*.sh # Cross-skill script
 
 ```markdown
 FAIL Read: ../../../../standards/java/java-core.adoc
-FAIL bash ../../scripts/analyzer.sh
+FAIL bash ../../scr1pts/analyzer.sh
 FAIL * Guide: ../../../standards/requirements/guide.adoc
 ```
 
@@ -231,7 +231,7 @@ FAIL * Guide: ../../../standards/requirements/guide.adoc
 
 ```markdown
 FAIL Read: ~/git/plan-marshall/standards/java-core.adoc
-FAIL bash /Users/oliver/scripts/analyzer.sh
+FAIL bash /Users/oliver/scr1pts/analyzer.sh
 FAIL Source: /opt/project/standards/logging.adoc
 ```
 
@@ -247,7 +247,7 @@ FAIL Source: /opt/project/standards/logging.adoc
 
 ```markdown
 FAIL Read ../cui-other-skill/references/file.md
-FAIL bash ../other-skill/scripts/script.sh
+FAIL bash ../other-skill/scr1pts/script.sh
 ```
 
 **Why Wrong**:

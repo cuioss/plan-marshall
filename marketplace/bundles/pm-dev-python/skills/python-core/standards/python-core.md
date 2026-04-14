@@ -566,200 +566,25 @@ class Rectangle:
 
 ## Imports
 
-### Organization
-
-Three groups separated by blank lines, each sorted alphabetically:
-
-```python
-# 1. Standard library
-import json
-import sys
-from pathlib import Path
-from typing import TypedDict
-
-# 2. Third-party packages
-import requests
-from pydantic import BaseModel
-
-# 3. Local application imports
-from myapp.models import User
-from myapp.utils import format_date
-```
-
-### Rules
-
-```python
-# Import modules, not individual items (with exceptions)
-import os
-result = os.path.exists(path)
-
-# Acceptable: typing, collections.abc, dataclasses
-from typing import TypedDict, Literal
-from collections.abc import Mapping
-from dataclasses import dataclass, field
-
-# Never wildcard imports
-# BAD: from module import *
-```
+Organize into three blank-line-separated, alphabetically sorted groups: standard library, third-party packages, and local application imports. Prefer importing the module and using dotted access (`import os; os.path.exists(path)`); reserve `from ... import name` for explicitly documented helpers (`typing`, `collections.abc`, `dataclasses`). Never use wildcard imports (`from module import *`).
 
 ---
 
 ## Docstrings
 
-### Google Style Format
+Use Google-style docstrings. Function docstrings start with a one-line summary, followed by a longer description paragraph, then `Args:`, `Returns:`, `Raises:`, and (optionally) `Example:` sections. Document each parameter on its own indented line (`filters: Key-value pairs for filtering`). Always describe the return shape (including the empty-result case) and every exception the function raises.
 
-```python
-def fetch_users(
-    filters: dict[str, str],
-    limit: int = 100,
-    include_inactive: bool = False,
-) -> list[User]:
-    """Fetch users matching the given filters.
-
-    Retrieves users from the database that match all provided
-    filter criteria. Results are ordered by creation date.
-
-    Args:
-        filters: Key-value pairs for filtering (e.g., {"role": "admin"}).
-        limit: Maximum number of users to return.
-        include_inactive: Whether to include deactivated accounts.
-
-    Returns:
-        List of User objects matching the criteria, ordered by
-        creation date descending. Empty list if no matches.
-
-    Raises:
-        DatabaseError: If the database connection fails.
-        ValueError: If filters contains invalid keys.
-
-    Example:
-        >>> users = fetch_users({"department": "engineering"}, limit=10)
-        >>> len(users)
-        10
-    """
-```
-
-### Module and Class Docstrings
-
-```python
-"""User management utilities.
-
-This module provides functions for user CRUD operations
-and authentication helpers.
-"""
-
-class UserService:
-    """Service for user-related business logic.
-
-    Handles user creation, updates, and authentication.
-    All methods are transaction-safe.
-
-    Attributes:
-        repository: The underlying data access layer.
-        cache: Optional cache for read operations.
-    """
-```
+Module docstrings are one summary line plus a short paragraph describing the module's purpose. Class docstrings include a summary, description, and an `Attributes:` section listing key instance state.
 
 ---
 
 ## Comprehensions and Generators
 
-### List Comprehensions
-
-```python
-# Simple transformations - prefer comprehension
-squares = [x ** 2 for x in range(10)]
-names = [user.name for user in users if user.is_active]
-
-# Complex logic - use regular loop
-results = []
-for item in items:
-    if item.is_valid():
-        processed = transform(item)
-        if processed.meets_criteria():
-            results.append(processed)
-```
-
-### Generator Expressions
-
-Use for large datasets to save memory:
-
-```python
-# Generator - processes one item at a time
-total = sum(order.amount for order in orders)
-
-# Avoid creating intermediate lists
-# BAD: sum([x ** 2 for x in range(1000000)])
-# GOOD: sum(x ** 2 for x in range(1000000))
-```
-
-### Dictionary Comprehensions
-
-```python
-# Create dict from iterable
-user_map = {user.id: user for user in users}
-
-# Filter and transform
-active_emails = {
-    user.id: user.email
-    for user in users
-    if user.is_active
-}
-```
-
----
+Prefer list/dict comprehensions for simple transformations (`[x ** 2 for x in range(10)]`, `{user.id: user for user in users}`) and fall back to a regular loop when the logic branches or mutates state. Use generator expressions (`sum(order.amount for order in orders)`) for large datasets to avoid materializing intermediate lists. Filter-and-transform dict comprehensions read cleanly when the source has an explicit `if` clause.
 
 ## String Handling
 
-### F-Strings (Preferred)
-
-```python
-name = "Alice"
-count = 42
-
-# Simple interpolation
-message = f"Hello, {name}! You have {count} messages."
-
-# Expressions
-message = f"Total: {price * quantity:.2f}"
-
-# Debugging (Python 3.8+)
-print(f"{variable=}")  # Prints: variable=value
-```
-
-### Multi-line Strings
-
-```python
-# Use triple quotes
-query = """
-    SELECT *
-    FROM users
-    WHERE active = true
-"""
-
-# Or parentheses for implicit concatenation
-message = (
-    f"User {user.name} has been "
-    f"active for {user.days_active} days"
-)
-```
-
-### String Building
-
-```python
-# For loops - use join, not concatenation
-# BAD: result = ""; for s in items: result += s
-# GOOD:
-result = "".join(items)
-result = ", ".join(str(x) for x in numbers)
-
-# For complex building, use list and join
-parts = []
-for item in items:
-    if item.is_valid():
-        parts.append(format_item(item))
-result = "\n".join(parts)
-```
+Use f-strings for interpolation, including format specs (`f"Total: {price * quantity:.2f}"`) and the debug form (`f"{variable=}"`). Use triple-quoted strings for multi-line SQL/text and implicit-concatenation inside parentheses for wrapped logical strings. Build strings with `"".join(items)` or a list-plus-`join` for loops — never with `+=` in a loop.
 
 ---
 

@@ -44,7 +44,7 @@ created=2025-12-02
 
 # Build fails with missing dependency
 
-When running `mvn clean install`, the build fails with a missing
+When running a Maven clean install, the build fails with a missing
 dependency error for `jakarta.json-api`.
 
 ## Solution
@@ -89,7 +89,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
   --component maven-build \
   --category bug \
   --title "Build fails with missing dependency" \
-  --detail "When running mvn clean install..." \
+  --detail "When running a Maven clean install..." \
   [--bundle planning]
 ```
 
@@ -156,7 +156,7 @@ created: 2025-12-02
 title: Build fails with missing dependency
 
 content: |
-  When running `mvn clean install`...
+  When running a Maven clean install...
 ```
 
 ### list

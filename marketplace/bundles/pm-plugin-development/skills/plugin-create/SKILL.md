@@ -14,7 +14,8 @@ Interactive wizard for creating well-structured marketplace components following
 
 **Prohibited actions:**
 - Agents cannot use the Task tool (Rule 6 — unavailable at runtime). If user lists `Task` in tools, reject and suggest creating a command instead.
-- Only maven-builder agent may execute Maven commands (Rule 7). If a non-maven-builder agent needs Bash and Maven, reject.
+- Only the maven-builder agent may execute Maven build commands (Rule 7).
+- Reject any non-maven-builder agent whose declared capabilities combine the shell tool with direct Java-build-tool invocation needs.
 - Do not invent script notations — use only documented notations
 
 **Constraints:**

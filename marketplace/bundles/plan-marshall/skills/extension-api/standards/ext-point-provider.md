@@ -10,7 +10,7 @@ Provider extensions declare external tool authentication needs for individual sk
 
 ### Convention
 
-- **File location**: `marketplace/bundles/{bundle}/skills/{skill}/scripts/{provider}_provider.py`
+- **File location**: the consuming skill's scripts directory, using the filename convention `{provider}_provider.py` (where `{provider}` is the provider key, e.g. `github`, `sonar`).
 - **Required function**: `get_provider_declarations() -> list[dict]`
 - **Discovery**: `_list_providers.run_discover_and_persist()` scans PYTHONPATH for `*_provider.py` and persists to marshal.json; `_providers_core.load_declared_providers()` reads from marshal.json at runtime
 - **Consumer**: `manage-providers` skill
@@ -56,7 +56,7 @@ None — discovery is automatic via filesystem scanning.
 
 ### Pre-Conditions
 
-- `{provider}_provider.py` exists at `{bundle}/skills/{skill}/scripts/{provider}_provider.py`
+- A `{provider}_provider.py` file exists in the consuming skill's scripts subdirectory
 - File contains a `get_provider_declarations()` function
 
 ### Post-Conditions

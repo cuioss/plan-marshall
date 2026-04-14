@@ -277,6 +277,42 @@ def test_apply_remove_unsupported_tools_field_with_tools():
         assert 'tools:' not in content, f'tools field should be removed: {content}'
 
 
+def test_apply_remove_unsupported_tools_field_block_list_form():
+    """Block-list form `tools:\\n  - A\\n  - B` must be removed entirely, not leave orphan list items."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        skill_file = Path(tmp_dir) / 'SKILL.md'
+        skill_file.write_text(
+            '---\n'
+            'name: test-skill\n'
+            'description: Test\n'
+            'user-invocable: false\n'
+            'tools:\n'
+            '  - Bash\n'
+            '  - Read\n'
+            '  - Write\n'
+            '  - AskUserQuestion\n'
+            '---\n\n# Test\n'
+        )
+
+        fix_json = json.dumps({'type': 'unsupported-skill-tools-field', 'file': 'SKILL.md'})
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(fix_json)
+            f.flush()
+            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            data = cmd_apply(args)
+            Path(f.name).unlink()
+
+        assert data['success'] is True, f'Fix should succeed: {data}'
+
+        content = skill_file.read_text()
+        assert 'tools:' not in content, f'tools key should be removed: {content}'
+        assert '- Bash' not in content, f'Block-list items must be removed with the key: {content}'
+        assert '- Read' not in content, f'Block-list items must be removed with the key: {content}'
+        assert '- Write' not in content, f'Block-list items must be removed with the key: {content}'
+        assert '- AskUserQuestion' not in content, f'Block-list items must be removed with the key: {content}'
+        assert 'user-invocable: false\n---' in content, f'Remaining frontmatter should be intact: {content}'
+
+
 def test_apply_remove_unsupported_tools_no_field():
     """Test applying unsupported-skill-tools-field fix when field absent fails gracefully."""
     with tempfile.TemporaryDirectory() as tmp_dir:

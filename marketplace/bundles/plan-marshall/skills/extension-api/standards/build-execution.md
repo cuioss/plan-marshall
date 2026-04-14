@@ -383,7 +383,7 @@ Each domain bundle provides its own `{build_system}_execute.py` module that:
 - Integrates with timeout learning (R3)
 - Returns `DirectCommandResult` structure
 
-Location: `{bundle}/skills/build-{tool}/scripts/_{build_system}_execute.py`
+Location: inside the `build-{tool}` skill directory, under a `scripts` subdirectory, as `_{build_system}_execute.py`.
 
 | Build System | Module |
 |--------------|--------|
@@ -583,30 +583,6 @@ Extensions providing build commands must:
 - Parse and return structured `errors`, `warnings`, `tests` on build failure
 - Filter warnings based on mode and acceptable patterns
 - Have tests for both output formats and all modes
-
-## Design Rationale
-
-### Why Seconds Not Milliseconds
-
-Duration uses seconds because:
-- Matches timeout parameter units
-- Human-readable for interactive output
-- Build durations rarely need millisecond precision
-
-### Why Flat Structure Not Nested
-
-Core fields are at the top level (not nested in `data`) because:
-- Simpler parsing in both TOON and JSON formats
-- Status check doesn't require traversing structure
-- TOON format naturally maps to flat key-value pairs
-
-### Why Log File Not stdout/stderr
-
-Output goes to log file (not captured to memory) because:
-- Build output can be megabytes (verbose mode, many modules)
-- Memory capture would bloat conversation context
-- Log files persist for debugging failed builds
-- Consistent location pattern enables automation
 
 ## Related Specifications
 

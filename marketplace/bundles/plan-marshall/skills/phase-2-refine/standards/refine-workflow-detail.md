@@ -249,106 +249,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Step 8: Analyze Request Quality
 
-Evaluate the request against five quality dimensions.
+Evaluate the request against five quality dimensions, using `arch_context` from Step 6 wherever applicable.
 
-### Correctness
-
-**Check**: Are requirements technically valid? **Use `arch_context` from Step 6**.
-
-| Aspect | Check | Architecture Data Used |
-|--------|-------|------------------------|
-| Technology references | Do mentioned technologies/frameworks exist? | `arch_context.technologies` |
-| Module references | Do mentioned modules exist in the project? | `arch_context.modules[].name` |
-| API references | Are referenced APIs/methods valid in the codebase? | Query if unclear |
-| Pattern references | Are mentioned patterns appropriate for the domain? | `arch_context.project_description` |
-| Constraint validity | Are constraints achievable (not mutually exclusive)? | Module purposes |
-
-**Validation against architecture**:
-- If request mentions "Maven" but `technologies` doesn't include `maven` → ISSUE
-- If request mentions module "foo-bar" but it's not in `modules` → ISSUE
-- If request mentions "Quarkus CDI" but project is plain Java library → ISSUE
-
-**Finding format**:
-```
-CORRECTNESS: {PASS|ISSUE}
-  - {specific finding with evidence}
-  - Architecture reference: {what was checked against}
-```
-
-### Completeness
-
-**Check**: Is all necessary information present?
-
-| Aspect | Check |
-|--------|-------|
-| Scope clarity | Is it clear what IS and IS NOT in scope? |
-| Success criteria | Are acceptance criteria defined or inferrable? |
-| Test requirements | Are testing expectations stated (or can be inferred from domain)? |
-| Dependencies | Are prerequisite changes or dependencies mentioned? |
-
-**Finding format**:
-```
-COMPLETENESS: {PASS|MISSING}
-  - {what is missing and why it matters}
-```
-
-### Consistency
-
-**Check**: Are requirements internally consistent?
-
-| Aspect | Check |
-|--------|-------|
-| No contradictions | Requirements don't conflict with each other |
-| Aligned constraints | Technology choices don't conflict |
-| Coherent scope | All parts work toward same goal |
-
-**Finding format**:
-```
-CONSISTENCY: {PASS|CONFLICT}
-  - {conflicting requirements with explanation}
-```
-
-### Non-Duplication
-
-**Check**: Are there redundant requirements?
-
-| Aspect | Check |
-|--------|-------|
-| No repeated asks | Same thing not requested multiple ways |
-| No overlapping scope | Requirements don't cover same ground differently |
-
-**Finding format**:
-```
-DUPLICATION: {PASS|REDUNDANT}
-  - {duplicated requirements and recommendation}
-```
-
-### Ambiguity
-
-**Check**: Is there only one valid interpretation?
-
-| Aspect | Check |
-|--------|-------|
-| Clear terminology | Domain terms are unambiguous |
-| Specific scope | "All X" or "some X" is clear |
-| Measurable criteria | Success is objectively determinable |
-| Clear boundaries | Where changes start/stop is explicit |
-| Analysis intent | If request uses "analyze/investigate/review", is the output scope clear (report-only vs. fix)? |
-
-**Finding format**:
-```
-AMBIGUITY: {PASS|UNCLEAR}
-  - {ambiguous element and possible interpretations}
-```
-
-**Analysis intent finding** (when request uses analyze/investigate/review without clear output scope):
-```
-AMBIGUITY: UNCLEAR
-  - Analysis intent: Request uses "{analyze/investigate/review}" but does not specify
-    whether output is findings-only or findings-with-fixes.
-    Interpretation A: Produce analysis report only (no code changes)
-    Interpretation B: Analyze to identify issues, then implement fixes
-```
+- **Correctness** — Are technology, module, API, and pattern references valid against `arch_context.technologies`, `arch_context.modules[].name`, and `arch_context.project_description`? Are stated constraints achievable (not mutually exclusive)? Flag as `CORRECTNESS: ISSUE` with the mismatched evidence and the architecture reference that was checked.
+- **Completeness** — Is scope clear (in and out), are acceptance criteria inferrable, are testing expectations stated, are prerequisite changes/dependencies mentioned? Flag gaps as `COMPLETENESS: MISSING`.
+- **Consistency** — Do requirements contradict each other or combine conflicting technology choices? Do all parts work toward the same goal? Flag conflicts as `CONSISTENCY: CONFLICT`.
+- **Non-duplication** — Is the same ask repeated or are requirements overlapping? Flag as `DUPLICATION: REDUNDANT` with a consolidation recommendation.
+- **Ambiguity** — Does each requirement have exactly one valid interpretation? Check terminology, quantifiers ("all X" vs "some X"), measurable criteria, boundary clarity, and — critically — the analysis intent when the request uses verbs like "analyze", "investigate", or "review" (report-only vs report-plus-fix). Flag as `AMBIGUITY: UNCLEAR` with each alternative interpretation enumerated.
 
 ---
 
@@ -358,99 +265,24 @@ With `arch_context` from Step 6, analyze how the request maps to the codebase.
 
 ### Module Mapping
 
-**Question**: Which modules are affected by this request?
-
-**Initial mapping** (use `arch_context.modules` from Step 6):
-
-For each requirement, identify candidate modules:
-- Does the request mention specific modules? → Check against `arch_context.modules[].name`
-- Does the request mention functionality? → Match against `arch_context.modules[].purpose`
-- Are there implicit module dependencies?
-
-**When to query detailed module info**:
-
-If mapping is unclear (confidence < 70%), query detailed module info:
+Identify candidate modules for each requirement using `arch_context.modules[].name` (direct name mentions) and `arch_context.modules[].purpose` (functionality matches); also capture implicit module dependencies. When confidence is below 70 %, query detailed module info:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module \
   --name {candidate_module} --trace-plan-id {plan_id}
 ```
 
-This provides:
-- `responsibility`: What the module does (e.g., "Core JWT validation logic")
-- `key_packages`: Package structure and descriptions
-- `key_dependencies`: External dependencies that indicate functionality
-- `internal_dependencies`: Dependencies on other project modules
+The response exposes `responsibility`, `key_packages`, `key_dependencies`, and `internal_dependencies`. For cross-cutting changes, also run `architecture graph` to understand the dependency flow between candidate modules. Query detailed info only when the request is not already a direct module-name match.
 
-**Decision tree for detailed queries**:
-
-| Situation | Action |
-|-----------|--------|
-| Request mentions specific module by name | No query needed (direct match) |
-| Request mentions functionality, multiple modules possible | Query candidates to compare `responsibility` |
-| Request is cross-cutting (affects multiple modules) | Query graph to understand dependencies |
-| Request scope unclear | Query detailed info for all candidate modules |
-
-**Graph query** (for cross-module changes):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture graph \
-  --trace-plan-id {plan_id}
-```
-
-**Finding format**:
-```
-MODULE_MAPPING: {CLEAR|NEEDS_CLARIFICATION}
-  - Requirement: "{requirement text}"
-  - Candidate modules: [{module1}, {module2}]
-  - Confidence: {percentage}
-  - Reason: {why these modules, or why unclear}
-  - Detailed query: {yes/no - whether module details were retrieved}
-```
+Emit a `MODULE_MAPPING: {CLEAR|NEEDS_CLARIFICATION}` finding containing the requirement text, candidate modules, confidence, the rationale, and whether a detailed query was required.
 
 ### Feasibility Check
 
-**Question**: Can this request be implemented given the architecture?
-
-**Use architecture data to validate**:
-
-| Aspect | Check | Data Source |
-|--------|-------|-------------|
-| Module boundaries | Does request respect existing module boundaries? | `arch_context.modules[].purpose` |
-| Dependency direction | Does request respect dependency flow? | `architecture graph` output |
-| Extension points | Are there appropriate extension points for the change? | Module details `internal_dependencies` |
-| Technology fit | Does request match project technologies? | `arch_context.technologies` |
-
-**Common feasibility concerns**:
-- Request asks to modify `library` module but change requires runtime context → CONCERN
-- Request requires dependency from leaf module to root module (wrong direction) → CONCERN
-- Request assumes framework feature not present in `technologies` → CONCERN
-
-**Finding format**:
-```
-FEASIBILITY: {FEASIBLE|CONCERN}
-  - {concern and architectural constraint}
-  - Architecture check: {what was validated}
-```
+Validate that the request respects module boundaries (`arch_context.modules[].purpose`), follows dependency direction (`architecture graph` output), aligns with existing extension points (`internal_dependencies`), and fits the project technologies (`arch_context.technologies`). Flag concerns such as runtime-context changes inside a library module, reverse dependency flows, or missing framework features as `FEASIBILITY: CONCERN` with the architectural constraint that was violated.
 
 ### Scope Size Estimation
 
-**Question**: What is the approximate scope?
-
-| Scope | Criteria |
-|-------|----------|
-| `single_file` | 1 specific file clearly identified |
-| `single_module` | 1 module, < 5 files |
-| `few_files` | 1-2 modules, 5-15 files with clear targets |
-| `multi_module` | 3+ modules, 15+ files |
-| `codebase_wide` | Cross-cutting, unclear boundaries, "all X" pattern |
-
-**Finding format**:
-```
-SCOPE_ESTIMATE: {single_file|single_module|few_files|multi_module|codebase_wide}
-  - Modules affected: {count}
-  - Estimated files: {range}
-  - Rationale: {brief explanation}
-```
+Classify the scope as `single_file` (one file), `single_module` (<5 files in one module), `few_files` (1-2 modules with 5-15 files), `multi_module` (3+ modules or 15+ files), or `codebase_wide` (cross-cutting or "all X" patterns). Emit `SCOPE_ESTIMATE: {class}` with modules affected, estimated file count, and rationale.
 
 ### Track Selection
 
@@ -560,41 +392,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Step 11: Clarify with User
 
-For each issue found in Steps 8-9, formulate a clarification question.
+For each issue found in Steps 8-9, formulate a clarification question mapped to its dimension:
 
-### Question Formulation
+- **Correctness**: "Is {X} the correct {technology/API/pattern}?"
+- **Completeness**: "What should happen when {missing scenario}?"
+- **Consistency**: "You mentioned both {A} and {B} which conflict. Which takes priority?"
+- **Ambiguity**: "When you say {ambiguous term}, do you mean {interpretation A} or {interpretation B}?"
+- **Analysis intent**: "Your request uses 'analyze'. Is the expected outcome a findings-only report, or analysis plus implementation of fixes?"
+- **Module mapping**: "Should this change affect {module A}, {module B}, or both?"
 
-**From Correctness issues**: "Is {X} the correct {technology/API/pattern}?"
-**From Completeness issues**: "What should happen when {missing scenario}?"
-**From Consistency issues**: "You mentioned both {A} and {B} which conflict. Which takes priority?"
-**From Ambiguity issues**: "When you say {ambiguous term}, do you mean {interpretation A} or {interpretation B}?"
-**From Analysis intent ambiguity**: "Your request uses 'analyze'. What is the expected outcome?"
-  Options:
-    - "Analyze and report only" → "Produce a findings document, no code changes"
-    - "Analyze and implement fixes" → "Use analysis as discovery, then create fix deliverables"
-**From Module Mapping issues**: "Should this change affect {module A}, {module B}, or both?"
-
-### Ask User
-
-Use AskUserQuestion with specific options derived from the analysis:
-
-```
-AskUserQuestion:
-  questions:
-    - question: "{formulated question based on issue}"
-      header: "{dimension}" # e.g., "Scope", "Behavior", "Priority"
-      options:
-        - label: "{option 1}"
-          description: "{what this option means for implementation}"
-        - label: "{option 2}"
-          description: "{what this option means for implementation}"
-      multiSelect: false
-```
-
-**Guidelines**:
-- Ask at most 4 questions per iteration (AskUserQuestion limit)
-- Prioritize: Correctness > Consistency > Completeness > Ambiguity > Duplication
-- Provide concrete examples from the codebase when possible
+Ask the user via `AskUserQuestion` with explicit options that describe the implementation consequence of each choice. Ask at most 4 questions per iteration (AskUserQuestion limit), prioritize by Correctness > Consistency > Completeness > Ambiguity > Duplication, and provide concrete codebase examples when possible.
 
 ---
 
