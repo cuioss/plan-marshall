@@ -113,4 +113,5 @@ exclude = [
     "test/.*/plan-marshall-plugin/",
     "test/plan-marshall/tools-permission-fix/test_permission\\.py$",
     "test/.*/integration/",
+    "\\.claude/worktrees/",
 ]

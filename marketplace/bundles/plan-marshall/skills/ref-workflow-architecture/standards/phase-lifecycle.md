@@ -54,6 +54,30 @@ Resolution values: `taken_into_account`, `fixed`, `deduplicated`, `reopened`.
 
 **If no pending findings:** Continue to the next step.
 
+### Phase Handshake Verify (phases 2-6)
+
+After the Q-Gate check, verify the handshake captured by the previous phase:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id {plan_id} --phase {previous_phase_key} --strict
+```
+
+**On `status: ok`**: Continue to the next step.
+
+**On `status: drift`**: Stop the phase immediately. Surface the `diffs[]` table to the user verbatim. **Do NOT rationalize the differences. Do NOT auto-continue.** The only valid responses are:
+- **Authorized override**: user confirms the drift is legitimate, then run `phase_handshake capture --override --reason "{user rationale}"` on the previous phase and re-enter the current phase.
+- **Manual investigation**: user investigates the root cause and corrects the drift before re-entry.
+
+Drift is a *signal*, not a *nuisance*. `--strict` makes the script exit non-zero so tooling that swallows TOON still sees the failure.
+
+**On `status: skipped`**: Log a warning to work.log and continue. Skipped means "first-time rollout, manual transition, or post-clear capture" — not an error, but worth surfacing so the audit trail is honest.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARN --message "[HANDSHAKE] (plan-marshall:{phase_skill}) Verify skipped — no capture for {previous_phase_key}"
+```
+
 ### Log Phase Start
 
 ```bash
@@ -65,7 +89,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Phase Completion Protocol
 
-After all phase-specific steps are done, execute this 3-step completion sequence:
+After all phase-specific steps are done, execute this 4-step completion sequence:
 
 ### Step 1: Transition Phase
 
@@ -92,6 +116,17 @@ The `{summary}` should include phase-specific metrics (e.g., "plan created with 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   separator --plan-id {plan_id} --type work
 ```
+
+### Step 4: Phase Handshake Capture
+
+Capture invariants so the next phase's entry protocol can verify them:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase {phase_key}
+```
+
+Returns `status: success` with the captured invariants. Re-running a phase replaces the previous row. See [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) for the full contract, storage format, and invariant registry.
 
 ---
 

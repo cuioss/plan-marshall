@@ -2,6 +2,10 @@
 
 Workflows for plan execution phases: execute (task implementation + verification) and finalize (commit, PR).
 
+## Phase Handshake
+
+Every phase transition is guarded by the `phase_handshake` script, which captures a fingerprint of key invariants on phase completion and verifies them on the next phase's entry. Drift between captured and observed invariants blocks progress until resolved or overridden. See [`../references/phase-handshake.md`](../references/phase-handshake.md) for the full contract, storage format, and invariant registry. The entry/completion protocols in [`phase-lifecycle.md`](../../ref-workflow-architecture/standards/phase-lifecycle.md) invoke the handshake automatically for all 6 phases.
+
 ## Action Routing
 
 | Action | Workflow |
