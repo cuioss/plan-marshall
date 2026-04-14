@@ -258,6 +258,7 @@ VALID_SOURCE_EXTENSIONS = (
     '.toml',
     '.cfg',
     '.ini',
+    '.jsonl',
     '.xml',
     '.sh',
     '.bash',
