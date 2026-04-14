@@ -19,7 +19,7 @@ from typing import Any
 
 _HEADER_VIRTUAL_FIELDS = ('plan_id', 'source', 'source_id', 'created')
 _HEADER_FIELD_PATTERN = re.compile(
-    r'^(plan_id|source|source_id|created):\s*(.+)$',
+    rf'^({"|".join(re.escape(f) for f in _HEADER_VIRTUAL_FIELDS)}):\s*(.*)$',
     re.MULTILINE,
 )
 
@@ -68,10 +68,9 @@ def parse_document_sections(content: str) -> dict[str, str]:
     header_text = sections.get('_header', '')
     if header_text:
         for match in _HEADER_FIELD_PATTERN.finditer(header_text):
-            key = match.group(1)
-            value = match.group(2).strip()
-            if key in _HEADER_VIRTUAL_FIELDS and key not in sections:
-                sections[key] = value
+            key, value = match.groups()
+            if key not in sections:
+                sections[key] = value.strip()
 
     return sections
 
