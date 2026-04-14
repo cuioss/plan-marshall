@@ -352,6 +352,156 @@ def test_read_section_clarified_request_when_present():
 
 
 # =============================================================================
+# Test: Header Metadata Section Reads (regression for phase-1-init header shape)
+# =============================================================================
+
+
+_PHASE_1_INIT_REQUEST_TEMPLATE = """# Request: Header Metadata Test
+
+plan_id: {plan_id}
+source: issue
+source_id: https://github.com/org/repo/issues/42
+created: 2026-04-14T10:00:00Z
+
+## Original Input
+
+Body content for header metadata regression.
+
+## Context
+
+Additional context for header metadata regression.
+"""
+
+
+def _write_phase1_request(ctx, plan_id: str) -> str:
+    """Write a request.md using the phase-1-init header block shape."""
+    content = _PHASE_1_INIT_REQUEST_TEMPLATE.format(plan_id=plan_id)
+    (ctx.plan_dir / 'request.md').write_text(content)
+    return content
+
+
+def test_read_section_source_from_header():
+    """Regression: `--section source` must resolve against header key:value lines."""
+    with PlanContext(plan_id='header-source') as ctx:
+        _write_phase1_request(ctx, 'header-source')
+
+        result = cmd_read(
+            'request',
+            Namespace(plan_id='header-source', raw=False, section='source'),
+        )
+        assert result['status'] == 'success'
+        assert result['section'] == 'source'
+        assert result['requested_section'] == 'source'
+        assert result['content'] == 'issue'
+
+
+def test_read_section_source_id_from_header():
+    """Regression: `--section source_id` must resolve against header key:value lines."""
+    with PlanContext(plan_id='header-source-id') as ctx:
+        _write_phase1_request(ctx, 'header-source-id')
+
+        result = cmd_read(
+            'request',
+            Namespace(plan_id='header-source-id', raw=False, section='source_id'),
+        )
+        assert result['status'] == 'success'
+        assert result['section'] == 'source_id'
+        assert result['content'] == 'https://github.com/org/repo/issues/42'
+
+
+def test_read_section_plan_id_from_header():
+    """Regression: `--section plan_id` must resolve against header key:value lines."""
+    with PlanContext(plan_id='header-plan-id') as ctx:
+        _write_phase1_request(ctx, 'header-plan-id')
+
+        result = cmd_read(
+            'request',
+            Namespace(plan_id='header-plan-id', raw=False, section='plan_id'),
+        )
+        assert result['status'] == 'success'
+        assert result['section'] == 'plan_id'
+        assert result['content'] == 'header-plan-id'
+
+
+def test_read_section_created_from_header():
+    """Regression: `--section created` must resolve against header key:value lines."""
+    with PlanContext(plan_id='header-created') as ctx:
+        _write_phase1_request(ctx, 'header-created')
+
+        result = cmd_read(
+            'request',
+            Namespace(plan_id='header-created', raw=False, section='created'),
+        )
+        assert result['status'] == 'success'
+        assert result['section'] == 'created'
+        assert result['content'] == '2026-04-14T10:00:00Z'
+
+
+def test_read_section_header_preserves_original_block():
+    """The _header virtual section must return the full original header block unchanged."""
+    with PlanContext(plan_id='header-preserved') as ctx:
+        _write_phase1_request(ctx, 'header-preserved')
+
+        result = cmd_read(
+            'request',
+            Namespace(plan_id='header-preserved', raw=False, section='_header'),
+        )
+        assert result['status'] == 'success'
+        assert result['section'] == '_header'
+        content = result['content']
+        # Full header block (title + all key:value lines) is preserved.
+        assert '# Request: Header Metadata Test' in content
+        assert 'plan_id: header-preserved' in content
+        assert 'source: issue' in content
+        assert 'source_id: https://github.com/org/repo/issues/42' in content
+        assert 'created: 2026-04-14T10:00:00Z' in content
+
+
+def test_read_unknown_section_lists_header_fields_as_available():
+    """Unknown sections still error, but available_sections now advertises header virtuals."""
+    with PlanContext(plan_id='header-unknown') as ctx:
+        _write_phase1_request(ctx, 'header-unknown')
+
+        result = cmd_read(
+            'request',
+            Namespace(plan_id='header-unknown', raw=False, section='does_not_exist'),
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'section_not_found'
+        assert result['section'] == 'does_not_exist'
+        available = result['available_sections']
+        # Both H2 sections and promoted header virtuals must be listed.
+        assert '_header' in available
+        assert 'original_input' in available
+        assert 'context' in available
+        assert 'plan_id' in available
+        assert 'source' in available
+        assert 'source_id' in available
+        assert 'created' in available
+
+
+def test_cli_archive_plan_source_section_read():
+    """End-to-end: exact CLI shape used by archive-plan.md (`request read --section source`)."""
+    with PlanContext(plan_id='archive-plan-source') as ctx:
+        _write_phase1_request(ctx, 'archive-plan-source')
+
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'read',
+            '--plan-id',
+            'archive-plan-source',
+            '--section',
+            'source',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert data['section'] == 'source'
+        assert data['content'] == 'issue'
+
+
+# =============================================================================
 # CLI Plumbing Tests (Tier 3 subprocess - kept for end-to-end coverage)
 # =============================================================================
 
