@@ -17,12 +17,26 @@ Usage:
 import re
 from typing import Any
 
+_HEADER_VIRTUAL_FIELDS = ('plan_id', 'source', 'source_id', 'created')
+_HEADER_FIELD_PATTERN = re.compile(
+    rf'^({"|".join(re.escape(f) for f in _HEADER_VIRTUAL_FIELDS)}):\s*(.*)$',
+    re.MULTILINE,
+)
+
 
 def parse_document_sections(content: str) -> dict[str, str]:
     """Parse markdown document into sections by ## heading.
 
     Section keys are lowercase with underscores (e.g., 'summary', 'deliverables').
     The content before any ## heading is stored under '_header'.
+
+    After splitting on H2 headings, an allowlisted set of header metadata fields
+    (``plan_id``, ``source``, ``source_id``, ``created``) is scanned from the
+    ``_header`` block and promoted to virtual sections so callers can read them
+    via the same section APIs. Only the allowlist is promoted — arbitrary
+    ``key: value`` lines are ignored. If an H2 section with the same name
+    already exists, it wins (virtual promotion does not overwrite it). The
+    ``_header`` section itself is preserved unchanged.
 
     Args:
         content: Markdown document content
@@ -48,6 +62,15 @@ def parse_document_sections(content: str) -> dict[str, str]:
     # Save last section
     if current_content:
         sections[current_section] = '\n'.join(current_content).strip()
+
+    # Promote allowlisted header metadata fields to virtual sections.
+    # H2-parsed sections take precedence on collision.
+    header_text = sections.get('_header', '')
+    if header_text:
+        for match in _HEADER_FIELD_PATTERN.finditer(header_text):
+            key, value = match.groups()
+            if key not in sections:
+                sections[key] = value.strip()
 
     return sections
 
