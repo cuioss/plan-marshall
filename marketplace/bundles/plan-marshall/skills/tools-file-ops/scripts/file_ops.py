@@ -56,9 +56,6 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa
 # — project-local, covered by the existing ``Write(.plan/**)`` permission.
 # Worktrees are anchored separately at ``<root>/.claude/worktrees/``.
 
-# Fallback base directory used when not inside a git repository.
-_FALLBACK_BASE_DIR = Path(PLAN_DIR_NAME) / 'local'
-
 # Runtime-overridable base directory (set by set_base_dir for tests).
 # None means "resolve from environment / git on each call".
 _BASE_DIR_OVERRIDE: Path | None = None
@@ -178,7 +175,10 @@ def get_base_dir() -> Path:
         1. Explicit set_base_dir() override (tests).
         2. PLAN_BASE_DIR environment variable (tests, user override).
         3. ``<git_main_checkout_root>/.plan/local`` when inside a git repo.
-        4. ``.plan/local`` fallback (outside a git repo).
+
+    Raises:
+        RuntimeError: when none of the above resolve (no override, no
+            env var, and not inside a git repository).
     """
     if _BASE_DIR_OVERRIDE is not None:
         return _BASE_DIR_OVERRIDE
@@ -186,9 +186,13 @@ def get_base_dir() -> Path:
     if env_dir:
         return Path(env_dir)
     root = git_main_checkout_root()
-    if root is not None:
-        return root / PLAN_DIR_NAME / 'local'
-    return _FALLBACK_BASE_DIR
+    if root is None:
+        raise RuntimeError(
+            'plan-marshall runtime state requires a git checkout; '
+            'no main checkout root could be resolved from cwd. '
+            'Set PLAN_BASE_DIR to override (tests).'
+        )
+    return root / PLAN_DIR_NAME / 'local'
 
 
 def set_base_dir(path: Path | str) -> None:
