@@ -584,84 +584,91 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     if returncode != 0 or data is None:
         return {'status': 'error', 'operation': 'pr_comments', 'error': f'GraphQL query failed: {err}'}
 
-    # Extract threads, reviews, and issue comments with null-safe traversal
+    # Extract and normalize threads, reviews, and issue comments with null-safe traversal.
+    # The entire parsing block is wrapped so any malformed node (non-dict, null nested field)
+    # is caught and surfaced as a structured error rather than crashing the caller.
+    comments: list[dict] = []
     try:
         pull_request = (data.get('repository') or {}).get('pullRequest') or {}
         threads = (pull_request.get('reviewThreads') or {}).get('nodes') or []
         reviews = (pull_request.get('reviews') or {}).get('nodes') or []
         issue_comments = (pull_request.get('comments') or {}).get('nodes') or []
-    except (KeyError, TypeError, AttributeError) as e:
-        return {'status': 'error', 'operation': 'pr_comments', 'error': f'Failed to parse response: {e}'}
 
-    # Normalize comments
-    comments: list[dict] = []
+        # 1. Inline review thread comments
+        for thread in threads:
+            if not isinstance(thread, dict):
+                continue
+            is_resolved = thread.get('isResolved', False)
 
-    # 1. Inline review thread comments
-    for thread in threads:
-        is_resolved = thread.get('isResolved', False)
+            # Skip resolved threads if --unresolved-only
+            if unresolved_only and is_resolved:
+                continue
 
-        # Skip resolved threads if --unresolved-only
-        if unresolved_only and is_resolved:
-            continue
+            path = thread.get('path') or ''
+            line = thread.get('line') or 0
+            thread_id = thread.get('id') or ''
 
-        path = thread.get('path', '')
-        line = thread.get('line', 0)
-        thread_id = thread.get('id', '')
+            thread_comments = (thread.get('comments') or {}).get('nodes') or []
+            for comment in thread_comments:
+                if not isinstance(comment, dict):
+                    continue
+                comments.append(
+                    {
+                        'kind': 'inline',
+                        'id': comment.get('id') or '',
+                        'author': (comment.get('author') or {}).get('login', 'unknown'),
+                        'body': comment.get('body') or '',
+                        'path': path,
+                        'line': line,
+                        'resolved': is_resolved,
+                        'created_at': comment.get('createdAt') or '',
+                        'thread_id': thread_id,
+                    }
+                )
 
-        # Process each comment in the thread
-        thread_comments = thread.get('comments', {}).get('nodes', [])
-        for comment in thread_comments:
+        # 2. Review submission bodies (APPROVED / COMMENTED / CHANGES_REQUESTED)
+        for review in reviews:
+            if not isinstance(review, dict):
+                continue
+            body = review.get('body') or ''
+            if not body:
+                continue
             comments.append(
                 {
-                    'kind': 'inline',
-                    'id': comment.get('id', ''),
-                    'author': comment.get('author', {}).get('login', 'unknown'),
-                    'body': comment.get('body', ''),
-                    'path': path,
-                    'line': line,
-                    'resolved': is_resolved,
-                    'created_at': comment.get('createdAt', ''),
-                    'thread_id': thread_id,
+                    'kind': 'review_body',
+                    'id': review.get('id') or '',
+                    'author': (review.get('author') or {}).get('login', 'unknown'),
+                    'body': body,
+                    'path': '',
+                    'line': 0,
+                    'resolved': False,
+                    'created_at': review.get('submittedAt') or '',
+                    'thread_id': '',
                 }
             )
 
-    # 2. Review submission bodies (APPROVED / COMMENTED / CHANGES_REQUESTED)
-    for review in reviews:
-        body = review.get('body', '') or ''
-        if not body:
-            continue
-        comments.append(
-            {
-                'kind': 'review_body',
-                'id': review.get('id', ''),
-                'author': (review.get('author') or {}).get('login', 'unknown'),
-                'body': body,
-                'path': '',
-                'line': 0,
-                'resolved': False,
-                'created_at': review.get('submittedAt', '') or '',
-                'thread_id': '',
-            }
-        )
-
-    # 3. Issue-level PR comments
-    for issue_comment in issue_comments:
-        body = issue_comment.get('body', '') or ''
-        if not body:
-            continue
-        comments.append(
-            {
-                'kind': 'issue_comment',
-                'id': issue_comment.get('id', ''),
-                'author': (issue_comment.get('author') or {}).get('login', 'unknown'),
-                'body': body,
-                'path': '',
-                'line': 0,
-                'resolved': False,
-                'created_at': issue_comment.get('createdAt', '') or '',
-                'thread_id': '',
-            }
-        )
+        # 3. Issue-level PR comments
+        for issue_comment in issue_comments:
+            if not isinstance(issue_comment, dict):
+                continue
+            body = issue_comment.get('body') or ''
+            if not body:
+                continue
+            comments.append(
+                {
+                    'kind': 'issue_comment',
+                    'id': issue_comment.get('id') or '',
+                    'author': (issue_comment.get('author') or {}).get('login', 'unknown'),
+                    'body': body,
+                    'path': '',
+                    'line': 0,
+                    'resolved': False,
+                    'created_at': issue_comment.get('createdAt') or '',
+                    'thread_id': '',
+                }
+            )
+    except (TypeError, AttributeError) as e:
+        return {'status': 'error', 'operation': 'pr_comments', 'error': f'Failed to parse response: {e}'}
 
     # Build result
     unresolved_count = sum(1 for c in comments if not c['resolved'])
