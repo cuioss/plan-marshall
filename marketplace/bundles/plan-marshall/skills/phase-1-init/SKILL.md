@@ -404,9 +404,14 @@ artifacts:
   request_md: request.md
   status: status.json
   references: references.json
+
+warnings[N]:
+  - "{one entry per non-fatal warning from Step 6, verbatim; empty list if none}"
 ```
 
 **If `worktree_path` is set**, append the cwd directive from Step 6 verbatim after the TOON output so the orchestrating LLM executes all subsequent phases with `cwd = worktree_path`.
+
+**`warnings[]` field**: Top-level list surfacing non-fatal issues that the caller and user must see. Step 6 populates this when worktree creation fails and the phase falls back to the main checkout — each warning is the verbatim error detail from `manage-worktree create` plus a note that isolation was lost. The list is empty when no warnings apply. This is the contract Step 6d depends on: worktree failures must appear here, never silently in logs.
 
 ---
 

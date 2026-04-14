@@ -122,8 +122,15 @@ def _ensure_worktree_plan_symlinks(worktree: Path) -> tuple[bool, str]:
                 'for user data.'
             )
 
+        # Use a relative symlink so the worktree stays portable if the
+        # project is moved or mounted at a different path (containers,
+        # network shares). The worktree lives under
+        # {main}/.claude/worktrees/{plan_id}/ so the relative path from
+        # {worktree}/.plan/{subpath} back to {main}/.plan/{subpath}
+        # traverses up through the worktrees root.
+        rel_target = os.path.relpath(target, link_path.parent)
         try:
-            os.symlink(target, link_path, target_is_directory=is_dir)
+            os.symlink(rel_target, link_path, target_is_directory=is_dir)
         except OSError as exc:
             return False, f'failed to create {rel_display} symlink: {exc}'
     return True, ''
