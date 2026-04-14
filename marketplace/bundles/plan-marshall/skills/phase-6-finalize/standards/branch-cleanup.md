@@ -17,7 +17,7 @@ Switch back to base branch and clean up after plan completion. Behavior adapts b
 
 ## Worktree Awareness
 
-If the plan was created with `use_worktree: true` (the default for `branch_strategy == feature`), the plan ran inside a git worktree at `{worktree_path}` rooted under `~/.plan-marshall/{project}/worktrees/{plan_id}/`.
+If the plan was created with `use_worktree: true` (the default for `branch_strategy == feature`), the plan ran inside a git worktree at `{worktree_path}` rooted under `<project_root>/.claude/worktrees/{plan_id}/` — the canonical Claude Code worktree location inside the main git checkout.
 
 Before any branch deletion, the worktree MUST be removed. The order is:
 

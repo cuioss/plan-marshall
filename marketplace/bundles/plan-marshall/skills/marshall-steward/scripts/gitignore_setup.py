@@ -15,7 +15,7 @@ Options:
 Output (TOON format):
     status	created
     gitignore_path	/path/to/.gitignore
-    entries_added	2
+    entries_added	4
 
     status	updated
     gitignore_path	/path/to/.gitignore
@@ -56,6 +56,7 @@ GITIGNORE_COMMENT = '# Planning system (managed by /marshall-steward)'
 GITIGNORE_PLAN_DIR = '.plan/*'
 GITIGNORE_MARSHAL_EXCEPTION = '!.plan/marshal.json'
 GITIGNORE_ARCHITECTURE_EXCEPTION = '!.plan/project-architecture/'
+GITIGNORE_CLAUDE_WORKTREES = '.claude/worktrees/'
 
 
 def check_gitignore_status(gitignore_path: Path) -> dict:
@@ -77,6 +78,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
     has_plan_dir = False
     has_marshal_exception = False
     has_architecture_exception = False
+    has_claude_worktrees = False
     content = ''
 
     if exists:
@@ -92,12 +94,16 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
                 has_marshal_exception = True
             if stripped == GITIGNORE_ARCHITECTURE_EXCEPTION:
                 has_architecture_exception = True
+            # Accept .claude/worktrees/ (preferred) and .claude/worktrees (no trailing slash)
+            if stripped in ('.claude/worktrees/', '.claude/worktrees'):
+                has_claude_worktrees = True
 
     return {
         'exists': exists,
         'has_plan_dir': has_plan_dir,
         'has_marshal_exception': has_marshal_exception,
         'has_architecture_exception': has_architecture_exception,
+        'has_claude_worktrees': has_claude_worktrees,
         'content': content,
     }
 
@@ -124,6 +130,8 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         entries_to_add.append(GITIGNORE_MARSHAL_EXCEPTION)
     if not status['has_architecture_exception']:
         entries_to_add.append(GITIGNORE_ARCHITECTURE_EXCEPTION)
+    if not status['has_claude_worktrees']:
+        entries_to_add.append(GITIGNORE_CLAUDE_WORKTREES)
 
     result = {
         'gitignore_path': str(gitignore_path.absolute()),
@@ -138,7 +146,13 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
     if not status['exists']:
         # Create new .gitignore
         result['status'] = 'created'
-        new_content = f'{GITIGNORE_COMMENT}\n{GITIGNORE_PLAN_DIR}\n{GITIGNORE_MARSHAL_EXCEPTION}\n{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
+        new_content = (
+            f'{GITIGNORE_COMMENT}\n'
+            f'{GITIGNORE_PLAN_DIR}\n'
+            f'{GITIGNORE_MARSHAL_EXCEPTION}\n'
+            f'{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
+            f'{GITIGNORE_CLAUDE_WORKTREES}\n'
+        )
     else:
         # Update existing .gitignore
         result['status'] = 'updated'

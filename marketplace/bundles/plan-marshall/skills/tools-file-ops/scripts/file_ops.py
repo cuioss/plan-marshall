@@ -147,6 +147,28 @@ def get_global_dir() -> Path | None:
     return GLOBAL_ROOT / name
 
 
+def get_worktree_root() -> Path:
+    """Return the project-local worktree root for plan-marshall.
+
+    Resolves to ``<git_main_checkout_root>/.claude/worktrees`` — the canonical
+    location documented by Claude Code for per-feature worktrees. Worktrees
+    live under the main checkout (not the global ``~/.plan-marshall/`` state
+    directory) so they inherit the project's existing permission allow-list
+    and IDE indexing.
+
+    Raises:
+        RuntimeError: when not inside a git repository (worktrees require a
+            main checkout to anchor against).
+    """
+    root = git_main_checkout_root()
+    if root is None:
+        raise RuntimeError(
+            'get_worktree_root() requires a git repository; '
+            'no main checkout root could be resolved from cwd.'
+        )
+    return root / '.claude' / 'worktrees'
+
+
 def normalize_to_repo_relative(path: str) -> str:
     """Normalize absolute file paths to repository-relative paths.
 
