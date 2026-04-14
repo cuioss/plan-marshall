@@ -102,6 +102,8 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
         """Should report unchanged when all entries already present."""
         gitignore_path = self.temp_dir / '.gitignore'
         gitignore_path.write_text(
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)\n'
             '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees/\n'
         )
 
@@ -113,6 +115,8 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
         """Should recognize .plan without trailing slash."""
         gitignore_path = self.temp_dir / '.gitignore'
         gitignore_path.write_text(
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)\n'
             '.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees/\n'
         )
 
@@ -124,6 +128,8 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
         """Should recognize .claude/worktrees without trailing slash."""
         gitignore_path = self.temp_dir / '.gitignore'
         gitignore_path.write_text(
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)\n'
             '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees\n'
         )
 

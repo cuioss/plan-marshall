@@ -2,7 +2,13 @@
 """
 Configure .gitignore for the planning system.
 
-Ensures .plan/* contents are ignored while marshal.json is tracked.
+Ensures .plan/* contents are ignored while tracked files (marshal.json,
+project-architecture/) remain visible. Runtime state (plans,
+archived-plans, run-configuration.json, lessons-learned, memory, logs)
+lives at ``<root>/.plan/local/`` — already covered by the ``.plan/*``
+rule, but an adjacent documentation comment is emitted so readers of
+the generated .gitignore understand the layout.
+
 Uses .plan/* (not .plan/) to allow exceptions - .plan/ ignores the entire
 directory making exceptions impossible.
 
@@ -53,6 +59,10 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa
 # Lines to add to .gitignore
 # Use .plan/* (not .plan/) to allow exceptions - .plan/ ignores entire directory
 GITIGNORE_COMMENT = '# Planning system (managed by /marshall-steward)'
+GITIGNORE_LOCAL_COMMENT = (
+    '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+    '— managed by plan-marshall)'
+)
 GITIGNORE_PLAN_DIR = '.plan/*'
 GITIGNORE_MARSHAL_EXCEPTION = '!.plan/marshal.json'
 GITIGNORE_ARCHITECTURE_EXCEPTION = '!.plan/project-architecture/'
@@ -79,6 +89,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
     has_marshal_exception = False
     has_architecture_exception = False
     has_claude_worktrees = False
+    has_local_comment = False
     content = ''
 
     if exists:
@@ -97,6 +108,8 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
             # Accept .claude/worktrees/ (preferred) and .claude/worktrees (no trailing slash)
             if stripped in ('.claude/worktrees/', '.claude/worktrees'):
                 has_claude_worktrees = True
+            if stripped == GITIGNORE_LOCAL_COMMENT:
+                has_local_comment = True
 
     return {
         'exists': exists,
@@ -104,6 +117,7 @@ def check_gitignore_status(gitignore_path: Path) -> dict:
         'has_marshal_exception': has_marshal_exception,
         'has_architecture_exception': has_architecture_exception,
         'has_claude_worktrees': has_claude_worktrees,
+        'has_local_comment': has_local_comment,
         'content': content,
     }
 
@@ -133,13 +147,15 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
     if not status['has_claude_worktrees']:
         entries_to_add.append(GITIGNORE_CLAUDE_WORKTREES)
 
+    needs_local_comment = not status['has_local_comment']
+
     result = {
         'gitignore_path': str(gitignore_path.absolute()),
         'entries_added': len(entries_to_add),
         'dry_run': dry_run,
     }
 
-    if not entries_to_add:
+    if not entries_to_add and not needs_local_comment:
         result['status'] = 'unchanged'
         return result
 
@@ -148,6 +164,7 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         result['status'] = 'created'
         new_content = (
             f'{GITIGNORE_COMMENT}\n'
+            f'{GITIGNORE_LOCAL_COMMENT}\n'
             f'{GITIGNORE_PLAN_DIR}\n'
             f'{GITIGNORE_MARSHAL_EXCEPTION}\n'
             f'{GITIGNORE_ARCHITECTURE_EXCEPTION}\n'
@@ -166,8 +183,10 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
         if content and not content.endswith('\n\n'):
             content += '\n'
 
-        # Add comment and entries
+        # Add comment and entries (include the local-state doc comment too)
         content += f'{GITIGNORE_COMMENT}\n'
+        if needs_local_comment:
+            content += f'{GITIGNORE_LOCAL_COMMENT}\n'
         for entry in entries_to_add:
             content += f'{entry}\n'
 

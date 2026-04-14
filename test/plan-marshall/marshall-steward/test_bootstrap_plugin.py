@@ -24,6 +24,7 @@ _spec.loader.exec_module(_mod)
 read_state = _mod.read_state
 write_state = _mod.write_state
 resolve_bundle_path = _mod.resolve_bundle_path
+migrate_runtime_state = _mod.migrate_runtime_state
 
 
 # =============================================================================
@@ -76,6 +77,106 @@ def test_state_read_empty():
     with PlanContext(plan_id='bootstrap-state-empty'):
         state = read_state()
         assert state == {} or 'plugin_root' not in state
+
+
+# =============================================================================
+# Test: migrate_runtime_state
+# =============================================================================
+
+
+def _make_fake_repo(tmp_path: Path) -> Path:
+    """Create a minimal git repo so git_main_checkout_root() resolves."""
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True, capture_output=True)
+    return repo
+
+
+def _legacy_dir_for(tmp_home: Path, repo: Path) -> Path:
+    """Mirror the inline hash derivation from bootstrap_plugin."""
+    import hashlib
+    digest = hashlib.sha256(str(repo.resolve()).encode('utf-8')).hexdigest()[:8]
+    return tmp_home / '.plan-marshall' / f'{repo.name}-{digest}'
+
+
+def test_migrate_runtime_state_happy_path(tmp_path, monkeypatch):
+    """Legacy plans/, run-configuration.json, and per-plan metrics.md are
+    copied into <root>/.plan/local/."""
+    repo = _make_fake_repo(tmp_path)
+    fake_home = tmp_path / 'home'
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, 'home', lambda: fake_home)
+
+    legacy = _legacy_dir_for(fake_home, repo)
+    (legacy / 'plans' / 'foo').mkdir(parents=True)
+    (legacy / 'plans' / 'foo' / 'status.json').write_text('{"status": "active"}')
+    (legacy / 'plans' / 'foo' / 'metrics.md').write_text('# metrics')
+    (legacy / 'run-configuration.json').write_text('{}')
+
+    new_path = repo / '.plan' / 'local'
+    monkeypatch.setenv('PLAN_BASE_DIR', str(new_path))
+    monkeypatch.chdir(repo)
+    # Reset the marketplace_paths LRU cache so chdir is honoured
+    from marketplace_paths import _resolve_git_main_checkout_root
+    _resolve_git_main_checkout_root.cache_clear()
+
+    result = migrate_runtime_state()
+    assert result['status'] == 'success'
+    assert result['items_copied'] == 2  # plans/, run-configuration.json
+    assert (new_path / 'plans' / 'foo' / 'status.json').is_file()
+    assert (new_path / 'plans' / 'foo' / 'metrics.md').is_file()
+    assert (new_path / 'run-configuration.json').is_file()
+
+
+def test_migrate_runtime_state_excludes_worktrees_and_pycache(tmp_path, monkeypatch):
+    """worktrees/, __pycache__/, *.pyc are excluded by ignore patterns."""
+    repo = _make_fake_repo(tmp_path)
+    fake_home = tmp_path / 'home'
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, 'home', lambda: fake_home)
+
+    legacy = _legacy_dir_for(fake_home, repo)
+    (legacy / 'plans').mkdir(parents=True)
+    (legacy / 'plans' / 'real.md').write_text('keep')
+    (legacy / 'plans' / '__pycache__').mkdir()
+    (legacy / 'plans' / '__pycache__' / 'junk.pyc').write_text('drop')
+    (legacy / 'logs').mkdir()
+    (legacy / 'logs' / 'a.log').write_text('keep')
+    # worktrees/ should be excluded entirely (not in _MIGRATION_SUBPATHS,
+    # but also explicit ignore_patterns guard).
+    (legacy / 'plans' / 'worktrees').mkdir()
+    (legacy / 'plans' / 'worktrees' / 'old').write_text('drop')
+
+    new_path = repo / '.plan' / 'local'
+    monkeypatch.setenv('PLAN_BASE_DIR', str(new_path))
+    monkeypatch.chdir(repo)
+    from marketplace_paths import _resolve_git_main_checkout_root
+    _resolve_git_main_checkout_root.cache_clear()
+
+    result = migrate_runtime_state()
+    assert result['status'] == 'success'
+    assert (new_path / 'plans' / 'real.md').is_file()
+    assert (new_path / 'logs' / 'a.log').is_file()
+    assert not (new_path / 'plans' / '__pycache__').exists()
+    assert not (new_path / 'plans' / 'worktrees').exists()
+
+
+def test_migrate_runtime_state_noop_when_legacy_missing(tmp_path, monkeypatch):
+    """No legacy directory → success with items_copied=0."""
+    repo = _make_fake_repo(tmp_path)
+    fake_home = tmp_path / 'home'
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, 'home', lambda: fake_home)
+
+    new_path = repo / '.plan' / 'local'
+    monkeypatch.setenv('PLAN_BASE_DIR', str(new_path))
+    monkeypatch.chdir(repo)
+    from marketplace_paths import _resolve_git_main_checkout_root
+    _resolve_git_main_checkout_root.cache_clear()
+
+    result = migrate_runtime_state()
+    assert result['status'] == 'success'
+    assert result['items_copied'] == 0
 
 
 def test_state_write_creates_directory():

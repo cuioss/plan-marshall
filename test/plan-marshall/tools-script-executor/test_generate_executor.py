@@ -187,6 +187,28 @@ def test_help_output():
     assert 'drift' in result.stdout, "Missing 'drift' in help"
     assert 'paths' in result.stdout, "Missing 'paths' in help"
     assert 'cleanup' in result.stdout, "Missing 'cleanup' in help"
+    assert 'write-shim' not in result.stdout, "write-shim subcommand must be removed"
+
+
+def test_executor_path_is_tracked_config_dir(monkeypatch, tmp_path):
+    """executor_path() resolves to <root>/.plan/execute-script.py via the
+    tracked config dir, NOT under the runtime-state base directory."""
+    module = load_module()
+    # PLAN_BASE_DIR overrides both runtime base and tracked config dir
+    # (file_ops.get_tracked_config_dir falls back to PLAN_BASE_DIR before git).
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    result = module.executor_path()
+    assert result == plan_dir / 'execute-script.py'
+
+
+def test_module_has_no_legacy_shim_symbols():
+    """Removed symbols should be gone — guards against accidental reintroduction."""
+    module = load_module()
+    for symbol in ('SHIM_TEMPLATE', 'SHIM_PATH', 'SHIM_DIR', 'write_shim',
+                   'cmd_write_shim', 'detect_legacy_drift'):
+        assert not hasattr(module, symbol), f'Legacy symbol {symbol!r} must be removed'
 
 
 def test_generate_help():

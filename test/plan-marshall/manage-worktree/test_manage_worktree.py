@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Tests for manage-worktree.py script.
 
-Subprocess-based tests because the script shells out to git and to
-generate_executor.py; importing the module directly would skip the
-integration paths we actually want to verify.
+Subprocess-based tests because the script shells out to git; importing
+the module directly would skip the integration paths we actually want
+to verify.
 
 Worktrees are anchored at ``<git_main_checkout_root>/.claude/worktrees/``
-(the canonical Claude Code location). The root is derived from the git
-repo itself via ``git rev-parse``, so tests just need to run the script
-with ``cwd=repo`` — no ``PLAN_BASE_DIR`` override is involved.
+(the canonical Claude Code location). After ``git worktree add``, the
+script symlinks ``{worktree}/.plan`` → main checkout's ``.plan`` so the
+shared executor and runtime state are reachable from inside the worktree.
+The root is derived from the git repo itself via ``git rev-parse``, so
+tests just need to run the script with ``cwd=repo`` — no
+``PLAN_BASE_DIR`` override is involved.
 """
 
 import subprocess
@@ -29,10 +32,12 @@ def _init_git_repo(repo: Path) -> None:
     subprocess.run(['git', '-C', str(repo), 'config', 'user.email', 't@t.test'], check=True)
     subprocess.run(['git', '-C', str(repo), 'config', 'user.name', 'Test'], check=True)
     (repo / 'README.md').write_text('x\n')
-    # .plan/ and .claude/worktrees/ must be gitignored so the executor shim
-    # and the worktrees themselves don't count as "untracked" and block
-    # non-force `git worktree remove`.
-    (repo / '.gitignore').write_text('.plan/\n.claude/worktrees/\n')
+    # .plan and .claude/worktrees/ must be gitignored so the .plan symlink
+    # dropped into each worktree (and the worktrees themselves) don't count
+    # as "untracked" and block non-force `git worktree remove`. Use `.plan`
+    # without a trailing slash so the rule matches symlinks too — git treats
+    # symlinks-to-directories as files for ignore matching.
+    (repo / '.gitignore').write_text('.plan\n.claude/worktrees/\n')
     subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True)
 
@@ -59,9 +64,12 @@ def test_path_returns_computed_location(tmp_path):
     assert data['exists'] in (False, 'false', 'False')
 
 
-def test_create_makes_worktree_with_shim(tmp_path):
+def test_create_makes_worktree_with_plan_symlink(tmp_path):
     repo = tmp_path / 'repo'
     _init_git_repo(repo)
+    # The main checkout's .plan must exist as a real directory for the
+    # symlink target to resolve.
+    (repo / '.plan').mkdir(exist_ok=True)
 
     result = run_script(
         SCRIPT_PATH,
@@ -78,8 +86,9 @@ def test_create_makes_worktree_with_shim(tmp_path):
     worktree = Path(data['worktree_path'])
     assert worktree == _expected_worktree(repo, 'feature-x')
     assert worktree.is_dir()
-    shim = worktree / '.plan' / 'execute-script.py'
-    assert shim.is_file(), 'shim must be dropped into the new worktree'
+    plan_link = worktree / '.plan'
+    assert plan_link.is_symlink(), '.plan must be a symlink in the worktree'
+    assert plan_link.resolve() == (repo / '.plan').resolve()
     # branch should be checked out in the worktree
     head = subprocess.run(
         ['git', '-C', str(worktree), 'rev-parse', '--abbrev-ref', 'HEAD'],

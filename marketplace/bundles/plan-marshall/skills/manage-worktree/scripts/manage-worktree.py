@@ -6,18 +6,19 @@ Worktrees are rooted at ``<project_root>/.claude/worktrees/{plan-id}/`` —
 the canonical Claude Code worktree location. Anchoring worktrees inside
 the main git checkout means project-level permission allow-lists, IDE
 indexing, and ``.worktreeinclude`` copying all work without per-host
-customization. Global plan-marshall state (``marshall-state.toon`` and
-friends) continues to live under ``~/.plan-marshall/{project}/`` via
-``get_base_dir()``.
+customization. All plan-marshall runtime state lives under
+``<root>/.plan/local/`` in the main checkout, reached via
+``file_ops.get_base_dir()``.
 
-The shim dropped into each worktree's ``.plan/`` resolves back to the
-same main-checkout executor via ``git rev-parse --git-common-dir``, so
-running ``python3 .plan/execute-script.py ...`` inside a worktree is
-functionally identical to running it in the main checkout.
+After ``git worktree add``, the create path links the worktree's ``.plan``
+directly at the main checkout's ``.plan`` via a symlink, so the tracked
+config, the executor, and runtime state are shared across every worktree.
+Running ``python3 .plan/execute-script.py ...`` from inside a worktree
+invokes the exact same executor as the main checkout.
 
 Subcommands:
   path    - Return the computed worktree path for a plan
-  create  - Create a worktree + feature branch + shim drop
+  create  - Create a worktree + feature branch + .plan symlink
   remove  - Remove a worktree (non-force by default)
   list    - Enumerate worktrees known to git under the worktree root
 
@@ -29,8 +30,14 @@ import os
 import subprocess
 from pathlib import Path
 
-from file_ops import get_worktree_root, output_toon, output_toon_error, safe_main  # type: ignore[import-not-found]
+from file_ops import (  # type: ignore[import-not-found]
+    get_worktree_root,
+    output_toon,
+    output_toon_error,
+    safe_main,
+)
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
+from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
 
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
@@ -53,26 +60,50 @@ def _run_git(args: list[str]) -> tuple[int, str, str]:
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
-def _run_generate_executor_write_shim(target: Path) -> tuple[bool, str]:
-    """Invoke generate_executor write-shim via the executor to drop a shim into target/.plan/.
+def _ensure_worktree_plan_symlink(worktree: Path) -> tuple[bool, str]:
+    """Link ``{worktree}/.plan`` to the main checkout's ``.plan`` directory.
 
-    Uses the currently-active executor (via the shim in the CURRENT checkout)
-    rather than re-implementing shim writing here. This guarantees every
-    worktree gets the canonical shim template.
+    Idempotent:
+    - If the link already points at the expected target, returns success.
+    - If ``.plan`` exists as a stale symlink, replaces it.
+    - If ``.plan`` exists as an empty directory (e.g. created incidentally
+      by tooling), removes it and creates the symlink.
+    - If ``.plan`` exists as a non-empty directory, refuses — this would
+      clobber real user data.
+
+    Returns ``(success, error_message)``.
     """
-    # Locate generate_executor.py alongside this script's sibling skill.
-    script_dir = Path(__file__).resolve().parent.parent.parent
-    gen = script_dir / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
-    if not gen.is_file():
-        return False, f'generate_executor.py not found at {gen}'
-    result = subprocess.run(
-        ['python3', str(gen), 'write-shim', '--target', str(target)],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if result.returncode != 0:
-        return False, result.stderr.strip() or result.stdout.strip()
+    main_root = git_main_checkout_root()
+    if main_root is None:
+        return False, 'cannot resolve main git checkout root for .plan symlink'
+    target_plan = (main_root / PLAN_DIR_NAME).resolve()
+    link_path = worktree / PLAN_DIR_NAME
+
+    if link_path.is_symlink():
+        try:
+            if link_path.resolve() == target_plan:
+                return True, ''
+        except OSError:
+            pass
+        link_path.unlink()
+    elif link_path.exists():
+        # Plain directory (or file). git worktree add never creates .plan,
+        # so this is almost certainly empty — but guard against data loss.
+        if link_path.is_dir():
+            contents = list(link_path.iterdir())
+            if contents:
+                return False, (
+                    f'{link_path} exists as a non-empty directory; refusing to '
+                    'replace with symlink'
+                )
+            link_path.rmdir()
+        else:
+            return False, f'{link_path} exists and is not a directory; refusing to replace'
+
+    try:
+        os.symlink(target_plan, link_path, target_is_directory=True)
+    except OSError as exc:
+        return False, f'failed to create .plan symlink: {exc}'
     return True, ''
 
 
@@ -115,11 +146,11 @@ def cmd_create(args: argparse.Namespace) -> None:
         )
         return
 
-    ok, shim_err = _run_generate_executor_write_shim(target)
+    ok, link_err = _ensure_worktree_plan_symlink(target)
     if not ok:
         output_toon_error(
-            'shim_write_failed',
-            f'Worktree created but shim drop failed: {shim_err}',
+            'plan_symlink_failed',
+            f'Worktree created but .plan symlink failed: {link_err}',
             plan_id=args.plan_id,
             worktree_path=str(target),
         )
@@ -131,7 +162,7 @@ def cmd_create(args: argparse.Namespace) -> None:
             'plan_id': args.plan_id,
             'worktree_path': str(target),
             'branch': args.branch,
-            'shim_path': str(target / PLAN_DIR_NAME / 'execute-script.py'),
+            'plan_symlink': str(target / PLAN_DIR_NAME),
         }
     )
 

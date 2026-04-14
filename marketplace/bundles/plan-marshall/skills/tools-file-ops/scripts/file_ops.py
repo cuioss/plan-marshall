@@ -31,9 +31,9 @@ from pathlib import Path
 from typing import Any
 
 # Bootstrap sys.path so script-shared/scripts is importable. file_ops needs
-# git_main_checkout_root + project_dir_name from script-shared.marketplace_paths
-# (the canonical implementation lives there to avoid byte-for-byte duplication
-# between the two bundles — see PR #160 review). The walk locates the bundle's
+# git_main_checkout_root from script-shared.marketplace_paths (the canonical
+# implementation lives there to avoid byte-for-byte duplication between the
+# two bundles — see PR #160 review). The walk locates the bundle's
 # skills/ root from this script's own __file__ and inserts script-shared/scripts
 # at the front of sys.path. Doing this in module init means callers (tests,
 # bootstrap scripts) don't have to remember to set up PYTHONPATH first.
@@ -46,20 +46,18 @@ for _ancestor in _THIS_FILE.parents:
         break
 
 from marketplace_paths import (  # type: ignore[import-not-found]  # noqa: E402
+    PLAN_DIR_NAME,
     git_main_checkout_root,
-    project_dir_name,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
 
-# Global plan-marshall root: per-project runtime state lives under
-# ~/.plan-marshall/{project-name}/. The project name is derived from the
-# main git checkout root (basename + path-hash suffix), resolved via
-# --git-common-dir so worktrees share the same global directory as the
-# main checkout. See script-shared.marketplace_paths for the resolver.
-GLOBAL_ROOT = Path.home() / '.plan-marshall'
+# Plan-marshall runtime state (plans, archived-plans, run-configuration.json,
+# lessons-learned, memory, logs) lives at ``<git_main_checkout_root>/.plan/local``
+# — project-local, covered by the existing ``Write(.plan/**)`` permission.
+# Worktrees are anchored separately at ``<root>/.claude/worktrees/``.
 
 # Fallback base directory used when not inside a git repository.
-_FALLBACK_BASE_DIR = Path('.plan')
+_FALLBACK_BASE_DIR = Path(PLAN_DIR_NAME) / 'plan-marshall'
 
 # Runtime-overridable base directory (set by set_base_dir for tests).
 # None means "resolve from environment / git on each call".
@@ -122,31 +120,6 @@ def format_duration(seconds: float) -> str:
     return f'{h}h{m}m'
 
 
-def get_project_name() -> str | None:
-    """Return the project name used to scope the global plan-marshall directory.
-
-    Delegates to ``script-shared.marketplace_paths.project_dir_name`` for the
-    canonical derivation: ``{basename}-{8-char sha256(abs path)}``. Returns
-    ``None`` when not inside a git repository.
-    """
-    root = git_main_checkout_root()
-    if root is None:
-        return None
-    return project_dir_name(root)
-
-
-def get_global_dir() -> Path | None:
-    """Return the per-project global plan-marshall directory, or None.
-
-    Returns ~/.plan-marshall/{project-name}/ when inside a git repo. Callers
-    that need a guaranteed path should use get_base_dir() instead.
-    """
-    name = get_project_name()
-    if name is None:
-        return None
-    return GLOBAL_ROOT / name
-
-
 def get_worktree_root() -> Path:
     """Return the project-local worktree root for plan-marshall.
 
@@ -205,18 +178,17 @@ def get_base_dir() -> Path:
     Resolution order:
         1. Explicit set_base_dir() override (tests).
         2. PLAN_BASE_DIR environment variable (tests, user override).
-        3. Per-project global directory ~/.plan-marshall/{project-name}/
-           when inside a git repository.
-        4. Repo-local .plan/ fallback (outside a git repo).
+        3. ``<git_main_checkout_root>/.plan/local`` when inside a git repo.
+        4. ``.plan/plan-marshall`` fallback (outside a git repo).
     """
     if _BASE_DIR_OVERRIDE is not None:
         return _BASE_DIR_OVERRIDE
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir)
-    global_dir = get_global_dir()
-    if global_dir is not None:
-        return global_dir
+    root = git_main_checkout_root()
+    if root is not None:
+        return root / PLAN_DIR_NAME / 'local'
     return _FALLBACK_BASE_DIR
 
 
@@ -312,8 +284,8 @@ def get_tracked_config_dir() -> Path:
         return Path(env_base)
     root = git_main_checkout_root()
     if root is not None:
-        return root / '.plan'
-    return Path('.plan')
+        return root / PLAN_DIR_NAME
+    return Path(PLAN_DIR_NAME)
 
 
 def get_marshal_path() -> Path:

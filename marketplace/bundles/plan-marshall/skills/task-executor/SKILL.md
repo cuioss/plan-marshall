@@ -21,7 +21,7 @@ Skill: plan-marshall:dev-general-practices
 ## Enforcement
 
 **Prohibited actions:**
-- Never target file paths outside the active git worktree. When a plan runs in an isolated worktree, all Edit/Write/Read tool calls during task execution MUST use the worktree's absolute path (e.g., `/Users/oliver/.plan-marshall/.../worktrees/{plan_id}/...`), never the main checkout (e.g., `/Users/oliver/git/{repo}/...`). Editing the main checkout pollutes uncommitted state, bypasses worktree isolation, and lets tests silently load stale source via PYTHONPATH. In this mode, the canonical worktree path is the one surfaced by `plan-marshall:phase-5-execute` in its phase-start `[STATUS] Active worktree: ...` work-log line — use that path as the root for every file operation.
+- Never target file paths outside the active git worktree. When a plan runs in an isolated worktree, all Edit/Write/Read tool calls during task execution MUST use the worktree's absolute path (e.g., `<root>/.claude/worktrees/{plan_id}/...`), never the main checkout (e.g., `/Users/oliver/git/{repo}/...`). Editing the main checkout pollutes uncommitted state, bypasses worktree isolation, and lets tests silently load stale source via PYTHONPATH. In this mode, the canonical worktree path is the one surfaced by `plan-marshall:phase-5-execute` in its phase-start `[STATUS] Active worktree: ...` work-log line — use that path as the root for every file operation.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline

@@ -14,10 +14,13 @@ so it uses its own lightweight caching mechanism.
 Usage:
     python3 bootstrap_plugin.py get-root [--refresh]
     python3 bootstrap_plugin.py resolve --bundle <bundle> --path <path>
+    python3 bootstrap_plugin.py migrate-runtime-state
 
 Subcommands:
-    get-root    Return the plugin root path (detects if needed)
-    resolve     Resolve a path relative to a bundle
+    get-root              Return the plugin root path (detects if needed)
+    resolve               Resolve a path relative to a bundle
+    migrate-runtime-state Copy legacy ~/.plan-marshall/{project}-{hash}/ state
+                          into <root>/.plan/local/ (one-shot, non-destructive)
 
 Output (TOON format):
     get-root:
@@ -32,6 +35,8 @@ Environment:
 """
 
 import argparse
+import hashlib
+import shutil
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -55,6 +60,7 @@ for _lib in ('ref-toon-format', 'tools-file-ops'):
         sys.path.insert(0, _lib_path)
 
 from file_ops import get_base_dir, output_toon, safe_main  # type: ignore[import-not-found]  # noqa: E402
+from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]  # noqa: E402
 
 # Default plugin name to search for
 PLUGIN_NAME = 'plan-marshall'
@@ -190,6 +196,84 @@ def resolve_bundle_path(plugin_root: Path, bundle: str, relative_path: str) -> P
     return None
 
 
+# =============================================================================
+# One-shot migration: legacy ~/.plan-marshall/{project}-{hash}/ → .plan/local/
+# =============================================================================
+
+# Subpaths to copy from the legacy directory. Per-plan metrics.md lives inside
+# each plan dir, so it travels along with plans/.
+_MIGRATION_SUBPATHS = (
+    'plans',
+    'archived-plans',
+    'run-configuration.json',
+    'lessons-learned',
+    'memory',
+    'logs',
+)
+
+# Exclude build artifacts and the out-of-scope worktrees subtree.
+_MIGRATION_IGNORE = shutil.ignore_patterns('worktrees', '__pycache__', '.venv', '*.pyc')
+
+
+def _legacy_state_path() -> Path | None:
+    """Compute the legacy ~/.plan-marshall/{basename}-{8-char hash}/ path.
+
+    The hash derivation is kept INLINE here (not imported from
+    marketplace_paths) because the refactor intentionally deletes it from
+    the shared module — this migration helper is the only remaining user.
+    """
+    root = git_main_checkout_root()
+    if root is None:
+        return None
+    abs_path = str(root.resolve())
+    digest = hashlib.sha256(abs_path.encode('utf-8')).hexdigest()[:8]
+    return Path.home() / '.plan-marshall' / f'{root.name}-{digest}'
+
+
+def migrate_runtime_state() -> dict:
+    """Copy legacy runtime state into <root>/.plan/local/.
+
+    Non-destructive: the legacy directory is left in place for manual
+    cleanup. Safe to re-run (shutil.copytree uses dirs_exist_ok=True).
+    """
+    legacy = _legacy_state_path()
+    new_path = get_base_dir()
+
+    if legacy is None or not legacy.is_dir():
+        return {
+            'status': 'success',
+            'items_copied': 0,
+            'legacy_path': str(legacy) if legacy is not None else '',
+            'new_path': str(new_path),
+        }
+
+    new_path.mkdir(parents=True, exist_ok=True)
+    copied = 0
+
+    for name in _MIGRATION_SUBPATHS:
+        source = legacy / name
+        if not source.exists():
+            continue
+        target = new_path / name
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True, ignore=_MIGRATION_IGNORE)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+        copied += 1
+
+    return {
+        'status': 'success',
+        'items_copied': copied,
+        'legacy_path': str(legacy),
+        'new_path': str(new_path),
+    }
+
+
+def cmd_migrate_runtime_state(_args: argparse.Namespace) -> dict:
+    return migrate_runtime_state()
+
+
 def cmd_get_root(args: argparse.Namespace) -> dict:
     """Handle the 'get-root' subcommand."""
     plugin_root, source = get_plugin_root(refresh=args.refresh)
@@ -229,12 +313,20 @@ def main() -> int:
     resolve_parser.add_argument('--bundle', required=True, help="Bundle name (e.g., 'plan-marshall')")
     resolve_parser.add_argument('--path', required=True, help='Path relative to bundle root')
 
+    # migrate-runtime-state subcommand
+    subparsers.add_parser(
+        'migrate-runtime-state',
+        help='Copy legacy ~/.plan-marshall/{project}-{hash}/ state into <root>/.plan/local/',
+    )
+
     args = parser.parse_args()
 
     if args.command == 'get-root':
         result = cmd_get_root(args)
     elif args.command == 'resolve':
         result = cmd_resolve(args)
+    elif args.command == 'migrate-runtime-state':
+        result = cmd_migrate_runtime_state(args)
     else:
         parser.print_help()
         return 0
