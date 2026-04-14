@@ -519,7 +519,7 @@ def cmd_pr_reviews(args: argparse.Namespace) -> dict:
     }
 
 
-# GraphQL query for PR review threads (inline code comments)
+# GraphQL query for PR review threads (inline), review submission bodies, and issue-level comments
 REVIEW_THREADS_QUERY = """
 query($owner: String!, $repo: String!, $pr: Int!) {
   repository(owner: $owner, name: $repo) {
@@ -538,6 +538,23 @@ query($owner: String!, $repo: String!, $pr: Int!) {
               createdAt
             }
           }
+        }
+      }
+      reviews(first: 100) {
+        nodes {
+          id
+          state
+          body
+          author { login }
+          submittedAt
+        }
+      }
+      comments(first: 100) {
+        nodes {
+          id
+          body
+          author { login }
+          createdAt
         }
       }
     }
@@ -567,14 +584,19 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     if returncode != 0 or data is None:
         return {'status': 'error', 'operation': 'pr_comments', 'error': f'GraphQL query failed: {err}'}
 
-    # Extract threads
+    # Extract threads, reviews, and issue comments
     try:
-        threads = data['repository']['pullRequest']['reviewThreads']['nodes']
+        pull_request = data['repository']['pullRequest']
+        threads = pull_request['reviewThreads']['nodes']
+        reviews = pull_request.get('reviews', {}).get('nodes', []) or []
+        issue_comments = pull_request.get('comments', {}).get('nodes', []) or []
     except (KeyError, TypeError) as e:
         return {'status': 'error', 'operation': 'pr_comments', 'error': f'Failed to parse response: {e}'}
 
     # Normalize comments
     comments: list[dict] = []
+
+    # 1. Inline review thread comments
     for thread in threads:
         is_resolved = thread.get('isResolved', False)
 
@@ -591,6 +613,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
         for comment in thread_comments:
             comments.append(
                 {
+                    'kind': 'inline',
                     'id': comment.get('id', ''),
                     'author': comment.get('author', {}).get('login', 'unknown'),
                     'body': comment.get('body', ''),
@@ -602,10 +625,49 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
                 }
             )
 
+    # 2. Review submission bodies (APPROVED / COMMENTED / CHANGES_REQUESTED)
+    for review in reviews:
+        body = review.get('body', '') or ''
+        if not body:
+            continue
+        comments.append(
+            {
+                'kind': 'review_body',
+                'id': review.get('id', ''),
+                'author': (review.get('author') or {}).get('login', 'unknown'),
+                'body': body,
+                'path': '',
+                'line': 0,
+                'resolved': False,
+                'created_at': review.get('submittedAt', '') or '',
+                'thread_id': '',
+            }
+        )
+
+    # 3. Issue-level PR comments
+    for issue_comment in issue_comments:
+        body = issue_comment.get('body', '') or ''
+        if not body:
+            continue
+        comments.append(
+            {
+                'kind': 'issue_comment',
+                'id': issue_comment.get('id', ''),
+                'author': (issue_comment.get('author') or {}).get('login', 'unknown'),
+                'body': body,
+                'path': '',
+                'line': 0,
+                'resolved': False,
+                'created_at': issue_comment.get('createdAt', '') or '',
+                'thread_id': '',
+            }
+        )
+
     # Build result
     unresolved_count = sum(1 for c in comments if not c['resolved'])
     comment_list = [
         {
+            'kind': c['kind'],
             'id': c['id'],
             'thread_id': c['thread_id'],
             'author': c['author'],

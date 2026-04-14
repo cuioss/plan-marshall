@@ -447,8 +447,13 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
 
             # Get position info for diff notes
             position = note.get('position') or {}
+            has_position = bool(position.get('new_path') or position.get('old_path'))
             path = position.get('new_path') or position.get('old_path', '')
             line = position.get('new_line') or position.get('old_line', 0)
+
+            # Classify note kind: inline (diff-anchored) vs issue_comment (no position).
+            # GitLab has no equivalent of GitHub's review_body kind.
+            kind = 'inline' if has_position else 'issue_comment'
 
             # Get resolved status
             is_resolved = note.get('resolved', False)
@@ -460,6 +465,7 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
             comments.append(
                 {
                     'id': str(note.get('id', '')),
+                    'kind': kind,
                     'author': note.get('author', {}).get('username', 'unknown'),
                     'body': note.get('body', ''),
                     'path': path,
@@ -477,6 +483,8 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
         toon_comments.append(
             {
                 'id': c['id'],
+                'kind': c['kind'],
+                'thread_id': c['thread_id'],
                 'author': c['author'],
                 'body': body,
                 'path': c['path'],

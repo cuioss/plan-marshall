@@ -233,3 +233,98 @@ def test_pr_comments_no_body_truncation():
     assert "['body'].replace('\\t', ' ').replace('\\n', ' ')[:100]" not in source, (
         'Comment body is still truncated at 100 chars — remove [:100]'
     )
+
+
+def test_pr_comments_kind_inline_vs_issue_comment(monkeypatch):
+    """New: GitLab discussions are classified into the unified comment schema
+    with kind=inline when a diff position is present and kind=issue_comment
+    otherwise. GitLab has no equivalent of GitHub's review_body kind."""
+    import argparse
+
+    import gitlab_ops  # type: ignore[import-not-found]
+
+    discussions_payload = [
+        {
+            'id': 'disc-inline',
+            'notes': [
+                {
+                    'id': 1001,
+                    'system': False,
+                    'author': {'username': 'reviewer'},
+                    'body': 'diff-anchored feedback',
+                    'created_at': '2026-04-14T00:00:00Z',
+                    'resolved': False,
+                    'position': {
+                        'new_path': 'src/file.py',
+                        'old_path': 'src/file.py',
+                        'new_line': 42,
+                        'old_line': 40,
+                    },
+                }
+            ],
+        },
+        {
+            'id': 'disc-issue',
+            'notes': [
+                {
+                    'id': 1002,
+                    'system': False,
+                    'author': {'username': 'commenter'},
+                    'body': 'overall comment without position',
+                    'created_at': '2026-04-14T00:05:00Z',
+                    'resolved': False,
+                    'position': None,
+                }
+            ],
+        },
+        {
+            'id': 'disc-system',
+            'notes': [
+                {
+                    'id': 1003,
+                    'system': True,
+                    'author': {'username': 'ghost'},
+                    'body': 'assigned to foo',
+                    'created_at': '2026-04-14T00:06:00Z',
+                    'resolved': False,
+                }
+            ],
+        },
+    ]
+
+    def fake_check_auth():
+        return True, ''
+
+    def fake_get_project_path():
+        return 'group/project'
+
+    def fake_run_api(endpoint: str):
+        return 0, discussions_payload, ''
+
+    monkeypatch.setattr(gitlab_ops, 'check_auth', fake_check_auth)
+    monkeypatch.setattr(gitlab_ops, 'get_project_path', fake_get_project_path)
+    monkeypatch.setattr(gitlab_ops, 'run_api', fake_run_api)
+
+    ns = argparse.Namespace(pr_number=7, unresolved_only=False)
+    result = gitlab_ops.cmd_pr_comments(ns)
+
+    assert result['status'] == 'success', result
+    # System note must be filtered out, leaving exactly two entries
+    assert result['total'] == 2
+    by_id = {c['id']: c for c in result['comments']}
+
+    inline = by_id['1001']
+    assert inline['kind'] == 'inline'
+    assert inline['path'] == 'src/file.py'
+    assert inline['line'] == 42
+    assert inline['thread_id'] == 'disc-inline'
+
+    issue = by_id['1002']
+    assert issue['kind'] == 'issue_comment'
+    assert issue['path'] == ''
+    assert issue['line'] == 0
+    assert issue['thread_id'] == 'disc-issue'
+
+    # Unified schema: no GitLab-side review_body kind
+    kinds = {c['kind'] for c in result['comments']}
+    assert 'review_body' not in kinds
