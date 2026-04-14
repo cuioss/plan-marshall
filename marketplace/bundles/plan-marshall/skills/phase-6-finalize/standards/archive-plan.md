@@ -15,24 +15,12 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --plan-id {plan_id} --section source
 ```
 
-**IF `source == "lesson"`**: Read `source_id` and mark applied:
+**IF `source == "lesson"`**: Read `source_id` and archive the lesson (archiving also marks it applied):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read \
   --plan-id {plan_id} --section source_id
 ```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons update \
-  --id {source_id} --applied true
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Lesson {source_id} marked as applied"
-```
-
-Archive the lesson file so it no longer remains in `.plan/lessons-learned/`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons archive \
