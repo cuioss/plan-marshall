@@ -46,6 +46,7 @@ for _ancestor in _THIS_FILE.parents:
         break
 
 from marketplace_paths import (  # type: ignore[import-not-found]  # noqa: E402
+    PLAN_DIR_NAME,
     git_main_checkout_root,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
@@ -56,7 +57,7 @@ from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa
 # Worktrees are anchored separately at ``<root>/.claude/worktrees/``.
 
 # Fallback base directory used when not inside a git repository.
-_FALLBACK_BASE_DIR = Path('.plan') / 'plan-marshall'
+_FALLBACK_BASE_DIR = Path(PLAN_DIR_NAME) / 'plan-marshall'
 
 # Runtime-overridable base directory (set by set_base_dir for tests).
 # None means "resolve from environment / git on each call".
@@ -187,7 +188,7 @@ def get_base_dir() -> Path:
         return Path(env_dir)
     root = git_main_checkout_root()
     if root is not None:
-        return root / '.plan' / 'local'
+        return root / PLAN_DIR_NAME / 'local'
     return _FALLBACK_BASE_DIR
 
 
@@ -283,8 +284,8 @@ def get_tracked_config_dir() -> Path:
         return Path(env_base)
     root = git_main_checkout_root()
     if root is not None:
-        return root / '.plan'
-    return Path('.plan')
+        return root / PLAN_DIR_NAME
+    return Path(PLAN_DIR_NAME)
 
 
 def get_marshal_path() -> Path:
