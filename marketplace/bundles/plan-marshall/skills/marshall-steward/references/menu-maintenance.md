@@ -80,32 +80,6 @@ by the existing `Write(.plan/**)` permission.
 
 ---
 
-## Operation: Migrate Legacy Runtime State
-
-One-shot copy of any pre-existing `~/.plan-marshall/{project}-{hash}/`
-directory into `<root>/.plan/local/`. Copies `plans/`, `archived-plans/`,
-`run-configuration.json`, `lessons-learned/`, `memory/`, and `logs/`;
-excludes `worktrees/`, `__pycache__/`, `.venv/`, and `*.pyc`. Never
-deletes the legacy directory — clean it up manually once the migrated
-state is verified.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-steward:bootstrap_plugin migrate-runtime-state
-```
-
-**Output (TOON)**:
-```toon
-status: success
-items_copied: 6
-legacy_path: /Users/<user>/.plan-marshall/<basename>-<hash>
-new_path: /path/to/repo/.plan/local
-```
-
-If no legacy directory exists, `items_copied` is `0` and `legacy_path`
-reflects where the helper looked.
-
----
-
 ## Operation: Regenerate Architecture
 
 Re-detect project structure and extensions, preserving existing enrichment data. Unlike the Configuration → Project Structure path (see `menu-configuration.md` § Project Structure), maintenance mode defaults to keeping enrichment (no user prompt) — it's a quick refresh, not a full reconfiguration.

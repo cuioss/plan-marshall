@@ -24,7 +24,6 @@ Usage:
 import json
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from _warnings_classify import pattern_match
 from file_ops import base_path  # type: ignore[import-not-found]
@@ -144,10 +143,9 @@ def load_acceptable_warnings(project_dir: str, build_system: str) -> list[str]:
     Reads patterns from the build-system-specific section of the configuration.
 
     Args:
-        project_dir: Project root directory. If set to a concrete path,
-            a legacy ``{project_dir}/.plan/run-configuration.json`` location
-            is checked first (used by older tests staging fixtures directly).
-            Resolution then falls back to the plan-marshall base directory.
+        project_dir: Unused. Retained for API compatibility with callers that
+            still pass a project root. Resolution always goes through the
+            plan-marshall base directory.
         build_system: Build system key (maven, gradle, npm).
 
     Returns:
@@ -159,12 +157,8 @@ def load_acceptable_warnings(project_dir: str, build_system: str) -> list[str]:
         {build_system}.acceptable_warnings. Resolution honours the
         PLAN_BASE_DIR env var for test isolation.
     """
-    # Legacy project-dir-relative lookup first (preserves test fixtures).
-    legacy_path = Path(project_dir) / '.plan' / 'run-configuration.json'
-    if legacy_path.exists():
-        config_path = legacy_path
-    else:
-        config_path = base_path('run-configuration.json')
+    del project_dir  # unused; resolution always goes through base_path()
+    config_path = base_path('run-configuration.json')
 
     if not config_path.exists():
         return []

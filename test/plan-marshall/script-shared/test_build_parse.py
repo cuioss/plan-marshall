@@ -2,8 +2,10 @@
 """Tests for build_parse.py module."""
 
 # Tier 2 direct imports via importlib for uniform import style
+import contextlib
 import importlib.util  # noqa: E402
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -156,20 +158,32 @@ def test_test_summary_zero_values():
     assert all(v == 0 for v in result.values())
 
 
+@contextlib.contextmanager
+def _plan_base_dir(tmpdir: str):
+    """Set PLAN_BASE_DIR for the duration of a test, restoring on exit."""
+    previous = os.environ.get('PLAN_BASE_DIR')
+    os.environ['PLAN_BASE_DIR'] = tmpdir
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop('PLAN_BASE_DIR', None)
+        else:
+            os.environ['PLAN_BASE_DIR'] = previous
+
+
 def test_load_acceptable_warnings_nonexistent():
     """Returns empty list when config doesn't exist."""
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
         result = load_acceptable_warnings(tmpdir, 'maven')
         assert result == []
 
 
 def test_load_acceptable_warnings_missing_build_system():
     """Returns empty list when build system not in config."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_dir = Path(tmpdir) / '.plan'
-        config_dir.mkdir()
+    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
         config = {'npm': {'acceptable_warnings': ['pattern']}}
-        (config_dir / 'run-configuration.json').write_text(json.dumps(config))
+        (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
 
         result = load_acceptable_warnings(tmpdir, 'maven')
         assert result == []
@@ -177,11 +191,9 @@ def test_load_acceptable_warnings_missing_build_system():
 
 def test_load_acceptable_warnings_missing_key():
     """Returns empty list when acceptable_warnings not in build system config."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_dir = Path(tmpdir) / '.plan'
-        config_dir.mkdir()
+    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
         config = {'maven': {'other_key': 'value'}}
-        (config_dir / 'run-configuration.json').write_text(json.dumps(config))
+        (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
 
         result = load_acceptable_warnings(tmpdir, 'maven')
         assert result == []
@@ -189,11 +201,9 @@ def test_load_acceptable_warnings_missing_key():
 
 def test_load_acceptable_warnings_loads():
     """Loads patterns from config."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_dir = Path(tmpdir) / '.plan'
-        config_dir.mkdir()
+    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
         config = {'maven': {'acceptable_warnings': ['unchecked', 'deprecated', '^.*raw type.*$']}}
-        (config_dir / 'run-configuration.json').write_text(json.dumps(config))
+        (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
 
         result = load_acceptable_warnings(tmpdir, 'maven')
         assert len(result) == 3
@@ -203,10 +213,8 @@ def test_load_acceptable_warnings_loads():
 
 def test_load_acceptable_warnings_invalid_json():
     """Returns empty list for invalid JSON."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config_dir = Path(tmpdir) / '.plan'
-        config_dir.mkdir()
-        (config_dir / 'run-configuration.json').write_text('not valid json')
+    with tempfile.TemporaryDirectory() as tmpdir, _plan_base_dir(tmpdir):
+        (Path(tmpdir) / 'run-configuration.json').write_text('not valid json')
 
         result = load_acceptable_warnings(tmpdir, 'maven')
         assert result == []

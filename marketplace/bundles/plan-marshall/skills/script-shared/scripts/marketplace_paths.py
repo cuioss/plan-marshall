@@ -72,7 +72,7 @@ def get_plan_dir() -> Path:
     Resolution order mirrors tools-file-ops.get_base_dir():
         1. PLAN_BASE_DIR environment variable (tests, user override).
         2. ``<git_main_checkout_root>/.plan/local`` when inside a git repo.
-        3. ``.plan/plan-marshall`` fallback (outside a git repo).
+        3. ``.plan/local`` fallback (outside a git repo).
     """
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
@@ -80,7 +80,7 @@ def get_plan_dir() -> Path:
     root = git_main_checkout_root()
     if root is not None:
         return root / PLAN_DIR_NAME / 'local'
-    return Path(PLAN_DIR_NAME) / 'plan-marshall'
+    return Path(PLAN_DIR_NAME) / 'local'
 
 
 def get_temp_dir(subdir: str) -> Path:

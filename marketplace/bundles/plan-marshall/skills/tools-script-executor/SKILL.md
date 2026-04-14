@@ -167,10 +167,11 @@ Run `/marshall-steward` to generate the executor after bundle changes.
 
 ```
 .plan/
-├── execute-script.py      # Generated executor with embedded mappings
-├── marshall-state.toon    # Plugin root path + metadata
-└── logs/                  # Global execution logs (no plan context)
-    └── script-execution-YYYY-MM-DD.log
+├── execute-script.py            # Generated executor with embedded mappings
+└── local/                       # Runtime state (managed by plan-marshall)
+    ├── marshall-state.toon      # Plugin root path + metadata
+    └── logs/                    # Global execution logs (no plan context)
+        └── script-execution-YYYY-MM-DD.log
 
 ~/.claude/plugins/cache/plan-marshall/
 └── {bundle}/              # Installed plugin bundles
@@ -184,7 +185,7 @@ When `.plan/execute-script.py` doesn't exist yet (first run), use the bootstrap 
 
 ### Step 1: Get Plugin Root
 
-Check `.plan/marshall-state.toon` for cached `plugin_root`, or detect it:
+Check `.plan/local/marshall-state.toon` for cached `plugin_root`, or detect it:
 
 ```bash
 python3 ~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap_plugin.py get-root
@@ -206,7 +207,7 @@ python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/{skill}/scripts/{script}.py {args}
 
 ### State File Format
 
-`.plan/marshall-state.toon`:
+`.plan/local/marshall-state.toon`:
 ```
 plugin_root	/Users/oliver/.claude/plugins/cache/plan-marshall
 detected_at	2025-12-12T10:30:00+00:00
