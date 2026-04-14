@@ -174,6 +174,26 @@ class TestGitHubProviderDirect(unittest.TestCase):
             self.assertEqual(result['total_comments'], 1)
             mock_github.fetch_pr_comments_data.assert_called_once_with(123, False)
 
+    def test_fetch_comments_preserves_kind_field(self):
+        """Pass-through: fetch_comments must preserve the unified `kind`
+        discriminator on every comment returned by fetch_pr_comments_data."""
+        with patch.object(github_pr, '_github') as mock_github:
+            mock_github.fetch_pr_comments_data.return_value = {
+                'status': 'success',
+                'provider': 'github',
+                'total': 3,
+                'unresolved': 3,
+                'comments': [
+                    {'id': 'I1', 'kind': 'inline', 'body': 'a', 'path': 'f.py', 'line': 1},
+                    {'id': 'R1', 'kind': 'review_body', 'body': 'b', 'path': '', 'line': 0},
+                    {'id': 'C1', 'kind': 'issue_comment', 'body': 'c', 'path': '', 'line': 0},
+                ],
+            }
+            result = fetch_comments(456)
+            self.assertEqual(result['status'], 'success')
+            kinds = [c.get('kind') for c in result['comments']]
+            self.assertEqual(kinds, ['inline', 'review_body', 'issue_comment'])
+
 
 class TestClassifyCommentOrdering(unittest.TestCase):
     """Test that classify_comment checks code_change BEFORE ignore."""

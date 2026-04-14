@@ -90,14 +90,22 @@ def get_current_pr_number() -> int | None:
 
 
 def fetch_comments(pr_number: int, unresolved_only: bool = False) -> dict[str, Any]:
-    """Fetch review comments for a PR via GitHub's fetch_pr_comments_data()."""
+    """Fetch review comments for a PR via GitHub's fetch_pr_comments_data().
+
+    The wrapper forwards the unified comments list from the provider verbatim,
+    preserving every field on each entry — including the ``kind`` discriminator
+    (``inline``, ``review_body``, or ``issue_comment``). No field filtering is
+    applied, so downstream callers see the full provider-side schema unchanged.
+    """
 
     result = _github.fetch_pr_comments_data(pr_number, unresolved_only)
 
     if result.get('status') != 'success':
         return make_error(result.get('error', 'Failed to fetch PR comments'), code=ErrorCode.FETCH_FAILURE)
 
-    # Transform provider result into pr.py's expected format
+    # Re-key the envelope for pr.py's expected format. The ``comments`` list is
+    # passed through by reference — every entry retains ``kind`` and all other
+    # fields produced by ``github_ops.fetch_pr_comments_data``.
     return {
         'pr_number': pr_number,
         'provider': result.get('provider', 'unknown'),
