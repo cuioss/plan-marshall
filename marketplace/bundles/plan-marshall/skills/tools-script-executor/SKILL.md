@@ -188,7 +188,7 @@ When `.plan/execute-script.py` doesn't exist yet (first run), use the bootstrap 
 Check `.plan/local/marshall-state.toon` for cached `plugin_root`, or detect it:
 
 ```bash
-BOOTSTRAP_PLUGIN=$(ls ~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap_plugin.py)
+BOOTSTRAP_PLUGIN=$(ls ~/.claude/plugins/cache/*/plan-marshall/*/skills/marshall-steward/scripts/bootstrap_plugin.py | head -n 1)
 python3 "$BOOTSTRAP_PLUGIN" get-root
 ```
 
@@ -204,7 +204,7 @@ Use the plugin root with glob pattern for version:
 
 ```bash
 SKILL_DIR="${PLUGIN_ROOT}/plan-marshall/*/skills/<skill>"
-SCRIPT_FILE=$(ls ${SKILL_DIR}/scr*ts/<script>.py)
+SCRIPT_FILE=$(ls ${SKILL_DIR}/scr*ts/<script>.py | head -n 1)
 python3 "$SCRIPT_FILE" <args>
 ```
 (Replace `<skill>`, `<script>`, and `<args>` with literal values. The `scr*ts` glob refers to the skill's `scripts` subdirectory; it is written with a wildcard to avoid scanner false positives on this standards document.)

@@ -13,7 +13,7 @@ Configure `.gitignore` for `.plan/` directory with tracked file exceptions.
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-GITIGNORE_SETUP=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore_setup.py)
+GITIGNORE_SETUP=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore_setup.py | head -n 1)
 python3 "$GITIGNORE_SETUP"
 ```
 
@@ -58,7 +58,7 @@ human readers.
 **BOOTSTRAP**: Use DIRECT Python call (executor not yet available):
 
 ```bash
-DETERMINE_MODE=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py)
+DETERMINE_MODE=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py | head -n 1)
 python3 "$DETERMINE_MODE" fix-docs
 ```
 
@@ -75,7 +75,7 @@ Add the executor permission to project-local settings so script execution doesn'
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-PERMISSION_FIX=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py)
+PERMISSION_FIX=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py | head -n 1)
 python3 "$PERMISSION_FIX" ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
@@ -103,7 +103,7 @@ This ensures script execution works without prompting, independent of global set
 **BOOTSTRAP**: Use DIRECT Python call with glob (executor doesn't exist yet):
 
 ```bash
-GENERATE_EXECUTOR=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py)
+GENERATE_EXECUTOR=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py | head -n 1)
 python3 "$GENERATE_EXECUTOR" generate
 ```
 
