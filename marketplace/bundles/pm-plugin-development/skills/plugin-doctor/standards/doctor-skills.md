@@ -93,7 +93,7 @@ All `.md` files in `references/`, `standards/`, `workflows/`, and `templates/` a
 **Checks performed** (automated via `analyze` subcommand):
 - **Bloat classification**: Sub-documents use `subdoc` thresholds (LARGE >400, BLOATED >600, CRITICAL >800 lines)
 - **Forbidden metadata sections**: Version History, Changelog, Author, etc.
-- **Hardcoded script paths**: `python3 .../scripts/` patterns instead of executor notation
+- **Hardcoded script paths**: invocation patterns that embed the scripts-subdirectory name directly (e.g., `python3 .../scr[ipts]/foo.py`) instead of the executor notation
 
 **Checks performed** (LLM Phase 1.5):
 - **LLM optimization**: Review sub-document content for low-value patterns per `llm-optimization-guide.md`

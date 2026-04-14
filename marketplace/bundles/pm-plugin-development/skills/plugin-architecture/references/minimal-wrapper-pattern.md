@@ -385,186 +385,17 @@ python3 .plan/execute-script.py plan-marshall:build-maven:maven run \
 
 ## Anti-Patterns to Avoid
 
-### FAIL Fat Wrappers (> 150 lines)
-
-**Problem:**
-```markdown
-# BAD: Agent contains 500 lines of standards knowledge
-# BAD: Command implements complex verification logic
-# BAD: Wrapper duplicates skill functionality
-```
-
-**Why Bad:**
-- Context pollution (defeats purpose)
-- Maintenance burden (logic in two places)
-- Hard to test (too much responsibility)
-- Not reusable (logic locked in wrapper)
-
-**Solution:**
-```markdown
-# GOOD: Agent validates and delegates (< 150 lines)
-# GOOD: All standards in skill (single source)
-# GOOD: Wrapper orchestrates only
-```
-
-### FAIL Agent-to-Agent Calls
-
-**Problem:**
-```markdown
-# BAD: Agent calling another agent
-Agent: java-create-agent
-  └─→ Agent: java-test-agent (doesn't work)
-```
-
-**Why Bad:**
-- Not supported by Claude Code architecture
-- Context confusion
-- Unpredictable behavior
-- No isolation benefits
-
-**Solution:**
-```markdown
-# GOOD: Agent uses skills for work
-Agent: java-create-agent
-  ├─→ Skill: cui-java-core
-  └─→ Skill: cui-java-unit-testing
-```
-
-### FAIL Duplicate Logic
-
-**Problem:**
-```markdown
-# BAD: Same verification logic in agent AND skill
-Agent: validates build state (50 lines)
-Skill: validates build state (50 lines)
-```
-
-**Why Bad:**
-- Maintenance nightmare (update two places)
-- Inconsistency risk (versions drift)
-- Wasted context (duplicate loading)
-
-**Solution:**
-```markdown
-# GOOD: Verification only in skill
-Agent: checks if verification needed
-Skill: performs actual verification
-```
-
-### FAIL Direct Tool Usage for Business Logic
-
-**Problem:**
-```markdown
-# BAD: Agent implements complex Maven parsing
-Agent reads Maven log, parses errors, categorizes... (100 lines)
-```
-
-**Why Bad:**
-- Business logic in wrapper (wrong layer)
-- Not reusable (locked in agent)
-- Hard to test (mixed concerns)
-
-**Solution:**
-```markdown
-# GOOD: Agent delegates to builder skill via script
-python3 .plan/execute-script.py plan-marshall:build-maven:maven parse \
-    --log-file {log_file}
-```
+- **Fat wrappers (> 150 lines)** — Agents or commands that embed standards or verification logic. Causes context pollution, doubles maintenance burden, hurts testability, and blocks reuse. **Fix**: keep the wrapper to orchestration only; move all standards and logic into a skill.
+- **Agent-to-agent calls** — Not supported by Claude Code. Causes context confusion, unpredictable behavior, and loses isolation benefits. **Fix**: agents delegate exclusively to skills, not to other agents.
+- **Duplicate logic** — The same verification or parsing logic in both an agent and a skill. **Fix**: keep the logic in the skill and let the wrapper merely decide whether to invoke it.
+- **Direct business logic via raw tools** — e.g. an agent reading and parsing a Maven log line-by-line. **Fix**: delegate to the builder skill via its executor notation (`plan-marshall:build-maven:maven parse --log-file {log_file}`) so the parsing logic stays in one place.
 
 ## Correct Patterns (Best Practices)
 
-### PASS Thin Orchestration
-
-```markdown
-# GOOD: Agent validates, delegates, returns (< 150 lines)
-
-Step 1: Validate Parameters (30 lines)
-  - Check description is clear
-  - Verify module exists
-  - Confirm build precondition
-
-Step 2: Delegate to Skill (50 lines)
-  Skill: cui-java-core
-  Workflow: implement-feature
-  Parameters: {validated}
-
-Step 3: Format and Return (20 lines)
-  - Success summary
-  - Files modified
-  - Standards compliance
-```
-
-**Why Good:**
-- Clear separation of concerns
-- Reusable business logic (in skill)
-- Easy to test (thin wrapper)
-- Context efficient (< 150 lines)
-
-### PASS Agent-to-Skill Delegation
-
-```markdown
-# GOOD: Agent uses skills for work
-
-Agent: java-create-agent (120 lines)
-  ├─→ Skill: cui-java-core (600 lines)
-  │   └─→ Skill: pm-documents:plan-marshall-plugin (400 lines)
-  └─→ Skill: cui-java-unit-testing (500 lines)
-      └─→ Skill: pm-documents:plan-marshall-plugin (400 lines)
-```
-
-**Why Good:**
-- Context isolation (agent spawns separately)
-- Skills compose naturally
-- Reusable across agents
-- Clean delegation hierarchy
-
-### PASS Single Source of Truth
-
-```markdown
-# GOOD: Standards only in skills
-
-Agent (thin wrapper - 100 lines):
-  - Parse parameters
-  - Validate inputs
-  - Delegate to skill
-
-Skill (business logic - 600 lines):
-  - Standards knowledge
-  - Verification logic
-  - Quality checklists
-  - Implementation patterns
-```
-
-**Why Good:**
-- Update standards once (in skill)
-- All agents benefit from updates
-- Consistent behavior
-- Easy maintenance
-
-### PASS Skill-to-Skill Composition
-
-```markdown
-# GOOD: Skills coordinate other skills
-
-Skill: cui-java-core (600 lines)
-  Step 3: Verify Build
-    Skill: pm-documents:plan-marshall-plugin
-    Workflow: Execute Build
-
-  Step 7: Run Tests
-    Skill: pm-documents:plan-marshall-plugin
-    Workflow: Execute Build
-
-  Step 9: Analyze Coverage
-    Skill: cui-java-unit-testing
-    Workflow: analyze-coverage-gaps
-```
-
-**Why Good:**
-- Reusable composition
-- Isolated within skill context
-- Clear dependency chain
-- Testable independently
+- **Thin orchestration** — Agent validates parameters, delegates to one skill, and formats the return value (< 150 lines total). Clear separation of concerns, reusable business logic, easy to test, context-efficient.
+- **Agent-to-skill delegation** — An agent (≈120 lines) routes to multiple skills (e.g. `cui-java-core` and `cui-java-unit-testing`) which themselves delegate to shared infrastructure skills. Context isolation, natural composition, reusable across agents.
+- **Single source of truth** — A thin wrapper holds only parameter parsing and validation; all standards, verification logic, quality checklists, and implementation patterns live in the skill. Updates to standards apply to every agent automatically.
+- **Skill-to-skill composition** — Skills coordinate other skills for reusable steps (e.g. `cui-java-core` invoking `pm-documents:plan-marshall-plugin` for build execution and `cui-java-unit-testing` for coverage analysis). Reusable composition, isolated within the skill context, clear dependency chain, independently testable.
 
 ## Integration with Goal-Based Organization
 
@@ -682,100 +513,11 @@ Use this checklist to verify minimal wrapper compliance:
 
 ## Real-World Example
 
-### Before: Fat Agent (500 lines)
+**Before** — a single fat agent (~500 lines) embedding Java standards (~200 lines) and implementation logic (parse/implement/test/verify ~300 lines). Problems: embedded standards are not reusable, implementation logic lives in the wrong layer, context is always loaded, and the file is hard to maintain.
 
-```markdown
----
-name: example-fat-agent
-description: Implement Java features
-allowed-tools: [Read, Write, Edit, Bash, Glob, Grep]
----
+**After** — a minimal wrapper (~120 lines) plus specialized skills (~600 lines total). The agent only parses the request, delegates implementation to `Skill: cui-java-core` (workflow `implement-feature`), delegates testing to `Skill: cui-java-unit-testing` (workflow `create-tests`), and formats the final summary. The skills own all standards and workflows (implementation patterns, verification rules, `implement-feature`, `verify-build`, `analyze-quality`).
 
-# Java Implement Agent
-
-## Standards (200 lines of embedded knowledge)
-- Java coding standards
-- Testing standards
-- Build requirements
-- Coverage thresholds
-
-## Workflow (300 lines of implementation)
-1. Parse requirements (50 lines)
-2. Implement code (100 lines of logic)
-3. Create tests (100 lines of logic)
-4. Verify build (50 lines of Maven logic)
-
-## Total: 500 lines
-```
-
-**Problems:**
-- Standards embedded (not reusable)
-- Implementation logic in agent (wrong layer)
-- Context pollution (always loaded)
-- Hard to maintain (large file)
-
-### After: Minimal Wrapper + Skills (120 + 600 lines)
-
-**Agent (120 lines):**
-```markdown
----
-name: java-create-agent
-description: Create Java features with implementation and tests
-allowed-tools: [Glob, Read, Grep, AskUserQuestion]
----
-
-# Java Create Agent
-
-## Workflow (120 lines total)
-
-### Step 1: Parse Requirements (30 lines)
-1. Read user request
-2. Use Glob/Grep to understand scope
-3. Ask clarifying questions if needed
-
-### Step 2: Delegate to Implementation Skill (40 lines)
-```
-Skill: cui-java-core
-Workflow: implement-feature
-Parameters:
-  description: {parsed_description}
-  module: {identified_module}
-```
-
-### Step 3: Delegate to Testing Skill (30 lines)
-```
-Skill: cui-java-unit-testing
-Workflow: create-tests
-Parameters:
-  types: {implemented_types}
-  module: {module}
-```
-
-### Step 4: Return Results (20 lines)
-Format and return comprehensive summary
-```
-
-**Skill: cui-java-core (600 lines):**
-```markdown
-# Java Core Skill
-
-## Standards (200 lines)
-- Java coding standards
-- Implementation patterns
-- Verification rules
-
-## Workflows (400 lines)
-- implement-feature workflow (200 lines)
-- verify-build workflow (100 lines)
-- analyze-quality workflow (100 lines)
-```
-
-**Benefits:**
-- Agent: 500 → 120 lines (76% reduction)
-- Skills reusable by all agents
-- Standards in one place
-- Context isolation achieved
-- Easy to maintain
+**Benefits**: the agent shrinks from 500 to ~120 lines (76 % reduction), skills become reusable across agents, standards live in one place, context isolation is achieved, and maintenance becomes easy.
 
 ## Summary
 

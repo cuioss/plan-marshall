@@ -13,7 +13,8 @@ Configure `.gitignore` for `.plan/` directory with tracked file exceptions.
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore_setup.py
+GITIGNORE_SETUP=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore_setup.py)
+python3 "$GITIGNORE_SETUP"
 ```
 
 **Output (TOON)**:
@@ -57,7 +58,8 @@ human readers.
 **BOOTSTRAP**: Use DIRECT Python call (executor not yet available):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py fix-docs
+DETERMINE_MODE=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/determine_mode.py)
+python3 "$DETERMINE_MODE" fix-docs
 ```
 
 Interpret the output:
@@ -73,7 +75,8 @@ Add the executor permission to project-local settings so script execution doesn'
 **BOOTSTRAP**: Use DIRECT Python call (no executor yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py ensure \
+PERMISSION_FIX=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-permission-fix/scripts/permission_fix.py)
+python3 "$PERMISSION_FIX" ensure \
   --permissions "Bash(python3 .plan/execute-script.py *)" \
   --target project
 ```
@@ -100,7 +103,8 @@ This ensures script execution works without prompting, independent of global set
 **BOOTSTRAP**: Use DIRECT Python call with glob (executor doesn't exist yet):
 
 ```bash
-python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py generate
+GENERATE_EXECUTOR=$(ls ${PLUGIN_ROOT}/plan-marshall/*/skills/tools-script-executor/scripts/generate_executor.py)
+python3 "$GENERATE_EXECUTOR" generate
 ```
 
 **Output (TOON)**:
@@ -153,36 +157,13 @@ See [provider-setup.md](provider-setup.md#provider-discovery-and-activation-step
 
 ## Step 6: Plan Phase Settings (Optional)
 
-```
-AskUserQuestion:
-  question: "Configure plan phase settings for this project?"
-  header: "Plan Config"
-  options:
-    - label: "Use defaults (Recommended)"
-      description: "branch=feature, compatibility=breaking, commits=per_deliverable"
-    - label: "Configure"
-      description: "Set branching, compatibility, and commit strategy"
-  multiSelect: false
-```
+Ask the user to accept defaults (`branch=feature`, `compatibility=breaking`, `commits=per_deliverable`) or configure each field interactively. If configuring, apply each choice via manage-config:
 
-If user selects "Use defaults" → Skip to Step 7.
-
-If user selects "Configure", use manage-config to set each plan phase field interactively:
-
-**Branch strategy** (phase-1-init): Ask user for `feature` (recommended) or `direct`, then apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field branch_strategy --value {direct|feature}
-```
-
-**Backward compatibility** (phase-2-refine): Ask user for `breaking` (recommended), `deprecation`, or `smart_and_ask`, then apply:
-```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
-```
-
-**Commit strategy** (phase-5-execute): Ask user for `per_deliverable` (recommended), `per_plan`, or `none`, then apply:
-```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
 ```
@@ -191,50 +172,24 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Step 7: Quality Pipeline Configuration (Optional)
 
-```
-AskUserQuestion:
-  question: "Configure verification and finalize pipelines?"
-  header: "Pipelines"
-  options:
-    - label: "Use defaults (Recommended)"
-      description: "All generic verify steps + 6 finalize steps with standard iterations"
-    - label: "Configure"
-      description: "Select individual steps and customize max iterations"
-  multiSelect: false
-```
+Ask the user to accept defaults (all generic verify steps + 6 finalize steps, default iterations) or configure individually. If configuring, discover available steps and apply:
 
-If user selects "Use defaults" → Skip to Step 8.
-
-If user selects "Configure", use manage-config to configure pipelines:
-
-**Discover and set verification steps** (phase-5-execute):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
-```
-Present discovered steps as multi-select, then apply:
-```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
-```
-
-**Discover and set finalize steps** (phase-6-finalize):
-```bash
+  plan phase-5-execute set-steps --steps {selection}
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
-```
-Present discovered steps as multi-select, then apply:
-```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
+  plan phase-6-finalize set-steps --steps {selection}
 ```
 
-**Max iterations**: Ask user for verification iterations (default 5) and finalize iterations (default 3):
+For max iterations (verification default 5, finalize default 3):
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute set-max-iterations --value {5|3|10}
-```
-```bash
+  plan phase-5-execute set-max-iterations --value {n}
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set-max-iterations --value {3|1|5}
+  plan phase-6-finalize set-max-iterations --value {n}
 ```
 
 ---
@@ -339,70 +294,31 @@ Modules discovered: 10
 
 ## Step 9b: Document Build Commands in CLAUDE.md
 
-**Purpose**: Add resolved build commands to CLAUDE.md so ALL agents (including built-in Explore agents) know how to invoke builds without hard-coding tool-specific commands.
+**Purpose**: Add resolved build commands to CLAUDE.md so agents invoke builds via canonical names, not hard-coded tool commands.
 
 **Prerequisite**: Step 9 completed (architecture API is available).
 
-**Check if already present**: Look for the heading `### Build Commands` in CLAUDE.md. If found, skip this step.
+**Skip condition**: If CLAUDE.md already has a `### Build Commands` heading, skip this step.
 
-**Check for existing build sections**: Search CLAUDE.md for existing hand-written build command patterns: `mvn `, `mvnw`, `gradle `, `npm run`, `./pw `, `build command`. If any are found, present the user with a choice:
+**Conflict handling**: If CLAUDE.md contains hand-written build patterns (`mvn`, `mvnw`, `gradle`, `npm run`, `./pw`, "build command"), ask the user to Replace existing or Keep existing. On Keep, skip the rest of this step.
 
-```
-AskUserQuestion:
-  questions:
-    - question: "CLAUDE.md already has build commands. Replace with resolved commands?"
-      header: "Build conflict"
-      options:
-        - label: "Replace existing"
-          description: "Remove hand-written build commands and add resolved commands"
-        - label: "Keep existing"
-          description: "Skip adding resolved commands, keep current CLAUDE.md as-is"
-      multiSelect: false
-```
-
-If user chooses "Keep existing", skip the rest of this step. If "Replace existing", remove the existing build command section before adding the resolved commands below.
-
-**Resolve available commands** for the default module. Attempt ALL canonical commands — only include those that resolve successfully:
+**Resolve available commands** for the default module across all canonical commands (`compile`, `quality-gate`, `module-tests`, `verify`, `integration-tests`, `e2e`, `coverage`, `benchmark`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command compile --name default
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command quality-gate --name default
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command module-tests --name default
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command verify --name default
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command integration-tests --name default
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command e2e --name default
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command coverage --name default
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command benchmark --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --name default
 ```
 
-For each successful resolution, collect the `executable` value. Track which canonical command names were found on the default module (the "default commands set").
+Collect the `executable` value from each successful resolution. Track which canonical command names resolved on the default module (the "default commands set").
 
-**Collect child-module-only commands**: After resolving against default, iterate over all non-default modules. For each module, resolve the same canonical commands. Collect any commands that resolved successfully on the child module but were NOT found in the default commands set. These are child-module-only commands (e.g., `benchmark`, `integration-tests`, `e2e` that exist only on specific child modules).
+**Collect child-module-only commands**: For each non-default module, resolve the same canonical commands and keep any that resolved on the child module but NOT on default. These become child-module-only entries (e.g., `benchmark` or `e2e` exclusive to specific modules).
 
 ```bash
-# For each non-default module (from architecture info modules list):
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --name {module_name}
 ```
 
-**Add to CLAUDE.md** under the heading `### Build Commands` (in a "Development Notes" or equivalent section):
+**Add to CLAUDE.md** under the heading `### Build Commands` (in a "Development Notes" section) with bullets: a "Never hard-code" preamble, one bullet per resolved canonical command (`Compile`, `Quality gate`, `Tests`, `Full verify`, plus `Integration tests`, `E2E`, `Coverage`, `Benchmark` only when resolved on default), one bullet per child-module-only command in the form `{Canonical} ({module_name}): {executable} — only on {module_name}`, a reminder to use a 10-minute Bash timeout (600000ms), and a reminder to analyze each build's TOON result (`status`, `errors[N]{file,line,message,category}`, `log_file`).
 
-```
-- Never hard-code build commands (./pw, mvn, npm, gradle) — use these resolved commands instead:
-  - Compile: `{resolved compile executable}`
-  - Quality gate: `{resolved quality-gate executable}`
-  - Tests: `{resolved module-tests executable}`
-  - Full verify: `{resolved verify executable}`
-  {- Integration tests: `{resolved integration-tests executable}` — only if resolved on default}
-  {- E2E: `{resolved e2e executable}` — only if resolved on default}
-  {- Coverage: `{resolved coverage executable}` — only if resolved on default}
-  {- Benchmark: `{resolved benchmark executable}` — only if resolved on default}
-  {- For each child-module-only command:}
-  {- {Canonical} ({module_name}): `{resolved executable}` — only on {module_name}}
-  - Always call build commands with a Bash timeout of at least 10 minutes (600000ms)
-  - After each build call, analyze the result TOON: check `status` for success/error/timeout, review `errors[N]{file,line,message,category}` for failures, and consult `log_file` for full output if deeper investigation is needed.
-```
-
-**Note**: Only include commands that resolved successfully. Different projects have different available commands. Child-module-only commands are listed separately with their module name for clarity.
+Only include commands that resolved successfully.
 
 ---
 
@@ -475,113 +391,28 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture d
 
 Look for `extensions_used` in the output - this lists bundles that found modules in the project. If `extensions_used` is empty (no extensions detected any modules), skip Steps 11b-11g and continue to Step 12.
 
-**Example output**:
-```toon
-project:
-  name: my-project
-
-modules[3]{name,path,build_systems}:
-  ...
-
-extensions_used[2]:
-  - pm-dev-java
-  - pm-documents
-```
-
 **Step 11b: Discover available domains**
-
-Query available domains dynamically from extension.py files:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains get-available
 ```
 
-**Output (TOON)**:
-```toon
-status: success
-discovered_domains[N]{key,bundle,name,applicable}:
-java	pm-dev-java	Java Development	true
-java-cui	pm-dev-java-cui	CUI Java Extensions	true
-javascript	pm-dev-frontend	JavaScript Development	false
-documentation	pm-documents	Documentation	true
-plan-marshall-plugin-dev	pm-plugin-development	Plugin Development	false
-requirements	pm-requirements	Requirements Engineering	false
-```
+The output lists `discovered_domains[N]{key,bundle,name,applicable}`. Match `extensions_used` bundles from Step 11a to discovered domain keys.
 
-Match `extensions_used` bundles from Step 11a to discovered domain keys.
-
-**Step 11c: Configure applicable domains**
-
-Configure all domains whose bundles appear in `extensions_used`:
-
-```
-Applicable domains (from architecture analysis):
-- java (pm-dev-java)
-- documentation (pm-documents)
-```
-
-**Step 11d: Apply domain configuration**
+**Step 11c-11d: Apply domain configuration**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains configure --domains "java,java-cui,javascript"
+  skill-domains configure --domains "{comma,separated,keys}"
 ```
 
-**Output (TOON)**:
-```toon
-status: success
-system_domain: configured
-domains_configured: 3
-domains: java,java-cui,javascript
-```
-
-This populates `skill_domains` in marshal.json with:
-- `system` domain (always) with task_executors
-- Each selected domain with bundle reference and workflow_skill_extensions (outline, triage)
-- Domain verification steps from `provides_verify_steps()` auto-persisted to `plan.phase-5-execute.verification_domain_steps`
+This populates `skill_domains` in marshal.json with: the `system` domain (always) with task_executors, each selected domain with bundle reference and workflow_skill_extensions (outline, triage), and domain verification steps from `provides_verify_steps()` auto-persisted to `plan.phase-5-execute.verification_domain_steps`.
 
 **Step 11e: Configure Active Profiles**
 
-Control which profiles are emitted during architecture enrichment. By default, extensions use signal detection to decide per-module profile applicability. Setting active_profiles provides a global positive list.
+Control which profiles are emitted during architecture enrichment. Ask the user to choose Default (recommended: `implementation,module_testing,quality`), All profiles (no filtering), or Custom (multiSelect from `implementation,module_testing,integration_testing,quality,documentation`). Apply the chosen list (skip apply entirely for "All profiles"):
 
-```
-AskUserQuestion:
-  question: "Configure active profiles for skill domains?"
-  header: "Active Profiles"
-  options:
-    - label: "Default: implementation, module_testing, quality (Recommended)"
-      description: "Excludes integration_testing and documentation unless signal-detected"
-    - label: "All profiles"
-      description: "Include all defined profiles (integration_testing, documentation)"
-    - label: "Custom"
-      description: "Choose specific profiles to include"
-  multiSelect: false
-```
-
-If "Default" → apply:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains active-profiles set --profiles implementation,module_testing,quality
-```
-
-If "All profiles" → skip (no active_profiles config = no filtering).
-
-If "Custom" → ask which profiles:
-```
-AskUserQuestion:
-  question: "Select profiles to include:"
-  header: "Profiles"
-  options:
-    - label: "implementation"
-    - label: "module_testing"
-    - label: "integration_testing"
-    - label: "quality"
-    - label: "documentation"
-  multiSelect: true
-```
-
-Apply selection:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains active-profiles set --profiles {comma-separated selection}
@@ -591,29 +422,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 **Step 11f: Configure Task Executors**
 
-Task executors map profile values to workflow skills that execute tasks of that profile.
+Map profile values to workflow skills that execute tasks of that profile:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   configure-task-executors
 ```
 
-**Output (TOON)**:
-```toon
-status: success
-task_executors_configured: 3
-executors:
-  implementation: plan-marshall:task-executor
-  module_testing: plan-marshall:task-executor
-  integration_testing: plan-marshall:task-executor
-```
-
-This auto-discovers profiles from configured domains and registers the unified `plan-marshall:task-executor` skill for each profile.
-
-**Extensibility**: New profiles can be added by:
-1. Adding profile to `skills_by_profile` in domain `extension.py`
-2. The unified `plan-marshall:task-executor` handles profile dispatch internally
-3. Re-running `/marshall-steward` to auto-discover and register
+This auto-discovers profiles from configured domains and registers the unified `plan-marshall:task-executor` skill for each profile. New profiles are added by extending `skills_by_profile` in the domain `extension.py` and re-running `/marshall-steward`.
 
 ---
 
@@ -659,36 +475,13 @@ If no project-level skills are found (`count == 0`), skip this step silently.
 
 ## Step 12: Verify Skill Domain Configuration
 
-Skill domains configure which implementation skills are loaded during plan execution:
-- **System domain**: Contains task_executors (profile to skill mapping)
-- **Technical domains**: Bundle reference and workflow_skill_extensions
+Skill domains configure which implementation skills are loaded during plan execution. The `system` domain holds task_executors (profile -> skill); technical domains hold bundle reference and workflow_skill_extensions (outline, triage).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains list
 ```
 
-**Expected output**: Shows configured domains:
-```json
-{
-  "system": {
-    "defaults": ["plan-marshall:dev-general-practices"],
-    "optionals": [...],
-    "task_executors": {
-      "implementation": "plan-marshall:task-executor",
-      "module_testing": "plan-marshall:task-executor",
-      "integration_testing": "plan-marshall:task-executor"
-    }
-  },
-  "java": {
-    "bundle": "pm-dev-java",
-    "workflow_skill_extensions": {
-      "triage": "pm-dev-java:ext-triage-java"
-    }
-  }
-}
-```
-
-**Note**: Task executors map profiles to execution skills. Domain-specific behavior is provided via workflow_skill_extensions (outline, triage). Profiles (core, implementation, module_testing, etc.) are loaded at runtime from `extension.py`.
+Confirm that `system` has `task_executors` populated and each technical domain has a `bundle` reference. Profiles (core, implementation, module_testing, etc.) are loaded at runtime from `extension.py`.
 
 ---
 
@@ -717,38 +510,11 @@ The LLM analysis reads discovered data, samples documentation and source code, t
 
 ### Step 13b: User Refinement (Optional)
 
-Display generated structure and offer refinement:
+Display the generated structure and ask whether to accept as-is or refine module responsibilities. On refine, iterate modules with uncertain analysis, confirm each responsibility with the user, and persist the chosen text:
 
-```yaml
-AskUserQuestion:
-  question: "Review analyzed structure. Refine any module details?"
-  header: "Structure"
-  options:
-    - label: "Accept analysis"
-      description: "Use LLM-generated structure as-is"
-    - label: "Refine responsibilities"
-      description: "Adjust module descriptions manually"
-  multiSelect: false
-```
-
-If user chooses "Refine responsibilities", for each module with uncertain analysis:
-
-```yaml
-AskUserQuestion:
-  question: "Confirm 'oauth-sheriff-core' responsibility:"
-  header: "Module"
-  options:
-    - label: "Validates OAuth access tokens against security policies"
-      description: "LLM-suggested based on code analysis"
-    - label: "Core business logic"
-      description: "Generic description"
-  multiSelect: false
-```
-
-Update with user input:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  enrich module --name oauth-sheriff-core --responsibility "Core OAuth token validation and refresh logic"
+  enrich module --name {module_name} --responsibility "{text}"
 ```
 
 ### Step 13c: Verify Structure

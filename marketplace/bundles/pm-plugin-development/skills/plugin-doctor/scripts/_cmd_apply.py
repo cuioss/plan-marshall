@@ -264,7 +264,7 @@ def apply_remove_frontmatter_field(file_path: Path, fix: dict, templates: dict) 
     field_type = fix.get('type', '')
     # Map issue types to field patterns to remove
     field_patterns = {
-        'unsupported-skill-tools-field': r'^(?:allowed-tools|tools):.*\n',
+        'unsupported-skill-tools-field': r'^(?:allowed-tools|tools):[^\n]*\n(?:[ \t]+-[^\n]*\n)*',
     }
     pattern = field_patterns.get(field_type)
     if not pattern:

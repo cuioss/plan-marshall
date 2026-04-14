@@ -553,95 +553,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## decision.log
 
-Dedicated log for decision entries tracking reasoning and choices made during execution.
-
-### Location
-
-```
-.plan/plans/{plan_id}/logs/decision.log
-```
-
-### Format
-
-Decision entries do NOT include a `[DECISION]` prefix since the file itself indicates the entry type.
-
-```
-[{timestamp}] [{level}] {message}
-  phase: {phase}
-  [detail: {additional context}]
-```
-
-### Example
-
-```
-[2025-12-11T11:14:48Z] [INFO] (plan-marshall:phase-1-init) Detected domain: java - pom.xml found
-  phase: 1-init
-
-[2025-12-11T11:20:15Z] [INFO] (pm-plugin-development:ext-outline-workflow) Scope: bundles=all
-  phase: 3-outline
-  detail: marketplace/bundles structure detected
-```
-
-### Manager
-
-```bash
-# Write decision entry
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level {level} --message "{message}"
-
-# Read decision entries
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  read --plan-id {id} --type decision [--limit N] [--phase PHASE]
-```
+Dedicated log for decision entries tracking reasoning and choices made during execution. Stored at `.plan/plans/{plan_id}/logs/decision.log`. Entries have the shape `[{timestamp}] [{level}] {message}` followed by indented `phase:` and optional `detail:` continuation lines (no `[DECISION]` prefix — the file itself identifies the entry type). Manage entries via `plan-marshall:manage-logging:manage-logging decision` to write and `read --type decision` to read.
 
 ---
 
 ## script-execution.log
 
-Technical script execution tracing (automatic).
-
-### Location
-
-```
-.plan/plans/{plan_id}/logs/script-execution.log
-```
-
-### Format
-
-```
-[{timestamp}] [{level}] [SCRIPT] {notation} {subcommand} ({duration}s)
-  [exit_code: {code}]
-  [args: {arguments}]
-  [stderr: {error output}]
-```
-
-### Example
-
-```
-[2025-12-11T12:14:26Z] [INFO] [SCRIPT] plan-marshall:manage-files:manage-files create (0.19s)
-[2025-12-11T12:15:01Z] [INFO] [SCRIPT] plan-marshall:manage-tasks:manage-tasks add (0.24s)
-[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] plan-marshall:manage-references:manage-references set (0.16s)
-  exit_code: 2
-  args: set --plan-id test --key invalid
-  stderr: error: unknown key 'invalid'
-```
-
-### Purpose
-
-- Automatic tracing by script executor
-- Debugging failed script invocations
-- Performance analysis (duration tracking)
-- Audit trail for plan execution
-
-### Manager
+Technical script execution trace written automatically by the script executor at `.plan/plans/{plan_id}/logs/script-execution.log`. Entries have the shape `[{timestamp}] [{level}] [SCRIPT] {notation} {subcommand} ({duration}s)` with optional `exit_code`, `args`, and `stderr` continuation lines. The log powers debugging, performance analysis, and audit trails; skills never write to it directly. Read entries via:
 
 ```bash
-# Read entries (read-only, written automatically by executor)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   read --plan-id {id} --type script [--limit N]
 ```
-
-**Note**: Entries are written automatically by the script executor. Skills do not write to this log directly.
 
 ---
 

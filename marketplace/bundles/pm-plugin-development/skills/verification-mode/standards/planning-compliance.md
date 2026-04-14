@@ -1,176 +1,78 @@
 # Planning Compliance Standard
 
-Enforces proper access patterns and audit trail verification for planning-related commands and skills.
+Enforces proper access patterns and audit-trail verification for planning-related commands and skills.
 
 ## Overview
 
-Planning operations MUST use the official manage-* APIs for all .plan directory access. Direct file manipulation bypasses validation, audit trails, and can corrupt plan state. This standard detects violations and ensures proper audit trail population.
+Planning operations MUST use the official manage-* APIs for all `.plan` directory access. Direct file manipulation bypasses validation, audit trails, and can corrupt plan state. This standard defines the detection pattern for violations and the audit-trail checks that guarantee consistent plan state.
 
 ## Core Principles
 
-1. **Abstraction Enforcement** - All .plan access goes through manage-* scripts
-2. **Audit Trail Integrity** - Every operation records to work-log
-3. **State Consistency** - Status reflects actual phase and progress
-4. **No Silent Mutations** - All changes are tracked and verifiable
+1. **Abstraction Enforcement** — all `.plan` access goes through manage-* scripts.
+2. **Audit Trail Integrity** — every operation records to work-log.
+3. **State Consistency** — status reflects the actual phase and progress.
+4. **No Silent Mutations** — all changes are tracked and verifiable.
 
 ---
 
 ## MANDATORY: Post-Phase Verification Protocol
 
-**CRITICAL**: Execute this protocol after EVERY phase transition (1-init→3-outline, 4-plan→5-execute, 5-execute→6-finalize). This is NOT optional.
+Execute this protocol after EVERY phase transition (1-init → 3-outline, 4-plan → 5-execute, 5-execute → 6-finalize). It is not optional.
 
-### Step 1: Chat History Error Check
+### Step 1 — Chat History Error Check
 
-Scan the conversation history for failures since the phase started:
+Scan the conversation for non-zero exit codes, error messages in tool output, `status: error` in script responses, and agent failures/exceptions since the phase started. If any are found, STOP and run `Skill: pm-plugin-development:tools-analyze-script-failures` before proceeding.
 
-**Look for**:
-- Tool calls with non-zero exit codes
-- Error messages in tool output
-- `status: error` in script responses
-- Agent failures or exceptions
-
-**If errors found** → **STOP**. Do not proceed. Analyze the error using:
-```
-Skill: pm-plugin-development:tools-analyze-script-failures
-```
-
-### Step 2: Script Execution Log Check
-
-Query the execution log for the plan:
+### Step 2 — Script Execution Log Check
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
   --plan-id {plan_id} --type script
 ```
 
-**Scan for**:
-- `[ERROR]` entries - any script failures
-- Retry patterns: `[ERROR]` followed by `[INFO]` for same script (indicates hidden failure + recovery)
-- Argument errors: entries containing "usage:" or "argument"
+Scan for `[ERROR]` entries, retry patterns (an `[ERROR]` followed by `[INFO]` for the same notation indicates a silent retry), and argument errors (`usage:` or `argument`). STOP and analyze any failure before continuing.
 
-**If errors found** → **STOP**. Analyze the failure before proceeding.
+### Step 3 — Workflow Skill API Contract Verification
 
-**Retry Pattern Detection**:
-```
-[timestamp1] [ERROR] {notation} {subcommand} ...
-[timestamp2] [INFO] {notation} {subcommand} ...
-```
-This indicates an agent silently retried after failure. Investigate WHY the first attempt failed.
-
-### Step 3: Workflow Skill API Contract Verification
-
-Load the contract skill and verify artifacts for the **completed phase**:
+Load the contract skill and verify artifacts for the phase that just completed:
 
 ```
 Skill: plan-marshall:extension-api
 ```
 
-| Completed Phase | Contract to Verify |
-|-----------------|-------------------|
-| 1-init | references.json required fields (domains) |
-| 3-outline | solution-outline-standard.md |
-| 4-plan | task-contract.md |
-| 5-execute | task verification criteria |
+| Completed Phase | Contract to Verify | Command |
+|-----------------|--------------------|---------|
+| 1-init | references.json required fields (domains) | `manage-references:manage-references read --plan-id {plan_id}` |
+| 3-outline | solution-outline-standard.md | `manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}` |
+| 4-plan | task-contract.md | `manage-tasks:manage-tasks list --plan-id {plan_id}` plus `manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}` for each task |
+| 5-execute | task verification criteria | Execute each task's `verification.commands` after calling `manage-tasks get` |
 
-**Exact Verification Commands** (copy-paste ready):
+All commands must be invoked via `python3 .plan/execute-script.py plan-marshall:...`. For phase 4-plan, also verify the work-log contains `[ARTIFACT]` entries for every task created. STOP and remediate any violations before proceeding.
 
-**1-Init Phase** - Verify references.json:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {plan_id}
-```
-
-**Refine (solution)** - Validate solution outline:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
-```
-
-**Refine (tasks)** - List and verify each task:
-```bash
-# List all tasks
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id}
-
-# Get each task by number (replace {N} with 1, 2, 3, etc.)
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
-
-# Verify work-log has entry for each task creation
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type work
-# Check output contains "[ARTIFACT]" entries for each TASK-N created
-```
-
-**4-Execute Phase** - Run task verification commands:
-```bash
-# Get task to retrieve verification.commands
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
-
-# Then execute each command from the task's verification.commands array
-```
-
-**If violations found** → **STOP**. Report violations and remediate before proceeding.
-
-### Step 4: Status Consistency Check
-
-Verify plan status reflects the transition:
+### Step 4 — Status Consistency Check
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
   --plan-id {plan_id}
 ```
 
-**Verify**:
-- `current_phase` matches expected next phase
-- Previous phase status is `done`
-- `updated` timestamp is recent
+Verify `current_phase` matches the expected next phase, the previous phase status is `done`, and the `updated` timestamp is recent.
 
 ### Verification Output Template
 
-After completing all steps, output:
-
-```
-## POST-PHASE VERIFICATION: {phase_name} Complete
-
-### Step 1: Chat History
-| Check | Result |
-|-------|--------|
-| Tool failures | None / {count} found |
-| Error messages | None / {count} found |
-
-### Step 2: Script Execution Log
-| Check | Result |
-|-------|--------|
-| ERROR entries | None / {count} found |
-| Retry patterns | None / {count} detected |
-
-### Step 3: Contract Verification
-| Contract | Status | Issues |
-|----------|--------|--------|
-| {contract} | PASS/FAIL | {details} |
-
-### Step 4: Status Consistency
-| Field | Expected | Actual | Status |
-|-------|----------|--------|--------|
-| current_phase | {phase} | {actual} | PASS/FAIL |
-| prev phase status | done | {actual} | PASS/FAIL |
-
-### Assessment
-**{PASS / FAIL}** - {summary}
-```
+After completing all four steps, report the result as a concise table listing, per step, the check name (chat history failures, script-log errors, contract status, status consistency) and its PASS/FAIL state. Finish with an overall `**PASS / FAIL**` line and a one-sentence summary.
 
 ### Failure Response
 
-If ANY step fails:
-
-1. **STOP** - Do not proceed to next phase
-2. **Analyze** - Use `pm-plugin-development:analyze-script-failures` for script issues
-3. **Report** - Show user the verification failure with full context
-4. **Wait** - Ask user how to proceed before continuing
+On any failed step, STOP immediately, run `pm-plugin-development:analyze-script-failures` (for script issues), report the failure to the user with full context, and wait for user direction before continuing.
 
 ---
 
 ## Compliance Rules
 
-### Rule 0: Allowed .plan Access
+### Rule 0 — Allowed `.plan` Access
 
-Some `.plan` files are designed for direct access:
+These files are designed for direct access and do NOT trigger compliance alerts:
 
 | File | Access | Purpose |
 |------|--------|---------|
@@ -178,236 +80,65 @@ Some `.plan` files are designed for direct access:
 | `.plan/plan_logging.py` | Import | Logging module |
 | `.plan/local/marshall-state.toon` | Read/Write | Executor generation metadata |
 | `.plan/local/logs/script-execution-*.log` | Append | Global execution logs |
-| `.plan/local/lessons-learned/*.md` | Read/Write | Lessons learned via manage-lessons skill |
+| `.plan/local/lessons-learned/*.md` | Read/Write | Lessons-learned content (always via the manage-lessons skill) |
 
-These are NOT violations and should not trigger compliance alerts.
+All other marketplace scripts must be invoked via the executor: `python3 .plan/execute-script.py {notation} [subcommand] {args...}`. Direct script invocation via an absolute path is a violation — it bypasses logging and response standardization.
 
-**Approved Script Execution Pattern**:
+### Rule 1 — No Direct `.plan/plans/**` Access
 
-All marketplace scripts should be executed via the executor:
-
-```bash
-python3 .plan/execute-script.py {notation} [subcommand] {args...}
-```
-
-Examples:
-- `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id my-plan`
-- `python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify`
-
-**Violation** (after executor migration complete):
-- Direct script execution: `python3 /path/to/script.py {args}` (bypasses logging and standardization)
-
-### Rule 1: No Direct .plan/plans/** Access
-
-**Prohibited Operations** (plan data must use manage-* API):
+Plan data must use the manage-* API. Prohibited operations and their correct alternatives:
 
 | Tool | Prohibited Pattern | Correct Alternative |
-|------|-------------------|---------------------|
-| Read | `.plan/plans/{id}/status.toon` | `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {id}` |
-| Read | `.plan/plans/{id}/references.json` | `python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {id}` |
-| Read | `.plan/plans/{id}/work.log` | `python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {id} --type work` |
-| Read | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
-| Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {id} --number 1` |
-| Write | `.plan/plans/{id}/*` | Use appropriate manage-* create/update via execute-script.py |
-| Edit | `.plan/plans/{id}/*` | Use appropriate manage-* update via execute-script.py |
-| Glob | `.plan/plans/**/*.toon` | Use manage-* list operations via execute-script.py |
-| Glob | `.plan/plans/{id}/solution_outline.md` | `python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` |
-| Glob | `.plan/plans/{id}/tasks/*` | `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {id}` |
-| Bash find | `find .plan/plans -name "*.toon"` | Use manage-* list operations via execute-script.py |
-| Bash ls | `ls .plan/plans/{id}/tasks/` | `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {id}` |
+|------|--------------------|---------------------|
+| Read | `.plan/plans/{id}/status.toon` | `manage-status:manage_status read --plan-id {id}` |
+| Read | `.plan/plans/{id}/references.json` | `manage-references:manage-references read --plan-id {id}` |
+| Read | `.plan/plans/{id}/work.log` | `manage-logging:manage-logging read --plan-id {id} --type work` |
+| Read | `.plan/plans/{id}/solution_outline.md` | `manage-solution-outline:manage-solution-outline read --plan-id {id}` |
+| Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `manage-tasks:manage-tasks get --plan-id {id} --number {N}` |
+| Write / Edit | any file under `.plan/plans/{id}/` | corresponding manage-* create/update subcommand |
+| Glob / find / ls | anything under `.plan/plans/` | corresponding manage-* list subcommand |
 
-**Allowed Direct Write Pattern**: `Write(.plan/plans/{plan_id}/solution_outline.md)` is permitted when:
-1. The path was obtained via `manage-solution-outline resolve-path --plan-id {id}`
-2. The write is immediately followed by `manage-solution-outline write --plan-id {id}` (or `update`) to validate
+**Allowed direct write pattern**: `Write(.plan/plans/{plan_id}/solution_outline.md)` is permitted when the path was obtained via `manage-solution-outline resolve-path --plan-id {id}` AND the write is immediately followed by `manage-solution-outline write` (or `update`) to validate.
 
-This replaces the previous heredoc stdin pattern. All other `.plan` file access must go through manage-* scripts.
+Complete script coverage:
 
-The following scripts provide complete coverage:
+| File | Read | Write |
+|------|------|-------|
+| `request.md` | `manage-plan-documents:manage-plan-documents request read` | `manage-plan-documents:manage-plan-documents request create` |
+| `solution_outline.md` | `manage-solution-outline:manage-solution-outline read` | `resolve-path` → `Write({path})` → `manage-solution-outline write` |
+| `work.log` | `manage-logging:manage-logging read --type work` | `manage-logging:manage-logging work` |
+| `lessons-learned/*.md` | `manage-lessons:manage-lessons get` | `manage-lessons:manage-lessons add` |
+| Any plan file | `manage-files:manage-files read` | `manage-files:manage-files write` |
 
-| File | Read Script | Write Script |
-|------|-------------|--------------|
-| `request.md` | `plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id {id}` | `plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id {id} --title ... --source ... --body ...` |
-| `solution_outline.md` | `plan-marshall:manage-solution-outline:manage-solution-outline read --plan-id {id}` | `resolve-path` → `Write({path})` → `manage-solution-outline write --plan-id {id}` (validate) |
-| `work.log` | `plan-marshall:manage-logging:manage-logging read --plan-id {id} --type work` | `plan-marshall:manage-logging:manage-logging work --plan-id {id} --level {level} --message "{message}"` |
-| `lessons-learned/*.md` | `plan-marshall:manage-lessons:manage-lessons get --id {lesson_id}` | `plan-marshall:manage-lessons:manage-lessons add` |
-| Any plan file | `plan-marshall:manage-files:manage-files read --plan-id {id} --file {path}` | `plan-marshall:manage-files:manage-files write --plan-id {id} --file {path}` |
+### Rule 2 — Work-Log Population Verification
 
-**Detection Pattern**:
+After any planning operation completes, query `manage-logging:manage-logging read --plan-id {id} --type work` and verify that the most recent entry matches the operation (recent timestamp, correct entry type, current phase, and a meaningful summary). The required entry types by operation are: phase transitions → `progress`; decisions → `decision` with rationale detail; artifact creation → `artifact` with the artifact type and id; task completion → `outcome`; errors → `error` with error detail.
 
-When you observe tool calls that directly access .plan structure files:
+### Rule 3 — Status Consistency Verification
 
-```
-## PLANNING COMPLIANCE Violation Detected
+After phase transitions or progress updates, read status via `manage-status:manage_status read --plan-id {id}` and confirm `current_phase` matches the expected phase, every phase entry has the correct status, and the `updated` timestamp is recent. Verification triggers: phase transitions (`current_phase` updated, previous phase marked `done`), task completion (phase progress reflects completed tasks), error states (status shows `error`/`blocked`), and plan completion (all phases `done`).
 
-### Issue Detected
-Direct .plan file access bypassing manage-* API
+### Rule 4 — Script Execution via Executor (Mandatory)
 
-### Context
-- **Operation**: [Read/Write/Edit/Glob]
-- **Target**: [.plan/plans/{id}/status.toon]
-- **Expected**: Use `python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read`
-- **Actual**: Direct file read attempted
+All marketplace script execution MUST use `python3 .plan/execute-script.py {bundle}:{skill}:{script} {subcommand} {args...}`.
 
-### Root Cause Analysis
-Calling code is accessing .plan files directly instead of using the
-manage-* abstraction layer. This bypasses:
-- Input validation
-- Audit trail logging
-- Format consistency checks
-- Atomic write guarantees
+**CRITICAL** — singular vs plural script names:
 
-### Impact Assessment
-| Aspect | Impact |
-|--------|--------|
-| Blocking | No - but should not proceed |
-| Data Loss Risk | Yes - no atomic writes |
-| Audit Trail | Broken - no work-log entry |
-| State Corruption | Possible - no validation |
-
-### Options
-1. **Use manage-* API**: Replace direct access with appropriate script
-2. **Investigate why**: Determine if manage-* is missing functionality
-3. **Document exception**: If truly needed, document why direct access required
-
-### Recommendation
-Use manage-* API - this is a design violation, not a missing feature case
-```
-
-### Rule 2: Work-Log Population Verification
-
-After any planning operation completes, verify work-log contains appropriate entry.
-
-**Required Work-Log Entries**:
-
-| Operation | Required Entry Type | Required Fields |
-|-----------|-------------------|-----------------|
-| Phase transition | `progress` | phase, summary |
-| Decision made | `decision` | phase, summary, detail (rationale) |
-| Artifact created | `artifact` | phase, summary (artifact type and id) |
-| Task completed | `outcome` | phase, summary |
-| Error occurred | `error` | phase, summary, detail (error info) |
-
-**Verification Steps**:
-
-1. After operation completes, query work-log:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type work
-   ```
-
-2. Verify most recent entry matches operation:
-   - Timestamp is within last few seconds
-   - Type matches operation category
-   - Phase matches current phase
-   - Summary describes what happened
-
-**Verification Template**:
-
-```
-## POST-OPERATION Audit Verification
-
-### Operation Completed
-[Description of what was just executed]
-
-### Work-Log Check
-```toon
-[Output from plan-marshall:manage-logging:manage-logging read]
-```
-
-### Verification Result
-| Check | Status | Notes |
-|-------|--------|-------|
-| Entry exists | Pass/Fail | [Details] |
-| Correct type | Pass/Fail | Expected: {type}, Found: {type} |
-| Correct phase | Pass/Fail | Expected: {phase}, Found: {phase} |
-| Meaningful summary | Pass/Fail | [Assessment] |
-
-### Assessment
-[PASS/FAIL with explanation]
-```
-
-### Rule 3: Status Consistency Verification
-
-After phase transitions or progress updates, verify status reflects correct state.
-
-### Rule 4: Script Execution via Executor (Mandatory)
-
-All marketplace script execution MUST use the universal executor pattern.
-
-**Required Pattern**:
-```bash
-python3 .plan/execute-script.py {notation} {subcommand} {args...}
-```
-
-**Notation Format**: `{bundle}:{skill}:{script}` (e.g., `plan-marshall:manage-files:manage-files`)
-
-**CRITICAL - Singular vs Plural Script Names**:
-
-| Skill Name (plural) | Script Name (SINGULAR) | Full Notation |
-|---------------------|------------------------|---------------|
+| Skill Name | Script Name | Full Notation |
+|------------|-------------|---------------|
 | `manage-plan-documents` | `manage-plan-document` | `plan-marshall:manage-plan-documents:manage-plan-documents` |
 | `manage-tasks` | `manage-task` | `plan-marshall:manage-tasks:manage-tasks` |
 | `manage-lessons` | `manage-lesson` | `plan-marshall:manage-lessons:manage-lessons` |
 | `manage-status` | `manage_status` | `plan-marshall:manage-status:manage_status` |
 | `manage-references` | `manage-references` | `plan-marshall:manage-references:manage-references` |
 | `manage-files` | `manage-files` | `plan-marshall:manage-files:manage-files` |
-| `logging` | `manage-log` | `plan-marshall:manage-logging:manage-logging` |
+| `manage-logging` | `manage-log` | `plan-marshall:manage-logging:manage-logging` |
 
-**Prohibited Operations** (direct script paths must use executor):
+Prohibited patterns: `python3 {script_path} {verb}`, `python3 marketplace/.../script.py`, and any direct-path form that embeds the bundle's scripts-subdirectory — always replace with the executor notation. The executor provides execution logging, notation consistency, error standardization, and a hook for future metrics or caching.
 
-| Tool | Prohibited Pattern | Correct Alternative |
-|------|-------------------|---------------------|
-| Bash | `python3 {script_path} {verb}` | `python3 .plan/execute-script.py {notation} {verb}` |
-| Bash | `python3 marketplace/.../script.py` | `python3 .plan/execute-script.py {notation}` |
-| Bash | `python3 {bundle}/scripts/foo.py` | `python3 .plan/execute-script.py {bundle}:{skill}` |
+### Rule 5 — CI/Git Provider Access via Integration Scripts (Mandatory)
 
-**Why This Matters**:
-- **Execution logging**: All invocations are logged with timestamps and duration
-- **Notation consistency**: Single canonical way to reference scripts
-- **Error standardization**: Consistent error output format
-- **Cross-cutting features**: Enables future metrics, caching, etc.
-
-**Detection Pattern**:
-
-When you observe tool calls that directly execute scripts:
-
-```
-## PLANNING COMPLIANCE Violation Detected
-
-### Issue Detected
-Direct script execution bypassing execute-script.py
-
-### Context
-- **Operation**: Bash
-- **Target**: `python3 {path}/manage-files.py add --plan-id my-plan`
-- **Expected**: `python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add --plan-id my-plan`
-- **Actual**: Direct script path used
-
-### Root Cause Analysis
-Calling code is executing scripts directly instead of using the
-execute-script.py proxy. This bypasses:
-- Execution logging
-- Notation consistency
-- Error standardization
-- Cross-cutting features
-
-### Options
-1. **Use executor**: Replace direct path with executor notation
-2. **Update caller**: Fix the SKILL.md/agent/command documentation
-
-### Recommendation
-Use executor pattern - this is a design violation
-```
-
-### Rule 5: CI/Git Provider Access via Integration Scripts (Mandatory)
-
-All GitHub (`gh`) and GitLab (`glab`) operations MUST use the CI integration scripts via the executor. Direct `Bash(gh ...)` or `Bash(glab ...)` calls are **bugs** — the process MUST stop immediately when detected.
-
-**Required Pattern**:
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {command} {subcommand} {args...}
-```
-
-**Available Commands and Subcommands**:
+All GitHub (`gh`) and GitLab (`glab`) operations MUST use the CI integration scripts via the executor. Direct `Bash(gh ...)` or `Bash(glab ...)` calls are **blocking violations** — the process MUST stop immediately when detected. There are NO exceptions: every operation has a corresponding integration subcommand. If one is missing, extend the CI integration scripts instead of bypassing them.
 
 | Command | Subcommands | Replaces |
 |---------|-------------|----------|
@@ -415,73 +146,11 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {command} 
 | `ci` | `status`, `wait`, `rerun`, `logs` | `gh pr checks`, `gh run *` |
 | `issue` | `create`, `view`, `close` | `gh issue *` |
 
-**Prohibited Operations**:
+Required pattern: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci {command} {subcommand} {args...}`.
 
-| Tool | Prohibited Pattern | Correct Alternative |
-|------|-------------------|---------------------|
-| Bash | `gh pr view` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view` |
-| Bash | `gh pr create ...` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create ...` |
-| Bash | `gh pr checks --watch` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait` |
-| Bash | `gh pr merge` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge` |
-| Bash | `gh run view` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status` |
-| Bash | `gh run rerun` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci rerun` |
-| Bash | `gh issue create` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue create ...` |
-| Bash | `gh api repos/.../pulls/.../comments` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr comments` |
-| Bash | `glab mr create` | `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create ...` |
+### Rule 6 — Log File Verification and Issue Detection
 
-**Why This Matters**:
-- **Provider abstraction**: Scripts support both GitHub and GitLab via unified API
-- **Execution logging**: All CI/git operations are logged with timestamps and duration
-- **Error standardization**: Consistent error output format across providers
-- **Audit trail**: Operations are traceable in script-execution logs
-
-**Detection Pattern**:
-
-When you observe direct `gh` or `glab` calls in Bash:
-
-```
-## PLANNING COMPLIANCE Violation Detected — PROCESS STOPPED
-
-### Issue Detected
-Direct gh/glab CLI call bypassing CI integration scripts
-
-### Context
-- **Operation**: Bash
-- **Target**: `gh pr view --json number`
-- **Expected**: `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view`
-- **Actual**: Direct gh CLI call used
-
-### Root Cause Analysis
-Calling code is invoking gh/glab directly instead of using the
-CI integration abstraction layer. This bypasses:
-- Provider abstraction (GitHub/GitLab portability)
-- Execution logging
-- Error standardization
-- Audit trail
-
-### Impact Assessment
-| Aspect | Impact |
-|--------|--------|
-| Blocking | **YES — process must stop** |
-| Audit Trail | Broken — no execution log entry |
-| Portability | Lost — tied to specific provider CLI |
-
-### Required Action
-1. **STOP** — Do not continue execution
-2. **Replace** — Use the correct executor notation
-3. **Verify** — Confirm the replacement works before proceeding
-
-### Recommendation
-This is a **blocking violation**. Replace direct CLI call with executor pattern and restart the operation.
-```
-
-**Exception**: There are NO exceptions for this rule. Every `gh` and `glab` operation has a corresponding integration script subcommand. If a needed operation is missing, the correct action is to extend the CI integration scripts, not to bypass them.
-
-### Rule 6: Log File Verification and Issue Detection
-
-Plan-related log files must exist, be properly formatted, remain consistent, and be actively scanned to detect script execution issues.
-
-**Log File Types**:
+Plan-related log files must exist, be well-formed, remain consistent, and be scanned for script-execution issues.
 
 | File | Location | Purpose |
 |------|----------|---------|
@@ -489,448 +158,73 @@ Plan-related log files must exist, be properly formatted, remain consistent, and
 | `script-execution.log` | `.plan/plans/{id}/script-execution.log` | Script execution records for plan-scoped operations |
 | `script-execution-*.log` | `.plan/logs/script-execution-{date}.log` | Global execution records (non-plan operations) |
 
-**Log Entry Format** (script-execution.log):
-
-Standard entry:
-```
-[{timestamp}] [{level}] [SCRIPT] {notation} {subcommand} ({duration}s)
-```
-
-Example:
-```
-[2025-12-11T12:14:26Z] [INFO] [SCRIPT] plan-marshall:manage-files:manage-files create (0.19s)
-[2025-12-11T12:17:50Z] [ERROR] [SCRIPT] plan-marshall:manage-task:manage-task add failed (exit 1)
-```
-
-**Verification Checks**:
-
-| Check | What to Verify | When |
-|-------|---------------|------|
-| Existence | `work.log` exists for every active plan | After plan creation |
-| Existence | `script-execution.log` exists after first plan-scoped script call | After executor runs with plan_id |
-| Format | `work.log` follows standard log format | After any log operation |
-| Format | `script-execution.log` uses standard log format | After executor runs |
-| Consistency | work.log entries match expected operations | After phase transitions |
-| Consistency | script-execution.log records match script calls | After any executor call |
-
-**Issue Detection via Log Scanning**:
-
-Actively scan execution logs to detect script issues:
-
-| Issue Type | Detection Pattern | Severity | Action |
-|------------|-------------------|----------|--------|
-| Script failure | Lines containing `[ERROR]` | High | Investigate log, fix root cause |
-| Repeated failures | Same notation with multiple ERROR entries | Critical | Script is broken, needs immediate fix |
-| Slow execution | Duration > 30s for simple operations | Medium | Optimize script or investigate hang |
-| Missing executions | Expected script calls not in log | High | Executor not used (compliance violation) |
-| Argument errors | Log contains "usage:" or "argument" | Medium | Caller using wrong arguments |
-| Import/module errors | Log contains "ModuleNotFoundError" or "ImportError" | Critical | Missing dependency or path issue |
-| Permission errors | Log contains "Permission denied" | High | File/directory access issue |
-
-**Log Scanning Commands**:
-
-1. Find all errors in plan execution log:
-   ```bash
-   grep '\[ERROR\]' .plan/plans/{plan_id}/script-execution.log
-   ```
-
-2. Find repeated failures (same script failing):
-   ```bash
-   grep '\[ERROR\]' .plan/plans/{plan_id}/script-execution.log | sort | uniq -c | sort -rn
-   ```
-
-3. Find slow executions (>10s):
-   ```bash
-   grep -E '\([0-9]{2,}\.[0-9]+s\)' .plan/plans/{plan_id}/script-execution.log
-   ```
-
-4. Scan global logs for today's issues:
-   ```bash
-   grep '\[ERROR\]' .plan/logs/script-execution-$(date +%Y-%m-%d).log
-   ```
-
-**Verification Steps**:
-
-1. Check work.log exists and has entries:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
-     --plan-id {plan_id} --type work --limit 20
-   ```
-
-2. Check script-execution.log exists and scan for issues:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
-     --plan-id {plan_id} --type script --limit 20
-   ```
-
-3. Verify format compliance:
-   - work.log: Standard log format `[timestamp] [level] [WORK] message`
-   - script-execution.log: Standard log format `[timestamp] [level] [SCRIPT] notation subcommand (duration)`
-
-**Detection Pattern for Log Issues**:
-
-```
-## PLANNING COMPLIANCE Violation Detected
-
-### Issue Detected
-[Log file integrity issue / Script execution failure detected]
-
-### Context
-- **Check Type**: [existence/format/consistency/script-failure]
-- **File**: [path to log file]
-- **Expected**: [what should exist or match]
-- **Actual**: [what was found]
-
-### Log Scan Results (if script failure)
-| Metric | Value |
-|--------|-------|
-| Total executions | {count} |
-| Failed executions | {error_count} |
-| Unique failing scripts | {list} |
-| Most recent error | {timestamp} |
-
-### Error Details
-```
-{stderr content from log}
-```
-
-### Root Cause Analysis
-[Explanation of why this matters for audit trail integrity or script health]
-
-### Impact Assessment
-| Aspect | Impact |
-|--------|--------|
-| Audit Trail | Incomplete or corrupted |
-| Debugging | Missing operation history |
-| Compliance | Cannot verify operations occurred |
-| Script Health | [Broken/Degraded/Healthy] |
-
-### Options
-1. **Fix script**: Address the error shown in stderr
-2. **Regenerate entries**: Use manage-log to add missing entries
-3. **Investigate cause**: Determine why log was not updated
-4. **Manual recovery**: Reconstruct from other sources if possible
-
-### Recommendation
-[Specific action based on violation type]
-```
-
-**Common Log Violations and Script Issues**:
-
-| Violation | Symptom | Cause |
-|-----------|---------|-------|
-| Missing work.log | work.log file not found | Plan created without init entry |
-| Empty work.log | No entries after operations | Operations bypassed logging |
-| Stale script-execution.log | Old timestamps only | Executor not used for recent calls |
-| Format corruption | Parse errors | Direct file edit instead of API |
-| Script failure | ERROR entries in log | Bug in script or invalid arguments |
-| Repeated failures | Same script failing multiple times | Systemic issue needs investigation |
-| Import errors | ModuleNotFoundError in log | Missing dependency or wrong Python path |
-| Timeout patterns | Very long durations (>60s) | Script hanging or performance issue |
-
-**Status Verification Points**:
-
-| Trigger | What to Verify |
-|---------|---------------|
-| Phase transition | `current_phase` updated, previous phase marked `done` |
-| Task completion | Phase progress reflects completed tasks |
-| Error state | Status shows `error` or `blocked` if applicable |
-| Plan completion | All phases marked `done` |
-
-**Verification Steps**:
-
-1. After phase-affecting operation, query status:
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id {plan_id}
-   ```
-
-2. Verify status consistency:
-   - `current_phase` matches expected phase
-   - Phases array shows correct `status` for each phase
-   - `updated` timestamp is recent
-
-**Verification Template**:
-
-```
-## STATUS Consistency Check
-
-### Expected State
-- Current phase: {phase}
-- Previous phases: {list of done phases}
-- Phase status: {expected statuses}
-
-### Actual State
-```toon
-[Output from plan-marshall:manage-status:manage_status read]
-```
-
-### Consistency Check
-| Field | Expected | Actual | Status |
-|-------|----------|--------|--------|
-| current_phase | {phase} | {actual} | Pass/Fail |
-| phases[1-init] | done | {actual} | Pass/Fail |
-| phases[3-outline] | done | {actual} | Pass/Fail |
-| phases[5-execute] | in_progress | {actual} | Pass/Fail |
-| updated | recent | {timestamp} | Pass/Fail |
-
-### Assessment
-[PASS/FAIL with explanation]
-```
-
-## Workflow Skill API Contract Verification
-
-After each planning phase completes, verify artifacts comply with the workflow skill API contracts. Reference: `plan-marshall:extension-api` (SKILL.md)
-
-### Phase 1: Init Complete
-
-**Contract Reference**: Phase skills are self-documenting. See `plan-marshall:phase-1-init/SKILL.md`
-
-**Verification**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id {plan_id}
-```
-
-**Required Fields**:
-| Field | Required | Description |
-|-------|----------|-------------|
-| `domains` | Yes | Domain identifiers array (java, javascript, plan-marshall-plugin-dev, generic) |
-
-### Phase 2: Solution Outline Complete
-
-**Contract Reference**: `plan-marshall:manage-solution-outline` standards/solution-outline-standard.md
-
-**Verification**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}
-```
-
-**Required Deliverable Fields**:
-| Field | Required | Description |
-|-------|----------|-------------|
-| `change_type` | Yes | create/modify/refactor/migrate/delete |
-| `execution_mode` | Yes | automated/manual/mixed |
-| `domain` | Yes | Valid domain (java/javascript/plan-marshall-plugin-dev etc.) |
-| `profile` | Yes | `implementation` or `module_testing` |
-| `depends` | Yes | `none` or `N` or `N. Title` or `N, M` |
-| `Affected files` | Yes | Explicit file paths (not glob patterns) |
-| `Verification` | Yes | Command and criteria |
-| `suggested_skill` | No | Optional override: explicit skill `{bundle}:{skill-name}` |
-| `suggested_workflow` | No | Optional override: workflow within explicit skill |
-| `context_skills` | No | List of optional skills from domain |
-
-**Common Violations**:
-| Violation | Description | Fix |
-|-----------|-------------|-----|
-| Vague file references | "All files matching X" instead of explicit paths | Enumerate all files explicitly |
-| Missing `depends` | No dependency specification | Add `depends: none` or proper reference |
-| Wrong `depends` format | Using title without number | Use `N. Title` format |
-| Missing `domain` | Skill loading will fail | Add valid domain from config |
-| Missing `context_skills` | Key in delegation block | Add empty list `[]` or valid skills |
-
-### Phase 3: User Review (Mandatory)
-
-**Contract Reference**: `plan-marshall:extension-api` standards/workflow-overview.md
-
-**Verification**: Check work.log for user approval entry
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type work | grep -i "approved\|proceed"
-```
-
-**Required**: User explicitly approved solution outline before task creation. Task creation without user approval is a CRITICAL violation.
-
-### Phase 4: Tasks Created
-
-**Contract Reference**: `plan-marshall:manage-tasks` standards/task-contract.md
-
-**Verification**:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id}
-```
-
-For each task, verify:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get --plan-id {plan_id} --number {N}
-```
-
-**Required Task Fields**:
-| Field | Required | Description |
-|-------|----------|-------------|
-| `deliverables` | Yes | List of deliverable numbers (non-empty) |
-| `depends_on` | Yes | `none` or `TASK-N` references |
-| `delegation.skill` | Yes | Format: `{bundle}:{skill-name}` |
-| `delegation.workflow` | Yes | Workflow within skill |
-| `delegation.domain` | Yes | Valid domain value |
-| `delegation.context_skills` | Yes* | From deliverable's context_skills (*may be empty list) |
-| `steps` | Yes | TOON tabular format with file paths |
-| `verification.commands` | Yes | List of verification commands |
-| `verification.criteria` | Yes | Success criteria |
-
-**Steps Field Contract** (CRITICAL):
-- Steps MUST be file paths from deliverable's `Affected files`
-- Steps MUST NOT be action descriptions
-- TOON format: `steps[N]{number,target,status}:` with file paths in target column
-
-**Common Violations**:
-| Violation | Description | Fix |
-|-----------|-------------|-----|
-| Missing `context_skills` | Delegation block incomplete | Add context_skills from deliverable |
-| Descriptive steps | Steps contain action text, not file paths | Use file paths from deliverable |
-| Missing `deliverables` | No traceability to solution outline | Add deliverable number references |
-
-### Post-Phase Verification Template
-
-After each phase completes, use this verification template:
-
-```
-## Workflow Skill API Contract Verification
-
-### Phase Completed
-{init | outline | plan | execute | finalize}
-
-### Contract Checks
-| Check | Status | Notes |
-|-------|--------|-------|
-| Required fields present | Pass/Fail | [Details] |
-| Field formats correct | Pass/Fail | [Details] |
-| References valid | Pass/Fail | [Details] |
-| No anti-patterns | Pass/Fail | [Details] |
-
-### Violations Found
-| Artifact | Field | Issue | Severity |
-|----------|-------|-------|----------|
-| {file} | {field} | {description} | Critical/High/Medium |
-
-### Remediation
-[Actions taken or required]
-
-### Assessment
-[PASS/FAIL with explanation]
-```
+Entries follow the format `[{timestamp}] [{level}] [SCRIPT] {notation} {subcommand} ({duration}s)` (success) and `[{timestamp}] [ERROR] [SCRIPT] {notation} {subcommand} failed (exit {code})` (failure).
+
+Scan log files for common issue classes and respond per severity: `[ERROR]` entries (investigate root cause), repeated failures (systemic bug, fix immediately), slow executions over 30 s for simple ops (optimize or investigate hang), missing expected executions (executor not used), `usage:` or `argument` errors (wrong caller arguments), `ModuleNotFoundError`/`ImportError` (missing dependency), and `Permission denied` (access issue). Read logs via `manage-logging read` commands — direct `grep` inside the plan log tree is acceptable only for quick scans such as `grep '[ERROR]' .plan/plans/{plan_id}/script-execution.log`.
+
+---
+
+## Workflow Skill API Contract Verification (per phase)
+
+After each planning phase completes, verify the artifacts comply with the workflow skill API contract. Reference: `plan-marshall:extension-api` (SKILL.md).
+
+### Phase 1 — Init Complete
+
+Contract: `plan-marshall:phase-1-init/SKILL.md`. Verify `manage-references:manage-references read --plan-id {plan_id}` exposes the required `domains` field (non-empty list of domain identifiers such as `java`, `javascript`, `plan-marshall-plugin-dev`, `generic`).
+
+### Phase 2 — Solution Outline Complete
+
+Contract: `plan-marshall:manage-solution-outline/standards/solution-outline-standard.md`. Verify via `manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}`. Every deliverable must carry: `change_type` (create|modify|refactor|migrate|delete), `execution_mode` (automated|manual|mixed), `domain` (valid domain value), `profile` (`implementation` or `module_testing`), `depends` (`none`, `N`, `N. Title`, or `N, M`), explicit `Affected files` (no glob patterns), and a `Verification` entry (command + criteria). Optional fields: `suggested_skill`, `suggested_workflow`, `context_skills`.
+
+Common violations and fixes: vague file references → enumerate explicitly; missing `depends` → add `depends: none` or proper reference; title-only `depends` → use `N. Title`; missing `domain` → add a valid domain from config; missing `context_skills` in delegation block → add empty list or valid skills.
+
+### Phase 3 — User Review (Mandatory)
+
+User must explicitly approve the solution outline before task creation. Verify via `manage-logging read --plan-id {plan_id} --type work` and confirm an entry recording approval exists. Task creation without user approval is a CRITICAL violation.
+
+### Phase 4 — Tasks Created
+
+Contract: `plan-marshall:manage-tasks/standards/task-contract.md`. Verify via `manage-tasks list` and `manage-tasks get --number {N}`. Required task fields: `deliverables` (non-empty), `depends_on` (`none` or `TASK-N`), `delegation.{skill,workflow,domain}`, `delegation.context_skills` (may be empty list), `steps` in TOON tabular format with file paths in the target column, `verification.commands`, and `verification.criteria`.
+
+**Steps field contract (CRITICAL)**: steps MUST be file paths from the deliverable's `Affected files`, NEVER action descriptions. Format: `steps[N]{number,target,status}:` with file paths as targets.
+
+Common violations: missing `context_skills`, descriptive step text, missing `deliverables` references → always map back to the solution outline.
+
+---
 
 ## Automated Verification Rules
 
 After each planning command/skill execution, verify:
 
-- No direct .plan file access (except request.md read)
-- work.log entry added for significant operations
-- Status reflects current phase correctly
-- All artifacts created via manage-* scripts
-- No orphaned files in .plan structure
-- Log files exist and are properly formatted (work.log, script-execution.log)
-- script-execution.log contains recent entries for script calls
-- script-execution.log scanned for ERROR entries - none found or issues addressed
-- No repeated script failures detected in logs
+- No direct `.plan` file access (except `request.md` read and the allow-listed files in Rule 0).
+- A `work.log` entry exists for every significant operation.
+- Status reflects the current phase correctly.
+- All artifacts were created via manage-* scripts.
+- No orphaned files exist in the `.plan` structure.
+- `work.log` and `script-execution.log` exist and use the standard format.
+- `script-execution.log` contains recent entries for all script calls and has been scanned for `[ERROR]` entries (none remaining unaddressed).
+- No repeated script failures are visible in the logs.
 
 ## Integration with Commands
 
-### plan-marshall Command (Phases 1-4)
+When `/plan-marshall` runs phases 1-4, verify after each action: `1-init` emits an `artifact` work-log entry and sets `phases[1-init]=in_progress`; configuration completion emits a `progress` entry and sets `phases[1-init]=done`, `current_phase=3-outline`; `3-outline` emits `artifact` entries per deliverable with progress updates; outline completion emits an `outcome` entry and sets `phases[3-outline]=done`, `current_phase=4-plan`.
 
-When `/plan-marshall` executes init/outline actions, verify after each action:
-
-| Action | Expected Work-Log Entry | Expected Status Change |
-|--------|------------------------|----------------------|
-| `1-init` | type=artifact, summary=plan created | phases[1-init]=in_progress |
-| configure complete | type=progress, summary=configuration complete | phases[1-init]=done, current_phase=3-outline |
-| `3-outline` | type=artifact per deliverable created | phases[3-outline] progress updates |
-| outline complete | type=outcome, summary=3-outline complete | phases[3-outline]=done, current_phase=4-plan |
-
-### plan-marshall Command (Phases 5-7)
-
-When `/plan-marshall` executes execute/verify/finalize actions, verify after each task:
-
-| Event | Expected Work-Log Entry | Expected Status Change |
-|-------|------------------------|----------------------|
-| Task started | type=progress, summary=task title | task status=in_progress |
-| Step completed | type=progress, summary=step description | step marked complete |
-| Task completed | type=outcome, summary=task completion | task status=done |
-| Build verified | type=outcome, summary=verification passed | - |
-| Error occurred | type=error, detail=error info | may set blocked state |
-| All tasks done | type=progress, summary=5-execute phase complete | current_phase=6-finalize |
+When `/plan-marshall` runs phases 5-7, verify after each task: task started → `progress` entry, task status `in_progress`; step completed → `progress` entry, step marked complete; task completed → `outcome` entry, task status `done`; build verified → `outcome` entry; error → `error` entry with detail (may set blocked state); all tasks done → `progress` entry, `current_phase=6-finalize`.
 
 ## Common Violations
 
-### Violation 1: Direct Status Read
-
-```
-Claude uses: Read .plan/plans/my-plan/status.toon
-Should use: python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id my-plan
-```
-
-**Note**: Script notation is `plan-marshall:manage-status:manage_status` for status reads.
-
-**Why It Matters**: Direct reads bypass the managed parser, may read stale data during atomic writes, and don't leverage script validation.
-
-### Violation 2: Missing Work-Log Entry
-
-```
-Operation: Created solution_outline.md with 3 goals
-Work-log: No entry found for artifact creation
-```
-
-**Why It Matters**: Audit trail is incomplete, making debugging and progress tracking impossible.
-
-### Violation 3: Stale Status After Transition
-
-```
-Operation: Completed all 5-execute phase tasks
-Expected: current_phase=6-finalize
-Actual: current_phase=5-execute (not updated)
-```
-
-**Why It Matters**: Phase routing will execute wrong phase, plan lifecycle is broken.
-
-### Violation 4: Direct File Creation
-
-```
-Claude uses: Write .plan/plans/my-plan/tasks/TASK-003.toon
-Should use: python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add --plan-id my-plan <<'EOF'
-title: Task title
-deliverable: 1
-domain: java
-steps:
-  - Step A
-  - Step B
-EOF
-```
-
-**Note**: Script notation uses SINGULAR `manage-task` (not `manage-tasks`). Full notation: `plan-marshall:manage-tasks:manage-tasks`. Task definitions are passed via stdin using heredoc to avoid shell metacharacter issues.
-
-**Why It Matters**: Bypasses numbering logic, validation, and work-log entry creation.
+1. **Direct status read** — `Read .plan/plans/my-plan/status.toon`. Use `manage-status:manage_status read --plan-id my-plan`. Direct reads bypass the managed parser, may see partial data during atomic writes, and skip script validation.
+2. **Missing work-log entry** — an artifact is created but no work-log entry exists. Breaks the audit trail and blocks debugging/progress tracking.
+3. **Stale status after transition** — all tasks are done but `current_phase` is still the old phase. Phase routing will execute the wrong phase and the plan lifecycle breaks.
+4. **Direct file creation** — `Write .plan/plans/my-plan/tasks/TASK-003.toon`. Use `manage-tasks add` (singular script name `manage-task`, full notation `plan-marshall:manage-tasks:manage-tasks`) with the task definition passed via stdin heredoc to avoid shell metacharacter issues. Bypassing this skips numbering, validation, and work-log entries.
 
 ## Exception Handling
 
-Some operations legitimately need direct access:
+Legitimate exceptions are lessons-learned access (always via the manage-lessons skill) and ad-hoc diagnostics/debugging **with explicit user approval**. Note that `request.md` and `solution_outline.md` are now managed via `manage-plan-documents` / `manage-solution-outline`. When an exception is truly required, document its justification, risk mitigation, scope (exact files and operations), and whether user approval was obtained.
 
-### Legitimate Exceptions
+## Post-Run Verification Pattern
 
-1. **Lessons learned** - standalone markdown files accessed via manage-lessons skill
-2. **Diagnostics/debugging** - when investigating issues with user approval
-
-**Note**: `request.md` and `solution_outline.md` are now managed via `plan-marshall:manage-plan-documents` skill.
-
-### Documenting Exceptions
-
-When direct access is truly required, document it:
-
-```
-## EXCEPTION: Direct .plan Access
-
-### Justification
-[Why manage-* cannot be used]
-
-### Risk Mitigation
-[How data integrity is preserved]
-
-### Scope
-[Exactly which files and operations]
-
-User approval obtained: [Yes/No]
-```
-
-## Post-Run Verification Script
-
-Use this verification pattern after major operations:
+Use after major operations:
 
 ```bash
 # Verify work.log has recent entry
@@ -941,44 +235,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
   --plan-id {plan_id}
 
-# Verify no orphaned files (optional)
+# Verify no orphaned files
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files list \
   --plan-id {plan_id}
 ```
 
-Expected output should show:
-- Work-log entry within last few seconds
-- Status current_phase matches expected
-- All files properly registered
+Expected: a work-log entry within the last few seconds, `current_phase` matches the expected value, and all files are properly registered.
 
 ## Post-Run Verification: Executor Pattern
 
-After script operations complete, verify proper executor usage:
-
-**For plan-scoped operations** (when plan_id was provided):
-```bash
-# Verify execution logged to plan
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read \
-  --plan-id {plan_id} --type script --limit 20
-```
-
-**For global operations** (no plan context):
-```bash
-# Verify execution logged to daily global log (direct access acceptable for global logs)
-tail -5 .plan/logs/script-execution-$(date +%Y-%m-%d).log
-```
-
-**Success entry format**:
-```
-[{timestamp}] [INFO] [SCRIPT] {notation} {subcommand} ({duration}s)
-```
-
-**Error entry format**:
-```
-[{timestamp}] [ERROR] [SCRIPT] {notation} {subcommand} failed (exit {code})
-```
-
-Expected verification:
-- Timestamp is recent (within last few seconds)
-- Notation matches expected script
-- Level is INFO for success, ERROR for failures
+After script operations complete, confirm the executor was used. For plan-scoped operations, query `manage-logging read --plan-id {plan_id} --type script --limit 20` and verify the entries match the scripts that were invoked. For global operations (no plan context), inspect the current-day global log at `.plan/logs/script-execution-$(date +%Y-%m-%d).log` — direct read access to global logs is acceptable. Success entries use the format `[{timestamp}] [INFO] [SCRIPT] {notation} {subcommand} ({duration}s)` and error entries use `[{timestamp}] [ERROR] [SCRIPT] {notation} {subcommand} failed (exit {code})`. Verify the timestamp is recent, the notation matches the expected script, and the level is INFO for success or ERROR for failures.

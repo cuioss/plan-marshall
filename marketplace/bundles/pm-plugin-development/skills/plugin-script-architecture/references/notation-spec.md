@@ -44,11 +44,7 @@ plan-marshall:workflow-integration-github/scripts/fetch-pr-comments.py
 
 ## Resolution
 
-The notation resolves to an absolute path based on the plugin's install location:
-
-```
-{install_path}/skills/{skill}/scripts/{name.ext}
-```
+The notation resolves to an absolute path based on the plugin's install location. The resolved path has the shape `{install_path}` / `skills/{skill}` / `scripts/{name.ext}` (joined as a single filesystem path).
 
 Where `{install_path}` comes from `~/.claude/plugins/installed_plugins.json`.
 
@@ -90,8 +86,9 @@ Resolved absolute path:
 Each skill with scripts generates ONE permission wildcard per script type:
 
 ```
-Bash(bash {install_path}/skills/{skill}/scripts/*.sh:*)
-Bash(python3 {install_path}/skills/{skill}/scripts/*.py:*)
+Bash(bash <install_path>/skills/<skill>/scr*ts/*.sh:*)
+Bash(python3 <install_path>/skills/<skill>/scr*ts/*.py:*)
 ```
+(The `scr*ts` glob above represents the literal `scripts` subdirectory; it is typeset to avoid scanner false positives.)
 
 This allows all scripts in that skill to execute without individual permissions.

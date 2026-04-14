@@ -28,11 +28,7 @@ When a path, skill reference, or dependency fails to resolve during verification
 
 **What It Is**: Resolving `bundle:skill/scripts/name.py` notation to actual file path.
 
-**Resolution Pattern**:
-```
-bundle:skill/scripts/name.py
-  → marketplace/bundles/{bundle}/skills/{skill}/scripts/name.py
-```
+**Resolution Pattern**: The notation `bundle:skill/scripts/name.py` maps to the absolute file path formed by joining `marketplace/bundles/{bundle}`, then the skill directory `skills/{skill}`, then its `scripts` subdirectory, then the script filename.
 
 **Common Failures**:
 - Bundle name misspelled

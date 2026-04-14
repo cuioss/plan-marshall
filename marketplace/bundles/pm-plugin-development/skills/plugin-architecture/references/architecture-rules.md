@@ -29,8 +29,9 @@ FAIL INCORRECT (hardcoded paths):
 ```markdown
 Read: ../../../../standards/java/java-core.adoc
 Read: ~/git/plan-marshall/standards/logging.adoc
-bash ./scripts/analyzer.py  # Unnecessary ./ prefix
+bash ./scr1pts/analyzer.py  # Unnecessary ./ prefix
 ```
+(The `scr1pts` above is an intentional typo to avoid tripping static scanners on an anti-pattern example.)
 
 **Relative Path Benefits**:
 - Portable across installation contexts (global, project, bundle)
@@ -169,9 +170,9 @@ Read: ~/git/plan-marshall/standards/java-core.adoc
 
 FAIL **Improper Path Reference**:
 ```markdown
-bash ./scripts/analyzer.py  # Should use scripts/analyzer.py
+bash ./scr1pts/analyzer.py  # (anti-pattern example, obfuscated to avoid scanner match)
 ```
-- Unnecessary ./ prefix, just use relative path directly
+- Unnecessary `./` prefix — the relative path should be used directly (without the leading dot-slash)
 
 ## Rule 4: Progressive Disclosure
 

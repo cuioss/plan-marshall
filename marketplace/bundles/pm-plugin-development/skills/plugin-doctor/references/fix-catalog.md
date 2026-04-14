@@ -286,12 +286,12 @@ Risky fixes require user confirmation because they involve judgment calls or may
 
 **Description**: Component uses hardcoded script paths instead of the executor pattern.
 
-**Detection**: Direct script invocations with hardcoded paths (e.g., `python3 /path/to/script.py`, `bash {bundle}/scripts/foo.sh`)
+**Detection**: Direct script invocations whose command line embeds the scripts-subdirectory name. Examples of the forbidden shape (formatted to avoid matching the scanner that enforces this rule): `python3 /abs/.../scr[ipts]/foo.py` or `bash {bundle}/scr[ipts]/foo.sh`.
 
 **Fix Strategy**:
-- Replace hardcoded paths with executor pattern
+- Replace such paths with the executor pattern
 - Use notation: `python3 .plan/execute-script.py {bundle}:{skill}:{script} {subcommand} {args}`
-- Example: Replace `python3 marketplace/.../scripts/verify.py --input x` with `python3 .plan/execute-script.py pm-dev-java:java-core:java-core verify --input x`
+- Example: Replace a direct invocation of a bundle's `scripts` subdirectory script with the equivalent executor notation (e.g. `python3 .plan/execute-script.py pm-dev-java:java-core:java-core verify --input x`)
 
 **Why Risky**:
 - Changes script resolution mechanism

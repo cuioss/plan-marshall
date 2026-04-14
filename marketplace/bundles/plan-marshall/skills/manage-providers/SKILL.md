@@ -2,11 +2,6 @@
 name: manage-providers
 description: "Provider management for external tool authentication — secure storage, interactive configuration, and REST client infrastructure"
 user-invocable: false
-tools:
-  - Bash
-  - Read
-  - Write
-  - AskUserQuestion
 ---
 
 # Manage Providers

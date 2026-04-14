@@ -482,96 +482,11 @@ test/{bundle}/{skill}/
   test_{script}.py             # Happy-path integration only
 ```
 
-### test_helpers.py Pattern
+### Module Patterns (summary)
 
-```python
-#!/usr/bin/env python3
-"""Shared test fixtures for {script} tests."""
-
-import json
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('{bundle}', '{skill}', '{script}.py')
-
-def create_fixture(fixture_dir: Path, config: dict = None) -> Path:
-    """Create test fixture in fixture directory."""
-    # Fixture creation logic
-    pass
-```
-
-### test_cmd_{noun}.py Pattern
-
-```python
-#!/usr/bin/env python3
-"""Tests for {noun} command in {script}.
-
-Tests {noun} command variants and edge cases.
-"""
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, TestRunner, PlanTestContext
-from test_helpers import SCRIPT_PATH, create_fixture
-
-def test_{noun}_happy_path():
-    """Test {noun} basic operation."""
-    with PlanTestContext() as ctx:
-        create_fixture(ctx.fixture_dir)
-        result = run_script(SCRIPT_PATH, '{noun}', 'verb')
-        assert result.success
-
-def test_{noun}_edge_case():
-    """Test {noun} edge case."""
-    # Edge case testing
-    pass
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_{noun}_happy_path,
-        test_{noun}_edge_case,
-    ])
-    sys.exit(runner.run())
-```
-
-### Main Test File Pattern (Integration Only)
-
-```python
-#!/usr/bin/env python3
-"""Integration tests for {script}.py script.
-
-Happy-path tests verifying the monolithic CLI API.
-Detailed variant and corner case tests are in:
-- test_cmd_{noun1}.py
-- test_cmd_{noun2}.py
-"""
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import run_script, TestRunner, PlanTestContext
-from test_helpers import SCRIPT_PATH, create_fixture
-
-def test_{noun1}_happy_path():
-    """Test {noun1} basic operation."""
-    # One simple happy-path test per command
-    pass
-
-if __name__ == '__main__':
-    runner = TestRunner()
-    runner.add_tests([
-        test_{noun1}_happy_path,
-        test_{noun2}_happy_path,
-    ])
-    sys.exit(runner.run())
-```
+- **`test_helpers.py`** — imports conftest helpers (`get_script_path`), exposes a module-level `SCRIPT_PATH` constant, and defines `create_fixture(fixture_dir, config)` and any other shared helpers. No test functions.
+- **`test_cmd_{noun}.py`** — imports `run_script`, `TestRunner`, `PlanTestContext` from conftest and `SCRIPT_PATH`, `create_fixture` from `test_helpers`. Contains detailed `test_{noun}_happy_path`, `test_{noun}_edge_case`, etc. The `__main__` block wires them into a `TestRunner`.
+- **Main test file** (`test_{script}.py`) — same imports, but contains only one happy-path test per command and acts as the monolithic CLI API contract test. Detailed variant and corner cases live in the per-command modules.
 
 ### Module Size Guidelines
 

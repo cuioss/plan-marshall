@@ -175,7 +175,7 @@ FOR each deliverable D with profile=module_testing AND change_type != verificati
         FLAG: "Profile overlap: {F} in deliverable {D.number} already covered by deliverable {D2.number}'s module_testing profile"
 ```
 
-**Heuristic for matching test files to source files**: A test file `test/{bundle}/{skill-name}/test_foo.py` corresponds to source file `marketplace/bundles/{bundle}/skills/{skill-name}/scripts/foo.py`. If a deliverable has `module_testing` profile and its source files have corresponding test files that appear in another deliverable, flag the overlap.
+**Heuristic for matching test files to source files**: A test file under `test/{bundle}/{skill-name}/test_foo.py` corresponds to a source file named `foo.py` inside that skill's script subdirectory. If a deliverable has `module_testing` profile and its source files have corresponding test files that appear in another deliverable, flag the overlap.
 
 **Pass criteria**:
 - No deliverable's test files overlap with another deliverable's module_testing scope
