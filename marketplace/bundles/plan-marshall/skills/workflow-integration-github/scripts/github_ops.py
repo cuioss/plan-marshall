@@ -584,13 +584,13 @@ def fetch_pr_comments_data(pr_number: int, unresolved_only: bool = False) -> dic
     if returncode != 0 or data is None:
         return {'status': 'error', 'operation': 'pr_comments', 'error': f'GraphQL query failed: {err}'}
 
-    # Extract threads, reviews, and issue comments
+    # Extract threads, reviews, and issue comments with null-safe traversal
     try:
-        pull_request = data['repository']['pullRequest']
-        threads = pull_request['reviewThreads']['nodes']
-        reviews = pull_request.get('reviews', {}).get('nodes', []) or []
-        issue_comments = pull_request.get('comments', {}).get('nodes', []) or []
-    except (KeyError, TypeError) as e:
+        pull_request = (data.get('repository') or {}).get('pullRequest') or {}
+        threads = (pull_request.get('reviewThreads') or {}).get('nodes') or []
+        reviews = (pull_request.get('reviews') or {}).get('nodes') or []
+        issue_comments = (pull_request.get('comments') or {}).get('nodes') or []
+    except (KeyError, TypeError, AttributeError) as e:
         return {'status': 'error', 'operation': 'pr_comments', 'error': f'Failed to parse response: {e}'}
 
     # Normalize comments
