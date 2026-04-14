@@ -35,7 +35,8 @@ class TestGitignoreSetupCreate(ScriptTestCase):
         """Should create new .gitignore with planning entries."""
         result = setup_gitignore(self.temp_dir)
         self.assertEqual(result['status'], 'created')
-        self.assertEqual(result['entries_added'], 3)  # .plan/*, !marshal.json, !project-architecture/
+        # .plan/*, !marshal.json, !project-architecture/, .claude/worktrees/
+        self.assertEqual(result['entries_added'], 4)
 
         # Verify file was created
         gitignore_path = self.temp_dir / '.gitignore'
@@ -45,6 +46,7 @@ class TestGitignoreSetupCreate(ScriptTestCase):
         self.assertIn('.plan/', content)
         self.assertIn('!.plan/marshal.json', content)
         self.assertIn('!.plan/project-architecture/', content)
+        self.assertIn('.claude/worktrees/', content)
         self.assertIn('# Planning system', content)
 
 
@@ -62,7 +64,7 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
 
         result = setup_gitignore(self.temp_dir)
         self.assertEqual(result['status'], 'updated')
-        self.assertEqual(result['entries_added'], 3)
+        self.assertEqual(result['entries_added'], 4)
 
         # Verify existing content preserved and new content added
         content = gitignore_path.read_text()
@@ -71,6 +73,7 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
         self.assertIn('.plan/', content)
         self.assertIn('!.plan/marshal.json', content)
         self.assertIn('!.plan/project-architecture/', content)
+        self.assertIn('.claude/worktrees/', content)
 
     def test_adds_only_missing_entries(self):
         """Should only add entries that are missing."""
@@ -79,11 +82,13 @@ class TestGitignoreSetupUpdate(ScriptTestCase):
 
         result = setup_gitignore(self.temp_dir)
         self.assertEqual(result['status'], 'updated')
-        self.assertEqual(result['entries_added'], 2)  # !marshal.json + !project-architecture/
+        # !marshal.json + !project-architecture/ + .claude/worktrees/
+        self.assertEqual(result['entries_added'], 3)
 
         content = gitignore_path.read_text()
         self.assertIn('!.plan/marshal.json', content)
         self.assertIn('!.plan/project-architecture/', content)
+        self.assertIn('.claude/worktrees/', content)
 
 
 class TestGitignoreSetupUnchanged(ScriptTestCase):
@@ -96,7 +101,9 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
     def test_unchanged_when_all_entries_exist(self):
         """Should report unchanged when all entries already present."""
         gitignore_path = self.temp_dir / '.gitignore'
-        gitignore_path.write_text('.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n')
+        gitignore_path.write_text(
+            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees/\n'
+        )
 
         result = setup_gitignore(self.temp_dir)
         self.assertEqual(result['status'], 'unchanged')
@@ -105,11 +112,35 @@ class TestGitignoreSetupUnchanged(ScriptTestCase):
     def test_recognizes_alternate_plan_format(self):
         """Should recognize .plan without trailing slash."""
         gitignore_path = self.temp_dir / '.gitignore'
-        gitignore_path.write_text('.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n')
+        gitignore_path.write_text(
+            '.plan\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees/\n'
+        )
 
         result = setup_gitignore(self.temp_dir)
         # .plan (without slash) should be recognized as .plan/
         self.assertEqual(result['entries_added'], 0)
+
+    def test_recognizes_claude_worktrees_without_trailing_slash(self):
+        """Should recognize .claude/worktrees without trailing slash."""
+        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path.write_text(
+            '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n.claude/worktrees\n'
+        )
+
+        result = setup_gitignore(self.temp_dir)
+        self.assertEqual(result['entries_added'], 0)
+
+    def test_adds_claude_worktrees_when_missing(self):
+        """Should add .claude/worktrees/ entry when only planning entries exist."""
+        gitignore_path = self.temp_dir / '.gitignore'
+        gitignore_path.write_text('.plan/*\n!.plan/marshal.json\n!.plan/project-architecture/\n')
+
+        result = setup_gitignore(self.temp_dir)
+        self.assertEqual(result['status'], 'updated')
+        self.assertEqual(result['entries_added'], 1)
+
+        content = gitignore_path.read_text()
+        self.assertIn('.claude/worktrees/', content)
 
 
 class TestGitignoreSetupDryRun(ScriptTestCase):
@@ -172,6 +203,7 @@ class TestGitignoreSetupEdgeCases(ScriptTestCase):
         self.assertTrue(status['has_plan_dir'])
         self.assertTrue(status['has_marshal_exception'])
         self.assertFalse(status['has_architecture_exception'])
+        self.assertFalse(status['has_claude_worktrees'])
 
 
 # =============================================================================

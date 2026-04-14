@@ -2,19 +2,24 @@
 """
 Manage per-plan git worktrees.
 
-Worktrees are rooted at ``{base_dir}/worktrees/{plan-id}/`` where
-``base_dir`` is the per-project global directory (``~/.plan-marshall/
-{project}/``). The shim dropped into each worktree's ``.plan/`` resolves
-back to the same main-checkout executor via ``git rev-parse
---git-common-dir``, so running ``python3 .plan/execute-script.py ...``
-inside a worktree is functionally identical to running it in the main
-checkout.
+Worktrees are rooted at ``<project_root>/.claude/worktrees/{plan-id}/`` —
+the canonical Claude Code worktree location. Anchoring worktrees inside
+the main git checkout means project-level permission allow-lists, IDE
+indexing, and ``.worktreeinclude`` copying all work without per-host
+customization. Global plan-marshall state (``marshall-state.toon`` and
+friends) continues to live under ``~/.plan-marshall/{project}/`` via
+``get_base_dir()``.
+
+The shim dropped into each worktree's ``.plan/`` resolves back to the
+same main-checkout executor via ``git rev-parse --git-common-dir``, so
+running ``python3 .plan/execute-script.py ...`` inside a worktree is
+functionally identical to running it in the main checkout.
 
 Subcommands:
   path    - Return the computed worktree path for a plan
   create  - Create a worktree + feature branch + shim drop
   remove  - Remove a worktree (non-force by default)
-  list    - Enumerate worktrees known to git under the global dir
+  list    - Enumerate worktrees known to git under the worktree root
 
 Output: TOON format.
 """
@@ -24,15 +29,14 @@ import os
 import subprocess
 from pathlib import Path
 
-from file_ops import get_base_dir, output_toon, output_toon_error, safe_main  # type: ignore[import-not-found]
+from file_ops import get_worktree_root, output_toon, output_toon_error, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 
-WORKTREES_SUBDIR = 'worktrees'
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 
 def _worktrees_root() -> Path:
-    return get_base_dir() / WORKTREES_SUBDIR
+    return get_worktree_root()
 
 
 def _worktree_path(plan_id: str) -> Path:

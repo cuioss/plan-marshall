@@ -215,7 +215,7 @@ Extract `branch_strategy` (default: `feature`) and `use_worktree` (default: `tru
 
 **IF `branch_strategy == "feature"` AND `use_worktree == true`** (default):
 
-Create an isolated git worktree with the feature branch. The worktree lives under `~/.plan-marshall/{project}/worktrees/{plan-id}/` and gets its own executor shim so all subsequent phases can run inside it without touching the main checkout.
+Create an isolated git worktree with the feature branch. The worktree lives under `<project_root>/.claude/worktrees/{plan-id}/` — the canonical Claude Code worktree location inside the main git checkout — and gets its own executor shim so all subsequent phases can run inside it without touching the main checkout. Anchoring worktrees here ensures project-level permission allow-lists and IDE indexing apply without per-host customization.
 
 1. Create the worktree + feature branch + shim in one operation:
 ```bash
