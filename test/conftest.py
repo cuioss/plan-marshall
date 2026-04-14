@@ -793,7 +793,7 @@ class BuildContext:
         # file_ops.get_base_dir() honours PLAN_BASE_DIR and falls back the
         # tracked config dir to the same value — so marshal.json (staged at
         # {temp_dir}/.plan/marshal.json) and runtime state both land inside
-        # the fixture tree, not the user's ~/.plan-marshall/<project>/.
+        # the fixture tree, not the project-local <root>/.plan/local/.
         self._original_plan_base_dir = os.environ.get('PLAN_BASE_DIR')
         os.environ['PLAN_BASE_DIR'] = str(self.plan_dir)
 

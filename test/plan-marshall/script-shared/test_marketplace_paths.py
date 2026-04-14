@@ -21,18 +21,21 @@ class TestGetPlanDir:
         result = get_plan_dir()
         assert result == Path('/tmp/custom-plan')
 
-    def test_default_resolves_global_dir_inside_git_repo(self, monkeypatch):
+    def test_default_resolves_local_subdir_inside_git_repo(self, tmp_path, monkeypatch):
         """Without an env override, the default resolves to
-        ~/.plan-marshall/{basename}-{path-hash} when called from inside a
-        git repo. The hash suffix prevents collisions when two repos
-        share a basename.
+        ``<git_main_checkout_root>/.plan/local`` when called from inside
+        a git repo.
         """
+        import subprocess
+
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
         monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+        monkeypatch.chdir(repo)
+
         result = get_plan_dir()
-        assert result.parent == Path.home() / '.plan-marshall'
-        # basename + 8-char hex digest separated by a dash
-        import re
-        assert re.fullmatch(r'.+-[0-9a-f]{8}', result.name), result.name
+        assert result.resolve() == (repo / '.plan' / 'local').resolve()
 
 
 class TestGetTempDir:

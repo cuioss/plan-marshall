@@ -20,8 +20,23 @@ python3 ${PLUGIN_ROOT}/plan-marshall/*/skills/marshall-steward/scripts/gitignore
 ```toon
 status	created
 gitignore_path	/path/to/.gitignore
-entries_added	3
+entries_added	4
 ```
+
+The generated block looks like:
+
+```
+# Planning system (managed by /marshall-steward)
+# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)
+.plan/*
+!.plan/marshal.json
+!.plan/project-architecture/
+.claude/worktrees/
+```
+
+The `.plan/*` rule already covers `.plan/local/` (where runtime state
+lives); the documentation comment above it explains the layout for
+human readers.
 
 **Tracked Files**:
 - `.plan/marshal.json` - Project configuration

@@ -4,10 +4,12 @@ Shared marketplace path resolution.
 Provides centralized path discovery for marketplace bundles and plugin cache.
 Used by generate_executor.py, scan-marketplace-inventory.py, and other scripts
 that need to locate marketplace infrastructure.
+
+Runtime plan-marshall state lives at ``<git_main_checkout_root>/.plan/local/``
+(project-local, covered by the existing ``Write(.plan/**)`` permission).
 """
 
 import functools
-import hashlib
 import os
 import subprocess
 from pathlib import Path
@@ -17,7 +19,6 @@ PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
 CLAUDE_DIR = '.claude'
 PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
-GLOBAL_PLAN_MARSHALL_ROOT = Path.home() / '.plan-marshall'
 
 
 # =============================================================================
@@ -65,35 +66,21 @@ def git_main_checkout_root() -> Path | None:
     return _resolve_git_main_checkout_root(os.getcwd())
 
 
-def project_dir_name(root: Path) -> str:
-    """Compute the per-project directory name (basename + path hash).
-
-    Format: ``{root.name}-{8-char sha256(abs path)}``. The basename keeps
-    the directory human-readable; the hash suffix prevents collisions
-    when two repos share a basename (e.g. ``~/work/app`` vs
-    ``~/personal/app``).
-    """
-    abs_path = str(root.resolve())
-    digest = hashlib.sha256(abs_path.encode('utf-8')).hexdigest()[:8]
-    return f'{root.name}-{digest}'
-
-
 def get_plan_dir() -> Path:
-    """Get the plan-marshall base directory.
+    """Get the plan-marshall runtime-state base directory.
 
     Resolution order mirrors tools-file-ops.get_base_dir():
         1. PLAN_BASE_DIR environment variable (tests, user override).
-        2. Per-project global directory ~/.plan-marshall/{project-name}/
-           when inside a git repository (basename + path hash suffix).
-        3. Repo-local .plan/ fallback (outside a git repo).
+        2. ``<git_main_checkout_root>/.plan/local`` when inside a git repo.
+        3. ``.plan/plan-marshall`` fallback (outside a git repo).
     """
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir)
     root = git_main_checkout_root()
     if root is not None:
-        return GLOBAL_PLAN_MARSHALL_ROOT / project_dir_name(root)
-    return Path(PLAN_DIR_NAME)
+        return root / PLAN_DIR_NAME / 'local'
+    return Path(PLAN_DIR_NAME) / 'plan-marshall'
 
 
 def get_temp_dir(subdir: str) -> Path:
