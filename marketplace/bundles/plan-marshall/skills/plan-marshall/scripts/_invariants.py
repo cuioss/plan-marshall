@@ -170,17 +170,17 @@ def _capture_qgate_open_count(plan_id: str, _metadata: dict[str, Any], phase: st
         ]
     )
     if stdout is None:
-        return 0
+        return None
     try:
         parsed = parse_toon(stdout)
     except Exception:
-        return 0
+        return None
     count = parsed.get('filtered_count')
     if isinstance(count, int):
         return count
     if isinstance(count, str) and count.isdigit():
         return int(count)
-    return 0
+    return None
 
 
 def _capture_config_hash(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
