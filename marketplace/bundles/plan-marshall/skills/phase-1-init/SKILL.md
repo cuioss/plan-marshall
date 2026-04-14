@@ -259,6 +259,20 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
    > _"This plan runs in an isolated git worktree. All subsequent commands for plan `{plan_id}` MUST execute with `cwd = {worktree_path}`. Do not modify files in the original checkout."_
 
+5. **Fail-loud on worktree creation errors**: If `manage-worktree create` returns `status=error` — including `error=plan_symlink_failed`, `error=worktree_add_failed`, or any other worktree-creation failure — the phase MUST NOT silently fall back to running in the main checkout. Silent fallback destroys isolation without warning the user and is prohibited. Instead:
+
+   a. Roll back any partial worktree state (`manage-worktree remove --plan-id {plan_id} --force` if the worktree directory was created).
+
+   b. Create and switch to `feature/{plan_id}` in the main checkout (same steps as the `use_worktree == false` branch below), so the plan can still proceed on a feature branch.
+
+   c. **Surface the original error via the phase return output**: add a top-level `warnings[]` entry (see Step 12) with the verbatim error message from `manage-worktree create`, plus a note that worktree isolation was lost and all subsequent phases will modify the main checkout directly. The warning text is not optional and is not buried in logs — it MUST appear in the phase return TOON so the calling workflow and the user see it immediately.
+
+   d. Log the failure to decision.log:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-1-init) Worktree creation failed: {original_error}. Plan running on feature/{plan_id} in main checkout without isolation."
+   ```
+
 **IF `branch_strategy == "feature"` AND `use_worktree == false`** (opt-out):
 
 1. Create and switch to a feature branch in the main checkout:

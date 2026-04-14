@@ -1,19 +1,34 @@
 #!/usr/bin/env python3
 """Tests for manage-worktree.py script.
 
-Subprocess-based tests because the script shells out to git; importing
-the module directly would skip the integration paths we actually want
-to verify.
-
 Worktrees are anchored at ``<git_main_checkout_root>/.claude/worktrees/``
-(the canonical Claude Code location). After ``git worktree add``, the
-script symlinks ``{worktree}/.plan`` → main checkout's ``.plan`` so the
-shared executor and runtime state are reachable from inside the worktree.
-The root is derived from the git repo itself via ``git rev-parse``, so
-tests just need to run the script with ``cwd=repo`` — no
+(the canonical Claude Code location). Most tests shell out to the CLI
+because the script calls ``git worktree add``; importing the module
+directly would skip that integration path.
+
+Narrowed-scope symlink contract (post-lesson 2026-04-14-006):
+
+After ``git worktree add``, the script leaves ``{worktree}/.plan`` as a
+real directory materialized by git (so tracked files like
+``marshal.json`` and ``project-architecture/`` are per-worktree and
+version-controlled). Only two gitignored paths are symlinked back into
+the main checkout so runtime state and the executor stay shared:
+
+* ``{worktree}/.plan/local`` → ``{main}/.plan/local`` (per-plan state)
+* ``{worktree}/.plan/execute-script.py`` → ``{main}/.plan/execute-script.py``
+
+Tests 3 and 4 exercise ``_ensure_worktree_plan_symlinks`` directly via
+``importlib`` because the ``cmd_create`` entry point refuses to run
+against an existing worktree — the symlink helper's error and
+replacement paths are easier to probe in isolation.
+
+The worktree root is derived from the git repo itself via
+``git rev-parse``, so tests just run the script with ``cwd=repo`` — no
 ``PLAN_BASE_DIR`` override is involved.
 """
 
+import importlib.util
+import os
 import subprocess
 from pathlib import Path
 
@@ -26,20 +41,80 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-worktree', 'manage-worktree.py')
 
 
+def _load_manage_worktree_module():
+    """Import manage-worktree.py as a module for direct function access.
+
+    The filename is hyphenated (``manage-worktree.py``), so a standard
+    ``import`` statement is not usable. ``importlib.util`` loads the
+    file under the sanitized name ``manage_worktree_under_test``.
+    """
+    spec = importlib.util.spec_from_file_location(
+        'manage_worktree_under_test', str(SCRIPT_PATH)
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _init_git_repo(repo: Path) -> None:
-    """Initialize a bare-ish git repo with one commit so worktrees are usable."""
+    """Initialize a git repo with tracked ``.plan/`` content plus a narrow gitignore.
+
+    The fixture mirrors the real plan-marshall repo layout: tracked
+    files under ``.plan/`` (e.g. ``marshal.json``, ``project-architecture/``)
+    are committed, while only the runtime subpaths that the worktree
+    script symlinks (``.plan/local`` and ``.plan/execute-script.py``) and
+    the worktree root (``.claude/worktrees/``) are gitignored. This
+    ensures ``git worktree add`` materializes the tracked ``.plan``
+    content inside each new worktree.
+    """
     subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
     subprocess.run(['git', '-C', str(repo), 'config', 'user.email', 't@t.test'], check=True)
     subprocess.run(['git', '-C', str(repo), 'config', 'user.name', 'Test'], check=True)
     (repo / 'README.md').write_text('x\n')
-    # .plan and .claude/worktrees/ must be gitignored so the .plan symlink
-    # dropped into each worktree (and the worktrees themselves) don't count
-    # as "untracked" and block non-force `git worktree remove`. Use `.plan`
-    # without a trailing slash so the rule matches symlinks too — git treats
-    # symlinks-to-directories as files for ignore matching.
-    (repo / '.gitignore').write_text('.plan\n.claude/worktrees/\n')
+
+    # Tracked content under .plan/ — committed so git worktree add
+    # materializes these files inside every new worktree as regular
+    # per-worktree files. Keeps parity with the real plan-marshall repo.
+    plan_dir = repo / '.plan'
+    plan_dir.mkdir(exist_ok=True)
+    (plan_dir / 'marshal.json').write_text('{"system": {}, "plan": {}}\n')
+    arch_dir = plan_dir / 'project-architecture'
+    arch_dir.mkdir(exist_ok=True)
+    (arch_dir / 'README.md').write_text('architecture placeholder\n')
+
+    # Narrow gitignore: only the runtime subpaths that get symlinked
+    # into the main checkout and the worktree root itself are ignored.
+    # Everything else under .plan/ (marshal.json, project-architecture/,
+    # etc.) stays tracked.
+    (repo / '.gitignore').write_text(
+        '.plan/local\n'
+        '.plan/execute-script.py\n'
+        '.claude/worktrees/\n'
+    )
     subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
     subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True)
+
+
+def _seed_main_shared_plan_paths(repo: Path) -> tuple[Path, Path]:
+    """Create the main-checkout symlink targets used by the worktree script.
+
+    The two shared subpaths under ``.plan/`` must exist in the main
+    checkout before ``_ensure_worktree_plan_symlinks`` runs, otherwise
+    the symlinks it creates would dangle on creation.
+
+    Returns:
+        Tuple ``(local_dir, executor_file)`` of absolute paths in the
+        main checkout.
+    """
+    main_plan = repo / '.plan'
+    main_plan.mkdir(exist_ok=True)
+    local_dir = main_plan / 'local'
+    local_dir.mkdir(exist_ok=True)
+    executor_file = main_plan / 'execute-script.py'
+    if not executor_file.exists():
+        executor_file.write_text('#!/usr/bin/env python3\n')
+    return local_dir, executor_file
 
 
 def _expected_worktree(repo: Path, plan_id: str) -> Path:
@@ -65,11 +140,12 @@ def test_path_returns_computed_location(tmp_path):
 
 
 def test_create_makes_worktree_with_plan_symlink(tmp_path):
+    """Worktree create leaves .plan real but symlinks shared runtime subpaths."""
     repo = tmp_path / 'repo'
     _init_git_repo(repo)
-    # The main checkout's .plan must exist as a real directory for the
-    # symlink target to resolve.
-    (repo / '.plan').mkdir(exist_ok=True)
+    # The shared subpaths must exist in the main checkout so the
+    # worktree script can create symlinks pointing at them.
+    main_local, main_executor = _seed_main_shared_plan_paths(repo)
 
     result = run_script(
         SCRIPT_PATH,
@@ -86,9 +162,31 @@ def test_create_makes_worktree_with_plan_symlink(tmp_path):
     worktree = Path(data['worktree_path'])
     assert worktree == _expected_worktree(repo, 'feature-x')
     assert worktree.is_dir()
-    plan_link = worktree / '.plan'
-    assert plan_link.is_symlink(), '.plan must be a symlink in the worktree'
-    assert plan_link.resolve() == (repo / '.plan').resolve()
+
+    # .plan itself must be a real directory (materialized by git from
+    # tracked content), NOT a symlink.
+    worktree_plan = worktree / '.plan'
+    assert worktree_plan.is_dir(), '.plan must be a real directory in the worktree'
+    assert not worktree_plan.is_symlink(), '.plan must not be a symlink anymore'
+
+    # Tracked content committed in _init_git_repo must show up as real
+    # per-worktree files.
+    worktree_marshal = worktree_plan / 'marshal.json'
+    assert worktree_marshal.is_file()
+    assert not worktree_marshal.is_symlink()
+    worktree_arch = worktree_plan / 'project-architecture' / 'README.md'
+    assert worktree_arch.is_file()
+
+    # The two gitignored runtime subpaths must be symlinks pointing
+    # back at the main checkout's copies.
+    local_link = worktree_plan / 'local'
+    assert local_link.is_symlink(), '.plan/local must be a symlink'
+    assert local_link.resolve() == main_local.resolve()
+
+    executor_link = worktree_plan / 'execute-script.py'
+    assert executor_link.is_symlink(), '.plan/execute-script.py must be a symlink'
+    assert executor_link.resolve() == main_executor.resolve()
+
     # branch should be checked out in the worktree
     head = subprocess.run(
         ['git', '-C', str(worktree), 'rev-parse', '--abbrev-ref', 'HEAD'],
@@ -97,6 +195,94 @@ def test_create_makes_worktree_with_plan_symlink(tmp_path):
         check=True,
     ).stdout.strip()
     assert head == 'feature/feature-x'
+
+
+def test_ensure_worktree_plan_symlinks_refuses_real_local_dir(tmp_path, monkeypatch):
+    """_ensure_worktree_plan_symlinks must refuse a pre-existing real .plan/local dir.
+
+    This is the guard that protects against silently clobbering user
+    data: if a worktree ends up with a real ``.plan/local`` directory
+    (for whatever reason — manual creation, stale state, tool bug),
+    the helper must return an error naming the offending subpath
+    rather than deleting the directory.
+
+    We invoke the helper directly because ``cmd_create`` refuses to run
+    against an existing worktree, making it impractical to reach this
+    branch via the CLI in a single test.
+    """
+    repo = tmp_path / 'repo'
+    _init_git_repo(repo)
+    main_local, _ = _seed_main_shared_plan_paths(repo)
+
+    # Materialize a worktree manually (bypassing the script's symlink
+    # helper) so we can plant a real .plan/local directory inside it.
+    worktree = _expected_worktree(repo, 'stale-real')
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ['git', '-C', str(repo), 'worktree', 'add', '-b', 'feature/stale-real', str(worktree)],
+        check=True,
+        capture_output=True,
+    )
+    # Pre-seed a real .plan/local directory with content. The tracked
+    # .plan dir already exists from `git worktree add`, so just add the
+    # offending subdir.
+    real_local = worktree / '.plan' / 'local'
+    real_local.mkdir(parents=True, exist_ok=True)
+    (real_local / 'user-data.txt').write_text('important\n')
+
+    module = _load_manage_worktree_module()
+    # The helper uses os.getcwd() via git_main_checkout_root, so run it
+    # from inside the repo.
+    monkeypatch.chdir(repo)
+    ok, err = module._ensure_worktree_plan_symlinks(worktree)
+
+    assert ok is False
+    assert '.plan/local' in err or str(real_local) in err, (
+        f'error must name the offending subpath, got: {err}'
+    )
+    # User data must still be present — the guard must not delete it.
+    assert (real_local / 'user-data.txt').read_text() == 'important\n'
+    # And the main-checkout target must be untouched.
+    assert main_local.is_dir()
+
+
+def test_ensure_worktree_plan_symlinks_replaces_stale_symlink(tmp_path, monkeypatch):
+    """A pre-existing symlink pointing at the wrong target must be replaced."""
+    repo = tmp_path / 'repo'
+    _init_git_repo(repo)
+    main_local, main_executor = _seed_main_shared_plan_paths(repo)
+
+    # Manually create a worktree so we can plant a stale symlink before
+    # invoking the helper.
+    worktree = _expected_worktree(repo, 'stale-link')
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ['git', '-C', str(repo), 'worktree', 'add', '-b', 'feature/stale-link', str(worktree)],
+        check=True,
+        capture_output=True,
+    )
+
+    # Plant a stale symlink for .plan/local pointing somewhere wrong.
+    wrong_target = tmp_path / 'not-the-real-local'
+    wrong_target.mkdir()
+    stale_link = worktree / '.plan' / 'local'
+    # Parent .plan already exists (real dir from git worktree add).
+    os.symlink(wrong_target, stale_link, target_is_directory=True)
+    assert stale_link.is_symlink()
+    assert stale_link.resolve() == wrong_target.resolve()
+
+    module = _load_manage_worktree_module()
+    monkeypatch.chdir(repo)
+    ok, err = module._ensure_worktree_plan_symlinks(worktree)
+
+    assert ok, f'helper must succeed when replacing stale symlink, got: {err}'
+    # The symlink should now point at the main checkout's .plan/local.
+    assert stale_link.is_symlink()
+    assert stale_link.resolve() == main_local.resolve()
+    # And the executor symlink should also have been created.
+    executor_link = worktree / '.plan' / 'execute-script.py'
+    assert executor_link.is_symlink()
+    assert executor_link.resolve() == main_executor.resolve()
 
 
 def test_create_fails_when_worktree_exists(tmp_path):

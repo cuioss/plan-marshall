@@ -10,11 +10,16 @@ customization. All plan-marshall runtime state lives under
 ``<root>/.plan/local/`` in the main checkout, reached via
 ``file_ops.get_base_dir()``.
 
-After ``git worktree add``, the create path links the worktree's ``.plan``
-directly at the main checkout's ``.plan`` via a symlink, so the tracked
-config, the executor, and runtime state are shared across every worktree.
-Running ``python3 .plan/execute-script.py ...`` from inside a worktree
-invokes the exact same executor as the main checkout.
+After ``git worktree add``, the create path leaves ``worktree/.plan``
+itself alone — ``git worktree add`` natively materializes any tracked
+content under ``.plan/`` (for example ``marshal.json`` and
+``project-architecture/``). Only the gitignored runtime subpaths that
+must be shared across worktrees are symlinked into the main checkout:
+``.plan/local/`` (per-plan runtime state) and ``.plan/execute-script.py``
+(the generated executor). Running
+``python3 .plan/execute-script.py ...`` from inside a worktree therefore
+invokes the exact same executor as the main checkout while tracked
+``.plan/`` files remain real, per-worktree files managed by git.
 
 Subcommands:
   path    - Return the computed worktree path for a plan
@@ -60,50 +65,67 @@ def _run_git(args: list[str]) -> tuple[int, str, str]:
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
-def _ensure_worktree_plan_symlink(worktree: Path) -> tuple[bool, str]:
-    """Link ``{worktree}/.plan`` to the main checkout's ``.plan`` directory.
+#: Gitignored subpaths under ``.plan/`` that must be shared across
+#: worktrees by symlinking into the main checkout. Everything else under
+#: ``.plan/`` is tracked and materialized natively by ``git worktree add``.
+_SHARED_PLAN_SUBPATHS: tuple[tuple[str, bool], ...] = (
+    ('local', True),
+    ('execute-script.py', False),
+)
 
-    Idempotent:
-    - If the link already points at the expected target, returns success.
-    - If ``.plan`` exists as a stale symlink, replaces it.
-    - If ``.plan`` exists as an empty directory (e.g. created incidentally
-      by tooling), removes it and creates the symlink.
-    - If ``.plan`` exists as a non-empty directory, refuses — this would
-      clobber real user data.
+
+def _ensure_worktree_plan_symlinks(worktree: Path) -> tuple[bool, str]:
+    """Link gitignored ``.plan/`` subpaths into the main checkout.
+
+    The worktree's ``.plan`` directory itself is left alone —
+    ``git worktree add`` already materializes any tracked content there.
+    Only the entries listed in :data:`_SHARED_PLAN_SUBPATHS` are linked
+    to the main checkout so runtime state and the executor stay in sync
+    across worktrees.
+
+    For each shared subpath:
+    - If it already exists as a symlink pointing at the expected target,
+      skip it.
+    - If it exists as a stale symlink, replace it.
+    - If it exists as a real file or directory, refuse with an error
+      that names the specific offending subpath.
+    - If it is missing, create the symlink.
 
     Returns ``(success, error_message)``.
     """
     main_root = git_main_checkout_root()
     if main_root is None:
-        return False, 'cannot resolve main git checkout root for .plan symlink'
-    target_plan = (main_root / PLAN_DIR_NAME).resolve()
-    link_path = worktree / PLAN_DIR_NAME
+        return False, 'cannot resolve main git checkout root for .plan symlinks'
 
-    if link_path.is_symlink():
+    plan_dir = worktree / PLAN_DIR_NAME
+    # Ensure .plan exists as a real directory. git worktree add creates
+    # it when tracked content lives there; fall back to mkdir otherwise.
+    plan_dir.mkdir(parents=True, exist_ok=True)
+
+    for subpath, is_dir in _SHARED_PLAN_SUBPATHS:
+        target = (main_root / PLAN_DIR_NAME / subpath).resolve()
+        link_path = plan_dir / subpath
+        rel_display = f'{PLAN_DIR_NAME}/{subpath}'
+
+        if link_path.is_symlink():
+            try:
+                if link_path.resolve() == target:
+                    continue
+            except OSError:
+                pass
+            link_path.unlink()
+        elif link_path.exists():
+            kind = 'directory' if link_path.is_dir() else 'file'
+            return False, (
+                f'{link_path} exists as a real {kind}; refusing to replace '
+                f'{rel_display} with symlink. Remove it manually or inspect '
+                'for user data.'
+            )
+
         try:
-            if link_path.resolve() == target_plan:
-                return True, ''
-        except OSError:
-            pass
-        link_path.unlink()
-    elif link_path.exists():
-        # Plain directory (or file). git worktree add never creates .plan,
-        # so this is almost certainly empty — but guard against data loss.
-        if link_path.is_dir():
-            contents = list(link_path.iterdir())
-            if contents:
-                return False, (
-                    f'{link_path} exists as a non-empty directory; refusing to '
-                    'replace with symlink'
-                )
-            link_path.rmdir()
-        else:
-            return False, f'{link_path} exists and is not a directory; refusing to replace'
-
-    try:
-        os.symlink(target_plan, link_path, target_is_directory=True)
-    except OSError as exc:
-        return False, f'failed to create .plan symlink: {exc}'
+            os.symlink(target, link_path, target_is_directory=is_dir)
+        except OSError as exc:
+            return False, f'failed to create {rel_display} symlink: {exc}'
     return True, ''
 
 
@@ -146,11 +168,11 @@ def cmd_create(args: argparse.Namespace) -> None:
         )
         return
 
-    ok, link_err = _ensure_worktree_plan_symlink(target)
+    ok, link_err = _ensure_worktree_plan_symlinks(target)
     if not ok:
         output_toon_error(
             'plan_symlink_failed',
-            f'Worktree created but .plan symlink failed: {link_err}',
+            f'Worktree created but .plan symlinks failed: {link_err}',
             plan_id=args.plan_id,
             worktree_path=str(target),
         )
