@@ -8,6 +8,7 @@ Tests the unified run command that combines execute + parse on failure:
 - Help text
 """
 
+import os
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -20,14 +21,27 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'build-npm', 'npm.py')
 
 @contextmanager
 def mock_npm_project():
-    """Context manager that creates a temp directory with npm available."""
+    """Context manager that creates a temp directory with npm available.
+
+    Sets PLAN_BASE_DIR to the temp dir so subprocess scripts launched via
+    run_script() resolve plan-marshall paths inside the sandbox instead of
+    raising on the (intentional) missing-git-repo case.
+    """
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         # Create .plan directory for log files
         (temp_dir / '.plan' / 'temp' / 'build-output' / 'default').mkdir(parents=True)
         # Create package.json
         (temp_dir / 'package.json').write_text('{"name": "test", "version": "1.0.0"}')
-        yield temp_dir
+        previous = os.environ.get('PLAN_BASE_DIR')
+        os.environ['PLAN_BASE_DIR'] = str(temp_dir / '.plan')
+        try:
+            yield temp_dir
+        finally:
+            if previous is None:
+                os.environ.pop('PLAN_BASE_DIR', None)
+            else:
+                os.environ['PLAN_BASE_DIR'] = previous
 
 
 # =============================================================================

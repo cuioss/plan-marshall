@@ -341,9 +341,9 @@ This is the ONLY allowed way to interact with `.plan` files. All other access is
 - Direct Read/Write/Edit of `.plan/plans/*/status.toon`
 - Direct Read/Write/Edit of `.plan/plans/*/references.json`
 - Direct Read/Write/Edit of `.plan/plans/*/work.log`
-- Direct Read/Write/Edit of `.plan/marshall-state.toon`
-- Direct Read/Write/Edit of `.plan/logs/*.log`
-- Direct Read/Write/Edit of `.plan/lessons-learned/*.md`
+- Direct Read/Write/Edit of `.plan/local/marshall-state.toon`
+- Direct Read/Write/Edit of `.plan/local/logs/*.log`
+- Direct Read/Write/Edit of `.plan/local/lessons-learned/*.md`
 - Direct access to goals/tasks directories
 - Glob patterns targeting `.plan/**`
 - Bash find/ls/cat commands accessing `.plan/` structure

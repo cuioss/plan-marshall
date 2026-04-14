@@ -72,15 +72,22 @@ def get_plan_dir() -> Path:
     Resolution order mirrors tools-file-ops.get_base_dir():
         1. PLAN_BASE_DIR environment variable (tests, user override).
         2. ``<git_main_checkout_root>/.plan/local`` when inside a git repo.
-        3. ``.plan/plan-marshall`` fallback (outside a git repo).
+
+    Raises:
+        RuntimeError: when neither resolves (no env var, not inside a
+            git repository).
     """
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir)
     root = git_main_checkout_root()
-    if root is not None:
-        return root / PLAN_DIR_NAME / 'local'
-    return Path(PLAN_DIR_NAME) / 'plan-marshall'
+    if root is None:
+        raise RuntimeError(
+            'plan-marshall runtime state requires a git checkout; '
+            'no main checkout root could be resolved from cwd. '
+            'Set PLAN_BASE_DIR to override (tests).'
+        )
+    return root / PLAN_DIR_NAME / 'local'
 
 
 def get_temp_dir(subdir: str) -> Path:

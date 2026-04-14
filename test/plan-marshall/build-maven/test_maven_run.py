@@ -8,6 +8,7 @@ Tests the unified run command that combines execute + parse on failure:
 - --mode parameter filtering
 """
 
+import os
 import shutil
 import tempfile
 from contextlib import contextmanager
@@ -22,7 +23,12 @@ MOCKS_DIR = Path(__file__).parent / 'mocks'
 
 @contextmanager
 def mock_maven_project(mock_script: str = 'mvnw-success.sh'):
-    """Context manager that creates a temp directory with mock Maven wrapper."""
+    """Context manager that creates a temp directory with mock Maven wrapper.
+
+    Sets PLAN_BASE_DIR to the temp dir so subprocess scripts launched via
+    run_script() resolve plan-marshall paths inside the sandbox instead of
+    raising on the (intentional) missing-git-repo case.
+    """
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         # Create target directory for log files
@@ -35,7 +41,15 @@ def mock_maven_project(mock_script: str = 'mvnw-success.sh'):
             mvnw_path = temp_dir / 'mvnw'
             shutil.copy(mock_path, mvnw_path)
             mvnw_path.chmod(0o755)
-        yield temp_dir
+        previous = os.environ.get('PLAN_BASE_DIR')
+        os.environ['PLAN_BASE_DIR'] = str(temp_dir / '.plan')
+        try:
+            yield temp_dir
+        finally:
+            if previous is None:
+                os.environ.pop('PLAN_BASE_DIR', None)
+            else:
+                os.environ['PLAN_BASE_DIR'] = previous
 
 
 # =============================================================================

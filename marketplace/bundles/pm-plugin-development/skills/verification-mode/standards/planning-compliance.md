@@ -176,9 +176,9 @@ Some `.plan` files are designed for direct access:
 |------|--------|---------|
 | `.plan/execute-script.py` | Execute | Universal script executor with embedded mappings |
 | `.plan/plan_logging.py` | Import | Logging module |
-| `.plan/marshall-state.toon` | Read/Write | Executor generation metadata |
-| `.plan/logs/script-execution-*.log` | Append | Global execution logs |
-| `.plan/lessons-learned/*.md` | Read/Write | Lessons learned via manage-lessons skill |
+| `.plan/local/marshall-state.toon` | Read/Write | Executor generation metadata |
+| `.plan/local/logs/script-execution-*.log` | Append | Global execution logs |
+| `.plan/local/lessons-learned/*.md` | Read/Write | Lessons learned via manage-lessons skill |
 
 These are NOT violations and should not trigger compliance alerts.
 

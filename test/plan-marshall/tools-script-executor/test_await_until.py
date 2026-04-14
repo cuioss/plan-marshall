@@ -21,12 +21,21 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'tools-script-executor', 'await_u
 
 
 def run_with_pythonpath(args, cwd=None, env=None, timeout=30):
-    """Run subprocess with marketplace PYTHONPATH set."""
+    """Run subprocess with marketplace PYTHONPATH set.
+
+    When ``cwd`` is given and ``PLAN_BASE_DIR`` is not already set in the
+    inherited env, default it to ``{cwd}/.plan``. Tests run inside ad-hoc
+    tempdirs that are not git repos, and ``get_base_dir()`` now raises in
+    that case — pre-staging the env keeps subprocess scripts resolving
+    paths inside the sandbox.
+    """
     run_env = (env or os.environ).copy()
     pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
     if 'PYTHONPATH' in run_env:
         pythonpath = pythonpath + os.pathsep + run_env['PYTHONPATH']
     run_env['PYTHONPATH'] = pythonpath
+    if cwd is not None and 'PLAN_BASE_DIR' not in run_env:
+        run_env['PLAN_BASE_DIR'] = str(Path(cwd) / '.plan')
     return subprocess.run(args, capture_output=True, text=True, cwd=cwd, env=run_env, timeout=timeout)
 
 

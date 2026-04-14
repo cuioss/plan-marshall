@@ -80,7 +80,7 @@ Output this banner directly as text at command start (do NOT use Bash echo - out
 |--------|----------|---------|
 | determine_mode | `plan-marshall:marshall-steward:determine_mode` | Determine wizard vs menu mode |
 | gitignore_setup | `plan-marshall:marshall-steward:gitignore_setup` | Configure .gitignore for .plan/ |
-| bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/marshall-state.toon` |
+| bootstrap_plugin | _(direct Python call)_ | Detect plugin root, cache in `.plan/local/marshall-state.toon` |
 
 ### Delegated Scripts (require executor)
 
@@ -103,7 +103,7 @@ The `/marshall-steward` command must set `${PLUGIN_ROOT}` before loading this sk
 
 1. Run `bootstrap_plugin.py get-root` (direct Python call with glob) to detect plugin root
 2. Set `${PLUGIN_ROOT}` to the returned path
-3. The plugin root is cached in `.plan/marshall-state.toon` for subsequent calls
+3. The plugin root is cached in `.plan/local/marshall-state.toon` for subsequent calls
 
 ---
 

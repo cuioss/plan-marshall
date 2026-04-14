@@ -10,6 +10,7 @@ Tests the unified run command that combines execute + parse on failure:
 """
 
 import json
+import os
 import shutil
 import tempfile
 from contextlib import contextmanager
@@ -24,7 +25,12 @@ MOCKS_DIR = Path(__file__).parent / 'mocks'
 
 @contextmanager
 def mock_gradle_project(mock_script: str = 'gradlew-success.sh'):
-    """Context manager that creates a temp directory with mock Gradle wrapper."""
+    """Context manager that creates a temp directory with mock Gradle wrapper.
+
+    Sets PLAN_BASE_DIR to the temp dir so subprocess scripts launched via
+    run_script() resolve plan-marshall paths inside the sandbox instead of
+    raising on the (intentional) missing-git-repo case.
+    """
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         # Create .plan directory for log files (new standard location)
@@ -35,7 +41,15 @@ def mock_gradle_project(mock_script: str = 'gradlew-success.sh'):
             gradlew_path = temp_dir / 'gradlew'
             shutil.copy(mock_path, gradlew_path)
             gradlew_path.chmod(0o755)
-        yield temp_dir
+        previous = os.environ.get('PLAN_BASE_DIR')
+        os.environ['PLAN_BASE_DIR'] = str(temp_dir / '.plan')
+        try:
+            yield temp_dir
+        finally:
+            if previous is None:
+                os.environ.pop('PLAN_BASE_DIR', None)
+            else:
+                os.environ['PLAN_BASE_DIR'] = previous
 
 
 # =============================================================================
