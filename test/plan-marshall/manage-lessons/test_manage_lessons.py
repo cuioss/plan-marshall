@@ -382,6 +382,23 @@ Body.
         assert plan_dir.exists()
         assert (plan_dir / 'lesson-2025-01-01-001.md').exists()
 
+    def test_convert_to_plan_rejects_path_traversal(self, tmp_path):
+        """Should reject identifiers containing path separators or traversal sequences."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            for bad_id in ('../escape', 'sub/dir', 'back\\slash'):
+                result = cmd_convert_to_plan(
+                    Namespace(id=bad_id, plan_id='p')
+                )
+                assert result['status'] == 'error'
+                assert result['error'] == 'invalid_id'
+
+            for bad_plan in ('../escape', 'sub/dir', 'back\\slash'):
+                result = cmd_convert_to_plan(
+                    Namespace(id='good-id', plan_id=bad_plan)
+                )
+                assert result['status'] == 'error'
+                assert result['error'] == 'invalid_id'
+
 
 # =============================================================================
 # Tier 2: cmd_from_error

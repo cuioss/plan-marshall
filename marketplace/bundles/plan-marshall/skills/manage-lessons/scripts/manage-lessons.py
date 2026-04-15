@@ -250,8 +250,26 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     The lesson is renamed to lesson-{id}.md inside .plan/local/plans/{plan_id}/.
     Errors if the source lesson does not exist.
     """
-    lessons_dir = get_lessons_dir()
-    source = lessons_dir / f'{args.id}.md'
+    if any(sep in args.id for sep in ('/', '\\', '..')) or any(
+        sep in args.plan_id for sep in ('/', '\\', '..')
+    ):
+        return {
+            'status': 'error',
+            'error': 'invalid_id',
+            'message': 'Identifiers must not contain path separators or traversal sequences',
+        }
+
+    lessons_dir = get_lessons_dir().resolve()
+    source = (lessons_dir / f'{args.id}.md').resolve()
+    plan_parent = base_path('plans').resolve()
+    plan_dir = (plan_parent / args.plan_id).resolve()
+
+    if source.parent != lessons_dir or plan_dir.parent != plan_parent:
+        return {
+            'status': 'error',
+            'error': 'path_traversal',
+            'message': 'Resolved path escapes intended parent directory',
+        }
 
     if not source.exists():
         return {
@@ -261,11 +279,10 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
             'message': f'Lesson {args.id} not found',
         }
 
-    plan_dir = base_path(f'plans/{args.plan_id}')
     plan_dir.mkdir(parents=True, exist_ok=True)
     destination = plan_dir / f'lesson-{args.id}.md'
 
-    shutil.move(str(source), str(destination))
+    shutil.move(source, destination)
 
     return {
         'status': 'success',
