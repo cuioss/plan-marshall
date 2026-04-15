@@ -709,3 +709,94 @@ class TestWorkingDir:
 
             call_kwargs = mock_run.call_args[1]
             assert call_kwargs['cwd'] == tmpdir
+
+
+# =============================================================================
+# Tests: project_dir propagation to subprocess cwd
+# =============================================================================
+
+
+class TestProjectDirPropagation:
+    """Tests verifying --project-dir propagates to subprocess cwd.
+
+    These regression-proof the worktree handling: when a plan runs in an
+    isolated worktree, callers pass --project-dir so subprocess.run uses the
+    correct cwd instead of inheriting the agent's working directory.
+    """
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.create_log_file')
+    def test_project_dir_propagates_to_subprocess_cwd(self, mock_log_file, mock_tget, mock_run, mock_tset):
+        """The explicit project_dir must become subprocess.run's cwd."""
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _call_execute(project_dir=tmpdir)
+
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs['cwd'] == tmpdir
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.create_log_file')
+    def test_project_dir_default_dot_propagates(self, mock_log_file, mock_tget, mock_run, mock_tset):
+        """When CLI default '.' is passed, subprocess inherits '.' as cwd."""
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        execute_direct_base(
+            args='verify',
+            command_key='test:verify',
+            default_timeout=300,
+            project_dir='.',
+            tool_name='test',
+            build_command_fn=_build_command_fn,
+            wrapper='/usr/bin/test-tool',
+            capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+        )
+
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs['cwd'] == '.'
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.create_log_file')
+    def test_working_dir_overrides_project_dir_for_cwd(self, mock_log_file, mock_tget, mock_run, mock_tset):
+        """Explicit working_dir should win over project_dir for subprocess cwd."""
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _call_execute(project_dir=tmpdir, working_dir='/custom/override')
+
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs['cwd'] == '/custom/override'
+
+    @patch('_build_execute.timeout_set')
+    @patch('_build_execute.subprocess.run')
+    @patch('_build_execute.timeout_get', return_value=300)
+    @patch('_build_execute.create_log_file')
+    def test_project_dir_absolute_path_propagates(self, mock_log_file, mock_tget, mock_run, mock_tset):
+        """Absolute worktree-style paths must round-trip to subprocess cwd unchanged."""
+        mock_log_file.return_value = '/tmp/test.log'
+        mock_run.return_value = MagicMock(returncode=0)
+
+        worktree_path = '/Users/test/.claude/worktrees/some-plan'
+        execute_direct_base(
+            args='verify',
+            command_key='test:verify',
+            default_timeout=300,
+            project_dir=worktree_path,
+            tool_name='test',
+            build_command_fn=_build_command_fn,
+            wrapper='/usr/bin/test-tool',
+            capture_strategy=CaptureStrategy.STDOUT_REDIRECT,
+        )
+
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs['cwd'] == worktree_path

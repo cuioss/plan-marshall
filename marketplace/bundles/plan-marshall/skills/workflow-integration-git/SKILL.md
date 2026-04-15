@@ -15,10 +15,12 @@ Provides git commit workflow following conventional commits specification. Inclu
 **Prohibited actions:**
 - Never commit secrets, credentials, or `.env` files
 - Never skip artifact cleanup step before committing (LLM must call detect-artifacts and act on results — the script detects but does not delete)
+- Never run raw `git <subcommand>` that relies on the current working directory. Agent cwd is unreliable under worktree isolation.
 
 **Constraints:**
 - Commit messages must follow conventional commits format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples
 - Push only when explicitly requested via parameters
+- All git invocations MUST use `git -C {worktree_path} <subcommand>`. No `cd` chaining, no implicit cwd. `{worktree_path}` is resolved from `status.metadata.worktree_path` in Step 0 of the Commit Changes workflow.
 
 ## Parameters
 
@@ -62,12 +64,23 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workf
 
 ### Steps
 
+**Step 0: Resolve Worktree Path**
+
+Read the active worktree path from plan status metadata. Every subsequent git call binds to this path via `git -C`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --plan-id {plan_id} --get --field worktree_path
+```
+
+Use the returned `value` as `{worktree_path}` throughout the rest of the workflow. If the field is absent (non-plan context), use the repository root resolved by the caller and still prefix every git call with `git -C <root>` — never rely on the agent's cwd.
+
 **Step 1: Verify Commit Standards**
 Use the quick reference above. For edge cases (breaking changes, multi-footer, scope guidelines), read `standards/git-commit-standards.md`.
 
 **Step 2: Check for Uncommitted Changes**
 ```bash
-git status --porcelain
+git -C {worktree_path} status --porcelain
 ```
 
 If no changes → Report "No changes to commit"
@@ -89,7 +102,7 @@ If custom message provided:
 - Use provided message
 
 If no message:
-- Generate diff: `git diff --cached > /tmp/changes.diff` (or `git diff` for unstaged)
+- Generate diff: `git -C {worktree_path} diff --cached > /tmp/changes.diff` (or `git -C {worktree_path} diff` for unstaged)
 - Analyze diff using script to get type/scope hints:
 
   ```bash
@@ -101,10 +114,10 @@ If no message:
 
 **Step 5: Stage and Commit**
 
-Stage specific files relevant to the logical change (use `git status --porcelain` to review):
+Stage specific files relevant to the logical change (use `git -C {worktree_path} status --porcelain` to review):
 ```bash
-git add <specific-files>
-git commit -m "$(cat <<'EOF'
+git -C {worktree_path} add <specific-files>
+git -C {worktree_path} commit -m "$(cat <<'EOF'
 {commit_message}
 
 Co-Authored-By: Claude <noreply@anthropic.com>
@@ -116,7 +129,7 @@ EOF
 
 If `push` parameter:
 ```bash
-git push
+git -C {worktree_path} push
 ```
 
 ### Output

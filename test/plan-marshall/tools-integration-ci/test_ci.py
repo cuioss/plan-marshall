@@ -7,6 +7,11 @@ Note: Without marshal.json, the router exits with an error (expected).
 
 import json
 
+# Import the ci router module directly for unit tests of private helpers.
+# conftest bootstraps PYTHONPATH so tools-integration-ci scripts are importable.
+import ci as ci_module
+import pytest
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import get_script_path, run_script
 
@@ -154,3 +159,114 @@ def test_router_rejects_legacy_body_flag(tmp_path):
     # argparse unknown-arg → non-zero exit; accept either 1 or 2 depending on
     # provider's error handling, but not success.
     assert result.returncode != 0
+
+
+# =============================================================================
+# --project-dir pre-parse (extract_project_dir, hoisted to ci_base)
+# =============================================================================
+
+
+def test_extract_project_dir_space_form():
+    """`--project-dir PATH` must be consumed and stripped from argv."""
+    project_dir, remaining = ci_module.extract_project_dir(
+        ['--project-dir', '/tmp/wt', 'pr', 'view']
+    )
+    assert project_dir == '/tmp/wt'
+    assert remaining == ['pr', 'view']
+
+
+def test_extract_project_dir_equals_form():
+    """`--project-dir=PATH` must be consumed and stripped from argv."""
+    project_dir, remaining = ci_module.extract_project_dir(
+        ['--project-dir=/tmp/wt', 'pr', 'view']
+    )
+    assert project_dir == '/tmp/wt'
+    assert remaining == ['pr', 'view']
+
+
+def test_extract_project_dir_absent():
+    """When --project-dir is absent, argv passes through unchanged and value is None."""
+    argv = ['pr', 'view', '--pr-number', '42']
+    project_dir, remaining = ci_module.extract_project_dir(argv)
+    assert project_dir is None
+    assert remaining == argv
+
+
+def test_extract_project_dir_empty_value_rejected():
+    """`--project-dir=` (empty value) must abort with exit code 2."""
+    with pytest.raises(SystemExit) as excinfo:
+        ci_module.extract_project_dir(['--project-dir=', 'pr', 'view'])
+    assert excinfo.value.code == 2
+
+
+def test_extract_project_dir_missing_arg_rejected():
+    """`--project-dir` at the end with no PATH must abort with exit code 2."""
+    with pytest.raises(SystemExit) as excinfo:
+        ci_module.extract_project_dir(['--project-dir'])
+    assert excinfo.value.code == 2
+
+
+def test_extract_project_dir_only_first_consumed():
+    """A second --project-dir must be left in argv for downstream rejection."""
+    project_dir, remaining = ci_module.extract_project_dir(
+        ['--project-dir', '/tmp/first', 'pr', 'view', '--project-dir', '/tmp/second']
+    )
+    assert project_dir == '/tmp/first'
+    assert remaining == ['pr', 'view', '--project-dir', '/tmp/second']
+
+
+def test_extract_project_dir_after_subcommand():
+    """A --project-dir appearing after the subcommand is still consumed (pre-parse)."""
+    # The pre-parse is position-agnostic: it scans the full argv. This documents
+    # the current contract so downstream changes that try to enforce positional
+    # constraints must update this test.
+    project_dir, remaining = ci_module.extract_project_dir(
+        ['pr', '--project-dir', '/tmp/wt', 'view']
+    )
+    assert project_dir == '/tmp/wt'
+    assert remaining == ['pr', 'view']
+
+
+def test_extract_project_dir_default_behavior_preserved(tmp_path):
+    """End-to-end: running without --project-dir behaves as before.
+
+    A router invocation with no --project-dir and an unconfigured marshal.json
+    must still exit with the standard 'not configured' TOON error, proving
+    the pre-parse step is a no-op when the flag is absent.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text(json.dumps({'providers': []}))
+
+    result = run_script(SCRIPT_PATH, cwd=tmp_path)
+    assert result.success
+    assert 'not configured' in result.stdout
+
+
+def test_router_accepts_project_dir_with_unconfigured_provider(tmp_path):
+    """End-to-end: passing --project-dir must not break the unconfigured path.
+
+    The router must consume --project-dir before looking up the provider. With
+    providers[] empty the call still returns the standard 'not configured' TOON
+    error — the flag is silently accepted and does not reach the provider.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text(json.dumps({'providers': []}))
+
+    result = run_script(
+        SCRIPT_PATH, '--project-dir', str(tmp_path), cwd=tmp_path
+    )
+    assert result.success
+    assert 'not configured' in result.stdout
+
+
+def test_router_rejects_empty_project_dir(tmp_path):
+    """End-to-end: `--project-dir=` must fail before provider lookup."""
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text(json.dumps({'providers': []}))
+
+    result = run_script(SCRIPT_PATH, '--project-dir=', cwd=tmp_path)
+    assert result.returncode == 2
+    assert 'non-empty' in result.stderr or 'PATH' in result.stderr

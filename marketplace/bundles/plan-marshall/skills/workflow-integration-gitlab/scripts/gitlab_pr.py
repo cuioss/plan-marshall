@@ -35,6 +35,7 @@ import sys
 from typing import Any
 
 import gitlab_ops as _gitlab  # type: ignore[import-not-found]
+from ci_base import extract_project_dir, set_default_cwd  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     cmd_triage_batch_handler,
@@ -325,6 +326,14 @@ def cmd_triage_batch(args):
 
 def main():
     """Main entry point."""
+    # Consume top-level --project-dir before argparse runs, matching the
+    # pattern used by ci.py. Forwards cwd to every glab subprocess via
+    # run_cli's process-global default.
+    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
     parser = create_workflow_cli(
         description='PR workflow operations',
         epilog="""

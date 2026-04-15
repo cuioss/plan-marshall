@@ -10,15 +10,19 @@ user-invocable: false
 
 **Execution mode**: All marketplace scripts must be executed through the executor proxy.
 
+**Executor is cwd-pass-through. All cwd control is explicit at the call site.** See [standards/cwd-policy.md](standards/cwd-policy.md) for the three buckets (plan metadata, worktree-scoped operations, meta-tools) and the mechanism each script category must use.
+
 **Prohibited actions:**
 - Do not execute marketplace scripts directly by path; always use the executor notation
 - Do not modify `.plan/execute-script.py` manually; regenerate via `/marshall-steward`
 - Do not hard-code PYTHONPATH; the executor manages it automatically
+- Do not rely on ambient cwd for path resolution inside scripts; follow [standards/cwd-policy.md](standards/cwd-policy.md)
 
 **Constraints:**
 - All scripts use `python3 .plan/execute-script.py {notation} {subcommand} {args}`
 - Bootstrap pattern is only for first run when executor does not exist yet
 - Plan-scoped logging requires `--plan-id` or `--trace-plan-id`
+- Plan-metadata scripts resolve `.plan/` via `script_shared.marketplace_paths.get_plan_dir()`; worktree-scoped scripts accept an explicit `--project-dir` or use `git -C {worktree_path}`; meta-tools always run against the main checkout
 
 ---
 

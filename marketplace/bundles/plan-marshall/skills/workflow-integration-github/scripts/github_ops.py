@@ -55,6 +55,7 @@ Output: TOON format
 
 import argparse
 import json
+import sys
 from typing import Any
 
 from ci_base import (  # type: ignore[import-not-found]
@@ -70,6 +71,7 @@ from ci_base import (  # type: ignore[import-not-found]
     compute_total_elapsed,
     delete_consumed_body,
     dispatch,
+    extract_project_dir,
     make_error,
     make_pr_number_handler,
     make_simple_handler,
@@ -77,6 +79,7 @@ from ci_base import (  # type: ignore[import-not-found]
     prepare_body,
     read_and_consume_body,
     run_cli,
+    set_default_cwd,
     truncate_log_content,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -1197,6 +1200,14 @@ def _cmd_issue_prepare_body(args: argparse.Namespace) -> dict:
 
 
 def main() -> int:
+    # Consume top-level --project-dir before argparse runs so the downstream
+    # provider parser never sees the router flag. Any cwd supplied here is
+    # installed as the process-global default for run_cli's gh invocations.
+    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
     parser, pr_sub, ci_sub, issue_sub = build_parser('GitHub operations via gh CLI')
 
     # GitHub-specific parser additions

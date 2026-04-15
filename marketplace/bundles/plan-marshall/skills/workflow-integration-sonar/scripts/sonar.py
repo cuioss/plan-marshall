@@ -21,6 +21,7 @@ Examples:
 
 import sys
 
+from ci_base import extract_project_dir, set_default_cwd  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     calculate_priority,
     cmd_triage_batch_handler,
@@ -191,6 +192,17 @@ def cmd_triage_batch(args):
 
 def main():
     """Main entry point."""
+    # Accept (and swallow) a top-level --project-dir for API uniformity with
+    # the github/gitlab workflow scripts. Triage is a pure in-memory operation
+    # that does not invoke any subprocess, so the cwd has no functional effect
+    # today; installing it here keeps the flag a no-op rather than a parser
+    # error and future-proofs the interface in case subprocess/REST calls are
+    # added (e.g., via sonar_rest).
+    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
     parser = create_workflow_cli(
         description='Sonar workflow operations',
         epilog="""

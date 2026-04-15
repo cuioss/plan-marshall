@@ -30,3 +30,12 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 ```
 
 Required flags: `--component`, `--category`, `--title`, `--detail`. Do NOT use `--summary` (does not exist).
+
+## Mark Step Complete
+
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done
+```

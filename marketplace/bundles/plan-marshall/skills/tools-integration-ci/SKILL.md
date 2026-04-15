@@ -112,6 +112,40 @@ Load the relevant standard when performing specific operations:
 
 ---
 
+## Worktree-Aware Invocation (`--project-dir`)
+
+Every `ci` leaf subcommand accepts an optional top-level `--project-dir PATH`
+flag placed **before** the command/subcommand pair. When supplied, every
+underlying `gh`/`glab` subprocess runs with `cwd=PATH`, so branch-aware
+operations (`pr view`, `ci status`, `pr create`, `pr merge`, …) resolve HEAD
+against the specified checkout instead of the Python process cwd.
+
+```bash
+# Run from the main checkout, but target a worktree-isolated plan branch:
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+  --project-dir /repo/.claude/worktrees/my-plan \
+  pr view --head my-plan-branch
+```
+
+**Semantics:**
+
+- The flag is consumed by the `ci.py` router before the provider script is
+  dispatched — provider scripts (github_ops, gitlab_ops) see their normal
+  argument vector and behave unchanged.
+- Under the hood the router calls `ci_base.set_default_cwd(PATH)`, and every
+  `run_cli` invocation threads that value into `subprocess.run(cwd=…)`.
+- When the flag is **omitted** behaviour is identical to before: subprocesses
+  inherit the Python process cwd.
+- Place the flag before the `pr` / `ci` / `issue` command word. Placing it
+  after will cause the provider parser to reject it as an unknown argument.
+
+Required when invoking CI operations from a checkout whose HEAD is not the
+branch you want to operate on — most notably during `phase-6-finalize` when
+the main agent runs in the main checkout but the plan branch lives in
+`.claude/worktrees/{plan_id}`.
+
+---
+
 ## PR Comment Vocabulary
 
 GitHub and GitLab expose several overlapping concepts for "commenting on a PR".

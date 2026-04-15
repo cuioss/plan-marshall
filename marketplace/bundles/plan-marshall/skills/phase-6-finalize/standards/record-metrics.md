@@ -57,3 +57,12 @@ This step populates the following fields in the parent skill's `metrics` output 
 | `metrics.total_duration_seconds` | `total_duration_seconds` from generate output |
 | `metrics.total_tokens` | `total_tokens` from generate output |
 | `metrics.metrics_file` | `.plan/archived-plans/{date}-{plan_id}/metrics.md` (post-archive resolved path) |
+
+## Mark Step Complete
+
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen before `default:archive-plan` runs, because archive moves `status.json` out of `.plan/plans/{plan_id}/` and `mark-step-done` would no longer find the plan.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step record-metrics --outcome done
+```

@@ -5,6 +5,7 @@ Sonar quality gate check and issue resolution.
 ## Prerequisites
 
 - Config field `4_sonar_roundtrip` is `true`
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). The Sonar workflow below forwards `--project-dir {worktree_path}` to every sonar/build subprocess it spawns.
 
 ## Execution
 
@@ -15,6 +16,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```
 Skill: plan-marshall:workflow-integration-sonar
+  Arguments: --project-dir {worktree_path}
 ```
 
 Handles Sonar quality gate and issue resolution. On findings, follows the same loop-back pattern as automated review:
@@ -22,3 +24,12 @@ Handles Sonar quality gate and issue resolution. On findings, follows the same l
 1. Create fix tasks for Sonar issues
 2. Loop back to phase-5-execute via `manage-status transition --loop-back 5-execute`
 3. Continue until clean or max iterations (3)
+
+## Mark Step Complete
+
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done
+```

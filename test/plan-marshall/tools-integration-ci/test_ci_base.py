@@ -11,9 +11,11 @@ Tests functions:
 
 import argparse
 import os
+import subprocess
 import tempfile
 from datetime import UTC, datetime, timedelta
 
+import ci_base
 import pytest
 from ci_base import (
     BODY_KIND_ISSUE_CREATE,
@@ -31,9 +33,12 @@ from ci_base import (
     compute_total_elapsed,
     delete_consumed_body,
     get_body_path,
+    get_default_cwd,
     poll_until,
     prepare_body,
     read_and_consume_body,
+    run_cli,
+    set_default_cwd,
     truncate_log_content,
 )
 
@@ -549,5 +554,107 @@ def test_delete_consumed_body_silent_when_missing(plan_base_env):
     delete_consumed_body('never-prepared', BODY_KIND_PR_CREATE)
 
 
+# =============================================================================
+# run_cli cwd propagation (worktree --project-dir plumbing)
+# =============================================================================
+
+
+class _FakeCompletedProcess:
+    """Minimal stand-in for subprocess.CompletedProcess for run_cli tests."""
+
+    def __init__(self, returncode: int = 0, stdout: str = '', stderr: str = ''):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+@pytest.fixture
+def _reset_default_cwd():
+    """Save/restore the module-global _DEFAULT_CWD around each test."""
+    previous = get_default_cwd()
+    yield
+    set_default_cwd(previous)
+
+
+@pytest.fixture
+def _capture_subprocess_run(monkeypatch):
+    """Replace ci_base.subprocess.run with a capturing stub.
+
+    Returns the list that will be populated with each call's kwargs. run_cli
+    always calls subprocess.run via the ci_base module import, so patching the
+    attribute on the module object is sufficient.
+    """
+    calls: list[dict] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append({'cmd': cmd, **kwargs})
+        return _FakeCompletedProcess(returncode=0, stdout='ok', stderr='')
+
+    monkeypatch.setattr(ci_base.subprocess, 'run', fake_run)
+    return calls
+
+
+def test_run_cli_forwards_explicit_cwd(_capture_subprocess_run, _reset_default_cwd):
+    """An explicit cwd= kwarg must be passed through to subprocess.run."""
+    set_default_cwd(None)
+    rc, stdout, stderr = run_cli('gh', ['pr', 'list'], cwd='/tmp/worktree-xyz')
+    assert rc == 0
+    assert stdout == 'ok'
+    assert stderr == ''
+    assert len(_capture_subprocess_run) == 1
+    call = _capture_subprocess_run[0]
+    assert call['cwd'] == '/tmp/worktree-xyz'
+    assert call['cmd'] == ['gh', 'pr', 'list']
+
+
+def test_run_cli_uses_default_cwd_when_not_passed(
+    _capture_subprocess_run, _reset_default_cwd
+):
+    """When no cwd= is passed, run_cli must fall back to _DEFAULT_CWD."""
+    set_default_cwd('/tmp/from-default')
+    run_cli('gh', ['pr', 'view'])
+    assert _capture_subprocess_run[0]['cwd'] == '/tmp/from-default'
+
+
+def test_run_cli_defaults_cwd_to_none(_capture_subprocess_run, _reset_default_cwd):
+    """Legacy behaviour: no explicit cwd and no default → cwd=None."""
+    set_default_cwd(None)
+    run_cli('gh', ['pr', 'view'])
+    assert _capture_subprocess_run[0]['cwd'] is None
+
+
+def test_run_cli_explicit_cwd_overrides_default(
+    _capture_subprocess_run, _reset_default_cwd
+):
+    """Explicit cwd= must win over the process-global default."""
+    set_default_cwd('/tmp/from-default')
+    run_cli('gh', ['pr', 'view'], cwd='/tmp/explicit')
+    assert _capture_subprocess_run[0]['cwd'] == '/tmp/explicit'
+
+
+def test_set_default_cwd_round_trip(_reset_default_cwd):
+    """set_default_cwd / get_default_cwd should round-trip values including None."""
+    set_default_cwd('/some/path')
+    assert get_default_cwd() == '/some/path'
+    set_default_cwd(None)
+    assert get_default_cwd() is None
+
+
+def test_run_cli_handles_file_not_found_without_touching_cwd(
+    monkeypatch, _reset_default_cwd
+):
+    """When the CLI binary is missing, run_cli must still return gracefully."""
+
+    def raising_run(cmd, **kwargs):
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr(ci_base.subprocess, 'run', raising_run)
+    set_default_cwd('/tmp/anywhere')
+    rc, stdout, stderr = run_cli('nonexistent-cli', ['x'], not_found_msg='missing')
+    assert rc == 127
+    assert stdout == ''
+    assert stderr == 'missing'
+
+
 # Silence unused-import warnings caused by the fixtures above.
-_ = (os, tempfile)
+_ = (os, tempfile, subprocess)

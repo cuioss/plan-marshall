@@ -37,6 +37,21 @@ class TestSonarRestCLI:
         assert 'transition' in result.stdout
         assert 'metrics' in result.stdout
 
+    def test_project_dir_accepted_as_noop_with_help(self):
+        """sonar_rest.py accepts --project-dir as a top-level no-op; the
+        pre-parse strips it before argparse runs, so combining it with --help
+        must succeed."""
+        result = run_script(SCRIPT_PATH, '--project-dir', '/tmp/wt-rest', '--help')
+        assert result.returncode == 0, result.stderr
+        assert 'search' in result.stdout
+        assert 'unrecognized arguments' not in result.stderr
+
+    def test_project_dir_equals_form_accepted(self):
+        """The --project-dir=PATH form is also accepted."""
+        result = run_script(SCRIPT_PATH, '--project-dir=/tmp/wt-rest2', '--help')
+        assert result.returncode == 0, result.stderr
+        assert 'unrecognized arguments' not in result.stderr
+
 
 class TestSonarSearchLogic:
     """Tests for search subcommand logic."""

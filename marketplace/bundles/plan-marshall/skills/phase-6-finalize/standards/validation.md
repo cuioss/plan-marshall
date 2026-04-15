@@ -119,3 +119,12 @@ step: {commit|push|pr|automated_review|sonar|iteration_limit}
 message: {error_description}
 recovery: {recovery_suggestion}
 ```
+
+## Mark Step Complete
+
+This document also serves as the `validation` finalize step entry in `required-steps.md`: it captures the end-of-pipeline validation pass. Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step validation --outcome done
+```

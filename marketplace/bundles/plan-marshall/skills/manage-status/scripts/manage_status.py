@@ -21,11 +21,13 @@ Usage:
     python3 manage_status.py archive --plan-id my-plan
     python3 manage_status.py route --phase 1-init
     python3 manage_status.py get-routing-context --plan-id my-plan
+    python3 manage_status.py mark-step-done --plan-id my-plan --phase 5-execute --step discovery --outcome done
 """
 
 import argparse
 
 from _cmd_lifecycle import cmd_archive, cmd_create, cmd_delete_plan, cmd_transition
+from _cmd_mark_step import cmd_mark_step_done
 from _cmd_routing import cmd_get_routing_context, cmd_route, cmd_self_test
 from _status_query import (
     cmd_get_context,
@@ -129,6 +131,21 @@ def main() -> int:
     delete_plan_parser = subparsers.add_parser('delete-plan', help='Delete entire plan directory')
     add_plan_id_arg(delete_plan_parser)
     delete_plan_parser.set_defaults(func=cmd_delete_plan)
+
+    # mark-step-done
+    mark_step_parser = subparsers.add_parser(
+        'mark-step-done', help='Mark a phase step outcome in status.metadata.phase_steps'
+    )
+    add_plan_id_arg(mark_step_parser)
+    mark_step_parser.add_argument('--phase', required=True, help='Phase name (e.g., 5-execute)')
+    mark_step_parser.add_argument('--step', required=True, help='Step identifier within the phase')
+    mark_step_parser.add_argument(
+        '--outcome', required=True, choices=['done', 'skipped'], help='Step outcome'
+    )
+    mark_step_parser.add_argument(
+        '--force', action='store_true', help='Overwrite an existing conflicting outcome'
+    )
+    mark_step_parser.set_defaults(func=cmd_mark_step_done)
 
     # self-test
     self_test_parser = subparsers.add_parser('self-test', help='Verify manage-status health')

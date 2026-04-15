@@ -370,5 +370,72 @@ class TestSonarMain(unittest.TestCase):
         self.assertIn('--issue', stderr)
 
 
+class TestSonarProjectDirNoop(unittest.TestCase):
+    """Verify sonar.py accepts --project-dir as a top-level no-op.
+
+    Sonar triage is pure in-memory so the cwd has no functional effect — the
+    flag is accepted for API uniformity with github/gitlab scripts and must
+    not be rejected by argparse.
+    """
+
+    def test_project_dir_accepted_before_subcommand(self):
+        """--project-dir PATH triage --issue ... must succeed."""
+        issue = json.dumps(
+            {
+                'key': 'ISSUE-1',
+                'type': 'BUG',
+                'severity': 'MAJOR',
+                'file': 'src/X.java',
+                'line': 1,
+                'rule': 'java:S1234',
+                'message': 'm',
+            }
+        )
+        stdout, stderr, code = run_sonar_script(
+            ['--project-dir', '/tmp/sonar-wt', 'triage', '--issue', issue]
+        )
+        self.assertEqual(code, 0, f'stderr={stderr}')
+        self.assertIn('status', stdout)
+
+    def test_project_dir_equals_form(self):
+        """--project-dir=PATH form is also accepted."""
+        issue = json.dumps(
+            {
+                'key': 'ISSUE-2',
+                'type': 'BUG',
+                'severity': 'MINOR',
+                'file': 'src/Y.java',
+                'line': 2,
+                'rule': 'java:S1111',
+                'message': 'm',
+            }
+        )
+        stdout, stderr, code = run_sonar_script(
+            ['--project-dir=/tmp/sonar-wt2', 'triage', '--issue', issue]
+        )
+        self.assertEqual(code, 0, f'stderr={stderr}')
+
+    def test_project_dir_not_visible_to_argparse(self):
+        """The flag must be stripped before argparse runs — feeding an
+        unknown value to --project-dir must not cause an 'unrecognized
+        argument' error."""
+        issue = json.dumps(
+            {
+                'key': 'ISSUE-3',
+                'type': 'BUG',
+                'severity': 'MAJOR',
+                'file': 'src/Z.java',
+                'line': 3,
+                'rule': 'java:S1234',
+                'message': 'm',
+            }
+        )
+        stdout, stderr, code = run_sonar_script(
+            ['--project-dir', '/nonexistent/path', 'triage', '--issue', issue]
+        )
+        self.assertEqual(code, 0, f'stderr={stderr}')
+        self.assertNotIn('unrecognized arguments', stderr)
+
+
 if __name__ == '__main__':
     unittest.main()

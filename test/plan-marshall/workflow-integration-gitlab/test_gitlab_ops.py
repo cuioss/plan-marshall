@@ -236,3 +236,136 @@ def test_ci_status_dual_flag_rejected(monkeypatch):
 
     assert result['status'] == 'error'
     assert 'exactly one' in result['error']
+
+
+# =============================================================================
+# --project-dir pre-parse plumbing (cwd forwarding)
+# =============================================================================
+
+
+def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
+    """gitlab_ops.main() strips --project-dir from argv and installs it as the
+    process-global default cwd used by ci_base.run_cli."""
+    import sys
+
+    import ci_base  # type: ignore[import-not-found]
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
+
+    worktree = str(tmp_path / 'worktree')
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'gitlab_ops.py',
+            '--project-dir',
+            worktree,
+            'pr',
+            'prepare-body',
+            '--plan-id',
+            'test-plan',
+        ],
+    )
+
+    rc = gitlab_ops.main()
+    assert rc == 0
+    assert ci_base.get_default_cwd() == worktree
+    assert '--project-dir' not in sys.argv
+    out = capsys.readouterr().out
+    assert 'status' in out and 'success' in out
+
+
+def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
+    """The --project-dir=PATH form is also honoured by gitlab_ops.main()."""
+    import sys
+
+    import ci_base  # type: ignore[import-not-found]
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
+
+    worktree = str(tmp_path / 'wt2')
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'gitlab_ops.py',
+            f'--project-dir={worktree}',
+            'pr',
+            'prepare-body',
+            '--plan-id',
+            'eq-plan',
+        ],
+    )
+
+    rc = gitlab_ops.main()
+    assert rc == 0
+    assert ci_base.get_default_cwd() == worktree
+    capsys.readouterr()
+
+
+def test_ci_logs_honours_default_cwd(monkeypatch):
+    """gitlab_ops.cmd_ci_logs uses subprocess.run directly (120s timeout) and
+    must forward the process-global default cwd installed via --project-dir."""
+    import ci_base  # type: ignore[import-not-found]
+
+    captured: dict = {}
+
+    class _FakeResult:
+        returncode = 0
+        stdout = 'log line\n'
+        stderr = ''
+
+    def fake_run(cmd, **kwargs):
+        captured['cmd'] = list(cmd)
+        captured['cwd'] = kwargs.get('cwd')
+        captured['timeout'] = kwargs.get('timeout')
+        return _FakeResult()
+
+    saved_cwd = ci_base.get_default_cwd()
+    try:
+        ci_base.set_default_cwd('/tmp/ci-logs-worktree')
+        monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+        monkeypatch.setattr(gitlab_ops.subprocess, 'run', fake_run)
+
+        ns = argparse.Namespace(run_id='job-123')
+        result = gitlab_ops.cmd_ci_logs(ns)
+    finally:
+        ci_base.set_default_cwd(saved_cwd)
+
+    assert result['status'] == 'success', result
+    assert captured['cmd'] == ['glab', 'ci', 'trace', 'job-123']
+    assert captured['cwd'] == '/tmp/ci-logs-worktree'
+    # Preserves the 120s override, not the default 60s from run_cli.
+    assert captured['timeout'] == 120
+
+
+def test_ci_logs_without_default_cwd_passes_none(monkeypatch):
+    """When --project-dir was not supplied, ci_logs falls through with cwd=None
+    so subprocess.run inherits the Python process cwd."""
+    import ci_base  # type: ignore[import-not-found]
+
+    captured: dict = {}
+
+    class _FakeResult:
+        returncode = 0
+        stdout = ''
+        stderr = ''
+
+    def fake_run(cmd, **kwargs):
+        captured['cwd'] = kwargs.get('cwd')
+        return _FakeResult()
+
+    saved_cwd = ci_base.get_default_cwd()
+    try:
+        ci_base.set_default_cwd(None)
+        monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
+        monkeypatch.setattr(gitlab_ops.subprocess, 'run', fake_run)
+
+        ns = argparse.Namespace(run_id='job-xyz')
+        gitlab_ops.cmd_ci_logs(ns)
+    finally:
+        ci_base.set_default_cwd(saved_cwd)
+
+    assert captured['cwd'] is None

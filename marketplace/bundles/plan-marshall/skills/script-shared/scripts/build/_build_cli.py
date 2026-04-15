@@ -17,6 +17,22 @@ from _build_parse import Issue
 from _build_shared import ParserFn, cmd_discover_common, cmd_parse_common
 
 
+def add_project_dir_arg(parser) -> None:
+    """Attach the standard --project-dir argument to a subparser.
+
+    All build subcommands accept --project-dir so invocations from an
+    isolated worktree (or any non-cwd directory) can pin subprocess cwd
+    without relying on the caller's working directory. Default is '.'
+    so existing invocations remain unchanged.
+    """
+    parser.add_argument(
+        '--project-dir',
+        dest='project_dir',
+        default='.',
+        help='Project root directory (default: current directory)',
+    )
+
+
 def add_run_subparser(
     subparsers,
     *,
@@ -64,12 +80,7 @@ def add_run_subparser(
         default='toon',
         help='Output format (default: toon)',
     )
-    run_parser.add_argument(
-        '--project-dir',
-        dest='project_dir',
-        default='.',
-        help='Project root directory',
-    )
+    add_project_dir_arg(run_parser)
     if extra_args_fn:
         extra_args_fn(run_parser)
     return run_parser
@@ -95,6 +106,7 @@ def add_coverage_subparser(subparsers, *, help_text: str = 'Parse coverage repor
         default=default_threshold,
         help=f'Coverage threshold percent (default: {default_threshold})',
     )
+    add_project_dir_arg(cov_parser)
     return cov_parser
 
 
@@ -137,6 +149,7 @@ def add_parse_subparser(
         default='toon',
         help='Output format (default: toon)',
     )
+    add_project_dir_arg(parse_parser)
 
     def _cmd_parse(args):
         return cmd_parse_common(
@@ -168,6 +181,7 @@ def add_check_warnings_subparser(subparsers, check_warnings_fn, *, help_text: st
         dest='acceptable_warnings',
         help='JSON object with acceptable patterns',
     )
+    add_project_dir_arg(warn_parser)
     warn_parser.set_defaults(func=check_warnings_fn)
     return warn_parser
 
