@@ -35,6 +35,7 @@
         "default:knowledge-capture",
         "default:lessons-capture",
         "default:branch-cleanup",
+        "project:finalize-step-sync-plugin-cache",
         "default:record-metrics",
         "default:archive-plan"
       ]
