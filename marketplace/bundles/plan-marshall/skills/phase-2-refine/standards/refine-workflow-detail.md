@@ -407,37 +407,64 @@ Ask the user via `AskUserQuestion` with explicit options that describe the imple
 
 ## Step 12: Update Request
 
-After receiving user answers, update request.md with clarifications.
+After receiving user answers, update request.md using the three-step path-allocate
+pattern. The script allocates the canonical artifact path, the main context edits
+the file directly with its native Edit/Write tools, and a second subcommand records
+the clarification transition. No multi-line content crosses the shell boundary.
 
-### Record Clarifications
+### Step 12a: Allocate Canonical Path
 
-**EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  request clarify \
-  --plan-id {plan_id} \
-  --clarifications "{formatted Q&A pairs}"
+  request path --plan-id {plan_id}
 ```
 
-**Format for clarifications**:
+The returned `path` field is the absolute location of `request.md`. Pass it to
+the Edit/Write tools in Step 12b — never hand-craft a path under `.plan/`.
+
+### Step 12b: Edit request.md Directly
+
+Use the Edit/Write tools to append a `## Clarifications` section and, if
+significant, a `## Clarified Request` section to the file returned by
+`request path`. Format:
+
 ```
+## Clarifications
+
 Q: {question asked}
 A: {user's answer}
+
+## Clarified Request
+
+{Original intent restated clearly}
+
+**Scope:**
+- {Specific inclusion from clarification}
+- {Specific inclusion from clarification}
+
+**Exclusions:**
+- {Specific exclusion from clarification}
+
+**Constraints:**
+- {Constraint from clarification}
 ```
 
-### Synthesize Clarified Request
+No shell marshalling — the Edit tool writes the exact markdown you intend, free
+of shell-escape concerns.
 
-If significant clarifications were made, synthesize an updated request:
+### Step 12c: Record the Clarification Transition
 
-**EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  request clarify \
-  --plan-id {plan_id} \
-  --clarified-request "{synthesized request incorporating clarifications}"
+  request mark-clarified --plan-id {plan_id}
 ```
 
-**Synthesis pattern**:
+This validates that the Clarified Request section is present and records the
+transition in the script's response. Returns `status: error, error: not_clarified`
+if Step 12b did not add the section — a hard signal that the direct edit was
+skipped or incomplete.
+
+**Synthesis pattern** (for the Clarified Request section you write in 12b):
 ```
 {Original intent restated clearly}
 

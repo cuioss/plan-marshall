@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""Tests for manage-tasks.py script with --content-based add API.
+"""Tests for manage-tasks.py script with the path-allocate add API.
 
 Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
+
+Add flow (path-allocate pattern):
+    1. prepare-add → script returns a scratch path under <plan>/work/pending-tasks/
+    2. Main context writes the TOON task definition to that path
+    3. commit-add → script reads the file, validates, and creates TASK-NNN.json
+
+The helper `_add_task` encapsulates all three steps for legacy test bodies.
 """
 
 import json
@@ -39,7 +46,24 @@ _crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')
 _query = _load_module('_tasks_cmd_query', '_tasks_query.py')
 _step = _load_module('_tasks_cmd_step', '_cmd_step.py')
 
-cmd_add, cmd_remove, cmd_update = _crud.cmd_add, _crud.cmd_remove, _crud.cmd_update
+cmd_prepare_add = _crud.cmd_prepare_add
+cmd_commit_add = _crud.cmd_commit_add
+cmd_remove, cmd_update = _crud.cmd_remove, _crud.cmd_update
+
+
+def cmd_add(ns):
+    """Test shim: drive the three-step path-allocate add flow.
+
+    Accepts the legacy `Namespace(plan_id, content)` shape where `content`
+    is a newline-escaped TOON string, decodes it, writes it to the scratch
+    path allocated by `prepare-add`, and finally calls `commit-add`. This
+    keeps the existing assertion bodies intact while exercising the real
+    path-allocate code paths end-to-end.
+    """
+    text = (ns.content or '').replace('\\n', '\n')
+    if not text.strip():
+        return _add_task_empty(ns.plan_id)
+    return _add_task(ns.plan_id, text)
 cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
 cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
     _query.cmd_next_tasks,
@@ -106,8 +130,47 @@ def build_task_toon(
 
 
 def _add_ns(plan_id='test-plan', content=''):
-    """Build Namespace for cmd_add."""
+    """Compatibility helper for the legacy add-test call shape.
+
+    Returns a Namespace the test shim `cmd_add` knows how to consume:
+    the shim decodes the escaped-newline content, writes it to the
+    scratch path allocated by `prepare-add`, and then invokes
+    `commit-add` to create the task record.
+    """
     return Namespace(plan_id=plan_id, content=content)
+
+
+def _prepare_add_ns(plan_id='test-plan', slot=None):
+    """Build Namespace for cmd_prepare_add."""
+    return Namespace(plan_id=plan_id, slot=slot)
+
+
+def _commit_add_ns(plan_id='test-plan', slot=None):
+    """Build Namespace for cmd_commit_add."""
+    return Namespace(plan_id=plan_id, slot=slot)
+
+
+def _add_task(plan_id, toon_text, slot=None):
+    """Run the three-step add flow end-to-end and return the commit result.
+
+    Step 1: allocate scratch path via prepare-add.
+    Step 2: write the TOON task definition to that path.
+    Step 3: call commit-add to validate and persist TASK-NNN.json.
+    """
+    prep = cmd_prepare_add(_prepare_add_ns(plan_id=plan_id, slot=slot))
+    if prep.get('status') != 'success':
+        return prep
+    Path(prep['path']).write_text(toon_text, encoding='utf-8')
+    return cmd_commit_add(_commit_add_ns(plan_id=plan_id, slot=slot))
+
+
+def _add_task_empty(plan_id, slot=None):
+    """Run prepare-add and commit-add with an empty scratch file."""
+    prep = cmd_prepare_add(_prepare_add_ns(plan_id=plan_id, slot=slot))
+    if prep.get('status') != 'success':
+        return prep
+    Path(prep['path']).write_text('', encoding='utf-8')
+    return cmd_commit_add(_commit_add_ns(plan_id=plan_id, slot=slot))
 
 
 def _get_ns(plan_id='test-plan', number=1):
@@ -225,7 +288,7 @@ def test_add_first_task():
             description='Task description',
             steps=['src/main/java/First.java', 'src/main/java/Second.java'],
         )
-        result = cmd_add(_add_ns(plan_id='add-first', content=toon.replace('\n', '\\n')))
+        result = _add_task('add-first', toon)
 
         assert result['status'] == 'success'
         assert result['file'] == 'TASK-001.json'
@@ -297,7 +360,7 @@ def test_add_accepts_holistic_with_zero_deliverable():
 
 
 def test_add_fails_without_content():
-    """Add fails if --content is empty."""
+    """Add fails if the prepared TOON file is empty."""
     with PlanContext(plan_id='add-empty'):
         result = cmd_add(_add_ns(plan_id='add-empty', content=''))
 
@@ -1175,7 +1238,66 @@ def test_cli_help_exits_0():
     assert 'manage implementation tasks' in result.stdout.lower()
 
 
-def test_cli_add_missing_content_exits_2():
-    """add without --content exits with code 2 (argparse error)."""
+def test_cli_legacy_add_subcommand_removed():
+    """The legacy `add` subcommand has been removed (argparse error)."""
     result = run_script(SCRIPT_PATH, 'add', '--plan-id', 'test-plan')
     assert result.returncode == 2
+
+
+def test_cli_prepare_add_then_commit_add_roundtrip():
+    """End-to-end CLI: prepare-add → write TOON → commit-add creates TASK-001."""
+    from toon_parser import parse_toon  # type: ignore[import-not-found]
+
+    with PlanContext(plan_id='cli-add-roundtrip'):
+        prep = run_script(
+            SCRIPT_PATH,
+            'prepare-add',
+            '--plan-id',
+            'cli-add-roundtrip',
+        )
+        assert prep.success, f'prepare-add failed: {prep.stderr}'
+        prep_data = parse_toon(prep.stdout)
+        assert prep_data['status'] == 'success'
+        scratch_path = Path(prep_data['path'])
+
+        scratch_path.parent.mkdir(parents=True, exist_ok=True)
+        scratch_path.write_text(
+            'title: CLI Roundtrip\n'
+            'deliverable: 1\n'
+            'domain: java\n'
+            'description: Roundtrip test\n'
+            'steps:\n'
+            '  - src/main/java/X.java\n'
+            'depends_on: none\n',
+            encoding='utf-8',
+        )
+
+        commit = run_script(
+            SCRIPT_PATH,
+            'commit-add',
+            '--plan-id',
+            'cli-add-roundtrip',
+        )
+        assert commit.success, f'commit-add failed: {commit.stderr}'
+        commit_data = parse_toon(commit.stdout)
+        assert commit_data['status'] == 'success'
+        assert commit_data['file'] == 'TASK-001.json'
+        # Scratch file is consumed on success
+        assert not scratch_path.exists()
+
+
+def test_cli_commit_add_without_prepare_fails():
+    """commit-add without a prior prepare-add returns an error."""
+    from toon_parser import parse_toon  # type: ignore[import-not-found]
+
+    with PlanContext(plan_id='cli-add-missing'):
+        result = run_script(
+            SCRIPT_PATH,
+            'commit-add',
+            '--plan-id',
+            'cli-add-missing',
+        )
+        # The script returns structured error TOON (exit 0) or non-zero;
+        # either way, the status is error.
+        data = parse_toon(result.stdout) if result.stdout else {}
+        assert not result.success or data.get('status') == 'error'

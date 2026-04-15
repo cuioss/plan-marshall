@@ -27,20 +27,38 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --plan-id {plan_id} --section summary
 ```
 
-Write PR body using the Write tool (**never** pass markdown through Bash `--body` arguments):
+Use the path-allocate pattern: the script allocates the scratch path, the main
+context writes the body with the Write tool, and `pr create` consumes the file.
+No multi-line markdown crosses the shell boundary.
+
+#### Step 1: Allocate the scratch body path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body \
+  --plan-id {plan_id}
+```
+
+Read the `path` field from the returned TOON — it is the canonical scratch
+location bound to this plan. Do not invent a path of your own.
+
+#### Step 2: Write the PR body
 
 ```
-Write(.plan/plans/{plan_id}/artifacts/pr-body.md) with PR body markdown content
+Write({path from prepare-body}) with PR body markdown content
 ```
 
-Use `templates/pr-template.md` as the format. Include issue link from references (`Closes #{issue}` if `issue_url` was set).
+Use `templates/pr-template.md` as the format. Include issue link from references
+(`Closes #{issue}` if `issue_url` was set).
 
-### Create PR via CI abstraction
+#### Step 3: Create PR via CI abstraction
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-  --title "{title from request.md}" --body-file .plan/plans/{plan_id}/artifacts/pr-body.md --base {base_branch}
+  --title "{title from request.md}" --plan-id {plan_id} --base {base_branch}
 ```
+
+The `pr create` subcommand reads the body from the prepared scratch file, creates
+the PR, and deletes the scratch on success.
 
 Read `pr_number` and `pr_url` from the TOON output.
 

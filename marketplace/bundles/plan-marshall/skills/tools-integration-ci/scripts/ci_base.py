@@ -11,13 +11,181 @@ This module uses only stdlib imports -- no serialize_toon dependency
 """
 
 import argparse
+import re
 import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
+
+from file_ops import get_plan_dir  # type: ignore[import-not-found]
 
 # Exit codes
 EXIT_SUCCESS = 0
+
+# ---------------------------------------------------------------------------
+# Body store (path-allocate pattern for PR/issue/comment bodies)
+# ---------------------------------------------------------------------------
+
+# Valid body "kinds" — each identifies a distinct consumer surface.
+BODY_KIND_PR_CREATE = 'pr-create'
+BODY_KIND_PR_EDIT = 'pr-edit'
+BODY_KIND_PR_REPLY = 'pr-reply'
+BODY_KIND_PR_THREAD_REPLY = 'pr-thread-reply'
+BODY_KIND_ISSUE_CREATE = 'issue-create'
+
+VALID_BODY_KINDS = frozenset(
+    {
+        BODY_KIND_PR_CREATE,
+        BODY_KIND_PR_EDIT,
+        BODY_KIND_PR_REPLY,
+        BODY_KIND_PR_THREAD_REPLY,
+        BODY_KIND_ISSUE_CREATE,
+    }
+)
+
+_BODY_SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
+
+
+def _resolve_body_slot(slot: str | None) -> str:
+    """Validate an optional slot identifier; default to 'default'."""
+    if slot is None or slot == '':
+        return 'default'
+    if not _BODY_SLOT_RE.match(slot):
+        raise ValueError(
+            f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,63}}"
+        )
+    return slot
+
+
+def get_body_path(plan_id: str, kind: str, slot: str | None = None) -> Path:
+    """Return the script-owned scratch path for a body of the given kind.
+
+    The layout is `<plan>/work/ci-bodies/{kind}-{slot}.md`. The file is NOT
+    created here — callers use `prepare_body` to allocate and pre-create the
+    parent directory, then write content with their native Write/Edit tools.
+    """
+    if kind not in VALID_BODY_KINDS:
+        raise ValueError(
+            f"Invalid body kind '{kind}'. Valid kinds: {sorted(VALID_BODY_KINDS)}"
+        )
+    resolved_slot = _resolve_body_slot(slot)
+    return get_plan_dir(plan_id) / 'work' / 'ci-bodies' / f'{kind}-{resolved_slot}.md'
+
+
+def prepare_body(plan_id: str, kind: str, slot: str | None = None) -> dict[str, Any]:
+    """Allocate a scratch path for a body of the given kind.
+
+    Creates the parent directory and returns a structured result the
+    caller can emit verbatim from a prepare-body subcommand.
+    """
+    try:
+        resolved_slot = _resolve_body_slot(slot)
+    except ValueError as e:
+        return {'status': 'error', 'error': 'invalid_slot', 'message': str(e)}
+
+    path = get_body_path(plan_id, kind, resolved_slot)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'kind': kind,
+        'slot': resolved_slot,
+        'path': str(path),
+        'exists': path.exists(),
+        'note': 'Write the body content to this path, then call the matching consume subcommand (e.g. `pr create --plan-id ...`).',
+    }
+
+
+def read_and_consume_body(
+    plan_id: str,
+    kind: str,
+    slot: str | None = None,
+    *,
+    required: bool = True,
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Read a prepared body file for consumption.
+
+    Returns ``(content, None)`` on success. On failure returns ``(None, error_dict)``.
+    The scratch file is NOT deleted here — providers should call
+    ``delete_consumed_body`` after the downstream CLI invocation succeeds
+    (keeping the file around on failure so the caller can retry).
+
+    Args:
+        plan_id: Plan identifier (required).
+        kind: One of the `BODY_KIND_*` constants.
+        slot: Optional slot identifier (defaults to 'default').
+        required: If True (default), a missing/empty file is an error. If
+            False, returns ``('', None)`` so callers can treat the body as
+            optional (e.g. pr edit where only the title changes).
+    """
+    if not plan_id:
+        return None, {
+            'status': 'error',
+            'error': 'missing_plan_id',
+            'message': '--plan-id is required to consume a prepared body.',
+        }
+
+    try:
+        path = get_body_path(plan_id, kind, slot)
+    except ValueError as e:
+        return None, {'status': 'error', 'error': 'invalid_kind', 'message': str(e)}
+
+    if not path.exists():
+        if not required:
+            return '', None
+        return None, {
+            'status': 'error',
+            'error': 'body_not_prepared',
+            'kind': kind,
+            'path': str(path),
+            'message': (
+                f'No prepared body for kind={kind} plan_id={plan_id}. '
+                f'Call the matching prepare-body subcommand first and write the '
+                f'body content to the returned path.'
+            ),
+        }
+
+    content = path.read_text(encoding='utf-8')
+    if not content.strip() and required:
+        return None, {
+            'status': 'error',
+            'error': 'body_empty',
+            'kind': kind,
+            'path': str(path),
+            'message': f'Prepared body file is empty: {path}',
+        }
+    return content, None
+
+
+def delete_consumed_body(plan_id: str, kind: str, slot: str | None = None) -> None:
+    """Delete a previously-consumed scratch body. Silent on failure."""
+    try:
+        path = get_body_path(plan_id, kind, slot)
+        if path.exists():
+            path.unlink()
+    except (OSError, ValueError):
+        pass
+
+
+def add_body_consumer_args(subparser: argparse.ArgumentParser) -> None:
+    """Register the `--plan-id` + `--slot` arguments required by every consumer.
+
+    Used on subcommands that now consume a prepared scratch body instead of a
+    raw CLI argument (`pr create`, `pr edit`, `pr reply`, `pr thread-reply`,
+    `issue create`).
+    """
+    subparser.add_argument(
+        '--plan-id',
+        required=True,
+        help='Plan identifier bound to the prepared body file',
+    )
+    subparser.add_argument(
+        '--slot',
+        default=None,
+        help='Optional body slot identifier matching the prior prepare-body call (default: "default")',
+    )
 
 # Shared defaults for CI polling operations
 DEFAULT_CI_TIMEOUT = 300  # seconds
@@ -170,20 +338,20 @@ def build_parser(
         help='Filter by state (default: open)',
     )
 
-    # pr reply
+    # pr reply — body supplied via prepare-body path-allocate pattern
     pr_reply = pr_sub.add_parser('reply', help='Reply to a PR with a comment')
     pr_reply.add_argument('--pr-number', required=True, type=int, help='PR number')
-    pr_reply.add_argument('--body', required=True, help='Comment text')
+    add_body_consumer_args(pr_reply)
 
     # pr resolve-thread
     pr_resolve = pr_sub.add_parser('resolve-thread', help='Resolve a review thread')
     pr_resolve.add_argument('--thread-id', required=True, help='Review thread ID')
 
-    # pr thread-reply
+    # pr thread-reply — body supplied via prepare-body path-allocate pattern
     pr_treply = pr_sub.add_parser('thread-reply', help='Reply to a review thread')
     pr_treply.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_treply.add_argument('--thread-id', required=True, help='Thread/comment ID to reply to')
-    pr_treply.add_argument('--body', required=True, help='Reply text')
+    add_body_consumer_args(pr_treply)
 
     # pr reviews
     pr_reviews = pr_sub.add_parser('reviews', help='Get PR reviews')
@@ -235,11 +403,11 @@ def build_parser(
         help='Review event (default: COMMENT)',
     )
 
-    # pr edit
+    # pr edit — body optionally supplied via prepare-body path-allocate pattern
     pr_edit = pr_sub.add_parser('edit', help='Edit PR title and/or body')
     pr_edit.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_edit.add_argument('--title', help='New PR title')
-    pr_edit.add_argument('--body', help='New PR body')
+    add_body_consumer_args(pr_edit)
 
     # -- ci -----------------------------------------------------------
     ci_parser = subparsers.add_parser('ci', help='CI operations')
@@ -268,11 +436,49 @@ def build_parser(
     issue_parser = subparsers.add_parser('issue', help='Issue operations')
     issue_sub = issue_parser.add_subparsers(dest='issue_command', required=True)
 
-    # issue create
+    # issue create — body supplied via prepare-body path-allocate pattern
     issue_create = issue_sub.add_parser('create', help='Create an issue')
     issue_create.add_argument('--title', required=True, help='Issue title')
-    issue_create.add_argument('--body', required=True, help='Issue description')
     issue_create.add_argument('--labels', help='Comma-separated labels')
+    add_body_consumer_args(issue_create)
+
+    # issue prepare-body — allocate scratch path for the description
+    issue_prepare = issue_sub.add_parser(
+        'prepare-body',
+        help='Allocate a scratch path for the issue description (path-allocate pattern)',
+    )
+    issue_prepare.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
+    issue_prepare.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
+
+    # pr prepare-body — allocate scratch path for PR create description
+    pr_prepare_body = pr_sub.add_parser(
+        'prepare-body',
+        help='Allocate a scratch path for a PR body (create/edit) (path-allocate pattern)',
+    )
+    pr_prepare_body.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
+    pr_prepare_body.add_argument(
+        '--for',
+        dest='prepare_for',
+        choices=['create', 'edit'],
+        default='create',
+        help='Which consumer this body is prepared for (default: create)',
+    )
+    pr_prepare_body.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
+
+    # pr prepare-comment — allocate scratch path for reply / thread-reply bodies
+    pr_prepare_comment = pr_sub.add_parser(
+        'prepare-comment',
+        help='Allocate a scratch path for a PR comment (reply / thread-reply) (path-allocate pattern)',
+    )
+    pr_prepare_comment.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
+    pr_prepare_comment.add_argument(
+        '--for',
+        dest='prepare_for',
+        choices=['reply', 'thread-reply'],
+        default='reply',
+        help='Which consumer this body is prepared for (default: reply)',
+    )
+    pr_prepare_comment.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
 
     # issue view
     issue_view = issue_sub.add_parser('view', help='View issue details')
@@ -287,25 +493,18 @@ def build_parser(
 
 def add_pr_create_args(
     pr_subparsers: argparse._SubParsersAction,
-    *,
-    body_required: bool = False,
-    body_file: bool = False,
 ) -> None:
-    """Add 'pr create' sub-parser with provider-specific variations.
+    """Add 'pr create' sub-parser.
 
-    Args:
-        pr_subparsers: The pr-level subparsers action.
-        body_required: Whether ``--body`` is required (GitLab) or optional (GitHub).
-        body_file: Whether to add ``--body-file`` argument (GitHub only).
+    The PR body is supplied via the path-allocate pattern: callers first run
+    ``pr prepare-body --plan-id {id}`` to allocate a scratch path, write the
+    body content to that path with their native Write/Edit tools, then invoke
+    ``pr create --plan-id {id}``. No multi-line body content crosses the
+    shell boundary.
     """
     pr_create = pr_subparsers.add_parser('create', help='Create a pull request')
     pr_create.add_argument('--title', required=True, help='PR title')
-    if body_required:
-        pr_create.add_argument('--body', required=True, help='PR description')
-    else:
-        pr_create.add_argument('--body', default='', help='PR description')
-    if body_file:
-        pr_create.add_argument('--body-file', help='Read PR body from file (takes precedence over --body)')
+    add_body_consumer_args(pr_create)
     pr_create.add_argument('--base', help='Base/target branch (default: repo default)')
     pr_create.add_argument('--draft', action='store_true', help='Create as draft PR')
     pr_create.add_argument(

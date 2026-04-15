@@ -8,7 +8,8 @@ Output: TOON format for LLM-optimized consumption.
 Each task references deliverables from solution_outline.md.
 
 Subcommands:
-  add              - Add a new task (--content with \\n-encoded TOON)
+  prepare-add      - Allocate a scratch path for a pending task definition
+  commit-add       - Read the prepared file and create TASK-NNN.json
   update           - Update an existing task
   remove           - Remove a task
   list             - List all tasks (summary)
@@ -24,16 +25,30 @@ Subcommands:
 
 Output: TOON format for all operations.
 
-Add command usage (--content with \\n encoding):
-  python3 manage-task.py add --plan-id my-plan \\
-    --content "title: My Task Title\\ndeliverable: 1\\ndomain: java\\nsteps:\\n  - src/main/java/File.java\\ndepends_on: none"
+Add flow (path-allocate pattern — no content crosses the shell boundary):
+
+  1. python3 manage-tasks.py prepare-add --plan-id my-plan [--slot my-slot]
+     → returns {path: /abs/.../work/pending-tasks/default.toon}
+
+  2. Write the TOON task definition to the returned path using your native
+     Write/Edit tools. Example TOON content:
+
+        title: My Task Title
+        deliverable: 1
+        domain: java
+        steps:
+          - src/main/java/File.java
+        depends_on: none
+
+  3. python3 manage-tasks.py commit-add --plan-id my-plan [--slot my-slot]
+     → reads the file, validates it, creates TASK-NNN.json, deletes the scratch
 """
 
 import argparse
 
 from _cmd_rename import cmd_rename_path
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
-from _tasks_crud import cmd_add, cmd_remove, cmd_update
+from _tasks_crud import cmd_commit_add, cmd_prepare_add, cmd_remove, cmd_update
 from _tasks_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
@@ -48,10 +63,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    # add (--content CLI argument)
-    p_add = subparsers.add_parser('add', help='Add a new task (--content with \\n-encoded TOON)')
-    add_plan_id_arg(p_add)
-    p_add.add_argument('--content', required=True, help='Task definition in TOON format (use \\n for newlines)')
+    # prepare-add: allocate a scratch path for a pending task definition
+    p_prepare = subparsers.add_parser(
+        'prepare-add',
+        help='Allocate a scratch path for a pending task definition (Step 1 of add flow)',
+    )
+    add_plan_id_arg(p_prepare)
+    p_prepare.add_argument(
+        '--slot',
+        default=None,
+        help='Optional slot identifier for concurrent prepared tasks (default: "default")',
+    )
+
+    # commit-add: read the prepared file and create TASK-NNN.json
+    p_commit = subparsers.add_parser(
+        'commit-add',
+        help='Read the prepared task file and create TASK-NNN.json (Step 3 of add flow)',
+    )
+    add_plan_id_arg(p_commit)
+    p_commit.add_argument(
+        '--slot',
+        default=None,
+        help='Slot identifier matching the prior prepare-add call (default: "default")',
+    )
 
     # update
     p_update = subparsers.add_parser('update', help='Update an existing task')
@@ -137,7 +171,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 # Command dispatch map
 COMMANDS = {
-    'add': cmd_add,
+    'prepare-add': cmd_prepare_add,
+    'commit-add': cmd_commit_add,
     'update': cmd_update,
     'remove': cmd_remove,
     'list': cmd_list,

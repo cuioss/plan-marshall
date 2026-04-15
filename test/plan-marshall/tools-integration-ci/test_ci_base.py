@@ -10,9 +10,17 @@ Tests functions:
 """
 
 import argparse
+import os
+import tempfile
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from ci_base import (
+    BODY_KIND_ISSUE_CREATE,
+    BODY_KIND_PR_CREATE,
+    BODY_KIND_PR_EDIT,
+    BODY_KIND_PR_REPLY,
+    BODY_KIND_PR_THREAD_REPLY,
     CI_LOG_TRUNCATE_LINES,
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
@@ -21,7 +29,11 @@ from ci_base import (
     build_parser,
     compute_elapsed,
     compute_total_elapsed,
+    delete_consumed_body,
+    get_body_path,
     poll_until,
+    prepare_body,
+    read_and_consume_body,
     truncate_log_content,
 )
 
@@ -236,12 +248,53 @@ def test_pr_create_parser_accepts_head_flag():
     sub = parser.add_subparsers(dest='cmd')
     add_pr_create_args(sub)
 
-    args = parser.parse_args(['create', '--title', 'T', '--head', 'feature/x'])
+    args = parser.parse_args(
+        ['create', '--title', 'T', '--plan-id', 'my-plan', '--head', 'feature/x']
+    )
     assert args.head == 'feature/x'
 
-    # Still optional — works without --head
-    args = parser.parse_args(['create', '--title', 'T'])
+    # Still optional — works without --head, but --plan-id is now required
+    args = parser.parse_args(['create', '--title', 'T', '--plan-id', 'my-plan'])
     assert args.head is None
+    assert args.plan_id == 'my-plan'
+
+
+def test_pr_create_parser_rejects_body_and_body_file():
+    """add_pr_create_args must NOT register the legacy body flags — they are deleted."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add_pr_create_args(sub)
+
+    # Legacy body flags must raise SystemExit (unknown arg → argparse error)
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ['create', '--title', 'T', '--plan-id', 'p', '--body', 'X']
+        )
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ['create', '--title', 'T', '--plan-id', 'p', '--body-file', '/tmp/x']
+        )
+
+
+def test_pr_create_parser_requires_plan_id():
+    """add_pr_create_args must require --plan-id for body consumer args."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add_pr_create_args(sub)
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(['create', '--title', 'T'])
+
+
+def test_pr_create_parser_accepts_slot():
+    """Optional --slot passes through to the namespace."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add_pr_create_args(sub)
+    args = parser.parse_args(
+        ['create', '--title', 'T', '--plan-id', 'p', '--slot', 'pr-body']
+    )
+    assert args.slot == 'pr-body'
 
 
 def test_build_parser_pr_view_accepts_head_flag():
@@ -278,3 +331,223 @@ def test_build_parser_ci_status_pr_number_optional():
     args = parser.parse_args(['ci', 'status', '--head', 'feature/x'])
     assert args.head == 'feature/x'
     assert args.pr_number is None
+
+
+# =============================================================================
+# prepare-body subcommand registration (argparse wiring)
+# =============================================================================
+
+
+def test_build_parser_registers_pr_prepare_body():
+    """`pr prepare-body` must be registered and require --plan-id."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(['pr', 'prepare-body', '--plan-id', 'my-plan'])
+    assert args.command == 'pr'
+    assert args.pr_command == 'prepare-body'
+    assert args.plan_id == 'my-plan'
+    assert args.prepare_for == 'create'  # default
+
+    args = parser.parse_args(
+        ['pr', 'prepare-body', '--plan-id', 'my-plan', '--for', 'edit', '--slot', 'update']
+    )
+    assert args.prepare_for == 'edit'
+    assert args.slot == 'update'
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(['pr', 'prepare-body'])  # missing --plan-id
+
+
+def test_build_parser_registers_pr_prepare_comment():
+    """`pr prepare-comment` must be registered with reply/thread-reply modes."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(['pr', 'prepare-comment', '--plan-id', 'my-plan'])
+    assert args.pr_command == 'prepare-comment'
+    assert args.prepare_for == 'reply'
+
+    args = parser.parse_args(
+        ['pr', 'prepare-comment', '--plan-id', 'my-plan', '--for', 'thread-reply']
+    )
+    assert args.prepare_for == 'thread-reply'
+
+
+def test_build_parser_registers_issue_prepare_body():
+    """`issue prepare-body` must be registered and require --plan-id."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(['issue', 'prepare-body', '--plan-id', 'my-plan'])
+    assert args.command == 'issue'
+    assert args.issue_command == 'prepare-body'
+    assert args.plan_id == 'my-plan'
+
+
+# =============================================================================
+# Consumer subcommands reject removed legacy body flags
+# =============================================================================
+
+
+def test_pr_reply_rejects_body_flag():
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ['pr', 'reply', '--pr-number', '1', '--plan-id', 'p', '--body', 'X']
+        )
+
+
+def test_pr_thread_reply_rejects_body_flag():
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                'pr',
+                'thread-reply',
+                '--pr-number',
+                '1',
+                '--thread-id',
+                't',
+                '--plan-id',
+                'p',
+                '--body',
+                'X',
+            ]
+        )
+
+
+def test_pr_edit_rejects_body_flag():
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ['pr', 'edit', '--pr-number', '1', '--plan-id', 'p', '--body', 'X']
+        )
+
+
+def test_issue_create_rejects_body_flag():
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ['issue', 'create', '--title', 'T', '--plan-id', 'p', '--body', 'X']
+        )
+
+
+def test_consumers_require_plan_id():
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['pr', 'reply', '--pr-number', '1'])
+    with pytest.raises(SystemExit):
+        parser.parse_args(['issue', 'create', '--title', 'T'])
+
+
+# =============================================================================
+# Body store helpers
+# =============================================================================
+
+
+@pytest.fixture
+def plan_base_env(tmp_path, monkeypatch):
+    """Point PLAN_BASE_DIR at a temporary directory so get_plan_dir is sandboxed."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    return tmp_path
+
+
+def test_get_body_path_rejects_unknown_kind(plan_base_env):
+    with pytest.raises(ValueError):
+        get_body_path('my-plan', 'unknown-kind')
+
+
+def test_get_body_path_default_slot(plan_base_env):
+    path = get_body_path('my-plan', BODY_KIND_PR_CREATE)
+    assert path.name == 'pr-create-default.md'
+    assert 'work/ci-bodies' in str(path)
+
+
+def test_get_body_path_custom_slot(plan_base_env):
+    path = get_body_path('my-plan', BODY_KIND_PR_CREATE, slot='alt')
+    assert path.name == 'pr-create-alt.md'
+
+
+def test_get_body_path_rejects_invalid_slot(plan_base_env):
+    with pytest.raises(ValueError):
+        get_body_path('my-plan', BODY_KIND_PR_CREATE, slot='Has Spaces!')
+
+
+def test_prepare_body_creates_parent_directory(plan_base_env):
+    result = prepare_body('my-plan', BODY_KIND_PR_CREATE)
+    assert result['status'] == 'success'
+    assert result['kind'] == BODY_KIND_PR_CREATE
+    assert result['slot'] == 'default'
+    assert result['exists'] is False
+    # Parent directory was created so the caller can write immediately
+    from pathlib import Path as _P
+    assert _P(result['path']).parent.exists()
+
+
+def test_prepare_body_reports_exists_flag(plan_base_env):
+    result = prepare_body('my-plan', BODY_KIND_PR_REPLY)
+    path = result['path']
+    from pathlib import Path as _P
+    _P(path).write_text('existing content', encoding='utf-8')
+    result2 = prepare_body('my-plan', BODY_KIND_PR_REPLY)
+    assert result2['exists'] is True
+
+
+def test_prepare_body_rejects_invalid_slot(plan_base_env):
+    result = prepare_body('my-plan', BODY_KIND_PR_CREATE, slot='BAD SLOT')
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_slot'
+
+
+def test_read_and_consume_body_returns_content(plan_base_env):
+    prep = prepare_body('my-plan', BODY_KIND_ISSUE_CREATE)
+    from pathlib import Path as _P
+    _P(prep['path']).write_text('Issue description body', encoding='utf-8')
+
+    content, err = read_and_consume_body('my-plan', BODY_KIND_ISSUE_CREATE)
+    assert err is None
+    assert content == 'Issue description body'
+
+
+def test_read_and_consume_body_missing_file(plan_base_env):
+    content, err = read_and_consume_body('no-plan', BODY_KIND_PR_CREATE)
+    assert content is None
+    assert err is not None
+    assert err['error'] == 'body_not_prepared'
+
+
+def test_read_and_consume_body_empty_file(plan_base_env):
+    prep = prepare_body('my-plan', BODY_KIND_PR_REPLY)
+    from pathlib import Path as _P
+    _P(prep['path']).write_text('   \n  ', encoding='utf-8')
+    content, err = read_and_consume_body('my-plan', BODY_KIND_PR_REPLY)
+    assert content is None
+    assert err['error'] == 'body_empty'
+
+
+def test_read_and_consume_body_optional_missing(plan_base_env):
+    content, err = read_and_consume_body(
+        'my-plan', BODY_KIND_PR_EDIT, required=False
+    )
+    assert err is None
+    assert content == ''
+
+
+def test_read_and_consume_body_requires_plan_id(plan_base_env):
+    content, err = read_and_consume_body('', BODY_KIND_PR_CREATE)
+    assert content is None
+    assert err['error'] == 'missing_plan_id'
+
+
+def test_delete_consumed_body_removes_file(plan_base_env):
+    prep = prepare_body('my-plan', BODY_KIND_PR_THREAD_REPLY)
+    from pathlib import Path as _P
+    _P(prep['path']).write_text('body', encoding='utf-8')
+    assert _P(prep['path']).exists()
+
+    delete_consumed_body('my-plan', BODY_KIND_PR_THREAD_REPLY)
+    assert not _P(prep['path']).exists()
+
+
+def test_delete_consumed_body_silent_when_missing(plan_base_env):
+    # Must not raise when the file does not exist
+    delete_consumed_body('never-prepared', BODY_KIND_PR_CREATE)
+
+
+# Silence unused-import warnings caused by the fixtures above.
+_ = (os, tempfile)

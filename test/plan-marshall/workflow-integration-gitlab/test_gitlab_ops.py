@@ -47,12 +47,25 @@ def _capture_run_glab(*, mr_list_iid: int = 7):
 # =============================================================================
 
 
-def test_pr_create_forwards_head_as_source_branch(monkeypatch):
+def _prepare_pr_create_body(tmp_path, monkeypatch, body_text='B', plan_id='p'):
+    """Seed PLAN_BASE_DIR with a prepared pr-create body scratch file."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    from ci_base import BODY_KIND_PR_CREATE, get_body_path  # type: ignore[import-not-found]
+    path = get_body_path(plan_id, BODY_KIND_PR_CREATE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body_text, encoding='utf-8')
+    return plan_id
+
+
+def test_pr_create_forwards_head_as_source_branch(monkeypatch, tmp_path):
     run_glab_stub, captured = _capture_run_glab()
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
 
-    ns = argparse.Namespace(title='T', body='B', base=None, draft=False, head='feature/x')
+    plan_id = _prepare_pr_create_body(tmp_path, monkeypatch)
+    ns = argparse.Namespace(
+        title='T', plan_id=plan_id, slot=None, base=None, draft=False, head='feature/x'
+    )
     result = gitlab_ops.cmd_pr_create(ns)
 
     assert result['status'] == 'success', result
@@ -61,12 +74,15 @@ def test_pr_create_forwards_head_as_source_branch(monkeypatch):
     assert 'feature/x' in create_call
 
 
-def test_pr_create_omits_source_branch_when_head_unset(monkeypatch):
+def test_pr_create_omits_source_branch_when_head_unset(monkeypatch, tmp_path):
     run_glab_stub, captured = _capture_run_glab()
     monkeypatch.setattr(gitlab_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
 
-    ns = argparse.Namespace(title='T', body='B', base=None, draft=False, head=None)
+    plan_id = _prepare_pr_create_body(tmp_path, monkeypatch)
+    ns = argparse.Namespace(
+        title='T', plan_id=plan_id, slot=None, base=None, draft=False, head=None
+    )
     result = gitlab_ops.cmd_pr_create(ns)
 
     assert result['status'] == 'success', result

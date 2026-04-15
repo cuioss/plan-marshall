@@ -16,7 +16,7 @@ Manage implementation tasks with sequential sub-steps within a plan. Each task r
 **Skill-specific constraints:**
 - Do not bypass dependency checking unless explicitly using `--ignore-deps`
 - Task numbering is sequential and immutable (TASK-001, TASK-002, etc.)
-- The `add` command reads TOON content from `--content` argument with `\n` encoding
+- Adding a task uses the three-step path-allocate pattern: `prepare-add` → write TOON file → `commit-add`. No multi-line content is marshalled through the shell boundary.
 - Step finalization requires explicit `--outcome` (done or skipped)
 
 ## Storage Location
@@ -59,7 +59,8 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `add` | `--plan-id --content` | Add a new task (TOON in --content with \n encoding) |
+| `prepare-add` | `--plan-id [--slot]` | Allocate a scratch path under `<plan>/work/pending-tasks/` (Step 1 of add flow) |
+| `commit-add` | `--plan-id [--slot]` | Read the prepared TOON file, validate, create TASK-NNN.json, delete scratch (Step 3 of add flow) |
 | `update` | `--plan-id --number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
 | `remove` | `--plan-id --number` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
@@ -73,11 +74,34 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `remove-step` | `--plan-id --task --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 
-### Add Command (--content CLI argument)
+### Add Flow — Three-Step Path-Allocate Pattern
 
-The `add` command reads the task definition from the `--content` CLI argument in TOON format. Newlines are encoded as literal `\n` (two characters) which Python decodes at runtime. This keeps the entire command on a single line, matching the `Bash(python3 .plan/execute-script.py *)` permission pattern.
+Adding a task uses the same path-allocate pattern as every other content-passing
+surface in the bundle. The script allocates a scratch path; the main context
+writes the TOON definition directly with its native Write/Edit tools; a second
+subcommand reads the file, validates it, creates `TASK-NNN.json`, and deletes
+the scratch. No multi-line content ever crosses the shell boundary.
 
-**Content format**:
+```bash
+# Step 1: script allocates a scratch path under <plan>/work/pending-tasks/
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  prepare-add --plan-id {plan_id}
+# → returns {path: /abs/.../work/pending-tasks/default.toon}
+
+# Step 2: main context writes the TOON task definition to that path with Write/Edit.
+# (No shell marshalling, no escaped \n. The Write tool does the work.)
+
+# Step 3: script reads the file, validates it, and creates the task
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  commit-add --plan-id {plan_id}
+# → returns {status: success, file: TASK-003.json, ...}
+```
+
+**Concurrent adds**: pass `--slot <name>` to `prepare-add` and `commit-add` to
+run multiple pending tasks side-by-side. Slot names must match
+`[a-z0-9][a-z0-9-]{0,63}`. Omitting `--slot` uses the reserved slot `default`.
+
+**TOON file format** (written to the path returned by `prepare-add`):
 
 ```toon
 title: My Task Title
@@ -135,25 +159,53 @@ verification:
 ### Add a task
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id my-feature \
-  --content "title: Update misc agents to TOON\ndeliverable: 1\ndomain: java\ndescription: Migrate miscellaneous agents from JSON to TOON output format.\nsteps:\n  - file1.md\n  - file2.md\n  - file3.md\nverification:\n  commands:\n    - mvn verify\n  criteria: Build passes"
+# Step 1: allocate scratch path
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  prepare-add --plan-id my-feature
+
+# Step 2: Write tool writes TOON content to the returned path, e.g.:
+#   title: Update misc agents to TOON
+#   deliverable: 1
+#   domain: java
+#   description: Migrate miscellaneous agents from JSON to TOON output format.
+#   steps:
+#     - file1.md
+#     - file2.md
+#     - file3.md
+#   verification:
+#     commands:
+#       - mvn verify
+#     criteria: Build passes
+
+# Step 3: commit
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  commit-add --plan-id my-feature
 ```
 
 ### Add a task with dependencies
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id my-feature \
-  --content "title: Write integration tests\ndeliverable: 3\ndomain: java-testing\ndescription: Add integration tests for new endpoint\nsteps:\n  - Create test class\n  - Add test methods\n  - Run tests\ndepends_on: TASK-1, TASK-2\nverification:\n  commands:\n    - mvn verify -Pintegration\n  criteria: All tests pass"
+Same three-step flow. The TOON definition written in Step 2 simply adds:
+
+```toon
+depends_on: TASK-1, TASK-2
 ```
 
-### Add a task with complex verification commands
+### Concurrent adds with slots
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id migrate-json-to-toon \
-  --content "title: Migrate skill outputs to TOON\ndeliverable: 1\ndomain: plan-marshall-plugin-dev\ndescription: Update skills to use TOON format instead of JSON.\nsteps:\n  - Update recipe-doc-verify SKILL.md\nverification:\n  commands:\n    - grep -l '```json' marketplace/bundles/pm-documents/skills/recipe-doc-verify/*.md | wc -l\n  criteria: All grep commands return 0 (no JSON blocks remain)"
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  prepare-add --plan-id my-feature --slot impl
+
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  prepare-add --plan-id my-feature --slot tests
+
+# ... Write TOON to both returned paths ...
+
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  commit-add --plan-id my-feature --slot impl
+
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  commit-add --plan-id my-feature --slot tests
 ```
 
 ### Get next task/step (respects dependencies)
@@ -198,9 +250,9 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 | Client | Operation | Purpose |
 |--------|-----------|---------|
-| `phase-4-plan` | `add` | Create tasks from deliverables |
+| `phase-4-plan` | `prepare-add`, `commit-add` | Create tasks from deliverables |
 | `phase-5-execute` | `update`, `finalize-step` | Update task/step status during execution |
-| Q-Gate iteration | `add` | Create fix tasks from verification findings |
+| Q-Gate iteration | `prepare-add`, `commit-add` | Create fix tasks from verification findings |
 
 ### Consumers
 
@@ -212,11 +264,25 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ### With phase-agent (phase-4-plan)
 
-Task-plan agents create tasks during plan refinement using `--content`:
+Task-plan agents create tasks during plan refinement using the three-step flow:
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} \
-  --content "title: {task_title}\ndeliverable: {deliverable_number}\ndomain: {domain}\nsteps:\n  - {step1}\n  - {step2}\ndepends_on: none"
+# Step 1
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  prepare-add --plan-id {plan_id}
+
+# Step 2: Write TOON definition to the returned path via the Write tool
+#   title: {task_title}
+#   deliverable: {deliverable_number}
+#   domain: {domain}
+#   steps:
+#     - {step1}
+#     - {step2}
+#   depends_on: none
+
+# Step 3
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  commit-add --plan-id {plan_id}
 ```
 
 ### With plan-execute

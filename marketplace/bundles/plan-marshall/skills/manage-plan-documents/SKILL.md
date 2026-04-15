@@ -37,9 +37,34 @@ manage-plan-documents {document-type} {verb} [options]
 |------|-------------|
 | `create` | Create document from template |
 | `read` | Read document (parsed or raw) |
-| `update` | Update specific section |
+| `path` | Return canonical artifact path for direct edit (Step 1 of edit flow) |
+| `mark-clarified` | Record clarification transition after direct edit (Step 3 of edit flow) |
 | `exists` | Check if document exists |
 | `remove` | Delete document |
+
+---
+
+## Editing Flow — Three-Step Path-Allocate Pattern
+
+Edits to existing request documents follow a unified three-step pattern. The script
+owns path allocation; the main context writes the file directly with its native
+Read/Edit/Write tools; a status-transition subcommand records the outcome. No
+multi-line content is ever marshalled through the shell boundary.
+
+```bash
+# Step 1: script allocates the canonical artifact path
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request path --plan-id {plan_id}
+# → returns {status, path, sections}
+
+# Step 2: main context edits the returned path directly with Read/Edit/Write.
+# (No shell marshalling, no escaped content. The Edit tool does the work.)
+
+# Step 3: script validates and records the transition
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request mark-clarified --plan-id {plan_id}
+# → succeeds when the edited file contains a Clarified Request section
+```
 
 ---
 
@@ -136,65 +161,20 @@ requested_section: clarified_request  # what was requested
 content: Migrate JSON output specifications to TOON format...
 ```
 
-### update
+### path
 
-Update a specific section.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  request update \
-  --plan-id {plan_id} \
-  --section context \
-  --content "Updated context information..."
-```
-
-**Parameters**:
-- `--plan-id` (required): Plan identifier
-- `--section` (required): Section name to update (e.g., `context`, `original_input`)
-- `--content` (required): New content for the section
-
-**Output:**
-
-```toon
-status: success
-plan_id: my-feature
-document: request
-section: context
-updated: true
-```
-
-### clarify
-
-Add clarifications and clarified request sections to a document. Used in the uncertainty resolution flow.
+Return the canonical artifact path so the main context can edit the file directly.
+This is Step 1 of the edit flow — the script owns path allocation; the caller
+never invents a path.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
-  request clarify \
-  --plan-id {plan_id} \
-  --clarifications "**Q: Should JSON in workflow context be included?**
-Examples: manage-adr/SKILL.md, workflow-integration-github/SKILL.md
-A: Exclude workflow JSON - Only include explicit ## Output sections" \
-  --clarified-request "Migrate JSON output specifications to TOON format in all marketplace bundles.
-
-**Scope:**
-- Components with explicit ## Output sections
-- All bundles
-
-**Exclusions:**
-- JSON in workflow documentation"
+  request path \
+  --plan-id {plan_id}
 ```
 
 **Parameters:**
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `--plan-id` | Yes | Plan identifier |
-| `--clarifications` | No | Q&A clarifications content |
-| `--clarified-request` | No | Synthesized clarified request |
-
-At least one of `--clarifications` or `--clarified-request` must be provided. If neither is given, returns `status: error, error: missing_argument`.
-
-**Idempotency**: Calling `clarify` multiple times appends to the Clarifications section and replaces the Clarified Request section. This supports iterative refinement during phase-2-refine.
+- `--plan-id` (required): Plan identifier
 
 **Output:**
 
@@ -202,41 +182,45 @@ At least one of `--clarifications` or `--clarified-request` must be provided. If
 status: success
 plan_id: my-feature
 document: request
-sections_added:
-  - Clarifications
-  - Clarified Request
+file: request.md
+path: /abs/path/.plan/local/plans/my-feature/request.md
+sections[2]:
+  - original_input
+  - context
 ```
 
-**Resulting request.md structure:**
+After receiving the path, the main context uses its native Read/Edit/Write tools
+to modify the file. No content ever crosses the shell boundary.
 
-```markdown
-# Request: Migrate JSON to TOON
+### mark-clarified
 
-## Original Input
+Step 3 of the edit flow for adding clarifications. The caller has already edited
+the request document directly; this subcommand validates that a `## Clarified
+Request` section is present and records the transition.
 
-Migrate agent/command/skill outputs from JSON to TOON format
-
-## Context
-
-...
-
-## Clarifications
-
-**Q: Should files with JSON in workflow context be included?**
-Examples: manage-adr/SKILL.md, workflow-integration-github/SKILL.md
-A: Exclude workflow JSON - Only include explicit ## Output sections
-
-## Clarified Request
-
-Migrate JSON output specifications to TOON format in all marketplace bundles.
-
-**Scope:**
-- Components with explicit `## Output` sections
-- All bundles
-
-**Exclusions (based on clarifications):**
-- JSON in workflow documentation
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request mark-clarified \
+  --plan-id {plan_id}
 ```
+
+**Parameters:**
+- `--plan-id` (required): Plan identifier
+
+**Output:**
+
+```toon
+status: success
+plan_id: my-feature
+document: request
+file: request.md
+clarified: true
+has_clarifications_section: true
+```
+
+If the file is missing a Clarified Request section, returns
+`status: error, error: not_clarified` — a signal to the caller that Step 2
+(direct edit) has not been performed or did not add the required section.
 
 ### exists
 
@@ -307,11 +291,11 @@ types:
 
 | Error Code | Cause |
 |------------|-------|
-| `document_not_found` | Document doesn't exist (read, update, clarify, remove) |
+| `document_not_found` | Document doesn't exist (read, path, mark-clarified, remove) |
 | `invalid_plan_id` | plan_id format invalid |
 | `file_exists` | Document already exists on create (use `--force`) |
 | `section_not_found` | Requested section doesn't exist (except `clarified_request` which falls back) |
-| `missing_argument` | Required parameter missing (clarify without either flag) |
+| `not_clarified` | `mark-clarified` called but document has no Clarified Request section |
 | `validation_error` | Field validation failed on create |
 
 ---
@@ -323,7 +307,7 @@ types:
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `phase-1-init` | request create | Create initial request document |
-| `phase-2-refine` | request clarify, request update | Add clarifications and update sections |
+| `phase-2-refine` | request path, request mark-clarified | Allocate path, direct-edit file, record clarification transition |
 
 ### Consumers
 

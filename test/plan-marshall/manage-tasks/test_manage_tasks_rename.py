@@ -33,15 +33,20 @@ _rename = _load_module('_tasks_cmd_rename', '_cmd_rename.py')
 _crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')
 
 cmd_rename_path = _rename.cmd_rename_path
-cmd_add = _crud.cmd_add
+cmd_prepare_add = _crud.cmd_prepare_add
+cmd_commit_add = _crud.cmd_commit_add
 
 
 def _rename_ns(plan_id='rename-test', old_path='old/path', new_path='new/path'):
     return Namespace(plan_id=plan_id, old_path=old_path, new_path=new_path)
 
 
-def _add_ns(plan_id='rename-test', content=''):
-    return Namespace(plan_id=plan_id, content=content)
+def _add_task(plan_id, toon_text, slot=None):
+    """Run the path-allocate add flow end-to-end."""
+    prep = cmd_prepare_add(Namespace(plan_id=plan_id, slot=slot))
+    assert prep.get('status') == 'success', prep
+    Path(prep['path']).write_text(toon_text, encoding='utf-8')
+    return cmd_commit_add(Namespace(plan_id=plan_id, slot=slot))
 
 
 def _build_task_toon(title='Test task', deliverable=1, steps=None):
@@ -118,7 +123,7 @@ class TestRenamePath:
                 deliverable=1,
                 steps=['providers/config.py', 'providers/auth.py', 'unrelated/file.py'],
             )
-            cmd_add(_add_ns(plan_id='rename-rewrite', content=content))
+            _add_task('rename-rewrite', content)
 
             # Rename providers/ -> auth/providers/
             result = cmd_rename_path(
@@ -145,7 +150,7 @@ class TestRenamePath:
                 deliverable=1,
                 steps=['providers/config.py'],
             )
-            cmd_add(_add_ns(plan_id='rename-done-steps', content=content))
+            _add_task('rename-done-steps', content)
 
             # Mark the task's step as done by modifying the file directly
             tasks_dir = ctx.plan_dir / 'tasks'

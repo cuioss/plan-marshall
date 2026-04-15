@@ -2,6 +2,11 @@
 """Tests for manage-plan-documents.py script.
 
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
+
+Exercises the three-step path-allocate pattern for request editing:
+    1. `request path`           → script returns the canonical artifact path
+    2. Main context edits file  → direct Read/Edit/Write (no shell boundary)
+    3. `request mark-clarified` → script validates and records the transition
 """
 
 import importlib.util
@@ -34,9 +39,10 @@ def _load_module(name, filename):
 _cmd_request = _load_module('_cmd_request', '_cmd_request.py')
 _cmd_types = _load_module('_cmd_types', '_cmd_types.py')
 
-cmd_clarify = _cmd_request.cmd_clarify
 cmd_create = _cmd_request.cmd_create
 cmd_exists = _cmd_request.cmd_exists
+cmd_mark_clarified = _cmd_request.cmd_mark_clarified
+cmd_path = _cmd_request.cmd_path
 cmd_read = _cmd_request.cmd_read
 cmd_remove = _cmd_request.cmd_remove
 cmd_list_types = _cmd_types.cmd_list_types
@@ -213,6 +219,195 @@ def test_request_remove():
 
 
 # =============================================================================
+# Test: request path (Step 1 of edit flow)
+# =============================================================================
+
+
+def test_request_path_returns_canonical_path():
+    """`request path` returns the absolute path to the existing request.md."""
+    with PlanContext(plan_id='path-ok') as ctx:
+        (ctx.plan_dir / 'request.md').write_text("""# Request: Test
+
+plan_id: path-ok
+source: description
+
+## Original Input
+
+Body
+
+## Context
+
+Ctx
+""")
+
+        result = cmd_path(
+            'request',
+            Namespace(plan_id='path-ok'),
+        )
+        assert result['status'] == 'success'
+        assert result['document'] == 'request'
+        assert result['file'] == 'request.md'
+        # Path must be absolute and point to the actual file
+        returned = Path(result['path'])
+        assert returned.is_absolute()
+        assert returned == (ctx.plan_dir / 'request.md').resolve()
+        # Sections list is advertised for caller convenience
+        assert 'sections' in result
+        assert isinstance(result['sections'], list)
+        assert 'original_input' in result['sections']
+
+
+def test_request_path_missing_document():
+    """`request path` errors when the request document does not exist yet."""
+    with PlanContext(plan_id='path-missing'):
+        result = cmd_path(
+            'request',
+            Namespace(plan_id='path-missing'),
+        )
+        assert result['status'] == 'error'
+
+
+# =============================================================================
+# Test: request mark-clarified (Step 3 of edit flow)
+# =============================================================================
+
+
+def test_mark_clarified_succeeds_when_section_present():
+    """mark-clarified returns success when Clarified Request section exists."""
+    with PlanContext(plan_id='mc-ok') as ctx:
+        (ctx.plan_dir / 'request.md').write_text("""# Request: Test
+
+plan_id: mc-ok
+source: description
+
+## Original Input
+
+Body
+
+## Clarifications
+
+Q: What? A: This.
+
+## Clarified Request
+
+Clarified version of the request
+""")
+        result = cmd_mark_clarified(
+            'request',
+            Namespace(plan_id='mc-ok'),
+        )
+        assert result['status'] == 'success'
+        assert result['clarified'] is True
+        assert result['has_clarifications_section'] is True
+
+
+def test_mark_clarified_succeeds_without_clarifications_section():
+    """mark-clarified still succeeds when only Clarified Request is present."""
+    with PlanContext(plan_id='mc-no-clar') as ctx:
+        (ctx.plan_dir / 'request.md').write_text("""# Request: Test
+
+plan_id: mc-no-clar
+source: description
+
+## Original Input
+
+Body
+
+## Clarified Request
+
+Clarified content
+""")
+        result = cmd_mark_clarified(
+            'request',
+            Namespace(plan_id='mc-no-clar'),
+        )
+        assert result['status'] == 'success'
+        assert result['clarified'] is True
+        assert result['has_clarifications_section'] is False
+
+
+def test_mark_clarified_fails_without_clarified_section():
+    """mark-clarified errors when Clarified Request section is absent."""
+    with PlanContext(plan_id='mc-missing') as ctx:
+        (ctx.plan_dir / 'request.md').write_text("""# Request: Test
+
+plan_id: mc-missing
+source: description
+
+## Original Input
+
+Body
+""")
+        result = cmd_mark_clarified(
+            'request',
+            Namespace(plan_id='mc-missing'),
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_clarified'
+
+
+def test_mark_clarified_fails_when_document_missing():
+    """mark-clarified errors when the request document itself does not exist."""
+    with PlanContext(plan_id='mc-no-doc'):
+        result = cmd_mark_clarified(
+            'request',
+            Namespace(plan_id='mc-no-doc'),
+        )
+        assert result['status'] == 'error'
+
+
+def test_three_step_edit_roundtrip():
+    """End-to-end three-step pattern: create → path → direct edit → mark-clarified."""
+    with PlanContext(plan_id='three-step') as ctx:
+        # Step 0: create original document
+        cmd_create(
+            'request',
+            Namespace(
+                plan_id='three-step',
+                title='Test',
+                source='description',
+                source_id=None,
+                body='Original body',
+                context=None,
+                force=False,
+            ),
+        )
+
+        # Step 1: script allocates path
+        path_result = cmd_path(
+            'request',
+            Namespace(plan_id='three-step'),
+        )
+        assert path_result['status'] == 'success'
+        target = Path(path_result['path'])
+
+        # Step 2: main context edits the file directly (simulated)
+        existing = target.read_text(encoding='utf-8')
+        updated = existing + '\n## Clarified Request\n\nClarified version here\n'
+        target.write_text(updated, encoding='utf-8')
+
+        # Step 3: script validates and records transition
+        mark_result = cmd_mark_clarified(
+            'request',
+            Namespace(plan_id='three-step'),
+        )
+        assert mark_result['status'] == 'success'
+        assert mark_result['clarified'] is True
+
+        # And a subsequent section read returns the clarified content
+        read_result = cmd_read(
+            'request',
+            Namespace(plan_id='three-step', raw=False, section='clarified_request'),
+        )
+        assert read_result['status'] == 'success'
+        assert read_result['section'] == 'clarified_request'
+        assert 'Clarified version here' in read_result['content']
+
+        # Sanity: plan context fixture directory was actually used
+        assert ctx.plan_dir.exists()
+
+
+# =============================================================================
 # Test: Invalid Plan IDs
 # =============================================================================
 
@@ -288,7 +483,7 @@ def test_create_existing_with_force():
 
 
 def test_read_section_clarified_request_fallback():
-    """Test that clarified_request falls back to original_input when not present."""
+    """Clarified section falls back to original_input when not present."""
     with PlanContext(plan_id='fallback-test'):
         # Create request
         cmd_create(
@@ -315,10 +510,10 @@ def test_read_section_clarified_request_fallback():
         assert 'Original body content' in result['content']
 
 
-def test_read_section_clarified_request_when_present():
-    """Test that clarified_request returns actual section when present."""
-    with PlanContext(plan_id='clarified-present'):
-        # Create request
+def test_read_section_returns_clarified_when_present_after_direct_edit():
+    """After a direct edit adds a Clarified Request section, read returns it."""
+    with PlanContext(plan_id='clarified-present') as ctx:
+        # Step 0: create the request
         cmd_create(
             'request',
             Namespace(
@@ -332,23 +527,34 @@ def test_read_section_clarified_request_when_present():
             ),
         )
 
-        # Add clarified_request via clarify command
-        cmd_clarify(
+        # Step 1: script allocates canonical path
+        path_result = cmd_path(
             'request',
-            Namespace(
-                plan_id='clarified-present',
-                clarifications='Q: What? A: This.',
-                clarified_request='Clarified version of the request',
-            ),
+            Namespace(plan_id='clarified-present'),
+        )
+        target = Path(path_result['path'])
+
+        # Step 2: caller edits the file directly (no content crosses the shell)
+        existing = target.read_text(encoding='utf-8')
+        target.write_text(
+            existing + '\n## Clarifications\n\nQ: What? A: This.\n\n## Clarified Request\n\nClarified version of the request\n',
+            encoding='utf-8',
         )
 
-        # Request clarified_request - should return the actual section
+        # Step 3: record the transition
+        cmd_mark_clarified(
+            'request',
+            Namespace(plan_id='clarified-present'),
+        )
+
+        # Subsequent read of clarified_request returns the edited section
         result = cmd_read(
             'request',
             Namespace(plan_id='clarified-present', raw=False, section='clarified_request'),
         )
         assert result['section'] == 'clarified_request'
         assert 'Clarified version' in result['content']
+        assert ctx.plan_dir.exists()
 
 
 # =============================================================================
@@ -552,3 +758,67 @@ def test_cli_request_create_roundtrip():
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert data['action'] == 'created'
+
+
+def test_cli_request_path_subcommand():
+    """CLI plumbing: `request path` returns canonical path via TOON."""
+    with PlanContext(plan_id='cli-path'):
+        # Create first
+        run_script(
+            SCRIPT_PATH,
+            'request',
+            'create',
+            '--plan-id',
+            'cli-path',
+            '--title',
+            'Test',
+            '--source',
+            'description',
+            '--body',
+            'Body',
+        )
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'path',
+            '--plan-id',
+            'cli-path',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'
+        assert 'path' in data
+        assert data['path'].endswith('request.md')
+
+
+def test_cli_request_mark_clarified_subcommand():
+    """CLI plumbing: `request mark-clarified` validates the edited file."""
+    with PlanContext(plan_id='cli-mc') as ctx:
+        # Create, then directly edit to add Clarified Request section
+        run_script(
+            SCRIPT_PATH,
+            'request',
+            'create',
+            '--plan-id',
+            'cli-mc',
+            '--title',
+            'Test',
+            '--source',
+            'description',
+            '--body',
+            'Body',
+        )
+        target = ctx.plan_dir / 'request.md'
+        target.write_text(
+            target.read_text() + '\n## Clarified Request\n\nClarified text\n'
+        )
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'mark-clarified',
+            '--plan-id',
+            'cli-mc',
+        )
+        assert result.success, f'Script failed: {result.stderr}'
+        data = parse_toon(result.stdout)
+        assert data['status'] == 'success'

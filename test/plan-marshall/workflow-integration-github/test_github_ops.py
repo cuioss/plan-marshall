@@ -39,13 +39,24 @@ def _capture_run_gh():
 # =============================================================================
 
 
-def test_pr_create_forwards_head_flag(monkeypatch):
+def _prepare_pr_create_body(tmp_path, monkeypatch, body_text='B', plan_id='p'):
+    """Seed PLAN_BASE_DIR with a prepared pr-create body scratch file."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    from ci_base import BODY_KIND_PR_CREATE, get_body_path  # type: ignore[import-not-found]
+    path = get_body_path(plan_id, BODY_KIND_PR_CREATE)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body_text, encoding='utf-8')
+    return plan_id
+
+
+def test_pr_create_forwards_head_flag(monkeypatch, tmp_path):
     run_gh_stub, captured = _capture_run_gh()
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
+    plan_id = _prepare_pr_create_body(tmp_path, monkeypatch)
     ns = argparse.Namespace(
-        title='T', body='B', body_file=None, base=None, draft=False, head='feature/x'
+        title='T', plan_id=plan_id, slot=None, base=None, draft=False, head='feature/x'
     )
     result = github_ops.cmd_pr_create(ns)
 
@@ -53,12 +64,15 @@ def test_pr_create_forwards_head_flag(monkeypatch):
     assert any('--head' in c and 'feature/x' in c for c in captured), captured
 
 
-def test_pr_create_omits_head_when_unset(monkeypatch):
+def test_pr_create_omits_head_when_unset(monkeypatch, tmp_path):
     run_gh_stub, captured = _capture_run_gh()
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
-    ns = argparse.Namespace(title='T', body='B', body_file=None, base=None, draft=False, head=None)
+    plan_id = _prepare_pr_create_body(tmp_path, monkeypatch)
+    ns = argparse.Namespace(
+        title='T', plan_id=plan_id, slot=None, base=None, draft=False, head=None
+    )
     result = github_ops.cmd_pr_create(ns)
 
     assert result['status'] == 'success', result

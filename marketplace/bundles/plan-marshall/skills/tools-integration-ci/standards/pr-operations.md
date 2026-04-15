@@ -91,29 +91,41 @@ prs[2]{number,url,title,state,head_branch,base_branch}:
 
 **Pattern**: Provider-Agnostic Router
 
-Create a pull request using config-stored command.
+Create a pull request using the three-step path-allocate pattern. The script
+owns path allocation — callers never invent scratch paths. Markdown bodies are
+written directly by the main context with its native Write tool, and the `pr
+create` subcommand consumes the prepared file. No multi-line markdown crosses
+the shell boundary, so Claude Code's shell-heading heuristic never fires.
 
-**CRITICAL**: Never pass multi-line markdown through Bash `--body` arguments. Markdown headings (`##`) after newlines in quoted strings trigger Claude Code's shell security heuristic. Always use the Write tool for the body file, then reference it with `--body-file`.
+### Step 1: Allocate Scratch Body Path
 
-### Step 1: Write PR Body
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body \
+    --plan-id {plan_id}
+```
 
-Use the Write tool to create the body file:
+Read the `path` field from the returned TOON. It is the canonical, script-owned
+location for the PR body, bound to this plan and kind.
+
+### Step 2: Write the PR Body
 
 ```
-Write({artifact_path}/pr-body.md) with PR body markdown content
+Write({path from prepare-body}) with PR body markdown content
 ```
 
-### Step 2: Create PR
+### Step 3: Create PR
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-    --title "Add feature X" --body-file path/to/pr-body.md --base main [--head feature/x]
+    --title "Add feature X" --plan-id {plan_id} --base main [--head feature/x]
 ```
 
-When invoking from the main checkout against a worktree-isolated plan, pass `--head {plan_branch}`
-to bypass cwd-based source-branch derivation. See *Worktree-Isolated Plans* above.
+The subcommand reads the body from the prepared scratch file, creates the PR,
+and deletes the scratch on success. When invoking from the main checkout
+against a worktree-isolated plan, pass `--head {plan_branch}` to bypass
+cwd-based source-branch derivation. See *Worktree-Isolated Plans* above.
 
-### Step 3: Process Result
+### Step 4: Process Result
 
 ```toon
 status: success
@@ -227,16 +239,34 @@ pr_number: 123
 
 **Pattern**: Provider-Agnostic Router
 
-Edit a pull request title and/or body.
+Edit a pull request title and/or body. Use the path-allocate pattern when
+updating the body. Title-only edits skip Steps 1-2.
 
-### Step 1: Execute
+### Step 1 (optional): Allocate scratch path for new body
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body \
+    --plan-id {plan_id} --for edit
+```
+
+### Step 2 (optional): Write the new body
+
+```
+Write({path from prepare-body}) with new PR body markdown content
+```
+
+### Step 3: Execute the edit
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr edit \
-    --pr-number 123 [--title "T"] [--body "B"]
+    --pr-number 123 --plan-id {plan_id} [--title "T"]
 ```
 
-### Step 2: Process Result
+Omit `--title` to update only the body; omit Steps 1-2 to update only the
+title. At least one of `--title` or a prepared body must be supplied — the
+script rejects calls that change nothing.
+
+### Step 4: Process Result
 
 ```toon
 status: success
