@@ -6,8 +6,8 @@ Tests subcommands:
 - add: Create a new lesson
 - get: Get a single lesson
 - list: List lessons with filtering
-- update: Update lesson metadata
-- archive: Archive a lesson
+- update: Update lesson metadata (component/category only)
+- convert-to-plan: Move a lesson into a plan directory
 - from-error: Create lesson from error context
 
 Tier 2 (direct import) with 2 subprocess tests for CLI plumbing.
@@ -37,7 +37,7 @@ cmd_add = _mod.cmd_add
 cmd_get = _mod.cmd_get
 cmd_list = _mod.cmd_list
 cmd_update = _mod.cmd_update
-cmd_archive = _mod.cmd_archive
+cmd_convert_to_plan = _mod.cmd_convert_to_plan
 cmd_from_error = _mod.cmd_from_error
 
 
@@ -117,7 +117,7 @@ class TestCmdList:
     def test_list_empty_directory(self, tmp_path):
         """Should return empty list when no lessons exist."""
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(Namespace(component=None, category=None, applied=None))
+            result = cmd_list(Namespace(component=None, category=None))
 
         assert result['status'] == 'success'
         assert result['total'] == 0
@@ -131,7 +131,6 @@ class TestCmdList:
         lesson_content = """id=2025-01-01-001
 component=test-component
 category=bug
-applied=false
 created=2025-01-01
 
 # Test Lesson Title
@@ -141,7 +140,7 @@ This is the lesson body.
         (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(Namespace(component=None, category=None, applied=None))
+            result = cmd_list(Namespace(component=None, category=None))
 
         assert result['status'] == 'success'
         assert result['total'] == 1
@@ -155,7 +154,6 @@ This is the lesson body.
         lesson1 = """id=2025-01-01-001
 component=component-a
 category=bug
-applied=false
 created=2025-01-01
 
 # Lesson A
@@ -163,7 +161,6 @@ created=2025-01-01
         lesson2 = """id=2025-01-01-002
 component=component-b
 category=bug
-applied=false
 created=2025-01-01
 
 # Lesson B
@@ -172,7 +169,7 @@ created=2025-01-01
         (lessons_dir / '2025-01-01-002.md').write_text(lesson2)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(Namespace(component='component-a', category=None, applied=None))
+            result = cmd_list(Namespace(component='component-a', category=None))
 
         assert result['status'] == 'success'
         assert result['total'] == 2
@@ -186,7 +183,6 @@ created=2025-01-01
         lesson1 = """id=2025-01-01-001
 component=test
 category=bug
-applied=false
 created=2025-01-01
 
 # Bug Lesson
@@ -194,7 +190,6 @@ created=2025-01-01
         lesson2 = """id=2025-01-01-002
 component=test
 category=improvement
-applied=false
 created=2025-01-01
 
 # Improvement Lesson
@@ -203,7 +198,7 @@ created=2025-01-01
         (lessons_dir / '2025-01-01-002.md').write_text(lesson2)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(Namespace(component=None, category='bug', applied=None))
+            result = cmd_list(Namespace(component=None, category='bug'))
 
         assert result['status'] == 'success'
         assert result['filtered'] == 1
@@ -225,7 +220,6 @@ class TestCmdGet:
         lesson_content = """id=2025-01-01-001
 component=test-component
 category=bug
-applied=false
 created=2025-01-01
 
 # Test Lesson Title
@@ -262,15 +256,14 @@ This is the lesson body.
 class TestCmdUpdate:
     """Test cmd_update direct invocation."""
 
-    def test_update_applied_status(self, tmp_path):
-        """Should update applied status."""
+    def test_update_component(self, tmp_path):
+        """Should update component field."""
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
         lesson_content = """id=2025-01-01-001
-component=test-component
+component=old-component
 category=bug
-applied=false
 created=2025-01-01
 
 # Test Lesson
@@ -281,16 +274,16 @@ Body.
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_update(
-                Namespace(id='2025-01-01-001', applied=True, component=None, category=None)
+                Namespace(id='2025-01-01-001', component='new-component', category=None)
             )
 
         assert result['status'] == 'success'
-        assert result['field'] == 'applied'
-        assert result['value'] == 'true'
+        assert result['field'] == 'component'
+        assert result['value'] == 'new-component'
 
         # Verify file was updated
         updated_content = (lessons_dir / '2025-01-01-001.md').read_text()
-        assert 'applied=true' in updated_content
+        assert 'component=new-component' in updated_content
 
     def test_update_nonexistent_lesson_fails(self, tmp_path):
         """Should fail when updating non-existent lesson."""
@@ -299,7 +292,7 @@ Body.
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_update(
-                Namespace(id='nonexistent', applied=True, component=None, category=None)
+                Namespace(id='nonexistent', component='x', category=None)
             )
 
         assert result['status'] == 'error'
@@ -307,81 +300,87 @@ Body.
 
 
 # =============================================================================
-# Tier 2: cmd_archive
+# Tier 2: cmd_convert_to_plan
 # =============================================================================
 
 
-class TestCmdArchive:
-    """Test cmd_archive direct invocation."""
+class TestCmdConvertToPlan:
+    """Test cmd_convert_to_plan direct invocation."""
 
-    def test_archive_moves_and_marks_applied(self, tmp_path):
-        """Should set applied=true and move to archived-lessons."""
+    def test_convert_to_plan_moves_file(self, tmp_path):
+        """Should move lesson file from lessons-learned into plan directory."""
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
         lesson_content = """id=2025-01-01-001
 component=test-component
 category=bug
-applied=false
 created=2025-01-01
 
 # Test Lesson
 
-Body content.
+Body content here.
 """
-        (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
+        source = lessons_dir / '2025-01-01-001.md'
+        source.write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_archive(Namespace(id='2025-01-01-001', applied=True))
+            result = cmd_convert_to_plan(
+                Namespace(id='2025-01-01-001', plan_id='my-plan')
+            )
 
         assert result['status'] == 'success'
+        assert result['lesson_id'] == '2025-01-01-001'
+        assert result['plan_id'] == 'my-plan'
 
-        # Original should be removed
-        assert not (lessons_dir / '2025-01-01-001.md').exists()
+        # Source file no longer exists
+        assert not source.exists()
 
-        # Archived file should exist with applied=true
-        archived = tmp_path / 'archived-lessons' / '2025-01-01-001.md'
-        assert archived.exists()
-        archived_content = archived.read_text()
-        assert 'applied=true' in archived_content
-        assert '# Test Lesson' in archived_content
+        # Destination exists with identical content
+        destination = tmp_path / 'plans' / 'my-plan' / 'lesson-2025-01-01-001.md'
+        assert destination.exists()
+        assert destination.read_text() == lesson_content
 
-    def test_archive_with_applied_false(self, tmp_path):
-        """Should archive with applied=false when specified."""
-        lessons_dir = tmp_path / 'lessons-learned'
-        lessons_dir.mkdir(parents=True)
-
-        lesson_content = """id=2025-01-01-001
-component=test-component
-category=bug
-applied=false
-created=2025-01-01
-
-# Test Lesson
-
-Body content.
-"""
-        (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
-
-        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_archive(Namespace(id='2025-01-01-001', applied=False))
-
-        assert result['status'] == 'success'
-
-        archived = tmp_path / 'archived-lessons' / '2025-01-01-001.md'
-        archived_content = archived.read_text()
-        assert 'applied=false' in archived_content
-
-    def test_archive_nonexistent_lesson_fails(self, tmp_path):
-        """Should fail when archiving non-existent lesson."""
+    def test_convert_to_plan_missing_source(self, tmp_path):
+        """Should return error when source lesson does not exist."""
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_archive(Namespace(id='nonexistent', applied=True))
+            result = cmd_convert_to_plan(
+                Namespace(id='nonexistent-id', plan_id='my-plan')
+            )
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
+
+    def test_convert_to_plan_creates_plan_dir_if_missing(self, tmp_path):
+        """Should create the plan directory on the fly when it does not exist."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        lesson_content = """id=2025-01-01-001
+component=test-component
+category=bug
+created=2025-01-01
+
+# Test Lesson
+
+Body.
+"""
+        (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
+
+        plan_dir = tmp_path / 'plans' / 'fresh-plan'
+        assert not plan_dir.exists()
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_convert_to_plan(
+                Namespace(id='2025-01-01-001', plan_id='fresh-plan')
+            )
+
+        assert result['status'] == 'success'
+        assert plan_dir.exists()
+        assert (plan_dir / 'lesson-2025-01-01-001.md').exists()
 
 
 # =============================================================================

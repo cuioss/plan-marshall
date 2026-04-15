@@ -37,7 +37,6 @@
 
 ## Archive (if 7_archive == true)
 
-- Mark lesson applied BEFORE archive (if plan originated from a lesson)
 - Archive plan via manage-status archive
 - Handle archive failures (missing plan directory, permissions)
 
@@ -95,7 +94,6 @@ actions:
   knowledge_capture: {done|skipped}
   lessons_capture: {done|skipped}
   archive: {done|skipped}
-  lesson_applied: {done|skipped}
   branch_cleanup: {done|skipped|declined}
 
 next_state: complete

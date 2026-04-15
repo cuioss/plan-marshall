@@ -7,7 +7,7 @@ scope: global
 
 # Manage Lessons Skill
 
-Manage lessons learned with global scope. Stores lessons as markdown files with key=value metadata headers.
+Manage lessons learned with global scope. Stores lessons as markdown files with key=value metadata headers. A lesson's lifecycle state ("unapplied" vs "applied") is encoded by its on-disk location, not by metadata: unapplied lessons live in `.plan/local/lessons-learned/{id}.md`, and become applied by being moved into a plan directory as `.plan/local/plans/{plan_id}/lesson-{id}.md` via `convert-to-plan`.
 
 ## Enforcement
 
@@ -39,7 +39,6 @@ Markdown with key=value metadata header:
 id=2025-12-02-001
 component=maven-build
 category=bug
-applied=false
 created=2025-12-02
 
 # Build fails with missing dependency
@@ -70,7 +69,6 @@ This affects all projects using jakarta.json without explicit dependency.
 | `id` | Unique identifier (date-sequence) |
 | `component` | Component that lesson applies to |
 | `category` | bug, improvement, anti-pattern |
-| `applied` | Whether lesson has been applied (true/false) |
 | `created` | Creation date |
 | `bundle` | Optional: bundle that the lesson relates to (e.g., `pm-dev-java`). Used for filtering when applying lessons to specific bundles. |
 
@@ -116,14 +114,12 @@ Update lesson metadata.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons update \
   --id 2025-12-02-001 \
-  [--applied true|false] \
   [--component new-component] \
   [--category bug|improvement|anti-pattern]
 ```
 
 **Parameters**:
 - `--id` (required): Lesson ID to update
-- `--applied`: Set applied status (true/false)
 - `--component`: Update component name
 - `--category`: Update category
 
@@ -131,9 +127,9 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons upda
 ```toon
 status: success
 id: 2025-12-02-001
-field: applied
-value: true
-previous: false
+field: component
+value: new-component
+previous: maven-build
 ```
 
 ### get
@@ -151,7 +147,6 @@ status: success
 id: 2025-12-02-001
 component: maven-build
 category: bug
-applied: false
 created: 2025-12-02
 title: Build fails with missing dependency
 
@@ -166,14 +161,12 @@ List lessons with filtering.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list \
   [--component maven-build] \
-  [--category bug] \
-  [--applied true|false]
+  [--category bug]
 ```
 
 **Parameters**:
 - `--component`: Filter by component name
 - `--category`: Filter by category (`bug`, `improvement`, `anti-pattern`)
-- `--applied`: Filter by applied status (true/false)
 
 **Output** (TOON):
 ```toon
@@ -184,13 +177,34 @@ lessons:
   - id: 2025-12-02-001
     component: maven-build
     category: bug
-    applied: false
     title: Build fails with missing dependency
   - id: 2025-12-02-002
     component: plan-files
     category: improvement
-    applied: true
     title: Add validation for plan_id format
+```
+
+### convert-to-plan
+
+Move a lesson out of the global lessons-learned directory and into a plan directory as `lesson-{id}.md`. This is how a lesson transitions from "unapplied" to "applied" — the lifecycle state is encoded in the file's location, not in metadata.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons convert-to-plan \
+  --id 2025-12-02-001 \
+  --plan-id my-plan
+```
+
+**Parameters**:
+- `--id` (required): Lesson ID to move
+- `--plan-id` (required): Target plan directory under `.plan/local/plans/`
+
+**Output** (TOON):
+```toon
+status: success
+lesson_id: 2025-12-02-001
+plan_id: my-plan
+source: .plan/local/lessons-learned/2025-12-02-001.md
+destination: .plan/local/plans/my-plan/lesson-2025-12-02-001.md
 ```
 
 ### from-error
@@ -224,11 +238,11 @@ created_from: error_context
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `add` | `--component --category --title --detail [--bundle]` | Create new lesson |
-| `update` | `--id [--applied] [--component] [--category]` | Update lesson metadata |
+| `update` | `--id [--component] [--category]` | Update lesson metadata |
 | `get` | `--id` | Get single lesson |
-| `list` | `[--component] [--category] [--applied]` | List with filtering |
+| `list` | `[--component] [--category]` | List with filtering |
 | `from-error` | `--context` | Create from JSON error context |
-| `archive` | `--id` | Mark lesson as applied and move to archived directory. Equivalent to `update --applied true` plus file relocation. |
+| `convert-to-plan` | `--id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
 
 ---
 
@@ -248,7 +262,7 @@ created_from: error_context
 
 | Error Code | Cause |
 |------------|-------|
-| `not_found` | Lesson ID doesn't exist (get, update, archive) |
+| `not_found` | Lesson ID doesn't exist (get, update, convert-to-plan) |
 | `invalid_category` | Category not in: bug, improvement, anti-pattern |
 | `invalid_context` | JSON context parsing failed (from-error) |
 | `missing_required` | Required parameter missing |
@@ -269,8 +283,8 @@ created_from: error_context
 
 | Client | Operation | Purpose |
 |--------|-----------|---------|
-| `plugin-apply-lessons-learned` | list, update | Apply lessons to marketplace components |
-| `phase-6-finalize` | list | Query unapplied lessons for promotion |
+| `plugin-apply-lessons-learned` | list, convert-to-plan | Apply lessons to marketplace components by moving them into a plan directory |
+| `phase-6-finalize` | list | Query unapplied lessons (those still in `.plan/local/lessons-learned/`) for promotion |
 
 ## Related
 

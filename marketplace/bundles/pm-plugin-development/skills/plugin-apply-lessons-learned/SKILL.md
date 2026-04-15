@@ -8,6 +8,8 @@ user-invocable: true
 
 Read lessons learned via `manage-lessons` skill and apply them to component documentation.
 
+**Lesson lifecycle**: Unapplied lessons live as files in `.plan/local/lessons-learned/`. Once a lesson is applied, it is moved into a plan directory (the plan that consumes it carries the `lesson-{id}.md` file along when archived). Therefore, "unapplied lessons" is simply "the set of files currently in `.plan/local/lessons-learned/`".
+
 ## Usage
 
 ```
@@ -39,17 +41,16 @@ Read lessons learned via `manage-lessons` skill and apply them to component docu
 Skill: plan-marshall:manage-lessons
 ```
 
-### Step 3: Query Unapplied Lessons
+### Step 3: List Unapplied Lessons
 
-Query unapplied lessons using the manage-lessons script:
+Unapplied lessons are the files currently in `.plan/local/lessons-learned/`. List them via the manage-lessons script:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons query \
-  --applied false [--component-name {name}]
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list [--component-name {name}]
 ```
 
 - For specific component: Add `--component-name {name}`
-- For --all: Query all where `applied: false`
+- For --all: List everything returned (all files in `.plan/local/lessons-learned/`)
 - For --list: Display results without applying
 
 ### Step 4: For Each Unapplied Lesson
@@ -76,7 +77,7 @@ d. **Apply lesson**:
    - Maintain document structure and formatting
 
 e. **Mark lesson applied**:
-   - Edit lesson file frontmatter: Change `applied: false` to `applied: true`
+   - The lesson is considered applied once the originating plan archives. Within this skill, no `applied` flag exists — applying the lesson here means editing the target component documentation. The lesson file remains in `.plan/local/lessons-learned/` until a plan picks it up and carries it through archive.
 
 ### Step 5: Report Results
 

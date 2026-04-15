@@ -31,7 +31,6 @@ Markdown with key=value metadata header (no YAML frontmatter):
 id=2025-12-02-001
 component=maven-build
 category=bug
-applied=false
 created=2025-12-02
 bundle=pm-dev-java
 
@@ -63,7 +62,6 @@ This affects all projects using jakarta.json without explicit dependency.
 | `id` | Yes | string | Unique identifier matching filename without `.md` extension |
 | `component` | Yes | string | Component that the lesson applies to (e.g., `maven-build`, `plan-files`) |
 | `category` | Yes | string | One of: `bug`, `improvement`, `anti-pattern`. These values match the promotable finding types in `manage-findings/standards/jsonl-format.md` |
-| `applied` | Yes | bool | Whether the lesson has been applied (`true`/`false`) |
 | `created` | Yes | string | Creation date in `YYYY-MM-DD` format |
 | `bundle` | No | string | Bundle that the lesson relates to (e.g., `pm-dev-java`). Used for filtering when applying lessons to specific bundles. |
 
@@ -89,3 +87,7 @@ After the metadata header, lessons follow standard markdown:
 ## Metadata Parsing
 
 The metadata header uses simple `key=value` format (one per line, no quoting). The header ends at the first blank line. Lines after the blank line are treated as markdown content.
+
+## Lesson Lifecycle
+
+Unapplied lesson files live at `.plan/local/lessons-learned/{id}.md`. A lesson becomes "applied" by being moved into a plan directory as `.plan/local/plans/{plan_id}/lesson-{id}.md` via `manage-lessons convert-to-plan --id {id} --plan-id {plan_id}`. The on-disk location is the source of truth for lifecycle state — there is no `applied` metadata field.

@@ -273,7 +273,6 @@ actions:
   knowledge_capture: {done|skipped}
   lessons_capture: {done|skipped}
   archive: {done|skipped}
-  lesson_applied: {done|skipped}
   branch_cleanup: {done|skipped|declined}
 
 metrics:

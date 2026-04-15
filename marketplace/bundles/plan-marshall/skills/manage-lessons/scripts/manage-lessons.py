@@ -8,18 +8,18 @@ Usage:
     python3 manage-lesson.py add --component maven-build --category bug --title "Title" --detail "..."
     python3 manage-lesson.py list --component maven-build
     python3 manage-lesson.py get --id 2025-12-02-001
-    python3 manage-lesson.py update --id 2025-12-02-001 --applied true
-    python3 manage-lesson.py archive --id 2025-12-02-001
+    python3 manage-lesson.py convert-to-plan --id 2025-12-02-001 --plan-id my-plan
 """
 
 import argparse
 import json
 import re
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
-from constants import DIR_ARCHIVED_LESSONS, DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
+from constants import DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
     base_path,
@@ -127,7 +127,6 @@ def cmd_add(args: argparse.Namespace) -> dict:
         'id': lesson_id,
         'component': args.component,
         'category': args.category,
-        'applied': 'false',
         'created': today,
     }
 
@@ -157,12 +156,7 @@ def cmd_update(args: argparse.Namespace) -> dict:
     value = None
     previous = None
 
-    if args.applied is not None:
-        field = 'applied'
-        previous = metadata.get('applied')
-        value = 'true' if args.applied else 'false'
-        metadata['applied'] = value
-    elif args.component:
+    if args.component:
         field = 'component'
         previous = metadata.get('component')
         value = args.component
@@ -200,7 +194,6 @@ def cmd_get(args: argparse.Namespace) -> dict:
         'id': metadata.get('id', args.id),
         'component': metadata.get('component', ''),
         'category': metadata.get('category', ''),
-        'applied': metadata.get('applied', 'false'),
         'created': metadata.get('created', ''),
         'title': title,
     }
@@ -231,10 +224,6 @@ def cmd_list(args: argparse.Namespace) -> dict:
             continue
         if args.category and metadata.get('category') != args.category:
             continue
-        if args.applied is not None:
-            applied_val = 'true' if args.applied else 'false'
-            if metadata.get('applied') != applied_val:
-                continue
 
         # Get title
         title = ''
@@ -248,7 +237,6 @@ def cmd_list(args: argparse.Namespace) -> dict:
                 'id': metadata.get('id', path.stem),
                 'component': metadata.get('component', ''),
                 'category': metadata.get('category', ''),
-                'applied': metadata.get('applied', 'false'),
                 'title': title,
             }
         )
@@ -256,35 +244,36 @@ def cmd_list(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'total': total, 'filtered': len(lessons), 'lessons': lessons}
 
 
-def get_archived_dir() -> Path:
-    """Get the archived-lessons directory."""
-    return base_path(DIR_ARCHIVED_LESSONS)
+def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
+    """Move a lesson file from the global lessons directory into a plan directory.
 
-
-def cmd_archive(args: argparse.Namespace) -> dict:
-    """Archive a lesson: set applied=true and move to archived-lessons."""
-    metadata, title, body = read_lesson(args.id)
-
-    if not metadata:
-        return {'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'}
-
+    The lesson is renamed to lesson-{id}.md inside .plan/local/plans/{plan_id}/.
+    Errors if the source lesson does not exist.
+    """
     lessons_dir = get_lessons_dir()
-    archived_dir = get_archived_dir()
-    archived_dir.mkdir(parents=True, exist_ok=True)
+    source = lessons_dir / f'{args.id}.md'
 
-    src = lessons_dir / f'{args.id}.md'
-    dst = archived_dir / f'{args.id}.md'
+    if not source.exists():
+        return {
+            'status': 'error',
+            'id': args.id,
+            'error': 'not_found',
+            'message': f'Lesson {args.id} not found',
+        }
 
-    # Update applied status
-    metadata['applied'] = 'true' if args.applied else 'false'
+    plan_dir = base_path(f'plans/{args.plan_id}')
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    destination = plan_dir / f'lesson-{args.id}.md'
 
-    # Write to archived location
-    write_lesson_to(dst, metadata, title, body)
+    shutil.move(str(source), str(destination))
 
-    # Remove original
-    src.unlink()
-
-    return {'status': 'success', 'id': args.id, 'archived_to': str(dst)}
+    return {
+        'status': 'success',
+        'lesson_id': args.id,
+        'plan_id': args.plan_id,
+        'source': str(source),
+        'destination': str(destination),
+    }
 
 
 def cmd_from_error(args: argparse.Namespace) -> dict:
@@ -301,7 +290,7 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
     lesson_id = get_next_id()
     today = datetime.now(UTC).strftime('%Y-%m-%d')
 
-    metadata = {'id': lesson_id, 'component': component, 'category': 'bug', 'applied': 'false', 'created': today}
+    metadata = {'id': lesson_id, 'component': component, 'category': 'bug', 'created': today}
 
     title = f'Error: {error[:50]}'
     body = f'## Error\n\n{error}\n\n'
@@ -332,7 +321,6 @@ def main() -> int:
     # update
     update_parser = subparsers.add_parser('update', help='Update lesson')
     update_parser.add_argument('--id', required=True, help='Lesson ID')
-    update_parser.add_argument('--applied', type=lambda x: x.lower() == 'true', help='Set applied status')
     update_parser.add_argument('--component', help='Update component')
     update_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Update category')
     update_parser.set_defaults(func=cmd_update)
@@ -346,16 +334,16 @@ def main() -> int:
     list_parser = subparsers.add_parser('list', help='List lessons')
     list_parser.add_argument('--component', help='Filter by component')
     list_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Filter by category')
-    list_parser.add_argument('--applied', type=lambda x: x.lower() == 'true', help='Filter by applied status')
     list_parser.set_defaults(func=cmd_list)
 
-    # archive
-    archive_parser = subparsers.add_parser('archive', help='Archive a lesson (set applied status and move)')
-    archive_parser.add_argument('--id', required=True, help='Lesson ID')
-    archive_parser.add_argument(
-        '--applied', type=lambda x: x.lower() == 'true', default=True, help='Set applied status (default: true)'
+    # convert-to-plan
+    convert_parser = subparsers.add_parser(
+        'convert-to-plan',
+        help='Move a lesson file into a plan directory as lesson-{id}.md',
     )
-    archive_parser.set_defaults(func=cmd_archive)
+    convert_parser.add_argument('--id', required=True, help='Lesson ID')
+    convert_parser.add_argument('--plan-id', required=True, help='Target plan ID')
+    convert_parser.set_defaults(func=cmd_convert_to_plan)
 
     # from-error
     from_error_parser = subparsers.add_parser('from-error', help='Create from error context')
