@@ -14,8 +14,12 @@ Check CI status for a pull request.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci status \
-    --pr-number 123
+    (--pr-number 123 | --head feature/x)
 ```
+
+Supply exactly one of `--pr-number` or `--head`. The `--head` form is required when invoking
+from the main checkout against a worktree-isolated plan branch — see
+[pr-operations.md § Worktree-Isolated Plans](pr-operations.md#worktree-isolated-plans).
 
 ### Step 2: Process Result
 

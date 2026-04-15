@@ -2,18 +2,45 @@
 
 Pull request lifecycle operations: create, view, merge, auto-merge, close, ready, edit.
 
+## Worktree-Isolated Plans
+
+Several operations identify a PR by source branch, and the underlying `gh`/`glab` CLI
+derives that branch from `git symbolic-ref HEAD` in the cwd. When a plan runs in an
+isolated git worktree (`.claude/worktrees/{plan_id}`) but the Bash tool executes from
+the main checkout, the cwd HEAD is the main branch, not the worktree's feature branch —
+so cwd-based derivation picks the wrong branch and operations fail (e.g. `pr create`
+returns *"No commits between main and main"*).
+
+To handle this, branch-aware operations accept an explicit `--head BRANCH` argument:
+
+| Operation | `--head` semantic |
+|-----------|--------------------|
+| `pr create` | Source branch for the new PR (forwarded as `gh --head` / `glab --source-branch`) |
+| `pr view` | Branch whose PR to view (gh accepts a branch positional; glab uses `mr view {branch}`) |
+| `pr merge` | Branch identifying the PR to merge (alternative to `--pr-number`; glab resolves IID via `mr list --source-branch`) |
+| `pr auto-merge` | Same as `pr merge` |
+| `ci status` | Same as `pr merge` |
+
+For `pr merge`, `pr auto-merge`, and `ci status`, supply **exactly one** of `--pr-number`
+or `--head`. Supplying both returns `status: error` with message `specify exactly one of --pr-number or --head`.
+Supplying neither returns `status: error` with message `specify either --pr-number or --head`.
+
+Callers running from the main checkout against a worktree-isolated plan branch MUST
+pass `--head {plan_branch}` on every branch-aware operation. Callers running from inside
+the worktree itself can omit `--head`.
+
 ---
 
-## Workflow: View PR (Current Branch)
+## Workflow: View PR (Current Branch or --head)
 
 **Pattern**: Provider-Agnostic Router
 
-Get PR/MR details for the current branch.
+Get PR/MR details for the current branch (or a specific branch via `--head`).
 
 ### Step 1: Resolve and Execute
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view [--head {branch}]
 ```
 
 ### Step 2: Process Result
@@ -80,8 +107,11 @@ Write({artifact_path}/pr-body.md) with PR body markdown content
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
-    --title "Add feature X" --body-file path/to/pr-body.md --base main
+    --title "Add feature X" --body-file path/to/pr-body.md --base main [--head feature/x]
 ```
+
+When invoking from the main checkout against a worktree-isolated plan, pass `--head {plan_branch}`
+to bypass cwd-based source-branch derivation. See *Worktree-Isolated Plans* above.
 
 ### Step 3: Process Result
 
@@ -104,8 +134,11 @@ Merge a pull request.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr merge \
-    --pr-number 123 [--strategy merge|squash|rebase] [--delete-branch]
+    (--pr-number 123 | --head feature/x) [--strategy merge|squash|rebase] [--delete-branch]
 ```
+
+Supply exactly one of `--pr-number` or `--head`. From a worktree-isolated plan invoked
+from the main checkout, prefer `--head {plan_branch}`.
 
 ### Step 2: Process Result
 
@@ -128,8 +161,10 @@ Enable auto-merge on a pull request (merges automatically when all checks pass).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-merge \
-    --pr-number 123 [--strategy merge|squash|rebase]
+    (--pr-number 123 | --head feature/x) [--strategy merge|squash|rebase]
 ```
+
+Supply exactly one of `--pr-number` or `--head`.
 
 ### Step 2: Process Result
 

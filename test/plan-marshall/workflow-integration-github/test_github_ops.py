@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Tests for github_ops.py --head flag routing.
+
+Verifies that branch-aware operations forward the --head value to gh and that
+the --pr-number/--head dual-flag validation works as expected.
+"""
+
+import argparse
+
+import github_ops  # type: ignore[import-not-found]
+
+
+def _ok_auth():
+    return True, ''
+
+
+def _capture_run_gh():
+    """Return a (run_gh_stub, captured_args_list) pair."""
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        # Provide a minimal valid response per operation.
+        if args[:2] == ['pr', 'create']:
+            return 0, 'https://github.com/octo/repo/pull/42', ''
+        if args[:2] == ['pr', 'view']:
+            return 0, '{"number": 42, "url": "https://github.com/octo/repo/pull/42", "state": "OPEN"}', ''
+        if args[:2] == ['pr', 'merge']:
+            return 0, '', ''
+        if args[:2] == ['pr', 'checks']:
+            return 0, '[]', ''
+        return 0, '', ''
+
+    return run_gh_stub, captured
+
+
+# =============================================================================
+# pr_create --head
+# =============================================================================
+
+
+def test_pr_create_forwards_head_flag(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(
+        title='T', body='B', body_file=None, base=None, draft=False, head='feature/x'
+    )
+    result = github_ops.cmd_pr_create(ns)
+
+    assert result['status'] == 'success', result
+    assert any('--head' in c and 'feature/x' in c for c in captured), captured
+
+
+def test_pr_create_omits_head_when_unset(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(title='T', body='B', body_file=None, base=None, draft=False, head=None)
+    result = github_ops.cmd_pr_create(ns)
+
+    assert result['status'] == 'success', result
+    assert not any('--head' in c for c in captured), captured
+
+
+# =============================================================================
+# pr_view --head
+# =============================================================================
+
+
+def test_pr_view_forwards_head_as_positional(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(head='feature/x')
+    result = github_ops.cmd_pr_view(ns)
+
+    assert result['status'] == 'success', result
+    pr_view_call = next(c for c in captured if c[:2] == ['pr', 'view'])
+    assert 'feature/x' in pr_view_call, pr_view_call
+
+
+# =============================================================================
+# pr_merge --head / --pr-number
+# =============================================================================
+
+
+def test_pr_merge_with_head(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(
+        pr_number=None, head='feature/x', strategy='merge', delete_branch=False
+    )
+    result = github_ops.cmd_pr_merge(ns)
+
+    assert result['status'] == 'success', result
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert merge_call[2] == 'feature/x'
+
+
+def test_pr_merge_with_pr_number(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=42, head=None, strategy='merge', delete_branch=False)
+    result = github_ops.cmd_pr_merge(ns)
+
+    assert result['status'] == 'success', result
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert merge_call[2] == '42'
+
+
+def test_pr_merge_dual_flag_rejected(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(
+        pr_number=42, head='feature/x', strategy='merge', delete_branch=False
+    )
+    result = github_ops.cmd_pr_merge(ns)
+
+    assert result['status'] == 'error'
+    assert 'exactly one' in result['error']
+    assert captured == [], 'Should not invoke gh when validation fails'
+
+
+def test_pr_merge_neither_flag_rejected(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=None, head=None, strategy='merge', delete_branch=False)
+    result = github_ops.cmd_pr_merge(ns)
+
+    assert result['status'] == 'error'
+    assert 'either' in result['error']
+
+
+# =============================================================================
+# pr_auto_merge --head
+# =============================================================================
+
+
+def test_pr_auto_merge_with_head(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=None, head='feature/x', strategy='merge')
+    result = github_ops.cmd_pr_auto_merge(ns)
+
+    assert result['status'] == 'success', result
+    merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
+    assert merge_call[2] == 'feature/x'
+    assert '--auto' in merge_call
+
+
+def test_pr_auto_merge_dual_flag_rejected(monkeypatch):
+    run_gh_stub, _ = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=42, head='feature/x', strategy='merge')
+    result = github_ops.cmd_pr_auto_merge(ns)
+
+    assert result['status'] == 'error'
+    assert 'exactly one' in result['error']
+
+
+# =============================================================================
+# ci_status --head
+# =============================================================================
+
+
+def test_ci_status_with_head(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=None, head='feature/x')
+    result = github_ops.cmd_ci_status(ns)
+
+    assert result['status'] == 'success', result
+    checks_call = next(c for c in captured if c[:2] == ['pr', 'checks'])
+    assert checks_call[2] == 'feature/x'
+
+
+def test_ci_status_dual_flag_rejected(monkeypatch):
+    run_gh_stub, _ = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=42, head='feature/x')
+    result = github_ops.cmd_ci_status(ns)
+
+    assert result['status'] == 'error'
+    assert 'exactly one' in result['error']

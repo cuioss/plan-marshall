@@ -135,6 +135,39 @@ def run_api(endpoint: str) -> tuple[int, list | dict | None, str]:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_mr_iid(args: argparse.Namespace, operation: str) -> tuple[str | None, dict | None]:
+    """Resolve an MR IID from --pr-number or --head.
+
+    For --pr-number: returns the value directly.
+    For --head: looks up the open MR by source branch via ``glab mr list --source-branch``.
+
+    Returns ``(iid, None)`` on success, or ``(None, error_dict)`` on validation failure
+    or zero-match.
+    """
+    pr_number = getattr(args, 'pr_number', None)
+    head = getattr(args, 'head', None)
+    if pr_number and head:
+        return None, make_error(operation, 'specify exactly one of --pr-number or --head, not both')
+    if pr_number:
+        return str(pr_number), None
+    if not head:
+        return None, make_error(operation, 'specify either --pr-number or --head')
+
+    returncode, stdout, stderr = run_glab(['mr', 'list', '--source-branch', head, '--output', 'json'])
+    if returncode != 0:
+        return None, make_error(operation, f'Failed to look up MR for source branch {head}', stderr.strip())
+    try:
+        mrs = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None, make_error(operation, 'Failed to parse glab mr list output', stdout[:100])
+    if not mrs:
+        return None, make_error(operation, f'no MR found for source branch {head}')
+    iid = mrs[0].get('iid')
+    if iid is None:
+        return None, make_error(operation, f'glab mr list returned entry without iid for source branch {head}')
+    return str(iid), None
+
+
 def cmd_pr_create(args: argparse.Namespace) -> dict:
     """Handle 'pr create' subcommand (creates MR in GitLab)."""
     # Check auth
@@ -148,6 +181,8 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
         glab_args.extend(['--target-branch', args.base])
     if args.draft:
         glab_args.append('--draft')
+    if getattr(args, 'head', None):
+        glab_args.extend(['--source-branch', args.head])
 
     # Execute
     returncode, stdout, stderr = run_glab(glab_args)
@@ -177,8 +212,8 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     }
 
 
-def view_pr_data() -> dict:
-    """Fetch MR data for current branch, returning structured dict.
+def view_pr_data(head: str | None = None) -> dict:
+    """Fetch MR data for current branch (or for the supplied ``head`` branch).
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
@@ -187,7 +222,10 @@ def view_pr_data() -> dict:
     if not is_auth:
         return {'status': 'error', 'operation': 'pr_view', 'error': err}
 
-    returncode, stdout, stderr = run_glab(['mr', 'view', '--output', 'json'])
+    glab_args = ['mr', 'view', '--output', 'json']
+    if head:
+        glab_args = ['mr', 'view', head, '--output', 'json']
+    returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
         return {
             'status': 'error',
@@ -245,8 +283,8 @@ def view_pr_data() -> dict:
 
 
 def cmd_pr_view(args: argparse.Namespace) -> dict:
-    """Handle 'pr view' subcommand - get MR for current branch."""
-    return view_pr_data()
+    """Handle 'pr view' subcommand - get MR for current branch (or --head branch)."""
+    return view_pr_data(head=getattr(args, 'head', None))
 
 
 def cmd_pr_list(args: argparse.Namespace) -> dict:
@@ -566,10 +604,15 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('ci_status', err)
 
+    iid, err_dict = _resolve_mr_iid(args, 'ci_status')
+    if err_dict:
+        return err_dict
+    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+
     # Get MR to find pipeline
-    returncode, stdout, stderr = run_glab(['mr', 'view', str(args.pr_number), '--output', 'json'])
+    returncode, stdout, stderr = run_glab(['mr', 'view', iid, '--output', 'json'])
     if returncode != 0:
-        return make_error('ci_status', f'Failed to get MR {args.pr_number}', stderr.strip())
+        return make_error('ci_status', f'Failed to get MR {iid}', stderr.strip())
 
     # Parse JSON
     try:
@@ -610,7 +653,7 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     return {
         'status': 'success',
         'operation': 'ci_status',
-        'pr_number': args.pr_number,
+        'pr_number': args.pr_number if args.pr_number else iid,
         'overall_status': overall,
         'check_count': len(jobs),
         'elapsed_sec': total_elapsed,
@@ -840,7 +883,12 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_merge', err)
 
-    glab_args = ['mr', 'merge', str(args.pr_number)]
+    iid, err_dict = _resolve_mr_iid(args, 'pr_merge')
+    if err_dict:
+        return err_dict
+    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+
+    glab_args = ['mr', 'merge', iid]
     if args.strategy == 'squash':
         glab_args.append('--squash')
     if args.delete_branch:
@@ -848,12 +896,12 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
 
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return make_error('pr_merge', f'Failed to merge MR {args.pr_number}', stderr.strip())
+        return make_error('pr_merge', f'Failed to merge MR {iid}', stderr.strip())
 
     return {
         'status': 'success',
         'operation': 'pr_merge',
-        'pr_number': args.pr_number,
+        'pr_number': args.pr_number if args.pr_number else iid,
         'strategy': args.strategy,
     }
 
@@ -864,18 +912,23 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_auto_merge', err)
 
-    glab_args = ['mr', 'merge', str(args.pr_number), '--when-pipeline-succeeds']
+    iid, err_dict = _resolve_mr_iid(args, 'pr_auto_merge')
+    if err_dict:
+        return err_dict
+    assert iid is not None  # noqa: S101 — narrowing after err_dict guard
+
+    glab_args = ['mr', 'merge', iid, '--when-pipeline-succeeds']
     if args.strategy == 'squash':
         glab_args.append('--squash')
 
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
-        return make_error('pr_auto_merge', f'Failed to enable auto-merge for MR {args.pr_number}', stderr.strip())
+        return make_error('pr_auto_merge', f'Failed to enable auto-merge for MR {iid}', stderr.strip())
 
     return {
         'status': 'success',
         'operation': 'pr_auto_merge',
-        'pr_number': args.pr_number,
+        'pr_number': args.pr_number if args.pr_number else iid,
         'enabled': True,
     }
 
