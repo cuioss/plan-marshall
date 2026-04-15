@@ -27,8 +27,10 @@ Both arguments are accepted for discovery-contract compliance but have no effect
 Load and run the underlying sync skill:
 
 ```
-Skill: sync-plugin-cache
+Skill: project:sync-plugin-cache
 ```
+
+The `project:` prefix matches the notation used by phase-6-finalize when dispatching project-local skills (see `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md` line 88), and is consistent with how this wrapper itself is referenced as `project:finalize-step-sync-plugin-cache` in `phase-6-finalize.steps`.
 
 That skill performs parallel rsync of every bundle under `marketplace/bundles/` into `~/.claude/plugins/cache/plan-marshall/` with `--delete` semantics.
 
