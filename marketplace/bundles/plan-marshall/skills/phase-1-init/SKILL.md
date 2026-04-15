@@ -249,17 +249,25 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --value {worktree_path}
 ```
 
-3. Log the decision:
+3. Persist `worktree_path` to `status.metadata` so downstream phases (notably phase-5-execute Step 3) can surface the active worktree path via `manage_status read`. This MUST happen in the same Step 6 transaction as the references write — the two sinks are the single source of truth and must agree:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --set --plan-id {plan_id} \
+  --field worktree_path \
+  --value {worktree_path}
+```
+
+4. Log the decision:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Created feature branch and worktree: feature/{plan_id} at {worktree_path} (base: {branch_name})"
 ```
 
-4. **CRITICAL cwd directive for subsequent phases**: Emit the following instruction verbatim in the phase completion output (see Step 12). The LLM driving the plan MUST `cd` into `{worktree_path}` before running any plan commands:
+5. **CRITICAL cwd directive for subsequent phases**: Emit the following instruction verbatim in the phase completion output (see Step 12). The LLM driving the plan MUST `cd` into `{worktree_path}` before running any plan commands:
 
    > _"This plan runs in an isolated git worktree. All subsequent commands for plan `{plan_id}` MUST execute with `cwd = {worktree_path}`. Do not modify files in the original checkout."_
 
-5. **Fail-loud on worktree creation errors**: If `manage-worktree create` returns `status=error` — including `error=plan_symlink_failed`, `error=worktree_add_failed`, or any other worktree-creation failure — the phase MUST NOT silently fall back to running in the main checkout. Silent fallback destroys isolation without warning the user and is prohibited. Instead:
+6. **Fail-loud on worktree creation errors**: If `manage-worktree create` returns `status=error` — including `error=plan_symlink_failed`, `error=worktree_add_failed`, or any other worktree-creation failure — the phase MUST NOT silently fall back to running in the main checkout. Silent fallback destroys isolation without warning the user and is prohibited. Instead:
 
    a. Roll back any partial worktree state (`manage-worktree remove --plan-id {plan_id} --force` if the worktree directory was created).
 
