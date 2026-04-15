@@ -9,9 +9,8 @@ Tests functions:
 - poll_until: Generic polling framework
 """
 
-from datetime import UTC, datetime, timedelta
-
 import argparse
+from datetime import UTC, datetime, timedelta
 
 from ci_base import (
     CI_LOG_TRUNCATE_LINES,
