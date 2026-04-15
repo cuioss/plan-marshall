@@ -128,7 +128,7 @@ Enable auto-merge on a pull request (merges automatically when all checks pass).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr auto-merge \
-    --pr-number 123 [--strategy merge]
+    --pr-number 123 [--strategy merge|squash|rebase]
 ```
 
 ### Step 2: Process Result
