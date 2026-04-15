@@ -180,6 +180,32 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created request.md from {source_type}"
 ```
 
+### Step 5b: Move Lesson File Into Plan Directory
+
+**Applicability**: This step runs **only when `source == lesson`**. Skip entirely for `description`, `issue`, or `recipe` sources.
+
+Convert the lesson into a plan-scoped artifact so the lesson file is moved out of the global lessons-learned directory and into the plan directory. This guarantees the lesson is owned by exactly one plan and prevents duplicate work across re-runs.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons convert-to-plan \
+  --id {lesson_id} --plan-id {plan_id}
+```
+
+**Post-condition (MANDATORY)**: After the script returns, assert both of the following:
+
+- `.plan/local/lessons-learned/{lesson_id}.md` MUST NOT exist (the source lesson file has been removed)
+- `.plan/local/plans/{plan_id}/lesson-{lesson_id}.md` MUST exist (the lesson now lives inside the plan directory)
+
+If either assertion fails, abort the phase immediately and return:
+
+```toon
+status: error
+message: "Lesson convert post-condition failed"
+lesson_id: {lesson_id}
+```
+
+Do not proceed to Step 6 unless both post-conditions hold.
+
 ### Step 6: Initialize References
 
 **IMPORTANT**: Get the branch name first, then pass it as a plain string. Do NOT use shell expansion `$(...)` in the command as it triggers permission prompts.

@@ -131,7 +131,6 @@ Handles:
 - Lessons capture (advisory)
 - Mark plan complete
 - Archive plan (move to `.plan/archived-plans/`)
-- Mark lesson applied (if plan originated from a lesson)
 
 **Metrics**: After finalize completes, record phase end with aggregated token data from any agent-dispatched steps (see phase-6-finalize SKILL.md for which steps run as agents):
 ```bash
