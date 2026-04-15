@@ -16,10 +16,12 @@ Unified CI provider abstraction using **static routing** - one script per provid
 - Do not call `gh` or `glab` directly; all CI operations go through the script API
 - Do not invent script arguments not listed in the operations table
 - Do not bypass provider detection logic
+- Do not transfer `gh`/`glab` flag names from memory when invoking `ci` leaf subcommands — flag names diverge from the underlying tools (e.g., `ci pr merge` uses `--strategy`, not `--merge-method`)
 
 **Constraints:**
 - All commands use `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:{script} {command} {args}`
 - Provider routing is config-driven; do not hard-code provider names
+- Before invoking any `ci` leaf subcommand whose exact flags you do not already know, Read [`standards/leaf-command-reference.md`](standards/leaf-command-reference.md) (or the relevant group standard). Never guess
 
 ## What This Skill Provides
 
@@ -99,6 +101,7 @@ Load the relevant standard when performing specific operations:
 
 | Standard | When to Load |
 |----------|-------------|
+| `standards/leaf-command-reference.md` | Before invoking any unfamiliar ci leaf subcommand |
 | `standards/health-setup.md` | Detecting provider, verifying tools, persisting config |
 | `standards/pr-operations.md` | Creating, viewing, merging, or managing PRs |
 | `standards/pr-review-operations.md` | Replying to reviews, resolving threads, checking approvals |
