@@ -136,8 +136,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
   `run_cli` invocation threads that value into `subprocess.run(cwd=…)`.
 - When the flag is **omitted** behaviour is identical to before: subprocesses
   inherit the Python process cwd.
-- Place the flag before the `pr` / `ci` / `issue` command word. Placing it
-  after will cause the provider parser to reject it as an unknown argument.
+- Position-agnostic: `extract_project_dir` in `ci_base.py` scans the entire
+  argument vector and strips the flag before the provider parser runs, so
+  `--project-dir` may appear before or after the `pr` / `ci` / `issue`
+  command word. Placing it first is still the conventional style.
 
 Required when invoking CI operations from a checkout whose HEAD is not the
 branch you want to operate on — most notably during `phase-6-finalize` when
