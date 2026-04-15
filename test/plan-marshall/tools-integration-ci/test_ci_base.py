@@ -11,10 +11,15 @@ Tests functions:
 
 from datetime import UTC, datetime, timedelta
 
+import argparse
+
 from ci_base import (
     CI_LOG_TRUNCATE_LINES,
     DEFAULT_CI_INTERVAL,
     DEFAULT_CI_TIMEOUT,
+    add_head_arg,
+    add_pr_create_args,
+    build_parser,
     compute_elapsed,
     compute_total_elapsed,
     poll_until,
@@ -205,3 +210,72 @@ def test_poll_until_eventual_success():
     assert not result['timed_out']
     assert result['polls'] == 3
     assert result['last_data']['ready'] is True
+
+
+# =============================================================================
+# --head flag registration tests
+# =============================================================================
+
+
+def test_add_head_arg_registers_optional_flag():
+    """add_head_arg should register --head as an optional argument on a subparser."""
+    parser = argparse.ArgumentParser()
+    add_head_arg(parser)
+
+    # Optional — parses without --head
+    args = parser.parse_args([])
+    assert args.head is None
+
+    # Accepts a branch name
+    args = parser.parse_args(['--head', 'feature/x'])
+    assert args.head == 'feature/x'
+
+
+def test_pr_create_parser_accepts_head_flag():
+    """add_pr_create_args should register --head on the pr create subparser."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add_pr_create_args(sub)
+
+    args = parser.parse_args(['create', '--title', 'T', '--head', 'feature/x'])
+    assert args.head == 'feature/x'
+
+    # Still optional — works without --head
+    args = parser.parse_args(['create', '--title', 'T'])
+    assert args.head is None
+
+
+def test_build_parser_pr_view_accepts_head_flag():
+    """build_parser should register --head on pr view (was: no args)."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(['pr', 'view', '--head', 'feature/x'])
+    assert args.head == 'feature/x'
+
+
+def test_build_parser_pr_merge_pr_number_optional():
+    """pr merge should accept --head as alternative to --pr-number (both optional)."""
+    parser, _, _, _ = build_parser('test')
+    # --head alone is allowed
+    args = parser.parse_args(['pr', 'merge', '--head', 'feature/x'])
+    assert args.head == 'feature/x'
+    assert args.pr_number is None
+    # --pr-number alone is allowed
+    args = parser.parse_args(['pr', 'merge', '--pr-number', '42'])
+    assert args.pr_number == 42
+    assert args.head is None
+
+
+def test_build_parser_pr_auto_merge_pr_number_optional():
+    """pr auto-merge should accept --head as alternative to --pr-number."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(['pr', 'auto-merge', '--head', 'feature/x'])
+    assert args.head == 'feature/x'
+    assert args.pr_number is None
+
+
+def test_build_parser_ci_status_pr_number_optional():
+    """ci status should accept --head as alternative to --pr-number."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(['ci', 'status', '--head', 'feature/x'])
+    assert args.head == 'feature/x'
+    assert args.pr_number is None

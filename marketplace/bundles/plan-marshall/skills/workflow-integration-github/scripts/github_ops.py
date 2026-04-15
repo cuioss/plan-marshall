@@ -164,6 +164,8 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
         gh_args.extend(['--base', args.base])
     if args.draft:
         gh_args.append('--draft')
+    if getattr(args, 'head', None):
+        gh_args.extend(['--head', args.head])
 
     # Execute
     returncode, stdout, stderr = run_gh(gh_args)
@@ -189,8 +191,29 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     }
 
 
-def view_pr_data() -> dict:
-    """Fetch PR data for current branch, returning structured dict.
+def _resolve_pr_identifier(args: argparse.Namespace, operation: str) -> tuple[str | None, dict | None]:
+    """Resolve a PR identifier from --pr-number or --head.
+
+    Returns ``(identifier, None)`` on success where ``identifier`` is the gh-acceptable
+    positional (PR number or branch name), or ``(None, error_dict)`` on validation failure.
+
+    gh accepts either a PR number or a branch name as the positional for ``pr view``,
+    ``pr merge``, ``pr checks``, etc., so the abstraction simply substitutes the branch
+    when ``--head`` is supplied.
+    """
+    pr_number = getattr(args, 'pr_number', None)
+    head = getattr(args, 'head', None)
+    if pr_number and head:
+        return None, make_error(operation, 'specify exactly one of --pr-number or --head, not both')
+    if pr_number:
+        return str(pr_number), None
+    if head:
+        return head, None
+    return None, make_error(operation, 'specify either --pr-number or --head')
+
+
+def view_pr_data(head: str | None = None) -> dict:
+    """Fetch PR data for current branch (or the supplied ``head`` branch).
 
     Returns dict with 'status' key ('success' or 'error').
     Importable by other scripts for direct data access without subprocess.
@@ -199,14 +222,16 @@ def view_pr_data() -> dict:
     if not is_auth:
         return {'status': 'error', 'operation': 'pr_view', 'error': err}
 
-    returncode, stdout, stderr = run_gh(
+    pr_view_args = ['pr', 'view']
+    if head:
+        pr_view_args.append(head)
+    pr_view_args.extend(
         [
-            'pr',
-            'view',
             '--json',
             'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,mergeStateStatus,reviewDecision',
         ]
     )
+    returncode, stdout, stderr = run_gh(pr_view_args)
     if returncode != 0:
         return {
             'status': 'error',
@@ -242,8 +267,8 @@ def view_pr_data() -> dict:
 
 
 def cmd_pr_view(args: argparse.Namespace) -> dict:
-    """Handle 'pr view' subcommand - get PR for current branch."""
-    return view_pr_data()
+    """Handle 'pr view' subcommand - get PR for current branch (or --head branch)."""
+    return view_pr_data(head=getattr(args, 'head', None))
 
 
 def cmd_pr_list(args: argparse.Namespace) -> dict:
@@ -708,18 +733,23 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_merge', err)
 
-    gh_args = ['pr', 'merge', str(args.pr_number), f'--{args.strategy}']
+    identifier, err_dict = _resolve_pr_identifier(args, 'pr_merge')
+    if err_dict:
+        return err_dict
+    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+
+    gh_args = ['pr', 'merge', identifier, f'--{args.strategy}']
     if args.delete_branch:
         gh_args.append('--delete-branch')
 
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return make_error('pr_merge', f'Failed to merge PR {args.pr_number}', stderr.strip())
+        return make_error('pr_merge', f'Failed to merge PR {identifier}', stderr.strip())
 
     return {
         'status': 'success',
         'operation': 'pr_merge',
-        'pr_number': args.pr_number,
+        'pr_number': args.pr_number if args.pr_number else identifier,
         'strategy': args.strategy,
     }
 
@@ -730,16 +760,21 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_auto_merge', err)
 
-    gh_args = ['pr', 'merge', str(args.pr_number), '--auto', f'--{args.strategy}']
+    identifier, err_dict = _resolve_pr_identifier(args, 'pr_auto_merge')
+    if err_dict:
+        return err_dict
+    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+
+    gh_args = ['pr', 'merge', identifier, '--auto', f'--{args.strategy}']
 
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
-        return make_error('pr_auto_merge', f'Failed to enable auto-merge for PR {args.pr_number}', stderr.strip())
+        return make_error('pr_auto_merge', f'Failed to enable auto-merge for PR {identifier}', stderr.strip())
 
     return {
         'status': 'success',
         'operation': 'pr_auto_merge',
-        'pr_number': args.pr_number,
+        'pr_number': args.pr_number if args.pr_number else identifier,
         'enabled': True,
     }
 
@@ -812,12 +847,17 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('ci_status', err)
 
+    identifier, err_dict = _resolve_pr_identifier(args, 'ci_status')
+    if err_dict:
+        return err_dict
+    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+
     # Get checks (bucket field contains pass/fail result)
     returncode, stdout, stderr = run_gh(
-        ['pr', 'checks', str(args.pr_number), '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
+        ['pr', 'checks', identifier, '--json', 'name,state,bucket,link,startedAt,completedAt,workflow']
     )
     if returncode != 0:
-        return make_error('ci_status', f'Failed to get CI status for PR {args.pr_number}', stderr.strip())
+        return make_error('ci_status', f'Failed to get CI status for PR {identifier}', stderr.strip())
 
     # Parse JSON
     try:
@@ -843,7 +883,7 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     return {
         'status': 'success',
         'operation': 'ci_status',
-        'pr_number': args.pr_number,
+        'pr_number': args.pr_number if args.pr_number else identifier,
         'overall_status': overall,
         'check_count': len(checks),
         'elapsed_sec': total_elapsed,

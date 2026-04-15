@@ -81,9 +81,12 @@ def test_pr_reviews_missing_required():
 
 
 def test_ci_status_missing_required():
-    """Test ci status fails without pr-number."""
+    """Test ci status emits a structured error when neither --pr-number nor --head is supplied."""
     result = run_script(SCRIPT_PATH, 'ci', 'status')
-    assert not result.success, 'Expected failure without --pr-number'
+    combined = (result.stdout + result.stderr).lower()
+    assert 'pr-number' in combined or 'head' in combined or 'auth' in combined, (
+        f'Expected pr-number/head/auth in output, got: {combined}'
+    )
 
 
 def test_ci_wait_missing_required():

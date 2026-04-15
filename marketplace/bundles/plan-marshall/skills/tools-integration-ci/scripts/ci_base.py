@@ -156,8 +156,9 @@ def build_parser(
     pr_parser = subparsers.add_parser('pr', help='Pull request operations')
     pr_sub = pr_parser.add_subparsers(dest='pr_command', required=True)
 
-    # pr view
-    pr_sub.add_parser('view', help='View PR for current branch')
+    # pr view — implicit current cwd HEAD by default; --head selects a different branch
+    pr_view = pr_sub.add_parser('view', help='View PR for current branch')
+    add_head_arg(pr_view)
 
     # pr list
     pr_list = pr_sub.add_parser('list', help='List pull requests')
@@ -193,9 +194,10 @@ def build_parser(
     pr_comments.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_comments.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
 
-    # pr merge
+    # pr merge — accepts either --pr-number or --head (validated by handler)
     pr_merge = pr_sub.add_parser('merge', help='Merge a pull request')
-    pr_merge.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_merge.add_argument('--pr-number', type=int, help='PR number')
+    add_head_arg(pr_merge)
     pr_merge.add_argument(
         '--strategy',
         default='merge',
@@ -204,9 +206,10 @@ def build_parser(
     )
     pr_merge.add_argument('--delete-branch', action='store_true', help='Delete branch after merge')
 
-    # pr auto-merge
+    # pr auto-merge — accepts either --pr-number or --head (validated by handler)
     pr_auto = pr_sub.add_parser('auto-merge', help='Enable auto-merge on a PR')
-    pr_auto.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_auto.add_argument('--pr-number', type=int, help='PR number')
+    add_head_arg(pr_auto)
     pr_auto.add_argument(
         '--strategy',
         default='merge',
@@ -242,9 +245,10 @@ def build_parser(
     ci_parser = subparsers.add_parser('ci', help='CI operations')
     ci_sub = ci_parser.add_subparsers(dest='ci_command', required=True)
 
-    # ci status
+    # ci status — accepts either --pr-number or --head (validated by handler)
     ci_status = ci_sub.add_parser('status', help='Check CI status')
-    ci_status.add_argument('--pr-number', required=True, type=int, help='PR number')
+    ci_status.add_argument('--pr-number', type=int, help='PR number')
+    add_head_arg(ci_status)
 
     # ci wait
     ci_wait = ci_sub.add_parser('wait', help='Wait for CI to complete')
@@ -304,6 +308,31 @@ def add_pr_create_args(
         pr_create.add_argument('--body-file', help='Read PR body from file (takes precedence over --body)')
     pr_create.add_argument('--base', help='Base/target branch (default: repo default)')
     pr_create.add_argument('--draft', action='store_true', help='Create as draft PR')
+    pr_create.add_argument(
+        '--head',
+        help='Source branch (default: current cwd HEAD). Required when invoking from a different '
+        'checkout than the worktree containing the source branch — e.g., when phase-6-finalize runs '
+        'from the main checkout against a worktree-isolated plan branch.',
+    )
+
+
+def add_head_arg(subparser: argparse.ArgumentParser) -> None:
+    """Register an optional ``--head BRANCH`` argument on a PR/CI subparser.
+
+    Used by provider scripts on operations that identify a PR by branch when no
+    explicit ``--pr-number`` is supplied: ``pr view``, ``pr merge``, ``pr auto-merge``,
+    and ``ci status``. Provider handlers MUST treat ``--head`` as a branch-as-identifier
+    substitute and validate that exactly one of ``--pr-number`` / ``--head`` is supplied.
+
+    The flag is purely additive — operations behave as before when ``--head`` is omitted.
+    Its purpose is to make branch-aware operations usable from a cwd whose HEAD is not
+    the branch the caller wants to operate on (the worktree-isolation use case).
+    """
+    subparser.add_argument(
+        '--head',
+        help='Source branch — alternative to --pr-number for branch-identified lookups. '
+        'Required when invoking from a different checkout than the worktree containing the branch.',
+    )
 
 
 def add_pr_resolve_thread_pr_number(

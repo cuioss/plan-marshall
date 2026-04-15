@@ -18,14 +18,37 @@ Source: [pr-operations.md](pr-operations.md)
 
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
-| `pr view` | _(none — uses current branch)_ | — | Get PR/MR details for the current branch |
+| `pr view` | _(none — uses current cwd HEAD)_ | `--head {branch}` | Get PR/MR details for current branch (or `--head` branch) |
 | `pr list` | _(none)_ | `--head {branch}`, `--state {open\|closed\|all}` | List PRs with optional branch and state filters |
-| `pr create` | `--title`, `--body-file`, `--base` | — | Create a PR. **Never** pass markdown through `--body`; always use `--body-file` |
-| `pr merge` | `--pr-number` | `--strategy {merge\|squash\|rebase}`, `--delete-branch` | Merge a PR. Flag is `--strategy`, **not** `--merge-method` |
-| `pr auto-merge` | `--pr-number` | `--strategy {merge\|squash\|rebase}` | Enable auto-merge when all checks pass |
+| `pr create` | `--title`, `--body-file`, `--base` | `--head {branch}` | Create a PR. **Never** pass markdown through `--body`; always use `--body-file`. Pass `--head` from main checkout against worktree branch |
+| `pr merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy {merge\|squash\|rebase}`, `--delete-branch` | Merge a PR. Flag is `--strategy`, **not** `--merge-method` |
+| `pr auto-merge` | _exactly one of_ `--pr-number` _or_ `--head` | `--strategy {merge\|squash\|rebase}` | Enable auto-merge when all checks pass |
 | `pr close` | `--pr-number` | — | Close a PR without merging |
 | `pr ready` | `--pr-number` | — | Mark a draft PR as ready for review |
 | `pr edit` | `--pr-number` | `--title`, `--body` | Edit PR title and/or body |
+
+**Worktree-isolated plans**: When invoking from the main checkout against a plan running
+in `.claude/worktrees/{plan_id}`, pass `--head {plan_branch}` on every branch-aware
+operation (`pr create`, `pr view`, `pr merge`, `pr auto-merge`, `ci status`). The
+underlying gh/glab CLIs derive the source branch from cwd HEAD, which would otherwise
+resolve to `main`. Examples:
+
+```bash
+# Create PR from worktree branch while running from main checkout
+ci pr create --title "T" --body-file body.md --base main --head plan/jwt-auth
+
+# Inspect that PR by branch (no PR number needed)
+ci pr view --head plan/jwt-auth
+
+# Check CI status by branch
+ci ci status --head plan/jwt-auth
+
+# Merge by branch
+ci pr merge --head plan/jwt-auth --strategy squash --delete-branch
+
+# Enable auto-merge by branch
+ci pr auto-merge --head plan/jwt-auth --strategy squash
+```
 
 ---
 
@@ -50,7 +73,7 @@ Source: [ci-operations.md](ci-operations.md)
 
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
-| `ci status` | `--pr-number` | — | Check CI status for a PR. **Not** `--branch` |
+| `ci status` | _exactly one of_ `--pr-number` _or_ `--head` | — | Check CI status for a PR. Use `--head {branch}` from the main checkout against a worktree branch |
 | `ci wait` | `--pr-number` | — | Poll CI until completion. Use Bash timeout ≥ 1800000 ms (30 min safety net) |
 | `ci rerun` | `--run-id` | — | Rerun a failed CI workflow run |
 | `ci logs` | `--run-id` | — | Get logs from a CI workflow run |
@@ -76,7 +99,7 @@ These specific mistakes have been observed when transferring `gh`/`glab` flag na
 | Wrong | Right | Why |
 |-------|-------|-----|
 | `ci pr-comments --branch X` | `ci pr comments --pr-number 123` | `pr-comments` is not a subcommand; `comments` lives under `pr`, and PR scoping is via `--pr-number` |
-| `ci ci status --branch X` | `ci ci status --pr-number 123` | `ci status` requires `--pr-number`; `--branch` is not accepted |
+| `ci ci status --branch X` | `ci ci status --head X` _or_ `ci ci status --pr-number 123` | The branch flag is `--head`, **not** `--branch` |
 | `ci pr merge --merge-method squash` | `ci pr merge --pr-number 123 --strategy squash` | Flag is `--strategy`, not `--merge-method` |
 
 When in doubt, load the relevant group standards file (`pr-operations.md`, `pr-review-operations.md`, `ci-operations.md`, `issue-operations.md`) for full examples and result schemas.
