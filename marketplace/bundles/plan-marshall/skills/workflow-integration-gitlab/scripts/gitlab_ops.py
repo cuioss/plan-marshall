@@ -23,25 +23,28 @@ Subcommands:
     issue view      View issue details
     issue close     Close an issue
 
-Usage:
-    python3 gitlab.py pr create --title "Title" --body "Body" [--base main] [--draft]
+Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume):
+    python3 gitlab.py pr prepare-body --plan-id my-plan [--for create|edit] [--slot name]
+    python3 gitlab.py pr prepare-comment --plan-id my-plan [--for reply|thread-reply] [--slot name]
+    python3 gitlab.py issue prepare-body --plan-id my-plan [--slot name]
+    python3 gitlab.py pr create --title "Title" --plan-id my-plan [--base main] [--draft]
     python3 gitlab.py pr view
     python3 gitlab.py pr list [--head feature/branch] [--state open|closed|all]
     python3 gitlab.py pr reviews --pr-number 123
     python3 gitlab.py pr comments --pr-number 123 [--unresolved-only]
-    python3 gitlab.py pr reply --pr-number 123 --body "Comment text"
+    python3 gitlab.py pr reply --pr-number 123 --plan-id my-plan
     python3 gitlab.py pr resolve-thread --pr-number 123 --thread-id abc123
-    python3 gitlab.py pr thread-reply --pr-number 123 --thread-id abc123 --body "Fixed"
+    python3 gitlab.py pr thread-reply --pr-number 123 --thread-id abc123 --plan-id my-plan
     python3 gitlab.py pr merge --pr-number 123 [--strategy squash] [--delete-branch]
     python3 gitlab.py pr auto-merge --pr-number 123 [--strategy squash]
     python3 gitlab.py pr close --pr-number 123
     python3 gitlab.py pr ready --pr-number 123
-    python3 gitlab.py pr edit --pr-number 123 [--title "New Title"] [--body "New Body"]
+    python3 gitlab.py pr edit --pr-number 123 --plan-id my-plan [--title "New Title"]
     python3 gitlab.py ci status --pr-number 123
     python3 gitlab.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 gitlab.py ci rerun --run-id 12345
     python3 gitlab.py ci logs --run-id 12345
-    python3 gitlab.py issue create --title "Title" --body "Body" [--labels "bug,priority::high"]
+    python3 gitlab.py issue create --title "Title" --plan-id my-plan [--labels "bug,priority::high"]
     python3 gitlab.py issue view --issue 123
     python3 gitlab.py issue close --issue 123
 
@@ -58,17 +61,25 @@ from typing import Any
 from urllib.parse import quote
 
 from ci_base import (  # type: ignore[import-not-found]
+    BODY_KIND_ISSUE_CREATE,
+    BODY_KIND_PR_CREATE,
+    BODY_KIND_PR_EDIT,
+    BODY_KIND_PR_REPLY,
+    BODY_KIND_PR_THREAD_REPLY,
     add_pr_create_args,
     add_pr_resolve_thread_pr_number,
     build_parser,
     check_auth_cli,
     compute_elapsed,
     compute_total_elapsed,
+    delete_consumed_body,
     dispatch,
     make_error,
     make_pr_number_handler,
     make_simple_handler,
     poll_until,
+    prepare_body,
+    read_and_consume_body,
     run_cli,
     truncate_log_content,
 )
@@ -175,8 +186,14 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_create', err)
 
+    body, err_dict = read_and_consume_body(
+        args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None)
+    )
+    if err_dict:
+        return make_error('pr_create', err_dict.get('message', 'body not prepared'))
+
     # Build command - glab uses 'mr' for merge requests
-    glab_args = ['mr', 'create', '--title', args.title, '--description', args.body]
+    glab_args = ['mr', 'create', '--title', args.title, '--description', body]
     if args.base:
         glab_args.extend(['--target-branch', args.base])
     if args.draft:
@@ -188,6 +205,10 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
         return make_error('pr_create', 'Failed to create MR', stderr.strip())
+
+    delete_consumed_body(
+        args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None)
+    )
 
     # Parse the URL from output (glab mr create outputs the URL)
     mr_url = stdout.strip()
@@ -331,12 +352,32 @@ def cmd_pr_list(args: argparse.Namespace) -> dict:
     }
 
 
-cmd_pr_reply = make_pr_number_handler(
-    'pr_reply',
-    lambda args: ['mr', 'note', str(args.pr_number), '--message', args.body],
-    run_glab,
-    check_auth,
-)
+def cmd_pr_reply(args: argparse.Namespace) -> dict:
+    """Handle 'pr reply' — post a note using the prepared body."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('pr_reply', err)
+
+    body, err_dict = read_and_consume_body(
+        args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
+    )
+    if err_dict:
+        return make_error('pr_reply', err_dict.get('message', 'body not prepared'))
+
+    glab_args = ['mr', 'note', str(args.pr_number), '--message', body]
+    returncode, stdout, stderr = run_glab(glab_args)
+    if returncode != 0:
+        return make_error('pr_reply', 'Failed to post note', stderr.strip())
+
+    delete_consumed_body(
+        args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
+    )
+    return {
+        'status': 'success',
+        'operation': 'pr_reply',
+        'pr_number': args.pr_number,
+        'output': stdout.strip(),
+    }
 
 
 def cmd_pr_resolve_thread(args: argparse.Namespace) -> dict:
@@ -373,14 +414,24 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     if not project_path:
         return make_error('pr_thread_reply', 'Could not determine project path')
 
+    body, err_dict = read_and_consume_body(
+        args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None)
+    )
+    if err_dict:
+        return make_error('pr_thread_reply', err_dict.get('message', 'body not prepared'))
+
     encoded_path = quote(project_path, safe='')
     # GitLab's discussion notes endpoint publishes replies immediately —
     # there is no pending/draft state here, unlike GitHub's PR review flow.
     endpoint = f'projects/{encoded_path}/merge_requests/{args.pr_number}/discussions/{args.thread_id}/notes'
 
-    returncode, stdout, stderr = run_glab(['api', '-X', 'POST', endpoint, '-f', f'body={args.body}'])
+    returncode, stdout, stderr = run_glab(['api', '-X', 'POST', endpoint, '-f', f'body={body}'])
     if returncode != 0:
         return make_error('pr_thread_reply', f'Failed to reply to thread: {stderr.strip()}')
+
+    delete_consumed_body(
+        args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None)
+    )
 
     return {
         'status': 'success',
@@ -790,8 +841,14 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('issue_create', err)
 
+    body, err_dict = read_and_consume_body(
+        args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None)
+    )
+    if err_dict:
+        return make_error('issue_create', err_dict.get('message', 'body not prepared'))
+
     # Build command
-    glab_args = ['issue', 'create', '--title', args.title, '--description', args.body]
+    glab_args = ['issue', 'create', '--title', args.title, '--description', body]
     if args.labels:
         glab_args.extend(['--label', args.labels])
 
@@ -799,6 +856,10 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
         return make_error('issue_create', 'Failed to create issue', stderr.strip())
+
+    delete_consumed_body(
+        args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None)
+    )
 
     # Parse the URL from output
     issue_url = stdout.strip()
@@ -950,18 +1011,59 @@ cmd_pr_ready = make_pr_number_handler(
 
 
 def cmd_pr_edit(args: argparse.Namespace) -> dict:
-    """Handle 'pr edit' subcommand - edit MR title and/or description."""
-    if not args.title and not args.body:
-        return make_error('pr_edit', 'At least one of --title or --body must be provided')
+    """Handle 'pr edit' subcommand - edit MR title and/or description.
+
+    Body is consumed from the prepared scratch file for ``BODY_KIND_PR_EDIT``;
+    callers who want to update only the title can skip preparing a body.
+    """
+    body, err_dict = read_and_consume_body(
+        args.plan_id,
+        BODY_KIND_PR_EDIT,
+        getattr(args, 'slot', None),
+        required=False,
+    )
+    if err_dict:
+        return make_error('pr_edit', err_dict.get('message', 'body not prepared'))
+
+    if not args.title and not body:
+        return make_error(
+            'pr_edit',
+            'At least one of --title or a prepared body must be provided',
+        )
 
     glab_args = ['mr', 'update', str(args.pr_number)]
     if args.title:
         glab_args.extend(['--title', args.title])
-    if args.body:
-        glab_args.extend(['--description', args.body])
+    if body:
+        glab_args.extend(['--description', body])
 
     result: dict = make_pr_number_handler('pr_edit', lambda a: glab_args, run_glab, check_auth)(args)
+    if body and result.get('status') == 'success':
+        delete_consumed_body(
+            args.plan_id, BODY_KIND_PR_EDIT, getattr(args, 'slot', None)
+        )
     return result
+
+
+def _cmd_pr_prepare_body(args: argparse.Namespace) -> dict:
+    """Allocate a scratch path for an MR body (create or edit)."""
+    kind = BODY_KIND_PR_EDIT if getattr(args, 'prepare_for', 'create') == 'edit' else BODY_KIND_PR_CREATE
+    return prepare_body(args.plan_id, kind, getattr(args, 'slot', None))
+
+
+def _cmd_pr_prepare_comment(args: argparse.Namespace) -> dict:
+    """Allocate a scratch path for an MR comment (reply or thread-reply)."""
+    kind = (
+        BODY_KIND_PR_THREAD_REPLY
+        if getattr(args, 'prepare_for', 'reply') == 'thread-reply'
+        else BODY_KIND_PR_REPLY
+    )
+    return prepare_body(args.plan_id, kind, getattr(args, 'slot', None))
+
+
+def _cmd_issue_prepare_body(args: argparse.Namespace) -> dict:
+    """Allocate a scratch path for an issue description."""
+    return prepare_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
 
 
 cmd_issue_close = make_simple_handler(
@@ -982,7 +1084,7 @@ def main() -> int:
     parser, pr_sub, ci_sub, issue_sub = build_parser('GitLab operations via glab CLI')
 
     # GitLab-specific parser additions
-    add_pr_create_args(pr_sub, body_required=True, body_file=False)
+    add_pr_create_args(pr_sub)
 
     # GitLab: --pr-number on resolve-thread is required
     add_pr_resolve_thread_pr_number(pr_sub)
@@ -990,6 +1092,9 @@ def main() -> int:
     args = parser.parse_args()
 
     handlers = {
+        ('pr', 'prepare-body'): _cmd_pr_prepare_body,
+        ('pr', 'prepare-comment'): _cmd_pr_prepare_comment,
+        ('issue', 'prepare-body'): _cmd_issue_prepare_body,
         ('pr', 'create'): cmd_pr_create,
         ('pr', 'view'): cmd_pr_view,
         ('pr', 'list'): cmd_pr_list,

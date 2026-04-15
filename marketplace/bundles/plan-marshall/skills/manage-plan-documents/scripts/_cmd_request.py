@@ -2,14 +2,17 @@
 """
 Request command handlers for manage-plan-documents.py.
 
-Contains: create, read, update, clarify, exists, remove subcommands.
-All operate on typed documents within plan directories.
+Contains: create, read, path, mark-clarified, exists, remove subcommands.
+
+Editing flow (three-step pattern):
+    1. `request path`         → script returns the canonical artifact path
+    2. Main context writes/edits the returned file with Read/Edit/Write
+    3. `request mark-clarified` → script validates and records the transition
+
+No multi-line content is ever marshalled through the shell boundary.
 """
 
-import argparse
-
 from _documents_core import (  # type: ignore[import-not-found]
-    atomic_write_file,
     output_error,
     render_template,
     resolve_document_path,
@@ -17,18 +20,13 @@ from _documents_core import (  # type: ignore[import-not-found]
     validate_fields,
 )
 from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
+from file_ops import atomic_write_file  # type: ignore[import-not-found]
 
 
 def cmd_create(doc_type: str, args) -> dict:
     """Create a new document."""
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
-        return {'status': 'error', 'error': 'validation_failed'}
-
-    # For unknown type, include available types in error
-    # (validate_doc_type_and_plan already handles this, but create adds extras)
-    # Re-check to provide available types list
-    if doc_def is None:
         return {'status': 'error', 'error': 'validation_failed'}
 
     # Collect fields from args
@@ -139,131 +137,77 @@ def cmd_read(doc_type: str, args) -> dict:
         }
 
 
-def cmd_update(doc_type: str, args) -> dict:
-    """Update a document section."""
-    doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
-    if not doc_def:
-        return {'status': 'error', 'error': 'validation_failed'}
+def cmd_path(doc_type: str, args) -> dict:
+    """Return the canonical absolute path for a document (Step 1 of edit flow).
 
-    file_path, _file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
-
-    if not file_path.exists():
-        output_error('document_not_found', plan_id=args.plan_id, document=doc_type)
-        return {'status': 'error', 'error': 'validation_failed'}
-
-    content = file_path.read_text(encoding='utf-8')
-    section = args.section.lower().replace(' ', '_')
-    new_content = args.content
-
-    # Find and replace section
-    lines = content.split('\n')
-    new_lines = []
-    in_section = False
-    section_found = False
-    section_heading = f'## {section.replace("_", " ").title()}'
-
-    for line in lines:
-        if line.lower().startswith('## '):
-            current_heading = line[3:].strip().lower().replace(' ', '_')
-            if current_heading == section:
-                # Found target section
-                section_found = True
-                in_section = True
-                new_lines.append(line)
-                new_lines.append('')
-                new_lines.append(new_content)
-                continue
-            elif in_section:
-                # Exiting target section
-                in_section = False
-                new_lines.append('')
-                new_lines.append(line)
-                continue
-
-        if not in_section:
-            new_lines.append(line)
-
-    if not section_found:
-        # Append new section at end
-        new_lines.append('')
-        new_lines.append(section_heading)
-        new_lines.append('')
-        new_lines.append(new_content)
-
-    atomic_write_file(file_path, '\n'.join(new_lines))
-
-    return {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'section': section, 'updated': True}
-
-
-def cmd_clarify(doc_type: str, args) -> dict:
-    """Add clarifications and clarified request to a document.
-
-    This command adds:
-    1. A ## Clarifications section with Q&A pairs
-    2. A ## Clarified Request section with the synthesized request
-
-    Expected for request documents to support the uncertainty resolution flow.
+    The script owns path allocation. Main context never invents paths.
+    Returns the canonical artifact location the caller will Edit/Write directly.
+    Document must already exist (use `create` to allocate a fresh one).
     """
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
         return {'status': 'error', 'error': 'validation_failed'}
 
-    file_path, _file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
+    file_path, file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
+
+    if not file_path.exists():
+        output_error('document_not_found', plan_id=args.plan_id, document=doc_type)
+        return {'status': 'error', 'error': 'validation_failed'}
+
+    sections = list(parse_document_sections(file_path.read_text(encoding='utf-8')).keys())
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'document': doc_type,
+        'file': file_name,
+        'path': str(file_path.resolve()),
+        'sections': sections,
+    }
+
+
+def cmd_mark_clarified(doc_type: str, args) -> dict:
+    """Validate that clarifications have been written and record the transition.
+
+    Step 3 of the edit flow for request clarification: the caller has already
+    edited the file directly with Read/Edit/Write. This subcommand verifies
+    the edit landed (Clarified Request section present) and returns a status
+    transition. No content crosses the shell boundary.
+    """
+    doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
+    if not doc_def:
+        return {'status': 'error', 'error': 'validation_failed'}
+
+    file_path, file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
 
     if not file_path.exists():
         output_error('document_not_found', plan_id=args.plan_id, document=doc_type)
         return {'status': 'error', 'error': 'validation_failed'}
 
     content = file_path.read_text(encoding='utf-8')
-    lines = content.split('\n')
+    sections = parse_document_sections(content)
 
-    # Check if clarifications section already exists
-    has_clarifications = any(line.strip().lower() == '## clarifications' for line in lines)
-    has_clarified_request = any(line.strip().lower() == '## clarified request' for line in lines)
+    has_clarified_request = 'clarified_request' in sections and bool(sections.get('clarified_request', '').strip())
 
-    # Build new sections
-    new_sections = []
-
-    # Add Clarifications section if provided and doesn't exist
-    clarifications = getattr(args, 'clarifications', None)
-    if clarifications:
-        if has_clarifications:
-            # Update existing section via cmd_update
-            args_update = argparse.Namespace(plan_id=args.plan_id, section='clarifications', content=clarifications)
-            return cmd_update(doc_type, args_update)
-        else:
-            new_sections.append('\n## Clarifications\n')
-            new_sections.append(clarifications)
-
-    # Add Clarified Request section if provided and doesn't exist
-    clarified_request = getattr(args, 'clarified_request', None)
-    if clarified_request:
-        if has_clarified_request:
-            # Update existing section via cmd_update
-            args_update = argparse.Namespace(
-                plan_id=args.plan_id, section='clarified_request', content=clarified_request
-            )
-            return cmd_update(doc_type, args_update)
-        else:
-            new_sections.append('\n## Clarified Request\n')
-            new_sections.append(clarified_request)
-
-    if not new_sections:
+    if not has_clarified_request:
         return {
             'status': 'error',
-            'error': 'no_content',
-            'message': 'Provide --clarifications and/or --clarified-request',
+            'error': 'not_clarified',
+            'plan_id': args.plan_id,
+            'document': doc_type,
+            'file': file_name,
+            'message': 'Document has no Clarified Request section. Edit the file (see `request path`) before calling mark-clarified.',
         }
 
-    # Append new sections to content
-    new_content = content.rstrip() + '\n' + '\n'.join(new_sections) + '\n'
-    atomic_write_file(file_path, new_content)
+    has_clarifications = 'clarifications' in sections and bool(sections.get('clarifications', '').strip())
 
     return {
         'status': 'success',
         'plan_id': args.plan_id,
         'document': doc_type,
-        'sections_added': [s.strip().replace('## ', '') for s in new_sections if s.startswith('\n##')],
+        'file': file_name,
+        'clarified': True,
+        'has_clarifications_section': has_clarifications,
     }
 
 

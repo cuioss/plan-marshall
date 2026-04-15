@@ -9,14 +9,20 @@ Delegates file I/O to manage-files.
 Usage:
     python3 manage-plan-document.py request create --plan-id my-plan --title "..." --source description --body "..."
     python3 manage-plan-document.py request read --plan-id my-plan
-    python3 manage-plan-document.py request update --plan-id my-plan --section context --content "..."
+    python3 manage-plan-document.py request path --plan-id my-plan
+    python3 manage-plan-document.py request mark-clarified --plan-id my-plan
+
+Editing flow (three-step pattern): call `request path` to get the canonical
+artifact path, edit the file directly with Read/Edit/Write in the main context,
+then call `request mark-clarified` to record the transition. No multi-line
+content crosses the shell boundary.
 
 Note: Solution documents are managed by the manage-solution-outline skill.
 """
 
 import argparse
 
-from _cmd_request import cmd_clarify, cmd_create, cmd_exists, cmd_read, cmd_remove, cmd_update
+from _cmd_request import cmd_create, cmd_exists, cmd_mark_clarified, cmd_path, cmd_read, cmd_remove
 from _cmd_types import cmd_list_types
 from _documents_core import get_available_types, load_document_type
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
@@ -70,12 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         read_parser.add_argument('--section', help='Read specific section (e.g., clarified_request)')
         read_parser.set_defaults(func=lambda args, dt=doc_type: cmd_read(dt, args))
 
-        # Update
-        update_parser = type_subparsers.add_parser('update', help='Update document section')
-        add_plan_id_arg(update_parser)
-        update_parser.add_argument('--section', required=True, help='Section to update')
-        update_parser.add_argument('--content', required=True, help='New content')
-        update_parser.set_defaults(func=lambda args, dt=doc_type: cmd_update(dt, args))
+        # Path (Step 1 of edit flow: script allocates canonical artifact path)
+        path_parser = type_subparsers.add_parser(
+            'path', help='Return canonical artifact path for direct edit (Step 1 of edit flow)'
+        )
+        add_plan_id_arg(path_parser)
+        path_parser.set_defaults(func=lambda args, dt=doc_type: cmd_path(dt, args))
 
         # Exists
         exists_parser = type_subparsers.add_parser('exists', help='Check if document exists')
@@ -87,14 +93,13 @@ def build_parser() -> argparse.ArgumentParser:
         add_plan_id_arg(remove_parser)
         remove_parser.set_defaults(func=lambda args, dt=doc_type: cmd_remove(dt, args))
 
-        # Clarify (add clarifications and clarified request)
-        clarify_parser = type_subparsers.add_parser('clarify', help='Add clarifications to document')
-        add_plan_id_arg(clarify_parser)
-        clarify_parser.add_argument('--clarifications', help='Q&A clarifications content')
-        clarify_parser.add_argument(
-            '--clarified-request', dest='clarified_request', help='Synthesized clarified request'
+        # Mark-clarified (Step 3: validate edited file and record transition)
+        mark_clarified_parser = type_subparsers.add_parser(
+            'mark-clarified',
+            help='Record clarification transition after direct edit (Step 3 of edit flow)',
         )
-        clarify_parser.set_defaults(func=lambda args, dt=doc_type: cmd_clarify(dt, args))
+        add_plan_id_arg(mark_clarified_parser)
+        mark_clarified_parser.set_defaults(func=lambda args, dt=doc_type: cmd_mark_clarified(dt, args))
 
     return parser
 

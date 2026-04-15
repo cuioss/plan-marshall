@@ -39,7 +39,30 @@ _crud = _load_module('_tasks_cmd_crud_nf', '_tasks_crud.py')
 _query = _load_module('_tasks_cmd_query_nf', '_tasks_query.py')
 _step = _load_module('_tasks_cmd_step_nf', '_cmd_step.py')
 
-cmd_add, cmd_update = _crud.cmd_add, _crud.cmd_update
+cmd_prepare_add = _crud.cmd_prepare_add
+cmd_commit_add = _crud.cmd_commit_add
+cmd_update = _crud.cmd_update
+
+
+def _add_task_pathalloc(plan_id, toon_text, slot=None):
+    """Run the path-allocate add flow end-to-end."""
+    prep = cmd_prepare_add(Namespace(plan_id=plan_id, slot=slot))
+    if prep.get('status') != 'success':
+        return prep
+    Path(prep['path']).write_text(toon_text, encoding='utf-8')
+    return cmd_commit_add(Namespace(plan_id=plan_id, slot=slot))
+
+
+def cmd_add(ns):
+    """Test shim: drive the three-step path-allocate add flow.
+
+    Accepts the legacy `Namespace(plan_id, content)` shape where `content`
+    is a newline-escaped TOON string.
+    """
+    text = (ns.content or '').replace('\\n', '\n')
+    return _add_task_pathalloc(ns.plan_id, text)
+
+
 cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
 cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
     _query.cmd_next_tasks,

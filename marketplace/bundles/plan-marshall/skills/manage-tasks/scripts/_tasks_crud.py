@@ -2,13 +2,23 @@
 """
 CRUD command handlers for manage-tasks.py.
 
-Contains: add, update, remove subcommands.
+Contains: prepare-add, commit-add, update, remove subcommands.
+
+Add flow (path-allocate pattern):
+    1. `prepare-add` → script returns a scratch path under <plan>/work/pending-tasks/
+    2. Main context writes the TOON task definition to that path with Write/Edit
+    3. `commit-add` → script reads the file, validates it, and creates TASK-NNN.json
+
+No multi-line content is marshalled through the shell boundary.
 """
+
+import re
 
 from _tasks_core import (
     find_task_file,
     format_task_file,
     get_next_number,
+    get_plan_dir,
     get_tasks_dir,
     output_error,
     parse_depends_on,
@@ -21,15 +31,81 @@ from file_ops import atomic_write_file  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 
-def cmd_add(args) -> dict:
-    """Handle 'add' subcommand.
+_PENDING_DIR_NAME = 'pending-tasks'
+_SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 
-    Reads task definition from --content CLI argument in TOON format.
-    Newlines are encoded as literal \\n in the argument value.
+
+def _get_pending_dir(plan_id: str):
+    """Return the script-owned scratch directory for pending task definitions."""
+    return get_plan_dir(plan_id) / 'work' / _PENDING_DIR_NAME
+
+
+def _resolve_slot(slot: str | None) -> str:
+    """Validate an optional slot identifier; default to 'default'."""
+    if slot is None or slot == '':
+        return 'default'
+    if not _SLOT_RE.match(slot):
+        raise ValueError(
+            f"Invalid slot '{slot}': must match [a-z0-9][a-z0-9-]{{0,63}}"
+        )
+    return slot
+
+
+def _pending_path(plan_id: str, slot: str):
+    """Return the scratch file path for a given plan_id + slot."""
+    return _get_pending_dir(plan_id) / f'{slot}.toon'
+
+
+def cmd_prepare_add(args) -> dict:
+    """Allocate a script-owned scratch path for a pending task definition.
+
+    Returns the absolute path the caller must write to before invoking
+    `commit-add` with the same --plan-id (and --slot, if provided).
     """
-    content = args.content.replace('\\n', '\n')
+    try:
+        slot = _resolve_slot(getattr(args, 'slot', None))
+    except ValueError as e:
+        return output_error(str(e))
+
+    pending_dir = _get_pending_dir(args.plan_id)
+    pending_dir.mkdir(parents=True, exist_ok=True)
+
+    path = _pending_path(args.plan_id, slot)
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'slot': slot,
+        'path': str(path.resolve()) if path.exists() else str(path),
+        'exists': path.exists(),
+        'note': 'Write the TOON task definition to this path, then call commit-add.',
+    }
+
+
+def cmd_commit_add(args) -> dict:
+    """Read a prepared task file, validate it, and create TASK-NNN.json.
+
+    Consumes the scratch file bound to --plan-id (and --slot). The file must
+    have been written by the main context between `prepare-add` and this call.
+    The scratch file is deleted on success.
+    """
+    try:
+        slot = _resolve_slot(getattr(args, 'slot', None))
+    except ValueError as e:
+        return output_error(str(e))
+
+    path = _pending_path(args.plan_id, slot)
+    if not path.exists():
+        return output_error(
+            f"No prepared task for plan '{args.plan_id}' slot '{slot}'. "
+            f'Call prepare-add first and write the TOON definition to the returned path.'
+        )
+
+    content = path.read_text(encoding='utf-8')
     if not content.strip():
-        return output_error('No task definition provided (--content is empty)')
+        return output_error(
+            f"Prepared task file is empty: {path}. Write the TOON definition before commit-add."
+        )
 
     try:
         parsed = parse_stdin_task(content)
@@ -66,6 +142,12 @@ def cmd_add(args) -> dict:
     content = format_task_file(task)
     atomic_write_file(filepath, content)
 
+    # Consume the scratch file — success means it is no longer pending.
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
     total = len(list(task_dir.glob('TASK-*.json')))
 
     log_entry(
@@ -79,6 +161,7 @@ def cmd_add(args) -> dict:
         'status': 'success',
         'plan_id': args.plan_id,
         'file': filename,
+        'slot': slot,
         'total_tasks': total,
         'task': {
             'number': number,

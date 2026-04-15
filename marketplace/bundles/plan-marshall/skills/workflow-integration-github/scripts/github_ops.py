@@ -24,26 +24,29 @@ Subcommands:
     issue view      View issue details
     issue close     Close an issue
 
-Usage:
-    python3 github.py pr create --title "Title" --body "Body" [--base main] [--draft]
+Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume):
+    python3 github.py pr prepare-body --plan-id my-plan [--for create|edit] [--slot name]
+    python3 github.py pr prepare-comment --plan-id my-plan [--for reply|thread-reply] [--slot name]
+    python3 github.py issue prepare-body --plan-id my-plan [--slot name]
+    python3 github.py pr create --title "Title" --plan-id my-plan [--base main] [--draft]
     python3 github.py pr view
     python3 github.py pr list [--head feature/branch] [--state open|closed|all]
     python3 github.py pr reviews --pr-number 123
     python3 github.py pr comments --pr-number 123 [--unresolved-only]
-    python3 github.py pr reply --pr-number 123 --body "Comment text"
+    python3 github.py pr reply --pr-number 123 --plan-id my-plan
     python3 github.py pr resolve-thread --thread-id PRRT_abc123
-    python3 github.py pr thread-reply --pr-number 123 --thread-id PRRT_abc123 --body "Fixed"
+    python3 github.py pr thread-reply --pr-number 123 --thread-id PRRT_abc123 --plan-id my-plan
     python3 github.py pr submit-review --review-id PRR_abc123 [--event COMMENT|APPROVE|REQUEST_CHANGES]
     python3 github.py pr merge --pr-number 123 [--strategy squash] [--delete-branch]
     python3 github.py pr auto-merge --pr-number 123 [--strategy squash]
     python3 github.py pr close --pr-number 123
     python3 github.py pr ready --pr-number 123
-    python3 github.py pr edit --pr-number 123 [--title "New Title"] [--body "New Body"]
+    python3 github.py pr edit --pr-number 123 --plan-id my-plan [--title "New Title"]
     python3 github.py ci status --pr-number 123
     python3 github.py ci wait --pr-number 123 [--timeout 300] [--interval 30]
     python3 github.py ci rerun --run-id 12345
     python3 github.py ci logs --run-id 12345
-    python3 github.py issue create --title "Title" --body "Body" [--labels "bug,priority:high"]
+    python3 github.py issue create --title "Title" --plan-id my-plan [--labels "bug,priority:high"]
     python3 github.py issue view --issue 123
     python3 github.py issue close --issue 123
 
@@ -55,16 +58,24 @@ import json
 from typing import Any
 
 from ci_base import (  # type: ignore[import-not-found]
+    BODY_KIND_ISSUE_CREATE,
+    BODY_KIND_PR_CREATE,
+    BODY_KIND_PR_EDIT,
+    BODY_KIND_PR_REPLY,
+    BODY_KIND_PR_THREAD_REPLY,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
     compute_elapsed,
     compute_total_elapsed,
+    delete_consumed_body,
     dispatch,
     make_error,
     make_pr_number_handler,
     make_simple_handler,
     poll_until,
+    prepare_body,
+    read_and_consume_body,
     run_cli,
     truncate_log_content,
 )
@@ -149,14 +160,12 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_create', err)
 
-    # Resolve body: --body-file takes precedence over --body
-    body = args.body or ''
-    if args.body_file:
-        try:
-            with open(args.body_file) as f:
-                body = f.read()
-        except OSError as e:
-            return make_error('pr_create', f'Failed to read body file: {e}')
+    # Resolve body via the path-allocate body store
+    body, err_dict = read_and_consume_body(
+        args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None)
+    )
+    if err_dict:
+        return make_error('pr_create', err_dict.get('message', 'body not prepared'))
 
     # Build command
     gh_args = ['pr', 'create', '--title', args.title, '--body', body]
@@ -171,6 +180,11 @@ def cmd_pr_create(args: argparse.Namespace) -> dict:
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
         return make_error('pr_create', 'Failed to create PR', stderr.strip())
+
+    # Delete the consumed scratch body — success only
+    delete_consumed_body(
+        args.plan_id, BODY_KIND_PR_CREATE, getattr(args, 'slot', None)
+    )
 
     # Parse the URL from output (gh pr create outputs the URL)
     pr_url = stdout.strip()
@@ -318,12 +332,32 @@ def cmd_pr_list(args: argparse.Namespace) -> dict:
     }
 
 
-cmd_pr_reply = make_pr_number_handler(
-    'pr_reply',
-    lambda args: ['pr', 'comment', str(args.pr_number), '--body', args.body],
-    run_gh,
-    check_auth,
-)
+def cmd_pr_reply(args: argparse.Namespace) -> dict:
+    """Handle 'pr reply' — post a comment using the prepared body."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('pr_reply', err)
+
+    body, err_dict = read_and_consume_body(
+        args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
+    )
+    if err_dict:
+        return make_error('pr_reply', err_dict.get('message', 'body not prepared'))
+
+    gh_args = ['pr', 'comment', str(args.pr_number), '--body', body]
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return make_error('pr_reply', 'Failed to post comment', stderr.strip())
+
+    delete_consumed_body(
+        args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
+    )
+    return {
+        'status': 'success',
+        'operation': 'pr_reply',
+        'pr_number': args.pr_number,
+        'output': stdout.strip(),
+    }
 
 
 RESOLVE_THREAD_MUTATION = """
@@ -407,12 +441,22 @@ def cmd_pr_thread_reply(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_thread_reply', err)
 
+    body, err_dict = read_and_consume_body(
+        args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None)
+    )
+    if err_dict:
+        return make_error('pr_thread_reply', err_dict.get('message', 'body not prepared'))
+
     returncode, data, err = run_graphql(
         THREAD_REPLY_MUTATION,
-        {'threadId': args.thread_id, 'body': args.body},
+        {'threadId': args.thread_id, 'body': body},
     )
     if returncode != 0 or data is None:
         return make_error('pr_thread_reply', f'Failed to reply to thread: {err}')
+
+    delete_consumed_body(
+        args.plan_id, BODY_KIND_PR_THREAD_REPLY, getattr(args, 'slot', None)
+    )
 
     # Post-call regression check: a successful addPullRequestReviewThreadReply
     # must not leave a PENDING review owned by the current viewer. If it does,
@@ -796,17 +840,39 @@ cmd_pr_ready = make_pr_number_handler(
 
 
 def cmd_pr_edit(args: argparse.Namespace) -> dict:
-    """Handle 'pr edit' subcommand - edit PR title and/or body."""
-    if not args.title and not args.body:
-        return make_error('pr_edit', 'At least one of --title or --body must be provided')
+    """Handle 'pr edit' subcommand - edit PR title and/or body.
+
+    Body is consumed from the prepared scratch file for
+    ``BODY_KIND_PR_EDIT``; callers who want to update only the title can skip
+    preparing a body and the edit proceeds without touching the description.
+    """
+    # Body is optional on edit: the caller may just want to rename the PR.
+    body, err_dict = read_and_consume_body(
+        args.plan_id,
+        BODY_KIND_PR_EDIT,
+        getattr(args, 'slot', None),
+        required=False,
+    )
+    if err_dict:
+        return make_error('pr_edit', err_dict.get('message', 'body not prepared'))
+
+    if not args.title and not body:
+        return make_error(
+            'pr_edit',
+            'At least one of --title or a prepared body must be provided',
+        )
 
     gh_args = ['pr', 'edit', str(args.pr_number)]
     if args.title:
         gh_args.extend(['--title', args.title])
-    if args.body:
-        gh_args.extend(['--body', args.body])
+    if body:
+        gh_args.extend(['--body', body])
 
     result: dict = make_pr_number_handler('pr_edit', lambda a: gh_args, run_gh, check_auth)(args)
+    if body and result.get('status') == 'success':
+        delete_consumed_body(
+            args.plan_id, BODY_KIND_PR_EDIT, getattr(args, 'slot', None)
+        )
     return result
 
 
@@ -992,8 +1058,15 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('issue_create', err)
 
+    # Consume the prepared issue body
+    body, err_dict = read_and_consume_body(
+        args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None)
+    )
+    if err_dict:
+        return make_error('issue_create', err_dict.get('message', 'body not prepared'))
+
     # Build command
-    gh_args = ['issue', 'create', '--title', args.title, '--body', args.body]
+    gh_args = ['issue', 'create', '--title', args.title, '--body', body]
     if args.labels:
         gh_args.extend(['--label', args.labels])
 
@@ -1001,6 +1074,10 @@ def cmd_issue_create(args: argparse.Namespace) -> dict:
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
         return make_error('issue_create', 'Failed to create issue', stderr.strip())
+
+    delete_consumed_body(
+        args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None)
+    )
 
     # Parse the URL from output
     issue_url = stdout.strip()
@@ -1089,6 +1166,32 @@ cmd_issue_close = make_simple_handler(
 
 
 # ---------------------------------------------------------------------------
+# Prepare-body handlers (path-allocate pattern)
+# ---------------------------------------------------------------------------
+
+
+def _cmd_pr_prepare_body(args: argparse.Namespace) -> dict:
+    """Allocate a scratch path for a PR body (create or edit)."""
+    kind = BODY_KIND_PR_EDIT if getattr(args, 'prepare_for', 'create') == 'edit' else BODY_KIND_PR_CREATE
+    return prepare_body(args.plan_id, kind, getattr(args, 'slot', None))
+
+
+def _cmd_pr_prepare_comment(args: argparse.Namespace) -> dict:
+    """Allocate a scratch path for a PR comment (reply or thread-reply)."""
+    kind = (
+        BODY_KIND_PR_THREAD_REPLY
+        if getattr(args, 'prepare_for', 'reply') == 'thread-reply'
+        else BODY_KIND_PR_REPLY
+    )
+    return prepare_body(args.plan_id, kind, getattr(args, 'slot', None))
+
+
+def _cmd_issue_prepare_body(args: argparse.Namespace) -> dict:
+    """Allocate a scratch path for an issue description."""
+    return prepare_body(args.plan_id, BODY_KIND_ISSUE_CREATE, getattr(args, 'slot', None))
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1097,7 +1200,7 @@ def main() -> int:
     parser, pr_sub, ci_sub, issue_sub = build_parser('GitHub operations via gh CLI')
 
     # GitHub-specific parser additions
-    add_pr_create_args(pr_sub, body_required=False, body_file=True)
+    add_pr_create_args(pr_sub)
 
     # GitHub: --pr-number on resolve-thread is optional (accepted for API uniformity)
     resolve_parser = pr_sub.choices.get('resolve-thread')
@@ -1107,6 +1210,9 @@ def main() -> int:
     args = parser.parse_args()
 
     handlers = {
+        ('pr', 'prepare-body'): _cmd_pr_prepare_body,
+        ('pr', 'prepare-comment'): _cmd_pr_prepare_comment,
+        ('issue', 'prepare-body'): _cmd_issue_prepare_body,
         ('pr', 'create'): cmd_pr_create,
         ('pr', 'view'): cmd_pr_view,
         ('pr', 'list'): cmd_pr_list,

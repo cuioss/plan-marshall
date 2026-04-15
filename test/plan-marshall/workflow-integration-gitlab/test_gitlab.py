@@ -64,7 +64,8 @@ def test_pr_create_help():
     result = run_script(SCRIPT_PATH, 'pr', 'create', '--help')
     assert result.success, f'pr create --help failed: {result.stderr}'
     assert '--title' in result.stdout
-    assert '--body' in result.stdout
+    assert '--plan-id' in result.stdout
+    assert '--body' not in result.stdout
 
 
 def test_pr_create_missing_required():
@@ -112,7 +113,8 @@ def test_pr_reply_help():
     result = run_script(SCRIPT_PATH, 'pr', 'reply', '--help')
     assert result.success, f'pr reply --help failed: {result.stderr}'
     assert '--pr-number' in result.stdout
-    assert '--body' in result.stdout
+    assert '--plan-id' in result.stdout
+    assert '--body' not in result.stdout
 
 
 def test_pr_reply_missing_required():
@@ -141,7 +143,8 @@ def test_pr_thread_reply_help():
     assert result.success, f'pr thread-reply --help failed: {result.stderr}'
     assert '--pr-number' in result.stdout
     assert '--thread-id' in result.stdout
-    assert '--body' in result.stdout
+    assert '--plan-id' in result.stdout
+    assert '--body' not in result.stdout
 
 
 def test_pr_thread_reply_missing_required():

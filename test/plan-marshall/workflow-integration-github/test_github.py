@@ -64,7 +64,8 @@ def test_pr_create_help():
     result = run_script(SCRIPT_PATH, 'pr', 'create', '--help')
     assert result.success, f'pr create --help failed: {result.stderr}'
     assert '--title' in result.stdout
-    assert '--body' in result.stdout
+    assert '--plan-id' in result.stdout
+    assert '--body' not in result.stdout
 
 
 def test_pr_create_missing_required():
@@ -114,7 +115,8 @@ def test_pr_reply_help():
     result = run_script(SCRIPT_PATH, 'pr', 'reply', '--help')
     assert result.success, f'pr reply --help failed: {result.stderr}'
     assert '--pr-number' in result.stdout
-    assert '--body' in result.stdout
+    assert '--plan-id' in result.stdout
+    assert '--body' not in result.stdout
 
 
 def test_pr_reply_missing_required():
@@ -142,7 +144,8 @@ def test_pr_thread_reply_help():
     assert result.success, f'pr thread-reply --help failed: {result.stderr}'
     assert '--pr-number' in result.stdout
     assert '--thread-id' in result.stdout
-    assert '--body' in result.stdout
+    assert '--plan-id' in result.stdout
+    assert '--body' not in result.stdout
 
 
 def test_pr_thread_reply_missing_required():
@@ -252,7 +255,20 @@ def test_no_subcommand():
     assert not result.success, 'Expected failure without subcommand'
 
 
-def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch):
+def _prepare_thread_reply_body(tmp_path, monkeypatch, body_text='Fixed it', plan_id='p'):
+    """Seed PLAN_BASE_DIR with a prepared thread-reply body scratch file."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    from ci_base import (  # type: ignore[import-not-found]
+        BODY_KIND_PR_THREAD_REPLY,
+        get_body_path,
+    )
+    path = get_body_path(plan_id, BODY_KIND_PR_THREAD_REPLY)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body_text, encoding='utf-8')
+    return plan_id
+
+
+def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch, tmp_path):
     """Regression: cmd_pr_thread_reply must use addPullRequestReviewThreadReply
     with exactly {threadId, body} variables, and MUST NOT shell out to gh pr view
     for a PR id. The follow-up PENDING-review check must see zero stuck reviews."""
@@ -284,7 +300,8 @@ def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch):
     monkeypatch.setattr(github_ops, 'run_graphql', fake_run_graphql)
     monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
 
-    ns = argparse.Namespace(pr_number=42, thread_id='PRRT_abc', body='Fixed it')
+    plan_id = _prepare_thread_reply_body(tmp_path, monkeypatch)
+    ns = argparse.Namespace(pr_number=42, thread_id='PRRT_abc', plan_id=plan_id, slot=None)
     result = github_ops.cmd_pr_thread_reply(ns)
 
     assert result['status'] == 'success', f'Expected success, got: {result}'
@@ -302,7 +319,7 @@ def test_pr_thread_reply_uses_thread_reply_mutation(monkeypatch):
     )
 
 
-def test_pr_thread_reply_fails_when_pending_review_remains(monkeypatch):
+def test_pr_thread_reply_fails_when_pending_review_remains(monkeypatch, tmp_path):
     """Regression: if a PENDING review owned by the viewer remains after the
     mutation, the handler must return status: error naming the stuck review id,
     NOT status: success."""
@@ -343,7 +360,8 @@ def test_pr_thread_reply_fails_when_pending_review_remains(monkeypatch):
     monkeypatch.setattr(github_ops, 'run_graphql', fake_run_graphql)
     monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
 
-    ns = argparse.Namespace(pr_number=42, thread_id='PRRT_abc', body='Fixed it')
+    plan_id = _prepare_thread_reply_body(tmp_path, monkeypatch)
+    ns = argparse.Namespace(pr_number=42, thread_id='PRRT_abc', plan_id=plan_id, slot=None)
     result = github_ops.cmd_pr_thread_reply(ns)
 
     assert result['status'] == 'error', f'Expected error, got: {result}'

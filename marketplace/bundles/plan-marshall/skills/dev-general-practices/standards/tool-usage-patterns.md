@@ -122,10 +122,20 @@ Each Bash call must contain exactly ONE command. Never combine with newlines, `&
 
 ### No heredocs with # lines
 
-Heredocs containing `#`-prefixed lines trigger security prompts. Write to a temp file instead:
+Heredocs containing `#`-prefixed lines trigger security prompts. Use the
+path-allocate pattern — the script owns the scratch path, so callers never
+invent one and no multi-line content crosses the shell boundary:
+
 ```
-Write(file_path=".plan/temp/pr-body.md", content="## Summary\n...")
-Bash(command="some-cli --body-file .plan/temp/pr-body.md")
+# Step 1: script allocates a scratch path bound to --plan-id
+Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body --plan-id my-plan")
+# → returns {path: /abs/.../work/ci-bodies/pr-create-default.md}
+
+# Step 2: Write tool writes the body directly to the returned path
+Write(file_path="<path from prepare-body>", content="## Summary\n...")
+
+# Step 3: consumer reads the prepared file and deletes it on success
+Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title 'T' --plan-id my-plan --base main")
 ```
 
 ## Performance Tips

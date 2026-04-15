@@ -111,3 +111,46 @@ def test_get_provider_derives_from_skill_name(tmp_path):
     result = run_script(SCRIPT_PATH, cwd=tmp_path)
     # Should detect gitlab provider (derived from skill_name), not "not configured"
     assert result.returncode == 2 or 'not configured' not in result.stdout
+
+
+# =============================================================================
+# Path-allocate body flow — router-level regression
+# =============================================================================
+
+
+def test_router_rejects_legacy_body_flag(tmp_path):
+    """Router must refuse the legacy inline body flag at the ci.py level.
+
+    Since ci.py delegates argument parsing to the provider, a provider parser
+    configured with the new path-allocate flow will raise SystemExit when
+    handed the legacy inline-body flag on any mutating subcommand. Exercise
+    this via a configured GitHub provider so the delegated call reaches
+    github_ops.py's build_parser.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    marshal = {
+        'providers': [
+            {
+                'skill_name': 'plan-marshall:workflow-integration-github',
+                'category': 'ci',
+            },
+        ],
+    }
+    (plan_dir / 'marshal.json').write_text(json.dumps(marshal))
+
+    result = run_script(
+        SCRIPT_PATH,
+        'pr',
+        'create',
+        '--title',
+        'T',
+        '--plan-id',
+        'p',
+        '--body',
+        'X',
+        cwd=tmp_path,
+    )
+    # argparse unknown-arg → non-zero exit; accept either 1 or 2 depending on
+    # provider's error handling, but not success.
+    assert result.returncode != 0
