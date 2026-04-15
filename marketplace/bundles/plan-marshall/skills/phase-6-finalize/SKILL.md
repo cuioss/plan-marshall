@@ -10,6 +10,8 @@ user-invocable: false
 
 **Key Pattern**: Shipping-focused execution. No verification steps—all quality checks run as verification tasks within phase-5-execute before reaching this phase.
 
+**Required steps declaration**: This skill opts in to the `phase_steps_complete` handshake invariant. The canonical list of steps that MUST be marked done on `status.metadata.phase_steps["6-finalize"]` before the phase transitions is maintained in [standards/required-steps.md](standards/required-steps.md). Each built-in step's standards document terminates with a `manage-status mark-step-done` call whose `--step` value matches an entry in that file.
+
 ## Enforcement
 
 > **Shared lifecycle patterns**: See [phase-lifecycle.md](../ref-workflow-architecture/standards/phase-lifecycle.md) for entry protocol, completion protocol, and error handling convention.
@@ -29,6 +31,8 @@ Skill: plan-marshall:tools-integration-ci
 - Never skip phase transitions — use `manage-status transition`, never set status directly
 - Never improvise script subcommands — use only those documented in this skill's workflow steps
 - Never skip config-gated steps based on PR state (approval, merge status, or CI status). The ONLY valid skip condition for each step is its config gate being `false`. Standards documents have their own user confirmation gates that handle runtime state decisions.
+- Never issue a raw `git` Bash call without `git -C {worktree_path}` (pre-worktree-removal) or `git -C {main_checkout}` (post-worktree-removal). No `cd` chaining, no implicit cwd. `{worktree_path}` and `{main_checkout}` MUST be resolved by the Step 0 entry step before any standards document runs.
+- Never invoke a build, CI, Sonar, or GitHub/GitLab script (`ci`, `python_build`, `sonar`, `workflow-integration-*`) without forwarding `--project-dir {worktree_path}` (or `--project-dir {main_checkout}` after worktree removal). The executor is cwd-pass-through; cwd control is explicit at the call site.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
@@ -123,6 +127,42 @@ The step skill can access the plan's context via manage-* scripts (references, s
 ## Operation: finalize
 
 **Input**: `plan_id`
+
+### Step 0: Resolve Worktree and Main Checkout Paths
+
+**This step runs before any other finalize step** and makes `{worktree_path}` and `{main_checkout}` available to every subsequent step and standards document. All git Bash calls and all build/CI/sonar/github/gitlab script invocations in the finalize workflow depend on these two values — no standards document may resolve them independently.
+
+Read the plan status and extract the worktree path from metadata:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
+```
+
+Extract `metadata.worktree_path`:
+
+- **If present**: the plan ran in an isolated worktree. Capture the value as `{worktree_path}`. The main checkout is the parent of `.claude/worktrees/{plan_id}/` — derive `{main_checkout}` by stripping the trailing `/.claude/worktrees/{plan_id}` segment from `{worktree_path}`, or resolve it explicitly:
+
+```bash
+git -C {worktree_path} rev-parse --path-format=absolute --git-common-dir
+```
+
+The `git-common-dir` output ends with `/.git` inside the main checkout — `{main_checkout}` is its parent directory.
+
+- **If absent** (pre-worktree plan or `use_worktree == false`): there is no worktree. Set `{worktree_path}` equal to `{main_checkout}`, where `{main_checkout}` is the repository root resolved via:
+
+```bash
+git rev-parse --show-toplevel
+```
+
+Log the resolved paths so they remain visible in model context for every subsequent Edit/Write/Read/Bash call:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Finalize cwd context: worktree_path={worktree_path} main_checkout={main_checkout} — all git calls MUST use 'git -C' with one of these paths, all script calls MUST pass '--project-dir'"
+```
+
+From this point on, every standards document loaded by the finalize pipeline inherits `{worktree_path}` and `{main_checkout}` from this step. Standards documents MUST NOT re-resolve these values.
 
 ### Step 1: Check Q-Gate Findings and Log Start
 
@@ -345,6 +385,7 @@ State checks (for present steps):
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
+| `standards/required-steps.md` | — | Canonical list of steps enforced by the `phase_steps_complete` handshake invariant |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |
 

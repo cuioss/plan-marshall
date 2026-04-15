@@ -94,6 +94,57 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples.
 | `task_state_hash` | always | SHA256 of sorted `(number, status, step_outcomes, depends_on)` from `manage-tasks list` | tasks silently mutated |
 | `qgate_open_count` | always | `filtered_count` from `manage-findings qgate query --resolution pending --phase P` | Q-Gate bypass |
 | `config_hash` | always | SHA256 of stable-key JSON of `manage-config plan phase-P get` output | config swapped mid-run |
+| `phase_steps_complete` | always (no-op when phase has no declaration) | See [resolution rule](#phase_steps_complete-resolution) | silently skipped intra-phase steps |
+
+### `phase_steps_complete` resolution
+
+The invariant reads a **static required step list** from the phase skill itself and validates it against `status.metadata.phase_steps[phase]` (written by `manage-status mark-step-done`).
+
+**Resolution rule:**
+
+1. Locate the phase skill directory by convention: `marketplace/bundles/plan-marshall/skills/phase-{phase}`, where `{phase}` is the phase key (e.g. `6-finalize`). The marketplace root is discovered via `marketplace_paths.find_marketplace_path()` so the rule works from either the checked-out source tree or the plugin cache.
+2. Read the sibling file `standards/required-steps.md` inside that directory. If the file does not exist, the invariant is a **no-op** — capture returns `None` and the column stays empty, so phases that do not opt in pay no cost.
+3. Parse the file as markdown: every line starting with `- ` (after stripping leading whitespace, and unwrapping a single pair of inline `` ` `` backticks) becomes one required step name. Blank lines, headings, and prose are ignored. Declaration order is preserved for stable hashing; completeness is checked as a set.
+4. For each required step `S`, read `status.metadata.phase_steps[phase][S]`. The step **passes** only when the recorded outcome is exactly `done`. Missing entries and entries with any other outcome (including `skipped`) **fail**.
+
+**Capture-time behavior:**
+
+- **Pass**: the capture function returns a truncated SHA256 of the sorted required step list. If the required set changes between capture and verify, that counts as drift on this column.
+- **Fail**: the capture function raises `PhaseStepsIncomplete(phase, missing, not_done)`. `cmd_capture` catches the exception and returns a structured error payload **without writing a row**:
+
+```toon
+status: error
+error: phase_steps_incomplete
+plan_id: X
+phase: 6-finalize
+missing[2]:
+  - sonar-roundtrip
+  - branch-cleanup
+not_done[1]{step,outcome}:
+  lessons-capture,skipped
+message: "phase_steps_complete failed for phase '6-finalize': ..."
+```
+
+The phase skill MUST either call `manage-status mark-step-done` for each unrecorded step or acknowledge the skip (currently unsupported — skipping is a hard failure per the cwd handshake spec) before re-running capture.
+
+**Verify-time behavior:** if the observed re-capture raises `PhaseStepsIncomplete`, `cmd_verify` surfaces it as a `drift` on the `phase_steps_complete` column with an `incomplete(missing=...,not_done=...)` observed value. Callers see the same structured signal regardless of whether the mismatch happened during capture or a later re-verify.
+
+**`required-steps.md` format** (owned by each phase skill that opts in):
+
+```markdown
+# Required steps for phase-6-finalize
+
+- commit-push
+- create-pr
+- automated-review
+- sonar-roundtrip
+- record-metrics
+- archive-plan
+- branch-cleanup
+- validation
+- knowledge-capture
+- lessons-capture
+```
 
 ### Adding a new invariant
 
@@ -102,7 +153,7 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples.
 3. Add the column name to `HANDSHAKE_FIELDS` in `_handshake_store.py`
 4. Add a drift test case
 
-No changes are required in `_handshake_commands.py`, `phase_handshake.py`, or any phase skill.
+No changes are required in `_handshake_commands.py`, `phase_handshake.py`, or any phase skill — unless the new invariant needs to raise a capture-time gate (as `phase_steps_complete` does). In that case, define a dedicated exception in `_invariants.py` and teach `cmd_capture`/`cmd_verify` to catch it, mirroring the `PhaseStepsIncomplete` pattern.
 
 ### Worktree applicability
 

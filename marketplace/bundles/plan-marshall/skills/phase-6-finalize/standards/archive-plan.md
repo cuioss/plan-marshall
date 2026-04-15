@@ -6,6 +6,15 @@ Archive the completed plan to `.plan/archived-plans/`.
 
 Lesson-sourced plans carry their `lesson-{id}.md` file along when the plan directory is archived — no separate mark-applied step is needed.
 
+## Mark Step Complete
+
+Record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen BEFORE the archive call below, because archive moves `status.json` out of `.plan/plans/{plan_id}/` and any subsequent `mark-step-done` call would fail to locate the plan.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step archive-plan --outcome done
+```
+
 ## Archive
 
 ```bash

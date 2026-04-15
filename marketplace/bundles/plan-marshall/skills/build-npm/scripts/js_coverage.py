@@ -243,7 +243,14 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     if report_format == 'json' and args.report.endswith('.info'):
         report_format = 'lcov'
 
-    result = analyze_coverage(args.report, report_format, args.threshold)
+    # Resolve relative report path against --project-dir so callers can run
+    # this from any cwd (e.g., worktree-scoped plan execution).
+    report_path = args.report
+    project_dir = getattr(args, 'project_dir', '.')
+    if project_dir and project_dir != '.' and not os.path.isabs(report_path):
+        report_path = os.path.join(project_dir, report_path)
+
+    result = analyze_coverage(report_path, report_format, args.threshold)
     print(serialize_toon(result))
 
     return EXIT_SUCCESS
@@ -268,6 +275,12 @@ def main() -> int:
     )
     analyze_parser.add_argument(
         '--threshold', type=float, default=80.0, help='Coverage threshold percentage (default: 80)'
+    )
+    analyze_parser.add_argument(
+        '--project-dir',
+        dest='project_dir',
+        default='.',
+        help='Project root directory for resolving relative report paths (default: current directory)',
     )
     analyze_parser.set_defaults(func=cmd_analyze)
 

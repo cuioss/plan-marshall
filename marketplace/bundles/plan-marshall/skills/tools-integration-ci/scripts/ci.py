@@ -6,10 +6,18 @@ category=ci and deriving the provider key from skill_name. Delegates to the
 matching provider script ({provider}_ops.py). All arguments are passed through.
 
 Usage:
-    python3 ci.py pr create --title "Title" --body "Body"
-    python3 ci.py pr view
-    python3 ci.py ci status --pr-number 123
-    python3 ci.py issue create --title "Bug" --body "Description"
+    python3 ci.py [--project-dir PATH] pr create --title "Title" --plan-id my-plan
+    python3 ci.py [--project-dir PATH] pr view
+    python3 ci.py [--project-dir PATH] ci status --pr-number 123
+    python3 ci.py [--project-dir PATH] issue create --title "Bug" --plan-id my-plan
+
+Top-level flags (consumed by the router before provider dispatch):
+    --project-dir PATH   Run every gh/glab subprocess with ``cwd=PATH``. Required
+                         when invoking from a checkout whose HEAD is not the
+                         branch the caller wants to operate on — e.g., phase-6
+                         finalize running from the main checkout against a
+                         worktree-isolated plan branch. When omitted, subprocesses
+                         inherit the Python process cwd (current behaviour).
 
 The provider is determined automatically from marshal.json configuration.
 This eliminates the need for eval or jq in skill instructions.
@@ -22,7 +30,11 @@ import json
 import sys
 from pathlib import Path
 
-from ci_base import output_error  # type: ignore[import-not-found]
+from ci_base import (  # type: ignore[import-not-found]
+    extract_project_dir,
+    output_error,
+    set_default_cwd,
+)
 
 
 def find_plan_dir() -> Path | None:
@@ -78,6 +90,14 @@ def get_provider() -> str | None:
 
 
 def main() -> int:
+    # Consume top-level router flags (currently only --project-dir) before
+    # delegating to the provider module. sys.argv is rewritten in place so the
+    # downstream provider parser sees only its own arguments.
+    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
     provider = get_provider()
     if not provider:
         return output_error('router', 'CI provider not configured. Run /marshall-steward first.')

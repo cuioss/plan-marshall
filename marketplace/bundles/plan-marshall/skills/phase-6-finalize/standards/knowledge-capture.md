@@ -27,3 +27,12 @@ python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory save
 ```
 
 Note: `--content` must be valid JSON. Required flags: `--category`, `--identifier`, `--content`.
+
+## Mark Step Complete
+
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step knowledge-capture --outcome done
+```

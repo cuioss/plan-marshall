@@ -4,7 +4,9 @@ Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
 
 import json
+import sys
 import unittest
+from unittest.mock import MagicMock, patch
 
 from conftest import get_script_path, run_script
 
@@ -14,10 +16,14 @@ from conftest import get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-pr-doctor', 'pr_doctor.py')
 
 # Tier 2 direct imports — conftest sets up PYTHONPATH for cross-skill imports
+import pr_doctor  # type: ignore[import-not-found]  # noqa: E402
 from pr_doctor import (  # type: ignore[import-not-found]  # noqa: E402
     check_attempt,
     diagnose_pr,
+    forward_project_dir,
     merge_handoff_with_params,
+    run_child_cmd,
+    set_project_dir,
     validate_handoff,
 )
 from triage_helpers import make_error, parse_json_arg  # type: ignore[import-not-found]  # noqa: E402
@@ -517,6 +523,160 @@ class TestMain(unittest.TestCase):
         )
         self.assertNotEqual(code, 0)
         self.assertIn('invalid', stderr)
+
+
+# =============================================================================
+# --project-dir forwarding tests (TASK-7/8)
+# =============================================================================
+
+
+class TestProjectDirForwarding(unittest.TestCase):
+    """Verify --project-dir is forwarded uniformly to every child script.
+
+    The contract is:
+      - main() pre-parses --project-dir via ci_base.extract_project_dir,
+        strips it from argv, and stores the value in _PROJECT_DIR.
+      - forward_project_dir(cmd) appends --project-dir <value> when set,
+        and is a no-op when _PROJECT_DIR is None (default inherited cwd).
+      - run_child_cmd(cmd, **kwargs) routes every subprocess invocation
+        through forward_project_dir — this is the monkey-patch target.
+    """
+
+    def setUp(self):
+        """Ensure a clean module state before every test."""
+        set_project_dir(None)
+
+    def tearDown(self):
+        set_project_dir(None)
+
+    # -- forward_project_dir unit-level behaviour --------------------------
+
+    def test_forward_noop_when_unset(self):
+        """Absent --project-dir, forward_project_dir must not mutate cmd."""
+        set_project_dir(None)
+        cmd = ['ci', 'pr', 'checks', '--pr', '123']
+        forwarded = forward_project_dir(cmd)
+        self.assertEqual(forwarded, cmd)
+        self.assertNotIn('--project-dir', forwarded)
+
+    def test_forward_appends_when_set(self):
+        """When set, forward appends --project-dir <value> at the tail."""
+        set_project_dir('/tmp/worktree')
+        cmd = ['ci', 'pr', 'checks', '--pr', '123']
+        forwarded = forward_project_dir(cmd)
+        self.assertEqual(forwarded[-2:], ['--project-dir', '/tmp/worktree'])
+        # Original list unchanged (defensive copy contract).
+        self.assertNotIn('--project-dir', cmd)
+
+    def test_forward_preserves_list_identity(self):
+        """forward_project_dir returns a new list, never mutates input."""
+        set_project_dir('/tmp/worktree')
+        cmd = ['build', 'run']
+        forwarded = forward_project_dir(cmd)
+        self.assertIsNot(forwarded, cmd)
+        self.assertEqual(cmd, ['build', 'run'])
+
+    # -- run_child_cmd: subprocess.run monkey-patch ------------------------
+
+    def _capture_run(self):
+        """Return (mock, patcher) for pr_doctor.subprocess.run."""
+        mock = MagicMock(return_value=MagicMock(returncode=0, stdout='', stderr=''))
+        patcher = patch.object(pr_doctor.subprocess, 'run', mock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return mock
+
+    def test_run_child_cmd_forwards_when_set(self):
+        """Every child script invocation must receive --project-dir."""
+        set_project_dir('/tmp/worktree')
+        mock_run = self._capture_run()
+
+        # Simulate each child script family pr-doctor fans out to.
+        child_cmds = [
+            ['ci', 'pr', 'checks', '--pr', '123'],
+            ['build', 'run', '--command-args', 'verify'],
+            ['sonar', 'issues', 'list'],
+            ['github', 'pr', 'review'],
+            ['gitlab', 'mr', 'discussions'],
+            ['architecture', 'resolve', '--command', 'compile'],
+        ]
+        for cmd in child_cmds:
+            run_child_cmd(cmd)
+
+        self.assertEqual(mock_run.call_count, len(child_cmds))
+        for call in mock_run.call_args_list:
+            forwarded = call.args[0]
+            self.assertIn('--project-dir', forwarded, f'missing flag in {forwarded}')
+            idx = forwarded.index('--project-dir')
+            self.assertEqual(forwarded[idx + 1], '/tmp/worktree')
+
+    def test_run_child_cmd_noop_when_unset(self):
+        """Default (no --project-dir) must not append the flag."""
+        set_project_dir(None)
+        mock_run = self._capture_run()
+
+        child_cmds = [
+            ['ci', 'pr', 'checks', '--pr', '123'],
+            ['build', 'run', '--command-args', 'verify'],
+            ['sonar', 'issues', 'list'],
+            ['github', 'pr', 'review'],
+            ['gitlab', 'mr', 'discussions'],
+            ['architecture', 'resolve', '--command', 'compile'],
+        ]
+        for cmd in child_cmds:
+            run_child_cmd(cmd)
+
+        self.assertEqual(mock_run.call_count, len(child_cmds))
+        for call in mock_run.call_args_list:
+            forwarded = call.args[0]
+            self.assertNotIn('--project-dir', forwarded, f'unexpected flag in {forwarded}')
+
+    def test_run_child_cmd_passes_kwargs(self):
+        """run_child_cmd must transparently forward subprocess.run kwargs."""
+        set_project_dir('/tmp/worktree')
+        mock_run = self._capture_run()
+        run_child_cmd(['ci', 'pr'], capture_output=True, text=True, check=False)
+        self.assertEqual(mock_run.call_count, 1)
+        kwargs = mock_run.call_args.kwargs
+        self.assertTrue(kwargs.get('capture_output'))
+        self.assertTrue(kwargs.get('text'))
+        self.assertIs(kwargs.get('check'), False)
+
+    # -- main() argv pre-parsing: space and equals forms -------------------
+
+    def _run_main_with_argv(self, argv):
+        """Run pr_doctor.main() under patched argv with diagnose stubbed out."""
+        mock_run = self._capture_run()
+        # Stub cmd_diagnose to return quickly without doing real work — we only
+        # care about what main() does to argv and _PROJECT_DIR before dispatch.
+        stub = MagicMock(return_value={'status': 'success', 'overall': 'pass'})
+        with patch.object(pr_doctor, 'cmd_diagnose', stub), patch.object(sys, 'argv', argv):
+            # main() returns the print_toon result; swallow stdout via the stub.
+            pr_doctor.main()
+        return mock_run, stub
+
+    def test_main_strips_project_dir_space_form(self):
+        """main() must pre-parse --project-dir PATH and store it."""
+        argv = ['pr_doctor.py', '--project-dir', '/tmp/worktree', 'diagnose', '--build-status', 'success']
+        self._run_main_with_argv(argv)
+        self.assertEqual(pr_doctor.get_project_dir(), '/tmp/worktree')
+        # Flag stripped from sys.argv so subcommand parsers never see it.
+        self.assertNotIn('--project-dir', sys.argv)
+        self.assertNotIn('/tmp/worktree', sys.argv)
+
+    def test_main_strips_project_dir_equals_form(self):
+        """main() must also accept --project-dir=PATH."""
+        argv = ['pr_doctor.py', '--project-dir=/tmp/worktree', 'diagnose', '--build-status', 'success']
+        self._run_main_with_argv(argv)
+        self.assertEqual(pr_doctor.get_project_dir(), '/tmp/worktree')
+        self.assertNotIn('--project-dir', sys.argv)
+        self.assertFalse(any(a.startswith('--project-dir') for a in sys.argv))
+
+    def test_main_without_project_dir_leaves_unset(self):
+        """Absent the flag, _PROJECT_DIR must remain None."""
+        argv = ['pr_doctor.py', 'diagnose', '--build-status', 'success']
+        self._run_main_with_argv(argv)
+        self.assertIsNone(pr_doctor.get_project_dir())
 
 
 if __name__ == '__main__':

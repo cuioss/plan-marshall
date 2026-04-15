@@ -57,6 +57,7 @@ Output: TOON format
 import argparse
 import json
 import subprocess
+import sys
 from typing import Any
 from urllib.parse import quote
 
@@ -74,6 +75,8 @@ from ci_base import (  # type: ignore[import-not-found]
     compute_total_elapsed,
     delete_consumed_body,
     dispatch,
+    extract_project_dir,
+    get_default_cwd,
     make_error,
     make_pr_number_handler,
     make_simple_handler,
@@ -81,6 +84,7 @@ from ci_base import (  # type: ignore[import-not-found]
     prepare_body,
     read_and_consume_body,
     run_cli,
+    set_default_cwd,
     truncate_log_content,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
@@ -801,7 +805,9 @@ def cmd_ci_logs(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('ci_logs', err)
 
-    # Use subprocess.run directly for longer timeout (120s)
+    # Use subprocess.run directly for longer timeout (120s). Honour the
+    # router's process-global default cwd so ci logs are fetched against
+    # the worktree configured via --project-dir, not the Python cwd.
     cmd = ['glab', 'ci', 'trace', str(args.run_id)]
     try:
         result = subprocess.run(
@@ -809,6 +815,7 @@ def cmd_ci_logs(args: argparse.Namespace) -> dict:
             capture_output=True,
             text=True,
             timeout=120,
+            cwd=get_default_cwd(),
         )
         returncode = result.returncode
         stdout = result.stdout
@@ -1081,6 +1088,14 @@ cmd_issue_close = make_simple_handler(
 
 
 def main() -> int:
+    # Consume top-level --project-dir before argparse runs so the downstream
+    # provider parser never sees the router flag. Any cwd supplied here is
+    # installed as the process-global default for run_cli's glab invocations.
+    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
     parser, pr_sub, ci_sub, issue_sub = build_parser('GitLab operations via glab CLI')
 
     # GitLab-specific parser additions

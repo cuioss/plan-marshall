@@ -13,7 +13,11 @@ from _handshake_store import (  # type: ignore[import-not-found]
     remove_row,
     upsert_row,
 )
-from _invariants import INVARIANTS, capture_all  # type: ignore[import-not-found]
+from _invariants import (  # type: ignore[import-not-found]
+    INVARIANTS,
+    PhaseStepsIncomplete,
+    capture_all,
+)
 from file_ops import get_base_dir  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
@@ -90,7 +94,18 @@ def cmd_capture(args: Any) -> dict[str, Any]:
     plan_id = args.plan_id
     phase = args.phase
     metadata = _load_status_metadata(plan_id)
-    captured = capture_all(plan_id, metadata, phase)
+    try:
+        captured = capture_all(plan_id, metadata, phase)
+    except PhaseStepsIncomplete as exc:
+        return {
+            'status': 'error',
+            'error': 'phase_steps_incomplete',
+            'plan_id': plan_id,
+            'phase': phase,
+            'missing': exc.missing,
+            'not_done': exc.not_done,
+            'message': str(exc),
+        }
     row = _row_for_capture(
         plan_id,
         phase,
@@ -146,7 +161,27 @@ def cmd_verify(args: Any) -> dict[str, Any]:
         }
 
     metadata = _load_status_metadata(plan_id)
-    observed = capture_all(plan_id, metadata, phase)
+    try:
+        observed = capture_all(plan_id, metadata, phase)
+    except PhaseStepsIncomplete as exc:
+        # Treat observed incompleteness as drift on the phase_steps_complete
+        # column so callers see a structured difference rather than an error.
+        observed = {}
+        diffs = [
+            {
+                'invariant': 'phase_steps_complete',
+                'captured': str(captured_row.get('phase_steps_complete', '')),
+                'observed': f'incomplete(missing={exc.missing},not_done={exc.not_done})',
+            }
+        ]
+        return {
+            'status': 'drift',
+            'plan_id': plan_id,
+            'phase': phase,
+            'override': captured_row.get('override', False),
+            'drift_count': len(diffs),
+            'diffs': diffs,
+        }
     diffs = _diffs(captured_row, observed)
 
     if not diffs:

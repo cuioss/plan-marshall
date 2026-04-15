@@ -16,6 +16,7 @@ import argparse
 import sys
 
 from _providers_core import RestClientError, get_authenticated_client  # type: ignore[import-not-found]
+from ci_base import extract_project_dir, set_default_cwd  # type: ignore[import-not-found]
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 SKILL_NAME = 'workflow-integration-sonar'
@@ -145,6 +146,15 @@ def cmd_metrics(args) -> int:
 
 @safe_main
 def main() -> int:
+    # Accept (and swallow) a top-level --project-dir for API uniformity with
+    # the github/gitlab workflow scripts. All Sonar operations here go over
+    # HTTP through RestClient, so cwd has no functional effect on API calls;
+    # the flag is accepted as a no-op rather than rejected by argparse.
+    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
     parser = argparse.ArgumentParser(description='Sonar REST API client')
     subparsers = parser.add_subparsers(dest='command', required=True)
 

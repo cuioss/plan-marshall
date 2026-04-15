@@ -6,6 +6,7 @@ Commit all changes and push to remote. Respects `commit_strategy` from phase-5-e
 
 - Config field `1_commit_push` is `true`
 - `commit_strategy` from phase-5-execute config (per_deliverable/per_plan/none)
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All git commands below MUST use `git -C {worktree_path}`.
 
 ## Execution
 
@@ -25,7 +26,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ### Check for uncommitted changes
 
 ```bash
-git status --porcelain
+git -C {worktree_path} status --porcelain
 ```
 
 If output is empty → no changes to commit, done.
@@ -44,3 +45,13 @@ Skill: plan-marshall:workflow-integration-git
 Execute the git_workflow skill's **Workflow: Commit Changes** with:
 - `message`: Generated from request.md summary
 - `push`: true (always push in finalize)
+- `worktree_path`: `{worktree_path}` resolved at finalize entry
+
+## Mark Step Complete
+
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step commit-push --outcome done
+```

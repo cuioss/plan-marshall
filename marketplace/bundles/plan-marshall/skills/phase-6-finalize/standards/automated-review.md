@@ -6,6 +6,7 @@ Wait for CI, handle review bot comments, and resolve or loop-back on findings.
 
 - Config field `3_automated_review` is `true`
 - A PR exists (from create-pr step or pre-existing)
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `ci` script invocations below MUST pass `--project-dir {worktree_path}`.
 
 ## Execution
 
@@ -14,7 +15,7 @@ Wait for CI, handle review bot comments, and resolve or loop-back on findings.
 Use the `pr_number` from the create-pr step. If not available:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr view
 ```
 
 Read `pr_number` from the TOON output. If no PR exists, skip automated review.
@@ -34,6 +35,7 @@ Execute **Workflow 3: Automated Review Lifecycle** with:
 - `plan_id`: from context
 - `pr_number`: from above
 - `review_bot_buffer_seconds`: from phase-6-finalize config (default: 300)
+- `worktree_path`: `{worktree_path}` resolved at finalize entry (forwarded to all ci/github subprocess calls)
 
 The workflow handles CI wait, review bot buffer, comment fetching, triage, thread replies, and thread resolution.
 
@@ -55,3 +57,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
 ```
 
 3. Continue until clean or max iterations (3).
+
+## Mark Step Complete
+
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done
+```

@@ -254,5 +254,64 @@ class TestPRMain(unittest.TestCase):
         self.assertIn('--comment', result.stderr)
 
 
+class TestPRProjectDirPlumbing(unittest.TestCase):
+    """Verify github_pr.main() strips --project-dir and forwards cwd."""
+
+    def test_main_project_dir_sets_default_cwd(self):
+        """main() installs --project-dir value as process-global default cwd
+        before argparse runs."""
+        import json
+
+        import ci_base  # type: ignore[import-not-found]
+
+        saved_argv = sys.argv
+        saved_cwd = ci_base.get_default_cwd()
+        try:
+            ci_base.set_default_cwd(None)
+            comment = json.dumps(
+                {'id': 'P1', 'body': 'LGTM', 'path': None, 'line': None, 'author': 'a'}
+            )
+            sys.argv = [
+                'github_pr.py',
+                '--project-dir',
+                '/tmp/worktree-pr',
+                'triage',
+                '--comment',
+                comment,
+            ]
+            github_pr.main()
+            self.assertEqual(ci_base.get_default_cwd(), '/tmp/worktree-pr')
+            self.assertNotIn('--project-dir', sys.argv)
+        finally:
+            sys.argv = saved_argv
+            ci_base.set_default_cwd(saved_cwd)
+
+    def test_main_project_dir_equals_form(self):
+        """The --project-dir=PATH form is also accepted."""
+        import json
+
+        import ci_base  # type: ignore[import-not-found]
+
+        saved_argv = sys.argv
+        saved_cwd = ci_base.get_default_cwd()
+        try:
+            ci_base.set_default_cwd(None)
+            comment = json.dumps(
+                {'id': 'P2', 'body': 'ok', 'path': None, 'line': None, 'author': 'a'}
+            )
+            sys.argv = [
+                'github_pr.py',
+                '--project-dir=/tmp/worktree-pr2',
+                'triage',
+                '--comment',
+                comment,
+            ]
+            github_pr.main()
+            self.assertEqual(ci_base.get_default_cwd(), '/tmp/worktree-pr2')
+        finally:
+            sys.argv = saved_argv
+            ci_base.set_default_cwd(saved_cwd)
+
+
 if __name__ == '__main__':
     unittest.main()

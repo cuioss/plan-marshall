@@ -24,7 +24,38 @@ from typing import Any
 
 from _git_helpers import git_dirty_count, git_head  # type: ignore[import-not-found]
 from file_ops import get_base_dir  # type: ignore[import-not-found]
+from marketplace_paths import find_marketplace_path  # type: ignore[import-not-found]
 from toon_parser import parse_toon  # type: ignore[import-not-found]
+
+
+class PhaseStepsIncomplete(Exception):
+    """Raised by the ``phase_steps_complete`` invariant capture when a phase
+    declares ``required-steps.md`` but ``status.metadata.phase_steps[phase]``
+    is missing required entries or has entries with ``outcome != 'done'``
+    (``skipped`` counts as failure).
+
+    ``cmd_capture`` catches this and surfaces a structured error payload so
+    phase skills cannot advance on silently skipped steps.
+    """
+
+    def __init__(
+        self,
+        phase: str,
+        missing: list[str],
+        not_done: list[dict[str, str]],
+    ):
+        self.phase = phase
+        self.missing = missing
+        self.not_done = not_done
+        parts: list[str] = []
+        if missing:
+            parts.append(f'missing={missing}')
+        if not_done:
+            parts.append(f'not_done={not_done}')
+        super().__init__(
+            f'phase_steps_complete failed for phase {phase!r}: '
+            + ', '.join(parts)
+        )
 
 
 AppliesFn = Callable[[str, dict[str, Any]], bool]
@@ -85,6 +116,63 @@ def _hash_dict(payload: Any) -> str:
     """Stable SHA256 of a JSON-serializable payload (keys sorted recursively)."""
     blob = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
     return hashlib.sha256(blob.encode('utf-8')).hexdigest()[:16]
+
+
+# --- phase required-steps resolution -------------------------------------
+
+def _resolve_required_steps_path(phase: str) -> Path | None:
+    """Return the ``required-steps.md`` path for a phase skill, if present.
+
+    Resolution rule (documented in ``references/phase-handshake.md``):
+    phase skills live at ``marketplace/bundles/plan-marshall/skills/phase-{phase}``
+    by convention — where ``phase`` is the phase key such as ``6-finalize``.
+    The required-steps declaration, if the phase opts in, is the sibling file
+    ``standards/required-steps.md`` inside that skill directory. Returns
+    ``None`` if the marketplace root cannot be located or the file is absent.
+    """
+    bundles = find_marketplace_path()
+    if bundles is None:
+        return None
+    candidate = (
+        bundles
+        / 'plan-marshall'
+        / 'skills'
+        / f'phase-{phase}'
+        / 'standards'
+        / 'required-steps.md'
+    )
+    return candidate if candidate.is_file() else None
+
+
+def _parse_required_steps(path: Path) -> list[str]:
+    """Parse a ``required-steps.md`` file into an ordered list of step names.
+
+    Format: markdown with one step per line in a bullet item, e.g.::
+
+        - commit-push
+        - create-pr
+        - record-metrics
+
+    Lines that do not start with ``- `` (after stripping whitespace) are
+    ignored. Duplicates are preserved in declaration order; callers should
+    treat the list as a set for the completeness check.
+    """
+    steps: list[str] = []
+    try:
+        content = path.read_text(encoding='utf-8')
+    except OSError:
+        return steps
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line.startswith('- '):
+            continue
+        name = line[2:].strip()
+        # Trim inline backticks/formatting if present.
+        if name.startswith('`') and name.endswith('`') and len(name) >= 2:
+            name = name[1:-1]
+        if name:
+            steps.append(name)
+    return steps
 
 
 # --- capture functions ---------------------------------------------------
@@ -204,6 +292,59 @@ def _capture_config_hash(plan_id: str, _metadata: dict[str, Any], phase: str) ->
     return _hash_dict(parsed)
 
 
+def _capture_phase_steps_complete(
+    _plan_id: str,
+    metadata: dict[str, Any],
+    phase: str,
+) -> Any:
+    """Verify that every step in the phase's ``required-steps.md`` is marked
+    ``done`` inside ``status.metadata.phase_steps[phase]``.
+
+    - If the phase has no ``required-steps.md``, returns ``None`` (no-op —
+      the column stays empty and is ignored during verify).
+    - On success, returns the SHA256 of the stable-key required step list so
+      drift verify can still detect a changed required set between capture
+      and verify.
+    - On failure (any required step missing or recorded with outcome !=
+      ``done``), raises ``PhaseStepsIncomplete`` so ``cmd_capture`` can surface
+      a structured error and refuse to persist the row.
+
+    ``skipped`` explicitly counts as failure per the cwd handshake spec —
+    only ``done`` passes.
+    """
+    required_path = _resolve_required_steps_path(phase)
+    if required_path is None:
+        return None
+    required = _parse_required_steps(required_path)
+    if not required:
+        return None
+
+    phase_steps = metadata.get('phase_steps') or {}
+    phase_entry: dict[str, Any] = {}
+    if isinstance(phase_steps, dict):
+        entry = phase_steps.get(phase)
+        if isinstance(entry, dict):
+            phase_entry = entry
+
+    missing: list[str] = []
+    not_done: list[dict[str, str]] = []
+    for step in required:
+        if step not in phase_entry:
+            missing.append(step)
+            continue
+        outcome = str(phase_entry.get(step, ''))
+        if outcome != 'done':
+            not_done.append({'step': step, 'outcome': outcome})
+
+    if missing or not_done:
+        raise PhaseStepsIncomplete(phase, missing, not_done)
+
+    # Deterministic hash of the required step set for drift detection. We
+    # hash the sorted list so registering a new required step (which also
+    # requires a new capture) shows up as drift on verify of an older row.
+    return _hash_dict(sorted(required))
+
+
 # --- registry ------------------------------------------------------------
 
 INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
@@ -214,6 +355,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('task_state_hash', _always, _capture_task_state_hash),
     ('qgate_open_count', _always, _capture_qgate_open_count),
     ('config_hash', _always, _capture_config_hash),
+    ('phase_steps_complete', _always, _capture_phase_steps_complete),
 ]
 
 

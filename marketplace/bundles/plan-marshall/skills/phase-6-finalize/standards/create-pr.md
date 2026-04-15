@@ -6,13 +6,14 @@ Create a pull request for the feature branch.
 
 - Config field `2_create_pr` is `true`
 - Branch has been pushed (Step 3)
+- `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `ci` script invocations below MUST pass `--project-dir {worktree_path}`.
 
 ## Execution
 
 ### Check if PR already exists
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr view
 ```
 
 - `status: success` with `pr_number` → PR already exists, skip creation. Use returned `pr_number` for automated review step.
@@ -34,7 +35,7 @@ No multi-line markdown crosses the shell boundary.
 #### Step 1: Allocate the scratch body path
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr prepare-body \
   --plan-id {plan_id}
 ```
 
@@ -53,7 +54,7 @@ Use `templates/pr-template.md` as the format. Include issue link from references
 #### Step 3: Create PR via CI abstraction
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr create \
   --title "{title from request.md}" --plan-id {plan_id} --base {base_branch}
 ```
 
@@ -67,4 +68,13 @@ Read `pr_number` and `pr_url` from the TOON output.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-6-finalize) Created PR #{pr_number}: {pr_url}"
+```
+
+## Mark Step Complete
+
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done
 ```

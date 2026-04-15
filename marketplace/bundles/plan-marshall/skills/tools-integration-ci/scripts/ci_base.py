@@ -197,6 +197,77 @@ CI_LOG_TRUNCATE_LINES = 200
 # CLI execution
 # ---------------------------------------------------------------------------
 
+# Process-global default working directory for all CLI subprocess invocations.
+# Set via set_default_cwd() from the top-level router when --project-dir is
+# supplied. When None, subprocesses inherit the Python process cwd. This exists
+# so every gh/glab call in every provider can be redirected at a worktree path
+# without threading the value through every handler signature — callers that
+# need a per-call override can still pass `cwd=` explicitly to run_cli.
+_DEFAULT_CWD: str | None = None
+
+
+def extract_project_dir(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Strip an optional top-level ``--project-dir PATH`` flag from *argv*.
+
+    Returns ``(project_dir_or_none, remaining_argv)``. Supports both the
+    ``--project-dir PATH`` and ``--project-dir=PATH`` forms. Only the first
+    occurrence is consumed; a second occurrence is left untouched so the
+    downstream provider parser can reject it as unknown.
+
+    Shared helper used by ``ci.py`` and all provider front-ends
+    (``github_pr.py``, ``github_ops.py``, ``gitlab_pr.py``, ``gitlab_ops.py``,
+    ``sonar.py``, ``sonar_rest.py``). Pre-parsing avoids forcing every
+    downstream ``argparse`` layer to know about the router flag.
+    """
+    project_dir: str | None = None
+    out: list[str] = []
+    consumed = False
+    i = 0
+    import sys as _sys
+    while i < len(argv):
+        token = argv[i]
+        if not consumed and token == '--project-dir':
+            if i + 1 >= len(argv):
+                print(
+                    'Error: --project-dir requires a PATH argument',
+                    file=_sys.stderr,
+                )
+                _sys.exit(2)
+            project_dir = argv[i + 1]
+            consumed = True
+            i += 2
+            continue
+        if not consumed and token.startswith('--project-dir='):
+            project_dir = token.split('=', 1)[1]
+            if not project_dir:
+                print(
+                    'Error: --project-dir requires a non-empty PATH',
+                    file=_sys.stderr,
+                )
+                _sys.exit(2)
+            consumed = True
+            i += 1
+            continue
+        out.append(token)
+        i += 1
+    return project_dir, out
+
+
+def set_default_cwd(cwd: str | None) -> None:
+    """Set the process-global default cwd used by run_cli.
+
+    Passing ``None`` restores the default (inherit the current process cwd).
+    Intended for the ci.py router to honour ``--project-dir`` without forcing
+    every provider handler to plumb the value through its call chain.
+    """
+    global _DEFAULT_CWD
+    _DEFAULT_CWD = cwd
+
+
+def get_default_cwd() -> str | None:
+    """Return the current process-global default cwd (None if unset)."""
+    return _DEFAULT_CWD
+
 
 def run_cli(
     cli_name: str,
@@ -205,6 +276,7 @@ def run_cli(
     capture_json: bool = False,
     timeout: int = 60,
     not_found_msg: str = '',
+    cwd: str | None = None,
 ) -> tuple[int, str, str]:
     """Run a CLI command and return (returncode, stdout, stderr).
 
@@ -215,6 +287,10 @@ def run_cli(
                       (GitHub-specific convenience).
         timeout: Subprocess timeout in seconds.
         not_found_msg: Error message when the CLI binary is missing.
+        cwd: Optional working directory for the subprocess. When None, falls
+            back to the process-global default set via ``set_default_cwd()``.
+            When that is also None, the subprocess inherits the current Python
+            process cwd (standard subprocess behaviour).
 
     Returns:
         Tuple of (returncode, stdout, stderr).
@@ -223,12 +299,15 @@ def run_cli(
     if capture_json and '--json' not in args:
         cmd.append('--json')
 
+    effective_cwd = cwd if cwd is not None else _DEFAULT_CWD
+
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=effective_cwd,
         )
         return result.returncode, result.stdout, result.stderr
     except FileNotFoundError:

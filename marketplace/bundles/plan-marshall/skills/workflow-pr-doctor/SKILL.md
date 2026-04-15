@@ -34,6 +34,20 @@ Diagnose and fix pull request issues with parameterized checks.
 | `wait` | optional | Wait for CI/Sonar to complete (default: true). `--no-wait` takes precedence over `--wait` if both are provided |
 | `handoff` | optional | Handoff structure from previous phase (JSON, see schema below) |
 | `max-fix-attempts` | optional | Maximum fix-verify-commit cycles before giving up (default: 3) |
+| `project-dir` | optional | Absolute path to the checkout/worktree to operate against. When set, pr-doctor forwards `--project-dir {value}` to every child script invocation (ci, build, sonar, github/gitlab). Omit for default behavior (inherited cwd). |
+
+## --project-dir Forwarding Contract
+
+When pr-doctor is invoked with `--project-dir {path}`, that value MUST be forwarded uniformly to every child script invocation it makes:
+
+- `plan-marshall:tools-integration-ci:ci ...`
+- `plan-marshall:build-*:* run ...`
+- `plan-marshall:workflow-integration-sonar:sonar ...`
+- `plan-marshall:workflow-integration-github:github_pr ...`
+- `plan-marshall:workflow-integration-gitlab:gitlab_pr ...`
+- `plan-marshall:manage-architecture:architecture resolve ...`
+
+The script captures the value at top-level pre-parse (see `pr_doctor.py` `main()`) and exposes it to forwarding helpers via `forward_project_dir(cmd)` / `run_child_cmd(cmd, ...)`. Every child-script bash block in the workflow below MUST include `--project-dir {project_dir}` when the flag is set. When absent, child commands omit the flag and default cwd behavior is preserved.
 
 ## Mode Selection
 
@@ -150,7 +164,7 @@ Extract and merge with explicit parameters (explicit parameters take precedence)
 
 Auto-detect if not provided:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr view
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci [--project-dir {project_dir}] pr view
 ```
 
 Validate: PR must have valid `pr_number` in TOON output.
@@ -159,7 +173,7 @@ Validate: PR must have valid `pr_number` in TOON output.
 
 If wait=true:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci [--project-dir {project_dir}] ci wait \
     --pr-number {pr_number}
 ```
 
@@ -186,7 +200,7 @@ AskUserQuestion:
 
 Based on `checks` parameter:
 
-**Build**: `ci ci status --pr-number {pr}` → BUILD_FAILURE if `overall_status: failure`. If CI status check fails, report error and skip build diagnosis.
+**Build**: `ci [--project-dir {project_dir}] ci status --pr-number {pr}` → BUILD_FAILURE if `overall_status: failure`. If CI status check fails, report error and skip build diagnosis.
 
 **Reviews**: workflow-integration-github (Fetch Comments) → REVIEW_COMMENTS ({count}). If fetch fails, report error and skip review diagnosis.
 
@@ -224,7 +238,7 @@ Recommended Actions:
 Based on checks parameter:
 
 **BUILD_FAILURE**: Resolve using the build system:
-1. Fetch build logs via `ci ci status --pr-number {pr}` — the `checks` array in the output contains per-check `name`, `status`, and `conclusion` fields; failed checks include a `details_url` for full logs
+1. Fetch build logs via `ci [--project-dir {project_dir}] ci status --pr-number {pr}` — the `checks` array in the output contains per-check `name`, `status`, and `conclusion` fields; failed checks include a `details_url` for full logs
 2. Identify failing step (compile, test, lint) from the check `name` field
 3. Read failing files from the build log output (fetch via `details_url` or re-run locally)
 4. Apply fix using Edit tool
@@ -235,7 +249,7 @@ Based on checks parameter:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve
    ```
-   Use the returned `executable` to run verify.
+   Use the returned `executable` to run verify. When `--project-dir` is active, append `--project-dir {project_dir}` to the `executable` invocation so the build runs against the intended checkout/worktree.
 
 **REVIEW_COMMENTS**: Delegate to workflow-integration-github "Handle Review" workflow. The CI skill handles fetching comments, batch triage, and classifying actions (code_change/explain/ignore). The pr-doctor processes each action and commits via the git skill.
 

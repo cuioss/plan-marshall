@@ -216,3 +216,101 @@ def test_ci_status_dual_flag_rejected(monkeypatch):
 
     assert result['status'] == 'error'
     assert 'exactly one' in result['error']
+
+
+# =============================================================================
+# --project-dir pre-parse plumbing (cwd forwarding)
+# =============================================================================
+
+
+def test_main_project_dir_sets_default_cwd(tmp_path, monkeypatch, capsys):
+    """github_ops.main() strips --project-dir from argv and installs it as the
+    process-global default cwd used by ci_base.run_cli."""
+    import sys
+
+    import ci_base  # type: ignore[import-not-found]
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
+
+    worktree = str(tmp_path / 'worktree')
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_ops.py',
+            '--project-dir',
+            worktree,
+            'pr',
+            'prepare-body',
+            '--plan-id',
+            'test-plan',
+        ],
+    )
+
+    rc = github_ops.main()
+    assert rc == 0
+    # Default cwd was installed before argparse ran.
+    assert ci_base.get_default_cwd() == worktree
+    # argv was stripped so argparse never saw --project-dir.
+    assert '--project-dir' not in sys.argv
+    # prepare-body emitted a success TOON payload.
+    out = capsys.readouterr().out
+    assert 'status' in out and 'success' in out
+
+
+def test_main_project_dir_equals_form(tmp_path, monkeypatch, capsys):
+    """The --project-dir=PATH form is also honoured by github_ops.main()."""
+    import sys
+
+    import ci_base  # type: ignore[import-not-found]
+
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setattr(ci_base, '_DEFAULT_CWD', None, raising=False)
+
+    worktree = str(tmp_path / 'wt2')
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_ops.py',
+            f'--project-dir={worktree}',
+            'pr',
+            'prepare-body',
+            '--plan-id',
+            'eq-plan',
+        ],
+    )
+
+    rc = github_ops.main()
+    assert rc == 0
+    assert ci_base.get_default_cwd() == worktree
+    capsys.readouterr()  # drain
+
+
+def test_main_without_project_dir_leaves_cwd_untouched(tmp_path, monkeypatch):
+    """Omitting --project-dir must not mutate the process-global default cwd."""
+    import sys
+
+    import ci_base  # type: ignore[import-not-found]
+
+    sentinel = str(tmp_path / 'sentinel')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setattr(ci_base, '_DEFAULT_CWD', sentinel, raising=False)
+
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            'github_ops.py',
+            'pr',
+            'prepare-body',
+            '--plan-id',
+            'noflag',
+        ],
+    )
+
+    rc = github_ops.main()
+    assert rc == 0
+    # Unchanged sentinel — pre-parse did not clobber an existing default.
+    assert ci_base.get_default_cwd() == sentinel

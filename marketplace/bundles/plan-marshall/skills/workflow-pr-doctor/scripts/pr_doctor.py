@@ -24,9 +24,11 @@ Examples:
     pr_doctor.py track-attempt --category build --current 0
 """
 
+import subprocess
 import sys
 from typing import Any
 
+from ci_base import extract_project_dir  # type: ignore[import-not-found]
 from triage_helpers import (  # type: ignore[import-not-found]
     ErrorCode,
     create_workflow_cli,
@@ -35,6 +37,57 @@ from triage_helpers import (  # type: ignore[import-not-found]
     parse_json_arg,
     safe_main,
 )
+
+# ============================================================================
+# --project-dir FORWARDING
+# ============================================================================
+#
+# pr-doctor is a coordinator that fans out to child scripts (ci, build, sonar,
+# github/gitlab). When the caller supplies ``--project-dir PATH`` at the top
+# level, that value is captured into the module-global _PROJECT_DIR and then
+# uniformly forwarded to every child script invocation via
+# ``forward_project_dir`` / ``run_child_cmd``. This keeps the plumbing out of
+# individual handlers and guarantees that a plan running inside a git worktree
+# redirects every downstream call at the worktree path.
+#
+# Absent the flag, _PROJECT_DIR stays None and forward_project_dir is a no-op,
+# preserving the current inherited-cwd behavior.
+
+_PROJECT_DIR: str | None = None
+
+
+def set_project_dir(project_dir: str | None) -> None:
+    """Set the module-global project_dir used by forward_project_dir."""
+    global _PROJECT_DIR
+    _PROJECT_DIR = project_dir
+
+
+def get_project_dir() -> str | None:
+    """Return the currently-configured project_dir (or None)."""
+    return _PROJECT_DIR
+
+
+def forward_project_dir(cmd: list[str]) -> list[str]:
+    """Append ``--project-dir <value>`` to *cmd* when the flag is active.
+
+    Returns a new list; leaves *cmd* untouched when no project_dir is set.
+    Every pr-doctor child script invocation MUST go through this helper so the
+    forwarding contract stays uniform.
+    """
+    if _PROJECT_DIR is None:
+        return list(cmd)
+    return [*cmd, '--project-dir', _PROJECT_DIR]
+
+
+def run_child_cmd(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+    """Run a child script with ``--project-dir`` forwarded when set.
+
+    Thin wrapper around ``subprocess.run`` that routes through
+    ``forward_project_dir``. Tests monkey-patch ``subprocess.run`` to verify
+    every child invocation carries the forwarded flag.
+    """
+    forwarded = forward_project_dir(cmd)
+    return subprocess.run(forwarded, **kwargs)  # noqa: S603
 
 # ============================================================================
 # CONFIGURATION (loaded from pr-doctor-config.json)
@@ -369,6 +422,15 @@ def cmd_parse_handoff(args):
 
 def main():
     """Main entry point."""
+    # Pre-parse top-level ``--project-dir PATH`` before handing off to the
+    # subcommand parsers, mirroring the ci.py router pattern. The flag is
+    # stripped from argv so downstream argparse layers never see it; the value
+    # is stored in the module-global _PROJECT_DIR and forwarded uniformly to
+    # every child script invocation via forward_project_dir.
+    project_dir, remaining = extract_project_dir(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    set_project_dir(project_dir)
+
     parser = create_workflow_cli(
         description='PR Doctor utilities',
         epilog="""
