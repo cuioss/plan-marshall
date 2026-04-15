@@ -341,8 +341,8 @@ def cmd_pr_reply(args: argparse.Namespace) -> dict:
     body, err_dict = read_and_consume_body(
         args.plan_id, BODY_KIND_PR_REPLY, getattr(args, 'slot', None)
     )
-    if err_dict:
-        return make_error('pr_reply', err_dict.get('message', 'body not prepared'))
+    if err_dict or body is None:
+        return make_error('pr_reply', (err_dict or {}).get('message', 'body not prepared'))
 
     gh_args = ['pr', 'comment', str(args.pr_number), '--body', body]
     returncode, stdout, stderr = run_gh(gh_args)

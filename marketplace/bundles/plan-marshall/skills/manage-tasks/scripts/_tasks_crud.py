@@ -30,7 +30,6 @@ from _tasks_core import (
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
-
 _PENDING_DIR_NAME = 'pending-tasks'
 _SLOT_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 

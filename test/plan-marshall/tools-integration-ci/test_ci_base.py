@@ -15,7 +15,6 @@ import tempfile
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from ci_base import (
     BODY_KIND_ISSUE_CREATE,
     BODY_KIND_PR_CREATE,
