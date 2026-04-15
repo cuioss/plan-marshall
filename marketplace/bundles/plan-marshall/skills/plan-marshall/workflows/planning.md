@@ -355,6 +355,22 @@ Remove completed plans. Shows completed plans for selective or batch deletion wi
 
 List lessons learned and convert selected lesson to a plan.
 
+### Canonical invocation
+
+When the user selects a lesson from the menu below, convert it to a plan using the canonical `phase-agent` invocation with a `lesson_id` reference:
+
+```
+Task: plan-marshall:phase-agent
+  Input: skill=plan-marshall:phase-1-init, lesson_id={lesson_id}
+  Output: plan_id, domain
+```
+
+Passing `lesson_id` triggers `phase-1-init` Step 4 ("From Lesson") to resolve the lesson body from `lessons-learned/` and Step 5b ("Move Lesson File Into Plan Directory") to relocate the lesson file into the new plan directory via `manage-lessons convert-to-plan`. Both side effects are automatic — the caller only supplies `lesson_id`.
+
+**Anti-pattern (prohibited):** Never invoke `phase-agent` with `skill=phase-1-init, source=lesson, content={verbatim lesson text}`. Inline `content` is the `description` source path and causes `phase-1-init` to treat the input as a free-form description — Step 5b is skipped and the original lesson file is orphaned in `lessons-learned/` instead of being archived inside the plan directory. Always reference the lesson by `lesson_id`; never paste its body.
+
+### Menu
+
 Present lessons using `AskUserQuestion`:
 
 ```
