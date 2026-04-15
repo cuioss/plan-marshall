@@ -362,7 +362,7 @@ When the user selects a lesson from the menu below, convert it to a plan using t
 ```
 Task: plan-marshall:phase-agent
   Input: skill=plan-marshall:phase-1-init, lesson_id={lesson_id}
-  Output: plan_id, domains
+  Output: plan_id, domain
 ```
 
 Passing `lesson_id` triggers `phase-1-init` Step 4 ("From Lesson") to resolve the lesson body from `lessons-learned/` and Step 5b ("Move Lesson File Into Plan Directory") to relocate the lesson file into the new plan directory via `manage-lessons convert-to-plan`. Both side effects are automatic — the caller only supplies `lesson_id`.
