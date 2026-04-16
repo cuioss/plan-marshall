@@ -134,7 +134,7 @@ Bash(command="cd /path/to/worktree && git log --oneline -5")
 Bash(command="git -C /path/to/worktree log --oneline -5")
 ```
 
-When a plan runs in an isolated worktree, `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use `git -C .` (or omit `-C` only when the current working directory is unambiguously correct) — never `cd && git`. The same rule applies inside `Skill: plan-marshall:workflow-integration-git` and any agent that delegates git to Bash.
+When a plan runs in an isolated worktree, `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use `git -C .` — never `cd && git`. The same rule applies inside `Skill: plan-marshall:workflow-integration-git` and any agent that delegates git to Bash.
 
 ### No heredocs with # lines
 

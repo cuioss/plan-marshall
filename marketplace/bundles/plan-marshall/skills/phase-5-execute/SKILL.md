@@ -179,7 +179,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 If `worktree_path` is absent (plan runs against the main checkout), skip emission. If present, every file path used in Edit/Write/Read from this point on MUST be resolved against `{worktree_path}` rather than the main checkout, and every git command MUST use `git -C {worktree_path} <subcommand>` rather than `cd {worktree_path} && git ...`.
 
-When `worktree_path` is absent (main-checkout mode), the `cd && git` prohibition still applies — use `git -C .` (or omit `-C` only when the current working directory is unambiguously the repo root). The rule is enforced at the foundational layer in [`dev-general-practices` Hard Rules](../dev-general-practices/SKILL.md#git-always-use-git--c-path-never-cd-path--git-) and reinforced inline here so agents see it next to the worktree path they would use it with.
+When `worktree_path` is absent (main-checkout mode), the `cd && git` prohibition still applies — use `git -C .`. The rule is enforced at the foundational layer in [`dev-general-practices` Hard Rules](../dev-general-practices/SKILL.md#git-always-use-git--c-path-never-cd-path--git-) and reinforced inline here so agents see it next to the worktree path they would use it with.
 
 For each task in current phase:
 
