@@ -472,6 +472,25 @@ def build_parser(
     pr_comments.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_comments.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
 
+    # pr wait-for-comments — poll until new bot comments arrive or timeout
+    pr_wait_comments = pr_sub.add_parser(
+        'wait-for-comments',
+        help='Wait for new review comments to be posted (replaces blocking shell sleep)',
+    )
+    pr_wait_comments.add_argument('--pr-number', required=True, type=int, help='PR number')
+    pr_wait_comments.add_argument(
+        '--timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Max wait time in seconds (default: {DEFAULT_CI_TIMEOUT})',
+    )
+    pr_wait_comments.add_argument(
+        '--interval',
+        type=int,
+        default=DEFAULT_CI_INTERVAL,
+        help=f'Poll interval in seconds (default: {DEFAULT_CI_INTERVAL})',
+    )
+
     # pr merge — accepts either --pr-number or --head (validated by handler)
     pr_merge = pr_sub.add_parser('merge', help='Merge a pull request')
     pr_merge.add_argument('--pr-number', type=int, help='PR number')

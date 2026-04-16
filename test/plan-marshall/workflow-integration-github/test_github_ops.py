@@ -307,6 +307,100 @@ def test_ci_status_dual_flag_rejected(monkeypatch):
 
 
 # =============================================================================
+# pr wait-for-comments (poll-instead-of-sleep replacement)
+# =============================================================================
+
+
+def _wait_for_comments_args(timeout=2, interval=1):
+    return argparse.Namespace(pr_number=42, timeout=timeout, interval=interval)
+
+
+def test_pr_wait_for_comments_returns_when_new_comment_arrives(monkeypatch):
+    """Happy path: baseline=1, second poll sees count=2 → returns timed_out: false, new_count: 1."""
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+
+    call_counts = {'fetch': 0}
+
+    def fake_fetch(pr_number, unresolved_only=False):
+        assert pr_number == 42
+        assert unresolved_only is True
+        call_counts['fetch'] += 1
+        # First call (baseline) returns 1; subsequent calls return 2 (new comment arrived)
+        unresolved = 1 if call_counts['fetch'] == 1 else 2
+        return {'status': 'success', 'unresolved': unresolved, 'comments': []}
+
+    monkeypatch.setattr(github_ops, 'fetch_pr_comments_data', fake_fetch)
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_for_comments_args())
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'pr_wait_for_comments'
+    assert result['pr_number'] == 42
+    assert result['timed_out'] is False
+    assert result['baseline_count'] == 1
+    assert result['final_count'] == 2
+    assert result['new_count'] == 1
+    assert result['polls'] >= 1
+    # baseline + at least one poll
+    assert call_counts['fetch'] >= 2
+
+
+def test_pr_wait_for_comments_times_out_when_no_new_comments(monkeypatch):
+    """Timeout path: count never grows above baseline → returns timed_out: true, new_count: 0."""
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+
+    def fake_fetch(pr_number, unresolved_only=False):
+        return {'status': 'success', 'unresolved': 5, 'comments': []}
+
+    monkeypatch.setattr(github_ops, 'fetch_pr_comments_data', fake_fetch)
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_for_comments_args(timeout=1, interval=1))
+
+    assert result['status'] == 'success', result
+    assert result['operation'] == 'pr_wait_for_comments'
+    assert result['timed_out'] is True
+    assert result['baseline_count'] == 5
+    assert result['final_count'] == 5
+    assert result['new_count'] == 0
+
+
+def test_pr_wait_for_comments_returns_error_when_initial_fetch_fails(monkeypatch):
+    """Error path: baseline fetch fails → returns status: error before polling starts."""
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+
+    def failing_fetch(pr_number, unresolved_only=False):
+        return {'status': 'error', 'error': 'GraphQL query failed: boom'}
+
+    monkeypatch.setattr(github_ops, 'fetch_pr_comments_data', failing_fetch)
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_for_comments_args())
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_wait_for_comments'
+    assert 'Initial unresolved-comment fetch failed' in result['error']
+
+
+def test_pr_wait_for_comments_returns_error_when_auth_fails(monkeypatch):
+    """Auth failure short-circuits before any fetch."""
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (False, 'not logged in'))
+
+    fetch_calls = {'count': 0}
+
+    def fake_fetch(pr_number, unresolved_only=False):
+        fetch_calls['count'] += 1
+        return {'status': 'success', 'unresolved': 0, 'comments': []}
+
+    monkeypatch.setattr(github_ops, 'fetch_pr_comments_data', fake_fetch)
+
+    result = github_ops.cmd_pr_wait_for_comments(_wait_for_comments_args())
+
+    assert result['status'] == 'error', result
+    assert result['operation'] == 'pr_wait_for_comments'
+    assert 'not logged in' in result['error']
+    assert fetch_calls['count'] == 0, 'fetch should not be called when auth fails'
+
+
+# =============================================================================
 # --project-dir pre-parse plumbing (cwd forwarding)
 # =============================================================================
 
