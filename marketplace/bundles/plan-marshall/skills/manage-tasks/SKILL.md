@@ -17,7 +17,7 @@ Manage implementation tasks with sequential sub-steps within a plan. Each task r
 - Do not bypass dependency checking unless explicitly using `--ignore-deps`
 - Task numbering is sequential and immutable (TASK-001, TASK-002, etc.)
 - Adding a task uses the three-step path-allocate pattern: `prepare-add` → write TOON file → `commit-add`. No multi-line content is marshalled through the shell boundary.
-- Step finalization requires explicit `--outcome` (done or skipped)
+- Step finalization requires explicit `--outcome` (done, skipped, or failed)
 
 ## Storage Location
 
@@ -69,7 +69,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
-| `finalize-step` | `--plan-id --task --step --outcome [--reason]` | Complete step with outcome (done/skipped) |
+| `finalize-step` | `--plan-id --task --step --outcome [--reason]` | Complete step with outcome (done/skipped/failed) |
 | `add-step` | `--plan-id --task --target [--after]` | Add step to task |
 | `remove-step` | `--plan-id --task --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
@@ -223,7 +223,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
   --ready
 ```
 
-### Finalize step (mark done or skipped)
+### Finalize step (mark done, skipped, or failed)
 
 ```bash
 # Mark step as done
@@ -240,6 +240,14 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
   --step 3 \
   --outcome skipped \
   --reason "File already exists"
+
+# Mark step as failed with reason
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
+  --plan-id my-feature \
+  --task 2 \
+  --step 3 \
+  --outcome failed \
+  --reason "Verification failed: test suite has 3 failures"
 ```
 
 ---
@@ -301,7 +309,7 @@ LOOP:
 Implement agents execute steps:
 ```
 1. manage-tasks get --plan-id {plan_id} --number {N}
-2. FOR EACH step: execute → finalize-step --outcome done
+2. FOR EACH step: execute → finalize-step --outcome done|failed
 3. RUN verification
 ```
 
@@ -352,9 +360,9 @@ blocked_tasks[2]{number,title,waiting_for}:
 
 ## Status Model
 
-**Task Status**: `pending` → `in_progress` → `done` (or `blocked`)
+**Task Status**: `pending` → `in_progress` → `done` | `failed` (or `blocked`)
 
-**Step Status**: `pending` → `in_progress` → `done` (or `skipped`)
+**Step Status**: `pending` → `in_progress` → `done` | `skipped` | `failed`
 
 ---
 
@@ -381,7 +389,7 @@ If a deliverable has no Verification section, the task is created without `verif
 | `invalid_content` | TOON content parsing failed or missing required fields |
 | `missing_required` | Required field missing (title, deliverable, domain, profile, skills, steps) |
 | `circular_dependency` | Task dependency creates a cycle (detected during `next`) |
-| `invalid_outcome` | Step outcome not `done` or `skipped` |
+| `invalid_outcome` | Step outcome not `done`, `skipped`, or `failed` |
 | `plan_dir_not_found` | Plan directory doesn't exist |
 
 ---

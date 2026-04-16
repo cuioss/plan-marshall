@@ -902,6 +902,102 @@ def test_finalize_step_returns_progress():
 
 
 # =============================================================================
+# Tests: finalize-step --outcome failed
+# =============================================================================
+
+
+def test_finalize_step_failed_marks_failed():
+    """finalize-step --outcome failed marks step as failed."""
+    with PlanContext(plan_id='fin-fail'):
+        add_basic_task(
+            plan_id='fin-fail',
+            title='Task',
+            deliverable=1,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
+        )
+
+        result = cmd_finalize_step(
+            _finalize_step_ns(
+                plan_id='fin-fail',
+                task=1,
+                step=1,
+                outcome='failed',
+                reason='Verification failed',
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['finalized']['outcome'] == 'failed'
+        assert result['finalized']['reason'] == 'Verification failed'
+        assert result['next_step'] is not None
+        assert result['next_step']['number'] == 2
+
+
+def test_finalize_step_failed_completes_task_as_failed():
+    """Failing last step via finalize-step marks task as failed (not done)."""
+    with PlanContext(plan_id='fin-fail-last'):
+        add_basic_task(plan_id='fin-fail-last', title='Task', deliverable=1, steps=['src/main/java/File.java'])
+
+        result = cmd_finalize_step(
+            _finalize_step_ns(plan_id='fin-fail-last', task=1, step=1, outcome='failed', reason='Build broke')
+        )
+
+        assert result['status'] == 'success'
+        assert result['task_complete'] is True
+        assert result['task_status'] == 'failed'
+
+
+def test_finalize_step_mixed_done_and_failed_marks_task_failed():
+    """Task with mix of done and failed steps gets status 'failed'."""
+    with PlanContext(plan_id='fin-mixed'):
+        add_basic_task(
+            plan_id='fin-mixed',
+            title='Task',
+            deliverable=1,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
+        )
+
+        cmd_finalize_step(_finalize_step_ns(plan_id='fin-mixed', task=1, step=1, outcome='done'))
+        result = cmd_finalize_step(
+            _finalize_step_ns(plan_id='fin-mixed', task=1, step=2, outcome='failed', reason='Test failed')
+        )
+
+        assert result['status'] == 'success'
+        assert result['task_complete'] is True
+        assert result['task_status'] == 'failed'
+
+
+def test_finalize_step_all_done_no_failed_marks_task_done():
+    """Task with all done steps (no failed) still gets status 'done'."""
+    with PlanContext(plan_id='fin-all-done'):
+        add_basic_task(
+            plan_id='fin-all-done',
+            title='Task',
+            deliverable=1,
+            steps=['src/main/java/FileA.java', 'src/main/java/FileB.java'],
+        )
+
+        cmd_finalize_step(_finalize_step_ns(plan_id='fin-all-done', task=1, step=1, outcome='done'))
+        result = cmd_finalize_step(_finalize_step_ns(plan_id='fin-all-done', task=1, step=2, outcome='done'))
+
+        assert result['task_status'] == 'done'
+
+
+def test_list_surfaces_failed_count():
+    """List command includes failed count in counts."""
+    with PlanContext(plan_id='list-fail-count'):
+        add_basic_task(plan_id='list-fail-count', title='Task', deliverable=1, steps=['src/main/java/File.java'])
+        cmd_finalize_step(
+            _finalize_step_ns(plan_id='list-fail-count', task=1, step=1, outcome='failed', reason='Broke')
+        )
+
+        result = cmd_list(Namespace(plan_id='list-fail-count', status='all', deliverable=None, ready=False))
+
+        assert result['counts']['failed'] == 1
+        assert result['counts']['done'] == 0
+
+
+# =============================================================================
 # Tests: add-step
 # =============================================================================
 
