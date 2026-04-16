@@ -1486,3 +1486,42 @@ def test_parse_stdin_task_rejects_outer_double_quoted_verification_command():
     assert 'verification.commands' in message
     assert 'outer double-quotes' in message
     assert 'plan-marshall:phase-4-plan' in message
+
+
+def test_parse_stdin_task_rejects_outer_double_quoted_verification_profile_step():
+    """Negative: outer-double-quoted step under verification profile raises ValueError.
+
+    Given a TOON task definition with profile=verification whose steps item is
+    wrapped in outer double quotes — verification-profile tasks store commands
+    in the steps field, so the same anti-pattern can land there,
+    When parse_stdin_task parses the content,
+    Then a ValueError is raised whose message references the steps contract and
+    points at `plan-marshall:phase-4-plan` SKILL.md.
+    """
+    # Arrange
+    offending_step = (
+        r'"python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        r'run --command-args \"quality-gate plan-marshall\""'
+    )
+    toon = (
+        'title: Outer-quoted verification step should fail fast\n'
+        'deliverable: 0\n'
+        'domain: plan-marshall-plugin-dev\n'
+        'profile: verification\n'
+        'origin: holistic\n'
+        'description: Verification-profile step must not be outer-quoted\n'
+        'steps:\n'
+        f'  - {offending_step}\n'
+        'depends_on: none\n'
+        'verification:\n'
+        '  criteria: must reject outer quoting on steps\n'
+    )
+
+    # Act / Assert
+    with pytest.raises(ValueError) as excinfo:
+        parse_stdin_task(toon)
+
+    message = str(excinfo.value)
+    assert 'steps' in message
+    assert 'outer double-quotes' in message
+    assert 'plan-marshall:phase-4-plan' in message
