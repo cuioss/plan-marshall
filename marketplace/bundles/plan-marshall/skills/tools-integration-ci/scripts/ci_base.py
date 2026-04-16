@@ -6,19 +6,52 @@ command dispatch, polling framework, and CI check formatting.
 Each provider imports from here and supplies provider-specific handler
 functions and CLI details.
 
-This module uses only stdlib imports -- no serialize_toon dependency
-(except in helpers that explicitly opt in via lazy import).
+This module re-exports commonly used helpers from sibling skill scripts
+(toon_parser, file_ops) so that CI provider scripts can import everything
+they need from ``ci_base`` alone — reducing the PYTHONPATH entries required
+for manual invocations from 4 directories to 2.
 """
 
 import argparse
 import re
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from file_ops import get_plan_dir  # type: ignore[import-not-found]
+# ---------------------------------------------------------------------------
+# sys.path auto-discovery for sibling skill script directories
+# ---------------------------------------------------------------------------
+# When invoked via the executor, PYTHONPATH already contains the required
+# directories.  For manual invocations we add them here so that ``file_ops``
+# and ``toon_parser`` are importable without the caller having to set up 4
+# separate PYTHONPATH entries.
+
+def _ensure_sibling_skill_paths() -> None:
+    """Add sibling skill script directories to sys.path if not already present.
+
+    Navigates from this file's location (``tools-integration-ci/scripts/``)
+    up to the ``skills/`` directory and adds the script directories for
+    ``tools-file-ops`` and ``ref-toon-format``.
+    """
+    scripts_dir = Path(__file__).resolve().parent          # .../tools-integration-ci/scripts
+    skills_dir = scripts_dir.parent.parent                 # .../skills
+
+    sibling_dirs = [
+        skills_dir / 'tools-file-ops' / 'scripts',
+        skills_dir / 'ref-toon-format' / 'scripts',
+    ]
+    for d in sibling_dirs:
+        d_str = str(d)
+        if d.is_dir() and d_str not in sys.path:
+            sys.path.insert(0, d_str)
+
+_ensure_sibling_skill_paths()
+
+from file_ops import get_plan_dir, output_toon, safe_main  # type: ignore[import-not-found]  # noqa: E402, F401
+from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]  # noqa: E402, F401
 
 # Exit codes
 EXIT_SUCCESS = 0
@@ -370,8 +403,6 @@ def output_error(operation: str, error: str, context: str = '') -> int:
     Legacy wrapper -- new code should use make_error() and return the dict.
     Three-tier model: Exit 0 for expected errors (status:error in TOON output).
     """
-    from toon_parser import serialize_toon  # type: ignore[import-not-found]
-
     data = make_error(operation, error, context)
     print(serialize_toon(data))
     return EXIT_SUCCESS
