@@ -27,7 +27,7 @@ Unified CI provider abstraction using **static routing** - one script per provid
 
 - Provider detection and health verification
 - PR operations (create, view, merge, auto-merge, close, ready, edit)
-- PR review operations (comments, reply, resolve-thread, thread-reply, reviews)
+- PR review operations (comments, wait-for-comments, reply, resolve-thread, thread-reply, reviews)
 - CI status, wait, rerun, and logs
 - Issue operations (create, view, close)
 - Unified TOON output format across providers

@@ -283,7 +283,7 @@ PR #{pr} Summary
 
 Autonomous CI → review → respond → resolve cycle, activated only via phase-6-finalize handoff with `decisions.automated_review: true`. Not invoked via `/workflow-pr-doctor` directly. See `standards/automated-review-lifecycle.md` for the full procedure.
 
-**Input:** `plan_id`, `pr_number`, `review_bot_buffer_seconds`
+**Input:** `plan_id`, `pr_number`, `review_bot_buffer_seconds` (max-wait ceiling for the polling `pr wait-for-comments` step at Step 2)
 
 **Output:**
 ```toon

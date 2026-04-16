@@ -6,7 +6,7 @@ Detailed reference for the Automated Review Lifecycle mode used by phase-6-final
 
 - `plan_id` — for logging and Q-Gate findings
 - `pr_number` — PR number (from phase-6-finalize Step 4 or pr-view)
-- `review_bot_buffer_seconds` — seconds to wait after CI for review bots (from config)
+- `review_bot_buffer_seconds` — max-wait ceiling (in seconds) passed to `pr wait-for-comments` as `--timeout`. The polling subcommand exits as soon as a new review-bot comment is posted, so this is a cap, not a fixed delay. Sourced from phase-6-finalize config (default: 180).
 
 ## Step-by-Step Reference
 
@@ -25,11 +25,20 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci ci wait \
 | `final_status: failure` | Return `{status: ci_failure, details: ...}` for loop-back |
 | `status: timeout` | Ask user (continue/skip/abort) |
 
-### Step 2: Buffer for Review Bots
+### Step 2: Wait for Review Bot Comments
+
+Poll for new review-bot comments using the dedicated CI subcommand. This replaces a previous bash `sleep` (blocked by the Claude Code harness for long leading durations) and exits as soon as a new comment arrives instead of always sleeping the full window.
 
 ```bash
-sleep {review_bot_buffer_seconds}
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments \
+  --pr-number {pr_number} --timeout {review_bot_buffer_seconds}
 ```
+
+| Script Output | Action |
+|--------------|--------|
+| `status: success`, `timed_out: false` | New comment(s) detected — proceed to Step 3 |
+| `status: success`, `timed_out: true` | No new comment within timeout — proceed to Step 3 anyway (the subsequent `fetch-comments` call surfaces whatever is on the PR; if nothing, the lifecycle returns `comments_total: 0`) |
+| `status: error` | Treat as warning, log, proceed to Step 3 best-effort |
 
 ### Step 3: Fetch and Triage Comments
 

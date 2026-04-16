@@ -68,7 +68,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 | Field | Type | Description |
 |-------|------|-------------|
 | `steps` | list | Ordered list of step references to execute |
-| `review_bot_buffer_seconds` | integer | Seconds to wait after CI for review bots (default: 300) |
+| `review_bot_buffer_seconds` | integer | Max seconds to wait after CI for new review-bot comments (used as `--timeout` for `pr wait-for-comments`; ceiling, not fixed delay; default: 180) |
 | `max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
 
 A step is active if it appears in the `steps` list. Absent steps are skipped. The order of steps in the list is the execution order.

@@ -40,7 +40,7 @@ JSON structure and field definitions for project configuration.
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "review_bot_buffer_seconds": 300,
+      "review_bot_buffer_seconds": 180,
       "steps": [
         "commit_push", "create_pr", "automated_review",
         "sonar_roundtrip", "knowledge_capture", "lessons_capture",
@@ -235,7 +235,7 @@ Finalize pipeline with numbered boolean steps.
   "plan": {
     "phase-6-finalize": {
       "max_iterations": 3,
-      "review_bot_buffer_seconds": 300,
+      "review_bot_buffer_seconds": 180,
       "steps": [
         "commit_push", "create_pr", "automated_review",
         "sonar_roundtrip", "knowledge_capture", "lessons_capture",
@@ -249,7 +249,7 @@ Finalize pipeline with numbered boolean steps.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
-| `review_bot_buffer_seconds` | int | 300 | Seconds to wait after CI for review bots to post comments |
+| `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay) |
 | `steps` | list | (see below) | Ordered list of step references to execute |
 
 Default steps: `commit_push`, `create_pr`, `automated_review`, `sonar_roundtrip`, `knowledge_capture`, `lessons_capture`, `branch_cleanup`, `archive`. Step types: built-in (plain name), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
