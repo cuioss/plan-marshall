@@ -117,23 +117,12 @@ def safe_relative_path(path: Path) -> str:
         return str(path)
 
 
-def find_marketplace_path(script_bundles_dir: Path | None = None) -> Path | None:
-    """Find marketplace/bundles directory.
+def find_marketplace_path() -> Path | None:
+    """Find marketplace/bundles directory via cwd-based discovery.
 
-    When ``script_bundles_dir`` is provided, it is used directly — the caller
-    has resolved the path from ``__file__`` (typically 5 levels up from the
-    script) so it is correct regardless of the current working directory.
-
-    When ``script_bundles_dir`` is ``None`` (e.g. the script lives outside
-    the marketplace source tree, such as when executed from the plugin
-    cache), fall back to cwd-based discovery.
-
-    Args:
-        script_bundles_dir: Script-relative bundles path resolved from
-                            ``__file__``. Preferred when available.
+    Checks the current working directory and its parent for the standard
+    ``marketplace/bundles`` layout.
     """
-    if script_bundles_dir and script_bundles_dir.is_dir():
-        return script_bundles_dir
     if (Path.cwd() / MARKETPLACE_BUNDLES_PATH).is_dir():
         return Path.cwd() / MARKETPLACE_BUNDLES_PATH
     if (Path.cwd().parent / MARKETPLACE_BUNDLES_PATH).is_dir():
@@ -147,7 +136,7 @@ def get_plugin_cache_path() -> Path | None:
     return cache_path if cache_path.is_dir() else None
 
 
-def get_base_path(scope: str = 'auto', script_bundles_dir: Path | None = None) -> Path:
+def get_base_path(scope: str = 'auto') -> Path:
     """Determine base path based on scope.
 
     Args:
@@ -158,7 +147,6 @@ def get_base_path(scope: str = 'auto', script_bundles_dir: Path | None = None) -
             - 'cache-first': tries plugin-cache first, then marketplace (executor default)
             - 'global': ~/.claude
             - 'project': ./.claude
-        script_bundles_dir: Optional script-relative bundles path for fallback
 
     Returns:
         Path to the bundles directory (or .claude for global/project scope)
@@ -168,22 +156,19 @@ def get_base_path(scope: str = 'auto', script_bundles_dir: Path | None = None) -
         ValueError: If scope is invalid
     """
     if scope == 'auto':
-        marketplace = find_marketplace_path(script_bundles_dir)
+        marketplace = find_marketplace_path()
         if marketplace:
             return marketplace
-        cache = get_plugin_cache_path()
-        if cache:
-            return cache
         raise FileNotFoundError(
-            f'Neither {MARKETPLACE_BUNDLES_PATH} nor plugin cache found. '
-            f'Run from marketplace repo or ensure plugin is installed.'
+            f'{MARKETPLACE_BUNDLES_PATH} not found. '
+            f'Run from marketplace repo root.'
         )
 
     if scope == 'cache-first':
         cache = get_plugin_cache_path()
         if cache:
             return cache
-        marketplace = find_marketplace_path(script_bundles_dir)
+        marketplace = find_marketplace_path()
         if marketplace:
             return marketplace
         raise FileNotFoundError(
@@ -193,7 +178,7 @@ def get_base_path(scope: str = 'auto', script_bundles_dir: Path | None = None) -
         )
 
     if scope == 'marketplace':
-        marketplace = find_marketplace_path(script_bundles_dir)
+        marketplace = find_marketplace_path()
         if marketplace:
             return marketplace
         raise FileNotFoundError(f'{MARKETPLACE_BUNDLES_PATH} directory not found')

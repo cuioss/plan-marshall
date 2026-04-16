@@ -54,10 +54,8 @@ DEFAULT_OUTPUT_SUBDIR = 'tools-marketplace-inventory'
 
 
 # Shared path resolution (from script-shared)
-from marketplace_bundles import extract_bundle_name, find_bundles, resolve_bundles_root  # noqa: E402, I001
+from marketplace_bundles import extract_bundle_name, find_bundles  # noqa: E402, I001
 from marketplace_paths import get_base_path as _shared_get_base_path, get_temp_dir, safe_relative_path  # noqa: E402, I001
-
-_BUNDLES_FROM_SCRIPT = resolve_bundles_root(Path(__file__))
 
 
 # find_bundles imported from marketplace_bundles
@@ -559,7 +557,7 @@ def process_bundle(
 
 def get_base_path(scope: str) -> Path:
     """Determine base path based on scope. Delegates to shared module."""
-    return _shared_get_base_path(scope, script_bundles_dir=_BUNDLES_FROM_SCRIPT)
+    return _shared_get_base_path(scope)
 
 
 def serialize_inventory_toon(data: dict, full: bool = False) -> str:
