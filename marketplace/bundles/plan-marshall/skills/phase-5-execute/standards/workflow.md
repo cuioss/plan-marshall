@@ -48,7 +48,7 @@ Returns next task with status pending or in_progress
 
 For each `- [ ]` item:
 1. **Parse** - Understand what action is needed
-2. **Delegate** - If item specifies agent/skill/command, invoke it
+2. **Delegate** - If item specifies agent/skill/command, invoke it. When a worktree is active, every delegated `Task:` invocation (and any other subagent dispatch that accepts a free-form prompt) MUST include the worktree path in the prompt — the prompt MUST begin with the Worktree Header defined in `standards/operations.md` (see the "Worktree Header Protocol" section at the top of that file for the exact template). Skip the header only when no worktree is active.
 3. **Execute** - Perform the action
 4. **Update** - Mark item `[x]` via manage-tasks script
 
