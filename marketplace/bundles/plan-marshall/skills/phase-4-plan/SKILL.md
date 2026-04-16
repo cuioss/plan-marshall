@@ -242,6 +242,28 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
   --content "title: {task title}\ndeliverable: {deliverable_number}\ndomain: {domain}\nprofile: {profile}\ndescription: {description}\nsteps:\n  - {file1}\n  - {file2}\ndepends_on: {TASK-N | none}\nskills:\n  - {skill1}\n  - {skill2}\nverification:\n  commands:\n    - {cmd1}\n  criteria: {criteria}"
 ```
 
+> **TOON quoting rule for `verification.commands` (ENFORCED)**
+>
+> Each list item under `verification.commands:` MUST be emitted as a bare TOON list entry — a hyphen, a single space, then the raw command. Do **NOT** wrap the entire command in outer double-quotes. Literal inner double-quotes (e.g. around `--command-args` values) are allowed and MUST be written as plain `"` characters, not escaped as `\"`.
+>
+> This rule is enforced: `parse_stdin_task` in `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_tasks_core.py` raises `ValueError` at task-creation time when a `verification.commands` item starts with a `"` wrapper. Treat the rule as hard — do not fall back to the outer-quoted form "just to be safe".
+>
+> **DO** (bare list item, literal inner quotes):
+> ```
+> verification:
+>   commands:
+>     - python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests plan-marshall"
+>   criteria: module-tests plan-marshall succeeds
+> ```
+>
+> **DON'T** (outer-quoted wrapper with escaped inner quotes — this trips the parser):
+> ```
+> verification:
+>   commands:
+>     - "python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args \"module-tests plan-marshall\""
+>   criteria: module-tests plan-marshall succeeds
+> ```
+
 **MANDATORY - Log each task creation**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

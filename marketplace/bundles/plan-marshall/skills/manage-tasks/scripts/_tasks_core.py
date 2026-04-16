@@ -425,6 +425,12 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
                     i += 1
                     while i < len(lines) and lines[i].startswith('    - '):
                         cmd = lines[i][6:].strip()
+                        if len(cmd) >= 2 and cmd.startswith('"') and cmd.endswith('"'):
+                            raise ValueError(
+                                f'Task contract violation - verification.commands items must not be '
+                                f'wrapped in outer double-quotes: {cmd!r}. Write list items without '
+                                f'outer quotes (inner double-quotes are allowed). See plan-marshall:phase-4-plan SKILL.md.'
+                            )
                         if cmd:
                             verification_commands.append(cmd)
                         i += 1
