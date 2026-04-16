@@ -777,6 +777,63 @@ def cmd_pr_comments(args: argparse.Namespace) -> dict:
     return fetch_pr_comments_data(args.pr_number, args.unresolved_only)
 
 
+def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
+    """Handle 'pr wait-for-comments' — poll until new unresolved comments arrive or timeout.
+
+    Replaces the blocking shell ``sleep`` previously used by workflow-pr-doctor's
+    Automated Review Lifecycle Step 2. Snapshots the unresolved-comment count
+    once, then polls on the standard CI interval and exits as soon as the count
+    grows (a new bot comment arrived) or the timeout is reached. Reuses the
+    same ``poll_until`` helper that powers ``ci wait``.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('pr_wait_for_comments', err)
+
+    initial = fetch_pr_comments_data(args.pr_number, unresolved_only=True)
+    if initial.get('status') != 'success':
+        return make_error(
+            'pr_wait_for_comments',
+            f'Initial unresolved-comment fetch failed for PR {args.pr_number}',
+            str(initial.get('error', '')),
+        )
+    baseline = int(initial.get('unresolved') or 0)
+
+    def check_fn() -> tuple[bool, dict]:
+        snapshot = fetch_pr_comments_data(args.pr_number, unresolved_only=True)
+        if snapshot.get('status') != 'success':
+            return False, {
+                'error': f'Unresolved-comment fetch failed for PR {args.pr_number}',
+                'context': str(snapshot.get('error', '')),
+            }
+        return True, {'unresolved': int(snapshot.get('unresolved') or 0)}
+
+    def is_complete_fn(data: dict) -> bool:
+        return int(data.get('unresolved', 0)) > baseline
+
+    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
+
+    if 'error' in result:
+        return make_error(
+            'pr_wait_for_comments',
+            result['error'],
+            result.get('last_data', {}).get('context', ''),
+        )
+
+    final_count = int(result['last_data'].get('unresolved', baseline))
+    return {
+        'status': 'success',
+        'operation': 'pr_wait_for_comments',
+        'pr_number': args.pr_number,
+        'timed_out': result['timed_out'],
+        'duration_sec': result['duration_sec'],
+        'polls': result['polls'],
+        'baseline_count': baseline,
+        'final_count': final_count,
+        'new_count': max(final_count - baseline, 0),
+    }
+
+
 def cmd_pr_merge(args: argparse.Namespace) -> dict:
     """Handle 'pr merge' subcommand - merge a pull request."""
     is_auth, err = check_auth()
@@ -1260,6 +1317,7 @@ def main() -> int:
         ('pr', 'submit-review'): cmd_pr_submit_review,
         ('pr', 'reviews'): cmd_pr_reviews,
         ('pr', 'comments'): cmd_pr_comments,
+        ('pr', 'wait-for-comments'): cmd_pr_wait_for_comments,
         ('pr', 'merge'): cmd_pr_merge,
         ('pr', 'auto-merge'): cmd_pr_auto_merge,
         ('pr', 'update-branch'): cmd_pr_update_branch,

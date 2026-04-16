@@ -258,7 +258,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     },
     "phase-6-finalize": {
       "max_iterations": 3,
-      "review_bot_buffer_seconds": 300,
+      "review_bot_buffer_seconds": 180,
       "steps": [
         "commit_push", "create_pr", "automated_review",
         "sonar_roundtrip", "knowledge_capture", "lessons_capture",

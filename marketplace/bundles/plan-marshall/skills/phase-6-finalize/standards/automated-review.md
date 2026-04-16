@@ -34,7 +34,7 @@ Skill: plan-marshall:workflow-integration-github
 Execute **Workflow 3: Automated Review Lifecycle** with:
 - `plan_id`: from context
 - `pr_number`: from above
-- `review_bot_buffer_seconds`: from phase-6-finalize config (default: 300)
+- `review_bot_buffer_seconds`: from phase-6-finalize config (default: 180; max-wait ceiling for the polling `pr wait-for-comments` step)
 - `worktree_path`: `{worktree_path}` resolved at finalize entry (forwarded to all ci/github subprocess calls)
 
 The workflow handles CI wait, review bot buffer, comment fetching, triage, thread replies, and thread resolution.
