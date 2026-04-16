@@ -8,6 +8,7 @@ Provides:
 - ensure: Ensure multiple permissions exist
 - consolidate: Consolidate timestamped permissions with wildcards
 - ensure-wildcards: Ensure marketplace wildcards exist
+- apply-project-step-permissions: Append Skill({skill}) rules for project: steps in marshal.json
 - generate-wildcards: Generate permission wildcards from marketplace inventory
 - ensure-executor: Ensure the executor permission exists
 - cleanup-scripts: Remove redundant individual script permissions
@@ -48,6 +49,11 @@ from permission_common import (  # type: ignore[import-not-found]  # noqa: E402
     load_settings,
     load_settings_path,
     save_settings,
+)
+from permission_doctor import (  # type: ignore[import-not-found]  # noqa: E402
+    extract_project_steps,
+    load_marshal_config,
+    skill_permission_covered,
 )
 from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
 
@@ -545,6 +551,82 @@ def cmd_ensure_wildcards(args) -> dict:
 
 
 # =============================================================================
+# apply-project-step-permissions subcommand
+# =============================================================================
+
+
+def cmd_apply_project_step_permissions(args) -> dict:
+    """Handle apply-project-step-permissions subcommand.
+
+    Detects project:{skill} step references in marshal.json that lack matching
+    Skill({skill}) allow rules, then appends the missing entries to the allow
+    list (sorted). Supports --dry-run to preview without writing.
+    """
+    marshal_config, marshal_error = load_marshal_config(args.marshal)
+    if marshal_error:
+        return {'status': 'error', 'error': marshal_error}
+
+    settings_path = args.settings
+    settings, settings_error = load_settings(settings_path)
+    if settings_error:
+        return {'status': 'error', 'error': settings_error}
+
+    allow_list = settings.setdefault('permissions', {}).setdefault('allow', [])
+    project_steps = extract_project_steps(marshal_config)
+
+    # Preserve insertion order while deduplicating: each skill only gets one rule.
+    seen_skills: set[str] = set()
+    to_add: list[dict] = []
+    already_present: list[dict] = []
+
+    for entry in project_steps:
+        covering = skill_permission_covered(entry['skill'], allow_list)
+        if covering is not None:
+            already_present.append({**entry, 'covered_by': covering})
+            continue
+        if entry['skill'] in seen_skills:
+            continue
+        seen_skills.add(entry['skill'])
+        to_add.append({**entry, 'rule': f'Skill({entry["skill"]})'})
+
+    added_rules = [item['rule'] for item in to_add]
+
+    if not args.dry_run and added_rules:
+        for rule in added_rules:
+            if rule not in allow_list:
+                allow_list.append(rule)
+        allow_list.sort()
+
+        if save_settings(settings_path, settings):
+            applied = True
+        else:
+            return {
+                'status': 'error',
+                'error': 'Failed to save settings',
+                'missing': to_add,
+                'settings_path': settings_path,
+            }
+    else:
+        applied = False
+
+    return {
+        'status': 'success',
+        'added': added_rules,
+        'missing': to_add,
+        'already_present': already_present,
+        'summary': {
+            'added_count': len(added_rules),
+            'already_present_count': len(already_present),
+            'project_steps_checked': len(project_steps),
+        },
+        'dry_run': args.dry_run,
+        'applied': applied,
+        'marshal_path': args.marshal,
+        'settings_path': settings_path,
+    }
+
+
+# =============================================================================
 # generate-wildcards subcommand
 # =============================================================================
 
@@ -988,6 +1070,16 @@ def main():
     p_ewc.add_argument('--marketplace-json', required=True, help='Path to marketplace.json file')
     p_ewc.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
     p_ewc.set_defaults(func=cmd_ensure_wildcards)
+
+    # apply-project-step-permissions subcommand
+    p_apps = subparsers.add_parser(
+        'apply-project-step-permissions',
+        help='Append Skill({skill}) allow rules for project: steps in marshal.json',
+    )
+    p_apps.add_argument('--marshal', required=True, help='Path to marshal.json')
+    p_apps.add_argument('--settings', required=True, help='Path to settings file to update')
+    p_apps.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
+    p_apps.set_defaults(func=cmd_apply_project_step_permissions)
 
     # generate-wildcards subcommand
     p_gen = subparsers.add_parser('generate-wildcards', help='Generate permission wildcards from marketplace inventory')
