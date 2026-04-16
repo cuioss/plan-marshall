@@ -72,7 +72,7 @@ def cmd_create(args: argparse.Namespace) -> dict:
     }
 
 
-def _collect_modified_files(plan_id: str, status: dict) -> list[str]:
+def _collect_modified_files(plan_id: str, status: dict, base_branch: str) -> list[str] | None:
     """Collect modified files via git diff when completing 5-execute.
 
     Uses ``git diff --name-only {base_branch}...HEAD`` to determine which files
@@ -81,13 +81,8 @@ def _collect_modified_files(plan_id: str, status: dict) -> list[str]:
     used so the diff is resolved against the correct working tree.
 
     Returns:
-        Sorted list of relative file paths, or an empty list on any error.
+        Sorted list of relative file paths, or ``None`` on any error.
     """
-    refs = read_references(plan_id)
-    base_branch = refs.get('base_branch', '') if refs else ''
-    if not base_branch:
-        return []
-
     metadata = status.get('metadata', {})
     worktree_path = metadata.get('worktree_path')
 
@@ -98,10 +93,9 @@ def _collect_modified_files(plan_id: str, status: dict) -> list[str]:
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
-        files = sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
-        return files
+        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        return []
+        return None
 
 
 def cmd_transition(args: argparse.Namespace) -> dict | None:
@@ -128,10 +122,10 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
 
     # Collect modified files when completing 5-execute
     if args.completed == '5-execute':
-        modified = _collect_modified_files(args.plan_id, status)
-        if modified:
-            refs = read_references(args.plan_id)
-            if refs is not None:
+        refs = read_references(args.plan_id)
+        if refs and (base_branch := refs.get('base_branch')):
+            modified = _collect_modified_files(args.plan_id, status, base_branch)
+            if modified is not None:
                 refs['modified_files'] = modified
                 write_references(args.plan_id, refs)
 
