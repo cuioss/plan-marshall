@@ -86,6 +86,10 @@ class Extension(ExtensionBase):
                         ],
                         'optionals': [
                             {
+                                'skill': 'pm-dev-java:java-quarkus',
+                                'description': 'Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration',
+                            },
+                            {
                                 'skill': 'pm-dev-java:junit-integration',
                                 'description': 'Maven integration testing with Failsafe plugin, IT naming conventions, and profiles',
                             },
