@@ -47,8 +47,24 @@ class Extension(ExtensionBase):
                             },
                         ],
                     },
-                    'implementation': {'defaults': [], 'optionals': []},
-                    'module_testing': {'defaults': [], 'optionals': []},
+                    'implementation': {
+                        'defaults': [],
+                        'optionals': [
+                            {
+                                'skill': 'pm-plugin-development:plugin-script-architecture',
+                                'description': 'Script development standards, implementation patterns, and output contracts — use for script-heavy plugin tasks',
+                            },
+                        ],
+                    },
+                    'module_testing': {
+                        'defaults': [],
+                        'optionals': [
+                            {
+                                'skill': 'pm-plugin-development:plugin-script-architecture',
+                                'description': 'Script testing patterns and output contract verification',
+                            },
+                        ],
+                    },
                     'quality': {'defaults': [], 'optionals': []},
                 },
             }

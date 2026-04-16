@@ -16,16 +16,8 @@ from typing import Any
 
 from _config_core import load_config, require_initialized, save_config  # type: ignore[import-not-found]
 from file_ops import output_toon  # type: ignore[import-not-found]
-from marketplace_bundles import collect_script_dirs, resolve_bundles_root  # type: ignore[import-not-found]
+from marketplace_bundles import collect_script_dirs  # type: ignore[import-not-found]
 from marketplace_paths import get_base_path  # type: ignore[import-not-found]
-
-# Script-relative bundles root, resolved by walking up to a plan-marshall bundle ancestor.
-# Falls back to None when the script lives outside a marketplace tree (e.g. plugin cache),
-# which lets get_base_path() drop back to cwd-based discovery.
-try:
-    _BUNDLES_FROM_SCRIPT: Path | None = resolve_bundles_root(Path(__file__))
-except RuntimeError:
-    _BUNDLES_FROM_SCRIPT = None
 
 
 def _scan_for_providers() -> list[dict[str, Any]]:
@@ -39,7 +31,7 @@ def _scan_for_providers() -> list[dict[str, Any]]:
         List of provider declaration dicts.
     """
     providers: list[dict[str, Any]] = []
-    base_path = get_base_path(script_bundles_dir=_BUNDLES_FROM_SCRIPT)
+    base_path = get_base_path()
     script_dirs = collect_script_dirs(base_path)
 
     seen_paths: set[str] = set()

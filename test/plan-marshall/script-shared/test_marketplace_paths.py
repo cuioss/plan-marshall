@@ -74,13 +74,6 @@ class TestFindMarketplacePath:
         result = find_marketplace_path()
         assert result == bundles
 
-    def test_script_fallback(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
-        script_bundles = tmp_path / 'script-bundles'
-        script_bundles.mkdir()
-        result = find_marketplace_path(script_bundles_dir=script_bundles)
-        assert result == script_bundles
-
     def test_not_found(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = find_marketplace_path()
@@ -109,13 +102,14 @@ class TestGetBasePath:
         result = get_base_path('auto')
         assert result == bundles
 
-    def test_auto_falls_back_to_cache(self, tmp_path, monkeypatch):
+    def test_auto_raises_without_marketplace(self, tmp_path, monkeypatch):
+        """auto scope no longer falls back to cache; it requires marketplace."""
         monkeypatch.chdir(tmp_path)
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
-        result = get_base_path('auto')
-        assert result == cache
+        with pytest.raises(FileNotFoundError):
+            get_base_path('auto')
 
     def test_auto_raises_when_nothing_found(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
