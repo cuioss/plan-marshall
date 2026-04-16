@@ -134,7 +134,7 @@ Skill: {step_reference}
   Arguments: --plan-id {plan_id}
 ```
 
-Input contract: `--plan-id` only. Retry logic is managed by the task runner (Step 9 triage loop with `verification_max_iterations`), not by the step itself.
+Input contract: `--plan-id` only. Retry logic is managed by the task runner (Step 10 triage loop with `verification_max_iterations`), not by the step itself.
 
 **Return Contract** (required TOON output from external steps):
 
@@ -149,7 +149,7 @@ src/Bar.java,10,Missing null check,error
 ```
 
 - `status: passed` → step complete, continue to next step
-- `status: failed` + `findings[]` → findings fed into Step 9 triage (fix task creation, suppress, or accept)
+- `status: failed` + `findings[]` → findings fed into Step 10 triage (fix task creation, suppress, or accept)
 - `status: failed` without `findings[]` → treated as single unstructured failure, triaged as one finding
 
 ---
@@ -217,7 +217,58 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
-### Step 8: Conditional Per-Deliverable Commit
+### Step 8: Independent Change Verification
+
+**Applies to**: `implementation` and `module_testing` profile tasks only. Skip this step for `verification` profile tasks.
+
+After task completion but before committing, independently verify that the task agent produced genuine results rather than trusting self-reports.
+
+**8a. File-change invariant**: Verify that at least one file was modified in the worktree. Run in the worktree directory (or main checkout if no worktree):
+
+```bash
+git -C {worktree_path} diff --name-only HEAD
+```
+
+If the diff output is empty (no files changed) for an `implementation` or `module_testing` task:
+- Mark task `blocked` with reason `no_changes_detected`
+- Log:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-5-execute) No file-system changes detected for {task_id} — marking blocked"
+  ```
+- Skip Steps 8b and 8c, proceed to Step 10 (Triage)
+
+**8b. Obfuscation spot-check** (conditional): When the task's verification criteria include checking for absence of a specific token (e.g., "zero grep hits for `--body`"), grep the modified files for common obfuscation patterns around that token:
+- String concatenation splitting the token (e.g., `'--' + 'body'`, `"--" + "body"`)
+- Variable assignment that reconstructs the token from parts
+
+If any obfuscation pattern is found:
+- Log each hit:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-5-execute) Obfuscation pattern detected in {file}: {pattern} — manual review recommended"
+  ```
+- Do NOT auto-block (false positives are possible) — flag for human review only
+
+**8c. Verification cross-check**: Re-execute the task's `verification.commands` independently and compare the exit code against what the agent reported:
+
+```bash
+# Run the same verification command the agent claims to have passed
+{verification_command}
+```
+
+If the agent reported `verification.passed: true` but the independent run returns a non-zero exit code:
+- Mark task `blocked` with reason `verification_mismatch`
+- Log:
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-5-execute) Verification mismatch for {task_id}: agent reported pass but independent run failed — marking blocked"
+  ```
+- Proceed to Step 10 (Triage)
+
+If independent verification also passes, continue to Step 9.
+
+### Step 9: Conditional Per-Deliverable Commit
 
 If `commit_strategy == per_deliverable` (cached from Step 2):
 
@@ -242,17 +293,30 @@ If `commit_strategy == per_deliverable` (cached from Step 2):
 
 If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
-### Step 9: Triage Verification Failure (verification tasks only)
+### Step 10: Triage Verification Failure
 
-**Only applies** when a `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`.
+**Applies when**:
+- A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
+- Step 8 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
-**9a**: Read `verify_iteration` counter from task metadata (default: 0).
+**For `no_changes_detected` blocks**: The implementation task produced no file changes. Triage options:
+- **RETRY** → reset task to `pending` for re-execution
+- **FAIL** → mark task `failed` with outcome `no_changes_detected`, log, continue
 
-**9b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 10.
+**For `verification_mismatch` blocks**: The agent claimed verification passed but independent re-run failed. Triage options:
+- **FIX** → create fix task to address the actual verification failure
+- **RETRY** → reset task to `pending` for re-execution
+- **FAIL** → mark task `failed` with outcome `verification_mismatch`, log, continue
 
-**9c**: Load domain triage extension via extension-api (`provides_triage()`).
+**For verification task failures** (original behavior):
 
-**9d**: Persist findings to Q-Gate:
+**10a**: Read `verify_iteration` counter from task metadata (default: 0).
+
+**10b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 11.
+
+**10c**: Load domain triage extension via extension-api (`provides_triage()`).
+
+**10d**: Persist findings to Q-Gate:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 5-execute \
@@ -260,22 +324,22 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --message "{finding_message}" --detail "{file}:{line}"
 ```
 
-**9e**: Triage each finding:
+**10e**: Triage each finding:
 - **FIX** → create fix task (`origin: fix`, `profile: implementation`, depends on nothing)
 - **SUPPRESS** → log suppression, resolve finding
 - **ACCEPT** → log as technical debt, resolve finding
 
-**9f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
+**10f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
 
-**9g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 10.
+**10g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 11.
 
-### Step 10: Next Task or Phase
+### Step 11: Next Task or Phase
 
 - If more tasks in phase → Continue to next task
 - If phase complete → Log phase outcome and auto-transition to next phase
 - If all phases complete → Mark plan complete
 
-### Step 11: Log Phase Completion (When phase completes)
+### Step 12: Log Phase Completion (When phase completes)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

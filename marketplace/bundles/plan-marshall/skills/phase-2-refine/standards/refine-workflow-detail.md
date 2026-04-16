@@ -36,7 +36,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Then continue with normal Steps 4..14 (phase re-runs with corrections applied).
 
-If no unresolved findings: Continue with normal Steps 4..14 (first entry).
+If no unresolved findings: Continue with normal Steps 3b..14 (first entry).
 
 ---
 
@@ -110,7 +110,43 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Return success. Phase 3 will handle recipe-specific outline creation.
 
-**If `plan_source != recipe` or field not found**: Continue with normal Steps 4..14.
+**If `plan_source != recipe` or field not found**: Continue with normal Steps 3b..14.
+
+---
+
+## Step 3b: Source Premise Verification
+
+**Purpose**: Verify that code references in the request narrative are still valid against the current codebase. Catches stale or invalid premises before quality analysis begins.
+
+**Trigger**: This step activates when the request narrative (from Step 7, or from prior context on first entry) contains verifiable code references -- file paths, flag/option names, API references, or specific behavior descriptions tied to identifiable code. If no verifiable references are present, skip to Step 4.
+
+For the complete claim extraction rules, verification procedure, and result handling, see [source-premise-verification.md](source-premise-verification.md).
+
+### Execute Verification
+
+1. Scan the request `description` and `clarified_request` for verifiable claims (at most 5, prioritized by load-bearing impact)
+2. For each claim, perform one targeted tool call (`Glob`, `Grep`, or `Read`) against the current codebase
+3. Classify each claim as Valid, Stale, Invalid, or Inconclusive
+
+### Handle Results
+
+**If all claims are valid**: Log and continue to Step 4.
+
+**If any claim is stale or invalid**: Emit a `CORRECTNESS: ISSUE` finding per invalid claim. These findings feed into Step 8 (Analyze Request Quality) under the Correctness dimension and impact the confidence score in Step 10.
+
+### Log Verification
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:3b] (plan-marshall:phase-2-refine) Source premise verification: {N} claims checked, {M} valid, {K} invalid"
+```
+
+When claims are invalid, also log to decision.log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-2-refine) Invalid premise: {claim_summary} — actual: {evidence_summary}"
+```
 
 ---
 

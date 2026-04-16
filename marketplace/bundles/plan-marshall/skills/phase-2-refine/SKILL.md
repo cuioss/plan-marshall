@@ -55,7 +55,7 @@ Before creating deliverables (phase-3-outline), ensure the request is:
 
 ## Workflow Overview
 
-The refine phase executes Steps 1-14. Steps 8-12 form an iterative loop that repeats until confidence reaches the threshold.
+The refine phase executes Steps 1-14 (with optional Step 3b). Steps 8-12 form an iterative loop that repeats until confidence reaches the threshold.
 
 ### Step 1: Check for Unresolved Q-Gate Findings
 
@@ -67,7 +67,13 @@ Log `[STATUS] Starting refine phase` to work.log.
 
 ### Step 3: Recipe Shortcut
 
-Recipe-sourced plans skip quality analysis entirely. Check `plan_source` metadata; if `recipe`, force `track=complex`, set `confidence=100`, transition phase, and return immediately. Otherwise continue with Steps 4-14.
+Recipe-sourced plans skip quality analysis entirely. Check `plan_source` metadata; if `recipe`, force `track=complex`, set `confidence=100`, transition phase, and return immediately. Otherwise continue with Steps 3b-14.
+
+### Step 3b: Source Premise Verification
+
+Verify code references in the request narrative against the current codebase before quality analysis. Activates when the request contains verifiable code references (file paths, flags, API names, behavior descriptions). Findings feed into the Correctness dimension in Step 8/10.
+
+For the complete verification procedure, see [source-premise-verification.md](standards/source-premise-verification.md).
 
 ### Step 4: Load Confidence Threshold
 
@@ -202,6 +208,7 @@ Transition from refine to outline with `manage-status transition --completed 2-r
 
 - [workflow-overview.md](references/workflow-overview.md) - Visual workflow diagrams and data flow
 - [refine-workflow-detail.md](standards/refine-workflow-detail.md) - Detailed step-by-step procedures
+- [source-premise-verification.md](standards/source-premise-verification.md) - Source premise verification patterns for Step 3b
 
 ---
 

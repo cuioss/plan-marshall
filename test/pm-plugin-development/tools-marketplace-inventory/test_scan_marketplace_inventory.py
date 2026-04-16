@@ -11,6 +11,7 @@ import. The script's logic (scope resolution, bundle discovery, resource filteri
 is tightly coupled to argparse and output serialization within main().
 """
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -1305,6 +1306,64 @@ def test_full_content_pattern_excludes_non_matching_subdocs():
     # Filtered count should be less than or equal to total (and likely less)
     # because not all subdocs contain ```json
     assert total_filtered <= total_all, f'Content-filtered subdocs ({total_filtered}) should be <= total ({total_all})'
+
+
+# =============================================================================
+# Tests - Path Resolution Regression (no cache fallback)
+# =============================================================================
+
+
+def test_find_marketplace_path_returns_none_outside_repo(tmp_path):
+    """Test find_marketplace_path() returns None when cwd has no marketplace/bundles/."""
+    from marketplace_paths import find_marketplace_path
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        result = find_marketplace_path()
+        assert result is None, (
+            f'find_marketplace_path() should return None when cwd has no marketplace/bundles/, got {result}'
+        )
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_get_base_path_auto_raises_without_marketplace(tmp_path):
+    """Test get_base_path('auto') raises FileNotFoundError instead of falling back to cache."""
+    from marketplace_paths import get_base_path as shared_get_base_path
+
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        try:
+            shared_get_base_path('auto')
+            raise AssertionError(
+                "get_base_path('auto') should raise FileNotFoundError when marketplace/bundles/ is missing"
+            )
+        except FileNotFoundError as e:
+            # Verify the error message indicates marketplace not found (not cache fallback)
+            assert 'marketplace/bundles' in str(e).lower() or 'not found' in str(e).lower(), (
+                f'Error should mention marketplace/bundles, got: {e}'
+            )
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_scan_from_repo_produces_single_plan_marshall_block():
+    """Test scan-marketplace-inventory from the repo with --bundles plan-marshall produces exactly one block."""
+    result = run_script(SCRIPT_PATH, '--direct-result', '--bundles', 'plan-marshall')
+    assert result.returncode == 0, f'Script returned error: {result.stderr}'
+
+    data = parse_toon(result.stdout)
+    bundles = get_bundles(data)
+    assert len(bundles) == 1, f'Should produce exactly 1 plan-marshall block, found {len(bundles)}'
+    assert bundles[0]['name'] == 'plan-marshall', f"Bundle name should be 'plan-marshall', got '{bundles[0]['name']}'"
+
+    # Verify it uses marketplace source, not cache
+    bundle_path = bundles[0].get('path', '')
+    assert 'marketplace/bundles' in bundle_path, (
+        f'Bundle path should reference marketplace/bundles (source), got: {bundle_path}'
+    )
 
 
 # =============================================================================
