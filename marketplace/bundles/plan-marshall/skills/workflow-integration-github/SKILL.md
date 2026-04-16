@@ -80,7 +80,7 @@ This skill is consumed by:
 1. **Get PR Comments**
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments [--pr-number {number}]
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments [--pr-number {number}] [--unresolved-only]
    ```
 
 2. **Return Comment List**
