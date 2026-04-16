@@ -225,7 +225,7 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 
 | Script | Subcommand | Mode | Purpose |
 |--------|------------|------|---------|
-| `doctor-marketplace.py` | `scan` | **EXECUTE** | Batch discovery of all marketplace components |
+| `doctor-marketplace.py` | `scan` | **EXECUTE** | Batch discovery of all marketplace components (`--bundles`, `--paths`) |
 | `doctor-marketplace.py` | `analyze` | **EXECUTE** | Batch analysis of all components for issues (`--bundles`, `--type`, `--name`) |
 | `doctor-marketplace.py` | `fix` | **EXECUTE** | Auto-apply safe fixes across marketplace (`--bundles`, `--type`, `--name`, `--dry-run`) |
 | `doctor-marketplace.py` | `report` | **EXECUTE** | Generate comprehensive report for LLM review |
@@ -247,6 +247,35 @@ Only `doctor-marketplace.py` is registered in the executor. The other scripts (`
 #### Hybrid Batch Processing
 
 Subcommands: `scan` → `analyze` → `fix` → `report`. See [standards/doctor-marketplace.md](standards/doctor-marketplace.md) for the complete two-phase (script + LLM) workflow, report output format, and directory structure.
+
+#### `scan --paths` (Explicit Path Mode)
+
+The `scan` subcommand accepts `--paths` to scan explicit component paths instead of discovering from the marketplace. This is mutually exclusive with `--bundles`.
+
+```bash
+# Scan a marketplace skill by path
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan \
+  --paths marketplace/bundles/plan-marshall/skills/phase-4-plan
+
+# Scan project-local skills
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan \
+  --paths .claude/skills/my-custom-skill
+
+# Scan multiple paths (mixed marketplace and project-local)
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace scan \
+  --paths marketplace/bundles/plan-marshall/skills/phase-4-plan \
+         marketplace/bundles/pm-dev-java/agents/java-verify-agent.md \
+         .claude/skills/project-local-skill
+```
+
+When `--paths` is provided:
+
+- Each path is resolved to absolute (relative paths resolve against cwd)
+- Component type is auto-detected from directory structure (SKILL.md presence, frontmatter patterns, parent directory name)
+- Marketplace root validation is skipped entirely
+- Invalid or missing paths produce a warning on stderr and are skipped
+
+**Note**: `--paths` and `--bundles` are mutually exclusive. Use `--bundles` for bundle-scoped discovery, `--paths` for targeting specific components.
 
 ### References (references/)
 

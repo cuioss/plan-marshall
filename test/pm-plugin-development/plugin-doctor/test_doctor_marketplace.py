@@ -883,5 +883,105 @@ def _collect_issues(data, path_filter=None):
 
 
 # =============================================================================
+# Scan --paths Flag Tests (Tier 3 - subprocess)
+# =============================================================================
+
+
+def test_scan_paths_valid_skill(tmp_path):
+    """Test scan --paths with a valid skill directory containing SKILL.md."""
+    skill_dir = tmp_path / 'my-skill'
+    skill_dir.mkdir()
+    (skill_dir / 'SKILL.md').write_text("""---
+name: my-skill
+description: A test skill for paths scanning
+---
+
+# My Skill
+
+Content here.
+""")
+
+    result = run_script(SCRIPT_PATH, 'scan', '--paths', str(skill_dir))
+    assert result.returncode == 0, f'Scan --paths failed: {result.stderr}'
+
+    data = parse_output(result)
+    assert data['mode'] == 'paths', 'Should report paths mode'
+    assert data['total_components'] == 1, f'Should find 1 component, got {data["total_components"]}'
+    assert data['components'][0]['type'] == 'skill', 'Should detect skill type'
+    assert data['components'][0]['name'] == 'my-skill', 'Should use directory name as skill name'
+
+
+def test_scan_paths_multiple(tmp_path):
+    """Test scan --paths with multiple paths (skill and agent)."""
+    # Create a skill directory
+    skill_dir = tmp_path / 'test-skill'
+    skill_dir.mkdir()
+    (skill_dir / 'SKILL.md').write_text("""---
+name: test-skill
+description: A test skill
+---
+
+# Test Skill
+""")
+
+    # Create an agent directory under agents/ parent for fallback detection
+    agents_parent = tmp_path / 'agents'
+    agents_parent.mkdir()
+    (agents_parent / 'test-agent.md').write_text("""---
+name: test-agent
+description: A test agent
+tools: Read, Write
+---
+
+# Test Agent
+""")
+
+    result = run_script(SCRIPT_PATH, 'scan', '--paths', str(skill_dir), str(agents_parent))
+    assert result.returncode == 0, f'Scan --paths failed: {result.stderr}'
+
+    data = parse_output(result)
+    assert data['mode'] == 'paths', 'Should report paths mode'
+    assert data['total_components'] == 2, f'Should find 2 components, got {data["total_components"]}'
+
+    types_found = {c['type'] for c in data['components']}
+    assert 'skill' in types_found, 'Should find the skill component'
+
+
+def test_scan_paths_invalid_path(tmp_path):
+    """Test scan --paths with a non-existent path skips it with warning."""
+    nonexistent = str(tmp_path / 'does-not-exist')
+
+    result = run_script(SCRIPT_PATH, 'scan', '--paths', nonexistent)
+    assert result.returncode == 0, f'Scan --paths should succeed even with invalid path: {result.stderr}'
+
+    data = parse_output(result)
+    assert data['mode'] == 'paths', 'Should report paths mode'
+    assert data['total_components'] == 0, 'Should find 0 components for invalid path'
+    assert 'WARNING' in result.stderr, 'Should emit warning on stderr for missing path'
+
+
+def test_scan_paths_mutual_exclusion_with_bundles():
+    """Test scan --paths and --bundles are mutually exclusive."""
+    result = run_script(SCRIPT_PATH, 'scan', '--paths', '/some/path', '--bundles', 'plan-marshall')
+    assert result.returncode != 0, 'Should fail when both --paths and --bundles are provided'
+
+
+def test_scan_without_paths_or_bundles():
+    """Test scan without --paths or --bundles uses default marketplace discovery."""
+    if not marketplace_available():
+        return  # Skip if marketplace not available
+
+    result = run_script(SCRIPT_PATH, 'scan')
+    assert result.returncode == 0, f'Default scan failed: {result.stderr}'
+
+    data = parse_output(result)
+    # Default mode should NOT have 'mode' key (only paths mode sets it)
+    assert 'mode' not in data or data.get('mode') != 'paths', 'Default scan should not be in paths mode'
+    assert 'total_bundles' in data, 'Default scan should have total_bundles'
+    assert 'bundles' in data, 'Default scan should have bundles list'
+    assert data['total_bundles'] > 0, 'Default scan should find bundles'
+
+
+# =============================================================================
 # Main
 # =============================================================================

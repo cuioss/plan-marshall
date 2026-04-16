@@ -15,7 +15,7 @@ analysis and complex fixes.
 Output: TOON to stdout.
 
 Usage:
-    python3 doctor-marketplace.py scan [--bundles NAMES]
+    python3 doctor-marketplace.py scan [--bundles NAMES] [--paths PATH [PATH ...]]
     python3 doctor-marketplace.py analyze [--bundles NAMES] [--type TYPE] [--name NAME]
     python3 doctor-marketplace.py fix [--bundles NAMES] [--type TYPE] [--name NAME] [--dry-run]
     python3 doctor-marketplace.py report [--bundles NAMES] [--output FILE]
@@ -39,6 +39,7 @@ from _doctor_shared import (
     find_marketplace_root,
     get_report_dir,
     get_report_filename,
+    resolve_component_paths,
 )
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
@@ -141,8 +142,55 @@ def collect_filtered_components(
 # =============================================================================
 
 
+def _scan_paths(paths: list[str]) -> dict:
+    """Scan explicitly provided component paths."""
+    resolved = resolve_component_paths(paths)
+    if not resolved:
+        return {
+            'status': 'success',
+            'mode': 'paths',
+            'total_components': 0,
+            'components': [],
+            'message': 'No valid paths resolved',
+        }
+
+    components_list = []
+    for resolved_path, component_type in resolved:
+        entry: dict = {
+            'path': str(resolved_path),
+            'type': component_type,
+        }
+        # For skills, add name from directory
+        if component_type == 'skill':
+            skill_dir = resolved_path if resolved_path.is_dir() else resolved_path.parent
+            entry['name'] = skill_dir.name
+        elif component_type in ('agent', 'command'):
+            # For agents/commands, use stem of the markdown file or directory
+            if resolved_path.is_file():
+                entry['name'] = resolved_path.stem
+            else:
+                # Try to find the markdown file
+                md_files = list(resolved_path.glob('*.md'))
+                entry['name'] = md_files[0].stem if md_files else resolved_path.name
+        else:
+            entry['name'] = resolved_path.stem if resolved_path.is_file() else resolved_path.name
+
+        components_list.append(entry)
+
+    return {
+        'status': 'success',
+        'mode': 'paths',
+        'total_components': len(components_list),
+        'components': components_list,
+    }
+
+
 def cmd_scan(args) -> dict:
     """Scan marketplace and list all components."""
+    # --paths mode: resolve explicit paths, skip marketplace discovery
+    if hasattr(args, 'paths') and args.paths:
+        return _scan_paths(args.paths)
+
     marketplace_root = find_marketplace_root()
     if not marketplace_root:
         return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
@@ -372,6 +420,12 @@ Examples:
   # Scan specific bundles
   %(prog)s scan --bundles pm-dev-java,plan-marshall
 
+  # Scan explicit component paths
+  %(prog)s scan --paths marketplace/bundles/plan-marshall/skills/phase-4-plan
+
+  # Scan multiple paths (marketplace and project-local)
+  %(prog)s scan --paths marketplace/bundles/plan-marshall/skills/phase-4-plan .claude/skills/my-skill
+
   # Analyze all components
   %(prog)s analyze
 
@@ -396,7 +450,9 @@ Examples:
 
     # scan subcommand
     p_scan = subparsers.add_parser('scan', help='Scan marketplace components')
-    p_scan.add_argument('--bundles', help='Comma-separated list of bundle names to scan')
+    scan_source = p_scan.add_mutually_exclusive_group()
+    scan_source.add_argument('--bundles', help='Comma-separated list of bundle names to scan')
+    scan_source.add_argument('--paths', nargs='+', help='Explicit component paths to scan (mutually exclusive with --bundles)')
     p_scan.set_defaults(func=cmd_scan)
 
     # analyze subcommand
