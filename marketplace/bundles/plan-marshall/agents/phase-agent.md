@@ -28,6 +28,7 @@ The agent layer is intentionally thin. Rather than creating a specialized agent 
 | `source` | string | No | Source type for phase-1-init |
 | `content` | string | No | Content for phase-1-init |
 | `task_number` | number | No | Task number for phase-5-execute |
+| `worktree_path` | string | Conditional | Absolute path to the active git worktree root. Required whenever the plan runs in an isolated worktree. When provided, the loaded skill MUST use this path as the mandatory root for all Edit/Write/Read operations and MUST echo the constraint into any further subagent dispatch using the Worktree Header protocol defined in `plan-marshall:phase-5-execute`. |
 
 ## Step 1: Load Foundational Practices
 
@@ -67,4 +68,6 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ## Step 3: Execute
 
 Follow the loaded skill's workflow with all provided parameters. The skill contains the complete logic — do not add, skip, or modify steps. Return the skill's output verbatim.
+
+**Worktree propagation**: When `worktree_path` is provided as input, the loaded skill MUST use it as the mandatory root for every Edit/Write/Read file operation — no path may resolve against the main checkout. Additionally, any further subagent dispatch (Task, Skill with free-form prompt, nested phase-agent call) issued by the loaded skill MUST echo the constraint verbatim into its prompt, using the Worktree Header template defined in `plan-marshall:phase-5-execute` (Dispatch Protocol section). This guarantees the worktree context propagates through every level of delegation.
 

@@ -21,8 +21,8 @@ Skill: plan-marshall:dev-general-practices
 ## Enforcement
 
 **Prohibited actions:**
-- Never target file paths outside the active git worktree. When a plan runs in an isolated worktree, all Edit/Write/Read tool calls during task execution MUST use the worktree's absolute path (e.g., `<root>/.claude/worktrees/{plan_id}/...`), never the main checkout (e.g., `/Users/oliver/git/{repo}/...`). Editing the main checkout pollutes uncommitted state, bypasses worktree isolation, and lets tests silently load stale source via PYTHONPATH. In this mode, the canonical worktree path is the one surfaced by `plan-marshall:phase-5-execute` in its phase-start `[STATUS] Active worktree: ...` work-log line — use that path as the root for every file operation.
-- Never run git as a `cd {worktree_path} && git ...` compound. All git commands during task execution MUST use the `git -C {worktree_path} <subcommand>` form, where `{worktree_path}` is the same `[STATUS] Active worktree: ...` value referenced above. The compound form trips Claude Code's bare-repository security prompt and simultaneously violates the Bash one-command-per-call rule. See `dev-general-practices` Hard Rules for the full rule and rationale.
+- Never target file paths outside the active git worktree. The authoritative source for the worktree root is the **Input Contract** below: when `worktree_path` is provided, every Edit/Write/Read tool call during task execution MUST resolve against that path — never against the main checkout. Editing the main checkout pollutes uncommitted state, bypasses worktree isolation, and lets tests silently load stale source via PYTHONPATH.
+- Never run git as a `cd {worktree_path} && git ...` compound. All git commands during task execution MUST use the `git -C {worktree_path} <subcommand>` form, where `{worktree_path}` is the value provided via the Input Contract. The compound form trips Claude Code's bare-repository security prompt and simultaneously violates the Bash one-command-per-call rule. See `dev-general-practices` Hard Rules for the full rule and rationale.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
@@ -32,7 +32,19 @@ Skill: plan-marshall:dev-general-practices
 
 ## Common Workflow
 
-All profiles share these steps. Profile-specific steps are documented in each profile section below.
+### Input Contract
+
+Every invocation of this skill MUST provide the following inputs:
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plan_id` | string | Yes | Plan identifier (used by all manage-* script calls) |
+| `task_number` | number | Yes | Numeric task id to execute |
+| `worktree_path` | string | Conditional | Absolute path to the active git worktree root. REQUIRED whenever the plan runs in an isolated worktree. When provided, `worktree_path` is the mandatory root for all Edit/Write/Read tool calls during this task. Omit only when the plan runs against the main checkout. |
+
+Callers (typically `phase-agent` dispatching this skill) MUST forward `worktree_path` verbatim when available. Child subagent dispatches issued from within this skill MUST echo the Worktree Header (see `plan-marshall:phase-5-execute` Dispatch Protocol) into their own prompts.
+
+All profiles share the steps below. Profile-specific steps are documented in each profile section.
 
 ### Step: Resolve Stale Targets
 
@@ -127,6 +139,10 @@ message: {error message if status=error}
 
 Production code creation and modification.
 
+### Path Resolution
+
+When `worktree_path` is provided in the Input Contract, every Edit/Write/Read tool call in this profile MUST resolve its file path against `worktree_path` (e.g., `{worktree_path}/marketplace/bundles/.../SKILL.md`). Never resolve step targets against the main checkout. If a subagent is dispatched from this profile, embed the Worktree Header (see phase-5-execute Dispatch Protocol) so the child propagates the constraint.
+
 ### Compatibility Strategy
 
 Before implementing, read the compatibility approach:
@@ -165,6 +181,10 @@ Apply throughout all subsequent steps:
 ## Profile: module_testing
 
 Unit and module test creation.
+
+### Path Resolution
+
+When `worktree_path` is provided in the Input Contract, every Edit/Write/Read tool call in this profile MUST resolve its file path against `worktree_path` (e.g., `{worktree_path}/marketplace/bundles/.../test_foo.py`). Never resolve test targets or implementation lookups against the main checkout. If a subagent is dispatched from this profile, embed the Worktree Header (see phase-5-execute Dispatch Protocol) so the child propagates the constraint.
 
 ### Workflow
 

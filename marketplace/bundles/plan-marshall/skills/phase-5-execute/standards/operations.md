@@ -2,6 +2,17 @@
 
 Reference for executing common checklist items. The executor uses these patterns when encountering specific checklist items.
 
+## Worktree Header Protocol (Applies to ALL Dispatch Patterns)
+
+When the plan runs in an isolated worktree, every `Task:` dispatch (and every other subagent dispatch that accepts a free-form prompt) below MUST have its `prompt:` block BEGIN with the following header, with `{worktree_path}` substituted by the active worktree absolute path surfaced by phase-5-execute's `[STATUS] Active worktree` work-log line:
+
+```
+WORKTREE: {worktree_path}
+All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+```
+
+Omit the header only when no worktree is active (plan runs against the main checkout). The templates below show the header inline for every dispatch example.
+
 ## Build Operations
 
 ### Maven Build
@@ -10,7 +21,11 @@ Reference for executing common checklist items. The executor uses these patterns
 ```
 Task:
   subagent_type: pm-dev-builder:maven-builder
-  prompt: Execute mvn clean verify, report results and coverage
+  prompt: |
+    WORKTREE: {worktree_path}
+    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+
+    Execute mvn clean verify, report results and coverage
 ```
 
 ### npm Build
@@ -19,7 +34,11 @@ Task:
 ```
 Task:
   subagent_type: pm-dev-builder:npm-builder
-  prompt: Execute npm build and test, report results and coverage
+  prompt: |
+    WORKTREE: {worktree_path}
+    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+
+    Execute npm build and test, report results and coverage
 ```
 
 ## Quality Operations
@@ -46,7 +65,11 @@ mcp__sonarqube__search_sonar_issues_in_projects
 ```
 Task:
   subagent_type: pm-dev-builder:npm-builder
-  prompt: Execute Task {N}: {name}, Goal: {goal}, Criteria: {list}
+  prompt: |
+    WORKTREE: {worktree_path}
+    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+
+    Execute Task {N}: {name}, Goal: {goal}, Criteria: {list}
 ```
 
 ## Git Operations
