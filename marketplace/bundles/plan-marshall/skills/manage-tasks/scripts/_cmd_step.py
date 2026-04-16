@@ -21,9 +21,9 @@ from plan_logging import log_entry  # type: ignore[import-not-found]
 def cmd_finalize_step(args) -> dict:
     """Handle 'finalize-step' subcommand.
 
-    Consolidates step-done and step-skip into a single command with --outcome parameter.
-    Marks step with outcome (done/skipped), auto-advances current_step, and
-    auto-completes task if all steps are finished.
+    Consolidates step-done, step-skip, and step-fail into a single command with --outcome parameter.
+    Marks step with outcome (done/skipped/failed), auto-advances current_step, and
+    auto-completes task if all steps are finished. Task status is 'failed' when any step failed.
 
     Returns structured output with:
     - finalized: details of the completed step
@@ -54,8 +54,10 @@ def cmd_finalize_step(args) -> dict:
     step_found['status'] = args.outcome
     task['status'] = 'in_progress'
 
-    # Check if all steps are complete
-    all_done = all(s['status'] in ('done', 'skipped') for s in steps)
+    # Check if all steps are terminal (done, skipped, or failed)
+    terminal_statuses = ('done', 'skipped', 'failed')
+    all_terminal = all(s['status'] in terminal_statuses for s in steps)
+    has_failed = any(s['status'] == 'failed' for s in steps)
 
     # Find next pending step
     next_step_info = None
@@ -65,8 +67,8 @@ def cmd_finalize_step(args) -> dict:
             break
 
     # Update task state
-    if all_done:
-        task['status'] = 'done'
+    if all_terminal:
+        task['status'] = 'failed' if has_failed else 'done'
         task['current_step'] = len(steps)
     elif next_step_info:
         task['current_step'] = next_step_info['number']
@@ -75,7 +77,9 @@ def cmd_finalize_step(args) -> dict:
     atomic_write_file(filepath, new_content)
 
     # Logging
-    if all_done:
+    if all_terminal and has_failed:
+        log_entry('work', args.plan_id, 'WARN', f'[MANAGE-TASKS] TASK-{args.task:03d} failed (has failed steps)')
+    elif all_terminal:
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Completed TASK-{args.task:03d}')
     else:
         log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] TASK-{args.task:03d} step {args.step} {args.outcome}')
@@ -92,12 +96,12 @@ def cmd_finalize_step(args) -> dict:
             'outcome': args.outcome,
         },
         'next_step': next_step_info,
-        'task_complete': all_done,
+        'task_complete': all_terminal,
         'task_status': task['status'],
         'progress': f'{completed}/{total}',
     }
 
-    # Include reason if provided (for skipped steps)
+    # Include reason if provided (for skipped or failed steps)
     if getattr(args, 'reason', None):
         result['finalized']['reason'] = args.reason
 

@@ -56,6 +56,7 @@ def cmd_list(args) -> dict:
     pending = sum(1 for _, t in all_tasks if t.get('status') == 'pending')
     in_progress = sum(1 for _, t in all_tasks if t.get('status') == 'in_progress')
     done_count = sum(1 for _, t in all_tasks if t.get('status') == 'done')
+    failed_count = sum(1 for _, t in all_tasks if t.get('status') == 'failed')
     blocked = sum(1 for _, t in all_tasks if t.get('status') == 'blocked')
 
     # Build table data
@@ -83,6 +84,7 @@ def cmd_list(args) -> dict:
             'pending': pending,
             'in_progress': in_progress,
             'done': done_count,
+            'failed': failed_count,
             'blocked': blocked,
         },
         'tasks_table': table,
@@ -284,6 +286,7 @@ def cmd_tasks_by_domain(args) -> dict:
     pending = sum(1 for _, t in filtered_tasks if t.get('status') == 'pending')
     in_progress = sum(1 for _, t in filtered_tasks if t.get('status') == 'in_progress')
     done_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'done')
+    failed_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'failed')
     blocked = sum(1 for _, t in filtered_tasks if t.get('status') == 'blocked')
 
     return {
@@ -295,6 +298,7 @@ def cmd_tasks_by_domain(args) -> dict:
             'pending': pending,
             'in_progress': in_progress,
             'done': done_count,
+            'failed': failed_count,
             'blocked': blocked,
         },
         'tasks_table': table,
@@ -332,6 +336,7 @@ def cmd_tasks_by_profile(args) -> dict:
     pending = sum(1 for _, t in filtered_tasks if t.get('status') == 'pending')
     in_progress = sum(1 for _, t in filtered_tasks if t.get('status') == 'in_progress')
     done_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'done')
+    failed_count = sum(1 for _, t in filtered_tasks if t.get('status') == 'failed')
     blocked = sum(1 for _, t in filtered_tasks if t.get('status') == 'blocked')
 
     return {
@@ -343,6 +348,7 @@ def cmd_tasks_by_profile(args) -> dict:
             'pending': pending,
             'in_progress': in_progress,
             'done': done_count,
+            'failed': failed_count,
             'blocked': blocked,
         },
         'tasks_table': table,

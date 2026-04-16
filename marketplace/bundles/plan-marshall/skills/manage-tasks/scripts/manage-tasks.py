@@ -140,12 +140,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_plan_id_arg(p_next_tasks)
 
     # finalize-step (consolidates step-done and step-skip)
-    p_finalize = subparsers.add_parser('finalize-step', help='Complete a step with outcome (done/skipped)')
+    p_finalize = subparsers.add_parser('finalize-step', help='Complete a step with outcome (done/skipped/failed)')
     add_plan_id_arg(p_finalize)
     p_finalize.add_argument('--task', required=True, type=int, help='Task number')
     p_finalize.add_argument('--step', required=True, type=int, help='Step number')
-    p_finalize.add_argument('--outcome', required=True, choices=['done', 'skipped'], help='Step outcome')
-    p_finalize.add_argument('--reason', help='Reason for skipping (optional, for skipped steps)')
+    p_finalize.add_argument('--outcome', required=True, choices=['done', 'skipped', 'failed'], help='Step outcome')
+    p_finalize.add_argument('--reason', help='Reason for skipping or failure (optional)')
 
     # add-step
     p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task')
