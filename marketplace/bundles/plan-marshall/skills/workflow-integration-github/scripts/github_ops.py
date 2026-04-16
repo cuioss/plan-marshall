@@ -13,6 +13,7 @@ Subcommands:
     pr submit-review   Submit a pending PR review (safety net)
     pr merge        Merge a pull request
     pr auto-merge   Enable auto-merge on a pull request
+    pr update-branch  Update PR branch with base branch changes
     pr close        Close a pull request
     pr ready        Mark a draft PR as ready for review
     pr edit         Edit PR title and/or body
@@ -39,6 +40,7 @@ Usage (bodies supplied via path-allocate pattern: prepare-body → write file �
     python3 github.py pr submit-review --review-id PRR_abc123 [--event COMMENT|APPROVE|REQUEST_CHANGES]
     python3 github.py pr merge --pr-number 123 [--strategy squash] [--delete-branch]
     python3 github.py pr auto-merge --pr-number 123 [--strategy squash]
+    python3 github.py pr update-branch --pr-number 123
     python3 github.py pr close --pr-number 123
     python3 github.py pr ready --pr-number 123
     python3 github.py pr edit --pr-number 123 --plan-id my-plan [--title "New Title"]
@@ -827,6 +829,30 @@ def cmd_pr_auto_merge(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_pr_update_branch(args: argparse.Namespace) -> dict:
+    """Handle 'pr update-branch' subcommand - update PR branch with base branch changes."""
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('pr_update_branch', err)
+
+    identifier, err_dict = _resolve_pr_identifier(args, 'pr_update_branch')
+    if err_dict:
+        return err_dict
+    assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
+
+    gh_args = ['pr', 'update-branch', identifier]
+
+    returncode, stdout, stderr = run_gh(gh_args)
+    if returncode != 0:
+        return make_error('pr_update_branch', f'Failed to update branch for PR {identifier}', stderr.strip())
+
+    return {
+        'status': 'success',
+        'operation': 'pr_update_branch',
+        'pr_number': args.pr_number if args.pr_number else identifier,
+    }
+
+
 cmd_pr_close = make_pr_number_handler(
     'pr_close',
     lambda args: ['pr', 'close', str(args.pr_number)],
@@ -1236,6 +1262,7 @@ def main() -> int:
         ('pr', 'comments'): cmd_pr_comments,
         ('pr', 'merge'): cmd_pr_merge,
         ('pr', 'auto-merge'): cmd_pr_auto_merge,
+        ('pr', 'update-branch'): cmd_pr_update_branch,
         ('pr', 'close'): cmd_pr_close,
         ('pr', 'ready'): cmd_pr_ready,
         ('pr', 'edit'): cmd_pr_edit,

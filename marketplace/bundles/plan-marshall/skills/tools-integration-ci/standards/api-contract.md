@@ -140,6 +140,7 @@ Every PR subcommand returns the standard envelope: success shape (`status: succe
 | `pr thread-reply` | `--pr-number`, `--thread-id`, `--body` | — | `pr_number`, `thread_id` |
 | `pr reviews` | `--pr-number` | — | `pr_number`, `review_count`, `reviews[N]{user,state,submitted_at}` |
 | `pr comments` | `--pr-number` | `--unresolved-only` | `provider`, `pr_number`, `total`, `unresolved`, `comments[N]{id,author,body,path,line,resolved,created_at}` |
+| `pr update-branch` | `--pr-number` | — | `pr_number` |
 
 ### Provider Field Mapping
 
@@ -333,6 +334,7 @@ The following subcommands all return the standard success shape (`status: succes
 |------------|---------------|----------------|-------|
 | `pr merge --pr-number N` | `--pr-number` | `--strategy merge\|squash\|rebase` (default `merge`), `--delete-branch` | Success adds `strategy`. |
 | `pr auto-merge --pr-number N` | `--pr-number` | `--strategy` | Enables auto-merge when all checks pass; success adds `enabled: true`. |
+| `pr update-branch --pr-number N` | `--pr-number` | — | Updates PR branch with base branch (GitHub REST API). |
 | `pr close --pr-number N` | `--pr-number` | — | Closes without merging. |
 | `pr ready --pr-number N` | `--pr-number` | — | Marks a draft as ready for review. |
 | `pr edit --pr-number N` | `--pr-number` | `--title`, `--body` | Edits title and/or body. |
