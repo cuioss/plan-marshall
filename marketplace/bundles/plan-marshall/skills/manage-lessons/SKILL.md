@@ -240,7 +240,7 @@ created_from: error_context
 | `add` | `--component --category --title --detail [--bundle]` | Create new lesson |
 | `update` | `--id [--component] [--category]` | Update lesson metadata |
 | `get` | `--id` | Get single lesson |
-| `list` | `[--component] [--category]` | List with filtering |
+| `list` | `[--component] [--category] [--full]` | List with filtering. `--full` includes lesson body content. |
 | `from-error` | `--context` | Create from JSON error context |
 | `convert-to-plan` | `--id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
 

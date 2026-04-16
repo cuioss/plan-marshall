@@ -240,16 +240,12 @@ def cmd_list(args: argparse.Namespace) -> dict:
         }
 
         if args.full:
-            lines = content.split('\n')
-            body_lines = []
-            past_header = False
-            for line in lines:
+            body_start = 0
+            for i, line in enumerate(content.split('\n')):
                 if line.startswith('# '):
-                    past_header = True
-                    continue
-                if past_header:
-                    body_lines.append(line)
-            entry['content'] = '\n'.join(body_lines).strip()
+                    body_start = i + 1
+                    break
+            entry['content'] = '\n'.join(content.split('\n')[body_start:]).strip()
 
         lessons.append(entry)
 
