@@ -45,6 +45,17 @@ Never use Bash for file discovery or reading. Use Glob, Grep, Read instead.
 
 Execute ONLY the commands documented in the loaded skill's workflow. Never add discovery steps, invent arguments, or skip documented steps.
 
+### Git: always use `git -C {path}`, never `cd {path} && git ...`
+
+Every repo-targeted git command MUST use the `git -C {path} <subcommand>` form. The compound form `cd {path} && git <subcommand>` is forbidden — even when the target path is a worktree absolute path that the model already has in context.
+
+Two reasons, both load-bearing:
+
+1. **Security prompt**: Claude Code treats `cd` followed by `git` in the same Bash call as a potential bare-repository-attack pattern and pops a permission prompt that disrupts the user. The `-C` form does not trip the heuristic.
+2. **One-command-per-call**: `cd {path} && git ...` is two commands joined by `&&`, which already violates the [Bash: One command per call](#bash-one-command-per-call) rule above. Using `git -C {path} ...` is one command and satisfies both rules at once.
+
+When a plan runs in an isolated worktree, the canonical `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use `git -C .` (or omit `-C` only when the current working directory is unambiguously correct) — never `cd && git`.
+
 ## Related
 
 - `dev-general-code-quality` — Complementary quality standards (SRP, CQS, complexity)
