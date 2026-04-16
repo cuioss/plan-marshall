@@ -58,7 +58,7 @@ JSON format for storage:
 | `base_branch` | string | Base branch for PR (e.g., main) |
 | `issue_url` | string | GitHub issue URL |
 | `build_system` | string | Build system (maven, gradle, npm, none) |
-| `modified_files` | list | Files modified during implementation (tracked by plan-execute as files are changed) |
+| `modified_files` | list | Files modified during implementation (collected via git diff on 5-execute completion) |
 | `domains` | list | Plan domains (e.g., java, documentation) |
 | `affected_files` | list | Files identified during outline phase as potentially needing changes (scope tracking, may be superset of modified_files) |
 | `external_docs` | table | External documentation references |
@@ -346,7 +346,7 @@ modified_files[3]:
 |--------|-----------|---------|
 | `phase-1-init` | create, set, set-list | Initialize references with branch, domains, build system |
 | `phase-3-outline` | set-list | Set affected_files from solution outline |
-| `phase-5-execute` | add-file | Track modified files as implementation progresses |
+| `manage-status/cmd_transition` | set-list (modified_files) | Collect modified files via git diff on 5-execute completion |
 
 ### Consumers
 

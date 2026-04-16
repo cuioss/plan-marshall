@@ -5,8 +5,10 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 
 import argparse
 import shutil
+import subprocess
 from typing import Any
 
+from _references_core import read_references, write_references  # type: ignore[import-not-found]
 from _status_core import (
     get_archive_dir,
     get_status_path,
@@ -70,6 +72,38 @@ def cmd_create(args: argparse.Namespace) -> dict:
     }
 
 
+def _collect_modified_files(plan_id: str, status: dict) -> list[str]:
+    """Collect modified files via git diff when completing 5-execute.
+
+    Uses ``git diff --name-only {base_branch}...HEAD`` to determine which files
+    were modified during the execute phase.  When the plan runs inside a
+    worktree (``metadata.worktree_path`` is set), ``git -C {worktree_path}`` is
+    used so the diff is resolved against the correct working tree.
+
+    Returns:
+        Sorted list of relative file paths, or an empty list on any error.
+    """
+    refs = read_references(plan_id)
+    base_branch = refs.get('base_branch', '') if refs else ''
+    if not base_branch:
+        return []
+
+    metadata = status.get('metadata', {})
+    worktree_path = metadata.get('worktree_path')
+
+    cmd: list[str] = ['git']
+    if worktree_path:
+        cmd.extend(['-C', worktree_path])
+    cmd.extend(['diff', '--name-only', f'{base_branch}...HEAD'])
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
+        files = sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+        return files
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        return []
+
+
 def cmd_transition(args: argparse.Namespace) -> dict | None:
     """Transition to next phase."""
     status = require_status(args)
@@ -91,6 +125,15 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
 
     # Mark completed phase as done
     phases[completed_idx]['status'] = PHASE_STATUS_DONE
+
+    # Collect modified files when completing 5-execute
+    if args.completed == '5-execute':
+        modified = _collect_modified_files(args.plan_id, status)
+        if modified:
+            refs = read_references(args.plan_id)
+            if refs is not None:
+                refs['modified_files'] = modified
+                write_references(args.plan_id, refs)
 
     # Determine next phase
     if completed_idx + 1 < len(phases):
