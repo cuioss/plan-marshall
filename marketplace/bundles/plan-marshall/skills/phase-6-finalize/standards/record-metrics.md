@@ -17,6 +17,84 @@ Capture the following fields from the returned TOON for the parent skill's outpu
 - `total_tokens`
 - `file` (relative path to `metrics.md`)
 
+## Display Consolidated Step-Outcome Summary
+
+Read the plan status to retrieve step outcomes for the finalize phase:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+  --plan-id {plan_id}
+```
+
+Extract `metadata.phase_steps["6-finalize"]` from the response. This is a map of step names to outcomes (`done` or `skipped`).
+
+Cross-reference against the configured `steps` list (already read during phase-6-finalize Step 2). For each configured step, look up its outcome in `phase_steps`. Steps not yet recorded (e.g., `record-metrics` itself, `archive-plan`) should show `pending` since they have not yet called `mark-step-done` at this point in the pipeline.
+
+Display a consolidated table:
+
+```
+## Finalize Step Outcomes
+
+| Step | Outcome |
+|------|---------|
+| commit-push | done |
+| create-pr | done |
+| automated-review | skipped |
+| sonar-roundtrip | skipped |
+| knowledge-capture | done |
+| lessons-capture | done |
+| branch-cleanup | done |
+| record-metrics | pending |
+| archive-plan | pending |
+```
+
+The table rows follow the order from the configured `steps` list. The `Outcome` column shows the value from `phase_steps` (`done`, `skipped`, or `failed`) or `pending` if no entry exists yet.
+
+## Verify Observable End-State
+
+After the step-outcome table, verify and display the observable end-state so the user can confirm the plan completed as expected without needing to ask follow-up questions.
+
+**PR state** (only if `default:create-pr` is in the configured `steps` list):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+  pr view --project-dir {worktree_path_or_main_checkout}
+```
+
+Extract `state` (merged, open, closed) and `number` from the response. If the CI script returns an error (e.g., no PR exists), display `n/a`.
+
+**Current branch and git status** (use `{main_checkout}` since worktree may already be removed by `branch-cleanup`):
+
+```bash
+git -C {main_checkout} branch --show-current
+```
+
+```bash
+git -C {main_checkout} status --porcelain
+```
+
+**Worktree status** (only if the plan used a worktree): Check whether the worktree directory still exists. If `branch-cleanup` ran successfully, the worktree should be removed.
+
+Display the end-state summary:
+
+```
+## End-State Verification
+
+| Check | Status |
+|-------|--------|
+| PR | #{pr_number} {state} |
+| Branch | {current_branch} |
+| Working tree | {clean / N uncommitted files} |
+| Worktree | {removed / still present at {path}} |
+```
+
+If any check reveals an unexpected state (e.g., PR still open when branch-cleanup marked done, uncommitted files present), log a warning:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-6-finalize:record-metrics) Unexpected end-state: {description}"
+```
+
 ## Display Plan Completion Summary
 
 Display the plan completion summary including core metrics:
@@ -28,7 +106,7 @@ Display the plan completion summary including core metrics:
 |--------|-------|
 | Total Duration | {formatted total_duration from metrics} |
 | Total Tokens | {total_tokens from metrics} |
-| PR | #{pr_number from earlier create-pr step, or "n/a"} |
+| PR | #{pr_number} {state} |
 | Metrics | .plan/archived-plans/{date}-{plan_id}/metrics.md |
 ```
 
