@@ -407,7 +407,14 @@ def parse_stdin_task(stdin_content: str) -> dict[str, Any]:
         elif line.startswith('steps:'):
             i += 1
             while i < len(lines) and lines[i].startswith('  - '):
-                step_target = normalize_step_path(lines[i][4:].strip())
+                raw_step = lines[i][4:].strip()
+                if len(raw_step) >= 2 and raw_step.startswith('"') and raw_step.endswith('"'):
+                    raise ValueError(
+                        f'Task contract violation - steps items must not be '
+                        f'wrapped in outer double-quotes: {raw_step!r}. Write list items without '
+                        f'outer quotes (inner double-quotes are allowed). See plan-marshall:phase-4-plan SKILL.md.'
+                    )
+                step_target = normalize_step_path(raw_step)
                 if step_target:
                     steps.append(step_target)
                 i += 1
