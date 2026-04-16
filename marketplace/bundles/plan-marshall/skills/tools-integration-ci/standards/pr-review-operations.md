@@ -131,3 +131,40 @@ IC_abc125	PRRT_thread2	alice	Typo here	README.md	10	true	2025-01-15T09:00:00Z
 ```
 
 See [api-contract.md](api-contract.md) for provider-specific field mappings.
+
+---
+
+## Workflow: Wait for New Review Comments
+
+**Pattern**: Provider-Agnostic Router (polling, replaces blocking shell sleep)
+
+Block until a new unresolved review comment is posted on the PR or the timeout elapses. Snapshots the unresolved-comment count once on entry, then polls on the standard CI interval and exits as soon as the count grows. Used by `workflow-pr-doctor`'s Automated Review Lifecycle (Step 2) in place of a bash `sleep`, which the harness blocks for long leading durations.
+
+### Step 1: Resolve and Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments \
+    --pr-number 123 --timeout 180
+```
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--pr-number` | yes | — | PR number |
+| `--timeout` | no | 300 (caller usually passes `review_bot_buffer_seconds`) | Max wait time in seconds |
+| `--interval` | no | 30 | Poll interval in seconds |
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: pr_wait_for_comments
+pr_number: 123
+timed_out: false
+duration_sec: 47
+polls: 2
+baseline_count: 1
+final_count: 2
+new_count: 1
+```
+
+`status: success` is returned even when `timed_out: true` — the caller should still proceed to fetch comments (`pr comments --unresolved-only`) and triage whatever did arrive. `status: error` is reserved for fetch/auth failures.
