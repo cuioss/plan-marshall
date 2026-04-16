@@ -30,6 +30,7 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-
 # Tier 2 direct imports
 from permission_fix import (  # type: ignore[import-not-found]  # noqa: E402
     cmd_apply_fixes,
+    cmd_apply_project_step_permissions,
     cmd_consolidate,
     cmd_ensure_wildcards,
     cmd_generate_wildcards,
@@ -922,6 +923,101 @@ def test_migrate_executor_help():
     """migrate-executor subcommand should have help."""
     result = run_script(SCRIPT_PATH, 'migrate-executor', '--help')
     assert result.returncode == 0
+
+
+def test_apply_project_step_permissions_help():
+    """apply-project-step-permissions subcommand should have help."""
+    result = run_script(SCRIPT_PATH, 'apply-project-step-permissions', '--help')
+    assert result.returncode == 0
+
+
+# =============================================================================
+# Tier 2: Tests for apply-project-step-permissions subcommand
+# =============================================================================
+
+
+class TestApplyProjectStepPermissions(ScriptTestCase):
+    """Test permission_fix.py apply-project-step-permissions subcommand."""
+
+    bundle = 'plan-marshall'
+    skill = 'tools-permission-fix'
+    script = 'permission_fix.py'
+
+    def _write_marshal(self, phase_steps: dict[str, list[str]]) -> str:
+        marshal = {'plan': {phase: {'steps': steps} for phase, steps in phase_steps.items()}}
+        marshal_file = self.temp_dir / 'marshal.json'
+        marshal_file.write_text(json.dumps(marshal))
+        return str(marshal_file)
+
+    def _write_settings(self, allow: list[str]) -> str:
+        settings = {'permissions': {'allow': allow, 'deny': [], 'ask': []}}
+        settings_file = self.temp_dir / 'settings.json'
+        settings_file.write_text(json.dumps(settings))
+        return str(settings_file)
+
+    def _read_settings(self, path: str) -> dict:
+        with open(path) as f:
+            return json.load(f)
+
+    def test_dry_run_does_not_mutate_settings(self):
+        """--dry-run must not touch the settings file."""
+        marshal = self._write_marshal({'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
+        settings = self._write_settings(['Edit(.plan/**)'])
+        original = self._read_settings(settings)
+
+        result = cmd_apply_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, dry_run=True)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['added'], ['Skill(finalize-step-plugin-doctor)'])
+        self.assertFalse(result['applied'])
+        self.assertEqual(self._read_settings(settings), original)
+
+    def test_default_run_appends_missing_rules(self):
+        """Default run appends missing Skill() rules and sorts the allow list."""
+        marshal = self._write_marshal({'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
+        settings = self._write_settings(['Edit(.plan/**)', 'Bash(git:*)'])
+
+        result = cmd_apply_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, dry_run=False)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertTrue(result['applied'])
+        allow = self._read_settings(settings)['permissions']['allow']
+        self.assertIn('Skill(finalize-step-plugin-doctor)', allow)
+        self.assertEqual(allow, sorted(allow))
+
+    def test_idempotent_re_run(self):
+        """Running twice must not create duplicates."""
+        marshal = self._write_marshal({'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
+        settings = self._write_settings([])
+
+        cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
+        result = cmd_apply_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, dry_run=False)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['added'], [])
+        self.assertEqual(result['summary']['already_present_count'], 1)
+        allow = self._read_settings(settings)['permissions']['allow']
+        self.assertEqual(allow.count('Skill(finalize-step-plugin-doctor)'), 1)
+
+    def test_wildcard_coverage_short_circuits_add(self):
+        """Covering wildcard Skill({skill}:*) prevents adding bare Skill({skill})."""
+        marshal = self._write_marshal({'phase-5-execute': ['project:verify-workflow']})
+        settings = self._write_settings(['Skill(verify-workflow:*)'])
+
+        result = cmd_apply_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, dry_run=False)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['added'], [])
+        allow = self._read_settings(settings)['permissions']['allow']
+        self.assertNotIn('Skill(verify-workflow)', allow)
 
 
 # =============================================================================

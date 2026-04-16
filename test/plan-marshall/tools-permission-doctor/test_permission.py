@@ -13,7 +13,11 @@ Tier 3 (subprocess) retained for CLI plumbing and --scope tests.
 import json
 from argparse import Namespace
 
-from permission_doctor import cmd_detect_redundant, cmd_detect_suspicious  # type: ignore[import-not-found]
+from permission_doctor import (  # type: ignore[import-not-found]
+    cmd_detect_missing_project_step_permissions,
+    cmd_detect_redundant,
+    cmd_detect_suspicious,
+)
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
@@ -316,6 +320,120 @@ class TestScopeOption(ScriptTestCase):
 
 
 # =============================================================================
+# Tier 2: Direct import tests for detect-missing-project-step-permissions
+# =============================================================================
+
+
+class TestDetectMissingProjectStepPermissions(ScriptTestCase):
+    """Test permission_doctor.py detect-missing-project-step-permissions subcommand."""
+
+    bundle = 'plan-marshall'
+    skill = 'tools-permission-doctor'
+    script = 'permission_doctor.py'
+
+    def _write_marshal(self, phase_steps: dict[str, list[str]]) -> str:
+        """Write a marshal.json with the given phase step configuration."""
+        marshal = {'plan': {phase: {'steps': steps} for phase, steps in phase_steps.items()}}
+        marshal_file = self.temp_dir / 'marshal.json'
+        marshal_file.write_text(json.dumps(marshal))
+        return str(marshal_file)
+
+    def _write_settings(self, allow: list[str]) -> str:
+        """Write a .claude/settings.json with the given allow list."""
+        settings = {'permissions': {'allow': allow, 'deny': [], 'ask': []}}
+        settings_file = self.temp_dir / 'settings.json'
+        settings_file.write_text(json.dumps(settings))
+        return str(settings_file)
+
+    def test_missing_project_step_permission_detected(self):
+        """Project:{skill} step with no matching Skill() rule is reported missing."""
+        marshal = self._write_marshal({'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
+        settings = self._write_settings(['Edit(.plan/**)'])
+
+        result = cmd_detect_missing_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, scope=None)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(len(result['missing']), 1)
+        self.assertEqual(result['missing'][0]['skill'], 'finalize-step-plugin-doctor')
+        self.assertEqual(result['missing'][0]['phase'], 'phase-6-finalize')
+
+    def test_exact_skill_rule_covers_project_step(self):
+        """Exact Skill({skill}) rule marks the step as present."""
+        marshal = self._write_marshal({'phase-6-finalize': ['project:sync-plugin-cache']})
+        settings = self._write_settings(['Skill(sync-plugin-cache)'])
+
+        result = cmd_detect_missing_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, scope=None)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(len(result['missing']), 0)
+        self.assertEqual(len(result['present']), 1)
+        self.assertEqual(result['present'][0]['covered_by'], 'Skill(sync-plugin-cache)')
+
+    def test_wildcard_skill_rule_covers_project_step(self):
+        """Covering wildcard Skill({skill}:*) counts as coverage for bare Skill({skill})."""
+        marshal = self._write_marshal({'phase-5-execute': ['project:verify-workflow']})
+        settings = self._write_settings(['Skill(verify-workflow:*)'])
+
+        result = cmd_detect_missing_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, scope=None)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(len(result['missing']), 0)
+        self.assertEqual(result['present'][0]['covered_by'], 'Skill(verify-workflow:*)')
+
+    def test_no_project_steps_returns_empty(self):
+        """Marshal without project: steps reports empty missing/present lists."""
+        marshal = self._write_marshal({'phase-6-finalize': ['default:commit-push', 'default:create-pr']})
+        settings = self._write_settings([])
+
+        result = cmd_detect_missing_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, scope=None)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(len(result['missing']), 0)
+        self.assertEqual(len(result['present']), 0)
+        self.assertEqual(result['summary']['project_steps_checked'], 0)
+
+    def test_scans_both_phase5_and_phase6(self):
+        """Detection aggregates project: steps across both phase-5-execute and phase-6-finalize."""
+        marshal = self._write_marshal({
+            'phase-5-execute': ['project:verify-workflow'],
+            'phase-6-finalize': ['project:finalize-step-plugin-doctor'],
+        })
+        settings = self._write_settings(['Skill(verify-workflow)'])
+
+        result = cmd_detect_missing_project_step_permissions(
+            Namespace(marshal=marshal, settings=settings, scope=None)
+        )
+
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['summary']['project_steps_checked'], 2)
+        self.assertEqual(len(result['missing']), 1)
+        self.assertEqual(result['missing'][0]['skill'], 'finalize-step-plugin-doctor')
+        self.assertEqual(len(result['present']), 1)
+        self.assertEqual(result['present'][0]['skill'], 'verify-workflow')
+
+    def test_malformed_marshal_returns_error(self):
+        """Malformed marshal.json returns a structured error, not a raise."""
+        marshal_file = self.temp_dir / 'bad-marshal.json'
+        marshal_file.write_text('{not valid json')
+        settings = self._write_settings([])
+
+        result = cmd_detect_missing_project_step_permissions(
+            Namespace(marshal=str(marshal_file), settings=settings, scope=None)
+        )
+
+        self.assertEqual(result['status'], 'error')
+        self.assertIn('Invalid JSON', result['error'])
+
+
+# =============================================================================
 # Tier 3: Subprocess tests for CLI plumbing
 # =============================================================================
 
@@ -340,4 +458,10 @@ def test_detect_redundant_help():
 def test_detect_suspicious_help():
     """detect-suspicious subcommand should have help."""
     result = run_script(SCRIPT_PATH, 'detect-suspicious', '--help')
+    assert result.returncode == 0
+
+
+def test_detect_missing_project_step_permissions_help():
+    """detect-missing-project-step-permissions subcommand should have help."""
+    result = run_script(SCRIPT_PATH, 'detect-missing-project-step-permissions', '--help')
     assert result.returncode == 0

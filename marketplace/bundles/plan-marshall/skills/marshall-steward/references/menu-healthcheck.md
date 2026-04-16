@@ -55,20 +55,44 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 - `added: []` → All wildcards present PASS
 - `added: [...]` → Missing wildcards, offer to add them
 
-If missing wildcards found, ask user:
+### Sub-check: Project-step permission rules
+
+Check that every `project:{skill}` step referenced in `marshal.json` has a matching `Skill({skill})` allow rule in project settings:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-missing-project-step-permissions \
+  --marshal .plan/marshal.json \
+  --scope project
+```
+
+**Interpret results**:
+- `missing: []` → All project-step permissions present PASS
+- `missing: [...]` → Missing rules, report alongside wildcard gaps
+
+Aggregate gaps from both checks into a single prompt. If either `added` (wildcards) or `missing` (project-step rules) is non-empty, ask user once:
+
 ```
 AskUserQuestion:
-  question: "Found {N} missing plugin wildcards. Add them?"
+  question: "Found {N_wildcards} missing plugin wildcards and {N_project_steps} missing project-step rules. Add them?"
   options:
     - label: "Yes"
-      description: "Add missing wildcards to global settings"
+      description: "Add missing wildcards to global settings and project-step rules to project settings"
       value: "yes"
     - label: "No"
       description: "Skip (may cause permission prompts)"
       value: "no"
 ```
 
-If yes, run without `--dry-run`.
+If yes:
+- Run `ensure-wildcards` without `--dry-run` (if wildcards were missing)
+- Run the fix without `--dry-run` (if project-step rules were missing):
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-project-step-permissions \
+    --marshal .plan/marshal.json \
+    --settings .claude/settings.json
+  ```
+
+Include `project_step_permissions` alongside `wildcards` in the Step 7 summary TOON (e.g., `project_step_permissions: {total: 2, missing: 0}`).
 
 ---
 
@@ -145,6 +169,9 @@ executor:
 wildcards:
   total: 16
   missing: 0
+project_step_permissions:
+  total: 2
+  missing: 0
 redundant_permissions: 0
 project_structure: configured
 ci:
@@ -167,6 +194,9 @@ executor:
 wildcards:
   total: 16
   missing: 2
+project_step_permissions:
+  total: 2
+  missing: 1
 redundant_permissions: 3
 project_structure: missing
 ci:
@@ -177,6 +207,7 @@ ci:
 issues:
   - Executor drift detected (regenerate recommended)
   - 2 plugin wildcards missing
+  - 1 project-step permission rule missing
   - 3 redundant permissions in project settings
   - Project structure not configured
   - CI tool 'gh' not authenticated
