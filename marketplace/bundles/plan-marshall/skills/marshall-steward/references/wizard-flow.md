@@ -473,6 +473,29 @@ If no project-level skills are found (`count == 0`), skip this step silently.
 
 ---
 
+**Step 11h: Bulk Populate skills_by_profile**
+
+Populate `skills_by_profile` for every module × every applicable extension so that downstream `phase-4-plan` tasks always receive a non-empty skill list. This `enrich-all` invocation iterates across all discovered modules and all configured domain extensions in a single call, eliminating the need for per-module enrichment loops.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich all
+```
+
+**Output (TOON)**:
+
+| Field | Description |
+|-------|-------------|
+| `modules_enriched` | Count of modules that received at least one `skills_by_profile` update |
+| `pairs_applied` | Number of (module, domain) pairs where skills were successfully written |
+| `pairs_skipped` | Number of (module, domain) pairs that were skipped (not applicable or already populated with identical content) |
+| `errors` | Array of per-pair error entries; empty on a fully clean run |
+
+**Handling errors**: If `errors` is non-empty, log the error list for review. The run is still considered successful because each (module, domain) pair is isolated — a failure on one pair does not block others from being populated. Do not abort the wizard.
+
+**Idempotency**: The command is idempotent — re-running `/marshall-steward` is safe and produces `pairs_applied=0` on subsequent runs when nothing has changed, so the wizard can be executed repeatedly without side effects.
+
+---
+
 ## Step 12: Verify Skill Domain Configuration
 
 Skill domains configure which implementation skills are loaded during plan execution. The `system` domain holds task_executors (profile -> skill); technical domains hold bundle reference and workflow_skill_extensions (outline, triage).

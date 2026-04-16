@@ -174,6 +174,15 @@ def main() -> int:
         '--profiles', help='Comma-separated profiles to include (overrides config and detection)'
     )
 
+    # enrich all
+    enrich_all_parser = enrich_subparsers.add_parser(
+        'all', help='Populate skills_by_profile for every module x every applicable extension'
+    )
+    enrich_all_parser.add_argument(
+        '--include-optionals', dest='include_optionals', action='store_true', help='Include optional skills'
+    )
+    enrich_all_parser.add_argument('--reasoning', help='Shared rationale appended to every enriched module')
+
     # =========================================================================
     # Parse and Dispatch
     # =========================================================================
@@ -193,6 +202,7 @@ def main() -> int:
     )
     from _cmd_enrich import (
         cmd_enrich_add_domain,
+        cmd_enrich_all,
         cmd_enrich_best_practice,
         cmd_enrich_dependencies,
         cmd_enrich_insight,
@@ -238,6 +248,7 @@ def main() -> int:
             'insight': cmd_enrich_insight,
             'best-practice': cmd_enrich_best_practice,
             'add-domain': cmd_enrich_add_domain,
+            'all': cmd_enrich_all,
         }
         handler = enrich_handlers.get(args.enrich_command)
     else:
