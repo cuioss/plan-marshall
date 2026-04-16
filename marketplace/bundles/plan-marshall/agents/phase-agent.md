@@ -28,7 +28,7 @@ The agent layer is intentionally thin. Rather than creating a specialized agent 
 | `source` | string | No | Source type for phase-1-init |
 | `content` | string | No | Content for phase-1-init |
 | `task_number` | number | No | Task number for phase-5-execute |
-| `worktree_path` | string | Conditional | Absolute path to the active git worktree root. Required whenever the plan runs in an isolated worktree; surfaced by `plan-marshall:phase-5-execute` as its `[STATUS] Active worktree: ...` work-log line. When provided, the loaded skill MUST use this path as the mandatory root for all Edit/Write/Read operations and MUST echo the constraint into any further subagent dispatch. |
+| `worktree_path` | string | Conditional | Absolute path to the active git worktree root. Required whenever the plan runs in an isolated worktree. When provided, the loaded skill MUST use this path as the mandatory root for all Edit/Write/Read operations and MUST echo the constraint into any further subagent dispatch using the Worktree Header protocol defined in `plan-marshall:phase-5-execute`. |
 
 ## Step 1: Load Foundational Practices
 

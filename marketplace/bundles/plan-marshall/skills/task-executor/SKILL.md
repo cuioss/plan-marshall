@@ -39,9 +39,9 @@ Every invocation of this skill MUST provide the following inputs:
 |-----------|------|----------|-------------|
 | `plan_id` | string | Yes | Plan identifier (used by all manage-* script calls) |
 | `task_number` | number | Yes | Numeric task id to execute |
-| `worktree_path` | string | Conditional | Absolute path to the active git worktree root. REQUIRED whenever the plan runs in an isolated worktree — surfaced by `plan-marshall:phase-5-execute` as its `[STATUS] Active worktree: ...` work-log line and embedded in every dispatch prompt (per the phase-5-execute Dispatch Protocol). When provided, `worktree_path` is the mandatory root for all Edit/Write/Read tool calls during this task. Omit only when the plan runs against the main checkout. |
+| `worktree_path` | string | Conditional | Absolute path to the active git worktree root. REQUIRED whenever the plan runs in an isolated worktree. When provided, `worktree_path` is the mandatory root for all Edit/Write/Read tool calls during this task. Omit only when the plan runs against the main checkout. |
 
-Callers (typically `phase-agent` dispatching this skill) MUST forward `worktree_path` verbatim when available. Child subagent dispatches issued from within this skill MUST echo the same `worktree_path` into their own prompts.
+Callers (typically `phase-agent` dispatching this skill) MUST forward `worktree_path` verbatim when available. Child subagent dispatches issued from within this skill MUST echo the Worktree Header (see `plan-marshall:phase-5-execute` Dispatch Protocol) into their own prompts.
 
 All profiles share the steps below. Profile-specific steps are documented in each profile section.
 
