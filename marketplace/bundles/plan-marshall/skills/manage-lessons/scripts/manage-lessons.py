@@ -232,14 +232,22 @@ def cmd_list(args: argparse.Namespace) -> dict:
                 title = line[2:].strip()
                 break
 
-        lessons.append(
-            {
-                'id': metadata.get('id', path.stem),
-                'component': metadata.get('component', ''),
-                'category': metadata.get('category', ''),
-                'title': title,
-            }
-        )
+        entry = {
+            'id': metadata.get('id', path.stem),
+            'component': metadata.get('component', ''),
+            'category': metadata.get('category', ''),
+            'title': title,
+        }
+
+        if args.full:
+            body_start = 0
+            for i, line in enumerate(content.split('\n')):
+                if line.startswith('# '):
+                    body_start = i + 1
+                    break
+            entry['content'] = '\n'.join(content.split('\n')[body_start:]).strip()
+
+        lessons.append(entry)
 
     return {'status': 'success', 'total': total, 'filtered': len(lessons), 'lessons': lessons}
 
@@ -351,6 +359,7 @@ def main() -> int:
     list_parser = subparsers.add_parser('list', help='List lessons')
     list_parser.add_argument('--component', help='Filter by component')
     list_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Filter by category')
+    list_parser.add_argument('--full', action='store_true', help='Include full lesson body content')
     list_parser.set_defaults(func=cmd_list)
 
     # convert-to-plan
