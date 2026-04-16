@@ -62,7 +62,6 @@ from marketplace_bundles import (  # noqa: E402, I001
     build_pythonpath,
     collect_script_dirs,
     resolve_bundle_path,
-    resolve_bundles_root,
 )
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402, I001
 from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402, I001
@@ -84,15 +83,6 @@ def state_path() -> Path:
 def logs_dir() -> Path:
     return _get_plan_base_dir() / 'logs'
 
-# Script-relative bundles root, resolved by walking up to a plan-marshall bundle
-# ancestor. Falls back to None when running from a context without an ancestor
-# bundle, in which case get_base_path() drops back to cwd-based discovery.
-try:
-    _BUNDLES_FROM_SCRIPT: Path | None = resolve_bundles_root(Path(__file__))
-except RuntimeError:
-    _BUNDLES_FROM_SCRIPT = None
-
-
 # ============================================================================
 # PATH RESOLUTION (delegates to shared modules)
 # ============================================================================
@@ -105,7 +95,7 @@ def get_base_path(use_marketplace: bool = False) -> Path:
     Delegates to shared marketplace_paths module.
     """
     scope = 'marketplace' if use_marketplace else 'cache-first'
-    return _shared_get_base_path(scope, script_bundles_dir=_BUNDLES_FROM_SCRIPT)
+    return _shared_get_base_path(scope)
 
 
 def _resolve_bundle_path(base_path: Path, bundle_name: str, subpath: str) -> Path:
