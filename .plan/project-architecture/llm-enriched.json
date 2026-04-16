@@ -112,6 +112,16 @@
               "skill": "pm-plugin-development:plugin-architecture",
               "description": "Architecture principles, skill patterns, and design guidance for building marketplace components"
             }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script development standards, implementation patterns, and output contracts \u2014 use for script-heavy plugin tasks"
+            },
+            {
+              "skill": "pm-dev-python:python-core",
+              "description": "Python 3.10+ standards for type annotations, data structures, error handling, and async patterns (script-heavy tasks)"
+            }
           ]
         },
         "module_testing": {
@@ -119,6 +129,16 @@
             {
               "skill": "pm-plugin-development:plugin-architecture",
               "description": "Architecture principles, skill patterns, and design guidance for building marketplace components"
+            }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-plugin-development:plugin-script-architecture",
+              "description": "Script testing patterns and output contract verification"
+            },
+            {
+              "skill": "pm-dev-python:pytest-testing",
+              "description": "pytest framework, fixtures, parametrization, mocking, and coverage (script test tasks)"
             }
           ]
         },
@@ -128,10 +148,16 @@
               "skill": "pm-plugin-development:plugin-architecture",
               "description": "Architecture principles, skill patterns, and design guidance for building marketplace components"
             }
+          ],
+          "optionals": [
+            {
+              "skill": "pm-dev-python:python-core",
+              "description": "Core Python patterns for code review context"
+            }
           ]
         }
       },
-      "skills_by_profile_reasoning": "Core bundle containing plugin infrastructure and workflow engine; Contains build abstraction layer for Maven, Gradle, npm, and Python; Contains general development practices and code quality skills",
+      "skills_by_profile_reasoning": "Enriched with Python optionals from pm-dev-python and script-architecture from pm-plugin-development extensions",
       "tips": [],
       "insights": [],
       "best_practices": []
