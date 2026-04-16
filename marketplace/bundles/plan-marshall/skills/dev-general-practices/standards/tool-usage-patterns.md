@@ -80,11 +80,13 @@ Grep(pattern="pattern", path="/path", glob="*.md", output_mode="content")
 
 ## When Bash IS Appropriate
 
-**Git operations:**
+**Git operations** (always use `git -C {path}` — never `cd {path} && git ...`):
 ```
-Bash(command="git status")
-Bash(command="git log --oneline -10")
+Bash(command="git -C /path/to/worktree status")
+Bash(command="git -C /path/to/worktree log --oneline -10")
 ```
+
+When a plan runs in an isolated worktree, `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. See [Git: use git -C, not cd+git](#git-use-git--c-not-cdgit) below for the rule and rationale.
 
 **CI/Git provider operations (PRs, issues, CI status, reviews):**
 
@@ -119,6 +121,20 @@ Each Bash call must contain exactly ONE command. Never combine with newlines, `&
 ### No shell constructs
 
 `$()` substitution, `for` loops, `while` loops, and subshells all trigger Claude Code's security prompt. Make individual Bash calls per iteration instead.
+
+### Git: use `git -C`, not `cd`+`git`
+
+Every repo-targeted git command MUST use `git -C {path} <subcommand>`. The compound form `cd {path} && git <subcommand>` is forbidden because it (a) trips Claude Code's bare-repository security heuristic and pops a permission prompt that disrupts the user, and (b) is two commands joined by `&&`, violating the [One command per call](#one-command-per-call) rule above.
+
+```
+# BAD — security prompt + violates one-command-per-call
+Bash(command="cd /path/to/worktree && git log --oneline -5")
+
+# GOOD — single command, no prompt
+Bash(command="git -C /path/to/worktree log --oneline -5")
+```
+
+When a plan runs in an isolated worktree, `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use `git -C .` — never `cd && git`. The same rule applies inside `Skill: plan-marshall:workflow-integration-git` and any agent that delegates git to Bash.
 
 ### No heredocs with # lines
 
