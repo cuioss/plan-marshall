@@ -26,41 +26,41 @@ GitHub-specific PR review comment workflow — fetching comments and triaging th
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `pr` | int | no | auto-detect | PR number (auto-detects current branch's PR if omitted) |
-| `unresolved-only` | bool | no | false | Only return unresolved comments (fetch-comments) |
+| `unresolved-only` | bool | no | false | Only return unresolved comments (`pr comments`) |
 
 ## Architecture
 
 ```
 workflow-integration-github (GitHub PR comment workflow)
-  ├─> github.py (GitHub operations via gh CLI)
-  ├─> pr.py (comment fetch, triage)
+  ├─> github_ops.py (GitHub operations via gh CLI — PR, CI, issue)
+  ├─> github_pr.py (PR comment triage — delegates to github_ops for fetch)
   └─> triage_helpers (ref-toon-format) — shared triage, error handling
 ```
 
-This skill is the GitHub provider in the CI provider model. The central dispatcher (`tools-integration-ci:ci`) routes to this skill's `github.py` for all GitHub operations.
+This skill is the GitHub provider in the CI provider model. The central dispatcher (`tools-integration-ci:ci`) routes to this skill's `github_ops.py` for all GitHub operations.
 
 ## Usage Examples
 
 ```bash
 # Fetch comments for current branch's PR
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:pr fetch-comments
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments
 
 # Fetch comments for specific PR
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:pr fetch-comments --pr 123
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments --pr-number 123
 
 # Triage a single comment
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:pr triage --comment '{"id":"C1","body":"Fix this","path":"src/Main.java","line":42}'
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr triage --comment '{"id":"C1","body":"Fix this","path":"src/Main.java","line":42}'
 
 # Batch triage multiple comments
-python3 .plan/execute-script.py plan-marshall:workflow-integration-github:pr triage-batch --comments '[{"id":"C1","body":"Bug here"},{"id":"C2","body":"LGTM"}]'
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr triage-batch --comments '[{"id":"C1","body":"Bug here"},{"id":"C2","body":"LGTM"}]'
 ```
 
 ## Scripts
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| github | `plan-marshall:workflow-integration-github:github` | GitHub operations via gh CLI |
-| pr | `plan-marshall:workflow-integration-github:pr` | PR comment fetch and triage |
+| github_ops | `plan-marshall:workflow-integration-github:github_ops` | GitHub PR, CI, and issue operations via gh CLI |
+| github_pr | `plan-marshall:workflow-integration-github:github_pr` | PR review comment triage (delegates to github_ops for fetch) |
 
 ## Consumers
 
@@ -80,7 +80,7 @@ This skill is consumed by:
 1. **Get PR Comments**
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:pr fetch-comments [--pr {number}]
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr comments [--pr-number {number}]
    ```
 
 2. **Return Comment List**
@@ -103,7 +103,7 @@ This skill is consumed by:
 1. **Get Comments** — use Fetch Comments workflow with `--unresolved-only`
 2. **Triage All Comments (Batch)**:
    ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:pr triage-batch --comments '[...]'
+   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr triage-batch --comments '[...]'
    ```
 3. **Process by Action Type**
 
@@ -126,7 +126,7 @@ Classification patterns are data-driven — loaded from `standards/comment-patte
 
 | Failure | Action |
 |---------|--------|
-| fetch-comments failure | Report error to caller with stderr details |
+| `pr comments` failure | Report error to caller with stderr details |
 | triage failure | Log warning, skip comment, continue |
 | CI router failure | Log warning, continue — best-effort |
 
