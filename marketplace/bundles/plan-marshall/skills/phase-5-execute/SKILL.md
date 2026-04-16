@@ -33,6 +33,22 @@ Skill: plan-marshall:dev-general-practices
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 - On phase entry (Step 3), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run. If present, every subsequent Edit/Write/Read must reference that path as the root.
+- Every subagent dispatch (Task / Skill / phase-agent invocation) MUST embed the `worktree_path` directly in the dispatch prompt when a worktree is active. See **Dispatch Protocol** below.
+
+## Dispatch Protocol (Worktree Header)
+
+**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 3), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the following header:
+
+```
+WORKTREE: {worktree_path}
+All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+```
+
+The `[STATUS] Active worktree: ...` work-log line remains the observability signal that the worktree was detected, but it is informational only — the active propagation mechanism is embedding the header in every dispatch prompt. Skip the header only when no worktree is active.
+
+This applies to every dispatch in the execution loop, including (but not limited to) **Step 5 (Execute Steps)** task dispatches and **Step 8 (Independent Change Verification)** subagent invocations. Child agents must echo the same header verbatim into any further dispatches they issue.
+
+See `standards/operations.md` for the complete set of dispatch pattern templates updated with this header.
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -195,7 +211,7 @@ Returns next task with status `pending` or `in_progress`, including embedded goa
 
 For each step in task's `steps[]` array:
 1. Parse the step text
-2. Execute the action (delegate if specified)
+2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `phase-agent`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
 3. Mark step complete via `manage-tasks:finalize-step`
 
 ### Step 6: Mark Step Complete
@@ -221,7 +237,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Applies to**: `implementation` and `module_testing` profile tasks only. Skip this step for `verification` profile tasks.
 
-After task completion but before committing, independently verify that the task agent produced genuine results rather than trusting self-reports.
+After task completion but before committing, independently verify that the task agent produced genuine results rather than trusting self-reports. Any subagent dispatch made during this step (e.g., a follow-up Task invocation) MUST embed the Worktree Header per the **Dispatch Protocol** section above.
 
 **8a. File-change invariant**: Verify that at least one file was modified in the worktree. Run in the worktree directory (or main checkout if no worktree):
 
