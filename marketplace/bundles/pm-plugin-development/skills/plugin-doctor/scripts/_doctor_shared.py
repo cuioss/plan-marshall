@@ -144,6 +144,88 @@ def discover_components(bundle_dir: Path) -> dict[str, list[dict]]:
     return components
 
 
+def resolve_component_paths(paths: list[str]) -> list[tuple[Path, str]]:
+    """Resolve explicit path strings to (absolute_path, component_type) tuples.
+
+    For each path:
+    - Resolve to absolute (relative paths resolved against cwd)
+    - Verify it exists
+    - Auto-detect component type from directory structure
+
+    Detection order:
+    1. Has ``SKILL.md`` -> type "skill"
+    2. Has markdown file matching agent frontmatter patterns -> type "agent"
+    3. Has markdown file matching command frontmatter patterns -> type "command"
+    4. Fallback: check parent directory name (``skills/``, ``agents/``, ``commands/``)
+
+    Invalid/missing paths produce a warning on stderr and are skipped.
+
+    Args:
+        paths: List of path strings (absolute or relative to cwd).
+
+    Returns:
+        List of (resolved_path, component_type) tuples.
+    """
+    results: list[tuple[Path, str]] = []
+    for path_str in paths:
+        resolved = Path(path_str).resolve()
+        if not resolved.exists():
+            print(f'WARNING: path does not exist, skipping: {path_str}', file=sys.stderr)
+            continue
+
+        # If it's a file, use its parent directory for detection
+        detect_dir = resolved if resolved.is_dir() else resolved.parent
+
+        component_type = _detect_component_type(detect_dir)
+        results.append((resolved, component_type))
+    return results
+
+
+def _detect_component_type(directory: Path) -> str:
+    """Detect component type from directory structure.
+
+    Args:
+        directory: Directory to inspect.
+
+    Returns:
+        One of "skill", "agent", "command", or "unknown".
+    """
+    # Check for SKILL.md -> skill
+    if (directory / 'SKILL.md').is_file():
+        return 'skill'
+
+    # Check markdown files for agent/command frontmatter patterns
+    for md_file in directory.glob('*.md'):
+        if not md_file.is_file():
+            continue
+        try:
+            content = md_file.read_text(encoding='utf-8')[:2048]
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        has_fm, fm_text = extract_frontmatter(content)
+        if not has_fm:
+            continue
+
+        # Agent frontmatter typically has 'tools:' with Task/Skill entries
+        if re.search(r'^\s*tools\s*:', fm_text, re.MULTILINE):
+            return 'agent'
+        # Command frontmatter typically has 'allowed-tools:' or starts with /
+        if re.search(r'^\s*allowed-tools\s*:', fm_text, re.MULTILINE):
+            return 'command'
+
+    # Fallback: check parent directory name
+    parent_name = directory.parent.name.lower()
+    if parent_name == 'skills':
+        return 'skill'
+    if parent_name == 'agents':
+        return 'agent'
+    if parent_name == 'commands':
+        return 'command'
+
+    return 'unknown'
+
+
 def find_bundle_for_file(file_path: Path, marketplace_root: Path) -> Path | None:
     """Find the bundle directory containing a file."""
     current = file_path.parent
