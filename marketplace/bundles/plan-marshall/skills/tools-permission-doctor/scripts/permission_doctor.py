@@ -4,6 +4,8 @@
 Provides:
 - detect-redundant: Detect redundant permissions between global and local settings
 - detect-suspicious: Detect suspicious permissions matching anti-patterns
+- detect-missing-project-step-permissions: Detect project:{skill} steps in marshal.json
+  without matching Skill({skill}) allow rules in project settings
 """
 
 import argparse
@@ -388,6 +390,116 @@ def cmd_detect_suspicious(args) -> dict:
 
 
 # =============================================================================
+# detect-missing-project-step-permissions subcommand
+# =============================================================================
+
+# Phases in marshal.json that may contain project:{skill} step references
+PROJECT_STEP_PHASES = ('phase-5-execute', 'phase-6-finalize')
+
+
+def load_marshal_config(path: str) -> tuple[dict, str | None]:
+    """Load marshal.json config file.
+
+    Args:
+        path: Absolute or relative path to marshal.json.
+
+    Returns:
+        Tuple of (config_dict, error_message). Error is None on success.
+    """
+    marshal_path = Path(path)
+    if not marshal_path.exists():
+        return {}, f'marshal.json not found: {path}'
+
+    try:
+        with open(marshal_path) as f:
+            data = json.load(f)
+        return data, None
+    except json.JSONDecodeError as e:
+        return {}, f'Invalid JSON in {path}: {e}'
+
+
+def extract_project_steps(marshal_config: dict) -> list[dict]:
+    """Enumerate project:{skill} step references from marshal.json.
+
+    Scans phases in PROJECT_STEP_PHASES under `plan.{phase}.steps` and filters
+    entries beginning with `project:`.
+
+    Returns:
+        List of dicts with keys: skill, step, phase.
+    """
+    plan = marshal_config.get('plan', {})
+    project_steps = []
+
+    for phase in PROJECT_STEP_PHASES:
+        phase_config = plan.get(phase, {})
+        steps = phase_config.get('steps', [])
+        for step in steps:
+            if isinstance(step, str) and step.startswith('project:'):
+                skill = step[len('project:'):]
+                project_steps.append({'skill': skill, 'step': step, 'phase': phase})
+
+    return project_steps
+
+
+def skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
+    """Check if a skill is covered by an allow rule.
+
+    Matches exact `Skill({skill})` or covering wildcard `Skill({skill}:*)`.
+
+    Returns:
+        The matching rule string, or None if no match found.
+    """
+    exact = f'Skill({skill})'
+    wildcard = f'Skill({skill}:*)'
+    for rule in allow_list:
+        if rule == exact or rule == wildcard:
+            return rule
+    return None
+
+
+def cmd_detect_missing_project_step_permissions(args) -> dict:
+    """Handle detect-missing-project-step-permissions subcommand."""
+    marshal_config, marshal_error = load_marshal_config(args.marshal)
+    if marshal_error:
+        return {'status': 'error', 'error': marshal_error}
+
+    if args.scope:
+        settings_path = str(get_project_settings_path()) if args.scope == 'project' else str(get_global_settings_path())
+    else:
+        settings_path = args.settings
+
+    settings, settings_error = load_settings(settings_path)
+    if settings_error:
+        return {'status': 'error', 'error': settings_error}
+
+    allow_list = settings.get('permissions', {}).get('allow', [])
+    project_steps = extract_project_steps(marshal_config)
+
+    missing = []
+    present = []
+    for entry in project_steps:
+        covering = skill_permission_covered(entry['skill'], allow_list)
+        if covering is None:
+            missing.append(entry)
+        else:
+            present.append({**entry, 'covered_by': covering})
+
+    result = {
+        'missing': missing,
+        'present': present,
+        'summary': {
+            'missing_count': len(missing),
+            'present_count': len(present),
+            'project_steps_checked': len(project_steps),
+        },
+        'marshal_path': args.marshal,
+        'settings_path': settings_path,
+        'status': 'success',
+    }
+    return result
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -415,6 +527,17 @@ def main():
     p_sus_group.add_argument('--scope', choices=['global', 'project'], help='Target scope (auto-resolves path)')
     p_sus.add_argument('--approved-file', help='Path to run-configuration file with user-approved permissions')
     p_sus.set_defaults(func=cmd_detect_suspicious)
+
+    # detect-missing-project-step-permissions subcommand
+    p_missing = subparsers.add_parser(
+        'detect-missing-project-step-permissions',
+        help='Detect project:{skill} steps in marshal.json without matching Skill() allow rules',
+    )
+    p_missing.add_argument('--marshal', required=True, help='Path to marshal.json')
+    p_missing_group = p_missing.add_mutually_exclusive_group(required=True)
+    p_missing_group.add_argument('--settings', help='Path to settings file to check')
+    p_missing_group.add_argument('--scope', choices=['global', 'project'], help='Target scope (auto-resolves path)')
+    p_missing.set_defaults(func=cmd_detect_missing_project_step_permissions)
 
     args = parser.parse_args()
 

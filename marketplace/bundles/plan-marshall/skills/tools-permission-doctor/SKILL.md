@@ -111,6 +111,37 @@ summary:
 
 ---
 
+### Operation: detect-missing-project-step-permissions
+
+Detect `project:{skill}` step references in `marshal.json` that lack matching `Skill({skill})` allow rules in settings.
+
+**Script**: `permission_doctor.py detect-missing-project-step-permissions`
+
+**Input**:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-missing-project-step-permissions \
+  --marshal {marshal_path} \
+  (--settings {settings_path} | --scope project|global)
+```
+
+**Scan scope**: `plan.phase-5-execute.steps` and `plan.phase-6-finalize.steps`. Entries starting with `project:` are enumerated; the substring after `project:` is matched against `permissions.allow` as either exact `Skill({skill})` or covering wildcard `Skill({skill}:*)`.
+
+**Output (TOON)**:
+```
+missing[1]{skill,step,phase}:
+finalize-step-plugin-doctor	project:finalize-step-plugin-doctor	phase-6-finalize
+present[1]{skill,step,phase,covered_by}:
+sync-plugin-cache	project:sync-plugin-cache	phase-6-finalize	Skill(sync-plugin-cache)
+summary:
+  missing_count: 1
+  present_count: 1
+  project_steps_checked: 2
+```
+
+**Usage**: Run during health check and after `set-steps` configuration to surface missing `Skill()` allow rules. Pair with `tools-permission-fix:apply-project-step-permissions` to auto-add missing entries.
+
+---
+
 ### Operation: analyze-settings
 
 High-level analysis of settings files for permission issues.
@@ -143,6 +174,7 @@ recommendations[2]:
 |--------|------------|---------|
 | `permission_doctor.py` | `detect-redundant` | Detects redundant permissions between global/local |
 | `permission_doctor.py` | `detect-suspicious` | Detects security anti-patterns in permissions |
+| `permission_doctor.py` | `detect-missing-project-step-permissions` | Detects `project:{skill}` steps in `marshal.json` without matching `Skill()` allow rules |
 | `permission_common.py` | (library) | Shared utilities for settings loading and path resolution (also used by `tools-permission-fix`) |
 
 ## Standards Organization
