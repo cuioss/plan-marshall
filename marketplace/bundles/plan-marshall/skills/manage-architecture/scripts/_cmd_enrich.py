@@ -335,14 +335,20 @@ def enrich_add_domain(
         merged = dict(existing)
         if 'defaults' not in merged:
             merged['defaults'] = []
+        added_in_profile = False
         for entry in new_entries:
             skill_name = entry.get('skill', entry) if isinstance(entry, dict) else entry
             if skill_name not in existing_names:
                 merged['defaults'].append(entry)
                 existing_names.add(skill_name)
+                added_in_profile = True
 
         current[profile_name] = merged
-        profiles_updated.append(profile_name)
+        # Only report the profile as updated when at least one new skill was
+        # actually added. Re-running with identical inputs must be a no-op so
+        # that enrich_all's pairs_applied/pairs_skipped counters stay idempotent.
+        if added_in_profile:
+            profiles_updated.append(profile_name)
 
     enriched['modules'][module_name]['skills_by_profile'] = current
 
@@ -363,6 +369,75 @@ def enrich_add_domain(
         'profiles_updated': profiles_updated,
         'skills_by_profile': current,
     }
+
+
+def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasoning: str | None = None) -> dict:
+    """Populate skills_by_profile for every module × every applicable extension.
+
+    Iterates all modules from derived data and all discovered extensions. For each
+    (module, domain) pair where the extension's applies_to_module() returns skills,
+    delegates to enrich_add_domain() to merge skills into the module's enrichment.
+
+    Returns a summary dict. Safe to re-run (idempotent — existing skills are not duplicated).
+    """
+    from extension_discovery import discover_all_extensions
+
+    # Load derived data (raises DataNotFoundError if missing)
+    derived = load_derived_data(project_dir)
+    module_names = get_module_names(derived)
+
+    extensions = discover_all_extensions()
+
+    summary = {
+        'status': 'success',
+        'modules_enriched': [],
+        'pairs_applied': 0,
+        'pairs_skipped': 0,
+        'errors': [],
+    }
+    enriched_set = set()
+
+    for module_name in module_names:
+        for ext in extensions:
+            ext_module = ext.get('module')
+            bundle = ext.get('bundle', 'unknown')
+            if ext_module is None:
+                continue
+            try:
+                all_domains = ext_module.get_skill_domains()
+            except Exception as e:
+                summary['errors'].append(f'{bundle}: get_skill_domains() raised {e}')
+                continue
+            for domain_info in all_domains:
+                domain_key = domain_info.get('domain', {}).get('key')
+                if not domain_key or domain_key == 'system':
+                    continue
+                try:
+                    result = enrich_add_domain(
+                        module_name,
+                        domain_key,
+                        project_dir=project_dir,
+                        include_optionals=include_optionals,
+                        reasoning=reasoning,
+                    )
+                except ModuleNotFoundInProjectError as e:
+                    summary['errors'].append(f'{module_name}/{domain_key}: {e}')
+                    continue
+                except ValueError:
+                    # Domain not present in extensions (shouldn't happen here); skip
+                    summary['pairs_skipped'] += 1
+                    continue
+                except Exception as e:
+                    summary['errors'].append(f'{module_name}/{domain_key}: {e}')
+                    continue
+                if result.get('profiles_updated'):
+                    summary['pairs_applied'] += 1
+                    if module_name not in enriched_set:
+                        enriched_set.add(module_name)
+                        summary['modules_enriched'].append(module_name)
+                else:
+                    summary['pairs_skipped'] += 1
+    return summary
 
 
 def enrich_skills_by_profile(
@@ -648,5 +723,17 @@ def cmd_enrich_add_domain(args) -> dict:
         return handle_module_not_found_result(args.module, args.project_dir)
     except (DataNotFoundError, ValueError) as e:
         return {'status': 'error', 'error': str(e)}
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+
+def cmd_enrich_all(args) -> dict:
+    """CLI handler for enrich all command."""
+    try:
+        include_optionals = getattr(args, 'include_optionals', False)
+        reasoning = getattr(args, 'reasoning', None)
+        return enrich_all(args.project_dir, include_optionals, reasoning)
+    except DataNotFoundError:
+        return _enrichment_not_found_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
