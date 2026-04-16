@@ -22,6 +22,7 @@ Skill: plan-marshall:dev-general-practices
 
 **Prohibited actions:**
 - Never target file paths outside the active git worktree. The authoritative source for the worktree root is the **Input Contract** below: when `worktree_path` is provided, every Edit/Write/Read tool call during task execution MUST resolve against that path — never against the main checkout. Editing the main checkout pollutes uncommitted state, bypasses worktree isolation, and lets tests silently load stale source via PYTHONPATH.
+- Never run git as a `cd {worktree_path} && git ...` compound. All git commands during task execution MUST use the `git -C {worktree_path} <subcommand>` form, where `{worktree_path}` is the value provided via the Input Contract. The compound form trips Claude Code's bare-repository security prompt and simultaneously violates the Bash one-command-per-call rule. See `dev-general-practices` Hard Rules for the full rule and rationale.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline

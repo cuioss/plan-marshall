@@ -153,6 +153,35 @@ total: 16
 dry_run: true
 ```
 
+### apply-project-step-permissions - Add Skill() Rules for project: Steps
+
+Append `Skill({skill})` allow rules for every `project:{skill}` entry in `marshal.json` under `phase-5-execute.steps` and `phase-6-finalize.steps` that does not already have a matching rule (exact or covering wildcard).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-project-step-permissions \
+  --marshal .plan/marshal.json \
+  --settings .claude/settings.json \
+  --dry-run
+```
+
+**Output (TOON)**:
+```
+added[1]:
+- Skill(finalize-step-plugin-doctor)
+missing[1]{skill,step,phase,rule}:
+finalize-step-plugin-doctor	project:finalize-step-plugin-doctor	phase-6-finalize	Skill(finalize-step-plugin-doctor)
+already_present[1]{skill,step,phase,covered_by}:
+sync-plugin-cache	project:sync-plugin-cache	phase-6-finalize	Skill(sync-plugin-cache)
+summary:
+  added_count: 1
+  already_present_count: 1
+  project_steps_checked: 2
+dry_run: true
+applied: false
+```
+
+**Usage**: Pair with `tools-permission-doctor:detect-missing-project-step-permissions` to close the gap surfaced by the health check — run doctor to detect, then fix to apply.
+
 ## Target Selection
 
 The `add`, `remove`, and `ensure` operations support `--target`:

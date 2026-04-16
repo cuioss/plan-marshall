@@ -164,6 +164,31 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
 ```
 
+After `set-steps` completes for phase-5-execute, validate that every `project:` step in the new selection has a matching `Skill()` allow rule:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission_doctor detect-missing-project-step-permissions \
+  --marshal .plan/marshal.json \
+  --scope project
+```
+
+If `missing` is non-empty, ask user:
+```
+AskUserQuestion:
+  question: "{N} project-step(s) in your phase-5-execute selection lack matching Skill() allow rules. Add them?"
+  options:
+    - label: "Yes"
+      description: "Add missing rules to project settings to avoid permission prompts"
+    - label: "No"
+      description: "Skip (may cause permission prompts during execute)"
+```
+
+If yes, apply fixes:
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-project-step-permissions \
+  --marshal .plan/marshal.json \
+  --settings .claude/settings.json
+```
+
 **Finalize steps** (phase-6-finalize): Discover available steps, present as multi-select, apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
@@ -172,6 +197,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-f
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
 ```
+
+After `set-steps` completes for phase-6-finalize, repeat the same project-step validation and auto-fix flow described above for phase-5 — the same `detect-missing-project-step-permissions` and `apply-project-step-permissions` calls cover both phases.
 
 **PR merge strategy**: Ask user for the merge strategy used when merging PRs during branch cleanup (default: squash):
 

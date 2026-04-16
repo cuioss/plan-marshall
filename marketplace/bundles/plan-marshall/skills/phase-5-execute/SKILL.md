@@ -190,10 +190,12 @@ Extract `worktree_path` from the output. If present (plan runs in an isolated wo
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Active worktree: {worktree_path} — all Edit/Write/Read tool calls MUST target this path, NOT the main checkout"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-5-execute) Active worktree: {worktree_path} — all Edit/Write/Read tool calls MUST target this path, NOT the main checkout. ALL git commands MUST use 'git -C {worktree_path} <subcommand>' — NEVER 'cd {worktree_path} && git ...' (compound form trips the bare-repository security prompt and violates Bash one-command-per-call)."
 ```
 
-If `worktree_path` is absent (plan runs against the main checkout), skip emission. If present, every file path used in Edit/Write/Read from this point on MUST be resolved against `{worktree_path}` rather than the main checkout.
+If `worktree_path` is absent (plan runs against the main checkout), skip emission. If present, every file path used in Edit/Write/Read from this point on MUST be resolved against `{worktree_path}` rather than the main checkout, and every git command MUST use `git -C {worktree_path} <subcommand>` rather than `cd {worktree_path} && git ...`.
+
+When `worktree_path` is absent (main-checkout mode), the `cd && git` prohibition still applies — use `git -C .`. The rule is enforced at the foundational layer in [`dev-general-practices` Hard Rules](../dev-general-practices/SKILL.md#git-always-use-git--c-path-never-cd-path--git-) and reinforced inline here so agents see it next to the worktree path they would use it with.
 
 For each task in current phase:
 
