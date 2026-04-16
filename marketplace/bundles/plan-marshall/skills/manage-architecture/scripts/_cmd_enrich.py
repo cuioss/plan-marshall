@@ -388,14 +388,14 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
 
     extensions = discover_all_extensions()
 
-    summary = {
+    summary: dict[str, Any] = {
         'status': 'success',
         'modules_enriched': [],
         'pairs_applied': 0,
         'pairs_skipped': 0,
         'errors': [],
     }
-    enriched_set = set()
+    enriched_set: set[str] = set()
 
     for module_name in module_names:
         for ext in extensions:
