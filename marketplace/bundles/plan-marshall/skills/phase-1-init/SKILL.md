@@ -289,9 +289,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-1-init) Created feature branch and worktree: feature/{plan_id} at {worktree_path} (base: {branch_name})"
 ```
 
-5. **CRITICAL cwd directive for subsequent phases**: Emit the following instruction verbatim in the phase completion output (see Step 12). The LLM driving the plan MUST `cd` into `{worktree_path}` before running any plan commands:
+5. **CRITICAL cwd directive for subsequent phases**: Emit the following Bucket A/B-aware instruction verbatim in the phase completion output (see Step 12). It tells the orchestrating LLM exactly how to honor the worktree without reaching for `env -C`:
 
-   > _"This plan runs in an isolated git worktree. All subsequent commands for plan `{plan_id}` MUST execute with `cwd = {worktree_path}`. Do not modify files in the original checkout."_
+   > _"This plan runs in an isolated git worktree at `{worktree_path}`. For `.plan/execute-script.py` calls, follow `plan-marshall:tools-script-executor/standards/cwd-policy.md`: `manage-*` scripts (Bucket A) are cwd-agnostic — call them from any cwd with NO `--project-dir` and never `env -C`. Build / CI / Sonar scripts (Bucket B) MUST pass `--project-dir {worktree_path}`. For raw `git`, `mvn`, `npm`, and Edit/Write/Read operations on source files, target paths under `{worktree_path}` — do not modify files in the original checkout."_
 
 6. **Fail-loud on worktree creation errors**: If `manage-worktree create` returns `status=error` — including `error=plan_symlink_failed`, `error=worktree_add_failed`, or any other worktree-creation failure — the phase MUST NOT silently fall back to running in the main checkout. Silent fallback destroys isolation without warning the user and is prohibited. Instead:
 
@@ -443,7 +443,7 @@ warnings[N]:
   - "{one entry per non-fatal warning from Step 6, verbatim; empty list if none}"
 ```
 
-**If `worktree_path` is set**, append the cwd directive from Step 6 verbatim after the TOON output so the orchestrating LLM executes all subsequent phases with `cwd = worktree_path`.
+**If `worktree_path` is set**, append the Bucket A/B-aware cwd directive from Step 6 point 5 verbatim after the TOON output. The orchestrating LLM uses it to decide, per call, whether a `.plan/execute-script.py` invocation is Bucket A (no cwd pinning, no `--project-dir`, no `env -C`) or Bucket B (pass `--project-dir {worktree_path}`), and to target editor writes at `{worktree_path}` rather than the main checkout.
 
 **`warnings[]` field**: Top-level list surfacing non-fatal issues that the caller and user must see. Step 6 populates this when worktree creation fails and the phase falls back to the main checkout — each warning is the verbatim error detail from `manage-worktree create` plus a note that isolation was lost. The list is empty when no warnings apply. This is the contract Step 6d depends on: worktree failures must appear here, never silently in logs.
 
