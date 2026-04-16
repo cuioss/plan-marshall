@@ -126,6 +126,46 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract `value` as `{pr_merge_strategy}` (default: `squash`). Valid values: `squash`, `merge`, `rebase`.
 
+### Update Branch (if behind)
+
+**Only if `state == open`**: Before merging, check whether the PR branch is behind the base branch. The `merge_state` field from the earlier `pr view` output contains GitHub's `mergeStateStatus`. If the value is `behind`, the branch must be updated before a merge attempt — otherwise `pr merge` fails with 'head branch not up to date' and the auto-merge fallback stalls because GitHub will not auto-update the branch without explicit intervention.
+
+**If `merge_state == behind`**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr update-branch \
+    --pr-number {pr_number}
+```
+
+If `update-branch` fails → log error and abort:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: pr update-branch failed - {error}"
+```
+
+After a successful branch update, wait for CI to complete on the updated branch before proceeding to merge:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} ci wait \
+    --pr-number {pr_number}
+```
+
+**Bash tool timeout**: 1800000ms (30-minute safety net).
+
+If CI fails after the branch update → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: CI failed after branch update — continuing with merge attempt"
+```
+
+Log the update:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: updated PR branch with base branch changes, CI passed"
+```
+
+**If `merge_state != behind`**: Skip this step — the branch is already up to date with the base branch.
+
 ### Merge PR (if not yet merged)
 
 **Only if `state == open`**:

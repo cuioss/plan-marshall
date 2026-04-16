@@ -495,6 +495,11 @@ def build_parser(
         help='Merge strategy (default: merge)',
     )
 
+    # pr update-branch — accepts either --pr-number or --head (validated by handler)
+    pr_update_branch = pr_sub.add_parser('update-branch', help='Update PR branch with base branch changes')
+    pr_update_branch.add_argument('--pr-number', type=int, help='PR number')
+    add_head_arg(pr_update_branch)
+
     # pr close
     pr_close = pr_sub.add_parser('close', help='Close a pull request')
     pr_close.add_argument('--pr-number', required=True, type=int, help='PR number')

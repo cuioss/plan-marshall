@@ -22,6 +22,7 @@ Skill: plan-marshall:dev-general-practices
 
 **Prohibited actions:**
 - Never target file paths outside the active git worktree. When a plan runs in an isolated worktree, all Edit/Write/Read tool calls during task execution MUST use the worktree's absolute path (e.g., `<root>/.claude/worktrees/{plan_id}/...`), never the main checkout (e.g., `/Users/oliver/git/{repo}/...`). Editing the main checkout pollutes uncommitted state, bypasses worktree isolation, and lets tests silently load stale source via PYTHONPATH. In this mode, the canonical worktree path is the one surfaced by `plan-marshall:phase-5-execute` in its phase-start `[STATUS] Active worktree: ...` work-log line — use that path as the root for every file operation.
+- Never run git as a `cd {worktree_path} && git ...` compound. All git commands during task execution MUST use the `git -C {worktree_path} <subcommand>` form, where `{worktree_path}` is the same `[STATUS] Active worktree: ...` value referenced above. The compound form trips Claude Code's bare-repository security prompt and simultaneously violates the Bash one-command-per-call rule. See `dev-general-practices` Hard Rules for the full rule and rationale.
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline

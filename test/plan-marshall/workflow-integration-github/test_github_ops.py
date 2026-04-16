@@ -29,6 +29,8 @@ def _capture_run_gh():
             return 0, '', ''
         if args[:2] == ['pr', 'checks']:
             return 0, '[]', ''
+        if args[:2] == ['pr', 'update-branch']:
+            return 0, '', ''
         return 0, '', ''
 
     return run_gh_stub, captured
@@ -186,6 +188,92 @@ def test_pr_auto_merge_dual_flag_rejected(monkeypatch):
 
     assert result['status'] == 'error'
     assert 'exactly one' in result['error']
+
+
+# =============================================================================
+# pr_update_branch --head / --pr-number
+# =============================================================================
+
+
+def test_pr_update_branch_with_head(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=None, head='feature/x')
+    result = github_ops.cmd_pr_update_branch(ns)
+
+    assert result['status'] == 'success', result
+    update_call = next(c for c in captured if c[:2] == ['pr', 'update-branch'])
+    assert update_call[2] == 'feature/x'
+
+
+def test_pr_update_branch_with_pr_number(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=42, head=None)
+    result = github_ops.cmd_pr_update_branch(ns)
+
+    assert result['status'] == 'success', result
+    update_call = next(c for c in captured if c[:2] == ['pr', 'update-branch'])
+    assert update_call[2] == '42'
+
+
+def test_pr_update_branch_dual_flag_rejected(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=42, head='feature/x')
+    result = github_ops.cmd_pr_update_branch(ns)
+
+    assert result['status'] == 'error'
+    assert 'exactly one' in result['error']
+    assert captured == [], 'Should not invoke gh when validation fails'
+
+
+def test_pr_update_branch_neither_flag_rejected(monkeypatch):
+    run_gh_stub, captured = _capture_run_gh()
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    ns = argparse.Namespace(pr_number=None, head=None)
+    result = github_ops.cmd_pr_update_branch(ns)
+
+    assert result['status'] == 'error'
+    assert 'either' in result['error']
+
+
+def test_pr_update_branch_gh_failure(monkeypatch):
+    """When gh returns non-zero, the handler should return an error result."""
+
+    def failing_run_gh(args, capture_json=False, timeout=60):
+        if args[:2] == ['pr', 'update-branch']:
+            return 1, '', 'merge conflict'
+        return 0, '', ''
+
+    monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
+    monkeypatch.setattr(github_ops, 'run_gh', failing_run_gh)
+
+    ns = argparse.Namespace(pr_number=42, head=None)
+    result = github_ops.cmd_pr_update_branch(ns)
+
+    assert result['status'] == 'error'
+    assert 'Failed to update branch' in result['error']
+
+
+def test_pr_update_branch_auth_failure(monkeypatch):
+    """When auth fails, the handler should return an error result."""
+    monkeypatch.setattr(github_ops, 'check_auth', lambda: (False, 'not logged in'))
+    monkeypatch.setattr(github_ops, 'run_gh', _capture_run_gh()[0])
+
+    ns = argparse.Namespace(pr_number=42, head=None)
+    result = github_ops.cmd_pr_update_branch(ns)
+
+    assert result['status'] == 'error'
+    assert 'not logged in' in result['error']
 
 
 # =============================================================================
