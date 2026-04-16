@@ -136,6 +136,8 @@ See [api-contract.md](api-contract.md) for provider-specific field mappings.
 
 ## Workflow: Wait for New Review Comments
 
+See [blocking-wait-pattern.md](blocking-wait-pattern.md) for the general pattern, timeout/interval guidance, and the full wait-for-* subcommand catalog.
+
 **Pattern**: Provider-Agnostic Router (polling, replaces blocking shell sleep)
 
 Block until a new unresolved review comment is posted on the PR or the timeout elapses. Snapshots the unresolved-comment count once on entry, then polls on the standard CI interval and exits as soon as the count grows. Used by `workflow-pr-doctor`'s Automated Review Lifecycle (Step 2) in place of a bash `sleep`, which the harness blocks for long leading durations.
