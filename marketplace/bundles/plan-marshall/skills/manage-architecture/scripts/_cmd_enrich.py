@@ -397,17 +397,26 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
     }
     enriched_set: set[str] = set()
 
+    # Pre-compute (bundle, domains) pairs once — get_skill_domains() does not
+    # depend on module_name, so calling it inside the module loop is wasteful.
+    ext_domains: list[tuple[str, list]] = []
+    for ext in extensions:
+        ext_module = ext.get('module')
+        bundle = ext.get('bundle', 'unknown')
+        if ext_module is None:
+            continue
+        try:
+            all_domains = ext_module.get_skill_domains()
+        except Exception as e:
+            summary['errors'].append(f'{bundle}: get_skill_domains() raised {e}')
+            continue
+        ext_domains.append((bundle, all_domains))
+
     for module_name in module_names:
-        for ext in extensions:
-            ext_module = ext.get('module')
-            bundle = ext.get('bundle', 'unknown')
-            if ext_module is None:
-                continue
-            try:
-                all_domains = ext_module.get_skill_domains()
-            except Exception as e:
-                summary['errors'].append(f'{bundle}: get_skill_domains() raised {e}')
-                continue
+        # Apply shared reasoning only once per module to avoid duplicate
+        # concatenation into skills_by_profile_reasoning.
+        reasoning_to_apply = reasoning
+        for _bundle, all_domains in ext_domains:
             for domain_info in all_domains:
                 domain_key = domain_info.get('domain', {}).get('key')
                 if not domain_key or domain_key == 'system':
@@ -418,7 +427,7 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
                         domain_key,
                         project_dir=project_dir,
                         include_optionals=include_optionals,
-                        reasoning=reasoning,
+                        reasoning=reasoning_to_apply,
                     )
                 except ModuleNotFoundInProjectError as e:
                     summary['errors'].append(f'{module_name}/{domain_key}: {e}')
@@ -430,6 +439,8 @@ def enrich_all(project_dir: str = '.', include_optionals: bool = False, reasonin
                 except Exception as e:
                     summary['errors'].append(f'{module_name}/{domain_key}: {e}')
                     continue
+                if reasoning_to_apply:
+                    reasoning_to_apply = None
                 if result.get('profiles_updated'):
                     summary['pairs_applied'] += 1
                     if module_name not in enriched_set:
