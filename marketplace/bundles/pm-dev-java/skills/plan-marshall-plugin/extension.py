@@ -45,6 +45,10 @@ class Extension(ExtensionBase):
                                 'skill': 'pm-dev-java:java-lombok',
                                 'description': 'Lombok patterns including @Delegate, @Builder, @Value, @UtilityClass for reducing boilerplate',
                             },
+                            {
+                                'skill': 'pm-dev-java:java-quarkus',
+                                'description': 'Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration',
+                            },
                         ],
                     },
                     'implementation': {
@@ -63,6 +67,10 @@ class Extension(ExtensionBase):
                                 'skill': 'pm-dev-java:java-maintenance',
                                 'description': 'Java code maintenance standards including prioritization, refactoring triggers, and compliance',
                             },
+                            {
+                                'skill': 'pm-dev-java:java-quarkus',
+                                'description': 'Quarkus CDI and configuration patterns — use when module uses Quarkus framework',
+                            },
                         ],
                     },
                     'module_testing': {
@@ -78,9 +86,17 @@ class Extension(ExtensionBase):
                         ],
                         'optionals': [
                             {
+                                'skill': 'pm-dev-java:java-quarkus',
+                                'description': 'Quarkus-specific CDI standards with testing, native image support, and GraalVM reflection configuration',
+                            },
+                            {
                                 'skill': 'pm-dev-java:junit-integration',
                                 'description': 'Maven integration testing with Failsafe plugin, IT naming conventions, and profiles',
-                            }
+                            },
+                            {
+                                'skill': 'pm-dev-java:junit-weld-testing',
+                                'description': 'Weld Testing standards for CDI unit testing with @EnableAutoWeld and auto-discovery patterns',
+                            },
                         ],
                     },
                     'quality': {
