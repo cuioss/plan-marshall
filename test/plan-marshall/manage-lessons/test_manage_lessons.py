@@ -117,7 +117,7 @@ class TestCmdList:
     def test_list_empty_directory(self, tmp_path):
         """Should return empty list when no lessons exist."""
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(Namespace(component=None, category=None))
+            result = cmd_list(Namespace(component=None, category=None, full=False))
 
         assert result['status'] == 'success'
         assert result['total'] == 0
@@ -140,7 +140,7 @@ This is the lesson body.
         (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(Namespace(component=None, category=None))
+            result = cmd_list(Namespace(component=None, category=None, full=False))
 
         assert result['status'] == 'success'
         assert result['total'] == 1
@@ -169,7 +169,7 @@ created=2025-01-01
         (lessons_dir / '2025-01-01-002.md').write_text(lesson2)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(Namespace(component='component-a', category=None))
+            result = cmd_list(Namespace(component='component-a', category=None, full=False))
 
         assert result['status'] == 'success'
         assert result['total'] == 2
@@ -198,10 +198,56 @@ created=2025-01-01
         (lessons_dir / '2025-01-01-002.md').write_text(lesson2)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_list(Namespace(component=None, category='bug'))
+            result = cmd_list(Namespace(component=None, category='bug', full=False))
 
         assert result['status'] == 'success'
         assert result['filtered'] == 1
+
+    def test_list_full_includes_body_content(self, tmp_path):
+        """Should include lesson body content when --full is set."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        lesson_content = """id=2025-01-01-001
+component=test-component
+category=bug
+created=2025-01-01
+
+# Test Lesson Title
+
+This is the lesson body with details.
+"""
+        (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, full=True))
+
+        assert result['status'] == 'success'
+        assert result['filtered'] == 1
+        assert 'content' in result['lessons'][0]
+        assert 'This is the lesson body with details.' in result['lessons'][0]['content']
+
+    def test_list_without_full_excludes_body(self, tmp_path):
+        """Should not include body content without --full."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        lesson_content = """id=2025-01-01-001
+component=test-component
+category=bug
+created=2025-01-01
+
+# Test Lesson Title
+
+Body content here.
+"""
+        (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, full=False))
+
+        assert result['status'] == 'success'
+        assert 'content' not in result['lessons'][0]
 
 
 # =============================================================================

@@ -355,11 +355,37 @@ Remove completed plans. Shows completed plans for selective or batch deletion wi
 
 ## Action: lessons
 
-List lessons learned and convert selected lesson to a plan.
+List lessons learned with options to convert to plan or analyze all.
 
-### Canonical invocation
+### Menu
 
-When the user selects a lesson from the menu below, convert it to a plan using the canonical `phase-agent` invocation with a `lesson_id` reference:
+**Step 1**: List all lessons:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
+```
+
+**Step 2**: Present options using `AskUserQuestion`:
+
+```
+AskUserQuestion:
+  questions:
+    - question: "What would you like to do with lessons?"
+      header: "Lessons"
+      options:
+        # For each lesson from list (dynamic):
+        - label: "[{category}] {title}"
+          description: "Component: {component} — Convert to plan"
+        # Always include:
+        - label: "Analyze all lessons"
+          description: "Review validity, find done/combinable lessons, cleanup"
+        - label: "Back to main menu"
+          description: "Return to plan list"
+      multiSelect: false
+```
+
+### Convert lesson to plan
+
+When a specific lesson is selected, convert it to a plan using the canonical `phase-agent` invocation with a `lesson_id` reference:
 
 ```
 Task: plan-marshall:phase-agent
@@ -371,30 +397,76 @@ Passing `lesson_id` triggers `phase-1-init` Step 4 ("From Lesson") to resolve th
 
 **Anti-pattern (prohibited):** Never invoke `phase-agent` with `skill=phase-1-init, source=lesson, content={verbatim lesson text}`. Inline `content` is the `description` source path and causes `phase-1-init` to treat the input as a free-form description — Step 5b is skipped and the original lesson file is orphaned in `lessons-learned/` instead of being archived inside the plan directory. Always reference the lesson by `lesson_id`; never paste its body.
 
-### Menu
+### Analyze all lessons
 
-Present lessons using `AskUserQuestion`:
+When "Analyze all lessons" is selected, run the analyze workflow. This is an interactive LLM workflow — no plan is created.
+
+**Step 1**: Get all lessons with full body content:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list --full
+```
+
+**Step 2**: For each lesson, verify validity against the current codebase:
+- Read the component/file referenced in the lesson
+- Check whether the described fix, improvement, or anti-pattern mitigation has already been implemented
+- Check whether other lessons reference the same component and root cause (combination candidates)
+
+Classify each lesson into one of three categories:
+- **Close** — the fix/improvement has already landed in code
+- **Merge** — two or more lessons share the same root cause and should be combined (specify target lesson)
+- **Keep open** — still actionable, not yet addressed
+
+**Step 3**: Present a single batch summary via `AskUserQuestion`:
 
 ```
 AskUserQuestion:
   questions:
-    - question: "Which lesson would you like to convert to a plan?"
-      header: "Lessons"
+    - question: |
+        ## Lessons Analysis
+
+        ### Close (already done):
+        {for each close candidate:}
+        - {id}: {title} — {reasoning}
+
+        ### Merge:
+        {for each merge group:}
+        - {source_id} → {target_id}: {reasoning}
+
+        ### Keep open:
+        {for each open lesson:}
+        - {id}: {title}
+
+        Proceed with these actions?
       options:
-        # For each lesson from list (dynamic):
-        - label: "[{category}] {title}"
-          description: "Component: {component} — {date}"
-        # Always include:
-        - label: "Back to main menu"
-          description: "Return to plan list"
+        - label: "Proceed"
+          description: "Execute all proposed close and merge actions"
+        - label: "Cancel"
+          description: "Make no changes"
       multiSelect: false
 ```
 
-When a lesson is selected:
-1. Analyzes lesson content for actionable tasks
-2. Asks for clarification only if lesson is ambiguous
-3. Creates a new plan via plan-init skill
-4. Moves the lesson file to the plan directory
+**Step 4**: If user selects "Proceed", execute actions and log:
+
+For each **close** action:
+1. Delete the lesson file (it lives in `.plan/local/lessons-learned/{id}.md`)
+2. Log:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO --message "(plan-marshall:lessons-analyze) Closed lesson {id}: {title} — {reasoning}"
+```
+
+For each **merge** action:
+1. Read the target lesson file content
+2. Append the source lesson's key content to the target lesson body
+3. Update the target lesson's title if needed to reflect the broader scope
+4. Delete the source lesson file
+5. Log:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO --message "(plan-marshall:lessons-analyze) Merged lesson {source_id} into {target_id}: {reasoning}"
+```
+
+**Step 5**: Display summary of actions taken.
 
 ---
 
