@@ -226,6 +226,37 @@ def test_detect_provider_no_patterns(mock_run):
 
 
 # =============================================================================
+# Tier 2: ci_base re-export compatibility tests
+# =============================================================================
+
+
+def test_ci_health_imports_safe_main_via_ci_base():
+    """Verify ci_health.safe_main is the ci_base re-export (not a direct file_ops import)."""
+    import ci_base
+    import ci_health
+
+    # ci_health imports safe_main from ci_base; ci_base re-exports from file_ops.
+    # Both must resolve to the exact same function object.
+    assert ci_health.safe_main is ci_base.safe_main
+
+
+def test_ci_health_imports_serialize_toon_via_ci_base():
+    """Verify ci_health.serialize_toon is the ci_base re-export."""
+    import ci_base
+    import ci_health
+
+    assert ci_health.serialize_toon is ci_base.serialize_toon
+
+
+def test_ci_health_imports_run_cli_from_ci_base():
+    """Verify ci_health.run_cli comes from ci_base (shared CLI runner)."""
+    import ci_base
+    import ci_health
+
+    assert ci_health.run_cli is ci_base.run_cli
+
+
+# =============================================================================
 # Tier 3: Subprocess tests for CLI plumbing
 # =============================================================================
 

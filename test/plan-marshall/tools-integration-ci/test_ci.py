@@ -162,6 +162,39 @@ def test_router_rejects_legacy_body_flag(tmp_path):
 
 
 # =============================================================================
+# ci_base re-export compatibility tests
+# =============================================================================
+
+
+def test_ci_router_extract_project_dir_is_ci_base_function():
+    """Verify ci.extract_project_dir is the ci_base canonical implementation."""
+    import ci_base
+
+    assert ci_module.extract_project_dir is ci_base.extract_project_dir
+
+
+def test_ci_router_output_error_is_ci_base_function():
+    """Verify ci.output_error comes from ci_base (not a local definition)."""
+    import ci_base
+
+    assert ci_module.output_error is ci_base.output_error
+
+
+def test_ci_router_safe_main_is_ci_base_re_export():
+    """Verify ci.safe_main is the ci_base re-export of file_ops.safe_main."""
+    import ci_base
+
+    assert ci_module.safe_main is ci_base.safe_main
+
+
+def test_ci_router_set_default_cwd_is_ci_base_function():
+    """Verify ci.set_default_cwd comes from ci_base."""
+    import ci_base
+
+    assert ci_module.set_default_cwd is ci_base.set_default_cwd
+
+
+# =============================================================================
 # --project-dir pre-parse (extract_project_dir, hoisted to ci_base)
 # =============================================================================
 

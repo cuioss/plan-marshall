@@ -22,8 +22,7 @@ import argparse
 import re
 from pathlib import Path
 
-from ci_base import run_cli  # type: ignore[import-not-found]
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
+from ci_base import run_cli, safe_main, serialize_toon  # type: ignore[import-not-found]
 
 # Tool definitions: {tool: requires_auth}
 # Note: python3 not checked - if it wasn't available, this script couldn't run
@@ -464,6 +463,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    from file_ops import safe_main  # type: ignore[import-not-found]
-
     safe_main(main)()

@@ -33,6 +33,7 @@ from pathlib import Path
 from ci_base import (  # type: ignore[import-not-found]
     extract_project_dir,
     output_error,
+    safe_main,
     set_default_cwd,
 )
 
@@ -114,6 +115,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    from file_ops import safe_main  # type: ignore[import-not-found]
-
     safe_main(main)()

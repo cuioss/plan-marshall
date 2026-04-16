@@ -79,10 +79,11 @@ from ci_base import (  # type: ignore[import-not-found]
     prepare_body,
     read_and_consume_body,
     run_cli,
+    safe_main,
+    serialize_toon,
     set_default_cwd,
     truncate_log_content,
 )
-from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # ---------------------------------------------------------------------------
 # CLI wrappers
@@ -1253,6 +1254,4 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    from file_ops import safe_main  # type: ignore[import-not-found]
-
     safe_main(main)()
