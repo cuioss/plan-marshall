@@ -225,12 +225,12 @@ Read `TERM_PROGRAM` using the globally allow-listed pattern installed by the mar
 echo "TERM_PROGRAM=$TERM_PROGRAM"
 ```
 
-Parse the output, then branch on the value:
+Parse the output. If the value is `vscode`, use the `code` command. Otherwise, use the platform-specific opener:
 - If `TERM_PROGRAM=vscode`: `code {resolved_path}`
-- On macOS (otherwise): `open {resolved_path}`
+- On macOS: `open {resolved_path}`
 - On Linux: `xdg-open {resolved_path}`
 
-Do NOT use `printenv`, `env | grep`, or subshell substitution such as `$(printenv TERM_PROGRAM)` — `echo "TERM_PROGRAM=$TERM_PROGRAM"` is the only pattern installed by the marshall-steward wizard and guaranteed not to trigger a permission prompt.
+Do NOT use `printenv`, `env | grep`, or command substitution such as `$(printenv TERM_PROGRAM)` — `echo "TERM_PROGRAM=$TERM_PROGRAM"` is the only pattern installed by the marshall-steward wizard and guaranteed not to trigger a permission prompt.
 
 ---
 
