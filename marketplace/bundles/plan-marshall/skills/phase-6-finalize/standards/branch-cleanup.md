@@ -1,3 +1,9 @@
+---
+name: default:branch-cleanup
+description: Branch cleanup — adapts to PR mode or local-only based on create-pr step presence
+order: 70
+---
+
 # Branch Cleanup
 
 Switch back to base branch and clean up after plan completion. Behavior adapts based on whether `default:create-pr` is in the finalize steps list.

@@ -1,3 +1,9 @@
+---
+name: default:archive-plan
+description: Archive the completed plan
+order: 1000
+---
+
 # Archive Plan
 
 Archive the completed plan to `.plan/archived-plans/`.

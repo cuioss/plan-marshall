@@ -155,7 +155,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Display current values, then configure pipelines using manage-config:
 
-**Verification steps** (phase-5-execute): Discover available steps, present as multi-select, apply:
+**Verification steps** (phase-5-execute): Discover available steps, present as multi-select, resolve order (see **Order resolution sub-flow** below), then apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-verify-steps
 ```
@@ -163,6 +163,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-v
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-steps --steps {comma_separated_selected_steps}
 ```
+Assert the `set-steps` response is `status: success`. A non-success response means the pre-flight order resolution missed a case — re-run the sub-flow for the reported `step` or `steps`.
 
 After `set-steps` completes for phase-5-execute, validate that every `project:` step in the new selection has a matching `Skill()` allow rule:
 ```bash
@@ -189,7 +190,7 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
   --settings .claude/settings.json
 ```
 
-**Finalize steps** (phase-6-finalize): Discover available steps, present as multi-select, apply:
+**Finalize steps** (phase-6-finalize): Discover available steps, present as multi-select, resolve order (see **Order resolution sub-flow** below), then apply:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
 ```
@@ -197,8 +198,46 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-f
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}
 ```
+Assert the `set-steps` response is `status: success`. A non-success response means the pre-flight order resolution missed a case — re-run the sub-flow for the reported `step` or `steps`.
 
 After `set-steps` completes for phase-6-finalize, repeat the same project-step validation and auto-fix flow described above for phase-5 — the same `detect-missing-project-step-permissions` and `apply-project-step-permissions` calls cover both phases.
+
+#### Order resolution sub-flow
+
+Run this sub-flow between `list-*-steps` and `set-steps` so the latter never errors with `missing_order` or `order_collision`. It is invoked for both `phase-5-execute` (verify steps) and `phase-6-finalize` (finalize steps); substitute `{phase}` with the appropriate section.
+
+1. Filter the `list-*-steps` output to the user-selected `{selected_steps}`. For each selected step, read its `order` value.
+2. **Missing order** — For every selected step whose `order` is `null`, prompt the user:
+   ```
+   AskUserQuestion:
+     question: "Step '{step_ref}' has no declared order. Pick an integer to position it in the {phase} pipeline."
+     options:
+       - label: "Before built-ins (0)"          # runs first
+       - label: "Mid-pipeline (500)"            # common default slot
+       - label: "End of pipeline (2000)"        # runs last
+       - label: "Custom..."                      # user types integer
+   ```
+   Persist the chosen value:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     plan {phase} set-step-order-override --step {step_ref} --order {value}
+   ```
+3. **Order collision** — Group the remaining selected steps by resolved `order`. For every group with >1 entry, prompt:
+   ```
+   AskUserQuestion:
+     question: "Steps '{step_a}' and '{step_b}' both resolve to order={N} in {phase}. How should we disambiguate?"
+     options:
+       - label: "Keep {step_a}'s order ({N}); reassign {step_b}"
+       - label: "Keep {step_b}'s order ({N}); reassign {step_a}"
+       - label: "Set both to new values"
+   ```
+   Apply the user's choice via one or two `set-step-order-override` calls — the reassigned step(s) need fresh values that do not collide with any other selected step.
+4. Loop steps 2 and 3 until every selected step has a distinct resolved order. Only then call `set-steps` — which now sorts by `order` — and assert `status: success`.
+5. If a previously persisted override is no longer needed (e.g., the user removed the step from the selection and wants to reset its order), clear it explicitly:
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     plan {phase} remove-step-order-override --step {step_ref}
+   ```
 
 **PR merge strategy**: Ask user for the merge strategy used when merging PRs during branch cleanup (default: squash):
 

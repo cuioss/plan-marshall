@@ -33,9 +33,12 @@ class Extension(ExtensionBase):
                 'name': 'my-bundle:my-verify-step',
                 'skill': 'my-bundle:my-verify-step',
                 'description': 'Custom domain verification',
+                'order': 500,
             },
         ]
 ```
+
+> **Note**: `order` is NOT enforced at runtime. `marshall-steward` sorts the `steps` list by `order` when writing to `marshal.json`; phase-5-execute iterates the list as written and does not re-sort or validate the ordering.
 
 ## Runtime Invocation Contract
 
@@ -70,6 +73,9 @@ def provides_verify_steps(self) -> list[dict]:
         - name: Fully-qualified skill reference (e.g., 'my-bundle:my-verify-step')
         - skill: Same as name (the fully-qualified skill reference)
         - description: Human-readable description for wizard presentation
+        - order: int — Sort key used by marshall-steward when writing the
+          steps list; steps with identical order prompt the user for
+          disambiguation. Not enforced at runtime.
 
     Default: []
     """
@@ -82,6 +88,7 @@ def provides_verify_steps(self) -> list[dict]:
 | `name` | str | Fully-qualified skill reference (`bundle:skill`) — used directly in steps list |
 | `skill` | str | Same as name |
 | `description` | str | Human-readable description for `/marshall-steward` wizard |
+| `order` | int | Sort key used by marshall-steward when writing the steps list; steps with identical order prompt the user |
 
 ## Storage in marshal.json
 

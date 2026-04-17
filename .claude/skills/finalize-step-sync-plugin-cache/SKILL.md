@@ -3,6 +3,7 @@ name: finalize-step-sync-plugin-cache
 description: Finalize-phase wrapper that syncs marketplace bundles to the Claude plugin cache by delegating to the sync-plugin-cache skill
 user-invocable: false
 allowed-tools: Skill
+order: 5
 ---
 
 # Finalize Step: sync-plugin-cache

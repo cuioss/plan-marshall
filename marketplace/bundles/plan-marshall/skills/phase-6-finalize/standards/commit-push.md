@@ -1,3 +1,9 @@
+---
+name: default:commit-push
+description: Commit and push changes
+order: 10
+---
+
 # Commit and Push
 
 Commit all changes and push to remote. Respects `commit_strategy` from phase-5-execute config.

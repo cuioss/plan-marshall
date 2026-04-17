@@ -95,6 +95,17 @@ def _add_phase_subparser(
         phase_rm_step = phase_sub.add_parser('remove-step', help='Remove step from list')
         phase_rm_step.add_argument('--step', required=True, help='Step reference to remove')
 
+        phase_set_order = phase_sub.add_parser(
+            'set-step-order-override', help='Persist per-step order override for the phase'
+        )
+        phase_set_order.add_argument('--step', required=True, help='Step reference')
+        phase_set_order.add_argument('--order', required=True, type=int, help='Override order value (int)')
+
+        phase_rm_order = phase_sub.add_parser(
+            'remove-step-order-override', help='Remove a previously persisted order override'
+        )
+        phase_rm_order.add_argument('--step', required=True, help='Step reference')
+
     if has_domain_steps:
         phase_set_ds = phase_sub.add_parser('set-domain-step', help='Enable/disable domain verification step')
         phase_set_ds.add_argument('--domain', required=True, help='Domain key (e.g., java)')

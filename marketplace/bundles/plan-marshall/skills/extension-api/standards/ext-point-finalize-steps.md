@@ -36,9 +36,12 @@ class Extension(ExtensionBase):
                 'name': 'pm-dev-java:java-post-pr',
                 'skill': 'pm-dev-java:java-post-pr',
                 'description': 'Java post-PR validation and artifact publishing',
+                'order': 500,
             },
         ]
 ```
+
+> **Note**: `order` is NOT enforced at runtime. `marshall-steward` sorts the `steps` list by `order` when writing to `marshal.json`; phase-6-finalize iterates the list as written and does not re-sort or validate the ordering.
 
 ## Runtime Invocation Contract
 
@@ -73,6 +76,9 @@ def provides_finalize_steps(self) -> list[dict]:
         - name: str — Fully-qualified skill notation (used as step reference)
         - skill: str — Same as name (fully-qualified skill reference)
         - description: str — Human-readable description for wizard presentation
+        - order: int — Sort key used by marshall-steward when writing the
+          steps list; steps with identical order prompt the user for
+          disambiguation. Not enforced at runtime.
 
     Default: []
     """
@@ -85,6 +91,7 @@ def provides_finalize_steps(self) -> list[dict]:
 | `name` | str | Fully-qualified skill notation — used as step reference in `steps` list |
 | `skill` | str | Same as `name` (the skill to invoke) |
 | `description` | str | Human-readable description for `/marshall-steward` wizard |
+| `order` | int | Sort key used by marshall-steward when writing the steps list; steps with identical order prompt the user |
 
 ## Storage in marshal.json
 

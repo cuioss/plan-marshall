@@ -131,6 +131,8 @@ The `steps` list in phase-5-execute config contains verification step references
 - Starts with `project:` -> project type
 - Contains `:` (other) -> fully-qualified skill type
 
+Each verify step declares an `order: <int>` value in its authoritative source — frontmatter on built-in standards docs (`standards/{name}.md`), frontmatter on project-local `SKILL.md` for `project:` steps, and the return-dict `order` field for extension-contributed skills. `marshall-steward` sorts the `steps` list by this value when writing it to `marshal.json`. This skill iterates the list as written and does NOT re-sort or validate `order` at runtime — the persisted order is the runtime order.
+
 ### Built-in Step Dispatch Table
 
 | Step Name | Action | Description |

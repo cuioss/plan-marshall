@@ -1,3 +1,9 @@
+---
+name: default:knowledge-capture
+description: Capture learnings to memory
+order: 50
+---
+
 # Knowledge Capture
 
 Record significant patterns discovered during implementation. Advisory only — does not block.

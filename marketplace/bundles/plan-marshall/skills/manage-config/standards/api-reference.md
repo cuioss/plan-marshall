@@ -131,8 +131,8 @@ Manage phase-specific plan configuration. Each phase has its own sub-noun.
 |----------|-------|-------------|
 | `phase-1-init` | `get`, `set` | Init phase (e.g., `branch_strategy`) |
 | `phase-2-refine` | `get`, `set` | Refine phase (e.g., `compatibility`) |
-| `phase-5-execute` | `get`, `set`, `set-max-iterations`, `set-step`, `set-domain-step`, `set-domain-step-agent` | Execute phase |
-| `phase-6-finalize` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step` | Finalize phase (e.g., `pr_merge_strategy`) |
+| `phase-5-execute` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step`, `set-step-order-override`, `remove-step-order-override`, `set-step`, `set-domain-step`, `set-domain-step-agent` | Execute phase |
+| `phase-6-finalize` | `get`, `set`, `set-max-iterations`, `set-steps`, `add-step`, `remove-step`, `set-step-order-override`, `remove-step-order-override` | Finalize phase (e.g., `pr_merge_strategy`) |
 
 ### Basic get/set pattern
 
@@ -174,6 +174,31 @@ manage-config plan phase-6-finalize set-max-iterations --value 5
 manage-config plan phase-6-finalize set-step \
   --step 2_create_pr --enabled false
 ```
+
+### Order-driven step verbs (phase-5-execute, phase-6-finalize)
+
+`set-steps` and `add-step` on these two phases derive each step's effective order from (in precedence) a persisted override (`plan.{phase}.step_order_overrides.{step_ref}`) or the step's authoritative `order` field (frontmatter for built-in standards / project-local `SKILL.md`, return-dict key for extension-contributed steps). The resulting list is persisted sorted ascending by resolved order — any positional arguments passed to `add-step` (e.g., `--position`, `--after`) are ignored for the sort.
+
+Error responses surfaced by `set-steps` and `add-step`:
+
+| `error` | Additional fields | Meaning |
+|---------|--------------------|---------|
+| `missing_order` | `step`, `phase`, `detail` | One selected step has no override and no discoverable `order` — run `set-step-order-override` for that step or add the `order` field to its source. |
+| `order_collision` | `steps` (2-element list), `order`, `phase`, `detail` | Two selected steps resolve to the same `order` — reassign one via `set-step-order-override`. |
+
+`list-finalize-steps` and `list-verify-steps` output now includes the resolved `order` for each step (value is `null` when the source has no declared order).
+
+```bash
+# Persist an order override for a step (use to fix collisions or position extension/project steps)
+manage-config plan phase-6-finalize set-step-order-override \
+  --step pm-dev-java:java-post-pr --order 75
+
+# Clear a previously persisted override
+manage-config plan phase-6-finalize remove-step-order-override \
+  --step pm-dev-java:java-post-pr
+```
+
+`set-step-order-override` always returns `status: success` with the updated `step_order_overrides` map. `remove-step-order-override` returns `status: error` (with `step` and `phase` fields) if no override exists for the named step; otherwise `status: success, removed: true`.
 
 Optional `--field` parameter on `get` to retrieve a specific field:
 

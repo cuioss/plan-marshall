@@ -197,10 +197,13 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
       "finalize_without_asking": false,
       "verification_max_iterations": 5,
       "steps": [
-        "quality_check",
-        "build_verify",
-        "coverage_check"
-      ]
+        "default:quality_check",
+        "default:build_verify",
+        "default:coverage_check"
+      ],
+      "step_order_overrides": {
+        "my-bundle:my-verify-step": 25
+      }
     }
   }
 }
@@ -211,6 +214,7 @@ Execute phase with integrated verification pipeline. Contains commit strategy, i
 | `commit_strategy` | string | "per_deliverable" | per_deliverable, per_plan, none |
 | `finalize_without_asking` | bool | false | Auto-continue to finalize phase after execute completes |
 | `verification_max_iterations` | int | 5 | Maximum verify-execute-verify loops |
+| `step_order_overrides` | map | `{}` | Per-step integer override of the discovered `order` value — read by `set-steps` and `add-step` before falling back to the step's authoritative `order`. Managed via `set-step-order-override` / `remove-step-order-override`. |
 
 #### Verification Steps
 
@@ -237,10 +241,13 @@ Finalize pipeline with numbered boolean steps.
       "max_iterations": 3,
       "review_bot_buffer_seconds": 180,
       "steps": [
-        "commit_push", "create_pr", "automated_review",
-        "sonar_roundtrip", "knowledge_capture", "lessons_capture",
-        "branch_cleanup", "archive"
-      ]
+        "default:commit-push", "default:create-pr", "default:automated-review",
+        "default:sonar-roundtrip", "default:knowledge-capture", "default:lessons-capture",
+        "default:branch-cleanup", "default:record-metrics", "default:archive-plan"
+      ],
+      "step_order_overrides": {
+        "pm-dev-java:java-post-pr": 75
+      }
     }
   }
 }
@@ -250,7 +257,8 @@ Finalize pipeline with numbered boolean steps.
 |-------|------|---------|-------------|
 | `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
 | `review_bot_buffer_seconds` | int | 180 | Max seconds to wait after CI for new review-bot comments to arrive (used as `--timeout` for `pr wait-for-comments`; the polling subcommand exits as soon as a new comment is posted, so this is a ceiling, not a fixed delay) |
-| `steps` | list | (see below) | Ordered list of step references to execute |
+| `steps` | list | (see below) | Ordered list of step references to execute — persisted sorted ascending by each step's resolved `order` (override > authoritative source) |
+| `step_order_overrides` | map | `{}` | Per-step integer override of the discovered `order` value — managed via `set-step-order-override` / `remove-step-order-override` |
 
 Default steps: `commit_push`, `create_pr`, `automated_review`, `sonar_roundtrip`, `knowledge_capture`, `lessons_capture`, `branch_cleanup`, `archive`. Step types: built-in (plain name), project (`project:` prefix), skill (fully-qualified `bundle:skill`).
 

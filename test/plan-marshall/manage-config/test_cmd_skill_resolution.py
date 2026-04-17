@@ -488,6 +488,106 @@ def test_list_finalize_steps_extension_steps_come_last(tmp_path):
 
 
 # =============================================================================
+# Order field discovery tests (deliverable 5)
+# =============================================================================
+
+
+def test_read_frontmatter_order_parses_int(tmp_path):
+    """_read_frontmatter_order returns the int value from frontmatter."""
+    md = tmp_path / 'skill.md'
+    md.write_text('---\nname: foo\ndescription: bar\norder: 42\n---\n\n# Foo\n')
+
+    assert _cmd_skill_domains._read_frontmatter_order(md) == 42
+
+
+def test_read_frontmatter_order_missing_returns_none(tmp_path):
+    """_read_frontmatter_order returns None when the frontmatter has no order key."""
+    md = tmp_path / 'skill.md'
+    md.write_text('---\nname: foo\ndescription: bar\n---\n\n# Foo\n')
+
+    assert _cmd_skill_domains._read_frontmatter_order(md) is None
+
+
+def test_read_frontmatter_order_no_frontmatter_returns_none(tmp_path):
+    """_read_frontmatter_order returns None when the file has no frontmatter."""
+    md = tmp_path / 'skill.md'
+    md.write_text('# Foo\n\nJust body content.\n')
+
+    assert _cmd_skill_domains._read_frontmatter_order(md) is None
+
+
+def test_read_frontmatter_order_missing_file_returns_none(tmp_path):
+    """_read_frontmatter_order returns None when the path does not exist."""
+    missing = tmp_path / 'nope.md'
+
+    assert _cmd_skill_domains._read_frontmatter_order(missing) is None
+
+
+def test_list_finalize_steps_builtins_have_order(tmp_path):
+    """Built-in finalize steps carry order values parsed from standards/*.md frontmatter."""
+    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
+        steps = _run_discovery_in_cwd(tmp_path)
+
+    by_name = {s['name']: s for s in steps if s['source'] == 'built-in'}
+    assert by_name['default:commit-push']['order'] == 10
+    assert by_name['default:create-pr']['order'] == 20
+    assert by_name['default:automated-review']['order'] == 30
+    assert by_name['default:archive-plan']['order'] == 1000
+    assert by_name['default:record-metrics']['order'] == 990
+
+
+def test_list_finalize_steps_project_skill_order_from_frontmatter(tmp_path):
+    """Project finalize-step-* skills expose the `order` declared in their SKILL.md."""
+    skill_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-custom'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text(
+        '---\nname: finalize-step-custom\ndescription: Custom\norder: 150\n---\n\n# Custom\n'
+    )
+
+    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
+        steps = _run_discovery_in_cwd(tmp_path)
+
+    custom = next(s for s in steps if s['name'] == 'project:finalize-step-custom')
+    assert custom['order'] == 150
+
+
+def test_list_finalize_steps_project_skill_without_order_returns_none(tmp_path):
+    """Project finalize-step-* skill without `order` frontmatter exposes order: None."""
+    skill_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-bare'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text(
+        '---\nname: finalize-step-bare\ndescription: Bare\n---\n\n# Bare\n'
+    )
+
+    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
+        steps = _run_discovery_in_cwd(tmp_path)
+
+    bare = next(s for s in steps if s['name'] == 'project:finalize-step-bare')
+    assert bare['order'] is None
+
+
+def test_list_finalize_steps_extension_order_from_return_dict(tmp_path):
+    """Extension-contributed finalize steps propagate the `order` field from the return dict."""
+    class _FakeExtModule:
+        @staticmethod
+        def provides_finalize_steps():
+            return [
+                {'name': 'ext:with-order', 'description': 'With order', 'order': 500},
+                {'name': 'ext:without-order', 'description': 'No order'},
+            ]
+
+    fake_extensions = [{'bundle': 'fake-bundle', 'module': _FakeExtModule()}]
+
+    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=fake_extensions):
+        steps = _run_discovery_in_cwd(tmp_path)
+
+    with_order = next(s for s in steps if s['name'] == 'ext:with-order')
+    without_order = next(s for s in steps if s['name'] == 'ext:without-order')
+    assert with_order['order'] == 500
+    assert without_order['order'] is None
+
+
+# =============================================================================
 # CLI Plumbing Tests (Tier 3 - subprocess)
 # =============================================================================
 
