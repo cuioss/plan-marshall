@@ -24,6 +24,7 @@ from git_workflow import (  # type: ignore[import-not-found]  # noqa: E402
     analyze_diff,
     cmd_detect_artifacts,
     cmd_format_commit,
+    get_tracked_files,
     scan_artifacts,
     wrap_text,
 )
@@ -472,6 +473,87 @@ class TestDetectArtifacts(unittest.TestCase):
         for f in all_files:
             self.assertFalse(f.startswith('.git/'), f'.git file should be excluded: {f}')
         self.assertTrue(any('real.temp' in f for f in result['safe']))
+
+    def test_fixture_path_classified_as_uncertain(self):
+        """Fixture files under test/**/fixtures/** should land in uncertain, not safe."""
+        self._create_file('test/foo/fixtures/sample.dat')
+
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
+        uncertain_str = '\n'.join(result['uncertain'])
+        safe_str = '\n'.join(result['safe'])
+        self.assertIn('test/foo/fixtures/sample.dat', uncertain_str)
+        self.assertNotIn('test/foo/fixtures/sample.dat', safe_str)
+
+    def test_non_repo_graceful_degradation(self):
+        """scan_artifacts must not raise when called outside a git repo."""
+        # No git init — tmpdir is a plain directory. Create a benign file so
+        # traversal has something to process.
+        self._create_file('src/main.py')
+
+        # Must complete without raising and return a valid dict shape.
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
+        self.assertIsInstance(result, dict)
+        self.assertIn('safe', result)
+        self.assertIn('uncertain', result)
+        self.assertIn('total', result)
+
+        # get_tracked_files should degrade to an empty set when no git repo exists.
+        tracked = get_tracked_files(Path(self.tmpdir))
+        self.assertEqual(tracked, set())
+
+
+class TestTrackedFileFilter(unittest.TestCase):
+    """Test that tracked files matching safe patterns are demoted to uncertain."""
+
+    def setUp(self):
+        """Create a temporary directory for git-backed scenarios."""
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        """Clean up temporary directory."""
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _create_file(self, relpath: str) -> None:
+        """Create a file within the temp directory."""
+        full = Path(self.tmpdir) / relpath
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text('test')
+
+    def _git_init_with_identity(self) -> None:
+        """Initialise a git repo with a throwaway committer identity."""
+        import subprocess as sp
+
+        sp.run(['git', 'init'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'config', 'user.email', 'test@test.com'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'config', 'user.name', 'Test'], cwd=self.tmpdir, capture_output=True)
+
+    def test_tracked_safe_pattern_file_downgrades_to_uncertain(self):
+        """A committed *.log file must appear in uncertain (never in safe)."""
+        import subprocess as sp
+
+        self._git_init_with_identity()
+        self._create_file('debug.log')
+        sp.run(['git', 'add', 'debug.log'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'commit', '-m', 'commit debug.log'], cwd=self.tmpdir, capture_output=True)
+
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
+
+        self.assertIn('debug.log', result['uncertain'])
+        self.assertNotIn('debug.log', result['safe'])
+
+    def test_untracked_safe_pattern_file_stays_safe(self):
+        """An untracked *.log file (not gitignored) must remain in safe (regression guard)."""
+        self._git_init_with_identity()
+        # No .gitignore is created, so the file is not gitignored.
+        # No `git add` — the file remains untracked.
+        self._create_file('debug.log')
+
+        result = scan_artifacts(Path(self.tmpdir), respect_gitignore=False)
+
+        self.assertIn('debug.log', result['safe'])
+        self.assertNotIn('debug.log', result['uncertain'])
 
 
 class TestDetectArtifactsGitignore(unittest.TestCase):
