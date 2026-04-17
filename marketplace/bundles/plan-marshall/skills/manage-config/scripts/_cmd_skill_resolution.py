@@ -406,6 +406,29 @@ def _discover_all_finalize_steps() -> list[dict]:
 
     all_steps: list[dict] = []
 
+    # cache-sync must precede any step that invokes cached scripts
+    claude_skills = Path('.claude/skills')
+    sync_skill_name = 'finalize-step-sync-plugin-cache'
+    if claude_skills.is_dir():
+        sync_skill_dir = claude_skills / sync_skill_name
+        sync_skill_md = sync_skill_dir / 'SKILL.md'
+        if sync_skill_dir.is_dir() and sync_skill_md.exists():
+            content = sync_skill_md.read_text()
+            description = ''
+            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
+            if fm_match:
+                description = fm_match.group(1).strip()
+
+            step_ref = f'project:{sync_skill_name}'
+            all_steps.append(
+                {
+                    'name': step_ref,
+                    'description': description or sync_skill_name,
+                    'type': 'project',
+                    'source': 'project',
+                }
+            )
+
     # Source 1: Built-in steps
     for step_name in BUILT_IN_FINALIZE_STEPS:
         all_steps.append(
@@ -417,11 +440,12 @@ def _discover_all_finalize_steps() -> list[dict]:
             }
         )
 
-    # Source 2: Project finalize-step-* skills
-    claude_skills = Path('.claude/skills')
+    # Source 2: Project finalize-step-* skills (excluding sync-plugin-cache, already emitted above)
     if claude_skills.is_dir():
         for skill_dir in sorted(claude_skills.iterdir()):
             if not skill_dir.is_dir() or not skill_dir.name.startswith('finalize-step-'):
+                continue
+            if skill_dir.name == sync_skill_name:
                 continue
             skill_md = skill_dir / 'SKILL.md'
             if not skill_md.exists():
