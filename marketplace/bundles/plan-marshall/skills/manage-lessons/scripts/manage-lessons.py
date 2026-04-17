@@ -5,10 +5,14 @@ Manage lessons learned with global scope.
 Stores lessons as markdown files with key=value metadata headers.
 
 Usage:
-    python3 manage-lesson.py add --component maven-build --category bug --title "Title" --detail "..."
+    python3 manage-lesson.py add --component maven-build --category bug --title "Title"
     python3 manage-lesson.py list --component maven-build
     python3 manage-lesson.py get --id 2025-12-02-001
     python3 manage-lesson.py convert-to-plan --id 2025-12-02-001 --plan-id my-plan
+
+The `add` subcommand allocates a fresh lesson file (metadata header + title, empty
+body) and returns its absolute path. Callers write the body directly to that path
+via the Write tool — there is no alternative API form for inline body content.
 """
 
 import argparse
@@ -111,7 +115,11 @@ def write_lesson_to(path: Path, metadata: dict, title: str, body: str) -> None:
 
 
 def cmd_add(args: argparse.Namespace) -> dict:
-    """Create a new lesson."""
+    """Allocate a new lesson file with metadata header and title (empty body).
+
+    Returns the absolute path of the created file. The caller writes the body
+    directly to that path via the Write tool — there is no inline body API.
+    """
     if args.category not in VALID_CATEGORIES:
         return {
             'status': 'error',
@@ -133,12 +141,14 @@ def cmd_add(args: argparse.Namespace) -> dict:
     if args.bundle:
         metadata['bundle'] = args.bundle
 
-    write_lesson(lesson_id, metadata, args.title, args.detail)
+    write_lesson(lesson_id, metadata, args.title, '')
+
+    path = (get_lessons_dir() / f'{lesson_id}.md').resolve()
 
     return {
         'status': 'success',
         'id': lesson_id,
-        'file': f'{lesson_id}.md',
+        'path': str(path),
         'component': args.component,
         'category': args.category,
     }
@@ -333,13 +343,15 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # add
-    add_parser = subparsers.add_parser('add', help='Create new lesson')
+    add_parser = subparsers.add_parser(
+        'add',
+        help='Allocate a new lesson file (metadata + title, empty body) and return its absolute path',
+    )
     add_parser.add_argument('--component', required=True, help='Component name')
     add_parser.add_argument(
         '--category', required=True, choices=['bug', 'improvement', 'anti-pattern'], help='Lesson category'
     )
     add_parser.add_argument('--title', required=True, help='Lesson title')
-    add_parser.add_argument('--detail', required=True, help='Lesson detail')
     add_parser.add_argument('--bundle', help='Optional bundle reference')
     add_parser.set_defaults(func=cmd_add)
 

@@ -16,6 +16,7 @@ Tier 2 (direct import) with 2 subprocess tests for CLI plumbing.
 import importlib.util
 import json
 from argparse import Namespace
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -49,8 +50,8 @@ cmd_from_error = _mod.cmd_from_error
 class TestCmdAdd:
     """Test cmd_add direct invocation."""
 
-    def test_add_creates_lesson_file(self, tmp_path):
-        """Should create a lesson file with correct metadata."""
+    def test_add_allocates_lesson_file_and_returns_path(self, tmp_path):
+        """Should create a lesson file with metadata header + title and return its absolute path."""
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
@@ -60,7 +61,6 @@ class TestCmdAdd:
                     component='test-component',
                     category='bug',
                     title='Test Lesson',
-                    detail='This is a test lesson detail.',
                     bundle=None,
                 )
             )
@@ -69,7 +69,21 @@ class TestCmdAdd:
         assert result['component'] == 'test-component'
         assert result['category'] == 'bug'
         assert 'id' in result
-        assert 'file' in result
+        assert 'path' in result
+
+        path = Path(result['path'])
+        assert path.is_absolute()
+        assert path.parent == lessons_dir.resolve()
+        assert path.exists()
+
+        content = path.read_text(encoding='utf-8')
+        assert f'id={result["id"]}' in content
+        assert 'component=test-component' in content
+        assert 'category=bug' in content
+        assert '# Test Lesson' in content
+        # Body is empty — the section after the title should be whitespace only
+        body = content.split('# Test Lesson', 1)[1]
+        assert body.strip() == ''
 
     def test_add_with_invalid_category_fails(self, tmp_path):
         """Should fail when using invalid category."""
@@ -79,7 +93,6 @@ class TestCmdAdd:
                     component='test-component',
                     category='invalid-category',
                     title='Test',
-                    detail='Detail',
                     bundle=None,
                 )
             )
@@ -88,7 +101,7 @@ class TestCmdAdd:
         assert result['error'] == 'invalid_category'
 
     def test_add_with_bundle_reference(self, tmp_path):
-        """Should accept optional bundle reference."""
+        """Should accept optional bundle reference and persist it in the metadata header."""
         lessons_dir = tmp_path / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
@@ -98,12 +111,13 @@ class TestCmdAdd:
                     component='test-component',
                     category='improvement',
                     title='Test Lesson',
-                    detail='Detail',
                     bundle='pm-dev-java',
                 )
             )
 
         assert result['status'] == 'success'
+        content = Path(result['path']).read_text(encoding='utf-8')
+        assert 'bundle=pm-dev-java' in content
 
 
 # =============================================================================
@@ -495,7 +509,7 @@ class TestCliPlumbingAdd(ScriptTestCase):
     script = 'manage-lessons.py'
 
     def test_cli_add_creates_lesson(self):
-        """Should create a lesson via CLI and produce TOON output."""
+        """Should create a lesson via CLI and produce TOON output with an absolute path."""
         lessons_dir = self.temp_dir / 'lessons-learned'
         lessons_dir.mkdir(parents=True)
 
@@ -509,14 +523,14 @@ class TestCliPlumbingAdd(ScriptTestCase):
                 'bug',
                 '--title',
                 'Test Lesson',
-                '--detail',
-                'This is a test lesson detail.',
             )
 
         self.assert_success(result)
         self.assertIn('status: success', result.stdout)
         self.assertIn('component: test-component', result.stdout)
         self.assertIn('category: bug', result.stdout)
+        self.assertIn('path: ', result.stdout)
+        self.assertNotIn('file: ', result.stdout)
 
     def test_cli_invalid_category_rejected_by_argparse(self):
         """Should reject invalid category at argparse level."""
@@ -530,12 +544,29 @@ class TestCliPlumbingAdd(ScriptTestCase):
                 'invalid-category',
                 '--title',
                 'Test',
-                '--detail',
-                'Detail',
             )
 
         self.assert_failure(result)
         self.assertIn('invalid choice', result.stderr)
+
+    def test_cli_detail_flag_rejected(self):
+        """Should reject the legacy --detail flag at argparse level."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(
+                SCRIPT_PATH,
+                'add',
+                '--component',
+                'test-component',
+                '--category',
+                'bug',
+                '--title',
+                'Test Lesson',
+                '--detail',
+                'Legacy inline body that must no longer be accepted',
+            )
+
+        self.assert_failure(result)
+        self.assertIn('unrecognized arguments', result.stderr)
 
 
 if __name__ == '__main__':

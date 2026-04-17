@@ -206,10 +206,13 @@ At `6-finalize`:
 
 1. Query unpromoted findings: `query --plan-id {plan_id} --promoted false`
 2. For each finding to promote:
-   - **To manage-lessons** (bug, improvement, anti-pattern, triage):
+   - **To manage-lessons** (bug, improvement, anti-pattern, triage) — two-step path-allocate flow:
      ```bash
-     manage-lessons add --component {component} --category {type} ...
-     promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to {promoted_id}
+     # Step A: allocate the lesson file (returns an absolute path)
+     manage-lessons add --component {component} --category {type} --title {title}
+     # Step B: write the finding body directly to the returned path via the Write tool
+     # Step C: record the promotion
+     promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to {lesson_id}
      ```
    - **To architecture** (tip, insight, best-practice):
      ```bash
@@ -217,7 +220,7 @@ At `6-finalize`:
      promote --plan-id {plan_id} --hash-id {hash_id} --promoted-to architecture
      ```
 
-**`promoted_to` values**: Either `architecture` (for tips/insights/best-practices routed to manage-architecture), or the lesson ID returned by `manage-lessons add` (the hash_id of the created lesson).
+**`promoted_to` values**: Either `architecture` (for tips/insights/best-practices routed to manage-architecture), or the lesson ID returned by `manage-lessons add` (the `id` field of the created lesson, still present in the TOON output).
 
 **Error cases**:
 - Promoting an already-promoted finding returns `status: error, error: already_promoted`

@@ -175,14 +175,15 @@ For each selected action:
 
 **If Record as lesson**:
 - Activate: `Skill: plan-marshall:manage-lessons`
-- Create lesson with:
-  ```bash
-  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
-    --component "{source_component}" \
-    --category "bug" \
-    --title "Script failure: {short_description}" \
-    --detail "{detailed analysis and solution}"
-  ```
+- Create the lesson using the two-step path-allocate flow (single supported API — no `--detail` inline form):
+  1. Allocate the lesson file and capture the returned `path`:
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
+       --component "{source_component}" \
+       --category "bug" \
+       --title "Script failure: {short_description}"
+     ```
+  2. Parse `path` from the TOON output and write the detailed analysis and solution directly to that path via the Write tool. The body may include rich markdown (stack traces in code fences, `##` sections for analysis and resolution) because it never passes through a shell argument.
 
 ### Step 9: Summary
 

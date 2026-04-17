@@ -106,13 +106,17 @@ If still failing after max iterations: mark task as `blocked` and record details
 
 ### Step: Record Lessons
 
-On issues or unexpected patterns:
+On issues or unexpected patterns, use the two-step path-allocate flow:
+
+1. Allocate a lesson file and capture the returned `path`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "plan-marshall:task-executor" --category improvement \
-  --title "{issue summary}" --detail "{context and resolution}"
+  --title "{issue summary}"
 ```
+
+2. Parse `path` from the output, then write the lesson body directly to that path via the Write tool. Markdown sections with `##` headings, code fences, and multiple paragraphs are all safe because the body never passes through a shell argument.
 
 ### Step: Return Results
 

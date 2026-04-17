@@ -368,15 +368,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 10: Record Issues as Lessons
 
-On ambiguous deliverable or planning issues:
+On ambiguous deliverable or planning issues, follow the two-step path-allocate flow:
+
+1. Allocate a lesson file and capture the returned `path`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "plan-marshall:phase-4-plan" \
   --category improvement \
-  --title "{issue summary}" \
-  --detail "{context and resolution approach}"
+  --title "{issue summary}"
 ```
+
+2. Parse `path` from the output and write the lesson body (context + resolution approach, with `##` sections as needed) directly to that path via the Write tool. This is the single supported API — there is no `--detail` inline form.
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 
