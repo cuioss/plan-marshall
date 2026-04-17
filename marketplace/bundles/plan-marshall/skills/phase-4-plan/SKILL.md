@@ -171,7 +171,7 @@ For each deliverable D:
          IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
            - Log WARN: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
            - Set task.skills = [] (continue with empty skills rather than erroring)
-           - Record a Q-Gate triage finding via `manage-findings qgate add --phase 4-plan --source qgate --type triage --title "Missing skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate the missing profile."` so phase-5-execute and phase-6-finalize can surface the gap.
+           - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title "Missing skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate the missing profile."` so phase-5-execute and phase-6-finalize can surface the gap.
          ELSE:
            - Load all `defaults` directly into task.skills
            - For each `optional`, evaluate its `description` against deliverable context
@@ -466,7 +466,7 @@ If a profile from `deliverable.profiles` is not in `module.skills_by_profile`, t
 
 - Log WARN: `(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate.`
 - Set `task.skills = []` and continue creating the task.
-- Record a Q-Gate triage finding via `manage-findings qgate add --phase 4-plan --source qgate --type triage`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
+- Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
 
 ### Ambiguous Deliverable
 
