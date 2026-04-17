@@ -51,6 +51,10 @@ Activate when:
 2. **SKILL.md** - Full instructions (~400-800 lines)
 3. **References** - Detailed content (thousands of lines, loaded when needed)
 
+### Skill Naming Convention
+
+**Principle**: Skill directory names are verb phrases (e.g., `execute-task`, `manage-files`). Noun suffixes — `-executor`, `-manager`, `-runner`, `-handler`, `-orchestrator` (and their plural forms) — are reserved for spawnable marketplace agents and MUST NOT appear at the end of a skill directory name. See `references/skill-design.md` for the full rule and enforcement.
+
 ### Relative Path Pattern
 
 **Principle**: All resource paths use relative paths from the skill directory for portability across installations.
@@ -74,7 +78,7 @@ Load references progressively based on current task. **Never load all references
 | 2 | Skill Patterns | `references/skill-patterns.md` | Designing a new skill, choosing implementation pattern (10 patterns + combinations) |
 | 3 | Goal-Based Organization | `references/goal-based-organization.md` | Understanding goal-based vs component-centric, migration strategies |
 | 4 | Architecture Rules | `references/architecture-rules.md` | Validating compliance, self-containment, progressive disclosure requirements |
-| 5 | Skill Design | `references/skill-design.md` | Designing workflows, multi-workflow skills, workflow composition |
+| 5 | Skill Design | `references/skill-design.md` | Designing workflows, multi-workflow skills, workflow composition, skill naming convention (verb-first names; forbidden noun suffixes -executor/-manager/-runner/-handler/-orchestrator) |
 | 6 | Command Design | `references/command-design.md` | Creating commands, parameter parsing, routing to skill workflows |
 | 7 | Token Optimization | `references/token-optimization.md` | Optimizing context, batch processing, token budgeting |
 | 8 | Reference Patterns | `references/reference-patterns.md` | Allowed reference types, relative path implementation, portability |
@@ -104,6 +108,7 @@ Load references progressively based on current task. **Never load all references
 | Creating component | core-principles.md, skill-patterns.md |
 | Understanding architecture | goal-based-organization.md, architecture-rules.md |
 | Designing skill | skill-design.md, skill-patterns.md |
+| Naming a new skill | skill-design.md (Skill Naming Convention) |
 | Designing command | command-design.md |
 | Optimizing context | token-optimization.md |
 | Validating compliance | architecture-rules.md, reference-patterns.md |

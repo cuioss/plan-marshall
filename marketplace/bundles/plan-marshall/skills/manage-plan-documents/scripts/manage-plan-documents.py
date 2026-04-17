@@ -7,15 +7,31 @@ Document types are defined declaratively in documents/*.toon files.
 Delegates file I/O to manage-files.
 
 Usage:
-    python3 manage-plan-document.py request create --plan-id my-plan --title "..." --source description --body "..."
+    # Create a metadata-only stub and write the body via Write(path)
+    python3 manage-plan-document.py request create --plan-id my-plan --title "..." --source description
+    # (then the main context calls Write(path) using the returned `path` field)
+
+    # Create with a pre-written body file as a shortcut
+    python3 manage-plan-document.py request create --plan-id my-plan --title "..." --source description --body-file /tmp/body.md
+
     python3 manage-plan-document.py request read --plan-id my-plan
     python3 manage-plan-document.py request path --plan-id my-plan
     python3 manage-plan-document.py request mark-clarified --plan-id my-plan
 
-Editing flow (three-step pattern): call `request path` to get the canonical
-artifact path, edit the file directly with Read/Edit/Write in the main context,
-then call `request mark-clarified` to record the transition. No multi-line
-content crosses the shell boundary.
+Body handling (path-allocate convention): `request create` never accepts inline
+multi-line body/context/clarification arguments. The two supported flows are:
+
+  1. Stub + Write: call `request create` with metadata only; it returns `path`
+     pointing at the freshly created file. The main context then writes the
+     body directly via the Write tool against that path.
+  2. Body-file shortcut: pass `--body-file PATH` to splice a pre-written body
+     into the rendered stub at creation time. Missing/non-regular paths return
+     `status: error, error: body_file_not_found`.
+
+Clarification flow (three-step pattern): call `request path` to get the
+canonical artifact path, edit the file directly with Read/Edit/Write in the
+main context, then call `request mark-clarified` to record the transition.
+No multi-line content crosses the shell boundary.
 
 Note: Solution documents are managed by the manage-solution-outline skill.
 """
@@ -50,7 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
         type_subparsers = type_parser.add_subparsers(dest='verb', required=True, help='Operation')
 
         # Create
-        create_parser = type_subparsers.add_parser('create', help='Create document')
+        # allow_abbrev=False prevents argparse from prefix-matching removed inline
+        # arguments (e.g. --body) against the live --body-file flag. The path-allocate
+        # refactor deliberately removed --body/--context/--clarifications/--clarified-request
+        # — any such invocation MUST fail with "unrecognized argument", not silently
+        # rebind to a different flag. See task-006 / solution_outline deliverable 6.
+        create_parser = type_subparsers.add_parser('create', help='Create document', allow_abbrev=False)
         add_plan_id_arg(create_parser)
         create_parser.add_argument('--force', action='store_true', help='Overwrite if exists')
 

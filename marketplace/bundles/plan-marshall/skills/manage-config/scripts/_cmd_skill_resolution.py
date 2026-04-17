@@ -2,7 +2,7 @@
 Skill resolution and discovery command handlers for manage-config.
 
 Handles: resolve-domain-skills, resolve-workflow-skill-extension, get-skills-by-profile,
-         configure-task-executors, resolve-task-executor, resolve-outline-skill,
+         configure-execute-task-skills, resolve-execute-task-skill, resolve-outline-skill,
          list-recipes, resolve-recipe, list-verify-steps, list-finalize-steps
 """
 
@@ -201,8 +201,8 @@ def cmd_get_skills_by_profile(args) -> dict:
     return success_exit({'domain': domain, 'skills_by_profile': skills_by_profile})
 
 
-def cmd_configure_task_executors(args) -> dict:
-    """Configure task executors from discovered profiles."""
+def cmd_configure_execute_task_skills(args) -> dict:
+    """Configure execute-task skills from discovered profiles."""
     try:
         require_initialized()
     except MarshalNotInitializedError as e:
@@ -233,29 +233,33 @@ def cmd_configure_task_executors(args) -> dict:
                 if key != 'core':
                     discovered_profiles.add(key)
 
-    # Build task_executors mapping using convention: profile X → plan-marshall:task-X
-    task_executors = {}
+    # Build execute_task_skills mapping using convention: profile X → plan-marshall:execute-task-X
+    execute_task_skills = {}
     for profile in sorted(discovered_profiles):
         # Skip quality profile - it's handled by verify phase, not task execution
         if profile == 'quality':
             continue
-        task_executors[profile] = f'plan-marshall:task-{profile}'
+        execute_task_skills[profile] = f'plan-marshall:execute-task-{profile}'
 
-    # Update system domain with task_executors
+    # Update system domain with execute_task_skills
     system_config = skill_domains['system']
-    system_config['task_executors'] = task_executors
+    system_config['execute_task_skills'] = execute_task_skills
     skill_domains['system'] = system_config
 
     config['skill_domains'] = skill_domains
     save_config(config)
 
     return success_exit(
-        {'status': 'success', 'task_executors_configured': len(task_executors), 'executors': task_executors}
+        {
+            'status': 'success',
+            'execute_task_skills_configured': len(execute_task_skills),
+            'skills': execute_task_skills,
+        }
     )
 
 
-def cmd_resolve_task_executor(args) -> dict:
-    """Resolve task executor skill for a given profile."""
+def cmd_resolve_execute_task_skill(args) -> dict:
+    """Resolve execute-task skill for a given profile."""
     try:
         require_initialized()
     except MarshalNotInitializedError as e:
@@ -265,18 +269,20 @@ def cmd_resolve_task_executor(args) -> dict:
     config = load_config()
     skill_domains = config.get('skill_domains', {})
     system_config = skill_domains.get('system', {})
-    task_executors = system_config.get('task_executors', {})
+    execute_task_skills = system_config.get('execute_task_skills', {})
 
-    if not task_executors:
-        return error_exit('No task_executors configured. Run configure-task-executors first.')
+    if not execute_task_skills:
+        return error_exit(
+            'No execute_task_skills configured. Run configure-execute-task-skills first.'
+        )
 
-    if profile not in task_executors:
-        available = sorted(task_executors.keys())
+    if profile not in execute_task_skills:
+        available = sorted(execute_task_skills.keys())
         return error_exit(f"Unknown profile '{profile}'. Available profiles: {', '.join(available)}")
 
-    task_executor = task_executors[profile]
+    execute_task_skill = execute_task_skills[profile]
 
-    return success_exit({'profile': profile, 'task_executor': task_executor})
+    return success_exit({'profile': profile, 'execute_task_skill': execute_task_skill})
 
 
 # =============================================================================

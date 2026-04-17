@@ -47,8 +47,11 @@ Script execution notation: `{bundle}:{skill}:{script}`
 ## Examples
 
 ```bash
-# Document operations (typed documents)
-python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id my-plan --title "My Task" --source description --body "Task details"
+# Document operations (typed documents) — path-allocate pattern:
+# `request create` emits a metadata-only stub and returns the absolute `path`;
+# the caller writes body content directly via its native Write tool.
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request create --plan-id my-plan --title "My Task" --source description
+# → parse `path` from the TOON output, then: Write(path, "Task details")
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents request read --plan-id my-plan
 
 # File operations (generic files)

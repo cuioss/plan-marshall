@@ -74,15 +74,33 @@ Script: `plan-marshall:manage-plan-documents:manage-plan-documents`
 
 ### request create
 
-Create a request document.
+Create a request document. Uses the path-allocate pattern: the script allocates
+the canonical artifact path and emits a metadata-only stub. The caller writes
+the body content directly with its native `Write` tool using the returned
+`path`. No body content ever crosses the shell boundary.
+
+```bash
+# Metadata-only: allocates the file and returns its absolute path.
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request create \
+  --plan-id {plan_id} \
+  --title "Feature Title" \
+  --source description
+# → returns {status, plan_id, document, file, action, path, ...}
+# Caller then: Write({path}, "Full task description...")
+```
+
+For the narrow case of already-persisted body content, the `--body-file`
+shortcut reads a UTF-8 file and inlines its contents during stub rendering:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
   request create \
   --plan-id {plan_id} \
   --title "Feature Title" \
-  --source description \
-  --body "Full task description..."
+  --source lesson \
+  --source-id lesson-2026-04-17-008 \
+  --body-file /abs/path/to/body.md
 ```
 
 **Parameters:**
@@ -91,10 +109,9 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 |-----------|----------|-------------|
 | `--plan-id` | Yes | Plan identifier |
 | `--title` | Yes | Document title |
-| `--source` | Yes | Source type: `description`, `lesson`, or `issue` |
-| `--body` | Yes | Main content |
-| `--source-id` | No | Source identifier (lesson ID, issue URL) |
-| `--context` | No | Additional context |
+| `--source` | Yes | Source type: `description`, `lesson`, `issue`, or `recipe` |
+| `--source-id` | No | Source identifier (lesson ID, issue URL, recipe key) |
+| `--body-file` | No | Absolute path to a UTF-8 file whose contents fill the `## Original Input` section. When omitted, the template placeholder paragraph is emitted and the caller writes the body via `Write({path})`. |
 | `--force` | No | Overwrite if exists |
 
 **Output:**
@@ -105,10 +122,11 @@ plan_id: my-feature
 document: request
 file: request.md
 action: created
+path: /abs/path/.plan/local/plans/my-feature/request.md
 
 document_info:
   title: Feature Title
-  sections: title,source,source_id,body,context
+  sections: title,metadata,original_input,clarifications,clarified_request
 ```
 
 ### read
@@ -296,6 +314,7 @@ types:
 | `file_exists` | Document already exists on create (use `--force`) |
 | `section_not_found` | Requested section doesn't exist (except `clarified_request` which falls back) |
 | `not_clarified` | `mark-clarified` called but document has no Clarified Request section |
+| `body_file_not_found` | `--body-file` path does not exist or is not a regular file |
 | `validation_error` | Field validation failed on create |
 
 ---

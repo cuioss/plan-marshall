@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """Tests for manage-plan-documents.py script.
 
-Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
+Tier 2 (direct import) tests with a handful of subprocess tests that pin the
+CLI plumbing (argparse contract, TOON output shape).
 
-Exercises the three-step path-allocate pattern for request editing:
-    1. `request path`           → script returns the canonical artifact path
-    2. Main context edits file  → direct Read/Edit/Write (no shell boundary)
-    3. `request mark-clarified` → script validates and records the transition
+Exercises the path-allocate convention for request editing:
+    * `request create` (metadata-only or --body-file PATH) allocates the
+      request file and returns its canonical `path`.
+    * `request path`           → script returns the canonical artifact path
+    * Main context edits file  → direct Read/Edit/Write (no shell boundary)
+    * `request mark-clarified` → script validates and records the transition
+
+The inline `--body`, `--context`, `--clarifications`, `--clarified-request`
+arguments were removed when the contract was tightened to path-allocate only.
+A dedicated test below pins that they no longer parse.
 """
 
 import importlib.util
@@ -14,9 +21,11 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import PlanContext, get_script_path, run_script
 
-# Script path for remaining subprocess (CLI plumbing) tests
+# Script path for subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-plan-documents', 'manage-plan-documents.py')
 
 # Import toon_parser for subprocess tests
@@ -47,6 +56,32 @@ cmd_read = _cmd_request.cmd_read
 cmd_remove = _cmd_request.cmd_remove
 cmd_list_types = _cmd_types.cmd_list_types
 
+
+def _make_create_args(
+    plan_id: str,
+    title: str = 'Test Feature',
+    source: str = 'description',
+    source_id: str | None = None,
+    body_file: str | None = None,
+    force: bool = False,
+) -> Namespace:
+    """Build a Namespace matching the trimmed `request create` CLI surface.
+
+    Only fields that survived the path-allocate refactor are present:
+    plan_id, title, source, source_id, body_file, force. Callers that previously
+    passed body/context/clarifications/clarified_request must stop — those
+    arguments were removed from both the argparse parser and cmd_create.
+    """
+    return Namespace(
+        plan_id=plan_id,
+        title=title,
+        source=source,
+        source_id=source_id,
+        body_file=body_file,
+        force=force,
+    )
+
+
 # =============================================================================
 # Test: List Types
 # =============================================================================
@@ -63,24 +98,16 @@ def test_list_types():
 
 
 # =============================================================================
-# Test: Request Document
+# Test: Request Document (metadata-only + --body-file flows)
 # =============================================================================
 
 
 def test_request_create():
-    """Test creating a request document."""
+    """Test creating a request document with metadata only."""
     with PlanContext(plan_id='request-create') as ctx:
         result = cmd_create(
             'request',
-            Namespace(
-                plan_id='request-create',
-                title='Test Feature',
-                source='description',
-                source_id=None,
-                body='Implement a test feature',
-                context=None,
-                force=False,
-            ),
+            _make_create_args(plan_id='request-create', title='Test Feature', source='description'),
         )
         assert result['status'] == 'success'
         assert result['document'] == 'request'
@@ -89,26 +116,23 @@ def test_request_create():
         assert (ctx.plan_dir / 'request.md').exists()
 
 
-def test_request_create_with_context():
-    """Test creating a request document with optional context."""
-    with PlanContext(plan_id='request-context') as ctx:
+def test_request_create_with_source_id():
+    """Test creating a request document with optional source_id populated."""
+    with PlanContext(plan_id='request-source-id') as ctx:
         result = cmd_create(
             'request',
-            Namespace(
-                plan_id='request-context',
+            _make_create_args(
+                plan_id='request-source-id',
                 title='Test Feature',
                 source='issue',
                 source_id='https://github.com/org/repo/issues/123',
-                body='Implement a test feature',
-                context='Additional context here',
-                force=False,
             ),
         )
         assert result['status'] == 'success'
-        # Verify content
+        # Verify content includes title and source_id in the header block
         content = (ctx.plan_dir / 'request.md').read_text()
         assert 'Test Feature' in content
-        assert 'Additional context here' in content
+        assert 'source_id: https://github.com/org/repo/issues/123' in content
 
 
 def test_request_create_invalid_source():
@@ -116,15 +140,7 @@ def test_request_create_invalid_source():
     with PlanContext(plan_id='request-invalid'):
         result = cmd_create(
             'request',
-            Namespace(
-                plan_id='request-invalid',
-                title='Test',
-                source='invalid_source',
-                source_id=None,
-                body='Body',
-                context=None,
-                force=False,
-            ),
+            _make_create_args(plan_id='request-invalid', title='Test', source='invalid_source'),
         )
         assert result['status'] == 'error'
         assert 'validation_failed' in result.get('error', '')
@@ -216,6 +232,150 @@ def test_request_remove():
         )
         assert result['action'] == 'removed'
         assert not (ctx.plan_dir / 'request.md').exists()
+
+
+# =============================================================================
+# Test: New contract — metadata-only stub and --body-file splicing
+# =============================================================================
+
+
+def test_request_create_metadata_only_emits_stub():
+    """Metadata-only create renders the template stub; path/success returned."""
+    with PlanContext(plan_id='meta-only-stub') as ctx:
+        result = cmd_create(
+            'request',
+            _make_create_args(
+                plan_id='meta-only-stub',
+                title='Metadata Only Stub',
+                source='issue',
+                source_id='https://github.com/org/repo/issues/42',
+            ),
+        )
+        # Response shape
+        assert result['status'] == 'success'
+        assert 'path' in result
+        returned_path = Path(result['path'])
+        assert returned_path.is_absolute()
+
+        # File shape
+        target = ctx.plan_dir / 'request.md'
+        assert target.exists()
+        assert returned_path == target.resolve()
+
+        content = target.read_text(encoding='utf-8')
+        assert '# Request: Metadata Only Stub' in content
+        # All four metadata header lines present
+        assert 'plan_id: meta-only-stub' in content
+        assert 'source: issue' in content
+        assert 'source_id: https://github.com/org/repo/issues/42' in content
+        assert 'created: ' in content
+        # Original Input section with stub placeholder
+        assert '## Original Input' in content
+        assert '_Body not yet provided — write content here._' in content
+
+
+def test_request_create_with_body_file_substitutes_contents():
+    """--body-file splices a pre-written body into the stub under Original Input."""
+    with PlanContext(plan_id='body-file-splice') as ctx:
+        body_path = ctx.fixture_dir / 'external-body.md'
+        body_content = (
+            'First paragraph with some detail.\n'
+            '\n'
+            '## Heading\n'
+            '\n'
+            'Second paragraph after a newline-plus-hash line that used to trip\n'
+            'the inline --body shell argument.\n'
+        )
+        body_path.write_text(body_content, encoding='utf-8')
+
+        result = cmd_create(
+            'request',
+            _make_create_args(
+                plan_id='body-file-splice',
+                title='Body File Splice',
+                source='description',
+                body_file=str(body_path),
+            ),
+        )
+        assert result['status'] == 'success'
+        target = ctx.plan_dir / 'request.md'
+        rendered = target.read_text(encoding='utf-8')
+
+        # Body file contents appear verbatim (minus trailing newline trim)
+        assert 'First paragraph with some detail.' in rendered
+        assert '## Heading' in rendered
+        assert 'Second paragraph after a newline-plus-hash line that used to trip' in rendered
+        # Stub placeholder replaced
+        assert '_Body not yet provided — write content here._' not in rendered
+        # Original Input heading still present
+        assert '## Original Input' in rendered
+
+
+@pytest.mark.parametrize(
+    'removed_arg,removed_value',
+    [
+        ('--body', 'inline body'),
+        ('--context', 'inline context'),
+        ('--clarifications', 'inline clarifications'),
+        ('--clarified-request', 'inline clarified request'),
+    ],
+)
+def test_request_create_rejects_removed_inline_args(removed_arg, removed_value):
+    """CLI argparse must reject the four removed inline-content arguments."""
+    with PlanContext(plan_id='rejects-inline'):
+        result = run_script(
+            SCRIPT_PATH,
+            'request',
+            'create',
+            '--plan-id',
+            'rejects-inline',
+            '--title',
+            'Test',
+            '--source',
+            'description',
+            removed_arg,
+            removed_value,
+        )
+        # argparse must fail with non-zero and mention the unknown argument
+        assert not result.success, f'Expected argparse to reject {removed_arg}, got stdout={result.stdout!r}'
+        assert 'unrecognized arguments' in result.stderr.lower() or removed_arg in result.stderr
+
+
+def test_request_create_rejects_missing_body_file():
+    """--body-file pointing at a nonexistent path returns body_file_not_found."""
+    with PlanContext(plan_id='body-file-missing') as ctx:
+        missing = ctx.fixture_dir / 'definitely-does-not-exist.md'
+        assert not missing.exists()
+
+        result = cmd_create(
+            'request',
+            _make_create_args(
+                plan_id='body-file-missing',
+                title='Missing Body File',
+                source='description',
+                body_file=str(missing),
+            ),
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'body_file_not_found'
+        # No request.md was written
+        assert not (ctx.plan_dir / 'request.md').exists()
+
+
+def test_request_create_returns_path_in_output():
+    """The create response must include an absolute path matching the filesystem."""
+    with PlanContext(plan_id='returns-path') as ctx:
+        result = cmd_create(
+            'request',
+            _make_create_args(plan_id='returns-path', title='Path In Output', source='description'),
+        )
+        assert result['status'] == 'success'
+        assert 'path' in result
+        returned = Path(result['path'])
+        assert returned.is_absolute(), f'Expected absolute path, got {returned}'
+        # Filesystem location matches
+        expected = (ctx.plan_dir / 'request.md').resolve()
+        assert returned == expected
 
 
 # =============================================================================
@@ -359,18 +519,10 @@ def test_mark_clarified_fails_when_document_missing():
 def test_three_step_edit_roundtrip():
     """End-to-end three-step pattern: create → path → direct edit → mark-clarified."""
     with PlanContext(plan_id='three-step') as ctx:
-        # Step 0: create original document
+        # Step 0: create original document (metadata only; body comes via direct Write)
         cmd_create(
             'request',
-            Namespace(
-                plan_id='three-step',
-                title='Test',
-                source='description',
-                source_id=None,
-                body='Original body',
-                context=None,
-                force=False,
-            ),
+            _make_create_args(plan_id='three-step', title='Test', source='description'),
         )
 
         # Step 1: script allocates path
@@ -417,15 +569,7 @@ def test_invalid_plan_id_uppercase(capsys):
     with PlanContext():
         result = cmd_create(
             'request',
-            Namespace(
-                plan_id='My-Plan',
-                title='Test',
-                source='description',
-                source_id=None,
-                body='Body',
-                context=None,
-                force=False,
-            ),
+            _make_create_args(plan_id='My-Plan', title='Test', source='description'),
         )
         assert result['status'] == 'error'
 
@@ -442,15 +586,7 @@ def test_create_existing_fails():
 
         result = cmd_create(
             'request',
-            Namespace(
-                plan_id='exists-fail',
-                title='New',
-                source='description',
-                source_id=None,
-                body='Body',
-                context=None,
-                force=False,
-            ),
+            _make_create_args(plan_id='exists-fail', title='New', source='description'),
         )
         assert result['error'] == 'document_exists'
 
@@ -462,15 +598,7 @@ def test_create_existing_with_force():
 
         result = cmd_create(
             'request',
-            Namespace(
-                plan_id='exists-force',
-                title='New Title',
-                source='description',
-                source_id=None,
-                body='New body',
-                context=None,
-                force=True,
-            ),
+            _make_create_args(plan_id='exists-force', title='New Title', source='description', force=True),
         )
         assert result['status'] == 'success'
         content = (ctx.plan_dir / 'request.md').read_text()
@@ -484,19 +612,19 @@ def test_create_existing_with_force():
 
 def test_read_section_clarified_request_fallback():
     """Clarified section falls back to original_input when not present."""
-    with PlanContext(plan_id='fallback-test'):
-        # Create request
+    with PlanContext(plan_id='fallback-test') as ctx:
+        # Create metadata-only request, then populate Original Input via direct write
         cmd_create(
             'request',
-            Namespace(
-                plan_id='fallback-test',
-                title='Test',
-                source='description',
-                source_id=None,
-                body='Original body content',
-                context=None,
-                force=False,
+            _make_create_args(plan_id='fallback-test', title='Test', source='description'),
+        )
+        target = ctx.plan_dir / 'request.md'
+        target.write_text(
+            target.read_text(encoding='utf-8').replace(
+                '_Body not yet provided — write content here._',
+                'Original body content',
             ),
+            encoding='utf-8',
         )
 
         # Request clarified_request - should return original_input
@@ -513,18 +641,10 @@ def test_read_section_clarified_request_fallback():
 def test_read_section_returns_clarified_when_present_after_direct_edit():
     """After a direct edit adds a Clarified Request section, read returns it."""
     with PlanContext(plan_id='clarified-present') as ctx:
-        # Step 0: create the request
+        # Step 0: create the request (metadata-only stub)
         cmd_create(
             'request',
-            Namespace(
-                plan_id='clarified-present',
-                title='Test',
-                source='description',
-                source_id=None,
-                body='Original body',
-                context=None,
-                force=False,
-            ),
+            _make_create_args(plan_id='clarified-present', title='Test', source='description'),
         )
 
         # Step 1: script allocates canonical path
@@ -720,8 +840,8 @@ def test_cli_unknown_document_type():
         assert not result.success
 
 
-def test_cli_missing_required_body():
-    """Test that missing required field is rejected via CLI argparse."""
+def test_cli_missing_required_field():
+    """Test that missing required field is rejected via CLI argparse (no --title)."""
     with PlanContext(plan_id='request-missing'):
         result = run_script(
             SCRIPT_PATH,
@@ -729,17 +849,15 @@ def test_cli_missing_required_body():
             'create',
             '--plan-id',
             'request-missing',
-            '--title',
-            'Test',
             '--source',
             'description',
-            # Missing --body
+            # Missing --title (required)
         )
         assert not result.success
 
 
 def test_cli_request_create_roundtrip():
-    """Test full CLI create + read roundtrip for end-to-end plumbing."""
+    """Test full CLI create + read roundtrip for end-to-end plumbing (metadata only)."""
     with PlanContext(plan_id='cli-roundtrip'):
         result = run_script(
             SCRIPT_PATH,
@@ -751,8 +869,6 @@ def test_cli_request_create_roundtrip():
             'CLI Test',
             '--source',
             'description',
-            '--body',
-            'CLI body content',
         )
         assert result.success, f'Script failed: {result.stderr}'
         data = parse_toon(result.stdout)
@@ -763,7 +879,7 @@ def test_cli_request_create_roundtrip():
 def test_cli_request_path_subcommand():
     """CLI plumbing: `request path` returns canonical path via TOON."""
     with PlanContext(plan_id='cli-path'):
-        # Create first
+        # Create first (metadata-only)
         run_script(
             SCRIPT_PATH,
             'request',
@@ -774,8 +890,6 @@ def test_cli_request_path_subcommand():
             'Test',
             '--source',
             'description',
-            '--body',
-            'Body',
         )
         result = run_script(
             SCRIPT_PATH,
@@ -788,7 +902,7 @@ def test_cli_request_path_subcommand():
         data = parse_toon(result.stdout)
         assert data['status'] == 'success'
         assert 'path' in data
-        assert data['path'].endswith('request.md')
+        assert str(data['path']).endswith('request.md')
 
 
 def test_cli_request_mark_clarified_subcommand():
@@ -805,8 +919,6 @@ def test_cli_request_mark_clarified_subcommand():
             'Test',
             '--source',
             'description',
-            '--body',
-            'Body',
         )
         target = ctx.plan_dir / 'request.md'
         target.write_text(

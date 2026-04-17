@@ -240,8 +240,8 @@ def test_skill_domains_validate_nested_profile_skill():
         assert 'in_defaults' in result.stdout.lower()
 
 
-def test_skill_domains_get_system_has_task_executors():
-    """Test skill-domains get returns system domain with task_executors."""
+def test_skill_domains_get_system_has_execute_task_skills():
+    """Test skill-domains get returns system domain with execute_task_skills."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
         patch_config_paths(ctx.fixture_dir)
@@ -251,7 +251,7 @@ def test_skill_domains_get_system_has_task_executors():
         assert result['status'] == 'success'
         assert 'defaults' in result
         assert 'plan-marshall:general-development-rules' in result['defaults']
-        assert 'task_executors' in result
+        assert 'execute_task_skills' in result
 
 
 # =============================================================================
@@ -848,7 +848,7 @@ def test_configure_preserves_project_skills():
                 'system': {
                     'defaults': ['plan-marshall:dev-general-practices'],
                     'project_skills': ['project:system-skill'],
-                    'task_executors': {'implementation': 'plan-marshall:task-implementation'},
+                    'execute_task_skills': {'implementation': 'plan-marshall:execute-task-implementation'},
                 },
                 'java': {
                     'bundle': 'pm-dev-java',
@@ -900,7 +900,7 @@ def test_configure_drops_project_skills_for_removed_domains():
     with PlanContext() as ctx:
         config = {
             'skill_domains': {
-                'system': {'defaults': [], 'task_executors': {}},
+                'system': {'defaults': [], 'execute_task_skills': {}},
                 'java': {'bundle': 'pm-dev-java', 'project_skills': ['project:java-helper']},
                 'javascript': {'bundle': 'pm-dev-frontend', 'project_skills': ['project:js-helper']},
             },
@@ -951,7 +951,7 @@ def test_get_nested_includes_project_skills():
                 'system': {
                     'defaults': ['plan-marshall:dev-general-practices'],
                     'project_skills': ['project:my-tool'],
-                    'task_executors': {},
+                    'execute_task_skills': {},
                 },
             },
             'system': {'retention': {}},

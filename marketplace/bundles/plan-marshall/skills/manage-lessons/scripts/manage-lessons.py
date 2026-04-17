@@ -42,26 +42,29 @@ def get_lessons_dir() -> Path:
 
 def get_next_id() -> str:
     """Generate the next lesson ID."""
-    today = datetime.now(UTC).strftime('%Y-%m-%d')
+    now = datetime.now().astimezone()
+    date = now.strftime('%Y-%m-%d')
+    hour = now.strftime('%H')
+    prefix = f'{date}-{hour}'
     lessons_dir = get_lessons_dir()
 
     if not lessons_dir.exists():
-        return f'{today}-001'
+        return f'{prefix}-001'
 
-    # Find existing lessons for today
-    existing = sorted([f.stem for f in lessons_dir.glob(f'{today}-*.md')])
+    # Find existing lessons for this hour
+    existing = sorted([f.stem for f in lessons_dir.glob(f'{prefix}-*.md')])
 
     if not existing:
-        return f'{today}-001'
+        return f'{prefix}-001'
 
     # Get the highest sequence number
     last = existing[-1]
-    match = re.match(r'\d{4}-\d{2}-\d{2}-(\d+)', last)
+    match = re.match(r'\d{4}-\d{2}-\d{2}-\d{2}-(\d+)', last)
     if match:
         seq = int(match.group(1)) + 1
-        return f'{today}-{seq:03d}'
+        return f'{prefix}-{seq:03d}'
 
-    return f'{today}-001'
+    return f'{prefix}-001'
 
 
 def read_lesson(lesson_id: str) -> tuple[dict, str, str]:

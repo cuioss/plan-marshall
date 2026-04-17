@@ -1,16 +1,16 @@
 ---
-name: task-executor
-description: Domain-agnostic task execution with profile-based workflow selection (implementation, module_testing, verification)
+name: execute-task
+description: Execute a single plan task with profile-based workflow selection (implementation, module_testing, verification)
 user-invocable: false
 ---
 
-# Task Executor Skill
+# Execute-Task Skill
 
 **Role**: Unified, domain-agnostic workflow skill for executing tasks during phase-5-execute. Handles all profiles: `implementation`, `module_testing`, and `verification`. Loaded by `plan-marshall:phase-5-execute` when executing any task.
 
-**Key Pattern**: Agent loads this skill via `resolve-task-executor --profile {profile}`. Skill reads the task's profile and follows the appropriate workflow. Domain-specific knowledge comes from `task.skills` (loaded by agent).
+**Key Pattern**: Agent loads this skill via `resolve-execute-task-skill --profile {profile}`. Skill reads the task's profile and follows the appropriate workflow. Domain-specific knowledge comes from `task.skills` (loaded by agent).
 
-**Base Contract**: This skill follows the task executor contract defined in [task-executors.md](../ref-workflow-architecture/standards/task-executors.md) for input/output contracts, error handling, and script notations.
+**Base Contract**: This skill follows the execute-task skill contract defined in [execute-task-skills.md](../ref-workflow-architecture/standards/execute-task-skills.md) for input/output contracts, error handling, and script notations.
 
 ## Foundational Practices
 
@@ -83,7 +83,7 @@ After all steps complete, run task verification using commands from `task.verifi
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:task-executor) TASK-{N} missing verification — falling back to architecture resolve"
+  work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:execute-task) TASK-{N} missing verification — falling back to architecture resolve"
 
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command {resolve_command} --name {module} \
@@ -112,7 +112,7 @@ On issues or unexpected patterns, use the two-step path-allocate flow:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
-  --component "plan-marshall:task-executor" --category improvement \
+  --component "plan-marshall:execute-task" --category improvement \
   --title "{issue summary}"
 ```
 
@@ -146,6 +146,8 @@ Production code creation and modification.
 ### Path Resolution
 
 When `worktree_path` is provided in the Input Contract, every Edit/Write/Read tool call in this profile MUST resolve its file path against `worktree_path` (e.g., `{worktree_path}/marketplace/bundles/.../SKILL.md`). Never resolve step targets against the main checkout. If a subagent is dispatched from this profile, embed the Worktree Header (see phase-5-execute Dispatch Protocol) so the child propagates the constraint.
+
+Additionally, every Bucket B `.plan/execute-script.py` invocation (build, CI, Sonar — anything that operates on the project tree rather than `.plan/` metadata) MUST pass `--project-dir {worktree_path}`. Bucket A `manage-*` scripts are cwd-agnostic and MUST NOT receive `--project-dir`. Running Bucket B scripts without `--project-dir` silently targets the main checkout and can produce green builds that skip tests from the worktree's uncommitted state. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
 
 ### Compatibility Strategy
 
@@ -189,6 +191,8 @@ Unit and module test creation.
 ### Path Resolution
 
 When `worktree_path` is provided in the Input Contract, every Edit/Write/Read tool call in this profile MUST resolve its file path against `worktree_path` (e.g., `{worktree_path}/marketplace/bundles/.../test_foo.py`). Never resolve test targets or implementation lookups against the main checkout. If a subagent is dispatched from this profile, embed the Worktree Header (see phase-5-execute Dispatch Protocol) so the child propagates the constraint.
+
+Additionally, every Bucket B `.plan/execute-script.py` invocation (build, CI, Sonar — notably the `module-tests` verification command resolved in Step 5 below) MUST pass `--project-dir {worktree_path}`. Bucket A `manage-*` scripts are cwd-agnostic and MUST NOT receive `--project-dir`. Running `module-tests` (or any Bucket B verification) without `--project-dir` silently targets the main checkout — pytest collects tests from the main working tree, which does not contain the worktree's uncommitted changes, so new test cases are silently skipped and the run still reports green. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
 
 ### Workflow
 

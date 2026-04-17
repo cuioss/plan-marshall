@@ -9,8 +9,4 @@ created: {timestamp}
 
 ## Original Input
 
-{body}
-
-## Context
-
-{context}
+_Body not yet provided — write content here._
