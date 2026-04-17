@@ -40,9 +40,22 @@ Do not attempt to smuggle the body into the Step A call (no `--detail`, no `--de
 
 ## Mark Step Complete
 
-Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
+
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the capture outcome. The payload differs by branch:
+
+**Branch A — one or more lessons recorded**: `{N}` is the count of `manage-lessons add` calls made in this step. `{lesson_ids}` is the comma-joined list of lesson identifiers returned by those calls (e.g. `lesson-2026-04-17-005,lesson-2026-04-17-006`).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --display-detail "{N} lesson(s) recorded ({lesson_ids})"
+```
+
+**Branch B — no lessons recorded** (advisory step; nothing lesson-worthy emerged from this plan):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step lessons-capture --outcome done \
+  --display-detail "no lessons recorded"
 ```

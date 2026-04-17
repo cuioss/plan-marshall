@@ -31,8 +31,10 @@ from toon_parser import parse_toon  # type: ignore[import-not-found]
 class PhaseStepsIncomplete(Exception):
     """Raised by the ``phase_steps_complete`` invariant capture when a phase
     declares ``required-steps.md`` but ``status.metadata.phase_steps[phase]``
-    is missing required entries or has entries with ``outcome != 'done'``
-    (``skipped`` counts as failure).
+    is missing required entries, has entries with ``outcome != 'done'``
+    (``skipped`` counts as failure), or has entries stored in the legacy
+    bare-string shape (drift — the caller must migrate to the dict shape
+    produced by ``mark-step-done``).
 
     ``cmd_capture`` catches this and surfaces a structured error payload so
     phase skills cannot advance on silently skipped steps.
@@ -43,15 +45,19 @@ class PhaseStepsIncomplete(Exception):
         phase: str,
         missing: list[str],
         not_done: list[dict[str, str]],
+        legacy_format: list[str] | None = None,
     ):
         self.phase = phase
         self.missing = missing
         self.not_done = not_done
+        self.legacy_format = legacy_format or []
         parts: list[str] = []
         if missing:
             parts.append(f'missing={missing}')
         if not_done:
             parts.append(f'not_done={not_done}')
+        if self.legacy_format:
+            parts.append(f'legacy_format={self.legacy_format}')
         super().__init__(
             f'phase_steps_complete failed for phase {phase!r}: '
             + ', '.join(parts)
@@ -305,12 +311,16 @@ def _capture_phase_steps_complete(
     - On success, returns the SHA256 of the stable-key required step list so
       drift verify can still detect a changed required set between capture
       and verify.
-    - On failure (any required step missing or recorded with outcome !=
-      ``done``), raises ``PhaseStepsIncomplete`` so ``cmd_capture`` can surface
-      a structured error and refuse to persist the row.
+    - On failure (any required step missing, recorded with outcome !=
+      ``done``, or stored in the legacy bare-string shape), raises
+      ``PhaseStepsIncomplete`` so ``cmd_capture`` can surface a structured
+      error and refuse to persist the row.
 
     ``skipped`` explicitly counts as failure per the cwd handshake spec —
-    only ``done`` passes.
+    only ``done`` passes. Bare-string entries are rejected as legacy drift:
+    ``mark-step-done`` now stores dicts of shape
+    ``{"outcome": ..., "display_detail": ...}`` and there is no automatic
+    migration for the old shape.
     """
     required_path = _resolve_required_steps_path(phase)
     if required_path is None:
@@ -328,16 +338,21 @@ def _capture_phase_steps_complete(
 
     missing: list[str] = []
     not_done: list[dict[str, str]] = []
+    legacy_format: list[str] = []
     for step in required:
         if step not in phase_entry:
             missing.append(step)
             continue
-        outcome = str(phase_entry.get(step, ''))
+        raw = phase_entry.get(step)
+        if isinstance(raw, str):
+            legacy_format.append(step)
+            continue
+        outcome = raw.get('outcome') if isinstance(raw, dict) else None
         if outcome != 'done':
-            not_done.append({'step': step, 'outcome': outcome})
+            not_done.append({'step': step, 'outcome': str(outcome or '')})
 
-    if missing or not_done:
-        raise PhaseStepsIncomplete(phase, missing, not_done)
+    if missing or not_done or legacy_format:
+        raise PhaseStepsIncomplete(phase, missing, not_done, legacy_format)
 
     # Deterministic hash of the required step set for drift detection. We
     # hash the sorted list so registering a new required step (which also

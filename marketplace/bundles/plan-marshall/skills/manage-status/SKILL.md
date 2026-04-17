@@ -231,7 +231,7 @@ value: feature
 
 ### mark-step-done
 
-Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are restricted to `done` or `skipped`.
+Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are restricted to `done` or `skipped`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
@@ -239,6 +239,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --phase {phase_name} \
   --step {step_id} \
   --outcome {done|skipped} \
+  [--display-detail "one-line user-facing detail"] \
   [--force]
 ```
 
@@ -247,14 +248,27 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 - `--phase` (required): Phase name (e.g., `5-execute`)
 - `--step` (required): Step identifier within the phase (free-form string chosen by the phase skill)
 - `--outcome` (required): `done` or `skipped`
+- `--display-detail` (optional at CLI level, required-by-convention for phase-6-finalize steps per the phase-6-finalize interface contract): One-line user-facing detail string. Persisted as `null` when omitted.
 - `--force` (optional): Overwrite an existing differing outcome
 
-**Semantics**:
-- **Idempotent on identical outcome**: If the step already has the requested outcome, no file write occurs and `changed: false` is returned.
-- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value.
-- **Storage path**: `status.metadata.phase_steps[{phase}][{step}] = {outcome}`. Both the `metadata` and `phase_steps` containers are created on demand.
+**Storage shape** (breaking — replaces the old bare-string shape):
 
-> **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has an entry with outcome `done` or `skipped` in this map. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
+```json
+status.metadata.phase_steps[{phase}][{step}] = {
+  "outcome": "done" | "skipped",
+  "display_detail": <string> | null
+}
+```
+
+Both the `metadata` and `phase_steps` containers are created on demand. Bare-string entries from prior versions are treated as drift — see conflict semantics below.
+
+**Semantics**:
+- **Idempotent on identical outcome AND display_detail**: If the step already has the requested outcome and the same `display_detail`, no file write occurs and `changed: false` is returned.
+- **Detail-only update**: If the outcome matches but `display_detail` differs, the command updates the detail in place and returns `changed: true`.
+- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail).
+- **Legacy drift rejection**: If the existing entry is a bare string (pre-migration shape), the command returns `error: legacy_string_entry` and refuses to write. The caller must migrate `status.metadata.phase_steps` to the dict shape before retrying — there is no automatic migration.
+
+> **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has a dict entry with `outcome == 'done'`. The invariant reader rejects bare-string entries as legacy drift. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
 
 **Output — idempotent no-op** (TOON):
 ```toon
@@ -263,6 +277,7 @@ plan_id: my-feature
 phase: 5-execute
 step: discovery
 outcome: done
+display_detail: null
 changed: false
 ```
 
@@ -273,8 +288,10 @@ plan_id: my-feature
 phase: 5-execute
 step: discovery
 outcome: done
+display_detail: Discovered 3 drift candidates across deliverables 2 and 4
 changed: true
 previous_outcome: null
+previous_display_detail: null
 ```
 
 **Output — conflict** (TOON):
@@ -287,6 +304,18 @@ step: discovery
 existing_outcome: skipped
 requested_outcome: done
 message: Step 'discovery' in phase '5-execute' already marked as 'skipped'; use --force to overwrite with 'done'
+```
+
+**Output — legacy drift** (TOON):
+```toon
+status: error
+plan_id: my-feature
+error: legacy_string_entry
+phase: 5-execute
+step: discovery
+existing_outcome: done
+requested_outcome: done
+message: Step 'discovery' in phase '5-execute' has legacy bare-string storage ('done'); migrate status.metadata.phase_steps to the dict shape {"outcome": ..., "display_detail": ...} before retrying.
 ```
 
 ### get-context
@@ -473,7 +502,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `update-phase` | `--plan-id --phase --status` | Update specific phase status |
 | `progress` | `--plan-id` | Calculate progress percentage |
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
-| `mark-step-done` | `--plan-id --phase --step --outcome [--force]` | Record phase step outcome in `metadata.phase_steps` |
+| `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--force]` | Record phase step outcome (+ optional display detail) in `metadata.phase_steps` |
 | `get-context` | `--plan-id` | Get combined status context |
 | `list` | `[--filter PHASE]` | Discover all plans, optionally filtered by phase |
 | `transition` | `--plan-id --completed` | Mark phase done, advance to next |
@@ -501,6 +530,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `not_found` | 1 | Plan directory not found (archive command) |
 | `not_found` | 0 | Metadata field doesn't exist — valid query result (returns `value: null`), not an error |
 | `conflict` | 1 | `mark-step-done`: step already has a different outcome and `--force` was not supplied |
+| `legacy_string_entry` | 1 | `mark-step-done`: existing entry uses the pre-migration bare-string shape; caller must migrate to dict shape before retrying |
 | `invalid_outcome` | 1 | `mark-step-done`: outcome not in `done`/`skipped` |
 | `invalid_argument` | 1 | `mark-step-done`: empty `--phase` or `--step` |
 

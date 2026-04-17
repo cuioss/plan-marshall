@@ -424,28 +424,62 @@ def required_steps_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path
 
 
 def test_capture_phase_steps_all_done(required_steps_path: Path) -> None:
-    metadata = {'phase_steps': {'5-execute': {'step-a': 'done', 'step-b': 'done'}}}
+    metadata = {
+        'phase_steps': {
+            '5-execute': {
+                'step-a': {'outcome': 'done', 'display_detail': None},
+                'step-b': {'outcome': 'done', 'display_detail': None},
+            }
+        }
+    }
     result = inv._capture_phase_steps_complete('pid', metadata, '5-execute')
     assert isinstance(result, str)
     assert len(result) == 16  # _hash_dict returns first 16 hex chars
 
 
 def test_capture_phase_steps_missing_step(required_steps_path: Path) -> None:
-    metadata = {'phase_steps': {'5-execute': {'step-a': 'done'}}}
+    metadata = {
+        'phase_steps': {
+            '5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}
+        }
+    }
     with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
         inv._capture_phase_steps_complete('pid', metadata, '5-execute')
     assert excinfo.value.missing == ['step-b']
     assert excinfo.value.not_done == []
+    assert excinfo.value.legacy_format == []
 
 
 def test_capture_phase_steps_skipped_fails(required_steps_path: Path) -> None:
     metadata = {
-        'phase_steps': {'5-execute': {'step-a': 'done', 'step-b': 'skipped'}}
+        'phase_steps': {
+            '5-execute': {
+                'step-a': {'outcome': 'done', 'display_detail': None},
+                'step-b': {'outcome': 'skipped', 'display_detail': None},
+            }
+        }
     }
     with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
         inv._capture_phase_steps_complete('pid', metadata, '5-execute')
     assert excinfo.value.missing == []
     assert excinfo.value.not_done == [{'step': 'step-b', 'outcome': 'skipped'}]
+    assert excinfo.value.legacy_format == []
+
+
+def test_capture_phase_steps_legacy_bare_string_fails(required_steps_path: Path) -> None:
+    metadata = {
+        'phase_steps': {
+            '5-execute': {
+                'step-a': 'done',
+                'step-b': {'outcome': 'done', 'display_detail': None},
+            }
+        }
+    }
+    with pytest.raises(inv.PhaseStepsIncomplete) as excinfo:
+        inv._capture_phase_steps_complete('pid', metadata, '5-execute')
+    assert excinfo.value.legacy_format == ['step-a']
+    assert excinfo.value.missing == []
+    assert excinfo.value.not_done == []
 
 
 def test_capture_phase_steps_no_required_file_returns_none(
@@ -497,7 +531,12 @@ def only_phase_steps_invariant(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_cmd_capture_phase_steps_success(
     only_phase_steps_invariant, stub_metadata, required_steps_path: Path
 ) -> None:
-    stub_metadata['phase_steps'] = {'5-execute': {'step-a': 'done', 'step-b': 'done'}}
+    stub_metadata['phase_steps'] = {
+        '5-execute': {
+            'step-a': {'outcome': 'done', 'display_detail': None},
+            'step-b': {'outcome': 'done', 'display_detail': None},
+        }
+    }
     with PlanContext(plan_id='psc-ok'):
         result = cmds.cmd_capture(_ns(plan_id='psc-ok', phase='5-execute'))
         assert result['status'] == 'success'
@@ -511,7 +550,9 @@ def test_cmd_capture_phase_steps_success(
 def test_cmd_capture_phase_steps_incomplete_returns_error(
     only_phase_steps_invariant, stub_metadata, required_steps_path: Path
 ) -> None:
-    stub_metadata['phase_steps'] = {'5-execute': {'step-a': 'done'}}
+    stub_metadata['phase_steps'] = {
+        '5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}
+    }
     with PlanContext(plan_id='psc-fail'):
         result = cmds.cmd_capture(_ns(plan_id='psc-fail', phase='5-execute'))
         assert result['status'] == 'error'
@@ -525,7 +566,10 @@ def test_cmd_capture_phase_steps_skipped_returns_error(
     only_phase_steps_invariant, stub_metadata, required_steps_path: Path
 ) -> None:
     stub_metadata['phase_steps'] = {
-        '5-execute': {'step-a': 'done', 'step-b': 'skipped'}
+        '5-execute': {
+            'step-a': {'outcome': 'done', 'display_detail': None},
+            'step-b': {'outcome': 'skipped', 'display_detail': None},
+        }
     }
     with PlanContext(plan_id='psc-skip'):
         result = cmds.cmd_capture(_ns(plan_id='psc-skip', phase='5-execute'))
@@ -535,16 +579,41 @@ def test_cmd_capture_phase_steps_skipped_returns_error(
         assert store.get_row('psc-skip', '5-execute') is None
 
 
+def test_cmd_capture_phase_steps_legacy_returns_error(
+    only_phase_steps_invariant, stub_metadata, required_steps_path: Path
+) -> None:
+    stub_metadata['phase_steps'] = {
+        '5-execute': {
+            'step-a': 'done',
+            'step-b': {'outcome': 'done', 'display_detail': None},
+        }
+    }
+    with PlanContext(plan_id='psc-legacy'):
+        result = cmds.cmd_capture(_ns(plan_id='psc-legacy', phase='5-execute'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'phase_steps_incomplete'
+        assert result['legacy_format'] == ['step-a']
+        assert store.get_row('psc-legacy', '5-execute') is None
+
+
 def test_cmd_verify_phase_steps_drift_when_step_regresses(
     only_phase_steps_invariant, stub_metadata, required_steps_path: Path
 ) -> None:
-    stub_metadata['phase_steps'] = {'5-execute': {'step-a': 'done', 'step-b': 'done'}}
+    stub_metadata['phase_steps'] = {
+        '5-execute': {
+            'step-a': {'outcome': 'done', 'display_detail': None},
+            'step-b': {'outcome': 'done', 'display_detail': None},
+        }
+    }
     with PlanContext(plan_id='psc-drift'):
         cap = cmds.cmd_capture(_ns(plan_id='psc-drift', phase='5-execute'))
         assert cap['status'] == 'success'
         # Regress: a previously-done step is now skipped.
         stub_metadata['phase_steps'] = {
-            '5-execute': {'step-a': 'done', 'step-b': 'skipped'}
+            '5-execute': {
+                'step-a': {'outcome': 'done', 'display_detail': None},
+                'step-b': {'outcome': 'skipped', 'display_detail': None},
+            }
         }
         result = cmds.cmd_verify(_ns(plan_id='psc-drift', phase='5-execute'))
         assert result['status'] == 'drift'
