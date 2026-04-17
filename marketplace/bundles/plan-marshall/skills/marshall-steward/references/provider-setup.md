@@ -176,10 +176,10 @@ Display detection result to user. If tool not authenticated, warn:
 ### Step 14d: Verify CI tool
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health persist
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health verify-all
 ```
 
-**Output**: Authenticated tool list persisted to `run-configuration.json` under `ci.authenticated_tools`. The CI provider identity and repo URL are derived at read time from the `providers[]` entries in marshal.json — no `config["ci"]` block is written.
+**Output**: Live verification result — provider, repo URL, authenticated tools, and git presence. Nothing is persisted; the steward displays the result to the user. The CI provider identity and repo URL are derived at read time from the `providers[]` entries in marshal.json, and tool authentication is re-checked each time it is needed.
 
 ---
 
@@ -276,7 +276,7 @@ Check if the selected provider has `extra_fields` in the `list-providers` output
 
 For `workflow-integration-sonar` (has `extra_fields: organization, project_key`):
 
-1. Read `repo_url` from the version-control provider entry in `providers[]` (the canonical source — marshal.json no longer stores a separate `config["ci"]` block):
+1. Read `repo_url` from the version-control provider entry in `providers[]` (the canonical source):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials list-providers
 ```

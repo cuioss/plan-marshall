@@ -1,8 +1,8 @@
 """
-Remove credential file and metadata.
+Remove credential file.
 """
 
-from _providers_core import get_project_name, remove_credential, unregister_credential_metadata
+from _providers_core import get_project_name, remove_credential
 from file_ops import output_toon  # type: ignore[import-not-found]
 
 
@@ -17,7 +17,6 @@ def run_remove(args) -> int:
 
     project_name = get_project_name() if scope == 'project' else None
     removed = remove_credential(skill, scope, project_name)
-    unregister_credential_metadata(skill)
 
     if removed:
         output_toon({

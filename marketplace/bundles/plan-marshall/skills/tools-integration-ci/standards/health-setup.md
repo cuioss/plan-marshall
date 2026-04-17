@@ -55,41 +55,39 @@ confidence: high
 
 ---
 
-## Workflow: Persist Configuration
+## Workflow: Live Verify
 
 **Pattern**: Command Chain Execution
 
-Detect provider and persist to marshal.json.
+Detect provider and verify CI tools live — no persistence, since tool/auth status is cheap to check on demand and varies per machine.
 
-### Step 1: Run Persist
+### Step 1: Run verify-all
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health persist
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health verify-all
 ```
 
 ### Step 2: Process Result
 
 ```toon
 status: success
-persisted_to: marshal.json
-
-ci_config{key,value}:
-provider	github
-repo_url	https://github.com/org/repo
+provider: github
+repo_url: https://github.com/org/repo
+authenticated_tools[1]:
+- gh
+git_present: true
 ```
 
 ---
 
 ## Storage Pattern
 
-**Split storage** (shared vs local):
-
 | File | Content | Shared |
 |------|---------|--------|
 | `.plan/marshal.json` | CI provider entry in `providers[]` array (`provider`, `repo_url`, `detected_at`) | Yes (git) |
-| `.plan/run-configuration.json` | `ci.authenticated_tools`, command timeouts | No (local) |
+| `.plan/run-configuration.json` | Command timeouts and learned warnings | No (local) |
 
-CI operations are resolved at runtime by the `ci.py` router which finds the system CI entry in the `providers[]` array of marshal.json and delegates to the correct provider script.
+CI tool authentication status is verified live via `ci_health verify-all` — not persisted. CI operations are resolved at runtime by the `ci.py` router which finds the system CI entry in the `providers[]` array of marshal.json and delegates to the correct provider script.
 
 ---
 

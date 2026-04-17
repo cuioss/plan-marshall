@@ -43,9 +43,9 @@ Each provider module exports `get_provider_declarations()` returning a list of d
 | `discover-and-persist` | Scan PYTHONPATH for provider modules and persist declarations to marshal.json |
 | `list-providers` | List available credential providers from marshal.json |
 | `edit` | Update non-secret fields (URL, auth type) |
-| `verify` | HTTP connectivity test, updates `verified_at` |
-| `list` | List configured skills (no secrets in output) |
-| `remove` | Remove credential file and metadata |
+| `verify` | HTTP connectivity test, writes `verified_at` timestamp into the credential file |
+| `list` | List configured skills by scanning `~/.plan-marshall-credentials/` (no secrets in output) |
+| `remove` | Remove credential file |
 | `ensure-denied` | Add deny rules to Claude Code settings |
 
 ## Script Notation
@@ -159,6 +159,10 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensur
 ## Security Model
 
 See `standards/security-considerations.md` for full threat model and implementation constraints.
+
+## Testing
+
+Tests override the credentials directory via the `PLAN_MARSHALL_CREDENTIALS_DIR` environment variable (read at module import time in `_providers_core.CREDENTIALS_DIR`). This is a testing-only knob — not a user-facing setting. Tests should set it via `monkeypatch.setenv` before importing `_providers_core`, or patch `_providers_core.CREDENTIALS_DIR` directly and reload as needed.
 
 ## Related
 

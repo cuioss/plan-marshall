@@ -10,7 +10,6 @@ from _providers_core import (
     check_credential_completeness,
     get_project_name,
     load_credential,
-    register_credential_metadata,
     save_credential,
 )
 from file_ops import output_toon  # type: ignore[import-not-found]
@@ -46,7 +45,6 @@ def run_edit(args) -> int:
     data['auth_type'] = auth_type
 
     path = save_credential(skill, data, scope, project_name)
-    register_credential_metadata(skill, scope, str(path))
 
     completeness = check_credential_completeness(skill, scope, project_name)
 

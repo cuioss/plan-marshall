@@ -27,7 +27,7 @@ from file_ops import get_marshal_path  # type: ignore[import-not-found]
 
 # === Constants ===
 
-CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
+CREDENTIALS_DIR = Path(os.environ.get('PLAN_MARSHALL_CREDENTIALS_DIR') or (Path.home() / '.plan-marshall-credentials'))
 VALID_AUTH_TYPES = ('none', 'token', 'basic', 'system')
 SECRET_PLACEHOLDERS = {
     'token': 'REPLACE_WITH_YOUR_TOKEN',
@@ -306,56 +306,19 @@ def check_credential_completeness(skill: str, scope: str = 'global',
     }
 
 
-# === Run Configuration Metadata ===
+def touch_verified_at(skill: str, scope: str = 'global',
+                      project_name: str | None = None) -> None:
+    """Update verified_at timestamp inside the credential file itself.
 
-
-def register_credential_metadata(skill: str, scope: str,
-                                 config_path: str, verified: bool = False) -> None:
-    """Write credential metadata to run-configuration.json (no secrets)."""
-    from _config_core import load_run_config, save_run_config  # type: ignore[import-not-found]
-
-    config = load_run_config()
-    if 'credentials' not in config:
-        config['credentials'] = {}
-
-    config['credentials'][skill] = {
-        'active': True,
-        'scope': scope,
-        'config_path': config_path,
-        'verified_at': datetime.now(UTC).isoformat() if verified else None,
-    }
-    save_run_config(config)
-
-
-def unregister_credential_metadata(skill: str) -> None:
-    """Remove credential metadata from run-configuration.json."""
-    from _config_core import load_run_config, save_run_config  # type: ignore[import-not-found]
-
-    config = load_run_config()
-    credentials = config.get('credentials', {})
-    if skill in credentials:
-        del credentials[skill]
-        save_run_config(config)
-
-
-def update_verified_at(skill: str) -> None:
-    """Update verified_at timestamp in run-configuration.json."""
-    from _config_core import load_run_config, save_run_config  # type: ignore[import-not-found]
-
-    config = load_run_config()
-    credentials = config.get('credentials', {})
-    if skill in credentials:
-        credentials[skill]['verified_at'] = datetime.now(UTC).isoformat()
-        save_run_config(config)
-
-
-def list_credential_metadata() -> dict:
-    """List all credential metadata (no secrets)."""
-    from _config_core import load_run_config  # type: ignore[import-not-found]
-
-    config = load_run_config()
-    result: dict = config.get('credentials', {})
-    return result
+    Loads the credential JSON, sets verified_at to the current UTC timestamp,
+    and rewrites the file via save_credential (preserves atomic 0o600 semantics).
+    No-op if the credential file does not exist.
+    """
+    data = load_credential(skill, scope, project_name)
+    if data is None:
+        return
+    data['verified_at'] = datetime.now(UTC).isoformat()
+    save_credential(skill, data, scope, project_name)
 
 
 # === Provider Loading (from marshal.json) ===

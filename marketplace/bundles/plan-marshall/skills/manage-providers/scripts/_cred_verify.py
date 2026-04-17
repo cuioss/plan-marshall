@@ -8,7 +8,7 @@ from _list_providers import find_provider_with_details  # type: ignore[import-no
 from _providers_core import (
     get_authenticated_client,
     get_project_name,
-    update_verified_at,
+    touch_verified_at,
     verify_system_auth,
 )
 from file_ops import output_toon  # type: ignore[import-not-found]
@@ -42,7 +42,7 @@ def run_verify(args) -> int:
 
         result = verify_system_auth(provider)
         if result['success']:
-            update_verified_at(skill)
+            touch_verified_at(skill, scope, project_name)
         output_toon({
             'status': 'success' if result['success'] else 'error',
             'skill': skill,
@@ -66,7 +66,7 @@ def run_verify(args) -> int:
         client.request(verify_method, verify_endpoint)
         client.close()
 
-        update_verified_at(skill)
+        touch_verified_at(skill, scope, project_name)
 
         output_toon({
             'status': 'success',

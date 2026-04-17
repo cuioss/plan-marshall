@@ -33,7 +33,6 @@ DEFAULT_STRUCTURE = {
     'maven': {
         'acceptable_warnings': {'transitive_dependency': [], 'plugin_compatibility': [], 'platform_specific': []}
     },
-    'ci': {'authenticated_tools': [], 'verified_at': None},
 }
 
 
