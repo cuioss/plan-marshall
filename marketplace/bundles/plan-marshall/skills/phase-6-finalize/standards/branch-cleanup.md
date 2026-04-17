@@ -381,7 +381,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST run while `status.json` is still under `.plan/plans/{plan_id}/` — if `default:archive-plan` appears earlier in the pipeline, ensure `mark-step-done` for `branch-cleanup` is emitted before that archive call rather than here. In the canonical order (`default:archive-plan` is last), this call runs here on the still-live plan.
 
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the cleanup outcome. The payload differs by branch and must match the branch actually executed above:
+
+**Branch A — PR mode (merge + cleanup)** (PR was merged, base branch pulled, feature branch deleted locally and on remote, worktree removed):
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --display-detail "main pulled, branch deleted (local+remote), worktree removed"
+```
+
+**Branch B — local-only mode** (no PR was created; only local switch-to-base-branch was performed):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --display-detail "local-only: switched to main"
+```
+
+**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --display-detail "declined by user"
 ```

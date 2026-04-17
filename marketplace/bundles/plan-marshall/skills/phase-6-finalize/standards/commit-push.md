@@ -49,9 +49,22 @@ Execute the git_workflow skill's **Workflow: Commit Changes** with:
 
 ## Mark Step Complete
 
-Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
+
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the commit outcome. The payload differs by branch:
+
+**Branch A — commit created**: `{commit_hash}` is the short 7-character hash of the commit produced by the `workflow-integration-git` call above (captured from its return payload):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step commit-push --outcome done
+  --plan-id {plan_id} --phase 6-finalize --step commit-push --outcome done \
+  --display-detail "-> {commit_hash}"
+```
+
+**Branch B — no uncommitted changes** (skipped path from "Check for uncommitted changes" above):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step commit-push --outcome done \
+  --display-detail "no changes"
 ```
