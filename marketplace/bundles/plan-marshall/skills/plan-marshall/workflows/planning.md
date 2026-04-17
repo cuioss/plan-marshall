@@ -217,10 +217,20 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   resolve-path --plan-id {plan_id}
 ```
 
-Extract `{resolved_path}` from the `path` field in the command output. Open in the current IDE using `TERM_PROGRAM` env var detection:
+Extract `{resolved_path}` from the `path` field in the command output.
+
+Read `TERM_PROGRAM` using the globally allow-listed pattern installed by the marshall-steward wizard:
+
+```bash
+echo "TERM_PROGRAM=$TERM_PROGRAM"
+```
+
+Parse the output, then branch on the value:
 - If `TERM_PROGRAM=vscode`: `code {resolved_path}`
-- On macOS: `open {resolved_path}`
+- On macOS (otherwise): `open {resolved_path}`
 - On Linux: `xdg-open {resolved_path}`
+
+Do NOT use `printenv`, `env | grep`, or subshell substitution such as `$(printenv TERM_PROGRAM)` — `echo "TERM_PROGRAM=$TERM_PROGRAM"` is the only pattern installed by the marshall-steward wizard and guaranteed not to trigger a permission prompt.
 
 ---
 
