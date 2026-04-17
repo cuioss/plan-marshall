@@ -79,6 +79,25 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 After all steps complete, run task verification using commands from `task.verification.commands`.
 
+**Sub-step: Auto-inject `--project-dir` for Bucket B commands**
+
+When `worktree_path` is provided in the Input Contract, before executing any `task.verification.commands[N]`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir \
+  run --command "{verification_command}" --worktree-path "{worktree_path}"
+```
+
+Take the rewritten command from the script's stdout and use it as the command to execute. When the helper reports `injected: true`, log:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[VERIFY] (plan-marshall:execute-task) Auto-injected --project-dir={worktree_path} for {notation}"
+```
+
+The helper whitelists the eight Bucket B notations from `plan-marshall:tools-script-executor/standards/cwd-policy.md`; Bucket A `manage-*` notations and unknown notations pass through unchanged. See `scripts/inject_project_dir.py` for the authoritative whitelist.
+
 **Safety net** (should not trigger in normal operation): If verification commands are missing, log a WARN and resolve from architecture:
 
 ```bash
@@ -147,7 +166,7 @@ Production code creation and modification.
 
 When `worktree_path` is provided in the Input Contract, every Edit/Write/Read tool call in this profile MUST resolve its file path against `worktree_path` (e.g., `{worktree_path}/marketplace/bundles/.../SKILL.md`). Never resolve step targets against the main checkout. If a subagent is dispatched from this profile, embed the Worktree Header (see phase-5-execute Dispatch Protocol) so the child propagates the constraint.
 
-Additionally, every Bucket B `.plan/execute-script.py` invocation (build, CI, Sonar — anything that operates on the project tree rather than `.plan/` metadata) MUST pass `--project-dir {worktree_path}`. Bucket A `manage-*` scripts are cwd-agnostic and MUST NOT receive `--project-dir`. Running Bucket B scripts without `--project-dir` silently targets the main checkout and can produce green builds that skip tests from the worktree's uncommitted state. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
+The auto-injection sub-step under Common Workflow → Step: Run Verification handles `--project-dir` forwarding structurally for Bucket B notations; the remaining rule is that Bucket A `manage-*` scripts MUST NOT receive `--project-dir`. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
 
 ### Compatibility Strategy
 
@@ -192,7 +211,7 @@ Unit and module test creation.
 
 When `worktree_path` is provided in the Input Contract, every Edit/Write/Read tool call in this profile MUST resolve its file path against `worktree_path` (e.g., `{worktree_path}/marketplace/bundles/.../test_foo.py`). Never resolve test targets or implementation lookups against the main checkout. If a subagent is dispatched from this profile, embed the Worktree Header (see phase-5-execute Dispatch Protocol) so the child propagates the constraint.
 
-Additionally, every Bucket B `.plan/execute-script.py` invocation (build, CI, Sonar — notably the `module-tests` verification command resolved in Step 5 below) MUST pass `--project-dir {worktree_path}`. Bucket A `manage-*` scripts are cwd-agnostic and MUST NOT receive `--project-dir`. Running `module-tests` (or any Bucket B verification) without `--project-dir` silently targets the main checkout — pytest collects tests from the main working tree, which does not contain the worktree's uncommitted changes, so new test cases are silently skipped and the run still reports green. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
+The auto-injection sub-step under Common Workflow → Step: Run Verification handles `--project-dir` forwarding structurally for Bucket B notations; the remaining rule is that Bucket A `manage-*` scripts MUST NOT receive `--project-dir`. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
 
 ### Workflow
 
@@ -201,7 +220,30 @@ Additionally, every Bucket B `.plan/execute-script.py` invocation (build, CI, So
 3. **Implement Tests**: For each step — create new test files with `Write`, modify existing test files with `Edit`. Follow the AAA pattern (Arrange-Act-Assert). Include positive and negative test cases with descriptive names.
 4. **Mark Step Complete** (common step)
 5. **Run Verification** — resolve command: `module-tests` (full test suite for the module)
-6. **Handle Verification Results** — on test failure: determine if test logic is wrong or implementation has a bug. If test logic → fix test. If implementation bug → fix production code AND the test. Adapting production code to make tests pass is expected within this profile.
+6. **Handle Verification Results**:
+
+   **Sub-step: Diff written test identifiers against the module-test log**
+
+   After a green `module-tests` run that produced new test files during step 3 (Implement Tests):
+
+   1. Collect pytest nodeids for every newly-written test file: `{rel_path}::{test_function}` for each test function. Write them to a temp file under `.plan/temp/` (one identifier per line).
+   2. Run the diff assertion helper:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:execute-task:assert_test_identifiers \
+     run --identifiers-file "{temp_identifiers_file}" --log "{module_test_log_path}"
+   ```
+
+   3. On `passed: true`: proceed to the standard "Mark task done" path.
+   4. On `passed: false`: do NOT mark the task `done` — the run was silently incomplete. Log, mark the task `requires_attention`, and surface the mismatch in the return value:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level WARN \
+     --message "[VERIFY] (plan-marshall:execute-task) Diff assertion failed: {missing_count} written test identifiers absent from module-test log — {missing}"
+   ```
+
+   On test failure: determine if test logic is wrong or implementation has a bug. If test logic → fix test. If implementation bug → fix production code AND the test. Adapting production code to make tests pass is expected within this profile.
 7. **Record Lessons**, **Return Results**
 
 ### Output Extensions
@@ -213,7 +255,13 @@ execution_summary:
 verification:
   tests_passed: N
   tests_failed: N
+  diff_assertion:
+    passed: true | false
+    missing_count: N
+    missing[]: [identifier, ...]
 ```
+
+Note: `diff_assertion.passed: false` overrides `tests_passed` — a green test count does not imply a successful run if written identifiers are absent from the log.
 
 ### Error Handling
 
