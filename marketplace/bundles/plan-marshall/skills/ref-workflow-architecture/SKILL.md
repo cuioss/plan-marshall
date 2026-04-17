@@ -20,7 +20,7 @@ Load specific standards on-demand based on what aspect you need to understand.
 | [manage-contract.md](standards/manage-contract.md) | manage-* contract | Enforcement, error codes, shared formats |
 | [skill-loading.md](standards/skill-loading.md) | Two-tier loading | System vs domain skills, domain flow through phases |
 | [artifacts.md](standards/artifacts.md) | Plan file formats | status.json, TASK-*.json, references.json, logs |
-| [task-executors.md](standards/task-executors.md) | Task executors | Profile routing, shared workflow, extensibility |
+| [execute-task-skills.md](standards/execute-task-skills.md) | Execute-task skills | Profile routing, shared workflow, extensibility |
 | [change-types.md](standards/change-types.md) | Change type vocabulary | analysis, feature, enhancement, bug_fix, tech_debt, verification |
 | [glossary.md](standards/glossary.md) | Terminology definitions | plan_id, phase, profile, module, domain, deliverable, task, finding, TOON |
 | [phase-lifecycle.md](standards/phase-lifecycle.md) | Phase lifecycle patterns | Entry protocol, completion protocol, enforcement template, error convention |
@@ -39,7 +39,7 @@ Load specific standards on-demand based on what aspect you need to understand.
 |-------|---------|
 | `plan-marshall:plan-marshall` | Unified user-facing entry point for plan lifecycle |
 | `plan-marshall:extension-api` | Extension points for domain customization |
-| `plan-marshall:task-executor` | Unified task executor (implementation, module_testing, verification profiles) |
+| `plan-marshall:execute-task` | Unified execute-task skill (implementation, module_testing, verification profiles) |
 | `plan-marshall:shared-workflow-helpers` | Shared Python infrastructure for workflow scripts |
 
 ## Shared Workflow Infrastructure

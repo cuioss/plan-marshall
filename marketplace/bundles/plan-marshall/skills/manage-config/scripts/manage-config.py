@@ -23,14 +23,14 @@ from _cmd_skill_domains import (
     cmd_skill_domains,
 )
 from _cmd_skill_resolution import (
-    cmd_configure_task_executors,
+    cmd_configure_execute_task_skills,
     cmd_get_skills_by_profile,
     cmd_list_finalize_steps,
     cmd_list_recipes,
     cmd_resolve_domain_skills,
+    cmd_resolve_execute_task_skill,
     cmd_resolve_outline_skill,
     cmd_resolve_recipe,
-    cmd_resolve_task_executor,
     cmd_resolve_workflow_skill_extension,
 )
 from _cmd_system_plan import cmd_plan, cmd_system
@@ -245,11 +245,13 @@ def main() -> int:
     )
     p_gsbp.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
 
-    # --- configure-task-executors ---
-    subparsers.add_parser('configure-task-executors', help='Configure task executors from discovered profiles')
+    # --- configure-execute-task-skills ---
+    subparsers.add_parser(
+        'configure-execute-task-skills', help='Configure execute-task skills from discovered profiles'
+    )
 
-    # --- resolve-task-executor ---
-    p_rte = subparsers.add_parser('resolve-task-executor', help='Resolve task executor skill for a profile')
+    # --- resolve-execute-task-skill ---
+    p_rte = subparsers.add_parser('resolve-execute-task-skill', help='Resolve execute-task skill for a profile')
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
     # --- list-recipes ---
@@ -305,10 +307,10 @@ def main() -> int:
         result = cmd_resolve_workflow_skill_extension(args)
     elif args.noun == 'get-skills-by-profile':
         result = cmd_get_skills_by_profile(args)
-    elif args.noun == 'configure-task-executors':
-        result = cmd_configure_task_executors(args)
-    elif args.noun == 'resolve-task-executor':
-        result = cmd_resolve_task_executor(args)
+    elif args.noun == 'configure-execute-task-skills':
+        result = cmd_configure_execute_task_skills(args)
+    elif args.noun == 'resolve-execute-task-skill':
+        result = cmd_resolve_execute_task_skill(args)
     elif args.noun == 'list-recipes':
         result = cmd_list_recipes(args)
     elif args.noun == 'resolve-recipe':

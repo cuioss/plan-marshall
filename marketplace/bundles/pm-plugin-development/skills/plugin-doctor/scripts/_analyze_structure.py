@@ -6,6 +6,32 @@ from pathlib import Path
 
 from _analyze_shared import check_yaml_validity, extract_frontmatter, remove_code_blocks
 
+# Noun suffixes reserved for spawnable marketplace agents. Skill directory names
+# must not end with any of these — see pm-plugin-development:plugin-architecture
+# references/skill-design.md "Skill Naming Convention".
+RESERVED_NOUN_SUFFIXES = (
+    '-executor', '-executors',
+    '-manager', '-managers',
+    '-runner', '-runners',
+    '-handler', '-handlers',
+    '-orchestrator', '-orchestrators',
+)
+
+
+def check_noun_suffix_name(skill_dir: Path) -> dict:
+    """Check whether the skill directory name ends with a reserved noun suffix.
+
+    Returns a dict with:
+      - violation: bool — True if the directory name ends with any reserved suffix
+      - suffix: str|None — The matched suffix (including leading dash), or None
+      - directory_name: str — The skill directory basename
+    """
+    name = skill_dir.name
+    for suffix in RESERVED_NOUN_SUFFIXES:
+        if name.endswith(suffix) and name != suffix.lstrip('-'):
+            return {'violation': True, 'suffix': suffix, 'directory_name': name}
+    return {'violation': False, 'suffix': None, 'directory_name': name}
+
 
 def extract_skill_references(content: str, skill_dir: Path) -> set[str]:
     """Extract file references from SKILL.md content."""
@@ -55,19 +81,27 @@ def find_existing_files(skill_dir: Path) -> set[str]:
     return existing
 
 
-def calculate_structure_score(skill_exists: bool, yaml_valid: bool, missing_count: int, unreferenced_count: int) -> int:
+def calculate_structure_score(
+    skill_exists: bool,
+    yaml_valid: bool,
+    missing_count: int,
+    unreferenced_count: int,
+    noun_suffix_violation: bool = False,
+) -> int:
     """Calculate structure score based on issues."""
     if not skill_exists:
         return 0
     if not yaml_valid:
         return 30
 
-    if missing_count == 0 and unreferenced_count == 0:
+    if missing_count == 0 and unreferenced_count == 0 and not noun_suffix_violation:
         return 100
 
     score = 100
     score -= missing_count * 20
     score -= unreferenced_count * 10
+    if noun_suffix_violation:
+        score -= 15
 
     return max(0, score)
 
@@ -130,12 +164,21 @@ def analyze_skill_structure(skill_dir: Path) -> dict:
                         continue
                 unreferenced_files.append(existing_file)
 
-    structure_score = calculate_structure_score(skill_exists, yaml_valid, len(missing_files), len(unreferenced_files))
+    noun_suffix = check_noun_suffix_name(skill_dir)
+
+    structure_score = calculate_structure_score(
+        skill_exists,
+        yaml_valid,
+        len(missing_files),
+        len(unreferenced_files),
+        noun_suffix_violation=noun_suffix['violation'],
+    )
 
     return {
         'skill_dir': str(skill_dir),
         'skill_md': {'exists': skill_exists, 'yaml_valid': yaml_valid},
         'standards_files': {'missing_files': sorted(missing_files), 'unreferenced_files': sorted(unreferenced_files)},
+        'noun_suffix': noun_suffix,
         'structure_score': structure_score,
     }
 

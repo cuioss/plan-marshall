@@ -141,9 +141,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   resolve-domain-skills --domain java --profile implementation
 
-# Resolve task executor for a profile
+# Resolve execute-task skill for a profile
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-task-executor --profile module_testing
+  resolve-execute-task-skill --profile module_testing
 ```
 
 ### Extension Defaults
@@ -194,8 +194,8 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `resolve-workflow-skill-extension` | `--domain --type` (outline, triage) |
 | `get-workflow-skills` | Get all workflow skills from system domain |
 | `get-skills-by-profile` | `--domain` (skills organized by profile) |
-| `configure-task-executors` | Auto-discover profiles and register executors |
-| `resolve-task-executor` | `--profile` (resolve executor for profile) |
+| `configure-execute-task-skills` | Auto-discover profiles and register execute-task skills |
+| `resolve-execute-task-skill` | `--profile` (resolve execute-task skill for profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
 | `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
@@ -222,10 +222,10 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "system": {
       "defaults": ["plan-marshall:dev-general-practices"],
       "optionals": ["plan-marshall:dev-general-practices"],
-      "task_executors": {
-        "implementation": "plan-marshall:task-executor",
-        "module_testing": "plan-marshall:task-executor",
-        "integration_testing": "plan-marshall:task-executor"
+      "execute_task_skills": {
+        "implementation": "plan-marshall:execute-task",
+        "module_testing": "plan-marshall:execute-task",
+        "integration_testing": "plan-marshall:execute-task"
       }
     },
     "java": {
@@ -277,13 +277,13 @@ The defaults template contains only `system` domain. Technical domains (java, ja
 
 ### System Domain
 
-The `system` domain contains task executors and base skills applied to all tasks.
+The `system` domain contains execute-task skills and base skills applied to all tasks.
 
 | Field | Purpose |
 |-------|---------|
 | `defaults` | Base skills loaded for all tasks (`plan-marshall:dev-general-practices`) |
 | `optionals` | Optional base skills available for selection |
-| `task_executors` | Maps profiles to task executor skills (convention: profile X -> `plan-marshall:task-X`) |
+| `execute_task_skills` | Maps profiles to execute-task skills (convention: profile X -> `plan-marshall:execute-task-X`) |
 
 ### Technical Domains (Profile Structure)
 
@@ -338,7 +338,7 @@ Script characteristics:
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `phase-1-init` | plan get, resolve-domain-skills | Read plan config, resolve skills |
-| `phase-4-plan` | resolve-task-executor | Resolve executor skill for task profile |
+| `phase-4-plan` | resolve-execute-task-skill | Resolve execute-task skill for task profile |
 | `phase-5-execute` | resolve-domain-skills | Load skills for task execution |
 | `manage-run-config` | system retention get | Read retention settings for cleanup |
 
