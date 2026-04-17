@@ -224,6 +224,23 @@ For the exact fill-in-the-blank structure, see:
 | `Change per file` | Yes | What changes | Task description |
 | `Pattern` | Conditional | Code/format pattern | Implementation guide |
 | `Verification` | Yes | How to verify | Task verification |
+| `intent_gloss` | Conditional | One-sentence disambiguation (≤15 words) of compound-word deliverable titles | Anchors task.description generation (phase-4-plan) |
+
+### Intent Gloss
+
+**Purpose**: Disambiguate compound-word deliverable titles whose head morpheme is a planning-domain verb (`review`, `check`, `validate`, `approve`, `merge`, …) to prevent phase-4-plan from re-interpreting the label.
+
+**Format**: A single sentence, max ~15 words, that restates the deliverable's goal using the tail morpheme's meaning.
+
+**When required**: Deliverables whose title contains a compound word whose head morpheme is a common task-planning verb.
+
+**Consumption**: phase-4-plan copies this gloss verbatim into every derived `task.description` header (after the verbatim title quote).
+
+**Example** (for deliverable title `review-knowledge`):
+
+```
+**Intent gloss:** Review knowledge captured by prior plans (lessons-learned and memories) against this plan's changes.
+```
 
 ### Domain Values
 
@@ -378,6 +395,7 @@ Solution outline skills MUST validate that each deliverable contains:
 - `**Profiles:**` block with valid profiles (`implementation`, `module_testing`, `integration_testing`, `verification`)
 - Explicit file list (not "all files matching X") — except `verification` profile where affected files can be empty
 - Verification command and criteria
+- `intent_gloss` — required when deliverable title head morpheme is a planning-domain verb; recommended for every deliverable.
 
 ### Deliverable ID Format
 
@@ -403,6 +421,7 @@ Solution outline skills MUST validate that each deliverable contains:
 - Missing `depends` field (prevents parallelization analysis)
 - Circular dependencies (D1 depends on D2, D2 depends on D1)
 - Forward dependencies (D1 depends on D3, where D3 comes after D1)
+- Compound-word deliverable (head morpheme is planning-domain verb) without an `**Intent gloss:**` field.
 
 ### Terminology
 
