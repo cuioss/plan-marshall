@@ -139,14 +139,14 @@ See [wait-pattern.md](../../tools-script-executor/standards/wait-pattern.md) for
 The steward wizard:
 
 1. **Detects provider** via `ci_health detect`
-2. **Verifies the CI tool** via `ci_health persist` (persists `authenticated_tools` to `run-configuration.json`; provider identity stays in `providers[]`)
+2. **Verifies CI tools live** via `ci_health verify-all` (returns current authenticated tools; nothing is persisted — the check is cheap and machine-specific)
 
 Example wizard step:
 ```markdown
 1. Call: `plan-marshall:tools-integration-ci:ci_health detect`
 2. Present detected provider to user
-3. Call: `plan-marshall:tools-integration-ci:ci_health persist`
-   (verifies the required CI tool and writes authenticated_tools to run-configuration.json; the CI provider identity and repo URL are read at runtime from providers[] in marshal.json)
+3. Call: `plan-marshall:tools-integration-ci:ci_health verify-all`
+   (returns the live authenticated_tools list and git presence; the CI provider identity and repo URL are read at runtime from providers[] in marshal.json — no run-config block is written)
 ```
 
 ---
@@ -171,7 +171,7 @@ The router:
 
 ### With marshall-steward
 
-- Steward wizard calls `ci_health persist` to verify tools and write `run-configuration.json` authenticated_tools
+- Steward wizard calls `ci_health verify-all` to verify tools live (no persistence)
 - Steward health check calls `ci_health status`
 - Steward does NOT contain CI detection logic
 

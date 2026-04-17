@@ -47,7 +47,6 @@ def create_run_config(fixture_dir: Path, config: dict | None = None) -> Path:
         config = {
             'version': 1,
             'commands': {},
-            'ci': {'git_present': True, 'authenticated_tools': ['git', 'gh'], 'verified_at': '2025-01-15T10:30:00Z'},
         }
     run_config_path = fixture_dir / 'run-configuration.json'
     run_config_path.write_text(json.dumps(config, indent=2))

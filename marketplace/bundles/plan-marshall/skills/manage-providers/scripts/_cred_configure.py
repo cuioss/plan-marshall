@@ -14,7 +14,6 @@ from _providers_core import (
     load_credential,
     load_declared_providers,
     read_provider_config,
-    register_credential_metadata,
     save_credential,
     write_provider_config,
 )
@@ -126,9 +125,6 @@ def run_configure(args) -> int:
             key, value = pair.split('=', 1)
             provider_config[key] = value
     write_provider_config(skill_name, provider_config)
-
-    # Register metadata (no secrets)
-    register_credential_metadata(skill_name, scope, str(path), verified=False)
 
     completeness = check_credential_completeness(skill_name, scope, project_name)
     result = {

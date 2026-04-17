@@ -290,7 +290,7 @@ CI provider configuration (project-level, shared via git).
 
 ### Note: Authenticated Tools
 
-Tool availability (`authenticated_tools`) is stored in `run-configuration.json` (local, not shared via git) since it varies per developer machine.
+Tool availability is verified live via `plan-marshall:tools-integration-ci:ci_health verify-all` — it is not persisted, since tool/auth status varies per developer machine and is cheap to check on demand.
 
 ## Default Values
 
