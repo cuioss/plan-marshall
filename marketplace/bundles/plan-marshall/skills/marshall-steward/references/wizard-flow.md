@@ -576,10 +576,17 @@ AskUserQuestion:
       value: "no"
 ```
 
-If yes:
+If yes, run these two commands sequentially — the first applies project-scope fixes; the second installs a narrow global allow rule for the `TERM_PROGRAM` detection pattern used by workflow auto-open / IDE hand-off steps (eliminates the `simple_expansion` permission prompt):
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-fixes --scope project
 ```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure --permissions 'Bash(echo "TERM_PROGRAM=$TERM_PROGRAM")' --target global
+```
+
+The `ensure` subcommand is idempotent — re-running the wizard does not duplicate the entry.
 
 ---
 
