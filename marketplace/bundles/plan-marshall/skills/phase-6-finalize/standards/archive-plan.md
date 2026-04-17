@@ -10,9 +10,12 @@ Lesson-sourced plans carry their `lesson-{id}.md` file along when the plan direc
 
 Record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen BEFORE the archive call below, because archive moves `status.json` out of `.plan/plans/{plan_id}/` and any subsequent `mark-step-done` call would fail to locate the plan.
 
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the archive destination. `{archive_path}` is the canonical archive location `.plan/archived-plans/{date}-{plan_id}` (the same path `manage-status archive` will move the plan directory to in the next call):
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step archive-plan --outcome done
+  --plan-id {plan_id} --phase 6-finalize --step archive-plan --outcome done \
+  --display-detail "-> {archive_path}"
 ```
 
 ## Archive

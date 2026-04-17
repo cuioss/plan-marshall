@@ -104,6 +104,7 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'phase': phase,
             'missing': exc.missing,
             'not_done': exc.not_done,
+            'legacy_format': exc.legacy_format,
             'message': str(exc),
         }
     row = _row_for_capture(
@@ -171,7 +172,10 @@ def cmd_verify(args: Any) -> dict[str, Any]:
             {
                 'invariant': 'phase_steps_complete',
                 'captured': str(captured_row.get('phase_steps_complete', '')),
-                'observed': f'incomplete(missing={exc.missing},not_done={exc.not_done})',
+                'observed': (
+                    f'incomplete(missing={exc.missing},not_done={exc.not_done},'
+                    f'legacy_format={exc.legacy_format})'
+                ),
             }
         ]
         return {

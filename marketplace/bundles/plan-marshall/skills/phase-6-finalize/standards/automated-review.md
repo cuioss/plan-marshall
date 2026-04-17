@@ -62,7 +62,28 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
 
 Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Mark done only on the terminal pass that returns clean (or on a skip); loop-back iterations do not terminate the step.
 
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the review outcome. The payload differs by branch:
+
+**Branch A — terminal clean pass** (no loop-back needed): `{N}` is the count of review comments resolved in the final pass (from the `workflow-integration-github` return payload, e.g. `comments_resolved`).
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done
+  --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
+  --display-detail "{N} comment(s) resolved (no loop-back)"
+```
+
+**Branch B — skipped** (no PR exists, config disabled, or otherwise gated):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
+  --display-detail "skipped"
+```
+
+**Branch C — loop-back recorded** (intermediate pass; used only when a non-terminal iteration must be surfaced in the output): `{iteration}` is the current loop-back iteration number (1..3). This branch is informational — the terminal pass still uses Branch A when review eventually goes clean.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
+  --display-detail "loop-back iteration {iteration}"
 ```
