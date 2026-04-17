@@ -171,6 +171,7 @@ For each deliverable D:
          IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
            - Log WARN: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
            - Set task.skills = [] (continue with empty skills rather than erroring)
+           - Record a Q-Gate triage finding via `manage-findings qgate add --phase 4-plan --source qgate --type triage --title "Missing skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate the missing profile."` so phase-5-execute and phase-6-finalize can surface the gap.
          ELSE:
            - Load all `defaults` directly into task.skills
            - For each `optional`, evaluate its `description` against deliverable context
@@ -443,7 +444,7 @@ Skills are resolved from architecture based on `module` + `profile`:
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
 | `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
-| Profile not in module | Error - profile must exist in `module.skills_by_profile` (except `verification`) |
+| Profile not in module | Log WARN, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
 
 ## Error Handling
 
@@ -461,9 +462,11 @@ If `deliverable.module` is not found in architecture:
 
 ### Profile Not in Module
 
-If a profile from `deliverable.profiles` is not in `module.skills_by_profile`:
-- Error: "Profile '{profile}' not found in {module}.skills_by_profile"
-- Record as lesson learned
+If a profile from `deliverable.profiles` is not in `module.skills_by_profile`, this is NOT plan-blocking. Follow Step 5's canonical procedure:
+
+- Log WARN: `(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate.`
+- Set `task.skills = []` and continue creating the task.
+- Record a Q-Gate triage finding via `manage-findings qgate add --phase 4-plan --source qgate --type triage`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
 
 ### Ambiguous Deliverable
 
