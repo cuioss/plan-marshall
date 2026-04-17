@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Tests for skill-domains commands in manage-config.
 
-Tests skill-domains, resolve-domain-skills commands
+Tests skill-domains and list-verify-steps commands defined in _cmd_skill_domains.py,
 including nested structure variants and edge cases.
 
-Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
+Tier 2 (direct import) tests with subprocess tests for CLI plumbing.
 """
 
 import importlib.util
@@ -30,14 +30,9 @@ def _load_module(name, filename):
 
 
 _cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
-_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
 
 cmd_list_verify_steps = _cmd_skill_domains.cmd_list_verify_steps
 cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
-cmd_get_skills_by_profile = _cmd_skill_resolution.cmd_get_skills_by_profile
-cmd_list_finalize_steps = _cmd_skill_resolution.cmd_list_finalize_steps
-cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
-cmd_resolve_workflow_skill_extension = _cmd_skill_resolution.cmd_resolve_workflow_skill_extension
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import PlanContext, run_script  # noqa: E402
@@ -356,180 +351,6 @@ def test_skill_domains_detect_no_overwrite():
 
 
 # =============================================================================
-# resolve-domain-skills Tests (Tier 2)
-# =============================================================================
-
-
-def test_resolve_domain_skills_java_implementation():
-    """Test resolve-domain-skills for java + implementation profile."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='implementation'))
-
-        assert result['status'] == 'success'
-        defaults_str = str(result['defaults'])
-        assert 'pm-dev-java:java-core' in defaults_str
-        optionals_str = str(result['optionals'])
-        assert 'pm-dev-java:java-cdi' in optionals_str
-        # Should NOT include testing defaults
-        assert 'pm-dev-java:junit-core' not in defaults_str
-
-
-def test_resolve_domain_skills_java_testing():
-    """Test resolve-domain-skills for java + module_testing profile."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='module_testing'))
-
-        assert result['status'] == 'success'
-        defaults_str = str(result['defaults'])
-        optionals_str = str(result['optionals'])
-        assert 'pm-dev-java:java-core' in defaults_str
-        assert 'pm-dev-java:junit-core' in defaults_str
-        assert 'pm-dev-java:junit-integration' in optionals_str
-        # Should NOT include implementation optionals
-        assert 'pm-dev-java:java-cdi' not in optionals_str
-
-
-def test_resolve_domain_skills_javascript_implementation():
-    """Test resolve-domain-skills for javascript + implementation profile."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_domain_skills(Namespace(domain='javascript', profile='implementation'))
-
-        assert result['status'] == 'success'
-        defaults_str = str(result['defaults'])
-        optionals_str = str(result['optionals'])
-        assert 'pm-dev-frontend:javascript' in defaults_str
-        assert 'pm-dev-frontend:lint-config' in optionals_str
-
-
-def test_resolve_domain_skills_unknown_domain():
-    """Test resolve-domain-skills with unknown domain returns error."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_domain_skills(Namespace(domain='unknown', profile='implementation'))
-
-        assert result['status'] == 'error'
-        assert 'unknown' in result['error'].lower()
-
-
-def test_resolve_domain_skills_unknown_profile():
-    """Test resolve-domain-skills with unknown profile returns error."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='invalid-profile'))
-
-        assert result['status'] == 'error'
-        assert 'profile' in result['error'].lower()
-
-
-def test_resolve_domain_skills_java_quality():
-    """Test resolve-domain-skills for java + quality profile (finalize phase)."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_domain_skills(Namespace(domain='java', profile='quality'))
-
-        assert result['status'] == 'success'
-        defaults_str = str(result['defaults'])
-        assert 'pm-dev-java:java-core' in defaults_str
-        assert 'pm-dev-java:javadoc' in defaults_str
-
-
-# =============================================================================
-# resolve-workflow-skill-extension Tests (Tier 2)
-# =============================================================================
-
-
-def test_resolve_workflow_skill_extension_java_outline():
-    """Test resolve-workflow-skill-extension returns outline extension for java."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_workflow_skill_extension(Namespace(domain='java', type='outline'))
-
-        assert result['status'] == 'success'
-        assert result['extension'] == 'pm-dev-java:ext-outline-java'
-        assert result['domain'] == 'java'
-        assert result['type'] == 'outline'
-
-
-def test_resolve_workflow_skill_extension_java_triage():
-    """Test resolve-workflow-skill-extension returns triage extension for java."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_workflow_skill_extension(Namespace(domain='java', type='triage'))
-
-        assert result['status'] == 'success'
-        assert result['extension'] == 'pm-dev-java:ext-triage-java'
-
-
-def test_resolve_workflow_skill_extension_javascript_outline():
-    """Test resolve-workflow-skill-extension returns outline extension for javascript."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_workflow_skill_extension(Namespace(domain='javascript', type='outline'))
-
-        assert result['status'] == 'success'
-        assert result['extension'] == 'pm-dev-frontend:ext-outline-frontend'
-
-
-def test_resolve_workflow_skill_extension_missing_type():
-    """Test resolve-workflow-skill-extension returns null for missing extension type."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_workflow_skill_extension(Namespace(domain='javascript', type='triage'))
-
-        assert result['status'] == 'success'
-        assert result['extension'] is None
-
-
-def test_resolve_workflow_skill_extension_unknown_domain():
-    """Test resolve-workflow-skill-extension returns null for unknown domain (not error)."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_workflow_skill_extension(Namespace(domain='unknown', type='outline'))
-
-        assert result['status'] == 'success'
-        assert result['extension'] is None
-
-
-def test_resolve_workflow_skill_extension_plugin_dev():
-    """Test resolve-workflow-skill-extension returns extensions for plugin-dev domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_resolve_workflow_skill_extension(Namespace(
-            domain='plan-marshall-plugin-dev', type='outline',
-        ))
-
-        assert result['status'] == 'success'
-        assert result['extension'] == 'pm-plugin-development:ext-outline-workflow'
-
-
-# =============================================================================
 # get-extensions / set-extensions Tests (Tier 2)
 # =============================================================================
 
@@ -757,91 +578,6 @@ def test_set_with_profile_returns_error():
         ))
 
         assert result['status'] == 'error'
-
-
-# =============================================================================
-# get-skills-by-profile Tests (Tier 2)
-# =============================================================================
-
-
-def test_get_skills_by_profile_java():
-    """Test get-skills-by-profile loads profile-keyed skills from extension.py."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_get_skills_by_profile(Namespace(domain='java'))
-
-        assert result['status'] == 'success'
-        assert 'skills_by_profile' in result
-        assert 'implementation' in result['skills_by_profile']
-        assert 'module_testing' in result['skills_by_profile']
-        # integration_testing should NOT appear as standalone profile for java
-        assert 'integration_testing' not in result['skills_by_profile']
-
-
-def test_get_skills_by_profile_includes_core_skills():
-    """Test get-skills-by-profile includes core skills in all profiles."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_get_skills_by_profile(Namespace(domain='java'))
-
-        assert result['status'] == 'success'
-        # Core skill should appear in every profile
-        for profile_skills in result['skills_by_profile'].values():
-            assert 'pm-dev-java:java-core' in profile_skills
-
-
-def test_get_skills_by_profile_includes_profile_skills():
-    """Test get-skills-by-profile includes profile-specific skills."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_get_skills_by_profile(Namespace(domain='java'))
-
-        assert result['status'] == 'success'
-        assert 'pm-dev-java:junit-core' in result['skills_by_profile']['module_testing']
-
-
-def test_get_skills_by_profile_javascript():
-    """Test get-skills-by-profile works for javascript domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_get_skills_by_profile(Namespace(domain='javascript'))
-
-        assert result['status'] == 'success'
-        assert 'skills_by_profile' in result
-        all_skills = str(result['skills_by_profile'])
-        assert 'pm-dev-frontend:javascript' in all_skills
-
-
-def test_get_skills_by_profile_unknown_domain():
-    """Test get-skills-by-profile returns error for unknown domain."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_get_skills_by_profile(Namespace(domain='unknown'))
-
-        assert result['status'] == 'error'
-        assert 'unknown' in result['error'].lower()
-
-
-def test_get_skills_by_profile_flat_domain_fallback():
-    """Test get-skills-by-profile returns core skills for flat structure domain (no bundle)."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_get_skills_by_profile(Namespace(domain='java'))
-
-        assert result['status'] == 'success'
-        assert 'skills_by_profile' in result
 
 
 # =============================================================================
@@ -1256,61 +992,6 @@ def test_get_nested_includes_project_skills():
 
 
 # =============================================================================
-# list-finalize-steps Tests (Tier 2)
-# =============================================================================
-
-
-def test_list_finalize_steps_returns_built_in():
-    """Test list-finalize-steps returns built-in steps with default: prefix."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_list_finalize_steps(Namespace())
-
-        assert result['status'] == 'success'
-        step_names = [s['name'] for s in result['steps']]
-        assert 'default:commit-push' in step_names
-        assert 'default:create-pr' in step_names
-        assert 'default:record-metrics' in step_names
-        assert 'default:archive-plan' in step_names
-        assert 'default:branch-cleanup' in step_names
-
-
-def test_list_finalize_steps_count():
-    """Test list-finalize-steps returns correct count for built-in steps."""
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
-
-        result = cmd_list_finalize_steps(Namespace())
-
-        assert result['status'] == 'success'
-        assert result['count'] >= 7
-
-
-def test_list_finalize_steps_discovers_project_skills():
-    """Test list-finalize-steps discovers project-local finalize-step-* skills.
-
-    Scans .claude/skills/ relative to cwd, so keep as subprocess.
-    """
-    with PlanContext() as ctx:
-        create_marshal_json(ctx.fixture_dir)
-
-        skill_dir = ctx.fixture_dir / '.claude' / 'skills' / 'finalize-step-hello-world'
-        skill_dir.mkdir(parents=True)
-        (skill_dir / 'SKILL.md').write_text(
-            '---\nname: finalize-step-hello-world\ndescription: Hello World\n---\n\n# Hello World\n'
-        )
-
-        result = run_script(SCRIPT_PATH, 'list-finalize-steps', cwd=ctx.fixture_dir)
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'project:finalize-step-hello-world' in result.stdout
-        assert 'Hello World' in result.stdout
-
-
-# =============================================================================
 # list-verify-steps Tests (Tier 2)
 # =============================================================================
 
@@ -1372,17 +1053,6 @@ def test_cli_skill_domains_get():
         create_marshal_json(ctx.fixture_dir)
 
         result = run_script(SCRIPT_PATH, 'skill-domains', 'get', '--domain', 'java')
-
-        assert result.success, f'Should succeed: {result.stderr}'
-        assert 'pm-dev-java:java-core' in result.stdout
-
-
-def test_cli_resolve_domain_skills():
-    """Test CLI plumbing: resolve-domain-skills outputs TOON."""
-    with PlanContext() as ctx:
-        create_nested_marshal_json(ctx.fixture_dir)
-
-        result = run_script(SCRIPT_PATH, 'resolve-domain-skills', '--domain', 'java', '--profile', 'implementation')
 
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'pm-dev-java:java-core' in result.stdout
