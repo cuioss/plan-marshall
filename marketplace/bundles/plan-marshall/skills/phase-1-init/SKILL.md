@@ -147,7 +147,9 @@ Use recipe_name as title, recipe description as body.
 
 ### Step 5: Write request.md
 
-Create the request document via manage-plan-documents:
+Create the request document via a two-step path-allocate flow. The script allocates a metadata-only stub and returns the absolute path; the body content is then written directly to that path with the `Write` tool. This pattern keeps the verbatim lesson/issue/description body out of shell arguments, which is essential because multi-line markdown (headings, code fences, blank lines) marshalled through `--body "..."` triggers security prompts and corrupts content.
+
+**Step 5.1 — Allocate the request stub:**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
@@ -155,25 +157,36 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   --plan-id {plan_id} \
   --title "{derived_title}" \
   --source {description|lesson|issue|recipe} \
-  --body "{verbatim_content}" \
-  [--source-id "{lesson_id|issue_url}"] \
-  [--context "{extracted_context}"]
+  [--source-id "{lesson_id|issue_url|recipe_key}"]
+```
+
+Parse the TOON output and extract the `path` field — this is the absolute path of the newly allocated request.md stub.
+
+**Step 5.2 — Write the verbatim body:**
+
+Use the `Write` tool to write the original input content directly to `{path}` from Step 5.1. The body is the verbatim content from Step 4:
+- **description**: The free-form description text
+- **lesson**: The lesson body (title + detail)
+- **issue**: The issue body
+- **recipe**: The recipe description
+
+```
+Write({path}, {verbatim_body_content})
 ```
 
 **Parameters:**
 - `--title`: Derived title from input
 - `--source`: One of `description`, `lesson`, `issue`, or `recipe`
-- `--body`: The verbatim original input content
 - `--source-id`: (only for traceable sources) External reference identifier:
   - For `lesson`: The lesson ID (e.g., `2025-12-02-001`)
   - For `issue`: The issue URL
   - For `recipe`: The recipe key (e.g., `refactor-to-standards`)
   - For `description`: Omit (no external reference)
-- `--context`: (optional) Extracted context from lesson or issue metadata
+- `--body-file PATH`: (optional, automated flows only) Absolute path to an existing file whose contents should become the request body. When provided, the script copies the file contents into the allocated stub atomically, replacing the two-step Write follow-up. Interactive flows driven by this skill use Step 5.2 instead.
 
-**Note**: The skill handles template rendering and timestamps automatically.
+**Note**: The skill handles template rendering and timestamps automatically. The stub returned by Step 5.1 already contains the metadata frontmatter — Step 5.2's `Write` replaces the body section only when the caller opts for the two-step pattern.
 
-**After successful creation**, log the artifact:
+**After successful creation and body write**, log the artifact:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
