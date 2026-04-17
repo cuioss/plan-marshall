@@ -93,8 +93,10 @@ This skill is consumed by:
 
 | Operation | Parameter | ID Field | Format Example |
 |-----------|-----------|----------|----------------|
-| `thread-reply --thread-id` | Comment's `id` field | GraphQL node ID | `PRRC_kwDO...` |
+| `thread-reply --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
 | `resolve-thread --thread-id` | Comment's `thread_id` field | GraphQL node ID | `PRRT_kwDO...` |
+
+Both operations take the same `PRRT_` thread id — pass the comment's `thread_id` field for either. The comment's `id` field (format `PRRC_...`) is never valid for `thread-reply` or `resolve-thread`.
 
 **NEVER use numeric IDs** — GitHub GraphQL requires global node IDs.
 
