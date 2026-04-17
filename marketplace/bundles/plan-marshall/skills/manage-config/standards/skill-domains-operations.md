@@ -112,15 +112,15 @@ status: success
 | `integration_testing` | `{domain}.core.defaults` + `{domain}.integration_testing.defaults` | `{domain}.core.optionals` + `{domain}.integration_testing.optionals` |
 | `quality` | `{domain}.core.defaults` + `{domain}.quality.defaults` | `{domain}.core.optionals` + `{domain}.quality.optionals` |
 
-### Task Executor Resolution
+### Execute-Task Skill Resolution
 
 ```bash
-# Resolves profile to task executor skill from system.task_executors
-manage-config resolve-task-executor --profile implementation
-# Returns: plan-marshall:task-executor
+# Resolves profile to execute-task skill from system.execute_task_skills
+manage-config resolve-execute-task-skill --profile implementation
+# Returns: plan-marshall:execute-task
 
-manage-config resolve-task-executor --profile module_testing
-# Returns: plan-marshall:task-executor
+manage-config resolve-execute-task-skill --profile module_testing
+# Returns: plan-marshall:execute-task
 ```
 
 ### Domain Skills Resolution

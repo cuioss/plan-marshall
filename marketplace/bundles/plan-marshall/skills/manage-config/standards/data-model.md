@@ -52,10 +52,10 @@ JSON structure and field definitions for project configuration.
     "system": {
       "defaults": ["plan-marshall:dev-general-practices"],
       "optionals": ["plan-marshall:dev-general-practices"],
-      "task_executors": {
-        "implementation": "plan-marshall:task-executor",
-        "module_testing": "plan-marshall:task-executor",
-        "integration_testing": "plan-marshall:task-executor"
+      "execute_task_skills": {
+        "implementation": "plan-marshall:execute-task",
+        "module_testing": "plan-marshall:execute-task",
+        "integration_testing": "plan-marshall:execute-task"
       }
     },
     "java": {
@@ -81,7 +81,7 @@ JSON structure and field definitions for project configuration.
 Skill configuration per domain. See [skill-domains.md](skill-domains.md) for complete domain structure, profiles, validation rules, and technical domain catalog. See [skill-domains-operations.md](skill-domains-operations.md) for resolution commands and usage patterns.
 
 Key structural summary:
-- **System domain**: Contains `defaults`, `optionals`, and `task_executors`
+- **System domain**: Contains `defaults`, `optionals`, and `execute_task_skills`
 - **Technical domains**: Reference a `bundle` and declare `workflow_skill_extensions` (outline, triage)
 - **Profiles**: Loaded at runtime from `extension.py`, not stored in marshal.json
 
