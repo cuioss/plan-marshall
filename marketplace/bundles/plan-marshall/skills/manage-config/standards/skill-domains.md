@@ -16,7 +16,7 @@ Skill domains configure which implementation skills are loaded when working on c
 See `data-model.md` for the complete `skill_domains` JSON schema. The key hierarchy is:
 
 - `skill_domains.active_profiles[]` — globally active profiles
-- `skill_domains.system` — workflow skills, task executors, system-level defaults/optionals
+- `skill_domains.system` — workflow skills, execute-task skills, system-level defaults/optionals
 - `skill_domains.{domain}` — per-domain skills organized by profile with extensions
 
 ## 6-Phase Workflow Model
@@ -45,7 +45,7 @@ The `system` domain is required and contains:
 | `defaults` | array | No | Base skills loaded for all tasks |
 | `optionals` | array | No | Optional base skills available for selection |
 | `workflow_skills` | object | Yes | Maps 6 phases to workflow skill references |
-| `task_executors` | object | Yes | Maps profiles to task executor skills |
+| `execute_task_skills` | object | Yes | Maps profiles to execute-task skills |
 
 ```json
 {
@@ -66,33 +66,33 @@ The `system` domain is required and contains:
 }
 ```
 
-### Task Executors
+### Execute-Task Skills
 
-Task executors map profile values to the workflow skill that executes tasks of that profile:
+Execute-task skills map profile values to the workflow skill that executes tasks of that profile:
 
 ```json
 {
-  "task_executors": {
-    "implementation": "plan-marshall:task-executor",
-    "module_testing": "plan-marshall:task-executor",
-    "integration_testing": "plan-marshall:task-executor"
+  "execute_task_skills": {
+    "implementation": "plan-marshall:execute-task",
+    "module_testing": "plan-marshall:execute-task",
+    "integration_testing": "plan-marshall:execute-task"
   }
 }
 ```
 
-| Profile | Purpose | Default Executor |
-|---------|---------|------------------|
-| `implementation` | Production code tasks | `plan-marshall:task-executor` |
-| `module_testing` | Unit/module test tasks | `plan-marshall:task-executor` |
-| `integration_testing` | Integration test tasks | `plan-marshall:task-executor` |
+| Profile | Purpose | Default Execute-Task Skill |
+|---------|---------|----------------------------|
+| `implementation` | Production code tasks | `plan-marshall:execute-task` |
+| `module_testing` | Unit/module test tasks | `plan-marshall:execute-task` |
+| `integration_testing` | Integration test tasks | `plan-marshall:execute-task` |
 
 **Extensibility**: The profile list is open for extension. To add a new profile:
 
 1. Add profile key to `skills_by_profile` in domain `extension.py`
-2. Create corresponding `plan-marshall:task-{profile}` skill
-3. Marshall-steward auto-discovers and registers in `task_executors`
+2. Create corresponding `plan-marshall:execute-task-{profile}` skill
+3. Marshall-steward auto-discovers and registers in `execute_task_skills`
 
-**Convention**: Profile `X` maps to skill `plan-marshall:task-X` by default.
+**Convention**: Profile `X` maps to skill `plan-marshall:execute-task-X` by default.
 
 ### Technical Domain Structure (Profile-Based)
 
@@ -341,7 +341,7 @@ manage-config skill-domains active-profiles remove
 
 1. **System domain required**: `skill_domains.system` must exist
 2. **Workflow skills required**: `system.workflow_skills` must have all 6 phases
-3. **Task executors required**: `system.task_executors` must exist with at least `implementation`
+3. **Execute-task skills required**: `system.execute_task_skills` must exist with at least `implementation`
 4. **Profile structure**: If domain has profiles, must have at least `core`
 5. **Extension types**: Only `outline` and `triage` are valid extension types
 6. **Skill format**: All skills must be `bundle:skill` format
@@ -351,7 +351,7 @@ manage-config skill-domains active-profiles remove
 These keys are reserved in domain configuration and cannot be used as profile names:
 
 - `workflow_skills` - System domain only
-- `task_executors` - System domain only
+- `execute_task_skills` - System domain only
 - `workflow_skill_extensions` - Domain extensions
 - `active_profiles` - Profile filtering (global or per-domain)
 - `core` - Core skills for all profiles

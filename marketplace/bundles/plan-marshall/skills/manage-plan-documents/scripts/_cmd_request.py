@@ -9,8 +9,13 @@ Editing flow (three-step pattern):
     2. Main context writes/edits the returned file with Read/Edit/Write
     3. `request mark-clarified` → script validates and records the transition
 
-No multi-line content is ever marshalled through the shell boundary.
+No multi-line content is ever marshalled through the shell boundary. For
+initial body creation, `request create` either emits a metadata-only stub
+(caller writes the body via Write(path)) or accepts `--body-file PATH` to
+splice a pre-written body into the rendered stub.
 """
+
+from pathlib import Path
 
 from _documents_core import (  # type: ignore[import-not-found]
     output_error,
@@ -22,29 +27,69 @@ from _documents_core import (  # type: ignore[import-not-found]
 from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
 
+# Placeholder paragraph emitted by templates/request.md when no body is provided.
+# When --body-file is supplied, cmd_create replaces this line with the file contents.
+# Keep in sync with templates/request.md.
+_BODY_STUB = '_Body not yet provided — write content here._'
+
 
 def cmd_create(doc_type: str, args) -> dict:
-    """Create a new document."""
+    """Create a new document.
+
+    Body handling (path-allocate convention):
+      * No `--body-file`:    render the metadata-only stub. The placeholder
+                             paragraph stays in place; the caller is expected
+                             to write the body directly via `Write(path)`,
+                             using the `path` field returned below.
+      * `--body-file PATH`:  read PATH (UTF-8) and splice the contents into
+                             the rendered stub in place of the placeholder
+                             paragraph. PATH must point to an existing regular
+                             file — otherwise returns `body_file_not_found`.
+
+    The returned dict always includes `path` (absolute resolved path of the
+    created file) so callers can pipe directly into the Write tool.
+    """
     doc_def = validate_doc_type_and_plan(doc_type, args.plan_id)
     if not doc_def:
         return {'status': 'error', 'error': 'validation_failed'}
 
-    # Collect fields from args
-    fields = {}
+    # Resolve destination path up-front so body_file_not_found can cite `file`.
+    file_path, file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
+
+    # Collect metadata fields (title, source, source_id). body_file is a pure
+    # input alias and never reaches the template renderer.
+    fields: dict[str, str] = {}
     for field_def in doc_def.get('fields', []):
         name = field_def['name']
+        if name == 'body_file':
+            continue
         value = getattr(args, name.replace('-', '_'), None)
         if value:
             fields[name] = value
 
-    # Validate
+    # Validate metadata fields.
     errors = validate_fields(doc_def, fields)
     if errors:
         return {'status': 'error', 'error': 'validation_failed', 'errors': errors}
 
-    # Check if document already exists
-    file_path, file_name = resolve_document_path(doc_def, doc_type, args.plan_id)
+    # Optional --body-file shortcut: load the body contents or fail fast.
+    body_file_raw = getattr(args, 'body_file', None)
+    body: str | None = None
+    if body_file_raw:
+        body_file_path = Path(body_file_raw).expanduser().resolve()
+        if not body_file_path.exists() or not body_file_path.is_file():
+            return {
+                'status': 'error',
+                'error': 'body_file_not_found',
+                'plan_id': args.plan_id,
+                'document': doc_type,
+                'file': file_name,
+                'body_file': str(body_file_path),
+                'message': f'body_file does not exist or is not a regular file: {body_file_path}',
+            }
+        body = body_file_path.read_text(encoding='utf-8')
 
+    # Refuse to overwrite unless --force.
     if file_path.exists() and not getattr(args, 'force', False):
         return {
             'status': 'error',
@@ -55,8 +100,14 @@ def cmd_create(doc_type: str, args) -> dict:
             'message': 'Document already exists. Use --force to overwrite.',
         }
 
-    # Render and write
+    # Render stub, then splice in the body (if supplied) by replacing the
+    # placeholder paragraph. Trailing newline on body is stripped so the
+    # spliced block matches the surrounding template formatting.
     content = render_template(doc_def, fields, args.plan_id)
+    if body is not None:
+        body_block = body.rstrip('\n')
+        content = content.replace(_BODY_STUB, body_block)
+
     atomic_write_file(file_path, content)
 
     return {
@@ -64,6 +115,7 @@ def cmd_create(doc_type: str, args) -> dict:
         'plan_id': args.plan_id,
         'document': doc_type,
         'file': file_name,
+        'path': str(file_path.resolve()),
         'action': 'created',
         'document_info': {
             'title': fields.get('title', ''),

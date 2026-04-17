@@ -133,7 +133,7 @@ def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
 def create_nested_marshal_json(fixture_dir: Path) -> Path:
     """Create marshal.json with nested skill_domains structure.
 
-    System domain contains task_executors.
+    System domain contains execute_task_skills.
     Domain-specific domains contain bundle reference and workflow_skill_extensions.
 
     NOTE: Profiles (core, implementation, module_testing, quality) are NOT stored
@@ -144,10 +144,10 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
             'system': {
                 'defaults': ['plan-marshall:general-development-rules'],
                 'optionals': ['plan-marshall:diagnostic-patterns'],
-                'task_executors': {
-                    'implementation': 'plan-marshall:task-implementation',
-                    'module_testing': 'plan-marshall:task-module-testing',
-                    'integration_testing': 'plan-marshall:task-integration_testing',
+                'execute_task_skills': {
+                    'implementation': 'plan-marshall:execute-task-implementation',
+                    'module_testing': 'plan-marshall:execute-task-module-testing',
+                    'integration_testing': 'plan-marshall:execute-task-integration_testing',
                 },
             },
             'java': {

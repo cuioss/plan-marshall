@@ -1,12 +1,12 @@
-# Task Executors
+# Execute-Task Skills
 
-How tasks are routed to the appropriate task executor skill and the shared workflow that all executors follow.
+How tasks are routed to the appropriate execute-task skill and the shared workflow that all execute-task skills follow.
 
 ---
 
 ## Routing Overview
 
-Task executors are workflow skills that handle the actual implementation or testing work during task execution. Unlike phase skills (which are system-only), task executors are configured via marshal.json and can be extended.
+Execute-task skills are workflow skills that handle the actual implementation or testing work during task execution. Unlike phase skills (which are system-only), execute-task skills are configured via marshal.json and can be extended.
 
 **Key Design**: Profile determines execution skill; domain determines knowledge skills.
 
@@ -16,28 +16,28 @@ Task executors are workflow skills that handle the actual implementation or test
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  TASK-001.json                                                   │
-│  ├─ profile: implementation     ←─ Determines task executor      │
+│  ├─ profile: implementation     ←─ Determines execute-task skill │
 │  ├─ domain: java                ←─ (informational only)          │
 │  └─ skills: [java-core, ...]    ←─ Domain knowledge skills       │
 │                                                                  │
 │                    │                                             │
 │                    ▼                                             │
 │                                                                  │
-│  resolve-task-executor --profile implementation                  │
+│  resolve-execute-task-skill --profile implementation             │
 │                    │                                             │
 │                    ▼                                             │
 │                                                                  │
-│  marshal.json: skill_domains.system.task_executors               │
+│  marshal.json: skill_domains.system.execute_task_skills          │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ "task_executors": {                                         │ │
-│  │   "implementation": "plan-marshall:task-executor",             │ │
-│  │   "module_testing": "plan-marshall:task-executor"             │ │
+│  │ "execute_task_skills": {                                    │ │
+│  │   "implementation": "plan-marshall:execute-task",           │ │
+│  │   "module_testing": "plan-marshall:execute-task"            │ │
 │  │ }                                                           │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                    │                                             │
 │                    ▼                                             │
 │                                                                  │
-│  Skill: plan-marshall:task-executor          ←─ Task executor      │
+│  Skill: plan-marshall:execute-task         ←─ Execute-task skill │
 │  Skill: pm-dev-java:java-core              ←─ Domain skills      │
 │  Skill: pm-dev-java:java-cdi               ←─ from task.skills   │
 │                                                                  │
@@ -50,11 +50,11 @@ Task executors are workflow skills that handle the actual implementation or test
 
 **Canonical profile names use underscores** (not hyphens):
 
-| Profile | Purpose | Default Task Executor |
-|---------|---------|----------------------|
-| `implementation` | Production code creation/modification | `plan-marshall:task-executor` |
-| `module_testing` | Unit/module test creation | `plan-marshall:task-executor` |
-| `verification` | Run commands without modifying files | `plan-marshall:task-executor` |
+| Profile | Purpose | Default Execute-Task Skill |
+|---------|---------|---------------------------|
+| `implementation` | Production code creation/modification | `plan-marshall:execute-task` |
+| `module_testing` | Unit/module test creation | `plan-marshall:execute-task` |
+| `verification` | Run commands without modifying files | `plan-marshall:execute-task` |
 
 **Why underscores?** Profiles are used as JSON keys, TOON field values, and CLI parameters — underscores are more consistent with these conventions.
 
@@ -64,14 +64,14 @@ Task executors are workflow skills that handle the actual implementation or test
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-task-executor --profile {profile}
+  resolve-execute-task-skill --profile {profile}
 ```
 
 **Output**:
 ```toon
 status: success
 profile: implementation
-task_executor: plan-marshall:task-executor
+execute_task_skill: plan-marshall:execute-task
 ```
 
 **Error (unknown profile)**:
@@ -84,42 +84,42 @@ error: Unknown profile 'X'. Available profiles: implementation, module_testing
 
 ## marshal.json Configuration
 
-Task executors are configured in the system domain:
+Execute-task skills are configured in the system domain:
 
 ```json
 {
   "skill_domains": {
     "system": {
       "workflow_skills": { ... },
-      "task_executors": {
-        "implementation": "plan-marshall:task-executor",
-        "module_testing": "plan-marshall:task-executor",
-        "verification": "plan-marshall:task-executor"
+      "execute_task_skills": {
+        "implementation": "plan-marshall:execute-task",
+        "module_testing": "plan-marshall:execute-task",
+        "verification": "plan-marshall:execute-task"
       }
     }
   }
 }
 ```
 
-**Convention**: All profiles map to `plan-marshall:task-executor` by default. The skill handles profile dispatch internally.
+**Convention**: All profiles map to `plan-marshall:execute-task` by default. The skill handles profile dispatch internally.
 
 ---
 
 ## Automatic Configuration
 
-Marshall-steward auto-populates task_executors during setup:
+Marshall-steward auto-populates execute_task_skills during setup:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  configure-task-executors
+  configure-execute-task-skills
 ```
 
 **Discovery Process**:
 1. Scans all configured domains in marshal.json
 2. Extracts profile keys from each domain (excluding reserved keys like `core`, `workflow_skills`)
 3. Includes DEFAULT_PROFILES from `_config_defaults.py`
-4. Maps each profile to `plan-marshall:task-executor`
-5. Persists to `skill_domains.system.task_executors`
+4. Maps each profile to `plan-marshall:execute-task`
+5. Persists to `skill_domains.system.execute_task_skills`
 
 ---
 
@@ -146,9 +146,9 @@ The profile system is open for extension. While `_config_defaults.py` defines a 
        }]
    ```
 
-2. **Create corresponding task executor skill**:
+2. **Create corresponding execute-task skill**:
    ```
-   marketplace/bundles/plan-marshall/skills/task-my_new_profile/
+   marketplace/bundles/plan-marshall/skills/execute-my_new_profile/
    └── SKILL.md  # Defines execution workflow for this profile
    ```
 
@@ -160,7 +160,7 @@ The profile system is open for extension. While `_config_defaults.py` defines a 
 4. **Verify configuration**:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     resolve-task-executor --profile my_new_profile
+     resolve-execute-task-skill --profile my_new_profile
    ```
 
 ---
@@ -181,9 +181,9 @@ For the complete architecture → outline → plan → execute skill resolution 
 
 ---
 
-## Shared Executor Workflow
+## Shared Execute-Task Workflow
 
-The unified `plan-marshall:task-executor` skill handles all profiles. Common workflow steps are shared, with profile-specific behavior documented per profile section in the skill.
+The unified `plan-marshall:execute-task` skill handles all profiles. Common workflow steps are shared, with profile-specific behavior documented per profile section in the skill.
 
 ### Common Input Contract
 
@@ -346,7 +346,7 @@ If verification command hangs:
 
 ## Common Script Notations
 
-All task executor skills use these notations (use EXACTLY as shown):
+All execute-task skills use these notations (use EXACTLY as shown):
 
 | Notation | Purpose |
 |----------|---------|

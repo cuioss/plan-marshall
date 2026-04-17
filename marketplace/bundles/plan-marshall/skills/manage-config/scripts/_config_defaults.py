@@ -7,33 +7,33 @@ project initialization and detection.
 
 # Reserved keys in nested domain config (not profile names)
 # bundle: Reference to bundle providing this domain (e.g., 'pm-dev-java')
-# task_executors: System domain only - profile to task skill mapping
+# execute_task_skills: System domain only - profile to execute-task skill mapping
 # workflow_skill_extensions: Domain extensions (outline, triage)
 # defaults/optionals: System domain top-level skills
 RESERVED_DOMAIN_KEYS = [
     'bundle',
-    'task_executors',
+    'execute_task_skills',
     'workflow_skill_extensions',
     'defaults',
     'optionals',
 ]
 
-# Task executors map profile -> workflow skill
-# All profiles use the unified task-executor skill which handles profile dispatch internally.
+# Execute-task skills map profile -> workflow skill
+# All profiles use the unified execute-task skill which handles profile dispatch internally.
 # Keys align with constants.VALID_PROFILES (source of truth for profile names)
 # These are defaults; marshall-steward auto-discovers from extension.py files
-DEFAULT_TASK_EXECUTORS = {
-    'implementation': 'plan-marshall:task-executor',
-    'module_testing': 'plan-marshall:task-executor',
-    'integration_testing': 'plan-marshall:task-executor',
-    'verification': 'plan-marshall:task-executor',
+DEFAULT_EXECUTE_TASK_SKILLS = {
+    'implementation': 'plan-marshall:execute-task',
+    'module_testing': 'plan-marshall:execute-task',
+    'integration_testing': 'plan-marshall:execute-task',
+    'verification': 'plan-marshall:execute-task',
 }
 
 # Default system domain configuration
 DEFAULT_SYSTEM_DOMAIN = {
     'defaults': [],
     'optionals': [],
-    'task_executors': DEFAULT_TASK_EXECUTORS,
+    'execute_task_skills': DEFAULT_EXECUTE_TASK_SKILLS,
 }
 
 
