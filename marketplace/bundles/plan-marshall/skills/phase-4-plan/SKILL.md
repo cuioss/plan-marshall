@@ -238,7 +238,7 @@ For each deliverable, create tasks using `--content` with `\n`-encoded TOON (one
 
 To prevent compound-word mis-interpretation (e.g. `review-knowledge` being described as PR/CI review hygiene), phase-4-plan MUST anchor every `task.description` to literal tokens from the parent deliverable:
 
-1. **Verbatim title quote (mitigation 1)**: The `description` value MUST begin with the exact deliverable title in single quotes, followed by a comma. Example for a deliverable titled `review-knowledge`:
+1. **Verbatim title quote (mitigation 1)**: The `description` value MUST begin with the exact deliverable title in single quotes, followed by a comma (or a period if an intent gloss follows per mitigation 2). Example for a deliverable titled `review-knowledge`:
 
    description: 'review-knowledge', which reviews prior-plan knowledge against this plan's changes.
 
@@ -387,7 +387,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 After all tasks are created, scan each `task.description` for planning-domain keywords that the author may have substituted for the deliverable's actual semantics. For each task:
 
 1. Build a deny-list of planning-domain keywords: `PR review`, `CI`, `merge comments`, `pipeline`, `automated review`, `build check`, `review comments`.
-2. Build an outline-text haystack: concatenate the parent deliverable's Metadata, Intent gloss, Profiles, Affected files, Change per file, and Success Criteria sections as plain text.
+2. Build an outline-text haystack: concatenate the parent deliverable's Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text.
 3. For each keyword present in the `description` but ABSENT from the haystack, emit a warning Q-Gate finding:
 
 ```bash
@@ -395,7 +395,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
   --type warning \
   --title "Description drift: TASK-{N} uses '{keyword}' not present in deliverable outline" \
-  --detail "{description excerpt}; deliverable {D} outline does not mention '{keyword}'"
+  --detail "{description excerpt}; deliverable {deliverable_number} outline does not mention '{keyword}'"
 ```
 
 **Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
