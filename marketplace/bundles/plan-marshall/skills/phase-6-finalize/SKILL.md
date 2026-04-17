@@ -297,6 +297,7 @@ Capture the following values:
 3. **Configured `steps` list** — from phase-6-finalize config (`manage-config plan phase-6-finalize get --plan-id {plan_id} --field steps`).
 4. **Repository state** — branch via `git -C {main_checkout} branch --show-current`, porcelain via `git -C {main_checkout} status --porcelain`.
 5. **PR state + number** — via `ci pr view --project-dir {main_checkout}`. Treat error (no PR for branch) as `state=n/a, number=n/a`.
+6. **Solution outline Summary** — the 2-3 sentence Summary body that feeds the Goal block. Fetch via `manage-solution-outline read --plan-id {plan_id} --section summary` and extract the `content` field. On `section_not_found` or empty content, store the sentinel value `None`; the emission procedure substitutes the defensive placeholder `(no summary recorded)`.
 
 See [standards/output-template.md#snapshot-procedure](standards/output-template.md#snapshot-procedure) for exact commands and field extraction.
 
@@ -328,17 +329,18 @@ Skill: plan-marshall:phase-6-finalize
 
 **Inputs** (both already in model context from Step 3):
 
-- **Pre-archive snapshot** — captured by the Pre-Archive Snapshot Hook before `default:archive-plan` dispatched. Contains `phase_steps` map, deliverables list, configured `steps` list, repository branch/porcelain, and PR state/number.
+- **Pre-archive snapshot** — captured by the Pre-Archive Snapshot Hook before `default:archive-plan` dispatched. Contains `phase_steps` map, deliverables list, configured `steps` list, repository branch/porcelain, PR state/number, and the solution outline Summary text captured via `manage-solution-outline read --section summary`.
 - **`archive_path`** — returned by `default:archive-plan` in Step 3.
 
 **Procedure:** Follow the emission procedure in [standards/output-template.md#emission-procedure](standards/output-template.md#emission-procedure). The renderer is a pure assembler:
 
 1. Resolve the headline token (`MERGED` / `OPEN` / `LOOP_BACK` / `SKIPPED` / `FAILED`) via the precedence chain.
 2. Build the headline.
-3. Build the Deliverables block (one row per deliverable, icon by outcome).
-4. Build the Finalize steps block (one row per configured step, padded 33-char name + `display_detail`).
-5. Build the Repository trailer (main state | worktree token | working tree state).
-6. Emit the four blocks separated by blank lines as a plain-text, user-facing output.
+3. Build the Goal block (literal `Goal` header, blank line, Summary text wrapped to ~78 chars with 2-space indent; defensive `(no summary recorded)` fallback when Summary is `None` or empty).
+4. Build the Deliverables block (one row per deliverable, icon by outcome).
+5. Build the Finalize steps block (one row per configured step, padded 33-char name + `display_detail`).
+6. Build the Repository trailer (main state | worktree token | working tree state).
+7. Emit the five blocks separated by blank lines as a plain-text, user-facing output.
 
 **No additional script calls are needed for this step** — the renderer consumes only the in-memory snapshot plus `archive_path`. It performs no `manage-status` / `manage-solution-outline` / `ci pr view` reads of its own.
 
@@ -366,12 +368,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Success** (user-facing):
 
-The primary output is the three-block template rendered by Step 5. It is a plain-text, user-facing block — not TOON — assembled from the pre-archive snapshot plus `archive_path`. See [standards/output-template.md](standards/output-template.md) for the full renderer specification.
+The primary output is the five-block template rendered by Step 5. It is a plain-text, user-facing block — not TOON — assembled from the pre-archive snapshot plus `archive_path`. See [standards/output-template.md](standards/output-template.md) for the full renderer specification.
 
 Example:
 
 ```
 [MERGED] PR #212 -- 5 deliverable(s) shipped, all green
+
+Goal
+  Enrich the phase-6-finalize output with a terminal-rendered three-block
+  template so the user sees a single at-a-glance summary of the plan's
+  outcome, deliverables, and finalize-step results.
 
 Deliverables (5/5)
   [OK]  1. Extend manage-status mark-step-done with --display-detail
@@ -467,7 +474,7 @@ State checks (for present steps):
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
-| `standards/output-template.md` | — | Renderer specification for the three-block final output template (Step 5) |
+| `standards/output-template.md` | — | Renderer specification for the five-block final output template (Step 5) |
 | `standards/required-steps.md` | — | Canonical list of steps enforced by the `phase_steps_complete` handshake invariant |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |

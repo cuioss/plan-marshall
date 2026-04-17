@@ -163,9 +163,9 @@ def _list_deliverables_ns(plan_id='test-plan'):
     return Namespace(plan_id=plan_id)
 
 
-def _read_ns(plan_id='test-plan', raw=False, deliverable_number=None):
+def _read_ns(plan_id='test-plan', raw=False, deliverable_number=None, section=None):
     """Build Namespace for cmd_read."""
-    return Namespace(plan_id=plan_id, raw=raw, deliverable_number=deliverable_number)
+    return Namespace(plan_id=plan_id, raw=raw, deliverable_number=deliverable_number, section=section)
 
 
 def _exists_ns(plan_id='test-plan'):
@@ -374,6 +374,57 @@ def test_read_deliverable_not_found():
         result = cmd_read(_read_ns(plan_id='deliverable-notfound', deliverable_number=999))
         assert result['error'] == 'deliverable_not_found'
         assert 'available' in result  # Should list available deliverable numbers
+
+
+def test_read_section_summary():
+    """--section summary returns the Summary section body in the content field."""
+    with PlanContext(plan_id='section-summary') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = cmd_read(_read_ns(plan_id='section-summary', section='summary'))
+        assert result['status'] == 'success'
+        assert result['section'] == 'summary'
+        assert result['requested_section'] == 'summary'
+        assert 'Implement JWT validation service' in result['content']
+        # Body should be the section body only, with no ## heading and no subsequent sections
+        assert '## Summary' not in result['content']
+        assert '## Overview' not in result['content']
+
+
+def test_read_section_overview():
+    """--section overview returns the Overview section body (diagram)."""
+    with PlanContext(plan_id='section-overview') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = cmd_read(_read_ns(plan_id='section-overview', section='overview'))
+        assert result['status'] == 'success'
+        assert result['section'] == 'overview'
+        assert result['requested_section'] == 'overview'
+        # Overview contains the ASCII diagram's box-drawing text
+        assert 'JwtConfiguration' in result['content']
+
+
+def test_read_section_case_insensitive():
+    """--section matching is case-insensitive."""
+    with PlanContext(plan_id='section-case') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = cmd_read(_read_ns(plan_id='section-case', section='Summary'))
+        assert result['status'] == 'success'
+        assert result['section'] == 'summary'
+        assert result['requested_section'] == 'Summary'
+
+
+def test_read_section_not_found():
+    """--section for a section that does not exist returns section_not_found."""
+    with PlanContext(plan_id='section-missing') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = cmd_read(_read_ns(plan_id='section-missing', section='does-not-exist'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'section_not_found'
+        assert result['requested_section'] == 'does-not-exist'
+        assert 'does-not-exist' in result['message']
 
 
 # =============================================================================
@@ -614,3 +665,22 @@ def test_cli_invalid_plan_id():
         assert result.success, 'Expected exit 0 with TOON error for invalid plan ID'
         data = parse_toon(result.stdout)
         assert data['error'] == 'invalid_plan_id'
+
+
+def test_cli_read_section_and_deliverable_mutually_exclusive():
+    """CLI plumbing: --section and --deliverable-number cannot be combined."""
+    with PlanContext(plan_id='cli-section-mutex') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'read',
+            '--plan-id',
+            'cli-section-mutex',
+            '--section',
+            'summary',
+            '--deliverable-number',
+            '1',
+        )
+        # argparse mutually exclusive group errors exit with code 2
+        assert not result.success, 'Expected failure when combining --section and --deliverable-number'
