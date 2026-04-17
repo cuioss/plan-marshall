@@ -23,6 +23,7 @@
   ],
   "uncertain_patterns": [
     "target/**",
+    "test/**/fixtures/**",
     "build/**",
     "dist/**",
     "out/**",
