@@ -337,6 +337,7 @@ def cmd_next_number(args) -> dict:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
+        allow_abbrev=False,
         description='Manage Architectural Decision Records (ADRs) in doc/adr/',
         epilog="""
 Examples:
@@ -364,35 +365,35 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # List command
-    list_parser = subparsers.add_parser('list', help='List all ADRs')
+    list_parser = subparsers.add_parser('list', help='List all ADRs', allow_abbrev=False)
     list_parser.add_argument('--status', choices=VALID_STATUSES, help='Filter by status')
     list_parser.set_defaults(func=cmd_list)
 
     # Create command
-    create_parser = subparsers.add_parser('create', help='Create new ADR')
+    create_parser = subparsers.add_parser('create', help='Create new ADR', allow_abbrev=False)
     create_parser.add_argument('--title', required=True, help='ADR title')
     create_parser.add_argument('--status', choices=VALID_STATUSES, default='Proposed', help='Initial status')
     create_parser.set_defaults(func=cmd_create)
 
     # Read command
-    read_parser = subparsers.add_parser('read', help='Read ADR content')
+    read_parser = subparsers.add_parser('read', help='Read ADR content', allow_abbrev=False)
     read_parser.add_argument('--number', type=int, required=True, help='ADR number')
     read_parser.set_defaults(func=cmd_read)
 
     # Update command
-    update_parser = subparsers.add_parser('update', help='Update ADR')
+    update_parser = subparsers.add_parser('update', help='Update ADR', allow_abbrev=False)
     update_parser.add_argument('--number', type=int, required=True, help='ADR number')
     update_parser.add_argument('--status', choices=VALID_STATUSES, help='New status')
     update_parser.set_defaults(func=cmd_update)
 
     # Delete command
-    delete_parser = subparsers.add_parser('delete', help='Delete ADR')
+    delete_parser = subparsers.add_parser('delete', help='Delete ADR', allow_abbrev=False)
     delete_parser.add_argument('--number', type=int, required=True, help='ADR number')
     delete_parser.add_argument('--force', action='store_true', help='Confirm deletion')
     delete_parser.set_defaults(func=cmd_delete)
 
     # Next-number command
-    next_parser = subparsers.add_parser('next-number', help='Get next available number')
+    next_parser = subparsers.add_parser('next-number', help='Get next available number', allow_abbrev=False)
     next_parser.set_defaults(func=cmd_next_number)
 
     args = parser.parse_args()

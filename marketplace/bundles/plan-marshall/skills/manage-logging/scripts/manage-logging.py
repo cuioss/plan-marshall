@@ -135,6 +135,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Unified logging operations',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -142,17 +143,21 @@ def main() -> int:
     for log_type in VALID_TYPES:
         if log_type == 'read':
             continue
-        write_parser = subparsers.add_parser(log_type, help=f'Write a {log_type} log entry')
+        write_parser = subparsers.add_parser(
+            log_type, help=f'Write a {log_type} log entry', allow_abbrev=False
+        )
         _add_write_args(write_parser)
         write_parser.set_defaults(log_type=log_type)
 
     # Separator subcommand
-    sep_parser = subparsers.add_parser('separator', help='Add visual separator (blank line) to log')
+    sep_parser = subparsers.add_parser(
+        'separator', help='Add visual separator (blank line) to log', allow_abbrev=False
+    )
     add_plan_id_arg(sep_parser)
     sep_parser.add_argument('--type', default='work', choices=VALID_TYPES, help='Log type (default: work)')
 
     # Read subcommand
-    read_parser = subparsers.add_parser('read', help='Read log entries')
+    read_parser = subparsers.add_parser('read', help='Read log entries', allow_abbrev=False)
     add_plan_id_arg(read_parser)
     read_parser.add_argument('--type', required=True, choices=VALID_TYPES, help='Log type')
     read_parser.add_argument('--limit', type=int, help='Max entries to return')

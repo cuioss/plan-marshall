@@ -399,6 +399,75 @@ def _restore_cwd():
         os.chdir(original_cwd)
 
 
+_REAL_RUN_CONFIG_PATH = PROJECT_ROOT / PLAN_DIR_NAME / 'local' / 'run-configuration.json'
+_REAL_CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
+
+
+def _snapshot_real_paths() -> tuple[float | None, list[str]]:
+    """Snapshot the mtime of the real run-configuration.json and the file
+    list of the real credentials directory.
+
+    Returns (mtime_or_None, sorted_filenames).
+    """
+    try:
+        mtime = _REAL_RUN_CONFIG_PATH.stat().st_mtime
+    except FileNotFoundError:
+        mtime = None
+    try:
+        creds = sorted(
+            str(p.relative_to(_REAL_CREDENTIALS_DIR))
+            for p in _REAL_CREDENTIALS_DIR.rglob('*')
+        )
+    except FileNotFoundError:
+        creds = []
+    return mtime, creds
+
+
+@pytest.fixture(autouse=True)
+def _pollution_guard(request):
+    """Fail loudly if a test mutates the real run-configuration.json or
+    the real ``~/.plan-marshall-credentials/`` directory.
+
+    Any test that legitimately needs to exercise the real paths (none
+    expected today) can opt out with ``@pytest.mark.allow_pollution``.
+    """
+    if request.node.get_closest_marker('allow_pollution'):
+        yield
+        return
+
+    before_mtime, before_creds = _snapshot_real_paths()
+    yield
+    after_mtime, after_creds = _snapshot_real_paths()
+
+    failures: list[str] = []
+    if before_mtime != after_mtime:
+        failures.append(
+            f'Test mutated {_REAL_RUN_CONFIG_PATH} '
+            f'(mtime {before_mtime} -> {after_mtime})'
+        )
+    if before_creds != after_creds:
+        failures.append(
+            f'Test mutated {_REAL_CREDENTIALS_DIR} '
+            f'(listing {before_creds} -> {after_creds})'
+        )
+    if failures:
+        pytest.fail(
+            f'Pollution guard: test {request.node.nodeid} leaked into real paths:\n  '
+            + '\n  '.join(failures)
+            + '\n\nIsolate via plan_context + monkeypatch.setattr(\'_providers_core.CREDENTIALS_DIR\', ...), '
+            "or mark with @pytest.mark.allow_pollution if intentional."
+        )
+
+
+def pytest_configure(config):
+    """Register the allow_pollution marker used by _pollution_guard."""
+    config.addinivalue_line(
+        'markers',
+        'allow_pollution: test may legitimately mutate the real run-configuration.json '
+        'or ~/.plan-marshall-credentials/ (bypasses the pollution guard).',
+    )
+
+
 @pytest.fixture
 def fixture_dir(tmp_path):
     """

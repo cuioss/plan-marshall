@@ -53,7 +53,7 @@ cmd_check_warnings = create_check_warnings_handler(
 
 
 def _register_find_project(subparsers):
-    find_parser = subparsers.add_parser('find-project', help='Find Gradle project path from project name')
+    find_parser = subparsers.add_parser('find-project', help='Find Gradle project path from project name', allow_abbrev=False)
     find_group = find_parser.add_mutually_exclusive_group(required=True)
     find_group.add_argument('--project-name', help='Project name to search for')
     find_group.add_argument('--project-path', help='Explicit project path to validate')

@@ -427,19 +427,19 @@ def build_parser(
         ``(parser, pr_subparsers, ci_subparsers, issue_subparsers)``
         so that providers can customise individual sub-parsers if needed.
     """
-    parser = argparse.ArgumentParser(description=description)
+    parser = argparse.ArgumentParser(description=description, allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # -- pr -----------------------------------------------------------
-    pr_parser = subparsers.add_parser('pr', help='Pull request operations')
+    pr_parser = subparsers.add_parser('pr', help='Pull request operations', allow_abbrev=False)
     pr_sub = pr_parser.add_subparsers(dest='pr_command', required=True)
 
     # pr view — implicit current cwd HEAD by default; --head selects a different branch
-    pr_view = pr_sub.add_parser('view', help='View PR for current branch')
+    pr_view = pr_sub.add_parser('view', help='View PR for current branch', allow_abbrev=False)
     add_head_arg(pr_view)
 
     # pr list
-    pr_list = pr_sub.add_parser('list', help='List pull requests')
+    pr_list = pr_sub.add_parser('list', help='List pull requests', allow_abbrev=False)
     pr_list.add_argument('--head', help='Filter by head/source branch name')
     pr_list.add_argument(
         '--state',
@@ -449,26 +449,26 @@ def build_parser(
     )
 
     # pr reply — body supplied via prepare-body path-allocate pattern
-    pr_reply = pr_sub.add_parser('reply', help='Reply to a PR with a comment')
+    pr_reply = pr_sub.add_parser('reply', help='Reply to a PR with a comment', allow_abbrev=False)
     pr_reply.add_argument('--pr-number', required=True, type=int, help='PR number')
     add_body_consumer_args(pr_reply)
 
     # pr resolve-thread
-    pr_resolve = pr_sub.add_parser('resolve-thread', help='Resolve a review thread')
+    pr_resolve = pr_sub.add_parser('resolve-thread', help='Resolve a review thread', allow_abbrev=False)
     pr_resolve.add_argument('--thread-id', required=True, help='Review thread ID')
 
     # pr thread-reply — body supplied via prepare-body path-allocate pattern
-    pr_treply = pr_sub.add_parser('thread-reply', help='Reply to a review thread')
+    pr_treply = pr_sub.add_parser('thread-reply', help='Reply to a review thread', allow_abbrev=False)
     pr_treply.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_treply.add_argument('--thread-id', required=True, help='Thread/comment ID to reply to')
     add_body_consumer_args(pr_treply)
 
     # pr reviews
-    pr_reviews = pr_sub.add_parser('reviews', help='Get PR reviews')
+    pr_reviews = pr_sub.add_parser('reviews', help='Get PR reviews', allow_abbrev=False)
     pr_reviews.add_argument('--pr-number', required=True, type=int, help='PR number')
 
     # pr comments
-    pr_comments = pr_sub.add_parser('comments', help='Get PR inline code comments')
+    pr_comments = pr_sub.add_parser('comments', help='Get PR inline code comments', allow_abbrev=False)
     pr_comments.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_comments.add_argument('--unresolved-only', action='store_true', help='Only show unresolved comments')
 
@@ -476,6 +476,7 @@ def build_parser(
     pr_wait_comments = pr_sub.add_parser(
         'wait-for-comments',
         help='Wait for new review comments to be posted (replaces blocking shell sleep)',
+        allow_abbrev=False,
     )
     pr_wait_comments.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_wait_comments.add_argument(
@@ -492,7 +493,7 @@ def build_parser(
     )
 
     # pr merge — accepts either --pr-number or --head (validated by handler)
-    pr_merge = pr_sub.add_parser('merge', help='Merge a pull request')
+    pr_merge = pr_sub.add_parser('merge', help='Merge a pull request', allow_abbrev=False)
     pr_merge.add_argument('--pr-number', type=int, help='PR number')
     add_head_arg(pr_merge)
     pr_merge.add_argument(
@@ -504,7 +505,7 @@ def build_parser(
     pr_merge.add_argument('--delete-branch', action='store_true', help='Delete branch after merge')
 
     # pr auto-merge — accepts either --pr-number or --head (validated by handler)
-    pr_auto = pr_sub.add_parser('auto-merge', help='Enable auto-merge on a PR')
+    pr_auto = pr_sub.add_parser('auto-merge', help='Enable auto-merge on a PR', allow_abbrev=False)
     pr_auto.add_argument('--pr-number', type=int, help='PR number')
     add_head_arg(pr_auto)
     pr_auto.add_argument(
@@ -515,20 +516,20 @@ def build_parser(
     )
 
     # pr update-branch — accepts either --pr-number or --head (validated by handler)
-    pr_update_branch = pr_sub.add_parser('update-branch', help='Update PR branch with base branch changes')
+    pr_update_branch = pr_sub.add_parser('update-branch', help='Update PR branch with base branch changes', allow_abbrev=False)
     pr_update_branch.add_argument('--pr-number', type=int, help='PR number')
     add_head_arg(pr_update_branch)
 
     # pr close
-    pr_close = pr_sub.add_parser('close', help='Close a pull request')
+    pr_close = pr_sub.add_parser('close', help='Close a pull request', allow_abbrev=False)
     pr_close.add_argument('--pr-number', required=True, type=int, help='PR number')
 
     # pr ready
-    pr_ready = pr_sub.add_parser('ready', help='Mark draft PR as ready for review')
+    pr_ready = pr_sub.add_parser('ready', help='Mark draft PR as ready for review', allow_abbrev=False)
     pr_ready.add_argument('--pr-number', required=True, type=int, help='PR number')
 
     # pr submit-review (GitHub safety net for recovering draft reviews)
-    pr_submit = pr_sub.add_parser('submit-review', help='Submit a pending review')
+    pr_submit = pr_sub.add_parser('submit-review', help='Submit a pending review', allow_abbrev=False)
     pr_submit.add_argument('--review-id', required=True, help='Pending PullRequestReview node id (PRR_*)')
     pr_submit.add_argument(
         '--event',
@@ -538,38 +539,39 @@ def build_parser(
     )
 
     # pr edit — body optionally supplied via prepare-body path-allocate pattern
-    pr_edit = pr_sub.add_parser('edit', help='Edit PR title and/or body')
+    pr_edit = pr_sub.add_parser('edit', help='Edit PR title and/or body', allow_abbrev=False)
     pr_edit.add_argument('--pr-number', required=True, type=int, help='PR number')
     pr_edit.add_argument('--title', help='New PR title')
     add_body_consumer_args(pr_edit)
 
     # -- ci -----------------------------------------------------------
-    ci_parser = subparsers.add_parser('ci', help='CI operations')
+    ci_parser = subparsers.add_parser('ci', help='CI operations', allow_abbrev=False)
     ci_sub = ci_parser.add_subparsers(dest='ci_command', required=True)
 
     # ci status — accepts either --pr-number or --head (validated by handler)
-    ci_status = ci_sub.add_parser('status', help='Check CI status')
+    ci_status = ci_sub.add_parser('status', help='Check CI status', allow_abbrev=False)
     ci_status.add_argument('--pr-number', type=int, help='PR number')
     add_head_arg(ci_status)
 
     # ci wait
-    ci_wait = ci_sub.add_parser('wait', help='Wait for CI to complete')
+    ci_wait = ci_sub.add_parser('wait', help='Wait for CI to complete', allow_abbrev=False)
     ci_wait.add_argument('--pr-number', required=True, type=int, help='PR number')
     ci_wait.add_argument('--timeout', type=int, default=300, help='Max wait time in seconds (default: 300)')
     ci_wait.add_argument('--interval', type=int, default=30, help='Poll interval in seconds (default: 30)')
 
     # ci rerun
-    ci_rerun = ci_sub.add_parser('rerun', help='Rerun a workflow/pipeline')
+    ci_rerun = ci_sub.add_parser('rerun', help='Rerun a workflow/pipeline', allow_abbrev=False)
     ci_rerun.add_argument('--run-id', required=True, help='Run/pipeline ID')
 
     # ci logs
-    ci_logs = ci_sub.add_parser('logs', help='Get failed run/job logs')
+    ci_logs = ci_sub.add_parser('logs', help='Get failed run/job logs', allow_abbrev=False)
     ci_logs.add_argument('--run-id', required=True, help='Run/job ID')
 
     # ci wait-for-status-flip — poll until PR CI status flips from pending or timeout
     ci_wait_status_flip = ci_sub.add_parser(
         'wait-for-status-flip',
         help='Wait for PR CI status to flip from pending (replaces blocking shell sleep)',
+        allow_abbrev=False,
     )
     ci_wait_status_flip.add_argument('--pr-number', required=True, type=int, help='PR number')
     ci_wait_status_flip.add_argument(
@@ -592,11 +594,11 @@ def build_parser(
     )
 
     # -- issue --------------------------------------------------------
-    issue_parser = subparsers.add_parser('issue', help='Issue operations')
+    issue_parser = subparsers.add_parser('issue', help='Issue operations', allow_abbrev=False)
     issue_sub = issue_parser.add_subparsers(dest='issue_command', required=True)
 
     # issue create — body supplied via prepare-body path-allocate pattern
-    issue_create = issue_sub.add_parser('create', help='Create an issue')
+    issue_create = issue_sub.add_parser('create', help='Create an issue', allow_abbrev=False)
     issue_create.add_argument('--title', required=True, help='Issue title')
     issue_create.add_argument('--labels', help='Comma-separated labels')
     add_body_consumer_args(issue_create)
@@ -605,6 +607,7 @@ def build_parser(
     issue_prepare = issue_sub.add_parser(
         'prepare-body',
         help='Allocate a scratch path for the issue description (path-allocate pattern)',
+        allow_abbrev=False,
     )
     issue_prepare.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
     issue_prepare.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
@@ -613,6 +616,7 @@ def build_parser(
     pr_prepare_body = pr_sub.add_parser(
         'prepare-body',
         help='Allocate a scratch path for a PR body (create/edit) (path-allocate pattern)',
+        allow_abbrev=False,
     )
     pr_prepare_body.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
     pr_prepare_body.add_argument(
@@ -628,6 +632,7 @@ def build_parser(
     pr_prepare_comment = pr_sub.add_parser(
         'prepare-comment',
         help='Allocate a scratch path for a PR comment (reply / thread-reply) (path-allocate pattern)',
+        allow_abbrev=False,
     )
     pr_prepare_comment.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
     pr_prepare_comment.add_argument(
@@ -640,17 +645,18 @@ def build_parser(
     pr_prepare_comment.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
 
     # issue view
-    issue_view = issue_sub.add_parser('view', help='View issue details')
+    issue_view = issue_sub.add_parser('view', help='View issue details', allow_abbrev=False)
     issue_view.add_argument('--issue', required=True, help='Issue number or URL')
 
     # issue close
-    issue_close = issue_sub.add_parser('close', help='Close an issue')
+    issue_close = issue_sub.add_parser('close', help='Close an issue', allow_abbrev=False)
     issue_close.add_argument('--issue', required=True, help='Issue number or URL')
 
     # issue wait-for-close — poll until the issue transitions to closed or timeout
     issue_wait_close = issue_sub.add_parser(
         'wait-for-close',
         help='Wait for issue to close (replaces blocking shell sleep)',
+        allow_abbrev=False,
     )
     issue_wait_close.add_argument('--issue-number', required=True, type=int, help='Issue number')
     issue_wait_close.add_argument(
@@ -670,6 +676,7 @@ def build_parser(
     issue_wait_label = issue_sub.add_parser(
         'wait-for-label',
         help='Wait for a label to be added or removed on an issue (replaces blocking shell sleep)',
+        allow_abbrev=False,
     )
     issue_wait_label.add_argument('--issue-number', required=True, type=int, help='Issue number')
     issue_wait_label.add_argument('--label', required=True, help='Label name to watch')
@@ -706,7 +713,7 @@ def add_pr_create_args(
     ``pr create --plan-id {id}``. No multi-line body content crosses the
     shell boundary.
     """
-    pr_create = pr_subparsers.add_parser('create', help='Create a pull request')
+    pr_create = pr_subparsers.add_parser('create', help='Create a pull request', allow_abbrev=False)
     pr_create.add_argument('--title', required=True, help='PR title')
     add_body_consumer_args(pr_create)
     pr_create.add_argument('--base', help='Base/target branch (default: repo default)')

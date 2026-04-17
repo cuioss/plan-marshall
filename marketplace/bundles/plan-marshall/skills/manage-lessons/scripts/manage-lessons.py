@@ -342,13 +342,14 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Manage lessons learned')
+    parser = argparse.ArgumentParser(description='Manage lessons learned', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # add
     add_parser = subparsers.add_parser(
         'add',
         help='Allocate a new lesson file (metadata + title, empty body) and return its absolute path',
+        allow_abbrev=False,
     )
     add_parser.add_argument('--component', required=True, help='Component name')
     add_parser.add_argument(
@@ -359,19 +360,19 @@ def main() -> int:
     add_parser.set_defaults(func=cmd_add)
 
     # update
-    update_parser = subparsers.add_parser('update', help='Update lesson')
+    update_parser = subparsers.add_parser('update', help='Update lesson', allow_abbrev=False)
     update_parser.add_argument('--id', required=True, help='Lesson ID')
     update_parser.add_argument('--component', help='Update component')
     update_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Update category')
     update_parser.set_defaults(func=cmd_update)
 
     # get
-    get_parser = subparsers.add_parser('get', help='Get single lesson')
+    get_parser = subparsers.add_parser('get', help='Get single lesson', allow_abbrev=False)
     get_parser.add_argument('--id', required=True, help='Lesson ID')
     get_parser.set_defaults(func=cmd_get)
 
     # list
-    list_parser = subparsers.add_parser('list', help='List lessons')
+    list_parser = subparsers.add_parser('list', help='List lessons', allow_abbrev=False)
     list_parser.add_argument('--component', help='Filter by component')
     list_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Filter by category')
     list_parser.add_argument('--full', action='store_true', help='Include full lesson body content')
@@ -381,13 +382,16 @@ def main() -> int:
     convert_parser = subparsers.add_parser(
         'convert-to-plan',
         help='Move a lesson file into a plan directory as lesson-{id}.md',
+        allow_abbrev=False,
     )
     convert_parser.add_argument('--id', required=True, help='Lesson ID')
     convert_parser.add_argument('--plan-id', required=True, help='Target plan ID')
     convert_parser.set_defaults(func=cmd_convert_to_plan)
 
     # from-error
-    from_error_parser = subparsers.add_parser('from-error', help='Create from error context')
+    from_error_parser = subparsers.add_parser(
+        'from-error', help='Create from error context', allow_abbrev=False
+    )
     from_error_parser.add_argument('--context', required=True, help='JSON error context')
     from_error_parser.set_defaults(func=cmd_from_error)
 

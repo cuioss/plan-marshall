@@ -130,8 +130,13 @@ def test_build_command_fn_with_module():
 # =============================================================================
 
 
-def test_execute_direct_error_on_nonexistent_project(tmp_path):
+def test_execute_direct_error_on_nonexistent_project(tmp_path, monkeypatch):
     """execute_direct returns error when running in empty directory without wrapper."""
+    # Pin PLAN_BASE_DIR so the shared learned-timeout machinery
+    # (run_config.timeout_set) writes into tmp_path, not the real repo-local
+    # run-configuration.json.
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
     # Empty tmp_path has no mvnw — if system mvn exists, it will fail on missing pom.xml
     result = execute_direct(
         args='verify',

@@ -104,24 +104,24 @@ gh	true	true
 
 ---
 
-### persist
+### verify-all
 
-Verify the CI tool and persist `authenticated_tools` to `run-configuration.json`. Provider identity and repo URL are canonically read from `providers[]` in marshal.json — this command does NOT write a `config["ci"]` block.
+Live verification of CI provider and tools. Returns the current authenticated tools, git presence, provider, and repo URL. Nothing is persisted — tool/auth status is cheap to verify on demand and varies per machine. Provider identity and repo URL are read from `providers[]` in marshal.json.
 
 **Command**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health persist [--plan-dir .plan]
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci_health verify-all
 ```
 
 **Success Output**:
 ```toon
 status: success
-persisted_to: run-configuration.json
 provider: github
 repo_url: https://github.com/org/repo
 authenticated_tools[2]:
   - git
   - gh
+git_present: true
 ```
 
 ---
@@ -376,32 +376,6 @@ context: <additional_context>
 
 ---
 
-## Marshal.json CI Structure
+## Provider Storage
 
-After `persist` command, marshal.json contains:
-
-```json
-{
-  "ci": {
-    "provider": "github",
-    "repo_url": "https://github.com/org/repo",
-    "detected_at": "2025-01-15T10:00:00Z"
-  }
-}
-```
-
----
-
-## Run-Configuration.json CI Structure
-
-Local machine-specific configuration:
-
-```json
-{
-  "ci": {
-    "git_present": true,
-    "authenticated_tools": ["git", "gh"],
-    "verified_at": "2025-01-15T10:00:00Z"
-  }
-}
-```
+CI provider identity and repo URL are stored in `marshal.json` under the `providers[]` array (see manage-config data-model). Tool authentication status is not persisted — use `ci_health verify-all` for a live check.

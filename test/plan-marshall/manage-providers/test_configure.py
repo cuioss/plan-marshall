@@ -161,13 +161,16 @@ class TestCheckCompleteness:
         assert 'path' in result
         assert 'placeholders' in result
 
-    def test_complete_credential(self, tmp_path):
+    def test_complete_credential(self, tmp_path, monkeypatch):
         """Returns complete=True when no placeholders present."""
         from _providers_core import (  # type: ignore[import-not-found]
-            CREDENTIALS_DIR,
             check_credential_completeness,
             save_credential,
         )
+
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'test-check-complete'
         data = {
@@ -176,25 +179,23 @@ class TestCheckCompleteness:
             'auth_type': 'token',
             'token': 'real-secret-value',
         }
-        try:
-            save_credential(skill, data, 'global')
-            result = check_credential_completeness(skill, 'global')
-            assert result['exists'] is True
-            assert result['complete'] is True
-            assert result['placeholders'] == []
-        finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
-            if path.exists():
-                path.unlink()
+        save_credential(skill, data, 'global')
+        result = check_credential_completeness(skill, 'global')
+        assert result['exists'] is True
+        assert result['complete'] is True
+        assert result['placeholders'] == []
 
-    def test_incomplete_credential(self, tmp_path):
+    def test_incomplete_credential(self, tmp_path, monkeypatch):
         """Returns complete=False when placeholders present."""
         from _providers_core import (  # type: ignore[import-not-found]
-            CREDENTIALS_DIR,
             SECRET_PLACEHOLDERS,
             check_credential_completeness,
             save_credential,
         )
+
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'test-check-incomplete'
         data = {
@@ -203,24 +204,22 @@ class TestCheckCompleteness:
             'auth_type': 'token',
             'token': SECRET_PLACEHOLDERS['token'],
         }
-        try:
-            save_credential(skill, data, 'global')
-            result = check_credential_completeness(skill, 'global')
-            assert result['exists'] is True
-            assert result['complete'] is False
-            assert 'token' in result['placeholders']
-        finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
-            if path.exists():
-                path.unlink()
+        save_credential(skill, data, 'global')
+        result = check_credential_completeness(skill, 'global')
+        assert result['exists'] is True
+        assert result['complete'] is False
+        assert 'token' in result['placeholders']
 
-    def test_auth_none_reports_complete(self, tmp_path):
+    def test_auth_none_reports_complete(self, tmp_path, monkeypatch):
         """auth_type=none with no secret fields reports complete."""
         from _providers_core import (  # type: ignore[import-not-found]
-            CREDENTIALS_DIR,
             check_credential_completeness,
             save_credential,
         )
+
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'test-check-auth-none'
         data = {
@@ -228,25 +227,21 @@ class TestCheckCompleteness:
             'url': 'https://example.com',
             'auth_type': 'none',
         }
-        try:
-            save_credential(skill, data, 'global')
-            result = check_credential_completeness(skill, 'global')
-            assert result['exists'] is True
-            assert result['complete'] is True
-            assert result['placeholders'] == []
-        finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
-            if path.exists():
-                path.unlink()
+        save_credential(skill, data, 'global')
+        result = check_credential_completeness(skill, 'global')
+        assert result['exists'] is True
+        assert result['complete'] is True
+        assert result['placeholders'] == []
 
 
 class TestConfigureAuthTypeValidation:
     """Tests for auth_type validation against provider declaration.
 
     Each test runs against an isolated ``tmp_path/.plan/marshal.json``
-    staged with the sonar provider declaration. PLAN_BASE_DIR is set so
-    the subprocess resolves marshal.json inside the fixture tree — never
-    the real repo-local .plan/marshal.json.
+    staged with the sonar provider declaration. PLAN_BASE_DIR pins the
+    subprocess to the fixture tree, and PLAN_MARSHALL_CREDENTIALS_DIR
+    pins the subprocess's credential directory to tmp_path/creds —
+    nothing leaks into the real ``~/.plan-marshall-credentials/``.
     """
 
     @pytest.fixture(autouse=True)
@@ -259,7 +254,11 @@ class TestConfigureAuthTypeValidation:
             _json.dumps({'providers': [_SONAR_PROVIDER]})
         )
         monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
         self._plan_dir = plan_dir
+        self._creds_env = {'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)}
         yield
 
     def test_configure_accepts_any_auth_type_without_declared(self):
@@ -268,27 +267,21 @@ class TestConfigureAuthTypeValidation:
             SCRIPT_PATH, 'configure',
             '--skill', 'plan-marshall:workflow-integration-sonar',
             '--auth-type', 'none',
+            env_overrides=self._creds_env,
         )
         assert result.returncode == 0
         assert 'incompatible' not in result.stdout.lower()
 
     def test_configure_accepts_matching_auth_type(self):
         """Configure accepts auth_type that matches provider's declared auth_type."""
-        from _providers_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
-
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
             SCRIPT_PATH, 'configure',
             '--skill', skill,
             '--auth-type', 'token',
+            env_overrides=self._creds_env,
         )
-        try:
-            assert result.returncode == 0
-        finally:
-            # Credential file uses unprefixed name (resolve_credential_path strips prefix)
-            path = CREDENTIALS_DIR / 'workflow-integration-sonar.json'
-            if path.exists():
-                path.unlink()
+        assert result.returncode == 0
 
     def test_configure_accepts_basic_without_declared_auth(self):
         """Configure accepts basic auth when provider has no declared auth_type."""
@@ -296,6 +289,7 @@ class TestConfigureAuthTypeValidation:
             SCRIPT_PATH, 'configure',
             '--skill', 'plan-marshall:workflow-integration-sonar',
             '--auth-type', 'basic',
+            env_overrides=self._creds_env,
         )
         assert result.returncode == 0
         assert 'incompatible' not in result.stdout.lower()
@@ -309,17 +303,19 @@ class TestConfigureMarshalJsonSeparation:
         import json as _json
 
         from _providers_core import (  # type: ignore[import-not-found]
-            CREDENTIALS_DIR,
             load_credential,
             read_provider_config,
         )
 
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        # Create marshal.json with sonar provider declaration
         _marshal = {'providers': [_SONAR_PROVIDER]}
         (plan_dir / 'marshal.json').write_text(_json.dumps(_marshal))
         monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
@@ -327,30 +323,24 @@ class TestConfigureMarshalJsonSeparation:
             '--skill', skill,
             '--auth-type', 'token',
             '--url', 'https://sonarcloud.io',
+            env_overrides={'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)},
         )
-        try:
-            assert result.returncode == 0
+        assert result.returncode == 0
 
-            # URL should be in marshal.json (subprocess wrote to tmp_path/.plan/)
-            provider_config = read_provider_config(skill)
-            assert provider_config.get('url') == 'https://sonarcloud.io'
+        # URL should be in marshal.json (subprocess wrote to tmp_path/.plan/)
+        provider_config = read_provider_config(skill)
+        assert provider_config.get('url') == 'https://sonarcloud.io'
 
-            # Credential file should NOT contain url
-            loaded = load_credential(skill, 'global')
-            assert loaded is not None
-            assert 'url' not in loaded
-        finally:
-            # Credential file uses unprefixed name (resolve_credential_path strips prefix)
-            path = CREDENTIALS_DIR / 'workflow-integration-sonar.json'
-            if path.exists():
-                path.unlink()
+        # Credential file should NOT contain url
+        loaded = load_credential(skill, 'global')
+        assert loaded is not None
+        assert 'url' not in loaded
 
     def test_configure_writes_extra_fields_to_marshal_json(self, tmp_path, monkeypatch):
         """Configure writes extra fields (organization, project_key) to marshal.json."""
         import json as _json
 
         from _providers_core import (  # type: ignore[import-not-found]
-            CREDENTIALS_DIR,
             load_credential,
             read_provider_config,
         )
@@ -360,6 +350,10 @@ class TestConfigureMarshalJsonSeparation:
         _marshal = {'providers': [_SONAR_PROVIDER]}
         (plan_dir / 'marshal.json').write_text(_json.dumps(_marshal))
         monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'plan-marshall:workflow-integration-sonar'
         result = run_script(
@@ -367,36 +361,28 @@ class TestConfigureMarshalJsonSeparation:
             '--skill', skill,
             '--auth-type', 'token',
             '--extra', 'organization=my-org', 'project_key=my-project',
+            env_overrides={'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)},
         )
-        try:
-            assert result.returncode == 0
+        assert result.returncode == 0
 
-            # read_provider_config reads from cwd (monkeypatched to tmp_path)
-            provider_config = read_provider_config(skill)
-            assert provider_config.get('organization') == 'my-org'
-            assert provider_config.get('project_key') == 'my-project'
+        provider_config = read_provider_config(skill)
+        assert provider_config.get('organization') == 'my-org'
+        assert provider_config.get('project_key') == 'my-project'
 
-            # Extra fields should NOT be in credential file
-            loaded = load_credential(skill, 'global')
-            assert loaded is not None
-            assert 'organization' not in loaded
-            assert 'project_key' not in loaded
-        finally:
-            # Credential file uses unprefixed name (resolve_credential_path strips prefix)
-            path = CREDENTIALS_DIR / 'workflow-integration-sonar.json'
-            if path.exists():
-                path.unlink()
+        loaded = load_credential(skill, 'global')
+        assert loaded is not None
+        assert 'organization' not in loaded
+        assert 'project_key' not in loaded
 
 
 class TestConfigureAuthTypeMismatch:
     """Tests for configure reconfiguring when auth_type changes."""
 
-    def test_configure_reconfigures_on_auth_type_mismatch(self, tmp_path):
+    def test_configure_reconfigures_on_auth_type_mismatch(self, tmp_path, monkeypatch):
         """Configure with token auth overwrites existing none credential."""
         import json as _json
 
         from _providers_core import (  # type: ignore[import-not-found]
-            CREDENTIALS_DIR,
             load_credential,
             save_credential,
         )
@@ -404,6 +390,12 @@ class TestConfigureAuthTypeMismatch:
         (tmp_path / '.plan').mkdir()
         _marshal = {'providers': [_SONAR_PROVIDER]}
         (tmp_path / '.plan' / 'marshal.json').write_text(_json.dumps(_marshal))
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(creds_dir))
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+
         skill = 'plan-marshall:workflow-integration-sonar'
         # Pre-create with auth_type=none
         data = {
@@ -411,27 +403,22 @@ class TestConfigureAuthTypeMismatch:
             'url': 'https://sonarcloud.io',
             'auth_type': 'none',
         }
-        try:
-            save_credential(skill, data, 'global')
+        save_credential(skill, data, 'global')
 
-            result = run_script(
-                SCRIPT_PATH, 'configure',
-                '--skill', skill,
-                '--url', 'https://sonarcloud.io',
-                '--auth-type', 'token',
-                cwd=tmp_path,
-            )
-            # Should create new file with token placeholder, not return exists_complete
-            if result.returncode == 0:
-                assert 'exists_complete' not in result.stdout
-                loaded = load_credential(skill, 'global')
-                assert loaded is not None
-                assert loaded['auth_type'] == 'token'
-        finally:
-            # Credential file uses unprefixed name (resolve_credential_path strips prefix)
-            path = CREDENTIALS_DIR / 'workflow-integration-sonar.json'
-            if path.exists():
-                path.unlink()
+        result = run_script(
+            SCRIPT_PATH, 'configure',
+            '--skill', skill,
+            '--url', 'https://sonarcloud.io',
+            '--auth-type', 'token',
+            cwd=tmp_path,
+            env_overrides={'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)},
+        )
+        # Should create new file with token placeholder, not return exists_complete
+        if result.returncode == 0:
+            assert 'exists_complete' not in result.stdout
+            loaded = load_credential(skill, 'global')
+            assert loaded is not None
+            assert loaded['auth_type'] == 'token'
 
 
 # =============================================================================
@@ -440,22 +427,30 @@ class TestConfigureAuthTypeMismatch:
 
 
 class TestConfigureSystemAuth:
-    """Tests for configure with auth_type=system via direct import."""
+    """Tests for configure with auth_type=system via direct import.
 
-    def test_system_auth_creates_credential_without_secrets(self, tmp_path, monkeypatch):
+    Each test isolates credential I/O to a per-test tmp_path by patching
+    `_providers_core.CREDENTIALS_DIR` (evaluated at module import) and uses
+    the `plan_context` fixture to pin `PLAN_BASE_DIR`. tmp_path auto-cleans,
+    so no manual unlink is required.
+    """
+
+    def test_system_auth_creates_credential_without_secrets(self, plan_context, monkeypatch):
         """Configure with system auth creates credential file with no secret placeholders."""
         from _cred_configure import run_configure  # type: ignore[import-not-found]
         from _providers_core import (  # type: ignore[import-not-found]
-            CREDENTIALS_DIR,
             check_credential_completeness,
             load_credential,
         )
 
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
+        tmp_path = plan_context.fixture_dir
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+
+        (tmp_path / '.plan').mkdir(exist_ok=True)
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
 
-        # Create a mock provider that declares system auth
         mock_provider = {
             'skill_name': 'test-system-provider',
             'display_name': 'Test System CLI',
@@ -472,34 +467,31 @@ class TestConfigureSystemAuth:
             url = None
             extra = None
 
-        try:
-            with monkeypatch.context() as m:
-                m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
-                m.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
-                run_configure(MockArgs())
+        monkeypatch.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
+        monkeypatch.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+        run_configure(MockArgs())
 
-            loaded = load_credential('test-system-provider', 'global')
-            assert loaded is not None
-            assert loaded['auth_type'] == 'system'
-            # System auth should NOT have token, username, or password fields
-            assert 'token' not in loaded
-            assert 'username' not in loaded
-            assert 'password' not in loaded
+        loaded = load_credential('test-system-provider', 'global')
+        assert loaded is not None
+        assert loaded['auth_type'] == 'system'
+        assert 'token' not in loaded
+        assert 'username' not in loaded
+        assert 'password' not in loaded
 
-            completeness = check_credential_completeness('test-system-provider', 'global')
-            assert completeness['complete'] is True
-        finally:
-            path = CREDENTIALS_DIR / 'test-system-provider.json'
-            if path.exists():
-                path.unlink()
+        completeness = check_credential_completeness('test-system-provider', 'global')
+        assert completeness['complete'] is True
 
-    def test_system_auth_does_not_require_url(self, tmp_path, monkeypatch):
+    def test_system_auth_does_not_require_url(self, plan_context, monkeypatch):
         """Configure with system auth succeeds without --url."""
         from _cred_configure import run_configure  # type: ignore[import-not-found]
-        from _providers_core import CREDENTIALS_DIR, load_credential  # type: ignore[import-not-found]
+        from _providers_core import load_credential  # type: ignore[import-not-found]
 
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
+        tmp_path = plan_context.fixture_dir
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+
+        (tmp_path / '.plan').mkdir(exist_ok=True)
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
 
         mock_provider = {
@@ -518,29 +510,25 @@ class TestConfigureSystemAuth:
             url = None
             extra = None
 
-        try:
-            with monkeypatch.context() as m:
-                m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
-                m.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
-                # Should not raise "URL is required"
-                ret = run_configure(MockArgs())
+        monkeypatch.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
+        monkeypatch.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+        ret = run_configure(MockArgs())
 
-            assert ret == 0
-            loaded = load_credential('test-system-no-url', 'global')
-            assert loaded is not None
-            assert loaded['auth_type'] == 'system'
-        finally:
-            path = CREDENTIALS_DIR / 'test-system-no-url.json'
-            if path.exists():
-                path.unlink()
+        assert ret == 0
+        loaded = load_credential('test-system-no-url', 'global')
+        assert loaded is not None
+        assert loaded['auth_type'] == 'system'
 
-    def test_system_auth_override_accepted(self, tmp_path, monkeypatch):
+    def test_system_auth_override_accepted(self, plan_context, monkeypatch):
         """Configure accepts explicit --auth-type override for system provider."""
         from _cred_configure import run_configure  # type: ignore[import-not-found]
-        from _providers_core import CREDENTIALS_DIR  # type: ignore[import-not-found]
 
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / '.plan').mkdir()
+        tmp_path = plan_context.fixture_dir
+        creds_dir = tmp_path / 'creds'
+        creds_dir.mkdir()
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
+
+        (tmp_path / '.plan').mkdir(exist_ok=True)
 
         mock_provider = {
             'skill_name': 'test-system-override',
@@ -562,16 +550,9 @@ class TestConfigureSystemAuth:
         def mock_output(data):
             captured_output.update(data)
 
-        try:
-            with monkeypatch.context() as m:
-                m.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
-                m.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
-                m.setattr('_cred_configure.output_toon', mock_output)
-                run_configure(MockArgs())
+        monkeypatch.setattr('_cred_configure.load_declared_providers', lambda: [mock_provider])
+        monkeypatch.setattr('_cred_configure.find_provider_with_details', lambda s: mock_provider if s == mock_provider['skill_name'] else None)
+        monkeypatch.setattr('_cred_configure.output_toon', mock_output)
+        run_configure(MockArgs())
 
-            # With convention-based inference, CLI override is accepted
-            assert captured_output.get('status') in ('created', 'exists_complete', 'exists_incomplete')
-        finally:
-            path = CREDENTIALS_DIR / 'test-system-override.json'
-            if path.exists():
-                path.unlink()
+        assert captured_output.get('status') in ('created', 'exists_complete', 'exists_incomplete')

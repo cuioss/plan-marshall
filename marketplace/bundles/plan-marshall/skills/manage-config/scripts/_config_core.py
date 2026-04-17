@@ -84,7 +84,7 @@ def load_run_config() -> dict:
     if RUN_CONFIG_PATH.exists():
         config: dict = json.loads(RUN_CONFIG_PATH.read_text(encoding='utf-8'))
         return config
-    return {'version': 1, 'commands': {}, 'ci': {'authenticated_tools': [], 'verified_at': None}}
+    return {'version': 1, 'commands': {}}
 
 
 def save_run_config(config: dict) -> None:

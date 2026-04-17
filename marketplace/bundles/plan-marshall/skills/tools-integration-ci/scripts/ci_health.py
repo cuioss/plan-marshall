@@ -337,42 +337,14 @@ def cmd_status(args: argparse.Namespace) -> dict:
     }
 
 
-def _load_ci_modules():
-    """Lazy-load config modules (PYTHONPATH set by executor)."""
-    from _config_core import load_config, load_run_config, save_config, save_run_config  # type: ignore[import-not-found]  # noqa: I001
-    return load_config, save_config, load_run_config, save_run_config
+def cmd_verify_all(args: argparse.Namespace) -> dict:
+    """Handle the 'verify-all' subcommand.
 
-
-def cmd_ci_set_tools(args: argparse.Namespace) -> dict:
-    """Handle 'ci-set-tools' subcommand — write run-config['ci']['authenticated_tools']."""
-    _, _, load_run_config, save_run_config = _load_ci_modules()
-    run_config = load_run_config()
-    run_ci = run_config.get('ci', {})
-    tools = [t.strip() for t in args.tools.split(',') if t.strip()]
-    run_ci['authenticated_tools'] = tools
-    run_config['ci'] = run_ci
-    save_run_config(run_config)
-    return {'status': 'success', 'authenticated_tools': tools}
-
-
-def cmd_ci_get_tools(args: argparse.Namespace) -> dict:
-    """Handle 'ci-get-tools' subcommand — read run-config['ci']['authenticated_tools']."""
-    del args
-    _, _, load_run_config, _ = _load_ci_modules()
-    run_config = load_run_config()
-    run_ci = run_config.get('ci', {})
-    return {'status': 'success', 'authenticated_tools': run_ci.get('authenticated_tools', [])}
-
-
-def cmd_persist(args: argparse.Namespace) -> dict:
-    """Handle the 'persist' subcommand.
-
-    Verifies the CI provider and tools, then persists authenticated_tools
-    (and git_present) to run-configuration.json. The provider identity and
-    repo URL are canonically sourced from providers[] in marshal.json — this
-    command no longer writes a config['ci'] block.
+    Live verification of CI provider and tools. Returns the current
+    authenticated_tools list and git presence without persisting to
+    run-configuration.json — CI tool status is cheap to verify on demand.
     """
-    del args  # plan_dir is accepted for backward compatibility but unused.
+    del args
 
     from file_ops import get_marshal_path  # type: ignore[import-not-found]
 
@@ -380,10 +352,8 @@ def cmd_persist(args: argparse.Namespace) -> dict:
     if not marshal_path.exists():
         return {'status': 'error', 'error': f'marshal.json not found at {marshal_path}. Run /marshall-steward first.'}
 
-    # Detect provider (for report payload — not persisted to config['ci'])
     provider_result = detect_provider()
 
-    # Verify all tools and collect authenticated ones
     authenticated_tools = []
     git_present = False
     for tool in TOOLS:
@@ -393,53 +363,31 @@ def cmd_persist(args: argparse.Namespace) -> dict:
         if tool == 'git' and tool_status['installed']:
             git_present = True
 
-    # Persist to run-config['ci'] (run-configuration.json)
-    _, _, load_run_config, save_run_config = _load_ci_modules()
-    if authenticated_tools:
-        run_config = load_run_config()
-        run_ci = run_config.get('ci', {})
-        run_ci['authenticated_tools'] = authenticated_tools
-        run_ci['git_present'] = git_present
-        run_config['ci'] = run_ci
-        save_run_config(run_config)
-
     return {
         'status': 'success',
-        'persisted_to': 'run-configuration.json',
         'provider': provider_result['provider'],
         'repo_url': provider_result['repo_url'] or 'none',
         'authenticated_tools': authenticated_tools,
+        'git_present': git_present,
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='CI health verification for detecting providers and verifying tools')
+    parser = argparse.ArgumentParser(description='CI health verification for detecting providers and verifying tools', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # detect subcommand
-    subparsers.add_parser('detect', help='Detect CI provider from repository configuration')
+    subparsers.add_parser('detect', help='Detect CI provider from repository configuration', allow_abbrev=False)
 
     # verify subcommand
-    verify_parser = subparsers.add_parser('verify', help='Verify CLI tools are installed and authenticated')
+    verify_parser = subparsers.add_parser('verify', help='Verify CLI tools are installed and authenticated', allow_abbrev=False)
     verify_parser.add_argument('--tool', type=str, help='Specific tool to verify (git, gh, glab)')
 
     # status subcommand
-    subparsers.add_parser('status', help='Full health check (detect + verify)')
+    subparsers.add_parser('status', help='Full health check (detect + verify)', allow_abbrev=False)
 
-    # persist subcommand
-    persist_parser = subparsers.add_parser('persist', help='Verify CI tools and persist authenticated_tools to run-configuration.json')
-    persist_parser.add_argument(
-        '--plan-dir', type=str, default='.plan', help='Path to .plan directory (default: .plan)'
-    )
-
-    # ci-set-tools subcommand
-    ci_st_parser = subparsers.add_parser('ci-set-tools', help='Write authenticated tools to run-config')
-    ci_st_parser.add_argument('--tools', required=True, help='Comma-separated tool names')
-    ci_st_parser.add_argument('--plan-dir', type=str, default='.plan')
-
-    # ci-get-tools subcommand
-    ci_gt_parser = subparsers.add_parser('ci-get-tools', help='Read authenticated tools from run-config')
-    ci_gt_parser.add_argument('--plan-dir', type=str, default='.plan')
+    # verify-all subcommand (live verify; no persistence)
+    subparsers.add_parser('verify-all', help='Verify all CI tools live (no persistence)', allow_abbrev=False)
 
     args = parser.parse_args()
 
@@ -447,9 +395,7 @@ def main() -> int:
         'detect': cmd_detect,
         'verify': cmd_verify,
         'status': cmd_status,
-        'persist': cmd_persist,
-        'ci-set-tools': cmd_ci_set_tools,
-        'ci-get-tools': cmd_ci_get_tools,
+        'verify-all': cmd_verify_all,
     }
 
     handler = handlers.get(args.command)

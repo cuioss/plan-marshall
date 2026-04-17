@@ -268,7 +268,7 @@ def test_help_flag():
     assert 'detect' in result.stdout
     assert 'verify' in result.stdout
     assert 'status' in result.stdout
-    assert 'persist' in result.stdout
+    assert 'verify-all' in result.stdout
 
 
 def test_detect_cli_output():
@@ -288,23 +288,23 @@ def test_verify_cli_output():
 
 
 # =============================================================================
-# Tier 3: Subprocess tests for persist (requires marshal.json I/O)
+# Tier 3: Subprocess tests for verify-all (live verification, no persistence)
 # =============================================================================
 
 
-def test_persist_no_marshal_json():
-    """Test persist command fails without marshal.json."""
-    with PlanContext(plan_id='test-persist') as ctx:
-        result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
+def test_verify_all_no_marshal_json():
+    """Test verify-all fails when marshal.json is missing."""
+    with PlanContext(plan_id='test-verify-all-missing'):
+        result = run_script(SCRIPT_PATH, 'verify-all')
         assert result.success, 'Expected exit 0 (error in TOON output)'
         data = result.toon_or_error()
         assert data.get('status') != 'success', 'Expected error status in TOON output'
         assert 'error' in data
 
 
-def test_persist_with_marshal_json():
-    """Test persist command succeeds and does NOT write config['ci']."""
-    with PlanContext(plan_id='test-persist-success') as ctx:
+def test_verify_all_with_marshal_json():
+    """Test verify-all succeeds and does NOT write config['ci']."""
+    with PlanContext(plan_id='test-verify-all-success') as ctx:
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps({
             'version': 1,
@@ -315,18 +315,18 @@ def test_persist_with_marshal_json():
             }],
         }))
 
-        result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
+        result = run_script(SCRIPT_PATH, 'verify-all')
         assert result.success, f'Script failed: {result.stderr}'
 
         updated = json.loads(marshal_path.read_text())
-        # providers[] is the canonical source — persist must not write config['ci']
-        assert 'ci' not in updated, f"persist should not write config['ci'], got: {updated.get('ci')}"
+        # providers[] is the canonical source — verify-all must not write config['ci']
+        assert 'ci' not in updated, f"verify-all should not write config['ci'], got: {updated.get('ci')}"
         assert updated['providers'][0]['category'] == 'ci'
 
 
-def test_persist_leaves_providers_intact():
-    """Test persist leaves providers[] untouched (single source of truth)."""
-    with PlanContext(plan_id='test-ci-section') as ctx:
+def test_verify_all_leaves_providers_intact():
+    """Test verify-all leaves providers[] untouched (single source of truth)."""
+    with PlanContext(plan_id='test-verify-all-intact') as ctx:
         marshal_path = ctx.fixture_dir / 'marshal.json'
         original_providers = [{
             'skill_name': 'plan-marshall:workflow-integration-github',
@@ -338,7 +338,7 @@ def test_persist_leaves_providers_intact():
             'providers': original_providers,
         }))
 
-        result = run_script(SCRIPT_PATH, 'persist', '--plan-dir', str(ctx.fixture_dir))
+        result = run_script(SCRIPT_PATH, 'verify-all')
         assert result.success, f'Script failed: {result.stderr}'
 
         updated = json.loads(marshal_path.read_text())

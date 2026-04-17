@@ -52,7 +52,6 @@ The run configuration file stores:
 
 | Section | Purpose |
 |---------|---------|
-| ci | CI provider tool verification status |
 | maven | Maven build configurations |
 
 ---
@@ -101,32 +100,6 @@ Use dot notation for field access:
 | `commands.my-cmd.last_execution.date` | Execution date |
 | `commands.my-cmd.skipped_files[0]` | First skipped file |
 | `maven.acceptable_warnings` | Maven warnings |
-
----
-
-## CI Section
-
-CI provider tool verification status (written by `tools-integration-ci:ci_health persist`).
-
-| Field | Type | Description |
-|-------|------|-------------|
-| git_present | boolean | Whether git is installed |
-| authenticated_tools | array | List of authenticated CI tools |
-| verified_at | string | ISO timestamp of last verification |
-
-### Example
-
-```json
-{
-  "ci": {
-    "git_present": true,
-    "authenticated_tools": ["git", "gh"],
-    "verified_at": "2025-12-19T10:30:00Z"
-  }
-}
-```
-
-> **Note**: Provider-specific configuration (provider name, repo URL, static commands) is stored in `marshal.json` (shared via git), while tool authentication status is stored in `run-configuration.json` (local, machine-specific).
 
 ---
 
@@ -513,11 +486,6 @@ Retention defaults are defined in `manage-config/standards/data-model.md` under 
         "status": "SUCCESS"
       }
     }
-  },
-  "ci": {
-    "git_present": true,
-    "authenticated_tools": ["git", "gh"],
-    "verified_at": "2025-12-19T10:30:00Z"
   },
   "maven": {
     "acceptable_warnings": {

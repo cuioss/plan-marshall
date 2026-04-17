@@ -205,7 +205,7 @@ def generate_summary(categorized: dict, stats: dict) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Scan marketplace for planning-related components')
+    parser = argparse.ArgumentParser(description='Scan marketplace for planning-related components', allow_abbrev=False)
     parser.add_argument('--format', choices=['full', 'summary'], default='full', help='Output format (default: full)')
     parser.add_argument(
         '--include-descriptions', action='store_true', help='Include component descriptions from frontmatter'

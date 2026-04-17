@@ -33,7 +33,6 @@ DEFAULT_STRUCTURE = {
     'maven': {
         'acceptable_warnings': {'transitive_dependency': [], 'plugin_compatibility': [], 'platform_specific': []}
     },
-    'ci': {'authenticated_tools': [], 'verified_at': None},
 }
 
 
@@ -434,6 +433,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Manage run-configuration.json files',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
         epilog="""
 Examples:
   # Initialize in current project
@@ -477,21 +477,25 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # init command
-    p_init = subparsers.add_parser('init', help='Initialize run-configuration.json')
+    p_init = subparsers.add_parser('init', help='Initialize run-configuration.json', allow_abbrev=False)
     p_init.add_argument('--force', action='store_true', help='Overwrite existing file')
     p_init.set_defaults(func=cmd_init)
 
     # validate command
-    p_validate = subparsers.add_parser('validate', help='Validate run-configuration.json')
+    p_validate = subparsers.add_parser(
+        'validate', help='Validate run-configuration.json', allow_abbrev=False
+    )
     p_validate.add_argument('--file', required=True, help='Path to run-configuration.json')
     p_validate.set_defaults(func=cmd_validate)
 
     # timeout command with subcommands
-    p_timeout = subparsers.add_parser('timeout', help='Manage command timeouts')
+    p_timeout = subparsers.add_parser('timeout', help='Manage command timeouts', allow_abbrev=False)
     timeout_subparsers = p_timeout.add_subparsers(dest='timeout_command', required=True, help='Timeout operation')
 
     # timeout get
-    p_timeout_get = timeout_subparsers.add_parser('get', help='Get timeout for a command')
+    p_timeout_get = timeout_subparsers.add_parser(
+        'get', help='Get timeout for a command', allow_abbrev=False
+    )
     p_timeout_get.add_argument('--command', required=True, help='Command identifier (e.g., "ci:pr_checks")')
     p_timeout_get.add_argument(
         '--default', type=int, required=True, help='Default timeout in seconds if no persisted value'
@@ -499,30 +503,38 @@ Examples:
     p_timeout_get.set_defaults(func=cmd_timeout_get)
 
     # timeout set
-    p_timeout_set = timeout_subparsers.add_parser('set', help='Set/update timeout for a command')
+    p_timeout_set = timeout_subparsers.add_parser(
+        'set', help='Set/update timeout for a command', allow_abbrev=False
+    )
     p_timeout_set.add_argument('--command', required=True, help='Command identifier (e.g., "ci:pr_checks")')
     p_timeout_set.add_argument('--duration', type=int, required=True, help='Observed duration in seconds')
     p_timeout_set.set_defaults(func=cmd_timeout_set)
 
     # warning command with subcommands
-    p_warning = subparsers.add_parser('warning', help='Manage acceptable warnings')
+    p_warning = subparsers.add_parser('warning', help='Manage acceptable warnings', allow_abbrev=False)
     warning_subparsers = p_warning.add_subparsers(dest='warning_command', required=True, help='Warning operation')
 
     # warning add
-    p_warning_add = warning_subparsers.add_parser('add', help='Add pattern to acceptable warnings')
+    p_warning_add = warning_subparsers.add_parser(
+        'add', help='Add pattern to acceptable warnings', allow_abbrev=False
+    )
     p_warning_add.add_argument('--category', required=True, choices=VALID_WARNING_CATEGORIES, help='Warning category')
     p_warning_add.add_argument('--pattern', required=True, help='Warning pattern to accept')
     p_warning_add.add_argument('--build-system', default='maven', help='Build system (default: maven)')
     p_warning_add.set_defaults(func=cmd_warning_add)
 
     # warning list
-    p_warning_list = warning_subparsers.add_parser('list', help='List acceptable warnings')
+    p_warning_list = warning_subparsers.add_parser(
+        'list', help='List acceptable warnings', allow_abbrev=False
+    )
     p_warning_list.add_argument('--category', choices=VALID_WARNING_CATEGORIES, help='Filter by category (optional)')
     p_warning_list.add_argument('--build-system', default='maven', help='Build system (default: maven)')
     p_warning_list.set_defaults(func=cmd_warning_list)
 
     # warning remove
-    p_warning_remove = warning_subparsers.add_parser('remove', help='Remove pattern from acceptable warnings')
+    p_warning_remove = warning_subparsers.add_parser(
+        'remove', help='Remove pattern from acceptable warnings', allow_abbrev=False
+    )
     p_warning_remove.add_argument(
         '--category', required=True, choices=VALID_WARNING_CATEGORIES, help='Warning category'
     )
@@ -531,7 +543,9 @@ Examples:
     p_warning_remove.set_defaults(func=cmd_warning_remove)
 
     # cleanup command
-    p_cleanup = subparsers.add_parser('cleanup', help='Clean .plan directories based on retention settings')
+    p_cleanup = subparsers.add_parser(
+        'cleanup', help='Clean .plan directories based on retention settings', allow_abbrev=False
+    )
     p_cleanup.add_argument('--dry-run', action='store_true', help='Show what would be deleted without deleting')
     p_cleanup.add_argument(
         '--target',
@@ -542,7 +556,9 @@ Examples:
     p_cleanup.set_defaults(func=cmd_cleanup)
 
     # cleanup-status command
-    p_cleanup_status = subparsers.add_parser('cleanup-status', help='Show cleanup status and what would be cleaned')
+    p_cleanup_status = subparsers.add_parser(
+        'cleanup-status', help='Show cleanup status and what would be cleaned', allow_abbrev=False
+    )
     p_cleanup_status.set_defaults(func=cmd_cleanup_status)
 
     args = parser.parse_args()

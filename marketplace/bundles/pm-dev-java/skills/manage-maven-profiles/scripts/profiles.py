@@ -353,23 +353,23 @@ def cmd_suggest(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Maven profile management operations')
+    parser = argparse.ArgumentParser(description='Maven profile management operations', allow_abbrev=False)
     parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # list - List all profiles
-    list_parser = subparsers.add_parser('list', help='List Maven profiles from all modules')
+    list_parser = subparsers.add_parser('list', help='List Maven profiles from all modules', allow_abbrev=False)
     list_parser.add_argument('--module', help='Filter by module name')
 
     # unmatched - List unmatched profiles
-    subparsers.add_parser('unmatched', help='List unmatched profiles (NO-MATCH-FOUND)')
+    subparsers.add_parser('unmatched', help='List unmatched profiles (NO-MATCH-FOUND)', allow_abbrev=False)
 
     # classify - Classify a single profile
-    classify_parser = subparsers.add_parser('classify', help='Classify a profile by pattern matching')
+    classify_parser = subparsers.add_parser('classify', help='Classify a profile by pattern matching', allow_abbrev=False)
     classify_parser.add_argument('--profile-id', required=True, dest='profile_id', help='Profile ID to classify')
 
     # suggest - Suggest classifications for unmatched
-    subparsers.add_parser('suggest', help='Suggest classifications for unmatched profiles')
+    subparsers.add_parser('suggest', help='Suggest classifications for unmatched profiles', allow_abbrev=False)
 
     args = parser.parse_args()
 

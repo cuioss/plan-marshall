@@ -171,6 +171,7 @@ For each deliverable D:
          IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
            - Log WARN: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
            - Set task.skills = [] (continue with empty skills rather than erroring)
+           - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title "Missing skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate the missing profile."` so phase-5-execute and phase-6-finalize can surface the gap.
          ELSE:
            - Load all `defaults` directly into task.skills
            - For each `optional`, evaluate its `description` against deliverable context
@@ -233,6 +234,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ### Step 6: Create Tasks
 
 For each deliverable, create tasks using `--content` with `\n`-encoded TOON (one task per profile):
+
+### Description Anchoring Contract
+
+To prevent compound-word mis-interpretation (e.g. `review-knowledge` being described as PR/CI review hygiene), phase-4-plan MUST anchor every `task.description` to literal tokens from the parent deliverable:
+
+1. **Verbatim title quote (mitigation 1)**: The `description` value MUST begin with the exact deliverable title in single quotes, followed by a comma (or a period if an intent gloss follows per mitigation 2). Example for a deliverable titled `review-knowledge`:
+
+   description: 'review-knowledge', which reviews prior-plan knowledge against this plan's changes.
+
+   This forces compound-word tokens to survive description generation as a single unit.
+
+2. **Intent gloss copy (mitigation 2)**: If the parent deliverable carries an `**Intent gloss:**` field (per manage-solution-outline/templates/deliverable-template.md), phase-4-plan MUST copy its value verbatim into the `description` after the title quote. If absent, phase-4-plan falls back to mitigation 1 alone.
+
+   Combined example when both are present:
+
+   description: 'review-knowledge'. Review knowledge captured by prior plans (lessons-learned and memories) against this plan's changes. <additional task-specific detail>.
 
 **CRITICAL — Shell Metacharacter Sanitization**: Before interpolating values into the `--content` string, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
 
@@ -366,6 +383,24 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-4-plan:qgate) Verification: {passed_count} passed, {flagged_count} flagged"
 ```
 
+### Keyword-drift check (warn-only)
+
+After all tasks are created, scan each `task.description` for planning-domain keywords that the author may have substituted for the deliverable's actual semantics. For each task:
+
+1. Build a deny-list of planning-domain keywords: `PR review`, `CI`, `merge comments`, `pipeline`, `automated review`, `build check`, `review comments`.
+2. Build an outline-text haystack: concatenate the parent deliverable's Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text.
+3. For each keyword present in the `description` but ABSENT from the haystack, emit a warning Q-Gate finding:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
+  --type warning \
+  --title "Description drift: TASK-{N} uses '{keyword}' not present in deliverable outline" \
+  --detail "{description excerpt}; deliverable {deliverable_number} outline does not mention '{keyword}'"
+```
+
+**Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
+
 ### Step 10: Record Issues as Lessons
 
 On ambiguous deliverable or planning issues, follow the two-step path-allocate flow:
@@ -443,7 +478,7 @@ Skills are resolved from architecture based on `module` + `profile`:
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
 | `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
-| Profile not in module | Error - profile must exist in `module.skills_by_profile` (except `verification`) |
+| Profile not in module | Log WARN, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
 
 ## Error Handling
 
@@ -461,9 +496,11 @@ If `deliverable.module` is not found in architecture:
 
 ### Profile Not in Module
 
-If a profile from `deliverable.profiles` is not in `module.skills_by_profile`:
-- Error: "Profile '{profile}' not found in {module}.skills_by_profile"
-- Record as lesson learned
+If a profile from `deliverable.profiles` is not in `module.skills_by_profile`, this is NOT plan-blocking. Follow Step 5's canonical procedure:
+
+- Log WARN: `(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate.`
+- Set `task.skills = []` and continue creating the task.
+- Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
 
 ### Ambiguous Deliverable
 

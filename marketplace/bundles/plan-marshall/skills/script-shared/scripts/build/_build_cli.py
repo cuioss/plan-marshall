@@ -55,7 +55,9 @@ def add_run_subparser(
     Returns:
         The created run subparser (for setting defaults like func=cmd_run).
     """
-    run_parser = subparsers.add_parser('run', help='Execute build and auto-parse on failure (primary API)')
+    run_parser = subparsers.add_parser(
+        'run', help='Execute build and auto-parse on failure (primary API)', allow_abbrev=False
+    )
     run_parser.add_argument(
         '--command-args',
         dest='command_args',
@@ -97,7 +99,7 @@ def add_coverage_subparser(subparsers, *, help_text: str = 'Parse coverage repor
     Returns:
         The created coverage-report subparser.
     """
-    cov_parser = subparsers.add_parser('coverage-report', help=help_text)
+    cov_parser = subparsers.add_parser('coverage-report', help=help_text, allow_abbrev=False)
     cov_parser.add_argument('--project-path', dest='project_path', help='Project or module directory path')
     cov_parser.add_argument('--report-path', dest='report_path', help='Override coverage report path')
     cov_parser.add_argument(
@@ -140,7 +142,7 @@ def add_parse_subparser(
     if extra_modes:
         modes.extend(extra_modes)
 
-    parse_parser = subparsers.add_parser('parse', help=help_text)
+    parse_parser = subparsers.add_parser('parse', help=help_text, allow_abbrev=False)
     parse_parser.add_argument('--log', required=True, help='Path to build log file')
     parse_parser.add_argument('--mode', choices=modes, default='structured', help='Output mode')
     parse_parser.add_argument(
@@ -174,7 +176,7 @@ def add_check_warnings_subparser(subparsers, check_warnings_fn, *, help_text: st
     Returns:
         The created check-warnings subparser.
     """
-    warn_parser = subparsers.add_parser('check-warnings', help=help_text)
+    warn_parser = subparsers.add_parser('check-warnings', help=help_text, allow_abbrev=False)
     warn_parser.add_argument('--warnings', help='JSON array of warning objects')
     warn_parser.add_argument(
         '--acceptable-warnings',
@@ -201,7 +203,7 @@ def add_discover_subparser(subparsers, discover_fn, *, help_text: str = 'Discove
     Returns:
         The created discover subparser.
     """
-    discover_parser = subparsers.add_parser('discover', help=help_text)
+    discover_parser = subparsers.add_parser('discover', help=help_text, allow_abbrev=False)
     discover_parser.add_argument('--root', default='.', help='Project root directory')
     discover_parser.add_argument(
         '--format',
@@ -230,7 +232,9 @@ def add_search_markers_subparser(subparsers, search_markers_fn, *, default_exten
     Returns:
         The created search-markers subparser.
     """
-    markers_parser = subparsers.add_parser('search-markers', help='Search for OpenRewrite TODO markers')
+    markers_parser = subparsers.add_parser(
+        'search-markers', help='Search for OpenRewrite TODO markers', allow_abbrev=False
+    )
     markers_parser.add_argument('--source-dir', default='src', help='Directory to search')
     markers_parser.add_argument('--extensions', default=default_extensions, help='Comma-separated extensions')
     markers_parser.add_argument(
@@ -355,7 +359,11 @@ def build_main(
     """
     import argparse as _argparse
 
-    parser = _argparse.ArgumentParser(description=description, formatter_class=_argparse.RawDescriptionHelpFormatter)
+    parser = _argparse.ArgumentParser(
+        description=description,
+        formatter_class=_argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     for register_fn in subparser_fns:

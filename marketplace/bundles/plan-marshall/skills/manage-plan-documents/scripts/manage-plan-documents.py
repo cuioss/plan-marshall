@@ -47,11 +47,13 @@ from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser with dynamic subparsers for document types."""
-    parser = argparse.ArgumentParser(description='Manage typed documents within plan directories')
+    parser = argparse.ArgumentParser(
+        description='Manage typed documents within plan directories', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='doc_type', required=True, help='Document type or command')
 
     # Special command: list-types
-    list_parser = subparsers.add_parser('list-types', help='List available document types')
+    list_parser = subparsers.add_parser('list-types', help='List available document types', allow_abbrev=False)
     list_parser.set_defaults(func=lambda args: cmd_list_types(args))
 
     # Dynamic subparsers for each document type
@@ -62,7 +64,9 @@ def build_parser() -> argparse.ArgumentParser:
         if not doc_def:
             continue
 
-        type_parser = subparsers.add_parser(doc_type, help=f'Manage {doc_type} documents')
+        type_parser = subparsers.add_parser(
+            doc_type, help=f'Manage {doc_type} documents', allow_abbrev=False
+        )
         type_subparsers = type_parser.add_subparsers(dest='verb', required=True, help='Operation')
 
         # Create
@@ -91,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
         create_parser.set_defaults(func=lambda args, dt=doc_type: cmd_create(dt, args))
 
         # Read
-        read_parser = type_subparsers.add_parser('read', help='Read document')
+        read_parser = type_subparsers.add_parser('read', help='Read document', allow_abbrev=False)
         add_plan_id_arg(read_parser)
         read_parser.add_argument('--raw', action='store_true', help='Output raw content')
         read_parser.add_argument('--section', help='Read specific section (e.g., clarified_request)')
@@ -99,18 +103,22 @@ def build_parser() -> argparse.ArgumentParser:
 
         # Path (Step 1 of edit flow: script allocates canonical artifact path)
         path_parser = type_subparsers.add_parser(
-            'path', help='Return canonical artifact path for direct edit (Step 1 of edit flow)'
+            'path',
+            help='Return canonical artifact path for direct edit (Step 1 of edit flow)',
+            allow_abbrev=False,
         )
         add_plan_id_arg(path_parser)
         path_parser.set_defaults(func=lambda args, dt=doc_type: cmd_path(dt, args))
 
         # Exists
-        exists_parser = type_subparsers.add_parser('exists', help='Check if document exists')
+        exists_parser = type_subparsers.add_parser(
+            'exists', help='Check if document exists', allow_abbrev=False
+        )
         add_plan_id_arg(exists_parser)
         exists_parser.set_defaults(func=lambda args, dt=doc_type: cmd_exists(dt, args))
 
         # Remove
-        remove_parser = type_subparsers.add_parser('remove', help='Remove document')
+        remove_parser = type_subparsers.add_parser('remove', help='Remove document', allow_abbrev=False)
         add_plan_id_arg(remove_parser)
         remove_parser.set_defaults(func=lambda args, dt=doc_type: cmd_remove(dt, args))
 
@@ -118,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
         mark_clarified_parser = type_subparsers.add_parser(
             'mark-clarified',
             help='Record clarification transition after direct edit (Step 3 of edit flow)',
+            allow_abbrev=False,
         )
         add_plan_id_arg(mark_clarified_parser)
         mark_clarified_parser.set_defaults(func=lambda args, dt=doc_type: cmd_mark_clarified(dt, args))

@@ -28,6 +28,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Marketplace component creation utilities',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
         epilog="""
 Examples:
   # Generate agent frontmatter
@@ -53,13 +54,13 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # generate command
-    p_generate = subparsers.add_parser('generate', help='Generate YAML frontmatter')
+    p_generate = subparsers.add_parser('generate', help='Generate YAML frontmatter', allow_abbrev=False)
     p_generate.add_argument('--type', required=True, choices=['agent', 'command', 'skill'], help='Component type')
     p_generate.add_argument('--config', required=True, help='JSON string with component configuration')
     p_generate.set_defaults(func=cmd_generate)
 
     # validate command
-    p_validate = subparsers.add_parser('validate', help='Validate component structure')
+    p_validate = subparsers.add_parser('validate', help='Validate component structure', allow_abbrev=False)
     p_validate.add_argument('--file', required=True, help='Path to component file')
     p_validate.add_argument('--type', required=True, choices=['agent', 'command', 'skill'], help='Component type')
     p_validate.set_defaults(func=cmd_validate)

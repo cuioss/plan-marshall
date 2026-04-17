@@ -37,7 +37,7 @@ def finish(status, start, polls, command_key, error=None):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Poll until condition is satisfied')
+    parser = argparse.ArgumentParser(description='Poll until condition is satisfied', allow_abbrev=False)
     parser.add_argument('--check-cmd', required=True)
     parser.add_argument('--success-field', required=True)
     parser.add_argument('--failure-field')
