@@ -126,7 +126,7 @@ Invoked after `default:archive-plan` completes. Inputs: the snapshot from above 
 
 Walk the precedence chain:
 
-1. If any configured step's `outcome` is `failed`, or any required step (per `required-steps.md`) is missing from `phase_steps` -> `[FAILED]`.
+1. If any configured step's `outcome` is `failed`, any required step (per `required-steps.md`) is missing from `phase_steps`, or any configured step's `display_detail` is missing or empty -> `[FAILED]`. A missing/empty `display_detail` violates the interface contract defined in `SKILL.md` and surfaces as `<missing display_detail>` in the step row.
 2. Else if `finalize_iteration > 1` -> `[LOOP_BACK]`.
 3. Else if PR `state == merged` -> `[MERGED]`.
 4. Else if PR exists (any other state) -> `[OPEN]`.

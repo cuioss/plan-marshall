@@ -113,8 +113,11 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 ),
             }
 
-    previous_outcome = existing.get('outcome') if isinstance(existing, dict) else None
-    previous_detail = existing.get('display_detail') if isinstance(existing, dict) else None
+    previous_outcome = None
+    previous_detail = None
+    if isinstance(existing, dict):
+        previous_outcome = existing.get('outcome')
+        previous_detail = existing.get('display_detail')
 
     phase_entry[step] = {'outcome': outcome, 'display_detail': display_detail}
     write_status(args.plan_id, status)
