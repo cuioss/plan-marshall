@@ -53,9 +53,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
 
     existing = phase_entry.get(step)
 
-    if isinstance(existing, str):
-        # Breaking migration: old bare-string shape is drift — caller must
-        # resolve manually (re-run the phase step or patch status.json).
+    if isinstance(existing, str) and not args.force:
         return {
             'status': 'error',
             'plan_id': args.plan_id,
@@ -66,8 +64,8 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             'requested_outcome': outcome,
             'message': (
                 f'Step {step!r} in phase {phase!r} has legacy bare-string storage '
-                f'({existing!r}); migrate status.metadata.phase_steps to the dict '
-                'shape {"outcome": ..., "display_detail": ...} before retrying.'
+                f'({existing!r}); re-run with --force to migrate the entry to the '
+                'dict shape {"outcome": ..., "display_detail": ...}.'
             ),
         }
 

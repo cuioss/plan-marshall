@@ -2,6 +2,50 @@
 
 Workflow-focused design principles for building goal-based skills.
 
+## Skill Naming Convention
+
+**Principle**: Skill directory names MUST be verb phrases that describe the action the skill performs. Noun-suffix names are reserved for spawnable marketplace agents.
+
+**Rationale**: Noun-suffix skill names (e.g., `task-executor`) cause the LLM to treat the skill as a spawnable agent and invoke it directly rather than through its wrapping phase-agent. Verb-first names (e.g., `execute-task`) align with the marketplace convention that skills describe actions while agents use the `-agent` suffix.
+
+### Prescribed Pattern: Verb-First Names
+
+Skill directory names use verb phrases:
+
+```
+# PASS — Verb-first names
+execute-task
+build-maven
+manage-files
+resolve-execute-task-skill
+sync-plugin-cache
+```
+
+### Forbidden Pattern: Noun Suffixes
+
+The following noun suffixes are **reserved for spawnable marketplace agents** and MUST NOT appear at the end of a skill directory name (singular or plural):
+
+| Reserved Suffix | Plural Form |
+|-----------------|-------------|
+| `-executor`     | `-executors` |
+| `-manager`      | `-managers` |
+| `-runner`       | `-runners` |
+| `-handler`      | `-handlers` |
+| `-orchestrator` | `-orchestrators` |
+
+```
+# FAIL — Noun-suffix skill names (reserved for agents)
+task-executor          → use execute-task
+test-runner            → use run-tests
+build-manager          → use manage-builds
+error-handler          → use handle-errors
+workflow-orchestrator  → use orchestrate-workflow
+```
+
+### Enforcement
+
+`plugin-doctor` flags skill directories whose names end in any reserved noun suffix. If a skill legitimately needs a noun-phrase name, the component should be implemented as an agent (with the `-agent` suffix) rather than a skill.
+
 ## Core Concept: Workflows Over Monolithic Operations
 
 **Principle**: Skills provide **workflows** (specific capabilities) not monolithic operations. Multiple workflows serve a single goal.

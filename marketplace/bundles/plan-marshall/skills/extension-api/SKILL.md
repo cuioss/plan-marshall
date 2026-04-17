@@ -142,7 +142,7 @@ For all extension-related configuration paths, see [marshal-json-reference.md](s
 │                            │ delegates to                        │
 │                            ▼                                     │
 │  LAYER 2: PROFILE SKILLS (System default, domain CAN override)  │
-│  task-executor (profiles: implementation, module_testing, etc.)  │
+│  execute-task (profiles: implementation, module_testing, etc.)   │
 │                            │                                     │
 │                            │ loads                               │
 │                            ▼                                     │

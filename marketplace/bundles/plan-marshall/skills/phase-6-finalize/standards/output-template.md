@@ -21,6 +21,7 @@ Finalize steps ({N_done}/{N_total} done)
   [OK]  knowledge-capture                 saved pattern: {pattern_id}
   [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
   [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
+  [OK]  review-knowledge                  2d/1u/5k of 8
   [OK]  record-metrics                    {duration}s / {tokens} tokens
   [OK]  archive-plan                      -> {archive_path}
 
@@ -238,6 +239,9 @@ Detail string rules:
 | `branch-cleanup` | PR mode full cleanup | `main pulled, branch deleted (local+remote), worktree removed` |
 | `branch-cleanup` | Local-only mode | `local-only: switched to main` |
 | `branch-cleanup` | Declined by user | `declined by user` |
+| `review-knowledge` | Actions applied | `2d/1u/5k of 8` |
+| `review-knowledge` | Nothing to review | `nothing to review (1 lesson, 32 memories)` |
+| `review-knowledge` | User declined | `user declined review` |
 | `record-metrics` | Metrics recorded | `{duration}s / {tokens} tokens` |
 | `archive-plan` | Archived successfully | `-> .plan/archived-plans/2026-04-17-jwt-auth/` |
 | `validation` | All required steps done | `all required steps done` |

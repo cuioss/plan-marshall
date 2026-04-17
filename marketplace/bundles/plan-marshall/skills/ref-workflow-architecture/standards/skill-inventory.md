@@ -93,7 +93,7 @@ Per the plugin.json registration convention documented in `frontmatter-standards
 | Skill | Registered | Purpose |
 |-------|-----------|---------|
 | plan-marshall | yes | Unified user-facing entry point for plan lifecycle |
-| task-executor | yes | Domain-agnostic task execution with profile routing |
+| execute-task | yes | Domain-agnostic task execution with profile routing |
 | plan-marshall-plugin | script-only | User guide references for plan-marshall |
 
 ## Configuration & Recipes (3 total, 2 registered)

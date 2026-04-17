@@ -108,6 +108,7 @@ Three step types are supported, distinguished by prefix notation:
 | `default:knowledge-capture` | `standards/knowledge-capture.md` | Capture learnings to memory |
 | `default:lessons-capture` | `standards/lessons-capture.md` | Record lessons learned |
 | `default:branch-cleanup` | `standards/branch-cleanup.md` | Branch cleanup — adapts to PR mode or local-only based on create-pr step presence |
+| `default:review-knowledge` | `standards/review-knowledge.md` | Review existing lessons-learned and memories against plan changes; propose deletes/updates |
 | `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |
 | `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
 
@@ -249,7 +250,7 @@ Iterate over the `steps` list from config. For each step reference:
 - `create-pr`, `automated-review`, `sonar-roundtrip`, `knowledge-capture`, `lessons-capture`
 
 **Inline-only built-in steps** (require user interaction or sequential dependency):
-- `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
+- `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
 ```
 FOR each step_ref in steps:
@@ -268,7 +269,7 @@ FOR each step_ref in steps:
   4. Dispatch:
      - BUILT-IN (agent-suitable: create-pr, automated-review, sonar-roundtrip, knowledge-capture, lessons-capture):
        Run as Task agent — read the standards document and execute all steps within the agent context.
-     - BUILT-IN (inline-only: commit-push, branch-cleanup, record-metrics, archive-plan):
+     - BUILT-IN (inline-only: commit-push, branch-cleanup, review-knowledge, record-metrics, archive-plan):
        Read the standards document from dispatch table and follow all steps in main context.
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
@@ -462,6 +463,7 @@ State checks (for present steps):
 | `standards/sonar-roundtrip.md` | `default:sonar-roundtrip` | Sonar quality gate, issue resolution |
 | `standards/knowledge-capture.md` | `default:knowledge-capture` | manage-memories save command |
 | `standards/lessons-capture.md` | `default:lessons-capture` | manage-lesson add command |
+| `standards/review-knowledge.md` | `default:review-knowledge` | Review lessons-learned and memories against plan changes |
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
