@@ -425,17 +425,19 @@ def get_gitignored_files(root: Path) -> set[str]:
 
 
 def get_tracked_files(root: Path) -> set[str]:
-    """Return set of relative paths that are tracked by git under root.
+    """Return set of paths (relative to ``root``) that are tracked by git.
 
-    Uses `git ls-files --cached --full-name` to enumerate every path in
-    the index. Returns empty set if not inside a git repo or git is
-    unavailable. Tracked files must never be classified as ``safe``
-    artifacts — even if a filename matches a safe glob, a tracked entry
-    may be a committed fixture that the developer intends to keep.
+    Uses ``git ls-files --cached`` with ``cwd=root`` so results are
+    relative to ``root`` — matching the ``rel`` computation in
+    ``scan_artifacts`` even when ``root`` is a subdirectory of a repo.
+    Returns empty set if not inside a git repo or git is unavailable.
+    Tracked files must never be classified as ``safe`` artifacts — even
+    if a filename matches a safe glob, a tracked entry may be a committed
+    fixture that the developer intends to keep.
     """
     try:
         result = subprocess.run(
-            ['git', 'ls-files', '--cached', '--full-name'],
+            ['git', 'ls-files', '--cached'],
             capture_output=True,
             text=True,
             timeout=30,

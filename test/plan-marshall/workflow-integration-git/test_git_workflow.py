@@ -555,6 +555,27 @@ class TestTrackedFileFilter(unittest.TestCase):
         self.assertIn('debug.log', result['safe'])
         self.assertNotIn('debug.log', result['uncertain'])
 
+    def test_tracked_file_scanned_from_subdir_still_downgrades(self):
+        """Scanning a subdirectory of a repo must still demote tracked safe matches.
+
+        Regression guard for the ``--full-name`` bug: ``git ls-files`` must
+        return paths relative to the scanned ``root`` (the subdir) so the
+        ``rel in tracked`` check matches. Without ``cwd=root`` + no
+        ``--full-name``, tracked files in a subdir scan leak into ``safe``.
+        """
+        import subprocess as sp
+
+        self._git_init_with_identity()
+        self._create_file('sub/debug.log')
+        sp.run(['git', 'add', 'sub/debug.log'], cwd=self.tmpdir, capture_output=True)
+        sp.run(['git', 'commit', '-m', 'commit sub/debug.log'], cwd=self.tmpdir, capture_output=True)
+
+        subdir = Path(self.tmpdir) / 'sub'
+        result = scan_artifacts(subdir, respect_gitignore=False)
+
+        self.assertIn('debug.log', result['uncertain'])
+        self.assertNotIn('debug.log', result['safe'])
+
 
 class TestDetectArtifactsGitignore(unittest.TestCase):
     """Test detect-artifacts with gitignore integration (subprocess-dependent)."""
