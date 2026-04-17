@@ -122,9 +122,22 @@ recovery: {recovery_suggestion}
 
 ## Mark Step Complete
 
-This document also serves as the `validation` finalize step entry in `required-steps.md`: it captures the end-of-pipeline validation pass. Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+This document also serves as the `validation` finalize step entry in `required-steps.md`: it captures the end-of-pipeline validation pass. Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
+
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the validation outcome. The payload differs by whether the validation pass exposed per-check counts:
+
+**Branch A — default** (the handshake invariant confirms all required steps are done; no per-check telemetry is available):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step validation --outcome done
+  --plan-id {plan_id} --phase 6-finalize --step validation --outcome done \
+  --display-detail "all required steps done"
+```
+
+**Branch B — per-check counts available** (when the validation pass enumerates individual checks and `{N}` is the count of checks that passed):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step validation --outcome done \
+  --display-detail "{N} validation check(s) passed"
 ```

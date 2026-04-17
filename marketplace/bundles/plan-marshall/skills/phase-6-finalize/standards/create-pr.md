@@ -72,9 +72,30 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Mark Step Complete
 
-Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time:
+Before returning control to the finalize pipeline, record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
+
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the PR outcome. The payload differs by branch:
+
+**Branch A — new PR created** (from "Create PR via CI abstraction"): `{pr_number}` is the PR number returned by `pr create`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done
+  --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done \
+  --display-detail "#{pr_number}"
+```
+
+**Branch B — existing PR re-used** (from "Check if PR already exists"): `{pr_number}` is the PR number returned by `pr view`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done \
+  --display-detail "existing PR #{pr_number}"
+```
+
+**Branch C — PR creation skipped** (config `2_create_pr` is `false` or otherwise gated):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done \
+  --display-detail "skipped"
 ```

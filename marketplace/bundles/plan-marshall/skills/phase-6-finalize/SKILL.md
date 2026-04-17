@@ -122,6 +122,18 @@ Skill: {step_reference}
 
 The step skill can access the plan's context via manage-* scripts (references, status, config).
 
+**Required termination:** Every external step (project and fully-qualified skill) MUST terminate with a `manage-status mark-step-done` call that carries `--display-detail "{one-line summary}"`. This is REQUIRED, not optional — a missing or empty `display_detail` causes renderer failure in Step 5 (the literal placeholder `<missing display_detail>` will surface to the user and contribute to a `[FAILED]` headline). The detail string is authored by the step itself; the renderer NEVER invents content on the step's behalf.
+
+**`display_detail` constraints:**
+
+- ≤80 characters
+- No trailing period
+- No embedded newlines (single line only)
+- Plain ASCII — no unicode glyphs
+- Concrete and user-facing (describe what the step did, not how)
+
+See [standards/output-template.md](standards/output-template.md#display_detail-contract-for-step-authors) for the full detail-string convention, ASCII icon rules, and concrete examples per built-in step.
+
 ---
 
 ## Operation: finalize
@@ -250,7 +262,10 @@ FOR each step_ref in steps:
      - ELSE IF step_ref starts with "project:" -> PROJECT type
      - ELSE IF step_ref contains ":" -> SKILL type
 
-  3. Dispatch:
+  3. Pre-archive snapshot hook (run BEFORE dispatching the step if step_ref == "default:archive-plan"):
+     See "Pre-Archive Snapshot Hook" subsection below. Capture the snapshot into model context, then proceed to step 4 to dispatch archive-plan normally.
+
+  4. Dispatch:
      - BUILT-IN (agent-suitable: create-pr, automated-review, sonar-roundtrip, knowledge-capture, lessons-capture):
        Run as Task agent — read the standards document and execute all steps within the agent context.
      - BUILT-IN (inline-only: commit-push, branch-cleanup, record-metrics, archive-plan):
@@ -259,11 +274,32 @@ FOR each step_ref in steps:
        Skill: {step_ref}
          Arguments: --plan-id {plan_id} --iteration {iteration}
 
-  4. Log step completion:
+  5. Capture archive result (only when step_ref == "default:archive-plan"):
+     Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 5 (Render Final Output Template).
+
+  6. Log step completion:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
 END FOR
 ```
+
+#### Pre-Archive Snapshot Hook
+
+When the NEXT step to dispatch is `default:archive-plan` (always the last CONFIGURED step), capture a snapshot of plan state BEFORE dispatching archive-plan. The archive step moves `.plan/plans/{plan_id}/` to `.plan/archived-plans/{date}-{plan_id}/` and invalidates subsequent `manage-status read` calls against the live path, so the renderer (Step 5) would be unable to read state after archive returns.
+
+The snapshot is held in **model context (in-memory)** — do NOT write a work file to disk. It flows directly from this hook into Step 5's render procedure.
+
+Capture the following values:
+
+1. **`status.metadata.phase_steps["6-finalize"]`** — dict of `{step_name: {outcome, display_detail}}` from `manage-status read --plan-id {plan_id}`.
+2. **Deliverables list** — from `manage-solution-outline read --plan-id {plan_id}` (ordered list of titles and per-deliverable state).
+3. **Configured `steps` list** — from phase-6-finalize config (`manage-config plan phase-6-finalize get --plan-id {plan_id} --field steps`).
+4. **Repository state** — branch via `git -C {main_checkout} branch --show-current`, porcelain via `git -C {main_checkout} status --porcelain`.
+5. **PR state + number** — via `ci pr view --project-dir {main_checkout}`. Treat error (no PR for branch) as `state=n/a, number=n/a`.
+
+See [standards/output-template.md#snapshot-procedure](standards/output-template.md#snapshot-procedure) for exact commands and field extraction.
+
+After the snapshot is captured, dispatch `default:archive-plan` normally (step 4 in the FOR body above) and capture its returned `archive_path` (step 5). Both the snapshot and `archive_path` flow into Step 5 "Render Final Output Template".
 
 **Built-in step notes**:
 - `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
@@ -278,7 +314,36 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
   --completed 6-finalize
 ```
 
-### Step 5: Log Phase Completion
+### Step 5: Render Final Output Template
+
+**This step ALWAYS runs** — it is NOT configurable via the `steps` list. It is the terminal action of the phase, invoked after `default:archive-plan` returns in Step 3.
+
+Load the renderer specification:
+
+```
+Skill: plan-marshall:phase-6-finalize
+  Standards: standards/output-template.md
+```
+
+**Inputs** (both already in model context from Step 3):
+
+- **Pre-archive snapshot** — captured by the Pre-Archive Snapshot Hook before `default:archive-plan` dispatched. Contains `phase_steps` map, deliverables list, configured `steps` list, repository branch/porcelain, and PR state/number.
+- **`archive_path`** — returned by `default:archive-plan` in Step 3.
+
+**Procedure:** Follow the emission procedure in [standards/output-template.md#emission-procedure](standards/output-template.md#emission-procedure). The renderer is a pure assembler:
+
+1. Resolve the headline token (`MERGED` / `OPEN` / `LOOP_BACK` / `SKIPPED` / `FAILED`) via the precedence chain.
+2. Build the headline.
+3. Build the Deliverables block (one row per deliverable, icon by outcome).
+4. Build the Finalize steps block (one row per configured step, padded 33-char name + `display_detail`).
+5. Build the Repository trailer (main state | worktree token | working tree state).
+6. Emit the four blocks separated by blank lines as a plain-text, user-facing output.
+
+**No additional script calls are needed for this step** — the renderer consumes only the in-memory snapshot plus `archive_path`. It performs no `manage-status` / `manage-solution-outline` / `ci pr view` reads of its own.
+
+The emitted template is a **user-facing text block printed to the model's output**, not a log entry. It is the primary surface reported to the user at the end of the finalize phase.
+
+### Step 6: Log Phase Completion
 
 Final metrics are already recorded inside the Step 3 pipeline by `default:record-metrics` (which runs immediately before `default:archive-plan`). This step only logs phase completion to work.log.
 
@@ -298,28 +363,43 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Output
 
-**Success**:
+**Success** (user-facing):
+
+The primary output is the three-block template rendered by Step 5. It is a plain-text, user-facing block — not TOON — assembled from the pre-archive snapshot plus `archive_path`. See [standards/output-template.md](standards/output-template.md) for the full renderer specification.
+
+Example:
+
+```
+[MERGED] PR #212 -- 5 deliverable(s) shipped, all green
+
+Deliverables (5/5)
+  [OK]  1. Extend manage-status mark-step-done with --display-detail
+  [OK]  2. Create standards/output-template.md
+  [OK]  3. Wire renderer into phase-6-finalize/SKILL.md
+  [OK]  4. Simplify standards/record-metrics.md
+  [OK]  5. Add display_detail to 9 step standards docs
+
+Finalize steps (10/10 done)
+  [OK]  commit-push                       -> a1b2c3d
+  [OK]  create-pr                         #212
+  [OK]  automated-review                  3 comment(s) resolved (no loop-back)
+  [OK]  sonar-roundtrip                   quality gate passed
+  [OK]  knowledge-capture                 no new pattern saved
+  [OK]  lessons-capture                   no lessons recorded
+  [OK]  validation                        all required steps done
+  [OK]  record-metrics                    1591s / 209327 tokens
+  [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
+  [OK]  archive-plan                      -> .plan/archived-plans/2026-04-17-lesson-2026-04-17-005
+
+Repository: main up-to-date | worktree removed | working tree clean
+```
+
+**Success** (machine-facing minimal TOON — retained for callers that parse phase output):
 
 ```toon
 status: success
 plan_id: {plan_id}
-
-actions:
-  commit: {commit_hash}
-  push: success
-  pr: {created #{number}|skipped}
-  automated_review: {completed|skipped|loop_back}
-  sonar: {passed|skipped|loop_back}
-  knowledge_capture: {done|skipped}
-  lessons_capture: {done|skipped}
-  archive: {done|skipped}
-  branch_cleanup: {done|skipped|declined}
-
-metrics:
-  total_duration_seconds: {total from metrics generate}
-  total_tokens: {total from metrics generate}
-  metrics_file: .plan/archived-plans/{date}-{plan_id}/metrics.md
-
+archive_path: .plan/archived-plans/{date}-{plan_id}
 next_state: complete
 ```
 
@@ -385,6 +465,7 @@ State checks (for present steps):
 | `standards/branch-cleanup.md` | `default:branch-cleanup` | Branch cleanup with user confirmation — PR mode (merge + CI) or local-only (switch + pull) |
 | `standards/record-metrics.md` | `default:record-metrics` | Record final plan metrics before archive |
 | `standards/archive-plan.md` | `default:archive-plan` | Archive the completed plan |
+| `standards/output-template.md` | — | Renderer specification for the three-block final output template (Step 5) |
 | `standards/required-steps.md` | — | Canonical list of steps enforced by the `phase_steps_complete` handshake invariant |
 | `standards/validation.md` | — | Configuration requirements, error scenarios |
 | `standards/lessons-integration.md` | — | Conceptual guidance on lesson capture |

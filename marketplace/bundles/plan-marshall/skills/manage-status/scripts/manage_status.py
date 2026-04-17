@@ -145,6 +145,11 @@ def main() -> int:
     mark_step_parser.add_argument(
         '--force', action='store_true', help='Overwrite an existing conflicting outcome'
     )
+    mark_step_parser.add_argument(
+        '--display-detail',
+        default=None,
+        help='One-line user-facing detail string describing the step outcome (required for phase-6-finalize steps).',
+    )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
 
     # self-test
