@@ -125,6 +125,27 @@ Each category references a standard from `plugin-script-architecture`. The check
 
 **Categorization**: Safe fix (mechanical transformation)
 
+### 10. Argparse Safety (`allow_abbrev=False`)
+
+**Standard reference**: `plugin-script-architecture:standards/python-implementation.md` (Argument Conventions section) and driving lesson 2026-04-17-012.
+
+**Required parameter**: Every `argparse.ArgumentParser(...)` constructor and every `subparsers.add_parser(...)` call in a marketplace Python script with a user-facing CLI MUST pass `allow_abbrev=False`.
+
+**Why it is required**: argparse's default behavior matches unknown long options by unique prefix. When a flag is renamed or removed, callers that still pass the old long form keep working — the new parser silently binds the old name via prefix matching. This turns contract rot into a silent bug class. Passing `allow_abbrev=False` disables prefix matching, so retired or renamed flags fail loudly with "unrecognized arguments" instead of quietly re-binding.
+
+**Check Criteria**:
+1. Every `ArgumentParser(...)` call includes `allow_abbrev=False` as a keyword argument.
+2. Every `subparsers.add_parser(...)` call includes `allow_abbrev=False`.
+3. Scope: files under `marketplace/bundles/*/skills/*/scripts/` and `marketplace/adapters/`.
+
+**Exclusions**: Tests (files under `test/`/`tests/` directories, or named `test_*.py` / `*_test.py`) may intentionally exercise default argparse behavior and are skipped.
+
+**Categorization**: Unfixable (manual edit) — the rule is detection-only; add the flag to each flagged call.
+
+**Fix Strategy**: Audit the flagged `file:line` and add `allow_abbrev=False` to the constructor.
+
+**Rule id**: `argparse_safety` (severity: error). See `rule-catalog.md` "Script Rules" for the full catalog entry.
+
 ## Validation Workflow
 
 ### Step 1: Discover Scripts
@@ -162,6 +183,7 @@ Glob: pattern="scripts/*.py", path="marketplace/bundles/*/skills/*"
 | Script >400 lines not modularized | Risky | No |
 | Missing help | Safe | No |
 | Test >400 lines not modularized | Risky | No |
+| Missing `allow_abbrev=False` | Unfixable | No |
 
 ### Step 5: Report
 

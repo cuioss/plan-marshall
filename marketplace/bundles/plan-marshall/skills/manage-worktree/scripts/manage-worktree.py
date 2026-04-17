@@ -276,25 +276,27 @@ def cmd_list(_args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Manage per-plan git worktrees')
+    parser = argparse.ArgumentParser(description='Manage per-plan git worktrees', allow_abbrev=False)
     sub = parser.add_subparsers(dest='command', required=True)
 
-    p_path = sub.add_parser('path', help='Return computed worktree path for a plan')
+    p_path = sub.add_parser('path', help='Return computed worktree path for a plan', allow_abbrev=False)
     add_plan_id_arg(p_path)
     p_path.set_defaults(func=cmd_path)
 
-    p_create = sub.add_parser('create', help='Create worktree + feature branch + shim drop')
+    p_create = sub.add_parser(
+        'create', help='Create worktree + feature branch + shim drop', allow_abbrev=False
+    )
     add_plan_id_arg(p_create)
     p_create.add_argument('--branch', required=True, help='Feature branch name to create')
     p_create.add_argument('--base', help='Base ref for the new branch (default: current HEAD)')
     p_create.set_defaults(func=cmd_create)
 
-    p_remove = sub.add_parser('remove', help='Remove a worktree')
+    p_remove = sub.add_parser('remove', help='Remove a worktree', allow_abbrev=False)
     add_plan_id_arg(p_remove)
     p_remove.add_argument('--force', action='store_true', help='Force removal (use only if worktree is clean)')
     p_remove.set_defaults(func=cmd_remove)
 
-    p_list = sub.add_parser('list', help='List managed worktrees')
+    p_list = sub.add_parser('list', help='List managed worktrees', allow_abbrev=False)
     p_list.set_defaults(func=cmd_list)
 
     return parser

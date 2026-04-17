@@ -155,25 +155,25 @@ def main() -> int:
     if project_dir is not None:
         set_default_cwd(project_dir)
 
-    parser = argparse.ArgumentParser(description='Sonar REST API client')
+    parser = argparse.ArgumentParser(description='Sonar REST API client', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # search
-    search_parser = subparsers.add_parser('search', help='Search for Sonar issues')
+    search_parser = subparsers.add_parser('search', help='Search for Sonar issues', allow_abbrev=False)
     search_parser.add_argument('--project', required=True, help='SonarQube project key')
     search_parser.add_argument('--pr', help='Pull request ID')
     search_parser.add_argument('--severities', help='Filter by severity (comma-separated)')
     search_parser.add_argument('--types', help='Filter by type (comma-separated)')
 
     # transition
-    transition_parser = subparsers.add_parser('transition', help='Change issue status')
+    transition_parser = subparsers.add_parser('transition', help='Change issue status', allow_abbrev=False)
     transition_parser.add_argument('--issue-key', required=True, help='Sonar issue key')
     transition_parser.add_argument('--transition', required=True,
                                    choices=['accept', 'falsepositive', 'wontfix'],
                                    help='Transition to apply')
 
     # metrics
-    metrics_parser = subparsers.add_parser('metrics', help='Get component metrics')
+    metrics_parser = subparsers.add_parser('metrics', help='Get component metrics', allow_abbrev=False)
     metrics_parser.add_argument('--project', required=True, help='SonarQube project key')
     metrics_parser.add_argument('--component', required=True, help='Component key')
     metrics_parser.add_argument('--metrics', help='Comma-separated metric keys')

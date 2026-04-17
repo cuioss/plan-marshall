@@ -373,21 +373,21 @@ def cmd_verify_all(args: argparse.Namespace) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='CI health verification for detecting providers and verifying tools')
+    parser = argparse.ArgumentParser(description='CI health verification for detecting providers and verifying tools', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # detect subcommand
-    subparsers.add_parser('detect', help='Detect CI provider from repository configuration')
+    subparsers.add_parser('detect', help='Detect CI provider from repository configuration', allow_abbrev=False)
 
     # verify subcommand
-    verify_parser = subparsers.add_parser('verify', help='Verify CLI tools are installed and authenticated')
+    verify_parser = subparsers.add_parser('verify', help='Verify CLI tools are installed and authenticated', allow_abbrev=False)
     verify_parser.add_argument('--tool', type=str, help='Specific tool to verify (git, gh, glab)')
 
     # status subcommand
-    subparsers.add_parser('status', help='Full health check (detect + verify)')
+    subparsers.add_parser('status', help='Full health check (detect + verify)', allow_abbrev=False)
 
     # verify-all subcommand (live verify; no persistence)
-    subparsers.add_parser('verify-all', help='Verify all CI tools live (no persistence)')
+    subparsers.add_parser('verify-all', help='Verify all CI tools live (no persistence)', allow_abbrev=False)
 
     args = parser.parse_args()
 

@@ -42,53 +42,54 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Read-only skill resolution and discovery queries',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
 
     subparsers = parser.add_subparsers(dest='command', required=True, help='Query command')
 
     # --- resolve-domain-skills ---
-    p_rds = subparsers.add_parser('resolve-domain-skills', help='Resolve skills for domain and profile')
+    p_rds = subparsers.add_parser('resolve-domain-skills', help='Resolve skills for domain and profile', allow_abbrev=False)
     p_rds.add_argument('--domain', required=True, help='Domain name (java, javascript)')
     p_rds.add_argument('--profile', required=True, help='Profile name (implementation, testing)')
 
     # --- resolve-workflow-skill-extension ---
     p_rwse = subparsers.add_parser(
-        'resolve-workflow-skill-extension', help='Resolve workflow skill extension for domain and type'
+        'resolve-workflow-skill-extension', help='Resolve workflow skill extension for domain and type', allow_abbrev=False
     )
     p_rwse.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
     p_rwse.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type (outline, triage)')
 
     # --- get-skills-by-profile ---
     p_gsbp = subparsers.add_parser(
-        'get-skills-by-profile', help='Get skills organized by profile for architecture enrichment'
+        'get-skills-by-profile', help='Get skills organized by profile for architecture enrichment', allow_abbrev=False
     )
     p_gsbp.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
 
     # --- configure-execute-task-skills ---
     subparsers.add_parser(
-        'configure-execute-task-skills', help='Configure execute-task skills from discovered profiles'
+        'configure-execute-task-skills', help='Configure execute-task skills from discovered profiles', allow_abbrev=False
     )
 
     # --- resolve-execute-task-skill ---
-    p_rte = subparsers.add_parser('resolve-execute-task-skill', help='Resolve execute-task skill for a profile')
+    p_rte = subparsers.add_parser('resolve-execute-task-skill', help='Resolve execute-task skill for a profile', allow_abbrev=False)
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
     # --- list-recipes ---
-    subparsers.add_parser('list-recipes', help='List all available recipes from configured domains')
+    subparsers.add_parser('list-recipes', help='List all available recipes from configured domains', allow_abbrev=False)
 
     # --- resolve-recipe ---
-    p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key')
+    p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key', allow_abbrev=False)
     p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
 
     # --- resolve-outline-skill ---
-    p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain')
+    p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False)
     p_ros.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
 
     # --- list-finalize-steps ---
-    subparsers.add_parser('list-finalize-steps', help='List all available finalize steps')
+    subparsers.add_parser('list-finalize-steps', help='List all available finalize steps', allow_abbrev=False)
 
     # --- list-verify-steps ---
-    subparsers.add_parser('list-verify-steps', help='List all available verify steps')
+    subparsers.add_parser('list-verify-steps', help='List all available verify steps', allow_abbrev=False)
 
     args = parser.parse_args()
 

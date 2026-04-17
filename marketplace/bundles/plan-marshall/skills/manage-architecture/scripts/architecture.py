@@ -11,7 +11,9 @@ from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Architecture analysis and enrichment operations')
+    parser = argparse.ArgumentParser(
+        description='Architecture analysis and enrichment operations', allow_abbrev=False
+    )
     parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
     subparsers = parser.add_subparsers(dest='command', required=True)
 
@@ -20,11 +22,11 @@ def main() -> int:
     # =========================================================================
 
     # discover - Run extension API discovery
-    discover_parser = subparsers.add_parser('discover', help='Run extension API discovery')
+    discover_parser = subparsers.add_parser('discover', help='Run extension API discovery', allow_abbrev=False)
     discover_parser.add_argument('--force', action='store_true', help='Overwrite existing derived-data.json')
 
     # init - Initialize enrichment file
-    init_parser = subparsers.add_parser('init', help='Initialize llm-enriched.json from derived data')
+    init_parser = subparsers.add_parser('init', help='Initialize llm-enriched.json from derived data', allow_abbrev=False)
     init_parser.add_argument('--check', action='store_true', help='Check if enrichment file exists, output status only')
     init_parser.add_argument('--force', action='store_true', help='Overwrite existing llm-enriched.json')
 
@@ -33,10 +35,12 @@ def main() -> int:
     # =========================================================================
 
     # derived - Read raw discovered data for all modules
-    subparsers.add_parser('derived', help='Read raw discovered data for all modules')
+    subparsers.add_parser('derived', help='Read raw discovered data for all modules', allow_abbrev=False)
 
     # derived-module - Read raw discovered data for single module
-    derived_module_parser = subparsers.add_parser('derived-module', help='Read raw discovered data for a single module')
+    derived_module_parser = subparsers.add_parser(
+        'derived-module', help='Read raw discovered data for a single module', allow_abbrev=False
+    )
     derived_module_parser.add_argument('--name', required=True, help='Module name')
 
     # =========================================================================
@@ -44,10 +48,10 @@ def main() -> int:
     # =========================================================================
 
     # info - Project summary
-    subparsers.add_parser('info', help='Get project summary with metadata and module overview')
+    subparsers.add_parser('info', help='Get project summary with metadata and module overview', allow_abbrev=False)
 
     # modules - List module names
-    modules_parser = subparsers.add_parser('modules', help='List available module names')
+    modules_parser = subparsers.add_parser('modules', help='List available module names', allow_abbrev=False)
     modules_parser.add_argument(
         '--command',
         dest='filter_command',  # Avoid collision with subparser dest='command'
@@ -55,36 +59,46 @@ def main() -> int:
     )
 
     # graph - Get module dependency graph
-    graph_parser = subparsers.add_parser('graph', help='Get complete internal module dependency graph')
+    graph_parser = subparsers.add_parser(
+        'graph', help='Get complete internal module dependency graph', allow_abbrev=False
+    )
     graph_parser.add_argument('--full', action='store_true', help='Include aggregator modules (pom-only parents)')
 
     # module - Get module information
-    module_parser = subparsers.add_parser('module', help='Get module information')
+    module_parser = subparsers.add_parser('module', help='Get module information', allow_abbrev=False)
     module_parser.add_argument('--name', help='Module name (default: root module)')
     module_parser.add_argument(
         '--full', action='store_true', help='Include all fields (packages, dependencies, reasoning)'
     )
 
     # commands - List commands for module
-    commands_parser = subparsers.add_parser('commands', help='List available commands for a module')
+    commands_parser = subparsers.add_parser(
+        'commands', help='List available commands for a module', allow_abbrev=False
+    )
     commands_parser.add_argument('--name', help='Module name (default: root module)')
 
     # resolve - Resolve command to executable
-    resolve_parser = subparsers.add_parser('resolve', help='Resolve command to executable form')
+    resolve_parser = subparsers.add_parser('resolve', help='Resolve command to executable form', allow_abbrev=False)
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
     resolve_parser.add_argument('--name', help='Module name (default: root module)')
 
     # siblings - Find sibling virtual modules
-    siblings_parser = subparsers.add_parser('siblings', help='Find sibling virtual modules for a given module')
+    siblings_parser = subparsers.add_parser(
+        'siblings', help='Find sibling virtual modules for a given module', allow_abbrev=False
+    )
     siblings_parser.add_argument('--name', required=True, help='Module name')
 
     # suggest-domains - Suggest applicable skill domains for a module
-    suggest_parser = subparsers.add_parser('suggest-domains', help='Suggest applicable skill domains for a module')
+    suggest_parser = subparsers.add_parser(
+        'suggest-domains', help='Suggest applicable skill domains for a module', allow_abbrev=False
+    )
     suggest_parser.add_argument('--module', required=True, help='Module name')
 
     # profiles - Extract unique profiles from modules
     profiles_parser = subparsers.add_parser(
-        'profiles', help='Extract unique profile keys from skills_by_profile for modules'
+        'profiles',
+        help='Extract unique profile keys from skills_by_profile for modules',
+        allow_abbrev=False,
     )
     profiles_parser.add_argument(
         '--modules', help='Comma-separated module names (default: all modules with enrichment)'
@@ -94,18 +108,22 @@ def main() -> int:
     # Enrich Commands (Write Enrichment)
     # =========================================================================
 
-    enrich_parser = subparsers.add_parser('enrich', help='Enrichment commands')
+    enrich_parser = subparsers.add_parser('enrich', help='Enrichment commands', allow_abbrev=False)
     enrich_subparsers = enrich_parser.add_subparsers(dest='enrich_command', required=True)
 
     # enrich project
-    enrich_project_parser = enrich_subparsers.add_parser('project', help='Update project description')
+    enrich_project_parser = enrich_subparsers.add_parser(
+        'project', help='Update project description', allow_abbrev=False
+    )
     enrich_project_parser.add_argument('--description', required=True, help='Project description (1-2 sentences)')
     enrich_project_parser.add_argument(
         '--reasoning', help='Source/rationale for the description (e.g., "Derived from README.md first paragraph")'
     )
 
     # enrich module
-    enrich_module_parser = enrich_subparsers.add_parser('module', help='Update module responsibility and purpose')
+    enrich_module_parser = enrich_subparsers.add_parser(
+        'module', help='Update module responsibility and purpose', allow_abbrev=False
+    )
     enrich_module_parser.add_argument('--name', required=True, help='Module name')
     enrich_module_parser.add_argument('--responsibility', required=True, help='Module description (1-3 sentences)')
     enrich_module_parser.add_argument('--purpose', help='Module classification (library, extension, deployment, etc.)')
@@ -120,7 +138,9 @@ def main() -> int:
     )
 
     # enrich package
-    enrich_package_parser = enrich_subparsers.add_parser('package', help='Add or update key package description')
+    enrich_package_parser = enrich_subparsers.add_parser(
+        'package', help='Add or update key package description', allow_abbrev=False
+    )
     enrich_package_parser.add_argument('--module', required=True, help='Module name')
     enrich_package_parser.add_argument('--package', required=True, help='Full package name')
     enrich_package_parser.add_argument('--description', required=True, help='Package description (1-2 sentences)')
@@ -130,7 +150,9 @@ def main() -> int:
 
     # enrich skills-by-profile
     enrich_skills_bp_parser = enrich_subparsers.add_parser(
-        'skills-by-profile', help='Update skills organized by profile (for architecture enrichment)'
+        'skills-by-profile',
+        help='Update skills organized by profile (for architecture enrichment)',
+        allow_abbrev=False,
     )
     enrich_skills_bp_parser.add_argument('--module', required=True, help='Module name')
     enrich_skills_bp_parser.add_argument(
@@ -139,30 +161,40 @@ def main() -> int:
     enrich_skills_bp_parser.add_argument('--reasoning', help='Selection rationale for the skill domains')
 
     # enrich dependencies
-    enrich_deps_parser = enrich_subparsers.add_parser('dependencies', help='Update key and internal dependencies')
+    enrich_deps_parser = enrich_subparsers.add_parser(
+        'dependencies', help='Update key and internal dependencies', allow_abbrev=False
+    )
     enrich_deps_parser.add_argument('--module', required=True, help='Module name')
     enrich_deps_parser.add_argument('--key', help='Comma-separated key external dependencies')
     enrich_deps_parser.add_argument('--internal', help='Comma-separated internal module dependencies')
     enrich_deps_parser.add_argument('--reasoning', help='Filtering rationale for key dependencies')
 
     # enrich tip
-    enrich_tip_parser = enrich_subparsers.add_parser('tip', help='Add implementation tip to a module')
+    enrich_tip_parser = enrich_subparsers.add_parser(
+        'tip', help='Add implementation tip to a module', allow_abbrev=False
+    )
     enrich_tip_parser.add_argument('--module', required=True, help='Module name')
     enrich_tip_parser.add_argument('--tip', required=True, help='Implementation tip')
 
     # enrich insight
-    enrich_insight_parser = enrich_subparsers.add_parser('insight', help='Add learned insight to a module')
+    enrich_insight_parser = enrich_subparsers.add_parser(
+        'insight', help='Add learned insight to a module', allow_abbrev=False
+    )
     enrich_insight_parser.add_argument('--module', required=True, help='Module name')
     enrich_insight_parser.add_argument('--insight', required=True, help='Learned insight from implementation')
 
     # enrich best-practice
-    enrich_bp_parser = enrich_subparsers.add_parser('best-practice', help='Add best practice to a module')
+    enrich_bp_parser = enrich_subparsers.add_parser(
+        'best-practice', help='Add best practice to a module', allow_abbrev=False
+    )
     enrich_bp_parser.add_argument('--module', required=True, help='Module name')
     enrich_bp_parser.add_argument('--practice', required=True, help='Established best practice')
 
     # enrich add-domain
     enrich_add_domain_parser = enrich_subparsers.add_parser(
-        'add-domain', help="Add a domain's skills to a module additively"
+        'add-domain',
+        help="Add a domain's skills to a module additively",
+        allow_abbrev=False,
     )
     enrich_add_domain_parser.add_argument('--module', required=True, help='Module name')
     enrich_add_domain_parser.add_argument('--domain', required=True, help='Domain key (e.g., java, general-dev)')
@@ -176,7 +208,9 @@ def main() -> int:
 
     # enrich all
     enrich_all_parser = enrich_subparsers.add_parser(
-        'all', help='Populate skills_by_profile for every module x every applicable extension'
+        'all',
+        help='Populate skills_by_profile for every module x every applicable extension',
+        allow_abbrev=False,
     )
     enrich_all_parser.add_argument(
         '--include-optionals', dest='include_optionals', action='store_true', help='Include optional skills'
