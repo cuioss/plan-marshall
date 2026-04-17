@@ -259,7 +259,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 │  INVOCATION: Skill loaded directly in main context                             │
-│  SKILL: plan-marshall:phase-5-execute → task-executor (profile-based dispatch) │
+│  SKILL: plan-marshall:phase-5-execute → execute-task (profile-based dispatch)  │
 │                                                                             │
 │  EXECUTION LOOP:                                                            │
 │  ───────────────                                                            │

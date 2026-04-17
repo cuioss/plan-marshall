@@ -169,7 +169,7 @@ Follows common workflow pattern. See [standards/doctor-commands.md](standards/do
 
 ## Workflow 3: doctor-skills
 
-Follows common workflow pattern. See [standards/doctor-skills.md](standards/doctor-skills.md) for enforcement block, keyword, and foundation skill validations.
+Follows common workflow pattern. See [standards/doctor-skills.md](standards/doctor-skills.md) for enforcement block, foundation skill, and skill-naming-noun-suffix validations.
 
 ## Workflow 4: doctor-metadata
 

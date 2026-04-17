@@ -407,7 +407,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   skill-domains configure --domains "{comma,separated,keys}"
 ```
 
-This populates `skill_domains` in marshal.json with: the `system` domain (always) with task_executors, each selected domain with bundle reference and workflow_skill_extensions (outline, triage), and domain verification steps from `provides_verify_steps()` auto-persisted to `plan.phase-5-execute.verification_domain_steps`.
+This populates `skill_domains` in marshal.json with: the `system` domain (always) with execute_task_skills, each selected domain with bundle reference and workflow_skill_extensions (outline, triage), and domain verification steps from `provides_verify_steps()` auto-persisted to `plan.phase-5-execute.verification_domain_steps`.
 
 **Step 11e: Configure Active Profiles**
 
@@ -420,16 +420,16 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ---
 
-**Step 11f: Configure Task Executors**
+**Step 11f: Configure Execute-Task Skills**
 
 Map profile values to workflow skills that execute tasks of that profile:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  configure-task-executors
+  configure-execute-task-skills
 ```
 
-This auto-discovers profiles from configured domains and registers the unified `plan-marshall:task-executor` skill for each profile. New profiles are added by extending `skills_by_profile` in the domain `extension.py` and re-running `/marshall-steward`.
+This auto-discovers profiles from configured domains and registers the unified `plan-marshall:execute-task` skill for each profile. New profiles are added by extending `skills_by_profile` in the domain `extension.py` and re-running `/marshall-steward`.
 
 ---
 
@@ -498,13 +498,13 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture e
 
 ## Step 12: Verify Skill Domain Configuration
 
-Skill domains configure which implementation skills are loaded during plan execution. The `system` domain holds task_executors (profile -> skill); technical domains hold bundle reference and workflow_skill_extensions (outline, triage).
+Skill domains configure which implementation skills are loaded during plan execution. The `system` domain holds execute_task_skills (profile -> skill); technical domains hold bundle reference and workflow_skill_extensions (outline, triage).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-domains list
 ```
 
-Confirm that `system` has `task_executors` populated and each technical domain has a `bundle` reference. Profiles (core, implementation, module_testing, etc.) are loaded at runtime from `extension.py`.
+Confirm that `system` has `execute_task_skills` populated and each technical domain has a `bundle` reference. Profiles (core, implementation, module_testing, etc.) are loaded at runtime from `extension.py`.
 
 ---
 

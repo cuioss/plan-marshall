@@ -57,7 +57,7 @@ Used by `get-extensions` and `set-extensions`:
 
 ### configure Notes
 
-- Always configures the `system` domain with task_executors
+- Always configures the `system` domain with execute_task_skills
 - Applies domain templates for each selected domain
 - Collects verify steps from domain extensions via `provides_verify_steps()`
 
@@ -70,12 +70,12 @@ Used by `get-extensions` and `set-extensions`:
 | `resolve-workflow-skill-extension` | `--domain`, `--type` | Resolve domain-specific workflow skill extension (returns `null` if not found) |
 | `resolve-domain-skills` | `--domain`, `--profile` | Resolve all skills for domain + profile (core + profile skills) |
 | `get-skills-by-profile` | `--domain` | Get skills organized by profile for a domain |
-| `configure-task-executors` | -- | Auto-discover profiles and register task executors |
-| `resolve-task-executor` | `--profile` | Resolve task executor skill for a profile |
+| `configure-execute-task-skills` | -- | Auto-discover profiles and register execute-task skills |
+| `resolve-execute-task-skill` | `--profile` | Resolve execute-task skill for a profile |
 
 ### Profiles
 
-Used by `resolve-domain-skills` and `resolve-task-executor`: `implementation`, `module_testing`, `integration_testing`, `quality`
+Used by `resolve-domain-skills` and `resolve-execute-task-skill`: `implementation`, `module_testing`, `integration_testing`, `quality`
 
 ### Example: resolve-domain-skills
 
@@ -86,13 +86,13 @@ manage-config resolve-domain-skills \
 
 Returns `defaults` and `optionals` arrays with skill references and descriptions.
 
-### Example: configure-task-executors
+### Example: configure-execute-task-skills
 
 ```bash
-manage-config configure-task-executors
+manage-config configure-execute-task-skills
 ```
 
-Convention: profile X maps to skill `plan-marshall:task-X`.
+Convention: profile X maps to skill `plan-marshall:execute-task-X`.
 
 ### resolve-workflow-skill-extension Notes
 
