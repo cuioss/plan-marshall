@@ -315,7 +315,7 @@ def touch_verified_at(skill: str, scope: str = 'global',
     No-op if the credential file does not exist.
     """
     data = load_credential(skill, scope, project_name)
-    if data is None:
+    if not isinstance(data, dict):
         return
     data['verified_at'] = datetime.now(UTC).isoformat()
     save_credential(skill, data, scope, project_name)

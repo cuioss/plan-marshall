@@ -414,7 +414,10 @@ def _snapshot_real_paths() -> tuple[float | None, list[str]]:
     except FileNotFoundError:
         mtime = None
     try:
-        creds = sorted(p.name for p in _REAL_CREDENTIALS_DIR.iterdir())
+        creds = sorted(
+            str(p.relative_to(_REAL_CREDENTIALS_DIR))
+            for p in _REAL_CREDENTIALS_DIR.rglob('*')
+        )
     except FileNotFoundError:
         creds = []
     return mtime, creds

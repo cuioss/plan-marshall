@@ -19,6 +19,8 @@ def _read_entry(path, scope: str) -> dict | None:
         data = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(data, dict):
+        return None
 
     skill = data.get('skill') or path.stem
     return {
@@ -51,8 +53,10 @@ def run_list(args) -> int:
     if scope in ('global', 'all'):
         entries.extend(_scan_dir(CREDENTIALS_DIR, 'global'))
     if scope in ('project', 'all'):
-        project_dir = CREDENTIALS_DIR / get_project_name()
-        entries.extend(_scan_dir(project_dir, 'project'))
+        project_name = get_project_name()
+        if project_name:
+            project_dir = CREDENTIALS_DIR / project_name
+            entries.extend(_scan_dir(project_dir, 'project'))
 
     entries.sort(key=lambda e: (e['scope'], e['skill']))
 
