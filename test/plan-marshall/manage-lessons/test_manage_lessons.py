@@ -40,6 +40,27 @@ cmd_list = _mod.cmd_list
 cmd_update = _mod.cmd_update
 cmd_convert_to_plan = _mod.cmd_convert_to_plan
 cmd_from_error = _mod.cmd_from_error
+get_next_id = _mod.get_next_id
+
+
+class _FakeDatetime:
+    """Stand-in for ``datetime.datetime`` that returns a fixed aware ``now()``.
+
+    The module under test calls ``datetime.now().astimezone()`` at the module
+    level import ``from datetime import UTC, datetime``. Tests monkeypatch
+    ``_mod.datetime`` with this fake so ID generation becomes deterministic
+    regardless of the host timezone or wall clock.
+    """
+
+    def __init__(self, fixed_now):
+        self._fixed_now = fixed_now
+
+    def now(self, tz=None):  # noqa: D401 - mirrors datetime API
+        if tz is None:
+            # Strip tzinfo to mimic the naive ``datetime.now()`` behaviour so
+            # the subsequent ``.astimezone()`` call attaches the local tz.
+            return self._fixed_now.replace(tzinfo=None)
+        return self._fixed_now.astimezone(tz)
 
 
 # =============================================================================
@@ -494,6 +515,162 @@ class TestCmdFromError:
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_json'
+
+
+# =============================================================================
+# Tier 2: get_next_id (hour-aware ID generation)
+# =============================================================================
+
+
+class TestGetNextIdHourAware:
+    """Deterministic tests for hour-aware ID generation in ``get_next_id``."""
+
+    def test_get_next_id_resets_per_hour(self, tmp_path, monkeypatch):
+        """Counter must reset to 001 when the hour changes.
+
+        Seeds the lessons dir with a lesson from hour 01, freezes ``datetime.now``
+        to a local-aware instant at ``2025-01-01 02:15:00``, then asserts that
+        ``get_next_id`` returns ``2025-01-01-02-001`` — the hour prefix rolls
+        forward and the sequence number resets because no prior lesson exists
+        for hour 02.
+        """
+        from datetime import datetime as real_datetime
+
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        # Legacy-format-for-hour-scheme fixture from hour 01.
+        (lessons_dir / '2025-01-01-01-001.md').write_text(
+            'id=2025-01-01-01-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# seed\n'
+        )
+
+        frozen = real_datetime(2025, 1, 1, 2, 15, 0)
+        monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            next_id = get_next_id()
+
+        assert next_id == '2025-01-01-02-001'
+
+    def test_get_next_id_increments_within_same_hour(self, tmp_path, monkeypatch):
+        """Sequence number must increment when multiple lessons share an hour."""
+        from datetime import datetime as real_datetime
+
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        (lessons_dir / '2025-01-01-02-001.md').write_text(
+            'id=2025-01-01-02-001\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# seed\n'
+        )
+
+        frozen = real_datetime(2025, 1, 1, 2, 30, 0)
+        monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            next_id = get_next_id()
+
+        assert next_id == '2025-01-01-02-002'
+
+    def test_get_next_id_ignores_legacy_ids_when_computing_hour_sequence(self, tmp_path, monkeypatch):
+        """Legacy ``YYYY-MM-DD-NNN`` files must not collide with a new hour prefix.
+
+        Seeds a legacy lesson ``2025-01-01-005.md`` (no hour segment), freezes
+        ``now`` to hour 03, and asserts ``get_next_id`` returns ``2025-01-01-03-001``
+        rather than reading the legacy counter. The legacy file must remain
+        on disk untouched — this test only covers the generation path.
+        """
+        from datetime import datetime as real_datetime
+
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        legacy_path = lessons_dir / '2025-01-01-005.md'
+        legacy_content = (
+            'id=2025-01-01-005\ncomponent=x\ncategory=bug\ncreated=2025-01-01\n\n# legacy seed\n'
+        )
+        legacy_path.write_text(legacy_content)
+
+        frozen = real_datetime(2025, 1, 1, 3, 0, 0)
+        monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            next_id = get_next_id()
+
+        assert next_id == '2025-01-01-03-001'
+        # Legacy file remains readable and untouched.
+        assert legacy_path.exists()
+        assert legacy_path.read_text() == legacy_content
+
+
+# =============================================================================
+# Tier 2: legacy-format compatibility (read paths)
+# =============================================================================
+
+
+class TestLegacyFormatCompatibility:
+    """Legacy ``YYYY-MM-DD-NNN`` lessons must remain readable through read APIs."""
+
+    def test_legacy_ids_remain_readable_and_listable(self, tmp_path):
+        """``cmd_get`` and ``cmd_list`` must surface legacy-format lessons.
+
+        Seeds the lessons dir with a legacy ``2025-01-01-001.md`` fixture (the
+        pre-hour-aware filename layout) and asserts:
+
+        * ``cmd_get(id='2025-01-01-001')`` returns ``status: success`` and
+          surfaces the metadata fields intact.
+        * ``cmd_list`` enumerates the legacy entry alongside any hour-aware
+          entries and does not drop it.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        legacy_content = """id=2025-01-01-001
+component=legacy-component
+category=improvement
+created=2025-01-01
+
+# Legacy Lesson Title
+
+Legacy body content.
+"""
+        (lessons_dir / '2025-01-01-001.md').write_text(legacy_content)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            get_result = cmd_get(Namespace(id='2025-01-01-001'))
+            list_result = cmd_list(Namespace(component=None, category=None, full=False))
+
+        # cmd_get surfaces the legacy entry with full metadata.
+        assert get_result['status'] == 'success'
+        assert get_result['id'] == '2025-01-01-001'
+        assert get_result['component'] == 'legacy-component'
+        assert get_result['category'] == 'improvement'
+        assert get_result['title'] == 'Legacy Lesson Title'
+
+        # cmd_list enumerates the legacy file.
+        assert list_result['status'] == 'success'
+        assert list_result['total'] == 1
+        assert list_result['filtered'] == 1
+        listed_ids = [entry['id'] for entry in list_result['lessons']]
+        assert '2025-01-01-001' in listed_ids
+
+    def test_legacy_and_hour_aware_ids_coexist_in_list(self, tmp_path):
+        """``cmd_list`` must enumerate both legacy and hour-aware lessons together."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        (lessons_dir / '2025-01-01-001.md').write_text(
+            'id=2025-01-01-001\ncomponent=a\ncategory=bug\ncreated=2025-01-01\n\n# Legacy\n'
+        )
+        (lessons_dir / '2025-01-01-02-001.md').write_text(
+            'id=2025-01-01-02-001\ncomponent=b\ncategory=bug\ncreated=2025-01-01\n\n# Hour-aware\n'
+        )
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, full=False))
+
+        assert result['status'] == 'success'
+        assert result['total'] == 2
+        assert result['filtered'] == 2
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert '2025-01-01-001' in listed_ids
+        assert '2025-01-01-02-001' in listed_ids
 
 
 # =============================================================================
