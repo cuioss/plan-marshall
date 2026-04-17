@@ -1,6 +1,6 @@
 # Finalize Output Template
 
-Defines how `phase-6-finalize` renders its final user-facing output as a fixed three-block template: **Headline + Deliverables + Vertical steps** closed by a one-line **Repository** trailer. The renderer runs as the terminal action of the phase, after `default:archive-plan` returns. It is NOT a configurable step in the `steps` list — it always runs.
+Defines how `phase-6-finalize` renders its final user-facing output as a fixed five-block template: **Headline + Goal + Deliverables + Finalize steps** closed by a one-line **Repository** trailer. The renderer runs as the terminal action of the phase, after `default:archive-plan` returns. It is NOT a configurable step in the `steps` list — it always runs.
 
 The renderer is a pure assembler: it never invents per-step content. Each finalize step authors its own one-line `display_detail` string at `mark-step-done` time; the renderer only concatenates those strings against the configured step order.
 
@@ -8,6 +8,9 @@ The renderer is a pure assembler: it never invents per-step content. Each finali
 
 ```
 [TOKEN] PR #{n} -- {N} deliverable(s) shipped, {state summary}
+
+Goal
+  {summary}
 
 Deliverables ({N_done}/{N_total})
   [OK]  1. {deliverable 1 title}
@@ -35,6 +38,7 @@ Placeholder glossary:
 - `{N}` / `{N_done}` / `{N_total}` — integer counts
 - `{commit_hash}` — short hash (7 chars) returned by `commit-push`
 - `{archive_path}` — relative path returned by `default:archive-plan`
+- `{summary}` — the 2-3 sentence Summary body from `solution_outline.md`, wrapped to ~78 chars with a 2-space indent. When the Summary is missing or empty, the renderer substitutes the literal placeholder `(no summary recorded)`.
 - All remaining `{...}` values come verbatim from each step's `display_detail`
 
 ## Headline Token Rules
@@ -117,6 +121,15 @@ Capture the following into in-memory state (no work file is written):
 
    Capture current branch name and the raw porcelain output (empty string == clean).
 
+6. **Solution outline Summary** — the 2-3 sentence Summary body that feeds the Goal block.
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read \
+     --plan-id {plan_id} --section summary
+   ```
+
+   Extract the `content` field on success. On `section_not_found` or empty content, store the sentinel value `None` — the emission procedure substitutes the defensive placeholder. This read MUST happen BEFORE `default:archive-plan` runs, because archive moves `solution_outline.md` into the archived-plans directory.
+
 Keep this snapshot in model context. It is passed to the emission procedure AFTER `default:archive-plan` returns.
 
 ## Emission Procedure
@@ -146,7 +159,22 @@ Walk the precedence chain:
 
 No commit hashes appear in the headline — they live inline with the `commit-push` row.
 
-### 3. Build deliverables block
+### 3. Build Goal block
+
+Header literal: `Goal` (no trailing colon). Follow the literal `Goal` line with a single blank line, then the Summary text wrapped to ~78 chars with a 2-space indent on every wrapped line.
+
+Wrap implementation guidance: use Python's `textwrap.fill(summary, width=78, initial_indent='  ', subsequent_indent='  ', break_long_words=False, break_on_hyphens=False)` or the equivalent — preserve URLs and long identifiers intact rather than splitting mid-token.
+
+Defensive fallback: when the snapshot captured `None` or an empty string for Summary (sentinel emitted by the Snapshot Procedure when `section_not_found` or empty content is returned), emit the literal placeholder so the block remains valid:
+
+```
+Goal
+  (no summary recorded)
+```
+
+ASCII only — no unicode glyphs, no emoji, no box-drawing characters in the Goal block. This matches the rest of the template's aesthetic.
+
+### 4. Build deliverables block
 
 Header: `Deliverables ({N_done}/{N_total})`
 
@@ -165,7 +193,7 @@ Icon resolution:
 
 Deliverable numbering starts at `1.` and pads width to accommodate up to 99 deliverables (`" 1."` vs `"10."`).
 
-### 4. Build finalize steps block
+### 5. Build finalize steps block
 
 Header: `Finalize steps ({N_done}/{N_total} done)` where `N_total` = count of configured steps and `N_done` = count with `outcome == done`.
 
@@ -179,7 +207,7 @@ Iterate the configured `steps` list in order. For each step, emit:
 - `{display_detail}` = the verbatim detail string authored by the step. If `display_detail` is missing or empty, emit the literal placeholder `<missing display_detail>` (this is a contract violation and should be surfaced).
 - Two spaces separate the icon from the step name; two spaces separate the padded name from the detail.
 
-### 5. Build repository trailer
+### 6. Build repository trailer
 
 One line, joined by ` | ` (space pipe space):
 
@@ -189,12 +217,14 @@ Repository: {main state} | {worktree token?} | {working tree state}
 
 See "Repository Trailer Rules" below.
 
-### 6. Emit
+### 7. Emit
 
-Print the four blocks separated by blank lines:
+Print the five blocks separated by blank lines:
 
 ```
 {headline}
+
+{goal block}
 
 {deliverables block}
 

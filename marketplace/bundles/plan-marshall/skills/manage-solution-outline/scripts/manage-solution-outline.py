@@ -15,7 +15,7 @@ Usage:
 
     python3 manage-solution-outline.py validate --plan-id my-plan
     python3 manage-solution-outline.py list-deliverables --plan-id my-plan
-    python3 manage-solution-outline.py read --plan-id my-plan [--raw]
+    python3 manage-solution-outline.py read --plan-id my-plan [--raw | --section summary | --deliverable-number N]
     python3 manage-solution-outline.py exists --plan-id my-plan
     python3 manage-solution-outline.py get-module-context
 """
@@ -337,6 +337,39 @@ def cmd_read(args) -> dict:
             'available': [d['number'] for d in deliverables],
         }
 
+    # Handle --section: read specific top-level ## section
+    requested_section = getattr(args, 'section', None)
+    if requested_section is not None:
+        normalized = requested_section.strip().lower().replace(' ', '_')
+        sections = parse_document_sections(content)
+        if normalized not in sections:
+            return {
+                'status': 'error',
+                'error': 'section_not_found',
+                'plan_id': args.plan_id,
+                'requested_section': requested_section,
+                'message': f"Section '{requested_section}' not found in {SOLUTION_FILE}",
+            }
+        body = sections[normalized]
+        if getattr(args, 'raw', False):
+            print(body)
+            return {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'file': SOLUTION_FILE,
+                'section': normalized,
+                'requested_section': requested_section,
+                'raw': True,
+            }
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'section': normalized,
+            'requested_section': requested_section,
+            'content': body,
+        }
+
     if getattr(args, 'raw', False):
         print(content)
         return {'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'raw': True}
@@ -561,7 +594,13 @@ def main() -> int:
     read_parser = subparsers.add_parser('read', help='Read solution outline', allow_abbrev=False)
     add_plan_id_arg(read_parser)
     read_parser.add_argument('--raw', action='store_true', help='Output raw content')
-    read_parser.add_argument('--deliverable-number', type=int, help='Read specific deliverable by number')
+    read_selector_group = read_parser.add_mutually_exclusive_group()
+    read_selector_group.add_argument('--deliverable-number', type=int, help='Read specific deliverable by number')
+    read_selector_group.add_argument(
+        '--section',
+        type=str,
+        help='Read a specific top-level ## section by name (case-insensitive, e.g. summary, overview)',
+    )
     read_parser.set_defaults(func=cmd_read)
 
     # exists

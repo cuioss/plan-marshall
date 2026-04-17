@@ -209,11 +209,50 @@ For codebase-wide changes requiring discovery and analysis.
 
 **CRITICAL**: If Complex Track skill workflow fails, do NOT fall back to grep/search. Fail clearly.
 
+- Domain-specific ext-outline-workflow skills MUST emit `**Intent gloss:**` per the deliverable template when a deliverable title contains a compound word whose head morpheme is a planning-domain verb (review, check, validate, approve, merge, …). The gloss is a single sentence (≤15 words) that restates the deliverable's goal using the tail morpheme's meaning, and phase-4-plan copies it verbatim into every derived task.description.
+
 For detailed procedures (skill resolution, change-type loading, solution writing, Q-Gate agent interaction), see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#complex-track-procedures-steps-9-11).
 
 ---
 
 ## Step 12: Write Solution and Return
+
+---
+
+### Deliverable Template (inline reference)
+
+Each deliverable in solution_outline.md MUST follow this field order. The authoritative schema is in `manage-solution-outline/templates/deliverable-template.md`:
+
+```markdown
+### {N}. {Deliverable Title}
+
+**Metadata:**
+- change_type: {feature|enhancement|tech_debt|bug_fix|analysis|verification}
+- execution_mode: {automated|manual|mixed}
+- domain: {domain}
+- module: {module}
+- depends: {none|N|N,M}
+
+**Intent gloss:** {one-sentence disambiguation, max ~15 words — required when title head morpheme is a planning-domain verb (review, check, validate, approve, merge, …)}
+
+**Profiles:**
+- implementation
+- {module_testing - only if this deliverable creates/modifies test files}
+
+**Affected files:**
+- `{explicit/path/to/file1}`
+
+**Change per file:** {what changes}
+
+**Verification:**
+- Command: `{resolved command}`
+- Criteria: {criteria}
+
+**Success Criteria:**
+- {criterion 1}
+```
+
+`**Intent gloss:**` is copied verbatim by phase-4-plan into every derived task.description, so the sentence must stand alone without relying on the surrounding deliverable context.
 
 ---
 

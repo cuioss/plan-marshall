@@ -270,6 +270,8 @@ Use template from `plan-marshall:manage-solution-outline/templates/deliverable-t
 - module: {module}
 - depends: none
 
+**Intent gloss:** {one-sentence disambiguation, max ~15 words — required when title head morpheme is a planning-domain verb (review, check, validate, approve, merge, …)}
+
 **Profiles:**
 - implementation
 - module_testing (only if this deliverable creates/modifies test files)
@@ -288,6 +290,30 @@ Use template from `plan-marshall:manage-solution-outline/templates/deliverable-t
 - {Specific criterion 1}
 - {Specific criterion 2}
 ```
+
+#### Intent gloss for compound-word titles
+
+For each deliverable whose title contains a compound word whose head morpheme is a common planning-domain verb (review, check, validate, approve, merge, …), author a single-sentence `**Intent gloss:**` (≤15 words) that restates the deliverable's goal using the tail morpheme's meaning. This gloss is copied verbatim into every derived task.description by phase-4-plan, preventing compound-word mis-interpretation.
+
+**Worked example** — deliverable titled with compound head verb `review`:
+
+```markdown
+### 1. Add review-knowledge step to phase-6-finalize
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: plan-marshall-plugin-dev
+- module: plan-marshall
+- depends: none
+
+**Intent gloss:** Review knowledge captured by prior plans (lessons-learned and memories) against this plan's changes.
+
+**Profiles:**
+- implementation
+```
+
+Without the gloss, a downstream agent could read `review-knowledge` as "subject one's knowledge to review" rather than the intended "consult existing knowledge before acting". The gloss fixes the head-morpheme ambiguity at the source.
 
 **Resolve verification command** for each deliverable before writing:
 ```bash
