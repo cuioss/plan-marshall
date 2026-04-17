@@ -258,7 +258,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Assert that pytest node identifiers written by the current task "
             "appear in the module-test log. Used by plan-marshall:execute-task "
             "as a structural guardrail against silently-skipped tests."
-        )
+        ),
+        allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest="command_name", required=True)
 
@@ -268,6 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Diff written identifiers against a module-test log and report "
             "the outcome as TOON"
         ),
+        allow_abbrev=False,
     )
     run_parser.add_argument(
         "--identifiers-file",

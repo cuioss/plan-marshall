@@ -158,13 +158,15 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Forward --project-dir to Bucket B execute-script invocations. "
             "Leaves Bucket A and non-executor commands unchanged."
-        )
+        ),
+        allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest="command_name", required=True)
 
     run_parser = subparsers.add_parser(
         "run",
         help="Rewrite a single command and print the result to stdout",
+        allow_abbrev=False,
     )
     run_parser.add_argument(
         "--command",
