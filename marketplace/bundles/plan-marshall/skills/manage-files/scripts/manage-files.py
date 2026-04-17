@@ -217,17 +217,19 @@ def cmd_create_or_reference(args) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Generic file I/O operations for plan directories')
+    parser = argparse.ArgumentParser(
+        description='Generic file I/O operations for plan directories', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # read
-    read_parser = subparsers.add_parser('read', help='Read file content')
+    read_parser = subparsers.add_parser('read', help='Read file content', allow_abbrev=False)
     add_plan_id_arg(read_parser)
     read_parser.add_argument('--file', required=True, help='Relative file path')
     read_parser.set_defaults(func=cmd_read)
 
     # write
-    write_parser = subparsers.add_parser('write', help='Write file content')
+    write_parser = subparsers.add_parser('write', help='Write file content', allow_abbrev=False)
     add_plan_id_arg(write_parser)
     write_parser.add_argument('--file', required=True, help='Relative file path')
     write_parser.add_argument('--content', help='Content to write')
@@ -235,32 +237,34 @@ def main() -> int:
     write_parser.set_defaults(func=cmd_write)
 
     # remove
-    remove_parser = subparsers.add_parser('remove', help='Remove file')
+    remove_parser = subparsers.add_parser('remove', help='Remove file', allow_abbrev=False)
     add_plan_id_arg(remove_parser)
     remove_parser.add_argument('--file', required=True, help='Relative file path')
     remove_parser.set_defaults(func=cmd_remove)
 
     # list
-    list_parser = subparsers.add_parser('list', help='List files')
+    list_parser = subparsers.add_parser('list', help='List files', allow_abbrev=False)
     add_plan_id_arg(list_parser)
     list_parser.add_argument('--dir', help='Subdirectory to list')
     list_parser.set_defaults(func=cmd_list)
 
     # exists
-    exists_parser = subparsers.add_parser('exists', help='Check if file exists')
+    exists_parser = subparsers.add_parser('exists', help='Check if file exists', allow_abbrev=False)
     add_plan_id_arg(exists_parser)
     exists_parser.add_argument('--file', required=True, help='Relative file path')
     exists_parser.set_defaults(func=cmd_exists)
 
     # mkdir
-    mkdir_parser = subparsers.add_parser('mkdir', help='Create subdirectory')
+    mkdir_parser = subparsers.add_parser('mkdir', help='Create subdirectory', allow_abbrev=False)
     add_plan_id_arg(mkdir_parser)
     mkdir_parser.add_argument('--dir', required=True, help='Directory to create')
     mkdir_parser.set_defaults(func=cmd_mkdir)
 
     # create-or-reference
     create_ref_parser = subparsers.add_parser(
-        'create-or-reference', help='Create plan directory or reference existing one'
+        'create-or-reference',
+        help='Create plan directory or reference existing one',
+        allow_abbrev=False,
     )
     add_plan_id_arg(create_ref_parser)
     create_ref_parser.set_defaults(func=cmd_create_or_reference)

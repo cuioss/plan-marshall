@@ -422,12 +422,14 @@ def cmd_analyze(args) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description='JSDoc documentation analysis tool', formatter_class=argparse.RawDescriptionHelpFormatter
+        description='JSDoc documentation analysis tool',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # analyze subcommand
-    analyze_parser = subparsers.add_parser('analyze', help='Analyze JavaScript files for JSDoc compliance violations')
+    analyze_parser = subparsers.add_parser('analyze', help='Analyze JavaScript files for JSDoc compliance violations', allow_abbrev=False)
     group = analyze_parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--directory', help='Directory to scan for JavaScript files')
     group.add_argument('--file', help='Single JavaScript file to analyze')

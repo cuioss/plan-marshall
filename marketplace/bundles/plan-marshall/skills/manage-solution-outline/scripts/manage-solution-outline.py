@@ -15,7 +15,7 @@ Usage:
 
     python3 manage-solution-outline.py validate --plan-id my-plan
     python3 manage-solution-outline.py list-deliverables --plan-id my-plan
-    python3 manage-solution-outline.py read --plan-id my-plan [--raw]
+    python3 manage-solution-outline.py read --plan-id my-plan [--raw | --section summary | --deliverable-number N]
     python3 manage-solution-outline.py exists --plan-id my-plan
     python3 manage-solution-outline.py get-module-context
 """
@@ -337,6 +337,39 @@ def cmd_read(args) -> dict:
             'available': [d['number'] for d in deliverables],
         }
 
+    # Handle --section: read specific top-level ## section
+    requested_section = getattr(args, 'section', None)
+    if requested_section is not None:
+        normalized = requested_section.strip().lower().replace(' ', '_')
+        sections = parse_document_sections(content)
+        if normalized not in sections:
+            return {
+                'status': 'error',
+                'error': 'section_not_found',
+                'plan_id': args.plan_id,
+                'requested_section': requested_section,
+                'message': f"Section '{requested_section}' not found in {SOLUTION_FILE}",
+            }
+        body = sections[normalized]
+        if getattr(args, 'raw', False):
+            print(body)
+            return {
+                'status': 'success',
+                'plan_id': args.plan_id,
+                'file': SOLUTION_FILE,
+                'section': normalized,
+                'requested_section': requested_section,
+                'raw': True,
+            }
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'section': normalized,
+            'requested_section': requested_section,
+            'content': body,
+        }
+
     if getattr(args, 'raw', False):
         print(content)
         return {'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'raw': True}
@@ -544,51 +577,65 @@ def cmd_get_module_context(args) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Manage solution outline documents')
+    parser = argparse.ArgumentParser(description='Manage solution outline documents', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True, help='Command')
 
     # validate
-    validate_parser = subparsers.add_parser('validate', help='Validate solution structure')
+    validate_parser = subparsers.add_parser('validate', help='Validate solution structure', allow_abbrev=False)
     add_plan_id_arg(validate_parser)
     validate_parser.set_defaults(func=cmd_validate)
 
     # list-deliverables
-    list_parser = subparsers.add_parser('list-deliverables', help='Extract deliverables')
+    list_parser = subparsers.add_parser('list-deliverables', help='Extract deliverables', allow_abbrev=False)
     add_plan_id_arg(list_parser)
     list_parser.set_defaults(func=cmd_list_deliverables)
 
     # read
-    read_parser = subparsers.add_parser('read', help='Read solution outline')
+    read_parser = subparsers.add_parser('read', help='Read solution outline', allow_abbrev=False)
     add_plan_id_arg(read_parser)
     read_parser.add_argument('--raw', action='store_true', help='Output raw content')
-    read_parser.add_argument('--deliverable-number', type=int, help='Read specific deliverable by number')
+    read_selector_group = read_parser.add_mutually_exclusive_group()
+    read_selector_group.add_argument('--deliverable-number', type=int, help='Read specific deliverable by number')
+    read_selector_group.add_argument(
+        '--section',
+        type=str,
+        help='Read a specific top-level ## section by name (case-insensitive, e.g. summary, overview)',
+    )
     read_parser.set_defaults(func=cmd_read)
 
     # exists
-    exists_parser = subparsers.add_parser('exists', help='Check if solution exists')
+    exists_parser = subparsers.add_parser('exists', help='Check if solution exists', allow_abbrev=False)
     add_plan_id_arg(exists_parser)
     exists_parser.set_defaults(func=cmd_exists)
 
     # resolve-path
-    resolve_parser = subparsers.add_parser('resolve-path', help='Get target file path for direct Write')
+    resolve_parser = subparsers.add_parser(
+        'resolve-path', help='Get target file path for direct Write', allow_abbrev=False
+    )
     add_plan_id_arg(resolve_parser)
     resolve_parser.set_defaults(func=cmd_resolve_path)
 
     # write
-    write_parser = subparsers.add_parser('write', help='Validate solution outline on disk (written via Write tool)')
+    write_parser = subparsers.add_parser(
+        'write', help='Validate solution outline on disk (written via Write tool)', allow_abbrev=False
+    )
     add_plan_id_arg(write_parser)
     write_parser.add_argument('--force', action='store_true', help='(legacy, ignored)')
     write_parser.set_defaults(func=cmd_write)
 
     # update
     update_parser = subparsers.add_parser(
-        'update', help='Validate updated solution outline on disk (written via Write tool)'
+        'update',
+        help='Validate updated solution outline on disk (written via Write tool)',
+        allow_abbrev=False,
     )
     add_plan_id_arg(update_parser)
     update_parser.set_defaults(func=cmd_update)
 
     # get-module-context
-    context_parser = subparsers.add_parser('get-module-context', help='Get project structure context for placement')
+    context_parser = subparsers.add_parser(
+        'get-module-context', help='Get project structure context for placement', allow_abbrev=False
+    )
     context_parser.set_defaults(func=cmd_get_module_context)
 
     args = parser.parse_args()

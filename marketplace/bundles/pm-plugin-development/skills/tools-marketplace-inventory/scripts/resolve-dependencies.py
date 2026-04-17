@@ -319,7 +319,7 @@ def cmd_validate(
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Resolve dependencies between marketplace components')
+    parser = argparse.ArgumentParser(description='Resolve dependencies between marketplace components', allow_abbrev=False)
     parser.add_argument(
         'subcommand',
         choices=['deps', 'rdeps', 'tree', 'validate'],

@@ -24,11 +24,11 @@ from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Manage references.json files')
+    parser = argparse.ArgumentParser(description='Manage references.json files', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # create
-    create_parser = subparsers.add_parser('create', help='Create references.json')
+    create_parser = subparsers.add_parser('create', help='Create references.json', allow_abbrev=False)
     add_plan_id_arg(create_parser)
     create_parser.add_argument('--branch', required=True, help='Git branch name')
     create_parser.add_argument('--issue-url', help='GitHub issue URL')
@@ -36,44 +36,54 @@ def main() -> int:
     create_parser.add_argument('--domains', help='Comma-separated domain list (e.g., java,documentation)')
 
     # read
-    read_parser = subparsers.add_parser('read', help='Read entire references')
+    read_parser = subparsers.add_parser('read', help='Read entire references', allow_abbrev=False)
     add_plan_id_arg(read_parser)
 
     # get
-    get_parser = subparsers.add_parser('get', help='Get specific field')
+    get_parser = subparsers.add_parser('get', help='Get specific field', allow_abbrev=False)
     add_plan_id_arg(get_parser)
     get_parser.add_argument('--field', required=True, help='Field name')
 
     # set
-    set_parser = subparsers.add_parser('set', help='Set specific field')
+    set_parser = subparsers.add_parser('set', help='Set specific field', allow_abbrev=False)
     add_plan_id_arg(set_parser)
     set_parser.add_argument('--field', required=True, help='Field name')
     set_parser.add_argument('--value', required=True, help='Field value')
 
     # add-file
-    add_file_parser = subparsers.add_parser('add-file', help='Add file to modified_files')
+    add_file_parser = subparsers.add_parser(
+        'add-file', help='Add file to modified_files', allow_abbrev=False
+    )
     add_plan_id_arg(add_file_parser)
     add_file_parser.add_argument('--file', required=True, help='File path to add')
 
     # remove-file
-    remove_file_parser = subparsers.add_parser('remove-file', help='Remove file from modified_files')
+    remove_file_parser = subparsers.add_parser(
+        'remove-file', help='Remove file from modified_files', allow_abbrev=False
+    )
     add_plan_id_arg(remove_file_parser)
     remove_file_parser.add_argument('--file', required=True, help='File path to remove')
 
     # add-list
-    add_list_parser = subparsers.add_parser('add-list', help='Add multiple values to a list field')
+    add_list_parser = subparsers.add_parser(
+        'add-list', help='Add multiple values to a list field', allow_abbrev=False
+    )
     add_plan_id_arg(add_list_parser)
     add_list_parser.add_argument('--field', required=True, help='List field name')
     add_list_parser.add_argument('--values', required=True, help='Comma-separated values to add')
 
     # set-list
-    set_list_parser = subparsers.add_parser('set-list', help='Set a list field (replaces existing)')
+    set_list_parser = subparsers.add_parser(
+        'set-list', help='Set a list field (replaces existing)', allow_abbrev=False
+    )
     add_plan_id_arg(set_list_parser)
     set_list_parser.add_argument('--field', required=True, help='List field name')
     set_list_parser.add_argument('--values', required=True, help='Comma-separated values')
 
     # get-context
-    get_context_parser = subparsers.add_parser('get-context', help='Get all references context in one call')
+    get_context_parser = subparsers.add_parser(
+        'get-context', help='Get all references context in one call', allow_abbrev=False
+    )
     add_plan_id_arg(get_context_parser)
     get_context_parser.add_argument('--include-files', action='store_true', help='Include full file lists in output')
 

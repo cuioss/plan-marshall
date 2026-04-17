@@ -498,11 +498,11 @@ def discover_plugin_modules(project_root: str) -> list:
 @safe_main
 def main() -> int:
     """Main CLI entry point."""
-    parser = argparse.ArgumentParser(description='Plugin bundle discovery')
+    parser = argparse.ArgumentParser(description='Plugin bundle discovery', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # discover subcommand
-    discover_parser = subparsers.add_parser('discover', help='Discover plugin bundles')
+    discover_parser = subparsers.add_parser('discover', help='Discover plugin bundles', allow_abbrev=False)
     discover_parser.add_argument('--root', required=True, help='Project root directory')
 
     args = parser.parse_args()

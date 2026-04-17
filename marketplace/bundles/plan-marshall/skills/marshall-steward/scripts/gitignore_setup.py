@@ -199,7 +199,9 @@ def setup_gitignore(project_root: Path, dry_run: bool = False) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Configure .gitignore for planning system')
+    parser = argparse.ArgumentParser(
+        description='Configure .gitignore for planning system', allow_abbrev=False
+    )
     parser.add_argument(
         '--project-root', type=str, default='.', help='Project root directory (default: current directory)'
     )

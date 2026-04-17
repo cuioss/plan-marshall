@@ -289,23 +289,32 @@ def cmd_check_structure(args: argparse.Namespace) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Plan-marshall helper for mode detection and documentation checks')
+    parser = argparse.ArgumentParser(
+        description='Plan-marshall helper for mode detection and documentation checks',
+        allow_abbrev=False,
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # mode subcommand
-    mode_parser = subparsers.add_parser('mode', help='Determine wizard vs menu mode')
+    mode_parser = subparsers.add_parser('mode', help='Determine wizard vs menu mode', allow_abbrev=False)
     mode_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 
     # check-docs subcommand
-    docs_parser = subparsers.add_parser('check-docs', help='Check if project docs need .plan/temp documentation')
+    docs_parser = subparsers.add_parser(
+        'check-docs', help='Check if project docs need .plan/temp documentation', allow_abbrev=False
+    )
     docs_parser.add_argument('--project-root', type=str, default='.', help='Project root directory (default: .)')
 
     # fix-docs subcommand
-    fix_parser = subparsers.add_parser('fix-docs', help='Deterministically fix missing documentation content')
+    fix_parser = subparsers.add_parser(
+        'fix-docs', help='Deterministically fix missing documentation content', allow_abbrev=False
+    )
     fix_parser.add_argument('--project-root', type=str, default='.', help='Project root directory (default: .)')
 
     # check-structure subcommand
-    structure_parser = subparsers.add_parser('check-structure', help='Check if project-architecture directory exists')
+    structure_parser = subparsers.add_parser(
+        'check-structure', help='Check if project-architecture directory exists', allow_abbrev=False
+    )
     structure_parser.add_argument('--plan-dir', type=str, default='.plan', help='Directory to check (default: .plan)')
 
     args = parser.parse_args()

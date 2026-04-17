@@ -355,6 +355,7 @@ def cmd_next_number(args) -> dict:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
+        allow_abbrev=False,
         description='Manage Interface specifications in doc/interfaces/',
         epilog="""
 Examples:
@@ -382,36 +383,36 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # List command
-    list_parser = subparsers.add_parser('list', help='List all interfaces')
+    list_parser = subparsers.add_parser('list', help='List all interfaces', allow_abbrev=False)
     list_parser.add_argument('--type', choices=VALID_TYPES, help='Filter by type')
     list_parser.set_defaults(func=cmd_list)
 
     # Create command
-    create_parser = subparsers.add_parser('create', help='Create new interface')
+    create_parser = subparsers.add_parser('create', help='Create new interface', allow_abbrev=False)
     create_parser.add_argument('--title', required=True, help='Interface title')
     create_parser.add_argument('--type', required=True, choices=VALID_TYPES, help='Interface type')
     create_parser.set_defaults(func=cmd_create)
 
     # Read command
-    read_parser = subparsers.add_parser('read', help='Read interface content')
+    read_parser = subparsers.add_parser('read', help='Read interface content', allow_abbrev=False)
     read_parser.add_argument('--number', type=int, required=True, help='Interface number')
     read_parser.set_defaults(func=cmd_read)
 
     # Update command
-    update_parser = subparsers.add_parser('update', help='Update interface')
+    update_parser = subparsers.add_parser('update', help='Update interface', allow_abbrev=False)
     update_parser.add_argument('--number', type=int, required=True, help='Interface number')
     update_parser.add_argument('--field', help='Field to update')
     update_parser.add_argument('--value', help='New value')
     update_parser.set_defaults(func=cmd_update)
 
     # Delete command
-    delete_parser = subparsers.add_parser('delete', help='Delete interface')
+    delete_parser = subparsers.add_parser('delete', help='Delete interface', allow_abbrev=False)
     delete_parser.add_argument('--number', type=int, required=True, help='Interface number')
     delete_parser.add_argument('--force', action='store_true', help='Confirm deletion')
     delete_parser.set_defaults(func=cmd_delete)
 
     # Next-number command
-    next_parser = subparsers.add_parser('next-number', help='Get next available number')
+    next_parser = subparsers.add_parser('next-number', help='Get next available number', allow_abbrev=False)
     next_parser.set_defaults(func=cmd_next_number)
 
     args = parser.parse_args()
