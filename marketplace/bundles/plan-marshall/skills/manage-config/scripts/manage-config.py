@@ -96,13 +96,17 @@ def _add_phase_subparser(
         phase_rm_step.add_argument('--step', required=True, help='Step reference to remove')
 
         phase_set_order = phase_sub.add_parser(
-            'set-step-order-override', help='Persist per-step order override for the phase'
+            'set-step-order-override',
+            help='Persist per-step order override for the phase',
+            allow_abbrev=False,
         )
         phase_set_order.add_argument('--step', required=True, help='Step reference')
         phase_set_order.add_argument('--order', required=True, type=int, help='Override order value (int)')
 
         phase_rm_order = phase_sub.add_parser(
-            'remove-step-order-override', help='Remove a previously persisted order override'
+            'remove-step-order-override',
+            help='Remove a previously persisted order override',
+            allow_abbrev=False,
         )
         phase_rm_order.add_argument('--step', required=True, help='Step reference')
 
