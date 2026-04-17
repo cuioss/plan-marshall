@@ -100,6 +100,7 @@ BUILT_IN_FINALIZE_STEPS = [
     'default:commit-push',
     'default:create-pr',
     'default:automated-review',
+    'default:sonar-roundtrip',
     'default:knowledge-capture',
     'default:lessons-capture',
     'default:branch-cleanup',

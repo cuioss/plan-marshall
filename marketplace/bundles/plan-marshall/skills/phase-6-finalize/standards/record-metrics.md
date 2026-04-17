@@ -1,3 +1,9 @@
+---
+name: default:record-metrics
+description: Record final plan metrics before archive
+order: 990
+---
+
 # Record Metrics
 
 Generate the final plan metrics report and emit the `mark-step-done` handshake before the plan is archived. This step is scoped to metrics generation and step-completion bookkeeping only — the consolidated finalize output (step outcomes, end-state verification, and plan-complete summary) is rendered by the dedicated template in `standards/output-template.md`.

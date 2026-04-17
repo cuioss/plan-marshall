@@ -183,6 +183,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-steps --steps {selection}
 ```
 
+Before calling `set-steps` for either phase, run the shared order resolution sub-flow so the command cannot fail with `missing_order` or `order_collision`. See [menu-configuration.md § Order resolution sub-flow](menu-configuration.md#order-resolution-sub-flow) for the full `AskUserQuestion` + `set-step-order-override` prompts.
+
 For max iterations (verification default 5, finalize default 3):
 
 ```bash

@@ -1,3 +1,9 @@
+---
+name: default:automated-review
+description: CI automated review
+order: 30
+---
+
 # Automated Review
 
 Wait for CI, handle review bot comments, and resolve or loop-back on findings.

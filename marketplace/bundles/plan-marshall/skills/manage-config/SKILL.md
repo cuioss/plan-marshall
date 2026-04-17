@@ -120,18 +120,28 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Manage Verification Steps
 
-```bash
-# Add a step to the verification pipeline
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute add-step --step sonar_check --position 2
+`set-steps` and `add-step` resolve each step's `order` (override first, then the value declared in the step's authoritative source) and persist the steps list sorted ascending by that value. They return `error: missing_order` or `error: order_collision` when a step has no resolvable order or two steps share the same value — use `set-step-order-override` to supply or disambiguate values.
 
-# Replace all verification steps
+```bash
+# Add a step — the list is re-sorted by resolved order; --position is ignored by the new flow
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute add-step --step sonar_check
+
+# Replace all verification steps (input order is irrelevant — output is sorted by resolved order)
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set-steps --steps "quality_check,build_verify,sonar_check"
 
 # Remove a step
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute remove-step --step sonar_check
+
+# Persist an order override for a step (e.g., to position an extension step or fix a collision)
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set-step-order-override --step sonar_check --order 25
+
+# Clear a previously persisted override
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute remove-step-order-override --step sonar_check
 ```
 
 ### Resolve Skills for a Domain and Profile
@@ -198,7 +208,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `resolve-execute-task-skill` | `--profile` (resolve execute-task skill for profile) |
 | `ext-defaults` | get, set, set-default, list, remove |
 | `system` | retention get, retention set |
-| `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations |
+| `plan` | `{phase} get/set`, set-steps, add-step, remove-step, set-max-iterations, set-step-order-override, remove-step-order-override |
 | `ci` | get, get-provider, get-tools, get-command, set-provider, set-tools, persist |
 | `init` | Initialize marshal.json (with optional `--force`) |
 

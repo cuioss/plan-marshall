@@ -9,9 +9,11 @@ Tier 2 (direct import) tests with subprocess tests for CLI plumbing.
 
 import importlib.util
 import json
+import os
 import sys
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import patch
 
 from test_helpers import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json, patch_config_paths
 
@@ -1029,6 +1031,89 @@ def test_list_verify_steps_discovers_project_skills():
         assert result.success, f'Should succeed: {result.stderr}'
         assert 'project:verify-step-hello-world' in result.stdout
         assert 'Hello World' in result.stdout
+
+
+# =============================================================================
+# Order field discovery tests (deliverable 5)
+# =============================================================================
+
+
+def _run_verify_discovery_in_cwd(cwd: Path) -> list[dict]:
+    """Invoke _discover_all_verify_steps() with cwd switched to ``cwd``.
+
+    Parallels ``_run_discovery_in_cwd`` in test_cmd_skill_resolution.py but targets
+    verify-step discovery. Discovery scans ``.claude/skills/`` relative to the
+    process cwd, so tests needing custom project-level layouts must chdir into an
+    isolated temp directory.
+    """
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(cwd)
+        return _cmd_skill_domains._discover_all_verify_steps()
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_list_verify_steps_builtins_have_order(tmp_path):
+    """Built-in verify steps carry order values parsed from standards/*.md frontmatter."""
+    with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]):
+        steps = _run_verify_discovery_in_cwd(tmp_path)
+
+    by_name = {s['name']: s for s in steps if s['source'] == 'built-in'}
+    assert by_name['default:quality_check']['order'] == 10
+    assert by_name['default:build_verify']['order'] == 20
+    assert by_name['default:coverage_check']['order'] == 30
+
+
+def test_list_verify_steps_project_skill_order_from_frontmatter(tmp_path):
+    """Project verify-step-* skills expose the `order` declared in their SKILL.md."""
+    skill_dir = tmp_path / '.claude' / 'skills' / 'verify-step-custom'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text(
+        '---\nname: verify-step-custom\ndescription: Custom\norder: 150\n---\n\n# Custom\n'
+    )
+
+    with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]):
+        steps = _run_verify_discovery_in_cwd(tmp_path)
+
+    custom = next(s for s in steps if s['name'] == 'project:verify-step-custom')
+    assert custom['order'] == 150
+
+
+def test_list_verify_steps_project_skill_without_order_returns_none(tmp_path):
+    """Project verify-step-* skill without `order` frontmatter exposes order: None."""
+    skill_dir = tmp_path / '.claude' / 'skills' / 'verify-step-bare'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text(
+        '---\nname: verify-step-bare\ndescription: Bare\n---\n\n# Bare\n'
+    )
+
+    with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=[]):
+        steps = _run_verify_discovery_in_cwd(tmp_path)
+
+    bare = next(s for s in steps if s['name'] == 'project:verify-step-bare')
+    assert bare['order'] is None
+
+
+def test_list_verify_steps_extension_order_from_return_dict(tmp_path):
+    """Extension-contributed verify steps propagate the `order` field from the return dict."""
+    class _FakeExtModule:
+        @staticmethod
+        def provides_verify_steps():
+            return [
+                {'name': 'ext:verify-with-order', 'description': 'With order', 'order': 500},
+                {'name': 'ext:verify-without-order', 'description': 'No order'},
+            ]
+
+    fake_extensions = [{'bundle': 'fake-bundle', 'module': _FakeExtModule()}]
+
+    with patch.object(_cmd_skill_domains, 'discover_all_extensions', return_value=fake_extensions):
+        steps = _run_verify_discovery_in_cwd(tmp_path)
+
+    with_order = next(s for s in steps if s['name'] == 'ext:verify-with-order')
+    without_order = next(s for s in steps if s['name'] == 'ext:verify-without-order')
+    assert with_order['order'] == 500
+    assert without_order['order'] is None
 
 
 # =============================================================================

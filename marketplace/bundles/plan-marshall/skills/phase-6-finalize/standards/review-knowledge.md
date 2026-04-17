@@ -1,3 +1,9 @@
+---
+name: default:review-knowledge
+description: Review existing lessons-learned and memories against plan changes; propose deletes/updates
+order: 80
+---
+
 # Review Knowledge
 
 Review existing lessons-learned and memories against the current plan's diff; propose deletes/updates.

@@ -3,6 +3,7 @@ name: finalize-step-plugin-doctor
 description: Finalize-phase wrapper that runs plugin-doctor against skills touched by the plan, reading modified_files from references.json and passing skill paths directly via --paths
 user-invocable: false
 allowed-tools: Bash
+order: 85
 ---
 
 # Finalize Step: plugin-doctor

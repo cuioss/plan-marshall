@@ -11,9 +11,11 @@ from pathlib import Path
 
 from _cmd_skill_domains import (
     _build_skill_dict_with_descriptions,
+    _read_frontmatter_order,
     load_profiles_from_bundle,
 )
 from _config_core import (
+    BUNDLES_DIR,
     MarshalNotInitializedError,
     error_exit,
     get_skill_description,
@@ -407,7 +409,12 @@ def cmd_resolve_recipe(args) -> dict:
 
 
 def _discover_all_finalize_steps() -> list[dict]:
-    """Discover all finalize steps from built-in, project, and extension sources."""
+    """Discover all finalize steps from built-in, project, and extension sources.
+
+    Each result dict includes an `order` field (int) or `None` when the source
+    authoritative file/return dict does not declare one. Sorting and collision
+    handling are the caller's responsibility (marshall-steward).
+    """
     from _config_defaults import BUILT_IN_FINALIZE_STEP_DESCRIPTIONS, BUILT_IN_FINALIZE_STEPS
 
     all_steps: list[dict] = []
@@ -417,7 +424,8 @@ def _discover_all_finalize_steps() -> list[dict]:
     sync_skill_name = 'finalize-step-sync-plugin-cache'
     if claude_skills.is_dir():
         sync_skill_dir = claude_skills / sync_skill_name
-        if sync_skill_dir.is_dir() and (sync_skill_dir / 'SKILL.md').exists():
+        sync_skill_md = sync_skill_dir / 'SKILL.md'
+        if sync_skill_dir.is_dir() and sync_skill_md.exists():
             step_ref = f'project:{sync_skill_name}'
             all_steps.append(
                 {
@@ -425,17 +433,23 @@ def _discover_all_finalize_steps() -> list[dict]:
                     'description': get_skill_description(step_ref),
                     'type': 'project',
                     'source': 'project',
+                    'order': _read_frontmatter_order(sync_skill_md),
                 }
             )
 
-    # Source 1: Built-in steps
+    # Source 1: Built-in steps — read order from standards/{name}.md frontmatter
     for step_name in BUILT_IN_FINALIZE_STEPS:
+        bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
+        standards_path = (
+            BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / f'{bare}.md'
+        )
         all_steps.append(
             {
                 'name': step_name,
                 'description': BUILT_IN_FINALIZE_STEP_DESCRIPTIONS.get(step_name, step_name),
                 'type': 'built-in',
                 'source': 'built-in',
+                'order': _read_frontmatter_order(standards_path),
             }
         )
 
@@ -446,7 +460,8 @@ def _discover_all_finalize_steps() -> list[dict]:
                 continue
             if skill_dir.name == sync_skill_name:
                 continue
-            if not (skill_dir / 'SKILL.md').exists():
+            skill_md = skill_dir / 'SKILL.md'
+            if not skill_md.exists():
                 continue
 
             step_ref = f'project:{skill_dir.name}'
@@ -456,6 +471,7 @@ def _discover_all_finalize_steps() -> list[dict]:
                     'description': get_skill_description(step_ref),
                     'type': 'project',
                     'source': 'project',
+                    'order': _read_frontmatter_order(skill_md),
                 }
             )
 
@@ -470,12 +486,14 @@ def _discover_all_finalize_steps() -> list[dict]:
             if not steps:
                 continue
             for step in steps:
+                order_value = step.get('order')
                 all_steps.append(
                     {
                         'name': step.get('name', step.get('skill', '')),
                         'description': step.get('description', ''),
                         'type': 'skill',
                         'source': 'extension',
+                        'order': int(order_value) if isinstance(order_value, int) else None,
                     }
                 )
         except Exception:

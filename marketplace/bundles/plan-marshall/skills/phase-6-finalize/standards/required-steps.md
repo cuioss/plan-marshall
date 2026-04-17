@@ -11,9 +11,11 @@ with `- ` are ignored by the parser. Step names must match the
 `--step` argument passed to `manage-status mark-step-done` at the tail
 of each corresponding standards document.
 
-**Ordering note**: the invariant treats the list as a set, so declared
-order is informational only. The execution order is still governed by
-the `steps` list in `phase-6-finalize` config.
+**Ordering note**: declared order in this file is informational only.
+Runtime execution order is the `steps` list in `marshal.json`, which
+`marshall-steward` sorts by each step's `order` frontmatter value when
+the list is written. phase-6-finalize iterates that list as written and
+does not re-sort or validate ordering at runtime.
 
 ## Steps
 

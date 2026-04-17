@@ -1,3 +1,9 @@
+---
+name: default:create-pr
+description: Create pull request
+order: 20
+---
+
 # Create PR
 
 Create a pull request for the feature branch.

@@ -1,3 +1,9 @@
+---
+name: default:lessons-capture
+description: Record lessons learned
+order: 60
+---
+
 # Lessons Capture
 
 Record lessons learned from the implementation. Advisory only — does not block.

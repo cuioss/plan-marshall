@@ -14,10 +14,12 @@ Extension API functions:
 """
 
 import copy
+import re
 import sys
 from pathlib import Path
 
 from _config_core import (
+    BUNDLES_DIR,
     MarshalNotInitializedError,
     error_exit,
     get_skill_description,
@@ -38,6 +40,36 @@ from extension_discovery import (  # type: ignore[import-not-found]
     discover_all_extensions,
     discover_applicable_extensions,
 )
+
+
+def _read_frontmatter_order(path: Path) -> int | None:
+    """Read the YAML frontmatter `order` field from a markdown file.
+
+    Parses `order: <int>` (optionally negative) from the frontmatter block
+    delimited by `---` lines at the start of the file. Returns `None` when the
+    file is missing, has no frontmatter, or the `order` key is absent.
+    """
+    if not path.is_file():
+        return None
+    try:
+        content = path.read_text()
+    except OSError:
+        return None
+    lines = content.split('\n')
+    if not lines or lines[0].strip() != '---':
+        return None
+    end_idx: int | None = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == '---':
+            end_idx = i
+            break
+    if end_idx is None:
+        return None
+    for line in lines[1:end_idx]:
+        match = re.match(r'^\s*order:\s*(-?\d+)\s*(?:#.*)?$', line.rstrip('\r'))
+        if match:
+            return int(match.group(1))
+    return None
 
 
 def _extract_skill_name(entry: str | dict) -> str:
@@ -383,23 +415,30 @@ def _discover_all_verify_steps() -> list[dict]:
     2. Project verify-step-* skills in .claude/skills/
     3. Extension provides_verify_steps()
 
-    Returns:
-        List of step dicts with name, description, type, source.
-    """
-    import re
+    Each result dict includes an `order` field (int) or `None` when the source
+    authoritative file/return dict does not declare one. Sorting and collision
+    handling are the caller's responsibility (marshall-steward).
 
+    Returns:
+        List of step dicts with name, description, type, source, order.
+    """
     from _config_defaults import BUILT_IN_VERIFY_STEP_DESCRIPTIONS, BUILT_IN_VERIFY_STEPS
 
     all_steps: list[dict] = []
 
-    # Source 1: Built-in steps
+    # Source 1: Built-in steps — read order from standards/{name}.md frontmatter
     for step_name in BUILT_IN_VERIFY_STEPS:
+        bare = step_name.split(':', 1)[1] if ':' in step_name else step_name
+        standards_path = (
+            BUNDLES_DIR / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'standards' / f'{bare}.md'
+        )
         all_steps.append(
             {
                 'name': step_name,
                 'description': BUILT_IN_VERIFY_STEP_DESCRIPTIONS.get(step_name, step_name),
                 'type': 'built-in',
                 'source': 'built-in',
+                'order': _read_frontmatter_order(standards_path),
             }
         )
 
@@ -426,6 +465,7 @@ def _discover_all_verify_steps() -> list[dict]:
                     'description': description or skill_dir.name,
                     'type': 'project',
                     'source': 'project',
+                    'order': _read_frontmatter_order(skill_md),
                 }
             )
 
@@ -440,12 +480,14 @@ def _discover_all_verify_steps() -> list[dict]:
             if not steps:
                 continue
             for step in steps:
+                order_value = step.get('order')
                 all_steps.append(
                     {
                         'name': step.get('name', ''),
                         'description': step.get('description', ''),
                         'type': 'skill',
                         'source': 'extension',
+                        'order': int(order_value) if isinstance(order_value, int) else None,
                     }
                 )
         except Exception:
