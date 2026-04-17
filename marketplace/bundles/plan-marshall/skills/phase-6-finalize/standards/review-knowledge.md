@@ -129,14 +129,7 @@ Where `{absolute_path}` is the `path` field captured in 3c or 3d. This matches t
 
 **Update action, lesson** — overwrite the markdown file via the `Write` tool. Preserve the existing metadata header (everything up to and including the `# {title}` line) and replace the body below the title with the revised content returned by the classification agent. Do NOT alter the component, category, or title fields.
 
-**Update action, memory** — read the current JSON envelope via `Read`, replace the `content` field with the revised body (keeping all other envelope fields — `meta`, `category`, `identifier`, timestamps — unchanged), serialize the updated JSON, and write atomically via:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-memories:manage-memory save \
-  --category {cat} --identifier {id} --content '{revised_json}'
-```
-
-The `save` subcommand preserves the envelope and overwrites the memory file atomically.
+**Update action, memory** — read the current JSON envelope via `Read`, replace the `content` field with the revised body (keeping all other envelope fields — `meta`, `category`, `identifier`, timestamps — unchanged), and overwrite the file at `{absolute_path}` directly via the `Write` tool. This path avoids shell quoting pitfalls with large JSON payloads and preserves the original `meta.created` timestamp (which `manage-memory save` would otherwise replace with `now_utc_iso()` via `create_memory_envelope`).
 
 ### 3j. Log each action
 
