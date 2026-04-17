@@ -147,6 +147,8 @@ Production code creation and modification.
 
 When `worktree_path` is provided in the Input Contract, every Edit/Write/Read tool call in this profile MUST resolve its file path against `worktree_path` (e.g., `{worktree_path}/marketplace/bundles/.../SKILL.md`). Never resolve step targets against the main checkout. If a subagent is dispatched from this profile, embed the Worktree Header (see phase-5-execute Dispatch Protocol) so the child propagates the constraint.
 
+Additionally, every Bucket B `.plan/execute-script.py` invocation (build, CI, Sonar — anything that operates on the project tree rather than `.plan/` metadata) MUST pass `--project-dir {worktree_path}`. Bucket A `manage-*` scripts are cwd-agnostic and MUST NOT receive `--project-dir`. Running Bucket B scripts without `--project-dir` silently targets the main checkout and can produce green builds that skip tests from the worktree's uncommitted state. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
+
 ### Compatibility Strategy
 
 Before implementing, read the compatibility approach:
@@ -189,6 +191,8 @@ Unit and module test creation.
 ### Path Resolution
 
 When `worktree_path` is provided in the Input Contract, every Edit/Write/Read tool call in this profile MUST resolve its file path against `worktree_path` (e.g., `{worktree_path}/marketplace/bundles/.../test_foo.py`). Never resolve test targets or implementation lookups against the main checkout. If a subagent is dispatched from this profile, embed the Worktree Header (see phase-5-execute Dispatch Protocol) so the child propagates the constraint.
+
+Additionally, every Bucket B `.plan/execute-script.py` invocation (build, CI, Sonar — notably the `module-tests` verification command resolved in Step 5 below) MUST pass `--project-dir {worktree_path}`. Bucket A `manage-*` scripts are cwd-agnostic and MUST NOT receive `--project-dir`. Running `module-tests` (or any Bucket B verification) without `--project-dir` silently targets the main checkout — pytest collects tests from the main working tree, which does not contain the worktree's uncommitted changes, so new test cases are silently skipped and the run still reports green. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
 
 ### Workflow
 
