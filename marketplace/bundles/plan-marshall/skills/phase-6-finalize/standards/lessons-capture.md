@@ -19,17 +19,24 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Skill: plan-marshall:manage-lessons
 ```
 
-**Use exactly this command** to add a lesson (do not invent alternative flags):
+Lessons are added in **two steps**. This is the single canonical flow — there is no inline `--detail` form and no alternative API variant.
+
+### Step A — Allocate the lesson file
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "{bundle}:{skill}" \
   --category {bug|improvement|anti-pattern} \
-  --title "{concise summary}" \
-  --detail "{detailed context and resolution}"
+  --title "{concise summary}"
 ```
 
-Required flags: `--component`, `--category`, `--title`, `--detail`. Do NOT use `--summary` (does not exist).
+Required flags: `--component`, `--category`, `--title`. The call creates a file with the metadata header and the `# {title}` heading already in place (body is empty) and returns an absolute `path` in the TOON output.
+
+### Step B — Write the body directly to the returned path
+
+Parse `path` from the TOON output of Step A and use the Write tool to append the lesson body to that file. The body may contain arbitrary markdown: `##` section headings, fenced code blocks, lists, multiple paragraphs. Because the body is delivered through the Write tool rather than a shell argument, Claude Code's path-validation heuristic for `#`-lines inside quoted arguments is not triggered and rich markdown bodies pass through safely.
+
+Do not attempt to smuggle the body into the Step A call (no `--detail`, no `--detail-file`, no second subcommand). Any such variant is intentionally absent — the single path-allocate + Write-tool flow is the supported API.
 
 ## Mark Step Complete
 

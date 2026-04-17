@@ -288,15 +288,18 @@ Record details in work.log using manage-log.
 
 ### Record Lessons
 
-On issues or unexpected patterns:
+On issues or unexpected patterns, use the two-step path-allocate flow:
+
+1. Allocate a lesson file and capture the returned `path`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "{skill_notation}" \
   --category improvement \
-  --title "{issue summary}" \
-  --detail "{context and resolution}"
+  --title "{issue summary}"
 ```
+
+2. Parse `path` from the output and write the lesson body directly to that path via the Write tool. This keeps the markdown body — including `##` sections, code fences, and multiple paragraphs — out of shell argument space.
 
 **Valid categories**: `bug`, `improvement`, `anti-pattern`
 

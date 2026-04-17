@@ -80,14 +80,13 @@ Script: `plan-marshall:manage-lessons:manage-lessons`
 
 ### add
 
-Create a new lesson.
+Allocate a new lesson file with metadata header and title (empty body). The call returns the absolute path of the created file; the caller then writes the body directly to that path via the Write tool. There is **no** inline-body API form — this is the single, canonical flow.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component maven-build \
   --category bug \
   --title "Build fails with missing dependency" \
-  --detail "When running a Maven clean install..." \
   [--bundle planning]
 ```
 
@@ -95,17 +94,26 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 - `--component` (required): Component that lesson applies to
 - `--category` (required): `bug`, `improvement`, or `anti-pattern`
 - `--title` (required): Lesson title
-- `--detail` (required): Lesson detail/content
 - `--bundle`: Optional bundle reference
 
 **Output** (TOON):
 ```toon
 status: success
 id: 2025-12-02-001
-file: 2025-12-02-001.md
+path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
 component: maven-build
 category: bug
 ```
+
+**Write the body**:
+
+After the call returns, use the Write tool with the returned `path` value to populate the lesson body. The file already contains the metadata header and the `# {title}` heading; append body content below the title.
+
+```
+Write(path, body_markdown)
+```
+
+Body content may include arbitrary markdown, including sections with `##` headings, code fences, and multiple paragraphs — all written directly through the Write tool, bypassing shell argument quoting entirely.
 
 ### update
 
@@ -237,11 +245,11 @@ created_from: error_context
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `add` | `--component --category --title --detail [--bundle]` | Create new lesson |
+| `add` | `--component --category --title [--bundle]` | Allocate a new lesson file and return its absolute `path`. Caller writes body via Write tool. |
 | `update` | `--id [--component] [--category]` | Update lesson metadata |
 | `get` | `--id` | Get single lesson |
 | `list` | `[--component] [--category] [--full]` | List with filtering. `--full` includes lesson body content. |
-| `from-error` | `--context` | Create from JSON error context |
+| `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
 
 ---

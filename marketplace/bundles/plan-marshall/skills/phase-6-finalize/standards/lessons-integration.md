@@ -40,15 +40,20 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Recording Lessons
 
-For each notable finding:
+For each notable finding, follow the two-step path-allocate flow (the single supported API — there is no `--detail` inline form):
+
+### Step A — Allocate the lesson file
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component {component_identifier} \
   --category {bug|improvement|anti-pattern} \
-  --title "{concise_summary}" \
-  --detail "{detailed_context_and_resolution}"
+  --title "{concise_summary}"
 ```
+
+### Step B — Write the body to the returned path
+
+Parse `path` from the TOON output of Step A and write the detailed context and resolution directly to that path via the Write tool. Bodies may contain arbitrary markdown (including `##` sections and code fences) because they never pass through a shell argument.
 
 **Component identifier** follows the pattern:
 - Skills: `{bundle}:{skill-name}` (e.g., `pm-dev-java:java-core`)
@@ -70,23 +75,33 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
 
 ## Example: Recording Bug Lesson
 
+Step A — allocate:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "plan-marshall:manage-tasks:manage-tasks" \
   --category bug \
-  --title "Shell metacharacters in verification commands need quoting" \
-  --detail "When verification commands contain pipes or wildcards, they must be quoted in HEREDOC to prevent shell expansion during task creation."
+  --title "Shell metacharacters in verification commands need quoting"
 ```
 
+Step B — Write tool appends the following body to the returned path:
+
+> When verification commands contain pipes or wildcards, they must be quoted in HEREDOC to prevent shell expansion during task creation.
+
 ## Example: Recording Improvement
+
+Step A — allocate:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
   --component "pm-dev-java:java-core" \
   --category improvement \
-  --title "Use constructor injection over field injection for CDI beans" \
-  --detail "Constructor injection makes dependencies explicit and testable. Field injection hides dependencies and makes unit testing harder."
+  --title "Use constructor injection over field injection for CDI beans"
 ```
+
+Step B — Write tool appends the following body to the returned path:
+
+> Constructor injection makes dependencies explicit and testable. Field injection hides dependencies and makes unit testing harder.
 
 ## Advisory Nature
 
