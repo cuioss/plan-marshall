@@ -358,6 +358,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Manage .plan/memory/ layer for session persistence',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
         epilog="""
 Categories:
   context     - Session context snapshots (short-lived)
@@ -383,7 +384,7 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # save command
-    p_save = subparsers.add_parser('save', help='Save content to memory file')
+    p_save = subparsers.add_parser('save', help='Save content to memory file', allow_abbrev=False)
     p_save.add_argument('--category', required=True, choices=CATEGORIES, help='Memory category')
     p_save.add_argument('--identifier', required=True, help='File identifier/summary')
     p_save.add_argument('--content', required=True, help='JSON content to save')
@@ -391,25 +392,25 @@ Examples:
     p_save.set_defaults(func=cmd_save)
 
     # load command
-    p_load = subparsers.add_parser('load', help='Load content from memory file')
+    p_load = subparsers.add_parser('load', help='Load content from memory file', allow_abbrev=False)
     p_load.add_argument('--category', required=True, choices=CATEGORIES, help='Memory category')
     p_load.add_argument('--identifier', required=True, help='File identifier')
     p_load.set_defaults(func=cmd_load)
 
     # list command
-    p_list = subparsers.add_parser('list', help='List memory files')
+    p_list = subparsers.add_parser('list', help='List memory files', allow_abbrev=False)
     p_list.add_argument('--category', choices=CATEGORIES, help='Filter by category')
     p_list.add_argument('--since', help='Filter by age (e.g., 7d, 24h)')
     p_list.set_defaults(func=cmd_list)
 
     # query command
-    p_query = subparsers.add_parser('query', help='Find files matching pattern')
+    p_query = subparsers.add_parser('query', help='Find files matching pattern', allow_abbrev=False)
     p_query.add_argument('--pattern', required=True, help='Glob pattern to match')
     p_query.add_argument('--category', choices=CATEGORIES, help='Filter by category')
     p_query.set_defaults(func=cmd_query)
 
     # cleanup command
-    p_cleanup = subparsers.add_parser('cleanup', help='Remove old memory files')
+    p_cleanup = subparsers.add_parser('cleanup', help='Remove old memory files', allow_abbrev=False)
     p_cleanup.add_argument('--category', choices=CATEGORIES, help='Filter by category')
     p_cleanup.add_argument(
         '--older-than', required=True, dest='older_than', help='Remove files older than (e.g., 7d, 24h)'
@@ -420,7 +421,7 @@ Examples:
     p_cleanup.set_defaults(func=cmd_cleanup)
 
     # validate command
-    p_validate = subparsers.add_parser('validate', help='Validate memory file format')
+    p_validate = subparsers.add_parser('validate', help='Validate memory file format', allow_abbrev=False)
     p_validate.add_argument('--file', required=True, help='Path to memory file to validate')
     p_validate.set_defaults(func=cmd_validate)
 

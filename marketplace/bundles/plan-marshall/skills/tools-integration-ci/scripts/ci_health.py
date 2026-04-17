@@ -413,32 +413,32 @@ def cmd_persist(args: argparse.Namespace) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='CI health verification for detecting providers and verifying tools')
+    parser = argparse.ArgumentParser(description='CI health verification for detecting providers and verifying tools', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # detect subcommand
-    subparsers.add_parser('detect', help='Detect CI provider from repository configuration')
+    subparsers.add_parser('detect', help='Detect CI provider from repository configuration', allow_abbrev=False)
 
     # verify subcommand
-    verify_parser = subparsers.add_parser('verify', help='Verify CLI tools are installed and authenticated')
+    verify_parser = subparsers.add_parser('verify', help='Verify CLI tools are installed and authenticated', allow_abbrev=False)
     verify_parser.add_argument('--tool', type=str, help='Specific tool to verify (git, gh, glab)')
 
     # status subcommand
-    subparsers.add_parser('status', help='Full health check (detect + verify)')
+    subparsers.add_parser('status', help='Full health check (detect + verify)', allow_abbrev=False)
 
     # persist subcommand
-    persist_parser = subparsers.add_parser('persist', help='Verify CI tools and persist authenticated_tools to run-configuration.json')
+    persist_parser = subparsers.add_parser('persist', help='Verify CI tools and persist authenticated_tools to run-configuration.json', allow_abbrev=False)
     persist_parser.add_argument(
         '--plan-dir', type=str, default='.plan', help='Path to .plan directory (default: .plan)'
     )
 
     # ci-set-tools subcommand
-    ci_st_parser = subparsers.add_parser('ci-set-tools', help='Write authenticated tools to run-config')
+    ci_st_parser = subparsers.add_parser('ci-set-tools', help='Write authenticated tools to run-config', allow_abbrev=False)
     ci_st_parser.add_argument('--tools', required=True, help='Comma-separated tool names')
     ci_st_parser.add_argument('--plan-dir', type=str, default='.plan')
 
     # ci-get-tools subcommand
-    ci_gt_parser = subparsers.add_parser('ci-get-tools', help='Read authenticated tools from run-config')
+    ci_gt_parser = subparsers.add_parser('ci-get-tools', help='Read authenticated tools from run-config', allow_abbrev=False)
     ci_gt_parser.add_argument('--plan-dir', type=str, default='.plan')
 
     args = parser.parse_args()

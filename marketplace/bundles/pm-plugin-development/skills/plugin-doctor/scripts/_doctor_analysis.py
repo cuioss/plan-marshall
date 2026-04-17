@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Analysis functions for doctor-marketplace."""
 
+import ast
 import re
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,11 @@ from _analyze_markdown import check_checklist_patterns, check_forbidden_metadata
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
+
+# Constructors whose calls must include allow_abbrev=False to prevent prefix
+# matching of retired flags. See rule-catalog.md (argparse_safety) and
+# lesson 2026-04-17-012.
+_ARGPARSE_SAFETY_CONSTRUCTORS = ('ArgumentParser', 'add_parser')
 
 
 def analyze_component(component: dict) -> dict:
@@ -455,3 +461,135 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
                 )
 
     return issues
+
+
+# =============================================================================
+# argparse_safety rule (marketplace-wide static check)
+# =============================================================================
+
+
+def _is_test_path(path: Path) -> bool:
+    """Return True if the path is a test file or lives under a test directory.
+
+    Matches:
+    - Any path component named ``test`` or ``tests``
+    - Filenames matching ``test_*.py`` or ``*_test.py``
+    """
+    name = path.name
+    if name.startswith('test_') or name.endswith('_test.py'):
+        return True
+    for part in path.parts:
+        if part in ('test', 'tests'):
+            return True
+    return False
+
+
+def _call_has_allow_abbrev_false(node: ast.Call) -> bool:
+    """Return True if an ``ast.Call`` includes ``allow_abbrev=False``."""
+    for kw in node.keywords:
+        if kw.arg != 'allow_abbrev':
+            continue
+        value = kw.value
+        if isinstance(value, ast.Constant) and value.value is False:
+            return True
+    return False
+
+
+def _call_func_name(node: ast.Call) -> str | None:
+    """Extract the callable's short name from an ``ast.Call``.
+
+    Handles both ``ArgumentParser(...)`` (``ast.Name``) and
+    ``argparse.ArgumentParser(...)`` / ``subparsers.add_parser(...)``
+    (``ast.Attribute``) call shapes.
+    """
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return None
+
+
+def _scan_file_for_argparse_safety(file_path: Path) -> list[dict]:
+    """Scan a single Python file for argparse calls missing ``allow_abbrev=False``.
+
+    Returns a list of issue dicts (empty if the file has no violations, is
+    unreadable, or fails to parse).
+    """
+    try:
+        source = file_path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return []
+
+    try:
+        tree = ast.parse(source, filename=str(file_path))
+    except SyntaxError:
+        return []
+
+    issues: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_func_name(node)
+        if name not in _ARGPARSE_SAFETY_CONSTRUCTORS:
+            continue
+        if _call_has_allow_abbrev_false(node):
+            continue
+        issues.append(
+            {
+                'type': 'argparse_safety',
+                'file': str(file_path),
+                'line': node.lineno,
+                'severity': 'error',
+                'fixable': False,
+                'description': 'Add allow_abbrev=False to this argparse call',
+                'call': name,
+            }
+        )
+    return issues
+
+
+def _iter_argparse_safety_targets(marketplace_root: Path) -> list[Path]:
+    """Enumerate Python files subject to the argparse_safety rule.
+
+    Scope:
+    - ``<marketplace_root>/*/skills/*/scripts/**/*.py`` (marketplace bundle scripts)
+    - ``<marketplace_root>/../adapters/**/*.py`` (adapter tree)
+
+    Tests (files under ``test/``/``tests/`` directories, or named
+    ``test_*.py`` / ``*_test.py``) are excluded — they may intentionally
+    exercise argparse default behavior.
+    """
+    targets: list[Path] = []
+
+    # Marketplace bundle scripts
+    if marketplace_root.is_dir():
+        for py_file in marketplace_root.glob('*/skills/*/scripts/**/*.py'):
+            if py_file.is_file() and not _is_test_path(py_file):
+                targets.append(py_file)
+
+    # Adapter tree (lives alongside bundles/)
+    adapters_root = marketplace_root.parent / 'adapters'
+    if adapters_root.is_dir():
+        for py_file in adapters_root.rglob('*.py'):
+            if py_file.is_file() and not _is_test_path(py_file):
+                targets.append(py_file)
+
+    return sorted(set(targets))
+
+
+def scan_argparse_safety(marketplace_root: Path) -> list[dict]:
+    """Static-scan the marketplace tree for argparse calls missing
+    ``allow_abbrev=False``.
+
+    Each finding is a dict with: ``type=argparse_safety``, ``file``,
+    ``line``, ``severity=error``, ``fixable=False``, ``description``, and
+    ``call`` (``ArgumentParser`` or ``add_parser``).
+
+    See rule-catalog.md (argparse_safety) and lesson 2026-04-17-012 for
+    rationale. The check is a lightweight AST walk — no parser is executed.
+    """
+    findings: list[dict] = []
+    for target in _iter_argparse_safety_targets(marketplace_root):
+        findings.extend(_scan_file_for_argparse_safety(target))
+    return findings

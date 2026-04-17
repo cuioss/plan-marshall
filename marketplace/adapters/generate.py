@@ -25,7 +25,7 @@ DEFAULT_MARKETPLACE_DIR = Path(__file__).resolve().parent.parent / 'bundles'
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Generate marketplace adapter output for target AI assistants.')
+    parser = argparse.ArgumentParser(description='Generate marketplace adapter output for target AI assistants.', allow_abbrev=False)
     parser.add_argument('--target', required=True, choices=list(ADAPTERS.keys()), help='Target assistant format.')
     parser.add_argument('--output', required=True, type=Path, help='Output directory.')
     parser.add_argument(

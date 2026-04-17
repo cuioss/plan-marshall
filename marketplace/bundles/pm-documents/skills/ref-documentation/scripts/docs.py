@@ -23,12 +23,13 @@ from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
+        allow_abbrev=False,
         description='Documentation content quality operations', formatter_class=argparse.RawDescriptionHelpFormatter
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # review subcommand
-    review_parser = subparsers.add_parser('review', help='Analyze content for quality issues')
+    review_parser = subparsers.add_parser('review', help='Analyze content for quality issues', allow_abbrev=False)
     review_parser.add_argument('--file', '-f', type=str, help='Single file to analyze')
     review_parser.add_argument('--directory', '-d', type=str, help='Directory to analyze')
     review_parser.add_argument('--recursive', '-r', action='store_true', help='Analyze subdirectories')
@@ -36,7 +37,7 @@ def main():
     review_parser.set_defaults(func=cmd_review)
 
     # analyze-tone subcommand
-    tone_parser = subparsers.add_parser('analyze-tone', help='Detect promotional language and missing sources')
+    tone_parser = subparsers.add_parser('analyze-tone', help='Detect promotional language and missing sources', allow_abbrev=False)
     tone_parser.add_argument('--file', type=str, help='Single file to analyze')
     tone_parser.add_argument('--directory', type=str, help='Directory to analyze')
     tone_parser.add_argument('--output', type=str, help='Output JSON file')

@@ -14,6 +14,8 @@ Mandatory template for each deliverable in solution_outline.md. **ALL fields are
 - module: {module name from architecture}
 - depends: {none|N|N,M|N. Title}
 
+**Intent gloss:** {one-sentence disambiguation of compound-word titles, max ~15 words — required when title head morpheme is a planning-domain verb (review, check, validate, approve, merge, …)}
+
 **Profiles:**
 - implementation
 - {module_testing - only if this deliverable creates/modifies test files}
@@ -58,6 +60,7 @@ Use the returned `executable` value as the Verification Command. Both Command an
 | `domain` | Yes | Single value from `config.domains` |
 | `module` | Yes | Module name from architecture |
 | `depends` | Yes | Use `none` if no dependencies |
+| `**Intent gloss:**` | Conditional | Required when title head morpheme is a planning-domain verb; ≤15 words |
 | `**Profiles:**` | Yes | At least `implementation`; add `module_testing` only if deliverable creates/modifies test files |
 | `**Affected files:**` | Yes | Explicit paths only - NO wildcards, NO "all files in..." |
 | `**Change per file:**` | Yes | What specifically changes |

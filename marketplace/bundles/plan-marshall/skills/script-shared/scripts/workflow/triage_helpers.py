@@ -495,11 +495,12 @@ def create_workflow_cli(
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog,
+        allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     for cmd in subcommands:
-        sub = subparsers.add_parser(cmd['name'], help=cmd['help'])
+        sub = subparsers.add_parser(cmd['name'], help=cmd['help'], allow_abbrev=False)
         for arg_def in cmd.get('args', []):
             flags = arg_def['flags']
             kwargs = {k: v for k, v in arg_def.items() if k != 'flags'}

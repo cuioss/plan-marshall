@@ -129,6 +129,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 | `parse_error` | Failed to parse document structure |
 | `validation_failed` | Missing required sections (Summary, Overview, or Deliverables), or deliverable numbering not sequential |
 | `deliverable_not_found` | Requested deliverable number doesn't exist (read with `--deliverable-number`) |
+| `section_not_found` | Requested section doesn't exist (read with `--section`) |
 
 See also [standards/solution-outline-standard.md](standards/solution-outline-standard.md) for deliverable validation criteria used during task planning.
 
@@ -153,7 +154,7 @@ See also [standards/solution-outline-standard.md](standards/solution-outline-sta
 | `write` | `--plan-id` | Validate newly created solution on disk; sets `action: created`. Returns `file_exists` error if file was already validated via `write` before — use `update` instead. |
 | `update` | `--plan-id` | Validate updated solution on disk; sets `action: updated`. Returns `document_not_found` if file doesn't exist — use `write` for initial creation. |
 | `validate` | `--plan-id` | Validate structure |
-| `read` | `--plan-id [--raw] [--deliverable-number N]` | Read solution or specific deliverable |
+| `read` | `--plan-id [--raw] [--deliverable-number N \| --section NAME]` | Read solution, specific deliverable, or a single top-level section |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |
 | `exists` | `--plan-id` | Check if solution exists |
 
@@ -283,6 +284,34 @@ available:
   - 1
   - 2
   - 3
+```
+
+With `--section NAME`: Returns a single top-level `## Section` body. The name is case-insensitive; spaces are normalized to underscores (so `--section "Risks and Mitigations"` matches `## Risks and Mitigations`). Mutually exclusive with `--deliverable-number`. Compatible with `--raw` — when combined, prints just the section body to stdout.
+
+**Example**: Read the Summary section:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read \
+  --plan-id {plan_id} \
+  --section summary
+```
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: my-feature
+file: solution_outline.md
+section: summary
+requested_section: summary
+content: Implement JWT validation service for the authentication module...
+```
+
+If the section does not exist, returns:
+```toon
+status: error
+error: section_not_found
+plan_id: my-feature
+requested_section: nonexistent
+message: "Section 'nonexistent' not found in solution_outline.md"
 ```
 
 ### exists

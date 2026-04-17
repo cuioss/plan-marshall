@@ -1021,11 +1021,11 @@ def cmd_migrate_executor(args) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Permission fix - write operations for Claude Code settings')
+    parser = argparse.ArgumentParser(description='Permission fix - write operations for Claude Code settings', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # apply-fixes subcommand
-    p_fix = subparsers.add_parser('apply-fixes', help='Apply safe fixes to permission settings')
+    p_fix = subparsers.add_parser('apply-fixes', help='Apply safe fixes to permission settings', allow_abbrev=False)
     p_fix_group = p_fix.add_mutually_exclusive_group(required=True)
     p_fix_group.add_argument('--settings', help='Path to settings file to fix')
     p_fix_group.add_argument('--scope', choices=['global', 'project'], help='Target scope (auto-resolves path)')
@@ -1033,7 +1033,7 @@ def main():
     p_fix.set_defaults(func=cmd_apply_fixes)
 
     # add subcommand
-    p_add = subparsers.add_parser('add', help='Add a permission to settings')
+    p_add = subparsers.add_parser('add', help='Add a permission to settings', allow_abbrev=False)
     p_add.add_argument('--permission', required=True, help='Permission to add')
     p_add.add_argument(
         '--target', default='project', choices=['global', 'project'], help='Target settings file (default: project)'
@@ -1041,7 +1041,7 @@ def main():
     p_add.set_defaults(func=cmd_add)
 
     # remove subcommand
-    p_rem = subparsers.add_parser('remove', help='Remove a permission from settings')
+    p_rem = subparsers.add_parser('remove', help='Remove a permission from settings', allow_abbrev=False)
     p_rem.add_argument('--permission', required=True, help='Permission to remove')
     p_rem.add_argument(
         '--target', default='project', choices=['global', 'project'], help='Target settings file (default: project)'
@@ -1049,7 +1049,7 @@ def main():
     p_rem.set_defaults(func=cmd_remove)
 
     # ensure subcommand
-    p_ens = subparsers.add_parser('ensure', help='Ensure multiple permissions exist')
+    p_ens = subparsers.add_parser('ensure', help='Ensure multiple permissions exist', allow_abbrev=False)
     p_ens.add_argument('--permissions', required=True, help='Comma-separated permissions to ensure')
     p_ens.add_argument(
         '--target', default='global', choices=['global', 'project'], help='Target settings file (default: global)'
@@ -1057,7 +1057,7 @@ def main():
     p_ens.set_defaults(func=cmd_ensure)
 
     # consolidate subcommand
-    p_con = subparsers.add_parser('consolidate', help='Consolidate timestamped permissions with wildcards')
+    p_con = subparsers.add_parser('consolidate', help='Consolidate timestamped permissions with wildcards', allow_abbrev=False)
     p_con_group = p_con.add_mutually_exclusive_group(required=True)
     p_con_group.add_argument('--settings', help='Path to settings file to analyze and modify')
     p_con_group.add_argument('--scope', choices=['global', 'project'], help='Target scope (auto-resolves path)')
@@ -1065,7 +1065,7 @@ def main():
     p_con.set_defaults(func=cmd_consolidate)
 
     # ensure-wildcards subcommand
-    p_ewc = subparsers.add_parser('ensure-wildcards', help='Ensure marketplace wildcards exist in settings')
+    p_ewc = subparsers.add_parser('ensure-wildcards', help='Ensure marketplace wildcards exist in settings', allow_abbrev=False)
     p_ewc.add_argument('--settings', required=True, help='Path to settings file to update')
     p_ewc.add_argument('--marketplace-json', required=True, help='Path to marketplace.json file')
     p_ewc.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
@@ -1075,6 +1075,7 @@ def main():
     p_apps = subparsers.add_parser(
         'apply-project-step-permissions',
         help='Append Skill({skill}) allow rules for project: steps in marshal.json',
+        allow_abbrev=False,
     )
     p_apps.add_argument('--marshal', required=True, help='Path to marshal.json')
     p_apps.add_argument('--settings', required=True, help='Path to settings file to update')
@@ -1082,14 +1083,14 @@ def main():
     p_apps.set_defaults(func=cmd_apply_project_step_permissions)
 
     # generate-wildcards subcommand
-    p_gen = subparsers.add_parser('generate-wildcards', help='Generate permission wildcards from marketplace inventory')
+    p_gen = subparsers.add_parser('generate-wildcards', help='Generate permission wildcards from marketplace inventory', allow_abbrev=False)
     p_gen_group = p_gen.add_mutually_exclusive_group()
     p_gen_group.add_argument('--marketplace-dir', help='Marketplace directory to scan (reads plugin.json files)')
     p_gen_group.add_argument('--input', '-i', help='Input JSON file (default: stdin)')
     p_gen.set_defaults(func=cmd_generate_wildcards)
 
     # ensure-executor subcommand
-    p_exe = subparsers.add_parser('ensure-executor', help='Ensure the executor permission exists')
+    p_exe = subparsers.add_parser('ensure-executor', help='Ensure the executor permission exists', allow_abbrev=False)
     p_exe.add_argument(
         '--target', default='global', choices=['global', 'project'], help='Target settings file (default: global)'
     )
@@ -1097,7 +1098,7 @@ def main():
     p_exe.set_defaults(func=cmd_ensure_executor)
 
     # cleanup-scripts subcommand
-    p_cln = subparsers.add_parser('cleanup-scripts', help='Remove redundant individual script permissions')
+    p_cln = subparsers.add_parser('cleanup-scripts', help='Remove redundant individual script permissions', allow_abbrev=False)
     p_cln.add_argument(
         '--target', default='global', choices=['global', 'project'], help='Target settings file (default: global)'
     )
@@ -1106,7 +1107,7 @@ def main():
     p_cln.set_defaults(func=cmd_cleanup_scripts)
 
     # migrate-executor subcommand
-    p_mig = subparsers.add_parser('migrate-executor', help='Full migration to executor-only permission pattern')
+    p_mig = subparsers.add_parser('migrate-executor', help='Full migration to executor-only permission pattern', allow_abbrev=False)
     p_mig.add_argument(
         '--target', default='global', choices=['global', 'project'], help='Target settings file (default: global)'
     )
