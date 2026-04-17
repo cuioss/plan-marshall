@@ -250,6 +250,27 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 Profile resolution order: `--profiles` flag > `marshal.json active_profiles` > extension signal detection > all defined profiles.
 
+### Batch: `enrich all`
+
+**Purpose**: Batch-populate `skills_by_profile` for every module × every applicable extension in one call. Useful when you want to initialize (or back-fill) skills across the entire project without iterating `enrich add-domain` per module/domain pair.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture enrich all
+```
+
+**Flags**:
+
+| Flag | Purpose |
+|------|---------|
+| `--include-optionals` | Include optional skills in addition to defaults |
+| `--reasoning` | Shared rationale appended to every enriched module |
+
+**Notes**:
+- Idempotent — safe to re-run. Only new (module, domain) pairs increment `pairs_applied`; already-present skills are not duplicated.
+- Returns a summary with `modules_enriched`, `pairs_applied`, `pairs_skipped`, and `errors` for traceability.
+- The `system` domain is always skipped (reserved for internal use).
+- Prose may refer to this as the `enrich-all` command; CLI invocations always use the space-separated form `enrich all` (same shape as `enrich add-domain`).
+
 ---
 
 ## Step 9: Verify & Summarize

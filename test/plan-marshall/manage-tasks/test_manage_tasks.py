@@ -16,6 +16,8 @@ import os
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import PlanContext, get_script_path, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
@@ -45,6 +47,9 @@ def _load_module(name, filename):
 _crud = _load_module('_tasks_cmd_crud', '_tasks_crud.py')
 _query = _load_module('_tasks_cmd_query', '_tasks_query.py')
 _step = _load_module('_tasks_cmd_step', '_cmd_step.py')
+_core = _load_module('_tasks_cmd_core', '_tasks_core.py')
+
+parse_stdin_task = _core.parse_stdin_task
 
 cmd_prepare_add = _crud.cmd_prepare_add
 cmd_commit_add = _crud.cmd_commit_add
@@ -1397,3 +1402,126 @@ def test_cli_commit_add_without_prepare_fails():
         # either way, the status is error.
         data = parse_toon(result.stdout) if result.stdout else {}
         assert not result.success or data.get('status') == 'error'
+
+
+# =============================================================================
+# Tests: parse_stdin_task verification.commands quoting (fail-fast contract)
+# =============================================================================
+#
+# These tests guard the contract that `verification.commands` list items must
+# be written as bare hyphenated items with literal inner double-quotes — the
+# anti-pattern of wrapping the whole item in outer double-quotes with escaped
+# inner quotes must be rejected at parse time with a pointed error.
+# See `plan-marshall:phase-4-plan` SKILL.md for the authoring rule.
+
+
+def test_parse_stdin_task_accepts_inner_double_quotes_in_verification_command():
+    """Positive: bare verification.commands item with literal inner double-quotes parses verbatim.
+
+    Given a TOON task definition whose verification.commands item contains literal
+    inner double-quote characters (no outer wrapping),
+    When parse_stdin_task parses the content,
+    Then the command is stored verbatim, preserving the inner quote characters.
+    """
+    # Arrange
+    canonical_command = (
+        'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        'run --command-args "module-tests plan-marshall"'
+    )
+    toon = (
+        'title: Inner quotes positive\n'
+        'deliverable: 1\n'
+        'domain: plan-marshall-plugin-dev\n'
+        'description: Parses verification command with inner double-quotes\n'
+        'steps:\n'
+        '  - test/plan-marshall/manage-tasks/test_manage_tasks.py\n'
+        'depends_on: none\n'
+        'verification:\n'
+        '  commands:\n'
+        f'    - {canonical_command}\n'
+        '  criteria: tests pass\n'
+    )
+
+    # Act
+    parsed = parse_stdin_task(toon)
+
+    # Assert
+    assert parsed['verification']['commands'] == [canonical_command]
+    assert '"module-tests plan-marshall"' in parsed['verification']['commands'][0]
+
+
+def test_parse_stdin_task_rejects_outer_double_quoted_verification_command():
+    """Negative: outer-double-quoted verification.commands item raises ValueError.
+
+    Given a TOON task definition whose verification.commands item is wrapped in
+    outer double quotes (with escaped inner quotes) — the anti-pattern,
+    When parse_stdin_task parses the content,
+    Then a ValueError is raised whose message points at the quoting rule and
+    references `plan-marshall:phase-4-plan` SKILL.md.
+    """
+    # Arrange
+    offending_item = (
+        r'"python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        r'run --command-args \"module-tests plan-marshall\""'
+    )
+    toon = (
+        'title: Outer quotes negative\n'
+        'deliverable: 1\n'
+        'domain: plan-marshall-plugin-dev\n'
+        'description: Outer-quoted verification command should fail fast\n'
+        'steps:\n'
+        '  - test/plan-marshall/manage-tasks/test_manage_tasks.py\n'
+        'depends_on: none\n'
+        'verification:\n'
+        '  commands:\n'
+        f'    - {offending_item}\n'
+        '  criteria: must reject outer quoting\n'
+    )
+
+    # Act / Assert
+    with pytest.raises(ValueError) as excinfo:
+        parse_stdin_task(toon)
+
+    message = str(excinfo.value)
+    assert 'verification.commands' in message
+    assert 'outer double-quotes' in message
+    assert 'plan-marshall:phase-4-plan' in message
+
+
+def test_parse_stdin_task_rejects_outer_double_quoted_verification_profile_step():
+    """Negative: outer-double-quoted step under verification profile raises ValueError.
+
+    Given a TOON task definition with profile=verification whose steps item is
+    wrapped in outer double quotes — verification-profile tasks store commands
+    in the steps field, so the same anti-pattern can land there,
+    When parse_stdin_task parses the content,
+    Then a ValueError is raised whose message references the steps contract and
+    points at `plan-marshall:phase-4-plan` SKILL.md.
+    """
+    # Arrange
+    offending_step = (
+        r'"python3 .plan/execute-script.py plan-marshall:build-python:python_build '
+        r'run --command-args \"quality-gate plan-marshall\""'
+    )
+    toon = (
+        'title: Outer-quoted verification step should fail fast\n'
+        'deliverable: 0\n'
+        'domain: plan-marshall-plugin-dev\n'
+        'profile: verification\n'
+        'origin: holistic\n'
+        'description: Verification-profile step must not be outer-quoted\n'
+        'steps:\n'
+        f'  - {offending_step}\n'
+        'depends_on: none\n'
+        'verification:\n'
+        '  criteria: must reject outer quoting on steps\n'
+    )
+
+    # Act / Assert
+    with pytest.raises(ValueError) as excinfo:
+        parse_stdin_task(toon)
+
+    message = str(excinfo.value)
+    assert 'steps' in message
+    assert 'outer double-quotes' in message
+    assert 'plan-marshall:phase-4-plan' in message
