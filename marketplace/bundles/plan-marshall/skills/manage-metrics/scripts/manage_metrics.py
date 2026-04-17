@@ -431,17 +431,21 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Plan metrics collection and reporting')
+    parser = argparse.ArgumentParser(
+        description='Plan metrics collection and reporting', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # start-phase
-    sp = subparsers.add_parser('start-phase', help='Record phase start timestamp')
+    sp = subparsers.add_parser('start-phase', help='Record phase start timestamp', allow_abbrev=False)
     add_plan_id_arg(sp)
     sp.add_argument('--phase', required=True, help='Phase name (e.g., 1-init)')
     sp.set_defaults(func=cmd_start_phase)
 
     # end-phase
-    ep = subparsers.add_parser('end-phase', help='Record phase end timestamp and optional token data')
+    ep = subparsers.add_parser(
+        'end-phase', help='Record phase end timestamp and optional token data', allow_abbrev=False
+    )
     add_plan_id_arg(ep)
     ep.add_argument('--phase', required=True, help='Phase name')
     ep.add_argument('--total-tokens', type=int, default=None, help='Total tokens from Task agent <usage>')
@@ -452,12 +456,16 @@ def main() -> int:
     ep.set_defaults(func=cmd_end_phase)
 
     # generate
-    gp = subparsers.add_parser('generate', help='Generate metrics.md from collected data')
+    gp = subparsers.add_parser(
+        'generate', help='Generate metrics.md from collected data', allow_abbrev=False
+    )
     add_plan_id_arg(gp)
     gp.set_defaults(func=cmd_generate)
 
     # enrich
-    enr = subparsers.add_parser('enrich', help='Enrich metrics from JSONL transcript')
+    enr = subparsers.add_parser(
+        'enrich', help='Enrich metrics from JSONL transcript', allow_abbrev=False
+    )
     add_plan_id_arg(enr)
     enr.add_argument('--session-id', required=True, help='Session ID for transcript lookup')
     enr.set_defaults(func=cmd_enrich)

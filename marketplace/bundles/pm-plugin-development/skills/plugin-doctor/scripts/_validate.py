@@ -33,6 +33,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plugin validation and inventory tools',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
         epilog="""
 Examples:
   # Validate plugin references
@@ -58,24 +59,24 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # references subcommand
-    p_refs = subparsers.add_parser('references', help='Validate plugin references')
+    p_refs = subparsers.add_parser('references', help='Validate plugin references', allow_abbrev=False)
     p_refs.add_argument('--file', '-f', required=True, help='Path to markdown file')
     p_refs.set_defaults(func=cmd_references)
 
     # cross-file subcommand
-    p_cross = subparsers.add_parser('cross-file', help='Verify cross-file findings')
+    p_cross = subparsers.add_parser('cross-file', help='Verify cross-file findings', allow_abbrev=False)
     p_cross.add_argument('--analysis', '-a', required=True, help='Path to script analysis JSON')
     p_cross.add_argument('--llm-findings', '-l', help='Path to LLM findings JSON (stdin if omitted)')
     p_cross.set_defaults(func=cmd_cross_file)
 
     # inventory subcommand
-    p_inv = subparsers.add_parser('inventory', help='Scan skill inventory')
+    p_inv = subparsers.add_parser('inventory', help='Scan skill inventory', allow_abbrev=False)
     p_inv.add_argument('--skill-path', '-s', required=True, help='Path to skill directory')
     p_inv.add_argument('--include-hidden', action='store_true', help='Include hidden files')
     p_inv.set_defaults(func=cmd_inventory)
 
     # extension subcommand
-    p_ext = subparsers.add_parser('extension', help='Validate extension.py files')
+    p_ext = subparsers.add_parser('extension', help='Validate extension.py files', allow_abbrev=False)
     p_ext.add_argument('--extension', '-e', dest='extension_path', help='Path to extension.py file')
     p_ext.add_argument('--bundle', '-b', dest='bundle_path', help='Path to bundle directory')
     p_ext.add_argument('--marketplace', '-m', dest='marketplace_path', help='Path to marketplace directory')

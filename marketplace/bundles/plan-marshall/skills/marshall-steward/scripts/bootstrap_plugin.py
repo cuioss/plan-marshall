@@ -217,15 +217,19 @@ def cmd_resolve(args: argparse.Namespace) -> dict:
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Bootstrap script for plugin root detection')
+    parser = argparse.ArgumentParser(
+        description='Bootstrap script for plugin root detection', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # get-root subcommand
-    root_parser = subparsers.add_parser('get-root', help='Get the plugin root path')
+    root_parser = subparsers.add_parser('get-root', help='Get the plugin root path', allow_abbrev=False)
     root_parser.add_argument('--refresh', action='store_true', help='Force re-detection even if cached')
 
     # resolve subcommand
-    resolve_parser = subparsers.add_parser('resolve', help='Resolve a path relative to a bundle')
+    resolve_parser = subparsers.add_parser(
+        'resolve', help='Resolve a path relative to a bundle', allow_abbrev=False
+    )
     resolve_parser.add_argument('--bundle', required=True, help="Bundle name (e.g., 'plan-marshall')")
     resolve_parser.add_argument('--path', required=True, help='Path relative to bundle root')
 

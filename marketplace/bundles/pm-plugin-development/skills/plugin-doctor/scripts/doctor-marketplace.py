@@ -28,7 +28,7 @@ from pathlib import Path
 
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
-from _doctor_analysis import analyze_component
+from _doctor_analysis import analyze_component, scan_argparse_safety
 from _doctor_report import generate_report
 from _doctor_shared import (
     categorize_all_issues,
@@ -252,6 +252,14 @@ def cmd_analyze(args) -> dict:
     for result in all_analysis:
         all_issues.extend(result.get('issues', []))
 
+    # Marketplace-wide argparse_safety scan (lightweight AST check).
+    # Runs on every analyze invocation — findings are file-scoped, not
+    # component-scoped, so they live alongside per-component issues rather
+    # than nested under any single component entry.
+    argparse_issues = scan_argparse_safety(marketplace_root)
+    all_issues.extend(argparse_issues)
+    total_issues += len(argparse_issues)
+
     categorized = categorize_all_issues(all_issues)
 
     return {
@@ -412,6 +420,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Batch marketplace analysis and fixing',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
         epilog="""
 Examples:
   # Scan entire marketplace
@@ -449,21 +458,21 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # scan subcommand
-    p_scan = subparsers.add_parser('scan', help='Scan marketplace components')
+    p_scan = subparsers.add_parser('scan', help='Scan marketplace components', allow_abbrev=False)
     scan_source = p_scan.add_mutually_exclusive_group()
     scan_source.add_argument('--bundles', help='Comma-separated list of bundle names to scan')
     scan_source.add_argument('--paths', nargs='+', help='Explicit component paths to scan (mutually exclusive with --bundles)')
     p_scan.set_defaults(func=cmd_scan)
 
     # analyze subcommand
-    p_analyze = subparsers.add_parser('analyze', help='Analyze all components for issues')
+    p_analyze = subparsers.add_parser('analyze', help='Analyze all components for issues', allow_abbrev=False)
     p_analyze.add_argument('--bundles', help='Comma-separated list of bundle names')
     p_analyze.add_argument('--type', help='Component types to analyze (agents,commands,skills)')
     p_analyze.add_argument('--name', help='Comma-separated component names to filter (e.g., phase-4-plan)')
     p_analyze.set_defaults(func=cmd_analyze)
 
     # fix subcommand
-    p_fix = subparsers.add_parser('fix', help='Apply safe fixes across marketplace')
+    p_fix = subparsers.add_parser('fix', help='Apply safe fixes across marketplace', allow_abbrev=False)
     p_fix.add_argument('--bundles', help='Comma-separated list of bundle names')
     p_fix.add_argument('--type', help='Component types to fix (agents,commands,skills)')
     p_fix.add_argument('--name', help='Comma-separated component names to filter (e.g., phase-4-plan)')
@@ -471,13 +480,13 @@ Examples:
     p_fix.set_defaults(func=cmd_fix)
 
     # report subcommand
-    p_report = subparsers.add_parser('report', help='Generate comprehensive report')
+    p_report = subparsers.add_parser('report', help='Generate comprehensive report', allow_abbrev=False)
     p_report.add_argument('--bundles', help='Comma-separated list of bundle names')
     p_report.add_argument('--output', '-o', help='Output directory for report')
     p_report.set_defaults(func=cmd_report)
 
     # validate-contracts subcommand
-    p_contracts = subparsers.add_parser('validate-contracts', help='Validate extension point contract compliance')
+    p_contracts = subparsers.add_parser('validate-contracts', help='Validate extension point contract compliance', allow_abbrev=False)
     p_contracts.add_argument('--extension-type', help='Filter by extension type (triage,outline,recipe,build,credential)')
     p_contracts.add_argument('--skill', help='Filter by specific skill (bundle:skill or skill-name)')
     p_contracts.set_defaults(func=cmd_validate_contracts)

@@ -34,6 +34,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Plugin component fix tools',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
         epilog="""
 Examples:
   # Extract fixable issues from diagnosis
@@ -53,27 +54,27 @@ Examples:
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
     # extract subcommand
-    p_extract = subparsers.add_parser('extract', help='Extract fixable issues')
+    p_extract = subparsers.add_parser('extract', help='Extract fixable issues', allow_abbrev=False)
     p_extract.add_argument(
         '--input', '-i', default='-', help="Path to diagnosis JSON file, or '-' for stdin (default: stdin)"
     )
     p_extract.set_defaults(func=cmd_extract)
 
     # categorize subcommand
-    p_categorize = subparsers.add_parser('categorize', help='Categorize fixes as safe/risky')
+    p_categorize = subparsers.add_parser('categorize', help='Categorize fixes as safe/risky', allow_abbrev=False)
     p_categorize.add_argument(
         '--input', '-i', default='-', help="Path to extracted issues JSON, or '-' for stdin (default: stdin)"
     )
     p_categorize.set_defaults(func=cmd_categorize)
 
     # apply subcommand
-    p_apply = subparsers.add_parser('apply', help='Apply a single fix')
+    p_apply = subparsers.add_parser('apply', help='Apply a single fix', allow_abbrev=False)
     p_apply.add_argument('--fix', '-f', required=True, help="Path to fix JSON file, or '-' for stdin")
     p_apply.add_argument('--bundle-dir', '-b', required=True, help='Path to bundle directory')
     p_apply.set_defaults(func=cmd_apply)
 
     # verify subcommand
-    p_verify = subparsers.add_parser('verify', help='Verify a fix was applied')
+    p_verify = subparsers.add_parser('verify', help='Verify a fix was applied', allow_abbrev=False)
     p_verify.add_argument('--fix-type', '-t', required=True, help='Type of fix to verify')
     p_verify.add_argument('--file', '-f', required=True, help='Path to the component file that was fixed')
     p_verify.set_defaults(func=cmd_verify)

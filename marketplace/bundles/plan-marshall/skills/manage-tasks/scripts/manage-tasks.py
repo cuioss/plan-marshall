@@ -59,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description='Manage implementation tasks with sequential sub-steps',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
 
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -67,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_prepare = subparsers.add_parser(
         'prepare-add',
         help='Allocate a scratch path for a pending task definition (Step 1 of add flow)',
+        allow_abbrev=False,
     )
     add_plan_id_arg(p_prepare)
     p_prepare.add_argument(
@@ -79,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_commit = subparsers.add_parser(
         'commit-add',
         help='Read the prepared task file and create TASK-NNN.json (Step 3 of add flow)',
+        allow_abbrev=False,
     )
     add_plan_id_arg(p_commit)
     p_commit.add_argument(
@@ -88,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # update
-    p_update = subparsers.add_parser('update', help='Update an existing task')
+    p_update = subparsers.add_parser('update', help='Update an existing task', allow_abbrev=False)
     add_plan_id_arg(p_update)
     p_update.add_argument('--number', required=True, type=int, help='Task number')
     p_update.add_argument('--title', help='New title')
@@ -101,46 +104,54 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument('--deliverable', type=int, help='Deliverable number (single integer)')
 
     # remove
-    p_remove = subparsers.add_parser('remove', help='Remove a task')
+    p_remove = subparsers.add_parser('remove', help='Remove a task', allow_abbrev=False)
     add_plan_id_arg(p_remove)
     p_remove.add_argument('--number', required=True, type=int, help='Task number')
 
     # list
-    p_list = subparsers.add_parser('list', help='List all tasks')
+    p_list = subparsers.add_parser('list', help='List all tasks', allow_abbrev=False)
     add_plan_id_arg(p_list)
     p_list.add_argument(
         '--status', choices=['pending', 'in_progress', 'done', 'blocked', 'all'], default='all', help='Filter by status'
     )
     p_list.add_argument('--deliverable', type=int, help='Filter by deliverable number')
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
-    p_get = subparsers.add_parser('get', help='Get a single task')
+    p_get = subparsers.add_parser('get', help='Get a single task', allow_abbrev=False)
     add_plan_id_arg(p_get)
     p_get.add_argument('--number', required=True, type=int, help='Task number')
 
     # next
-    p_next = subparsers.add_parser('next', help='Get next pending task/step')
+    p_next = subparsers.add_parser('next', help='Get next pending task/step', allow_abbrev=False)
     add_plan_id_arg(p_next)
     p_next.add_argument('--include-context', action='store_true', help='Include deliverable details in output')
     p_next.add_argument('--ignore-deps', action='store_true', help='Ignore dependency constraints')
 
     # tasks-by-domain
-    p_by_domain = subparsers.add_parser('tasks-by-domain', help='List tasks filtered by domain')
+    p_by_domain = subparsers.add_parser(
+        'tasks-by-domain', help='List tasks filtered by domain', allow_abbrev=False
+    )
     add_plan_id_arg(p_by_domain)
     p_by_domain.add_argument('--domain', required=True, help='Domain to filter by (e.g., java, javascript)')
 
     # tasks-by-profile
-    p_by_profile = subparsers.add_parser('tasks-by-profile', help='List tasks filtered by profile')
+    p_by_profile = subparsers.add_parser(
+        'tasks-by-profile', help='List tasks filtered by profile', allow_abbrev=False
+    )
     add_plan_id_arg(p_by_profile)
     p_by_profile.add_argument(
         '--profile', required=True, help='Profile to filter by (e.g., implementation, module_testing)'
     )
 
     # next-tasks
-    p_next_tasks = subparsers.add_parser('next-tasks', help='Get all tasks ready for parallel execution')
+    p_next_tasks = subparsers.add_parser(
+        'next-tasks', help='Get all tasks ready for parallel execution', allow_abbrev=False
+    )
     add_plan_id_arg(p_next_tasks)
 
     # finalize-step (consolidates step-done and step-skip)
-    p_finalize = subparsers.add_parser('finalize-step', help='Complete a step with outcome (done/skipped/failed)')
+    p_finalize = subparsers.add_parser(
+        'finalize-step', help='Complete a step with outcome (done/skipped/failed)', allow_abbrev=False
+    )
     add_plan_id_arg(p_finalize)
     p_finalize.add_argument('--task', required=True, type=int, help='Task number')
     p_finalize.add_argument('--step', required=True, type=int, help='Step number')
@@ -148,20 +159,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_finalize.add_argument('--reason', help='Reason for skipping or failure (optional)')
 
     # add-step
-    p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task')
+    p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task', allow_abbrev=False)
     add_plan_id_arg(p_add_step)
     p_add_step.add_argument('--task', required=True, type=int, help='Task number')
     p_add_step.add_argument('--target', required=True, help='Step target (file path or verification command)')
     p_add_step.add_argument('--after', type=int, help='Insert after this step number')
 
     # remove-step
-    p_remove_step = subparsers.add_parser('remove-step', help='Remove a step from a task')
+    p_remove_step = subparsers.add_parser(
+        'remove-step', help='Remove a step from a task', allow_abbrev=False
+    )
     add_plan_id_arg(p_remove_step)
     p_remove_step.add_argument('--task', required=True, type=int, help='Task number')
     p_remove_step.add_argument('--step', required=True, type=int, help='Step number')
 
     # rename-path
-    p_rename = subparsers.add_parser('rename-path', help='Record a path rename mapping')
+    p_rename = subparsers.add_parser(
+        'rename-path', help='Record a path rename mapping', allow_abbrev=False
+    )
     add_plan_id_arg(p_rename)
     p_rename.add_argument('--old-path', required=True, help='Original path before rename')
     p_rename.add_argument('--new-path', required=True, help='New path after rename')

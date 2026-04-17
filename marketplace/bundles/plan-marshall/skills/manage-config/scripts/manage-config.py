@@ -60,48 +60,52 @@ def _add_phase_subparser(
         has_domain_steps: If True, adds set-domain-step and set-domain-step-agent verbs
         has_list_steps: If True, adds set-steps, add-step, remove-step verbs (ordered list)
     """
-    p_phase = plan_sub.add_parser(phase_name, help=help_text)
+    p_phase = plan_sub.add_parser(phase_name, help=help_text, allow_abbrev=False)
     phase_sub = p_phase.add_subparsers(dest='verb', required=True, help='Operation')
 
     # get (with optional --field)
-    phase_get = phase_sub.add_parser('get', help=f'Get {phase_name} config')
+    phase_get = phase_sub.add_parser('get', help=f'Get {phase_name} config', allow_abbrev=False)
     phase_get.add_argument('--field', help='Field name (optional, shows all if omitted)')
 
     if has_scalar:
-        phase_set = phase_sub.add_parser('set', help=f'Set {phase_name} field')
+        phase_set = phase_sub.add_parser('set', help=f'Set {phase_name} field', allow_abbrev=False)
         phase_set.add_argument('--field', required=True, help='Field name')
         phase_set.add_argument('--value', required=True, help='Field value')
 
     if has_pipeline:
-        phase_set_iter = phase_sub.add_parser('set-max-iterations', help='Set max iterations')
+        phase_set_iter = phase_sub.add_parser('set-max-iterations', help='Set max iterations', allow_abbrev=False)
         phase_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
 
-        phase_set_step = phase_sub.add_parser('set-step', help='Set generic boolean step')
+        phase_set_step = phase_sub.add_parser('set-step', help='Set generic boolean step', allow_abbrev=False)
         phase_set_step.add_argument('--step', required=True, help='Step key (e.g., 1_quality_check)')
         phase_set_step.add_argument('--enabled', required=True, help='true or false')
 
     if has_list_steps:
-        phase_set_iter = phase_sub.add_parser('set-max-iterations', help='Set max iterations')
+        phase_set_iter = phase_sub.add_parser('set-max-iterations', help='Set max iterations', allow_abbrev=False)
         phase_set_iter.add_argument('--value', required=True, type=int, help='Max iterations value')
 
-        phase_set_steps = phase_sub.add_parser('set-steps', help='Replace entire steps list')
+        phase_set_steps = phase_sub.add_parser('set-steps', help='Replace entire steps list', allow_abbrev=False)
         phase_set_steps.add_argument('--steps', required=True, help='Comma-separated step list')
 
-        phase_add_step = phase_sub.add_parser('add-step', help='Add step to list')
+        phase_add_step = phase_sub.add_parser('add-step', help='Add step to list', allow_abbrev=False)
         phase_add_step.add_argument('--step', required=True, help='Step reference')
         phase_add_step.add_argument('--position', type=int, help='Insert position (0-based, default: append)')
         phase_add_step.add_argument('--after', help='Insert after this step name (takes precedence over --position)')
 
-        phase_rm_step = phase_sub.add_parser('remove-step', help='Remove step from list')
+        phase_rm_step = phase_sub.add_parser('remove-step', help='Remove step from list', allow_abbrev=False)
         phase_rm_step.add_argument('--step', required=True, help='Step reference to remove')
 
     if has_domain_steps:
-        phase_set_ds = phase_sub.add_parser('set-domain-step', help='Enable/disable domain verification step')
+        phase_set_ds = phase_sub.add_parser(
+            'set-domain-step', help='Enable/disable domain verification step', allow_abbrev=False
+        )
         phase_set_ds.add_argument('--domain', required=True, help='Domain key (e.g., java)')
         phase_set_ds.add_argument('--step', required=True, help='Step key (e.g., 1_technical_impl)')
         phase_set_ds.add_argument('--enabled', required=True, help='true or false')
 
-        phase_set_dsa = phase_sub.add_parser('set-domain-step-agent', help='Set domain step agent reference')
+        phase_set_dsa = phase_sub.add_parser(
+            'set-domain-step-agent', help='Set domain step agent reference', allow_abbrev=False
+        )
         phase_set_dsa.add_argument('--domain', required=True, help='Domain key (e.g., java)')
         phase_set_dsa.add_argument('--step', required=True, help='Step key (e.g., 1_technical_impl)')
         phase_set_dsa.add_argument('--agent', required=True, help='Fully-qualified agent reference')
@@ -112,88 +116,102 @@ def _add_phase_subparser(
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description='Plan-Marshall configuration management', formatter_class=argparse.RawDescriptionHelpFormatter
+        description='Plan-Marshall configuration management',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
 
     subparsers = parser.add_subparsers(dest='noun', required=True, help='Noun (resource type)')
 
     # --- skill-domains ---
-    p_sd = subparsers.add_parser('skill-domains', help='Manage implementation skill domains')
+    p_sd = subparsers.add_parser('skill-domains', help='Manage implementation skill domains', allow_abbrev=False)
     sd_sub = p_sd.add_subparsers(dest='verb', required=True, help='Operation')
 
-    sd_sub.add_parser('list', help='List all domains')
+    sd_sub.add_parser('list', help='List all domains', allow_abbrev=False)
 
-    sd_get = sd_sub.add_parser('get', help='Get domain config')
+    sd_get = sd_sub.add_parser('get', help='Get domain config', allow_abbrev=False)
     sd_get.add_argument('--domain', required=True, help='Domain name')
 
-    sd_get_def = sd_sub.add_parser('get-defaults', help='Get domain default skills')
+    sd_get_def = sd_sub.add_parser('get-defaults', help='Get domain default skills', allow_abbrev=False)
     sd_get_def.add_argument('--domain', required=True, help='Domain name')
 
-    sd_get_opt = sd_sub.add_parser('get-optionals', help='Get domain optional skills')
+    sd_get_opt = sd_sub.add_parser('get-optionals', help='Get domain optional skills', allow_abbrev=False)
     sd_get_opt.add_argument('--domain', required=True, help='Domain name')
 
-    sd_set = sd_sub.add_parser('set', help='Set domain config')
+    sd_set = sd_sub.add_parser('set', help='Set domain config', allow_abbrev=False)
     sd_set.add_argument('--domain', required=True, help='Domain name')
     sd_set.add_argument('--profile', help='Profile name (core, implementation, testing, quality)')
     sd_set.add_argument('--defaults', help='Comma-separated default skills')
     sd_set.add_argument('--optionals', help='Comma-separated optional skills')
 
-    sd_get_ext = sd_sub.add_parser('get-extensions', help='Get workflow skill extensions for domain')
+    sd_get_ext = sd_sub.add_parser(
+        'get-extensions', help='Get workflow skill extensions for domain', allow_abbrev=False
+    )
     sd_get_ext.add_argument('--domain', required=True, help='Domain name')
 
-    sd_set_ext = sd_sub.add_parser('set-extensions', help='Set workflow skill extension')
+    sd_set_ext = sd_sub.add_parser('set-extensions', help='Set workflow skill extension', allow_abbrev=False)
     sd_set_ext.add_argument('--domain', required=True, help='Domain name')
     sd_set_ext.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type')
     sd_set_ext.add_argument('--skill', required=True, help='Extension skill reference (bundle:skill)')
 
-    sd_add = sd_sub.add_parser('add', help='Add new domain')
+    sd_add = sd_sub.add_parser('add', help='Add new domain', allow_abbrev=False)
     sd_add.add_argument('--domain', required=True, help='Domain name')
     sd_add.add_argument('--defaults', help='Comma-separated default skills')
     sd_add.add_argument('--optionals', help='Comma-separated optional skills')
 
-    sd_val = sd_sub.add_parser('validate', help='Validate skill in domain')
+    sd_val = sd_sub.add_parser('validate', help='Validate skill in domain', allow_abbrev=False)
     sd_val.add_argument('--domain', required=True, help='Domain name')
     sd_val.add_argument('--skill', required=True, help='Skill to validate')
 
-    sd_sub.add_parser('detect', help='Auto-detect domains from project files')
+    sd_sub.add_parser('detect', help='Auto-detect domains from project files', allow_abbrev=False)
 
-    sd_sub.add_parser('get-available', help='Get available domains based on detected build systems')
+    sd_sub.add_parser(
+        'get-available', help='Get available domains based on detected build systems', allow_abbrev=False
+    )
 
-    sd_configure = sd_sub.add_parser('configure', help='Configure selected domains')
+    sd_configure = sd_sub.add_parser('configure', help='Configure selected domains', allow_abbrev=False)
     sd_configure.add_argument('--domains', required=True, help='Comma-separated domain names to enable')
 
-    sd_sub.add_parser('discover-project', help='Discover project-level skills from .claude/skills/')
+    sd_sub.add_parser(
+        'discover-project', help='Discover project-level skills from .claude/skills/', allow_abbrev=False
+    )
 
-    sd_attach = sd_sub.add_parser('attach-project', help='Attach project-level skills to a domain')
+    sd_attach = sd_sub.add_parser(
+        'attach-project', help='Attach project-level skills to a domain', allow_abbrev=False
+    )
     sd_attach.add_argument('--domain', required=True, help='Domain to attach skills to')
     sd_attach.add_argument('--skills', required=True, help='Comma-separated project:skill notations')
 
     # active-profiles subcommands
-    sd_ap = sd_sub.add_parser('active-profiles', help='Manage active profile configuration')
+    sd_ap = sd_sub.add_parser('active-profiles', help='Manage active profile configuration', allow_abbrev=False)
     sd_ap_sub = sd_ap.add_subparsers(dest='ap_verb', help='Active profiles operation')
 
-    sd_ap_set = sd_ap_sub.add_parser('set', help='Set active profiles (global or per-domain)')
+    sd_ap_set = sd_ap_sub.add_parser(
+        'set', help='Set active profiles (global or per-domain)', allow_abbrev=False
+    )
     sd_ap_set.add_argument('--profiles', required=True, help='Comma-separated profile names')
     sd_ap_set.add_argument('--domain', help='Domain to set profiles for (omit for global)')
 
-    sd_ap_remove = sd_ap_sub.add_parser('remove', help='Remove active profiles config')
+    sd_ap_remove = sd_ap_sub.add_parser(
+        'remove', help='Remove active profiles config', allow_abbrev=False
+    )
     sd_ap_remove.add_argument('--domain', help='Domain to remove profiles from (omit for global)')
 
     # --- system ---
-    p_sys = subparsers.add_parser('system', help='Manage system settings')
+    p_sys = subparsers.add_parser('system', help='Manage system settings', allow_abbrev=False)
     sys_sub = p_sys.add_subparsers(dest='sub_noun', required=True, help='Sub-noun')
 
-    p_ret = sys_sub.add_parser('retention', help='Manage retention settings')
+    p_ret = sys_sub.add_parser('retention', help='Manage retention settings', allow_abbrev=False)
     ret_sub = p_ret.add_subparsers(dest='verb', required=True, help='Operation')
 
-    ret_sub.add_parser('get', help='Get retention settings')
+    ret_sub.add_parser('get', help='Get retention settings', allow_abbrev=False)
 
-    ret_set = ret_sub.add_parser('set', help='Set retention field')
+    ret_set = ret_sub.add_parser('set', help='Set retention field', allow_abbrev=False)
     ret_set.add_argument('--field', required=True, help='Field name')
     ret_set.add_argument('--value', required=True, help='Field value')
 
     # --- plan (phase-based sub-nouns) ---
-    p_plan = subparsers.add_parser('plan', help='Manage plan settings')
+    p_plan = subparsers.add_parser('plan', help='Manage plan settings', allow_abbrev=False)
     plan_sub = p_plan.add_subparsers(dest='sub_noun', required=True, help='Phase sub-noun')
 
     _add_phase_subparser(plan_sub, 'phase-1-init', 'Init phase settings', has_scalar=True)
@@ -204,72 +222,92 @@ def main() -> int:
     _add_phase_subparser(plan_sub, 'phase-6-finalize', 'Finalize phase settings', has_scalar=True, has_list_steps=True)
 
     # --- ext-defaults ---
-    p_ext = subparsers.add_parser('ext-defaults', help='Manage extension defaults (shared config)')
+    p_ext = subparsers.add_parser(
+        'ext-defaults', help='Manage extension defaults (shared config)', allow_abbrev=False
+    )
     ext_sub = p_ext.add_subparsers(dest='verb', required=True, help='Operation')
 
-    ext_get = ext_sub.add_parser('get', help='Get extension default value')
+    ext_get = ext_sub.add_parser('get', help='Get extension default value', allow_abbrev=False)
     ext_get.add_argument('--key', required=True, help='Key to retrieve')
 
-    ext_set = ext_sub.add_parser('set', help='Set extension default value (always overwrites)')
+    ext_set = ext_sub.add_parser(
+        'set', help='Set extension default value (always overwrites)', allow_abbrev=False
+    )
     ext_set.add_argument('--key', required=True, help='Key to set')
     ext_set.add_argument('--value', required=True, help='Value (JSON or string)')
 
-    ext_set_def = ext_sub.add_parser('set-default', help='Set value only if key does not exist (write-once)')
+    ext_set_def = ext_sub.add_parser(
+        'set-default', help='Set value only if key does not exist (write-once)', allow_abbrev=False
+    )
     ext_set_def.add_argument('--key', required=True, help='Key to set')
     ext_set_def.add_argument('--value', required=True, help='Value (JSON or string)')
 
-    ext_sub.add_parser('list', help='List all extension defaults')
+    ext_sub.add_parser('list', help='List all extension defaults', allow_abbrev=False)
 
-    ext_remove = ext_sub.add_parser('remove', help='Remove extension default')
+    ext_remove = ext_sub.add_parser('remove', help='Remove extension default', allow_abbrev=False)
     ext_remove.add_argument('--key', required=True, help='Key to remove')
 
     # --- init ---
-    p_init = subparsers.add_parser('init', help='Initialize marshal.json')
+    p_init = subparsers.add_parser('init', help='Initialize marshal.json', allow_abbrev=False)
     p_init.add_argument('--force', action='store_true', help='Overwrite existing')
 
     # --- resolve-domain-skills ---
-    p_rds = subparsers.add_parser('resolve-domain-skills', help='Resolve skills for domain and profile')
+    p_rds = subparsers.add_parser(
+        'resolve-domain-skills', help='Resolve skills for domain and profile', allow_abbrev=False
+    )
     p_rds.add_argument('--domain', required=True, help='Domain name (java, javascript)')
     p_rds.add_argument('--profile', required=True, help='Profile name (implementation, testing)')
 
     # --- resolve-workflow-skill-extension ---
     p_rwse = subparsers.add_parser(
-        'resolve-workflow-skill-extension', help='Resolve workflow skill extension for domain and type'
+        'resolve-workflow-skill-extension',
+        help='Resolve workflow skill extension for domain and type',
+        allow_abbrev=False,
     )
     p_rwse.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
     p_rwse.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type (outline, triage)')
 
     # --- get-skills-by-profile ---
     p_gsbp = subparsers.add_parser(
-        'get-skills-by-profile', help='Get skills organized by profile for architecture enrichment'
+        'get-skills-by-profile',
+        help='Get skills organized by profile for architecture enrichment',
+        allow_abbrev=False,
     )
     p_gsbp.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
 
     # --- configure-execute-task-skills ---
     subparsers.add_parser(
-        'configure-execute-task-skills', help='Configure execute-task skills from discovered profiles'
+        'configure-execute-task-skills',
+        help='Configure execute-task skills from discovered profiles',
+        allow_abbrev=False,
     )
 
     # --- resolve-execute-task-skill ---
-    p_rte = subparsers.add_parser('resolve-execute-task-skill', help='Resolve execute-task skill for a profile')
+    p_rte = subparsers.add_parser(
+        'resolve-execute-task-skill', help='Resolve execute-task skill for a profile', allow_abbrev=False
+    )
     p_rte.add_argument('--profile', required=True, help='Profile name (e.g., implementation, module_testing)')
 
     # --- list-recipes ---
-    subparsers.add_parser('list-recipes', help='List all available recipes from configured domains')
+    subparsers.add_parser(
+        'list-recipes', help='List all available recipes from configured domains', allow_abbrev=False
+    )
 
     # --- resolve-recipe ---
-    p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key')
+    p_rr = subparsers.add_parser('resolve-recipe', help='Resolve a specific recipe by key', allow_abbrev=False)
     p_rr.add_argument('--recipe', required=True, help='Recipe key (e.g., refactor-to-standards)')
 
     # --- resolve-outline-skill ---
-    p_ros = subparsers.add_parser('resolve-outline-skill', help='Resolve outline skill for domain')
+    p_ros = subparsers.add_parser(
+        'resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False
+    )
     p_ros.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
 
     # --- list-finalize-steps ---
-    subparsers.add_parser('list-finalize-steps', help='List all available finalize steps')
+    subparsers.add_parser('list-finalize-steps', help='List all available finalize steps', allow_abbrev=False)
 
     # --- list-verify-steps ---
-    subparsers.add_parser('list-verify-steps', help='List all available verify steps')
+    subparsers.add_parser('list-verify-steps', help='List all available verify steps', allow_abbrev=False)
 
     args = parser.parse_args()
 

@@ -684,7 +684,7 @@ def write_file_output(output: dict, output_dir: Path, custom_output: str = '', f
 
 @safe_main
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Scan marketplace directories and return structured inventory')
+    parser = argparse.ArgumentParser(description='Scan marketplace directories and return structured inventory', allow_abbrev=False)
     parser.add_argument(
         '--scope',
         choices=['auto', 'marketplace', 'global', 'project', 'plugin-cache'],
