@@ -523,6 +523,22 @@ def test_read_frontmatter_order_missing_file_returns_none(tmp_path):
     assert _cmd_skill_domains._read_frontmatter_order(missing) is None
 
 
+def test_read_frontmatter_order_tolerates_trailing_comment(tmp_path):
+    """Trailing YAML comments after the order value are ignored."""
+    md = tmp_path / 'skill.md'
+    md.write_text('---\nname: foo\norder: 10 # pinned early\n---\n\n# Foo\n')
+
+    assert _cmd_skill_domains._read_frontmatter_order(md) == 10
+
+
+def test_read_frontmatter_order_tolerates_crlf(tmp_path):
+    """CRLF line endings do not prevent the regex from matching."""
+    md = tmp_path / 'skill.md'
+    md.write_bytes(b'---\r\nname: foo\r\norder: 7\r\n---\r\n\r\n# Foo\r\n')
+
+    assert _cmd_skill_domains._read_frontmatter_order(md) == 7
+
+
 def test_list_finalize_steps_builtins_have_order(tmp_path):
     """Built-in finalize steps carry order values parsed from standards/*.md frontmatter."""
     with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):

@@ -66,7 +66,7 @@ def _read_frontmatter_order(path: Path) -> int | None:
     if end_idx is None:
         return None
     for line in lines[1:end_idx]:
-        match = re.match(r'^\s*order:\s*(-?\d+)\s*$', line)
+        match = re.match(r'^\s*order:\s*(-?\d+)\s*(?:#.*)?$', line.rstrip('\r'))
         if match:
             return int(match.group(1))
     return None
