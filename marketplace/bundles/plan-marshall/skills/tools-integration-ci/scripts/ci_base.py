@@ -566,6 +566,31 @@ def build_parser(
     ci_logs = ci_sub.add_parser('logs', help='Get failed run/job logs')
     ci_logs.add_argument('--run-id', required=True, help='Run/job ID')
 
+    # ci wait-for-status-flip — poll until PR CI status flips from pending or timeout
+    ci_wait_status_flip = ci_sub.add_parser(
+        'wait-for-status-flip',
+        help='Wait for PR CI status to flip from pending (replaces blocking shell sleep)',
+    )
+    ci_wait_status_flip.add_argument('--pr-number', required=True, type=int, help='PR number')
+    ci_wait_status_flip.add_argument(
+        '--timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Max wait time in seconds (default: {DEFAULT_CI_TIMEOUT})',
+    )
+    ci_wait_status_flip.add_argument(
+        '--interval',
+        type=int,
+        default=DEFAULT_CI_INTERVAL,
+        help=f'Poll interval in seconds (default: {DEFAULT_CI_INTERVAL})',
+    )
+    ci_wait_status_flip.add_argument(
+        '--expected',
+        choices=['success', 'failure', 'any'],
+        default='any',
+        help='Wait until status flips to this value; default any non-pending flip',
+    )
+
     # -- issue --------------------------------------------------------
     issue_parser = subparsers.add_parser('issue', help='Issue operations')
     issue_sub = issue_parser.add_subparsers(dest='issue_command', required=True)
@@ -621,6 +646,51 @@ def build_parser(
     # issue close
     issue_close = issue_sub.add_parser('close', help='Close an issue')
     issue_close.add_argument('--issue', required=True, help='Issue number or URL')
+
+    # issue wait-for-close — poll until the issue transitions to closed or timeout
+    issue_wait_close = issue_sub.add_parser(
+        'wait-for-close',
+        help='Wait for issue to close (replaces blocking shell sleep)',
+    )
+    issue_wait_close.add_argument('--issue-number', required=True, type=int, help='Issue number')
+    issue_wait_close.add_argument(
+        '--timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Max wait time in seconds (default: {DEFAULT_CI_TIMEOUT})',
+    )
+    issue_wait_close.add_argument(
+        '--interval',
+        type=int,
+        default=DEFAULT_CI_INTERVAL,
+        help=f'Poll interval in seconds (default: {DEFAULT_CI_INTERVAL})',
+    )
+
+    # issue wait-for-label — poll until a label appears/disappears on the issue or timeout
+    issue_wait_label = issue_sub.add_parser(
+        'wait-for-label',
+        help='Wait for a label to be added or removed on an issue (replaces blocking shell sleep)',
+    )
+    issue_wait_label.add_argument('--issue-number', required=True, type=int, help='Issue number')
+    issue_wait_label.add_argument('--label', required=True, help='Label name to watch')
+    issue_wait_label.add_argument(
+        '--mode',
+        choices=['present', 'absent'],
+        default='present',
+        help="Wait for label to be present (default) or absent",
+    )
+    issue_wait_label.add_argument(
+        '--timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Max wait time in seconds (default: {DEFAULT_CI_TIMEOUT})',
+    )
+    issue_wait_label.add_argument(
+        '--interval',
+        type=int,
+        default=DEFAULT_CI_INTERVAL,
+        help=f'Poll interval in seconds (default: {DEFAULT_CI_INTERVAL})',
+    )
 
     return parser, pr_sub, ci_sub, issue_sub
 

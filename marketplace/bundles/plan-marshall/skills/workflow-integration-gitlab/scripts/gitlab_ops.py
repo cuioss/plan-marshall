@@ -800,6 +800,102 @@ cmd_ci_rerun = make_simple_handler(
 )
 
 
+def _fetch_pr_overall_ci_status(pr_number: int) -> tuple[bool, Any]:
+    """Fetch the overall pipeline status for an MR.
+
+    Returns ``(True, status)`` on success where status is one of
+    ``pending|success|failure|none``. On failure returns
+    ``(False, {'error': ..., 'context': ...})`` so callers can propagate the
+    error dict through ``poll_until`` in the same shape used by ``cmd_ci_wait``.
+    Mirrors the GitHub helper: GitLab's raw pipeline statuses are normalised to
+    the same four-valued vocabulary so the wait-for-status-flip handler shares
+    a response shape across providers.
+    """
+    returncode, stdout, stderr = run_glab(['mr', 'view', str(pr_number), '--output', 'json'])
+    if returncode != 0:
+        return False, {
+            'error': f'Failed to get MR {pr_number}',
+            'context': stderr.strip(),
+        }
+    try:
+        data = json.loads(stdout)
+        pipeline = data.get('pipeline') or {}
+        pipeline_status = pipeline.get('status')
+    except json.JSONDecodeError:
+        return False, {'error': 'Failed to parse glab output', 'context': stdout[:100]}
+
+    if not pipeline or not pipeline_status:
+        return True, 'none'
+
+    status_map = {
+        'success': 'success',
+        'failed': 'failure',
+        'canceled': 'failure',
+        'skipped': 'success',
+        'running': 'pending',
+        'pending': 'pending',
+        'created': 'pending',
+    }
+    overall = status_map.get(pipeline_status, 'pending')
+    return True, overall
+
+
+def cmd_ci_wait_for_status_flip(args: argparse.Namespace) -> dict:
+    """Handle 'ci wait-for-status-flip' — poll until MR pipeline status flips from pending or timeout.
+
+    GitLab counterpart to the GitHub handler. Preserves the CLI key
+    ``pr_number`` (the flag remains ``--pr-number``) for cross-provider
+    consistency, even though GitLab calls these merge requests.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('ci_wait_for_status_flip', err)
+
+    ok, initial = _fetch_pr_overall_ci_status(args.pr_number)
+    if not ok:
+        return make_error(
+            'ci_wait_for_status_flip',
+            initial.get('error', f'Initial CI status fetch failed for MR {args.pr_number}'),
+            initial.get('context', ''),
+        )
+    baseline = initial
+
+    def check_fn() -> tuple[bool, dict]:
+        inner_ok, data = _fetch_pr_overall_ci_status(args.pr_number)
+        if not inner_ok:
+            return False, data
+        return True, {'status': data}
+
+    def is_complete_fn(data: dict) -> bool:
+        fresh = data.get('status')
+        if fresh == baseline or fresh == 'pending':
+            return False
+        if args.expected != 'any' and fresh != args.expected:
+            return False
+        return True
+
+    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
+
+    if 'error' in result:
+        return make_error(
+            'ci_wait_for_status_flip',
+            result['error'],
+            result.get('last_data', {}).get('context', ''),
+        )
+
+    final_status = result['last_data'].get('status', baseline)
+    return {
+        'status': 'success',
+        'operation': 'ci_wait_for_status_flip',
+        'pr_number': args.pr_number,
+        'timed_out': result['timed_out'],
+        'duration_sec': result['duration_sec'],
+        'polls': result['polls'],
+        'baseline_status': baseline,
+        'final_status': final_status,
+    }
+
+
 def cmd_ci_logs(args: argparse.Namespace) -> dict:
     """Handle 'ci logs' subcommand - get job logs."""
     is_auth, err = check_auth()
@@ -1083,6 +1179,142 @@ cmd_issue_close = make_simple_handler(
 )
 
 
+def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
+    """Fetch issue state and labels for polling handlers.
+
+    Normalises GitLab's ``opened`` state to ``open`` to match the GitHub
+    handler shape. Labels are returned verbatim (GitLab exposes them as a
+    direct string array).
+    """
+    returncode, stdout, stderr = run_glab(
+        ['issue', 'view', str(issue_number), '--output', 'json']
+    )
+    if returncode != 0:
+        return False, {
+            'error': f'Failed to view issue {issue_number}',
+            'context': stderr.strip(),
+        }
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return False, {'error': 'Failed to parse glab output', 'context': stdout[:100]}
+
+    state = str(data.get('state', 'unknown')).lower()
+    if state == 'opened':
+        state = 'open'
+    labels = list(data.get('labels') or [])
+    return True, {'state': state, 'labels': labels}
+
+
+def cmd_issue_wait_for_close(args: argparse.Namespace) -> dict:
+    """Handle 'issue wait-for-close' — poll until the issue transitions to closed or timeout.
+
+    GitLab counterpart to the GitHub handler. Normalises GitLab's ``opened``
+    state to ``open`` so the baseline/final values are consistent across
+    providers.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('issue_wait_for_close', err)
+
+    ok, initial = _fetch_issue_state_and_labels(args.issue_number)
+    if not ok:
+        return make_error(
+            'issue_wait_for_close',
+            initial.get('error', f'Initial state fetch failed for issue {args.issue_number}'),
+            initial.get('context', ''),
+        )
+    baseline_state = initial['state']
+
+    def check_fn() -> tuple[bool, dict]:
+        inner_ok, data = _fetch_issue_state_and_labels(args.issue_number)
+        if not inner_ok:
+            return False, data
+        return True, {'state': data['state']}
+
+    def is_complete_fn(data: dict) -> bool:
+        return data.get('state') != 'open'
+
+    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
+
+    if 'error' in result:
+        return make_error(
+            'issue_wait_for_close',
+            result['error'],
+            result.get('last_data', {}).get('context', ''),
+        )
+
+    final_state = result['last_data'].get('state', baseline_state)
+    return {
+        'status': 'success',
+        'operation': 'issue_wait_for_close',
+        'issue_number': args.issue_number,
+        'timed_out': result['timed_out'],
+        'duration_sec': result['duration_sec'],
+        'polls': result['polls'],
+        'baseline_state': baseline_state,
+        'final_state': final_state,
+    }
+
+
+def cmd_issue_wait_for_label(args: argparse.Namespace) -> dict:
+    """Handle 'issue wait-for-label' — poll until the requested label transitions state.
+
+    GitLab counterpart to the GitHub handler. Same response shape and
+    completion semantics as GitHub: wait for the label to appear (``present``
+    mode) or disappear (``absent`` mode) relative to the baseline.
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('issue_wait_for_label', err)
+
+    ok, initial = _fetch_issue_state_and_labels(args.issue_number)
+    if not ok:
+        return make_error(
+            'issue_wait_for_label',
+            initial.get('error', f'Initial label fetch failed for issue {args.issue_number}'),
+            initial.get('context', ''),
+        )
+    baseline_present = args.label in initial['labels']
+
+    def check_fn() -> tuple[bool, dict]:
+        inner_ok, data = _fetch_issue_state_and_labels(args.issue_number)
+        if not inner_ok:
+            return False, data
+        return True, {'labels': data['labels']}
+
+    def is_complete_fn(data: dict) -> bool:
+        present_now = args.label in data.get('labels', [])
+        if present_now == baseline_present:
+            return False
+        if args.mode == 'present':
+            return present_now is True
+        return present_now is False
+
+    result = poll_until(check_fn, is_complete_fn, timeout=args.timeout, interval=args.interval)
+
+    if 'error' in result:
+        return make_error(
+            'issue_wait_for_label',
+            result['error'],
+            result.get('last_data', {}).get('context', ''),
+        )
+
+    final_present = args.label in result['last_data'].get('labels', [])
+    return {
+        'status': 'success',
+        'operation': 'issue_wait_for_label',
+        'issue_number': args.issue_number,
+        'label': args.label,
+        'mode': args.mode,
+        'timed_out': result['timed_out'],
+        'duration_sec': result['duration_sec'],
+        'polls': result['polls'],
+        'baseline_present': baseline_present,
+        'final_present': final_present,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1127,11 +1359,14 @@ def main() -> int:
         ('pr', 'edit'): cmd_pr_edit,
         ('ci', 'status'): cmd_ci_status,
         ('ci', 'wait'): cmd_ci_wait,
+        ('ci', 'wait-for-status-flip'): cmd_ci_wait_for_status_flip,
         ('ci', 'rerun'): cmd_ci_rerun,
         ('ci', 'logs'): cmd_ci_logs,
         ('issue', 'create'): cmd_issue_create,
         ('issue', 'view'): cmd_issue_view,
         ('issue', 'close'): cmd_issue_close,
+        ('issue', 'wait-for-close'): cmd_issue_wait_for_close,
+        ('issue', 'wait-for-label'): cmd_issue_wait_for_label,
     }
 
     result = dispatch(args, handlers, parser)

@@ -656,5 +656,252 @@ def test_run_cli_handles_file_not_found_without_touching_cwd(
     assert stderr == 'missing'
 
 
+# =============================================================================
+# ci wait-for-status-flip argparse tests
+# =============================================================================
+
+
+def test_ci_wait_for_status_flip_registered():
+    """`ci wait-for-status-flip` subcommand must be registered under the ci subparser."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        ['ci', 'wait-for-status-flip', '--pr-number', '42']
+    )
+    assert args.command == 'ci'
+    assert args.ci_command == 'wait-for-status-flip'
+    assert args.pr_number == 42
+
+
+def test_ci_wait_for_status_flip_requires_pr_number():
+    """`ci wait-for-status-flip` must exit when --pr-number is omitted."""
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['ci', 'wait-for-status-flip'])
+
+
+def test_ci_wait_for_status_flip_defaults():
+    """--timeout and --interval default to module constants; --expected defaults to 'any'."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        ['ci', 'wait-for-status-flip', '--pr-number', '7']
+    )
+    assert args.timeout == DEFAULT_CI_TIMEOUT
+    assert args.interval == DEFAULT_CI_INTERVAL
+    assert args.expected == 'any'
+
+
+def test_ci_wait_for_status_flip_accepts_custom_timeout_and_interval():
+    """--timeout and --interval should accept integer overrides."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        [
+            'ci',
+            'wait-for-status-flip',
+            '--pr-number',
+            '7',
+            '--timeout',
+            '600',
+            '--interval',
+            '15',
+        ]
+    )
+    assert args.timeout == 600
+    assert args.interval == 15
+
+
+@pytest.mark.parametrize('expected', ['success', 'failure', 'any'])
+def test_ci_wait_for_status_flip_accepts_valid_expected_values(expected):
+    """--expected accepts success, failure, and any."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        ['ci', 'wait-for-status-flip', '--pr-number', '7', '--expected', expected]
+    )
+    assert args.expected == expected
+
+
+def test_ci_wait_for_status_flip_rejects_invalid_expected_value():
+    """--expected must reject values outside the success|failure|any choice set."""
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                'ci',
+                'wait-for-status-flip',
+                '--pr-number',
+                '7',
+                '--expected',
+                'pending',
+            ]
+        )
+
+
+# =============================================================================
+# issue wait-for-close argparse tests
+# =============================================================================
+
+
+def test_issue_wait_for_close_registered():
+    """`issue wait-for-close` subcommand must be registered under the issue subparser."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        ['issue', 'wait-for-close', '--issue-number', '99']
+    )
+    assert args.command == 'issue'
+    assert args.issue_command == 'wait-for-close'
+    assert args.issue_number == 99
+
+
+def test_issue_wait_for_close_requires_issue_number():
+    """`issue wait-for-close` must exit when --issue-number is omitted."""
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['issue', 'wait-for-close'])
+
+
+def test_issue_wait_for_close_defaults():
+    """--timeout and --interval default to module constants."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        ['issue', 'wait-for-close', '--issue-number', '99']
+    )
+    assert args.timeout == DEFAULT_CI_TIMEOUT
+    assert args.interval == DEFAULT_CI_INTERVAL
+
+
+def test_issue_wait_for_close_accepts_custom_timeout_and_interval():
+    """--timeout and --interval should accept integer overrides."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        [
+            'issue',
+            'wait-for-close',
+            '--issue-number',
+            '99',
+            '--timeout',
+            '120',
+            '--interval',
+            '5',
+        ]
+    )
+    assert args.timeout == 120
+    assert args.interval == 5
+
+
+# =============================================================================
+# issue wait-for-label argparse tests
+# =============================================================================
+
+
+def test_issue_wait_for_label_registered():
+    """`issue wait-for-label` subcommand must be registered under the issue subparser."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        [
+            'issue',
+            'wait-for-label',
+            '--issue-number',
+            '99',
+            '--label',
+            'ready',
+        ]
+    )
+    assert args.command == 'issue'
+    assert args.issue_command == 'wait-for-label'
+    assert args.issue_number == 99
+    assert args.label == 'ready'
+
+
+def test_issue_wait_for_label_requires_issue_number():
+    """`issue wait-for-label` must exit when --issue-number is omitted."""
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(['issue', 'wait-for-label', '--label', 'ready'])
+
+
+def test_issue_wait_for_label_requires_label():
+    """`issue wait-for-label` must exit when --label is omitted."""
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            ['issue', 'wait-for-label', '--issue-number', '99']
+        )
+
+
+def test_issue_wait_for_label_defaults():
+    """--timeout and --interval default to module constants; --mode defaults to 'present'."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        [
+            'issue',
+            'wait-for-label',
+            '--issue-number',
+            '99',
+            '--label',
+            'ready',
+        ]
+    )
+    assert args.timeout == DEFAULT_CI_TIMEOUT
+    assert args.interval == DEFAULT_CI_INTERVAL
+    assert args.mode == 'present'
+
+
+def test_issue_wait_for_label_accepts_custom_timeout_and_interval():
+    """--timeout and --interval should accept integer overrides."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        [
+            'issue',
+            'wait-for-label',
+            '--issue-number',
+            '99',
+            '--label',
+            'ready',
+            '--timeout',
+            '45',
+            '--interval',
+            '3',
+        ]
+    )
+    assert args.timeout == 45
+    assert args.interval == 3
+
+
+@pytest.mark.parametrize('mode', ['present', 'absent'])
+def test_issue_wait_for_label_accepts_valid_mode_values(mode):
+    """--mode accepts present and absent."""
+    parser, _, _, _ = build_parser('test')
+    args = parser.parse_args(
+        [
+            'issue',
+            'wait-for-label',
+            '--issue-number',
+            '99',
+            '--label',
+            'ready',
+            '--mode',
+            mode,
+        ]
+    )
+    assert args.mode == mode
+
+
+def test_issue_wait_for_label_rejects_invalid_mode_value():
+    """--mode must reject values outside the present|absent choice set."""
+    parser, _, _, _ = build_parser('test')
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                'issue',
+                'wait-for-label',
+                '--issue-number',
+                '99',
+                '--label',
+                'ready',
+                '--mode',
+                'toggled',
+            ]
+        )
+
+
 # Silence unused-import warnings caused by the fixtures above.
 _ = (os, tempfile, subprocess)

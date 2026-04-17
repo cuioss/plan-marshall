@@ -154,6 +154,49 @@ Write(file_path="<path from prepare-body>", content="## Summary\n...")
 Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create --title 'T' --plan-id my-plan --base main")
 ```
 
+### No sleep for external waits
+
+`sleep N` and `until <check>; do sleep ...; done` are forbidden for blocking on
+external conditions (CI status changes, PR bot comments, issue state
+transitions, label propagation, etc.). A bare `sleep` in an agent/skill blocks
+the turn for the full duration, defeats the Monitor-driven notification model,
+and is what the Bash safety harness already blocks via its "long leading sleep"
+heuristic.
+
+Instead, dispatch to the CI abstraction's `wait-for-*` subcommands — they
+implement bounded polling with proper exit codes, timeout handling, and
+structured TOON output:
+
+- `pr wait-for-comments --pr-number N --timeout SECS` — block until new bot
+  review comments land (or timeout)
+- `ci wait-for-status-flip --ref REF --timeout SECS` — block until the CI
+  status on a ref transitions (queued → running → success/failure)
+- `issue wait-for-close --issue-number N --timeout SECS` — block until an
+  issue is closed
+- `issue wait-for-label --issue-number N --label L --timeout SECS` — block
+  until a specific label is applied (or removed, depending on mode)
+
+If no existing subcommand covers your signal, **extend the CI abstraction**:
+add a new `wait-for-*` parser entry in
+`marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci_base.py`
+alongside the existing `wait-for-comments` parser, wire it through to the
+provider implementations, and document it in
+`tools-integration-ci/standards/leaf-command-reference.md`. Do not paper over
+the gap with a `sleep`.
+
+```
+# BAD — blocks the turn, no timeout semantics, no structured result
+Bash(command="sleep 180")
+
+# GOOD — bounded wait with TOON result, parseable exit code
+Bash(command="python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-for-comments --pr-number N --timeout 180")
+```
+
+See [blocking-wait-pattern.md](../../tools-integration-ci/standards/blocking-wait-pattern.md)
+in the `tools-integration-ci` standards for the full pattern (polling cadence,
+timeout semantics, TOON contract for wait-for-* results, and guidance on
+adding new wait-for-* subcommands).
+
 ## Performance Tips
 
 - **Glob once, then Read selectively** — discover files first, read only what you need
