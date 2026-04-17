@@ -424,6 +424,32 @@ def get_gitignored_files(root: Path) -> set[str]:
         return set()
 
 
+def get_tracked_files(root: Path) -> set[str]:
+    """Return set of paths (relative to ``root``) that are tracked by git.
+
+    Uses ``git ls-files --cached`` with ``cwd=root`` so results are
+    relative to ``root`` — matching the ``rel`` computation in
+    ``scan_artifacts`` even when ``root`` is a subdirectory of a repo.
+    Returns empty set if not inside a git repo or git is unavailable.
+    Tracked files must never be classified as ``safe`` artifacts — even
+    if a filename matches a safe glob, a tracked entry may be a committed
+    fixture that the developer intends to keep.
+    """
+    try:
+        result = subprocess.run(
+            ['git', 'ls-files', '--cached'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(root),
+        )
+        if result.returncode != 0:
+            return set()
+        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return set()
+
+
 def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
     """Compile glob-style patterns into regex for single-pass matching.
 
@@ -470,8 +496,15 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     of multiple Path.glob() calls, improving performance on large repos.
     Skips known large directories (node_modules, .git, etc.) early to avoid
     unnecessary traversal.
+
+    Tracked files are never reported as ``safe`` — even when a filename
+    matches a safe glob, a tracked entry may be an intentional fixture
+    (e.g., a committed ``*.log`` used by a test). Matching tracked files
+    are routed to ``uncertain`` so the caller can confirm before any
+    deletion.
     """
     ignored = get_gitignored_files(root) if respect_gitignore else set()
+    tracked = get_tracked_files(root)
 
     safe: list[str] = []
     uncertain: list[str] = []
@@ -486,9 +519,13 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
             if rel in ignored:
                 continue
 
-            # Check safe patterns first
+            # Check safe patterns first, but demote tracked files to
+            # 'uncertain' so committed fixtures are never auto-deleted.
             if any(rx.match(rel) for rx in _SAFE_REGEXES):
-                safe.append(rel)
+                if rel in tracked:
+                    uncertain.append(rel)
+                else:
+                    safe.append(rel)
             elif any(rx.match(rel) for rx in _UNCERTAIN_REGEXES):
                 uncertain.append(rel)
 
