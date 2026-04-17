@@ -148,6 +148,67 @@ def test_structure_real_plugin_doctor():
 
 
 # =============================================================================
+# Structure Subcommand Tests - skill-naming-noun-suffix Rule
+# =============================================================================
+
+
+def test_structure_noun_suffix_flags_executor(tmp_path):
+    """Skill directory names ending in reserved -executor are flagged."""
+    fixture_src = SKILL_STRUCTURE_FIXTURES / 'skill-with-noun-suffix'
+    if not fixture_src.exists():
+        return  # Skip if fixture not available
+
+    # Rename the fixture into a reserved-suffix directory name for this test.
+    target = tmp_path / 'sample-executor'
+    target.mkdir()
+    (target / 'SKILL.md').write_text((fixture_src / 'SKILL.md').read_text(encoding='utf-8'), encoding='utf-8')
+
+    args = Namespace(directory=str(target))
+    data = cmd_structure(args)
+
+    noun_suffix = data.get('noun_suffix', {})
+    assert noun_suffix.get('violation') is True, f'Expected violation=True, got {noun_suffix!r}'
+    assert noun_suffix.get('suffix') == '-executor', f'Expected suffix=-executor, got {noun_suffix.get("suffix")!r}'
+    assert noun_suffix.get('directory_name') == 'sample-executor'
+    # Score is penalised when a violation is present.
+    assert data.get('structure_score', 100) < 100, 'Noun-suffix violation should reduce structure_score'
+
+
+def test_structure_noun_suffix_flags_plurals(tmp_path):
+    """Plural reserved suffixes (-managers) are also flagged."""
+    fixture_src = SKILL_STRUCTURE_FIXTURES / 'skill-with-noun-suffix'
+    if not fixture_src.exists():
+        return  # Skip if fixture not available
+
+    target = tmp_path / 'resource-managers'
+    target.mkdir()
+    (target / 'SKILL.md').write_text((fixture_src / 'SKILL.md').read_text(encoding='utf-8'), encoding='utf-8')
+
+    args = Namespace(directory=str(target))
+    data = cmd_structure(args)
+
+    noun_suffix = data.get('noun_suffix', {})
+    assert noun_suffix.get('violation') is True, f'Expected violation=True, got {noun_suffix!r}'
+    assert noun_suffix.get('suffix') == '-managers', f'Expected suffix=-managers, got {noun_suffix.get("suffix")!r}'
+
+
+def test_structure_noun_suffix_passes_verb_first_name():
+    """Verb-first skill directory names are not flagged."""
+    skill_dir = (
+        PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'execute-task'
+    )
+    if not skill_dir.exists():
+        return  # Skip if not found (depends on rename tasks completing earlier)
+
+    args = Namespace(directory=str(skill_dir))
+    data = cmd_structure(args)
+
+    noun_suffix = data.get('noun_suffix', {})
+    assert noun_suffix.get('violation') is False, f'Verb-first name should not be flagged, got {noun_suffix!r}'
+    assert noun_suffix.get('suffix') is None
+
+
+# =============================================================================
 # Cross-File Subcommand Tests (Tier 2 - direct import)
 # =============================================================================
 

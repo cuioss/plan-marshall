@@ -52,6 +52,25 @@ def analyze_component(component: dict) -> dict:
         structure = analyze_skill_structure(skill_dir)
         analysis['structure'] = structure
 
+        # Skill naming convention: forbid noun-suffix directory names
+        noun_suffix = structure.get('noun_suffix', {})
+        if noun_suffix.get('violation'):
+            directory_name = noun_suffix.get('directory_name', skill_dir.name)
+            suffix = noun_suffix.get('suffix', '')
+            issues.append(
+                {
+                    'type': 'skill-naming-noun-suffix',
+                    'file': str(skill_dir),
+                    'severity': 'warning',
+                    'fixable': False,
+                    'description': (
+                        f'Skill directory name `{directory_name}` ends with reserved noun suffix '
+                        f'`{suffix}` — use a verb-first name (skill-naming-noun-suffix)'
+                    ),
+                    'details': noun_suffix,
+                }
+            )
+
         # Markdown analysis of SKILL.md
         if skill_md_path:
             md_path = Path(skill_md_path)

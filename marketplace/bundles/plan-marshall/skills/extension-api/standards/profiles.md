@@ -39,11 +39,11 @@ These are the profiles defined in `ExtensionBase.APPLICABLE_PROFILES`. Extension
 
 | Profile | Purpose | System Default | Detection |
 |---------|---------|----------------|-----------|
-| `implementation` | Create/modify production code | `plan-marshall:task-executor` | Always included |
-| `module_testing` | Create/modify test code | `plan-marshall:task-executor` | Always included |
-| `integration_testing` | Integration tests (containers, external services) | `plan-marshall:task-executor` | Signal-based (e.g., Failsafe plugin, testcontainers deps) |
-| `quality` | Documentation standards, code quality | `plan-marshall:task-executor` | Always included |
-| `documentation` | Documentation-specific tasks (AsciiDoc, ADRs) | `plan-marshall:task-executor` | Signal-based (module has `doc/*.adoc` files) |
+| `implementation` | Create/modify production code | `plan-marshall:execute-task` | Always included |
+| `module_testing` | Create/modify test code | `plan-marshall:execute-task` | Always included |
+| `integration_testing` | Integration tests (containers, external services) | `plan-marshall:execute-task` | Signal-based (e.g., Failsafe plugin, testcontainers deps) |
+| `quality` | Documentation standards, code quality | `plan-marshall:execute-task` | Always included |
+| `documentation` | Documentation-specific tasks (AsciiDoc, ADRs) | `plan-marshall:execute-task` | Signal-based (module has `doc/*.adoc` files) |
 
 ---
 
@@ -108,13 +108,13 @@ Domain-specific profile skills CAN:
 2. **Use domain-specific verification** - Different commands
 3. **Apply domain patterns** - Coding standards, idioms
 
-**Error handling**: If a profile skill reference in marshal.json points to a non-existent skill, resolution falls back to the system default (`plan-marshall:task-executor`) with `fallback=true`. The invalid reference is logged as a warning.
+**Error handling**: If a profile skill reference in marshal.json points to a non-existent skill, resolution falls back to the system default (`plan-marshall:execute-task`) with `fallback=true`. The invalid reference is logged as a warning.
 
 ---
 
 ## Profile Execution Contract
 
-All profiles share the same execution contract. The system default for all profiles is `plan-marshall:task-executor`.
+All profiles share the same execution contract. The system default for all profiles is `plan-marshall:execute-task`.
 
 **Invocation**: Phase `5-execute` via `plan-phase-agent plan_id={plan_id} phase=5-execute task_number={task_number}`
 

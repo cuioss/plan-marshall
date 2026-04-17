@@ -40,7 +40,7 @@
     "./skills/recipe-refactor-to-profile-standards",
     "./skills/ref-toon-format",
     "./skills/ref-workflow-architecture",
-    "./skills/task-executor",
+    "./skills/execute-task",
     "./skills/tools-integration-ci",
     "./skills/tools-permission-doctor",
     "./skills/tools-permission-fix",
