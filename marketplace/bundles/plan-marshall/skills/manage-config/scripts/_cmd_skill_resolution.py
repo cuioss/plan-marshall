@@ -411,19 +411,12 @@ def _discover_all_finalize_steps() -> list[dict]:
     sync_skill_name = 'finalize-step-sync-plugin-cache'
     if claude_skills.is_dir():
         sync_skill_dir = claude_skills / sync_skill_name
-        sync_skill_md = sync_skill_dir / 'SKILL.md'
-        if sync_skill_dir.is_dir() and sync_skill_md.exists():
-            content = sync_skill_md.read_text()
-            description = ''
-            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
-            if fm_match:
-                description = fm_match.group(1).strip()
-
+        if sync_skill_dir.is_dir() and (sync_skill_dir / 'SKILL.md').exists():
             step_ref = f'project:{sync_skill_name}'
             all_steps.append(
                 {
                     'name': step_ref,
-                    'description': description or sync_skill_name,
+                    'description': get_skill_description(step_ref),
                     'type': 'project',
                     'source': 'project',
                 }
@@ -447,21 +440,14 @@ def _discover_all_finalize_steps() -> list[dict]:
                 continue
             if skill_dir.name == sync_skill_name:
                 continue
-            skill_md = skill_dir / 'SKILL.md'
-            if not skill_md.exists():
+            if not (skill_dir / 'SKILL.md').exists():
                 continue
-
-            content = skill_md.read_text()
-            description = ''
-            fm_match = re.search(r'^description:\s*(.+)$', content, re.MULTILINE)
-            if fm_match:
-                description = fm_match.group(1).strip()
 
             step_ref = f'project:{skill_dir.name}'
             all_steps.append(
                 {
                     'name': step_ref,
-                    'description': description or skill_dir.name,
+                    'description': get_skill_description(step_ref),
                     'type': 'project',
                     'source': 'project',
                 }
