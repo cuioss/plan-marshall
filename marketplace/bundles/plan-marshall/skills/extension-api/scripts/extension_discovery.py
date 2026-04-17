@@ -381,12 +381,16 @@ def main() -> int:
     """CLI entry point for extension discovery operations."""
     import argparse
 
-    parser = argparse.ArgumentParser(description='Extension discovery and configuration operations')
+    parser = argparse.ArgumentParser(
+        description='Extension discovery and configuration operations', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # apply-config-defaults subcommand
     defaults_parser = subparsers.add_parser(
-        'apply-config-defaults', help='Apply config_defaults() callback for all extensions'
+        'apply-config-defaults',
+        help='Apply config_defaults() callback for all extensions',
+        allow_abbrev=False,
     )
     defaults_parser.add_argument('--project-dir', default='.', help='Project directory (default: current directory)')
     defaults_parser.set_defaults(func=cmd_apply_config_defaults)

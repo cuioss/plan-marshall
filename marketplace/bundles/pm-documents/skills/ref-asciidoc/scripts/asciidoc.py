@@ -32,13 +32,14 @@ from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
+        allow_abbrev=False,
         description='AsciiDoc formatting, validation, and link operations',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # stats subcommand
-    stats_parser = subparsers.add_parser('stats', help='Generate documentation statistics')
+    stats_parser = subparsers.add_parser('stats', help='Generate documentation statistics', allow_abbrev=False)
     stats_parser.add_argument('--directory', default='.', help='Directory to analyze')
     stats_parser.add_argument(
         '-f', '--format', dest='format', default='console', choices=['console', 'json'], help='Output format'
@@ -47,7 +48,7 @@ def main():
     stats_parser.set_defaults(func=cmd_stats)
 
     # validate subcommand
-    validate_parser = subparsers.add_parser('validate', help='Validate AsciiDoc files for compliance')
+    validate_parser = subparsers.add_parser('validate', help='Validate AsciiDoc files for compliance', allow_abbrev=False)
     validate_parser.add_argument('--path', default='standards', help='File or directory to check')
     validate_parser.add_argument(
         '-f', '--format', dest='format', default='console', choices=['console', 'json'], help='Output format'
@@ -56,7 +57,7 @@ def main():
     validate_parser.set_defaults(func=cmd_validate)
 
     # format subcommand
-    format_parser = subparsers.add_parser('format', help='Auto-fix AsciiDoc formatting issues')
+    format_parser = subparsers.add_parser('format', help='Auto-fix AsciiDoc formatting issues', allow_abbrev=False)
     format_parser.add_argument('--path', default='.', help='File or directory to format')
     format_parser.add_argument(
         '-t',
@@ -70,7 +71,7 @@ def main():
     format_parser.set_defaults(func=cmd_format)
 
     # verify-links subcommand
-    links_parser = subparsers.add_parser('verify-links', help='Verify links in AsciiDoc files')
+    links_parser = subparsers.add_parser('verify-links', help='Verify links in AsciiDoc files', allow_abbrev=False)
     links_parser.add_argument('--file', type=str, help='Single file to verify')
     links_parser.add_argument('--directory', type=str, help='Directory to verify')
     links_parser.add_argument('--recursive', action='store_true', help='Scan subdirectories')
@@ -78,7 +79,7 @@ def main():
     links_parser.set_defaults(func=cmd_verify_links)
 
     # classify-links subcommand
-    classify_parser = subparsers.add_parser('classify-links', help='Classify broken links to reduce false positives')
+    classify_parser = subparsers.add_parser('classify-links', help='Classify broken links to reduce false positives', allow_abbrev=False)
     classify_parser.add_argument('--input', type=str, help='Input JSON file')
     classify_parser.add_argument('--output', type=str, help='Output JSON file')
     classify_parser.add_argument('--pretty', action='store_true', help='Pretty-print JSON')

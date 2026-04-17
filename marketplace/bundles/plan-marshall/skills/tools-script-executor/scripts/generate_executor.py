@@ -717,11 +717,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Generate execute-script.py with embedded script mappings',
         epilog='By default uses plugin-cache context. Use --marketplace for development.',
+        allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # generate subcommand
-    gen_parser = subparsers.add_parser('generate', help='Generate executor with script mappings')
+    gen_parser = subparsers.add_parser('generate', help='Generate executor with script mappings', allow_abbrev=False)
     gen_parser.add_argument('--force', action='store_true', help='Force regeneration')
     gen_parser.add_argument('--dry-run', action='store_true', help='Show what would be generated')
     gen_parser.add_argument(
@@ -730,22 +731,22 @@ def main() -> int:
     gen_parser.set_defaults(func=cmd_generate)
 
     # verify subcommand
-    verify_parser = subparsers.add_parser('verify', help='Verify existing executor')
+    verify_parser = subparsers.add_parser('verify', help='Verify existing executor', allow_abbrev=False)
     verify_parser.set_defaults(func=cmd_verify)
 
     # drift subcommand
-    drift_parser = subparsers.add_parser('drift', help='Compare with current bundles state')
+    drift_parser = subparsers.add_parser('drift', help='Compare with current bundles state', allow_abbrev=False)
     drift_parser.add_argument(
         '--marketplace', action='store_true', help='Use marketplace context (development mode) instead of plugin-cache'
     )
     drift_parser.set_defaults(func=cmd_drift)
 
     # paths subcommand
-    paths_parser = subparsers.add_parser('paths', help='Verify all mapped paths exist')
+    paths_parser = subparsers.add_parser('paths', help='Verify all mapped paths exist', allow_abbrev=False)
     paths_parser.set_defaults(func=cmd_paths)
 
     # cleanup subcommand
-    cleanup_parser = subparsers.add_parser('cleanup', help='Clean up old logs')
+    cleanup_parser = subparsers.add_parser('cleanup', help='Clean up old logs', allow_abbrev=False)
     cleanup_parser.add_argument('--max-age-days', type=int, default=7, help='Max age in days (default: 7)')
     cleanup_parser.set_defaults(func=cmd_cleanup)
 

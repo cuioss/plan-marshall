@@ -200,13 +200,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description='Unified finding and Q-Gate storage',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     # --- Plan-scoped finding commands ---
 
     # add
-    add_parser = subparsers.add_parser('add', help='Add a finding')
+    add_parser = subparsers.add_parser('add', help='Add a finding', allow_abbrev=False)
     add_plan_id_arg(add_parser)
     add_parser.add_argument('--type', required=True, choices=FINDING_TYPES, dest='type', help='Finding type')
     add_parser.add_argument('--title', required=True, dest='title', help='Short title')
@@ -220,7 +221,7 @@ def main() -> int:
     add_parser.set_defaults(func=cmd_add)
 
     # query
-    query_parser = subparsers.add_parser('query', help='Query findings')
+    query_parser = subparsers.add_parser('query', help='Query findings', allow_abbrev=False)
     add_plan_id_arg(query_parser)
     query_parser.add_argument('--type', help='Filter by type (comma-separated)')
     query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
@@ -229,13 +230,13 @@ def main() -> int:
     query_parser.set_defaults(func=cmd_query)
 
     # get
-    get_parser = subparsers.add_parser('get', help='Get single finding')
+    get_parser = subparsers.add_parser('get', help='Get single finding', allow_abbrev=False)
     add_plan_id_arg(get_parser)
     get_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
     get_parser.set_defaults(func=cmd_get)
 
     # resolve
-    resolve_parser = subparsers.add_parser('resolve', help='Resolve a finding')
+    resolve_parser = subparsers.add_parser('resolve', help='Resolve a finding', allow_abbrev=False)
     add_plan_id_arg(resolve_parser)
     resolve_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
     resolve_parser.add_argument(
@@ -245,18 +246,18 @@ def main() -> int:
     resolve_parser.set_defaults(func=cmd_resolve)
 
     # promote
-    promote_parser = subparsers.add_parser('promote', help='Promote a finding')
+    promote_parser = subparsers.add_parser('promote', help='Promote a finding', allow_abbrev=False)
     add_plan_id_arg(promote_parser)
     promote_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
     promote_parser.add_argument('--promoted-to', required=True, dest='promoted_to', help='Target ID or "architecture"')
     promote_parser.set_defaults(func=cmd_promote)
 
     # --- Q-Gate commands ---
-    qgate_parser = subparsers.add_parser('qgate', help='Manage per-phase Q-Gate findings')
+    qgate_parser = subparsers.add_parser('qgate', help='Manage per-phase Q-Gate findings', allow_abbrev=False)
     qgate_sub = qgate_parser.add_subparsers(dest='action', required=True)
 
     # qgate add
-    q_add_parser = qgate_sub.add_parser('add', help='Add a Q-Gate finding')
+    q_add_parser = qgate_sub.add_parser('add', help='Add a Q-Gate finding', allow_abbrev=False)
     add_plan_id_arg(q_add_parser)
     add_phase_arg(q_add_parser, choices=QGATE_PHASES)
     q_add_parser.add_argument('--source', required=True, choices=QGATE_SOURCES, help='Finding source')
@@ -270,7 +271,7 @@ def main() -> int:
     q_add_parser.set_defaults(func=cmd_qgate_add)
 
     # qgate query
-    q_query_parser = qgate_sub.add_parser('query', help='Query Q-Gate findings')
+    q_query_parser = qgate_sub.add_parser('query', help='Query Q-Gate findings', allow_abbrev=False)
     add_plan_id_arg(q_query_parser)
     add_phase_arg(q_query_parser, choices=QGATE_PHASES)
     q_query_parser.add_argument('--resolution', choices=RESOLUTIONS, help='Filter by resolution')
@@ -279,7 +280,7 @@ def main() -> int:
     q_query_parser.set_defaults(func=cmd_qgate_query)
 
     # qgate resolve
-    q_resolve_parser = qgate_sub.add_parser('resolve', help='Resolve a Q-Gate finding')
+    q_resolve_parser = qgate_sub.add_parser('resolve', help='Resolve a Q-Gate finding', allow_abbrev=False)
     add_plan_id_arg(q_resolve_parser)
     q_resolve_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
     q_resolve_parser.add_argument(
@@ -290,17 +291,21 @@ def main() -> int:
     q_resolve_parser.set_defaults(func=cmd_qgate_resolve)
 
     # qgate clear
-    q_clear_parser = qgate_sub.add_parser('clear', help='Clear Q-Gate findings for a phase')
+    q_clear_parser = qgate_sub.add_parser(
+        'clear', help='Clear Q-Gate findings for a phase', allow_abbrev=False
+    )
     add_plan_id_arg(q_clear_parser)
     add_phase_arg(q_clear_parser, choices=QGATE_PHASES)
     q_clear_parser.set_defaults(func=cmd_qgate_clear)
 
     # --- Assessment commands ---
-    assessment_parser = subparsers.add_parser('assessment', help='Manage component assessments')
+    assessment_parser = subparsers.add_parser(
+        'assessment', help='Manage component assessments', allow_abbrev=False
+    )
     assessment_sub = assessment_parser.add_subparsers(dest='action', required=True)
 
     # assessment add
-    a_add_parser = assessment_sub.add_parser('add', help='Add an assessment')
+    a_add_parser = assessment_sub.add_parser('add', help='Add an assessment', allow_abbrev=False)
     add_plan_id_arg(a_add_parser)
     a_add_parser.add_argument('--file-path', required=True, dest='file_path', help='Path to assessed component')
     a_add_parser.add_argument('--certainty', required=True, choices=CERTAINTY_VALUES, help='Certainty value')
@@ -311,7 +316,7 @@ def main() -> int:
     a_add_parser.set_defaults(func=cmd_assessment_add)
 
     # assessment query
-    a_query_parser = assessment_sub.add_parser('query', help='Query assessments')
+    a_query_parser = assessment_sub.add_parser('query', help='Query assessments', allow_abbrev=False)
     add_plan_id_arg(a_query_parser)
     a_query_parser.add_argument('--certainty', choices=CERTAINTY_VALUES, help='Filter by certainty')
     a_query_parser.add_argument('--min-confidence', type=int, help='Minimum confidence')
@@ -320,13 +325,13 @@ def main() -> int:
     a_query_parser.set_defaults(func=cmd_assessment_query)
 
     # assessment get
-    a_get_parser = assessment_sub.add_parser('get', help='Get single assessment')
+    a_get_parser = assessment_sub.add_parser('get', help='Get single assessment', allow_abbrev=False)
     add_plan_id_arg(a_get_parser)
     a_get_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Assessment hash ID')
     a_get_parser.set_defaults(func=cmd_assessment_get)
 
     # assessment clear
-    a_clear_parser = assessment_sub.add_parser('clear', help='Clear assessments')
+    a_clear_parser = assessment_sub.add_parser('clear', help='Clear assessments', allow_abbrev=False)
     add_plan_id_arg(a_clear_parser)
     a_clear_parser.add_argument('--agent', help='Only clear assessments from this agent')
     a_clear_parser.set_defaults(func=cmd_assessment_clear)
