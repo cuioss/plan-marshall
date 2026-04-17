@@ -230,7 +230,7 @@ def test_log_path_is_directory_raises_file_not_found(tmp_path):
 
 
 # =============================================================================
-# (5) Substring matching: realistic usage + documented limitation
+# (5) Anchored-regex matching: distinct names + prefix-collision guardrail
 # =============================================================================
 
 
@@ -238,10 +238,8 @@ def test_realistic_nodeids_with_distinct_names_dont_collide(tmp_path):
     """Realistic pytest nodeids with distinct function names are unambiguous.
 
     In normal execute-task usage the written identifiers are full pytest
-    nodeids with distinct function names. Substring matching resolves
-    correctly as long as names are not prefix-related — which is the
-    common case because developers don't write tests named
-    ``test_foo``/``test_foobar`` side by side.
+    nodeids with distinct function names. The anchored-regex matcher
+    resolves correctly for any non-colliding name.
     """
     # Arrange — two nodeids with completely different function names
     alpha_id = 'test/plan-marshall/execute-task/test_foo.py::test_alpha'
@@ -259,24 +257,14 @@ def test_realistic_nodeids_with_distinct_names_dont_collide(tmp_path):
     assert result.found == ()
 
 
-def test_substring_collision_is_a_documented_limitation(tmp_path):
-    """Document the known substring-collision behaviour.
+def test_prefix_collision_does_not_false_match(tmp_path):
+    """Anchored matching prevents prefix-name collisions.
 
-    The helper uses plain substring matching (``identifier in line``). This
-    means a shorter identifier that is a prefix of a longer identifier on
-    some log line WILL match — ``test_bar`` matches a line reporting
-    ``test_barbaz``. This is a deliberate trade-off: substring matching is
-    the simplest check that still works against pytest's variable log
-    format (path prefixes, status tokens, timing, percent markers).
-
-    Mitigation: execute-task passes full pytest nodeids (path + ``::`` +
-    function), and developers almost never write prefix-colliding test
-    names in the same module. If a future caller needs stricter matching,
-    they can pass a longer identifier (e.g. the full line) or the helper
-    can be upgraded to token-aware matching.
-
-    This test LOCKS IN the current behaviour so any future tightening of
-    the match logic (which would be a breaking change) is caught.
+    The helper matches each identifier with ``{identifier}(?:\\s|$)`` so that
+    a shorter identifier which is a character-prefix of a longer identifier
+    on the same log line does NOT false-match — ``test_bar`` must not
+    silently be reported as present when only ``test_barbaz`` actually ran.
+    This is the core guardrail the diff assertion exists to provide.
     """
     # Arrange — long id is written to log, short id is a prefix of it
     short_id = 'test/plan-marshall/execute-task/test_foo.py::test_bar'
@@ -286,10 +274,10 @@ def test_substring_collision_is_a_documented_limitation(tmp_path):
     # Act — search for the short id
     result = assert_identifiers_in_log([short_id], log_path)
 
-    # Assert — substring match DOES fire (documented limitation)
-    assert result.passed is True
-    assert result.found == (short_id,)
-    assert result.missing == ()
+    # Assert — short id is correctly flagged as missing (no false positive)
+    assert result.passed is False
+    assert result.found == ()
+    assert result.missing == (short_id,)
 
 
 # =============================================================================

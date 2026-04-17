@@ -88,7 +88,7 @@ python3 .plan/execute-script.py plan-marshall:execute-task:inject_project_dir \
   run --command "{verification_command}" --worktree-path "{worktree_path}"
 ```
 
-Take the rewritten command from the script's stdout and use it as the command to execute. When the helper reports `injected: true`, log:
+Parse the TOON output from the script's stdout. Use the `rewritten_command` value as the command to execute. When `injected` is `true`, log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

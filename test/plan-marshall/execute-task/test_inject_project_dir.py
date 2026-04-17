@@ -314,18 +314,29 @@ def test_executor_with_notation_but_no_run_subcommand_passes_through():
 
 
 # =============================================================================
-# (8) CLI entrypoint integration
+# (8) CLI entrypoint integration (TOON output contract)
 # =============================================================================
 
 
-def test_cli_entrypoint_matches_library_output_on_injection(tmp_path):
-    """CLI invocation via subprocess produces the same output as the library."""
+def _parse_toon_output(stdout: str) -> dict:
+    """Parse the TOON output emitted by cmd_run.
+
+    Parsed via the shared toon_parser so the test locks in the real contract
+    rather than re-implementing a brittle inline parser.
+    """
+    from toon_parser import parse_toon  # imported lazily to keep stdlib top
+
+    return parse_toon(stdout)
+
+
+def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
+    """CLI emits TOON with injected=true and the rewritten command on injection."""
     # Arrange
     command = (
         'python3 .plan/execute-script.py plan-marshall:build-python:python_build '
         'run --command-args "module-tests"'
     )
-    expected, injected = inject_project_dir(command, WORKTREE)
+    expected_rewritten, injected = inject_project_dir(command, WORKTREE)
     assert injected is True  # sanity — the scenario should trigger injection
 
     # Act — invoke the script as a subprocess (tmp_path used as isolated cwd)
@@ -337,19 +348,22 @@ def test_cli_entrypoint_matches_library_output_on_injection(tmp_path):
         cwd=tmp_path,
     )
 
-    # Assert
+    # Assert — structured TOON contract
     assert result.success, f'CLI failed: {result.stderr}'
-    assert result.stdout.strip() == expected.strip()
+    parsed = _parse_toon_output(result.stdout)
+    assert parsed['status'] == 'success'
+    assert parsed['injected'] is True
+    assert parsed['rewritten_command'] == expected_rewritten
 
 
-def test_cli_entrypoint_matches_library_output_on_passthrough(tmp_path):
-    """CLI pass-through (Bucket A) matches library output byte-for-byte."""
+def test_cli_entrypoint_emits_toon_on_passthrough(tmp_path):
+    """CLI pass-through (Bucket A) emits injected=false with original command."""
     # Arrange
     command = (
         'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks '
         'get --plan-id my-plan --number 1'
     )
-    expected, injected = inject_project_dir(command, WORKTREE)
+    expected_rewritten, injected = inject_project_dir(command, WORKTREE)
     assert injected is False  # sanity — Bucket A must not trigger injection
 
     # Act
@@ -363,14 +377,17 @@ def test_cli_entrypoint_matches_library_output_on_passthrough(tmp_path):
 
     # Assert
     assert result.success, f'CLI failed: {result.stderr}'
-    assert result.stdout.strip() == expected.strip()
+    parsed = _parse_toon_output(result.stdout)
+    assert parsed['status'] == 'success'
+    assert parsed['injected'] is False
+    assert parsed['rewritten_command'] == expected_rewritten
 
 
-def test_cli_entrypoint_matches_library_output_on_non_executor(tmp_path):
-    """CLI pass-through for non-executor commands matches the library."""
+def test_cli_entrypoint_emits_toon_on_non_executor(tmp_path):
+    """CLI pass-through for non-executor commands emits injected=false."""
     # Arrange
     command = 'git status'
-    expected, injected = inject_project_dir(command, WORKTREE)
+    expected_rewritten, injected = inject_project_dir(command, WORKTREE)
     assert injected is False
 
     # Act
@@ -384,4 +401,7 @@ def test_cli_entrypoint_matches_library_output_on_non_executor(tmp_path):
 
     # Assert
     assert result.success, f'CLI failed: {result.stderr}'
-    assert result.stdout.strip() == expected.strip()
+    parsed = _parse_toon_output(result.stdout)
+    assert parsed['status'] == 'success'
+    assert parsed['injected'] is False
+    assert parsed['rewritten_command'] == expected_rewritten

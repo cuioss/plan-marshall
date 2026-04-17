@@ -28,6 +28,8 @@ import argparse
 import shlex
 import sys
 
+from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
 _BUCKET_B_NOTATIONS: frozenset[str] = frozenset(
     {
         "plan-marshall:build-maven:maven",
@@ -124,13 +126,29 @@ def inject_project_dir(command: str, worktree_path: str) -> tuple[str, bool]:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """CLI wrapper: rewrite a single command and print the result to stdout.
+    """CLI wrapper: rewrite a single command and print structured TOON output.
 
-    Prints exactly one line: the rewritten command (unchanged when no
-    injection applies). Exit code is ``0`` on success.
+    Output contract (TOON):
+
+    * ``status`` — always ``success`` on exit code 0.
+    * ``injected`` — boolean; ``true`` only when the command was actually
+      rewritten.
+    * ``rewritten_command`` — the (possibly unchanged) command string the
+      caller should execute.
+
+    Callers parse the TOON and drive conditional logging off ``injected``.
+    Exit code is ``0`` on success.
     """
-    rewritten, _injected = inject_project_dir(args.command, args.worktree_path)
-    print(rewritten)
+    rewritten, injected = inject_project_dir(args.command, args.worktree_path)
+    print(
+        serialize_toon(
+            {
+                "status": "success",
+                "injected": injected,
+                "rewritten_command": rewritten,
+            }
+        )
+    )
     return 0
 
 

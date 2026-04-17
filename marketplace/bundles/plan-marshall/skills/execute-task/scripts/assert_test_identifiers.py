@@ -13,16 +13,19 @@ The helper returns a :class:`DiffResult` describing which identifiers were
 located on some line of the log (``found``) and which were not (``missing``).
 ``passed`` is true iff every written identifier appears at least once.
 
-The matching is a simple case-sensitive substring check — pytest node
-identifiers are literal strings and have no regex semantics, so substring
-matching is the most permissive safe check that still proves the test was
-collected and reported by pytest.
+The matching is a case-sensitive regex anchored to a whitespace boundary or
+end-of-line: ``{re.escape(identifier)}(?:\\s|$)``. Anchoring prevents prefix
+collisions (e.g., ``test_login`` would otherwise false-match
+``test_login_failure``), which is a real concern when test-function names
+share a common prefix — the helper's job is to surface absent identifiers, so
+a prefix collision that hides a missing identifier defeats the guardrail.
 
-Why substring rather than equality: the log line also carries a status token
+Why regex rather than equality: the log line also carries a status token
 (``PASSED``, ``FAILED``, ``SKIPPED``), a separator, timing, and sometimes a
 leading ``tests/...`` relative path. The node identifier is embedded in that
-line. Substring matching is immune to all of those surrounding tokens while
-still requiring the exact identifier text to appear.
+line, followed by whitespace before the status token. The anchor lets us
+accept all of those surrounding tokens while still requiring the identifier
+to end at a token boundary.
 
 Contract
 --------
@@ -63,6 +66,7 @@ as a guardrail boolean:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -132,17 +136,22 @@ def assert_identifiers_in_log(
         )
 
     # Read the log into memory once. Module-test logs are typically small
-    # (tens to hundreds of KB); the substring scan over a list of lines is
-    # both faster and easier to reason about than a streaming scan, and it
-    # lets us preserve input order cheaply. ``errors='replace'`` tolerates
-    # odd bytes pytest occasionally emits without hiding IO errors.
+    # (tens to hundreds of KB); the regex scan over a list of lines is both
+    # faster and easier to reason about than a streaming scan, and it lets us
+    # preserve input order cheaply. ``errors='replace'`` tolerates odd bytes
+    # pytest occasionally emits without hiding IO errors.
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         lines = handle.readlines()
 
     found: list[str] = []
     missing: list[str] = []
     for identifier in identifiers:
-        if any(identifier in line for line in lines):
+        # Anchor to a whitespace boundary or end-of-line so that e.g.
+        # ``test_login`` does not false-match a line carrying only
+        # ``test_login_failure``. pytest writes nodeid<whitespace>STATUS so the
+        # anchor is always satisfied when the test was actually collected.
+        pattern = re.compile(rf"{re.escape(identifier)}(?:\s|$)")
+        if any(pattern.search(line) for line in lines):
             found.append(identifier)
         else:
             missing.append(identifier)
