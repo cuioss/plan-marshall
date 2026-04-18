@@ -1,0 +1,45 @@
+[2026-04-18T11:45:25Z] [INFO] [f4840d] plan-marshall:manage-files:manage-files create-or-reference (0.26s)
+[2026-04-18T11:45:37Z] [INFO] [75a05d] plan-marshall:manage-plan-documents:manage-plan-documents request (0.26s)
+[2026-04-18T11:46:10Z] [INFO] [a0ae44] plan-marshall:manage-worktree:manage-worktree create (0.85s)
+[2026-04-18T11:46:36Z] [INFO] [4bb86b] plan-marshall:manage-status:manage_status create (0.29s)
+[2026-04-18T11:50:58Z] [ERROR] [6e70ff] plan-marshall:manage-plan-documents:manage-plan-documents request (0.20s)
+  exit_code: 2
+  args: request clarify --plan-id lesson-2026-04-18-13-001
+  stderr: invalid choice: 'clarify'
+[2026-04-18T11:53:45Z] [INFO] [1fd5d5] plan-marshall:manage-solution-outline:manage-solution-outline resolve-path (0.27s)
+[2026-04-18T11:54:41Z] [INFO] [9b5e49] plan-marshall:manage-solution-outline:manage-solution-outline write (0.26s)
+[2026-04-18T11:57:55Z] [ERROR] [38058f] plan-marshall:manage-tasks:manage-tasks add (0.23s)
+  exit_code: 2
+  args: add --plan-id lesson-2026-04-18-13-001
+  stderr: invalid choice: 'add'
+[2026-04-18T11:58:04Z] [INFO] [650534] plan-marshall:manage-tasks:manage-tasks prepare-add (0.29s)
+[2026-04-18T11:58:13Z] [INFO] [c2bc2e] plan-marshall:manage-tasks:manage-tasks commit-add (0.26s)
+[2026-04-18T12:02:21Z] [ERROR] [43c30a] plan-marshall:manage-tasks:manage-tasks get-task (0.24s)
+  exit_code: 2
+  args: get-task --plan-id lesson-2026-04-18-13-001 --task 1
+  stderr: invalid choice: 'get-task'
+[2026-04-18T12:02:25Z] [ERROR] [fc45bf] plan-marshall:manage-tasks:manage-tasks get (0.23s)
+  exit_code: 2
+  args: get --plan-id lesson-2026-04-18-13-001 --task 1
+  stderr: required: --number
+[2026-04-18T12:02:33Z] [INFO] [3c08c7] plan-marshall:manage-tasks:manage-tasks get (0.43s)
+[2026-04-18T12:05:42Z] [INFO] [17ea14] plan-marshall:manage-tasks:manage-tasks finalize-step (0.32s)
+[2026-04-18T12:07:48Z] [ERROR] [283baf] plan-marshall:manage-tasks:manage-tasks finalize-step (0.24s)
+  exit_code: 2
+  args: finalize-step --plan-id lesson-2026-04-18-13-001 --task 2 --step 1 --outcome in_progress
+  stderr: invalid choice: 'in_progress'
+[2026-04-18T12:10:45Z] [INFO] [edb3fd] plan-marshall:manage-tasks:manage-tasks finalize-step (0.30s)
+[2026-04-18T12:16:08Z] [INFO] [25dada] plan-marshall:manage-tasks:manage-tasks finalize-step (0.28s)
+[2026-04-18T12:18:19Z] [INFO] [71b398] plan-marshall:manage-tasks:manage-tasks finalize-step (0.31s)
+[2026-04-18T12:19:38Z] [INFO] [71b398] plan-marshall:manage-tasks:manage-tasks finalize-step (0.31s)
+[2026-04-18T12:23:37Z] [INFO] [9ec2a6] plan-marshall:manage-tasks:manage-tasks finalize-step (0.29s)
+[2026-04-18T12:27:40Z] [INFO] [25dada] plan-marshall:manage-tasks:manage-tasks finalize-step (0.28s)
+[2026-04-18T12:43:33Z] [INFO] [81728a] plan-marshall:manage-metrics:manage_metrics generate (0.48s)
+[2026-04-18T12:44:31Z] [INFO] [fca41d] plan-marshall:plan-retrospective:collect-plan-artifacts run (0.38s)
+[2026-04-18T12:44:32Z] [INFO] [79bee1] plan-marshall:plan-retrospective:collect-fragments init (0.36s)
+[2026-04-18T12:44:36Z] [INFO] [0c891c] plan-marshall:plan-retrospective:check-artifact-consistency run (0.36s)
+[2026-04-18T12:44:38Z] [INFO] [33b00e] plan-marshall:plan-retrospective:analyze-logs run (0.35s)
+[2026-04-18T12:44:39Z] [INFO] [9a49f2] plan-marshall:plan-retrospective:summarize-invariants run (0.37s)
+[2026-04-18T12:44:43Z] [INFO] [fa1eb6] plan-marshall:plan-retrospective:collect-fragments add (0.27s)
+[2026-04-18T12:46:10Z] [INFO] [a35ab7] plan-marshall:plan-retrospective:collect-fragments finalize (0.36s)
+[2026-04-18T12:46:14Z] [INFO] [de9fb6] plan-marshall:plan-retrospective:compile-report run (0.36s)

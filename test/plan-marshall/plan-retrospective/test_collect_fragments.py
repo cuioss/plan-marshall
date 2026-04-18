@@ -3,7 +3,9 @@
 Covers the three subcommands (``init``, ``add``, ``finalize``) across live
 and archived modes, plus the fault paths documented in the script header:
 malformed TOON fragments and duplicate aspect registration without
-``--overwrite``.
+``--overwrite``. Mode is now a bundle property (persisted under
+``_meta.mode`` by ``init``); ``add`` and ``finalize`` read it from the
+bundle rather than accepting ``--mode`` as an argument.
 """
 
 from __future__ import annotations
@@ -51,7 +53,7 @@ def _valid_fragment_body(aspect: str) -> str:
 
 
 class TestInitLiveMode:
-    def test_creates_empty_bundle_in_plan_dir(self, tmp_path, monkeypatch):
+    def test_creates_bundle_with_meta_mode_in_plan_dir(self, tmp_path, monkeypatch):
         # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
 
@@ -73,7 +75,10 @@ class TestInitLiveMode:
         expected_path = plan_dir / 'work' / 'retro-fragments.toon'
         assert Path(data['bundle_path']) == expected_path
         assert expected_path.exists()
-        assert expected_path.read_text(encoding='utf-8') == ''
+        # Bundle is seeded with _meta.mode — it is never literally empty.
+        from toon_parser import parse_toon
+        parsed = parse_toon(expected_path.read_text(encoding='utf-8'))
+        assert parsed['_meta']['mode'] == 'live'
 
     def test_init_is_idempotent_overwriting_existing_bundle(self, tmp_path, monkeypatch):
         # Arrange
@@ -94,7 +99,10 @@ class TestInitLiveMode:
 
         # Assert
         assert result.success, result.stderr
-        assert bundle_path.read_text(encoding='utf-8') == ''
+        from toon_parser import parse_toon
+        parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
+        # Stale content is replaced with the meta-only bundle.
+        assert parsed == {'_meta': {'mode': 'live'}}
 
 
 # =============================================================================
@@ -103,7 +111,7 @@ class TestInitLiveMode:
 
 
 class TestInitArchivedMode:
-    def test_creates_empty_bundle_in_os_tmpdir(self, tmp_path):
+    def test_creates_bundle_with_meta_mode_in_os_tmpdir(self, tmp_path):
         # Arrange
         plan_id = 'archived-plan-abc'
         archived_plan_path = tmp_path / '2026-04-17-archived-plan-abc'
@@ -133,6 +141,10 @@ class TestInitArchivedMode:
         assert bundle_path.parent == Path(tempfile.gettempdir()) / 'plan-retrospective'
         assert bundle_path.name == f'retro-fragments-{plan_id}.toon'
         assert bundle_path.exists()
+        # Bundle persists the archived mode via _meta.
+        from toon_parser import parse_toon
+        parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
+        assert parsed['_meta']['mode'] == 'archived'
         # Archived plan directory must remain untouched.
         assert sorted(p.name for p in archived_plan_path.iterdir()) == archived_contents_before
 
@@ -154,14 +166,12 @@ class TestAddHappyPath:
             tmp_path, 'aspect-a.toon', _valid_fragment_body('request_result_alignment')
         )
 
-        # Act
+        # Act — add no longer accepts --mode; it reads the mode from the bundle.
         result = run_script(
             SCRIPT_PATH,
             'add',
             '--plan-id',
             plan_id,
-            '--mode',
-            'live',
             '--aspect',
             'request_result_alignment',
             '--fragment-file',
@@ -203,8 +213,6 @@ class TestAddFaultPaths:
             'add',
             '--plan-id',
             plan_id,
-            '--mode',
-            'live',
             '--aspect',
             'request_result_alignment',
             '--fragment-file',
@@ -231,8 +239,6 @@ class TestAddFaultPaths:
             'add',
             '--plan-id',
             plan_id,
-            '--mode',
-            'live',
             '--aspect',
             'request_result_alignment',
             '--fragment-file',
@@ -280,8 +286,6 @@ class TestAddOverwrite:
             'add',
             '--plan-id',
             plan_id,
-            '--mode',
-            'live',
             '--aspect',
             'request_result_alignment',
             '--fragment-file',
@@ -320,14 +324,12 @@ class TestFinalize:
         _add_aspect(plan_id, 'log_analysis', frag_b)
         _add_aspect(plan_id, 'artifact_consistency', frag_a)
 
-        # Act
+        # Act — finalize no longer accepts --mode.
         result = run_script(
             SCRIPT_PATH,
             'finalize',
             '--plan-id',
             plan_id,
-            '--mode',
-            'live',
         )
 
         # Assert
@@ -340,7 +342,7 @@ class TestFinalize:
         # aspect_count may come back as int or str from the TOON parser;
         # normalize before comparison.
         assert int(data['aspect_count']) == 2
-        # aspects are sorted alphabetically.
+        # aspects are sorted alphabetically; _meta is filtered out.
         assert data['aspects'] == ['artifact_consistency', 'log_analysis']
 
     def test_finalize_on_empty_bundle_returns_empty_aspect_list(
@@ -356,11 +358,9 @@ class TestFinalize:
             'finalize',
             '--plan-id',
             plan_id,
-            '--mode',
-            'live',
         )
 
-        # Assert
+        # Assert — _meta is filtered out of the aspect list.
         assert result.success, result.stderr
         data = result.toon()
         assert data['status'] == 'success'
@@ -393,7 +393,14 @@ def _load_module():
 
 
 class _ArgsNS:
-    """Simple namespace mimicking argparse.Namespace for cmd_* tests."""
+    """Simple namespace mimicking argparse.Namespace for cmd_* tests.
+
+    ``mode`` is intentionally not part of the base fixture: ``cmd_add`` and
+    ``cmd_finalize`` do not read ``args.mode`` under the new contract (they
+    read the mode from the bundle's persisted ``_meta.mode``). Only
+    ``cmd_init`` consumes ``mode`` — callers pass it explicitly when
+    constructing init-style namespaces.
+    """
 
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
@@ -587,7 +594,7 @@ class TestReadFragment:
 class TestCmdInit:
     """Direct unit tests for cmd_init."""
 
-    def test_creates_empty_bundle_in_live_mode(self, tmp_path, monkeypatch):
+    def test_creates_bundle_with_meta_mode_in_live_mode(self, tmp_path, monkeypatch):
         # Arrange
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         module = _load_module()
@@ -606,7 +613,10 @@ class TestCmdInit:
         expected_path = plan_dir / 'work' / 'retro-fragments.toon'
         assert Path(result['bundle_path']) == expected_path
         assert expected_path.exists()
-        assert expected_path.read_text(encoding='utf-8') == ''
+        # Bundle seeds _meta.mode on init (no longer literally empty).
+        from toon_parser import parse_toon
+        parsed = parse_toon(expected_path.read_text(encoding='utf-8'))
+        assert parsed == {'_meta': {'mode': 'live'}}
 
     def test_creates_parent_directory_when_missing(self, tmp_path, monkeypatch):
         # Arrange — use a plan_id whose work dir does not yet exist.
@@ -631,9 +641,10 @@ class TestCmdAdd:
     """Direct unit tests for cmd_add happy and error paths."""
 
     def _args(self, plan_id: str, aspect: str, fragment: Path, overwrite: bool = False):
+        # cmd_add no longer reads args.mode — it resolves the mode from the
+        # bundle's persisted _meta.mode via _read_mode_from_bundle.
         return _ArgsNS(
             plan_id=plan_id,
-            mode='live',
             archived_plan_path=None,
             aspect=aspect,
             fragment_file=str(fragment),
@@ -648,7 +659,7 @@ class TestCmdAdd:
         module.cmd_init(_ArgsNS(plan_id=plan_id, mode='live', archived_plan_path=None))
         fragment = tmp_path / 'f.toon'
         fragment.write_text(_valid_fragment_body('x'), encoding='utf-8')
-        # aspect is empty string — triggers the guard after _read_bundle.
+        # aspect is empty string — triggers the guard before _locate_bundle.
         args = self._args(plan_id, aspect='', fragment=fragment)
 
         # Act / Assert
@@ -675,6 +686,7 @@ class TestCmdAdd:
         # Assert
         assert result['status'] == 'success'
         assert result['overwrote'] is False
+        # _meta is filtered out of the aspects list.
         assert result['aspects'] == ['aspect_a']
 
     def test_duplicate_without_overwrite_returns_error_status(
@@ -718,6 +730,63 @@ class TestCmdAdd:
         assert result['status'] == 'success'
         assert result['overwrote'] is True
 
+    def test_rejects_bundle_missing_meta_mode(self, tmp_path, monkeypatch):
+        """Regression: cmd_add must reject a bundle written without _meta.mode.
+
+        Simulates a bundle produced by an incompatible (pre-persisted-mode)
+        init or hand-crafted edit. The sanity guard in _read_mode_from_bundle
+        must surface the problem via ValueError rather than silently falling
+        back.
+        """
+        # Arrange — set up a live plan, then write an empty bundle (no _meta).
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
+        bundle_path.parent.mkdir(parents=True, exist_ok=True)
+        bundle_path.write_text('', encoding='utf-8')
+        fragment = tmp_path / 'f.toon'
+        fragment.write_text(_valid_fragment_body('aspect_a'), encoding='utf-8')
+
+        # Act / Assert
+        try:
+            module.cmd_add(_ArgsNS(
+                plan_id=plan_id,
+                archived_plan_path=None,
+                aspect='aspect_a',
+                fragment_file=str(fragment),
+                overwrite=False,
+            ))
+        except ValueError as exc:
+            assert '_meta.mode' in str(exc)
+        else:
+            raise AssertionError('Expected ValueError for bundle missing _meta.mode')
+
+    def test_rejects_reserved_underscore_aspect(self, tmp_path, monkeypatch):
+        """Regression: cmd_add must reject aspect names starting with ``_``.
+
+        Underscore-prefixed keys are reserved for internal metadata
+        (e.g. ``_meta``) and would otherwise shadow mode resolution.
+        """
+        # Arrange — bundle does not need to exist; the guard fires earlier.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        fragment = tmp_path / 'f.toon'
+        fragment.write_text(_valid_fragment_body('ignored'), encoding='utf-8')
+
+        # Act / Assert
+        try:
+            module.cmd_add(_ArgsNS(
+                plan_id=plan_id,
+                archived_plan_path=None,
+                aspect='_meta',
+                fragment_file=str(fragment),
+                overwrite=False,
+            ))
+        except ValueError as exc:
+            assert 'Reserved aspect key' in str(exc)
+        else:
+            raise AssertionError('Expected ValueError for reserved aspect key')
+
 
 class TestCmdFinalize:
     """Direct unit tests for cmd_finalize."""
@@ -732,20 +801,20 @@ class TestCmdFinalize:
         frag_a = tmp_path / 'a.toon'
         frag_a.write_text(_valid_fragment_body('artifact_consistency'), encoding='utf-8')
         module.cmd_add(_ArgsNS(
-            plan_id=plan_id, mode='live', archived_plan_path=None,
+            plan_id=plan_id, archived_plan_path=None,
             aspect='log_analysis', fragment_file=str(frag_b), overwrite=False,
         ))
         module.cmd_add(_ArgsNS(
-            plan_id=plan_id, mode='live', archived_plan_path=None,
+            plan_id=plan_id, archived_plan_path=None,
             aspect='artifact_consistency', fragment_file=str(frag_a), overwrite=False,
         ))
 
         # Act
         result = module.cmd_finalize(_ArgsNS(
-            plan_id=plan_id, mode='live', archived_plan_path=None,
+            plan_id=plan_id, archived_plan_path=None,
         ))
 
-        # Assert
+        # Assert — _meta is filtered out of the aspects list.
         assert result['status'] == 'success'
         assert result['operation'] == 'finalize'
         assert result['aspect_count'] == 2
@@ -760,12 +829,35 @@ class TestCmdFinalize:
 
         # Act
         result = module.cmd_finalize(_ArgsNS(
-            plan_id=plan_id, mode='live', archived_plan_path=None,
+            plan_id=plan_id, archived_plan_path=None,
         ))
 
-        # Assert
+        # Assert — only _meta is present, which is filtered out.
         assert result['aspect_count'] == 0
         assert result['aspects'] == []
+
+    def test_rejects_bundle_missing_meta_mode(self, tmp_path, monkeypatch):
+        """Regression: cmd_finalize must reject a bundle without _meta.mode.
+
+        Finalize performs the same sanity guard as add; without the persisted
+        mode, the bundle cannot be attributed to a resolution mode.
+        """
+        # Arrange — set up a live plan, then write an empty bundle (no _meta).
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        module = _load_module()
+        bundle_path = plan_dir / 'work' / 'retro-fragments.toon'
+        bundle_path.parent.mkdir(parents=True, exist_ok=True)
+        bundle_path.write_text('', encoding='utf-8')
+
+        # Act / Assert
+        try:
+            module.cmd_finalize(_ArgsNS(
+                plan_id=plan_id, archived_plan_path=None,
+            ))
+        except ValueError as exc:
+            assert '_meta.mode' in str(exc)
+        else:
+            raise AssertionError('Expected ValueError for bundle missing _meta.mode')
 
 
 # =============================================================================
@@ -891,12 +983,12 @@ class TestMainEntryPoint:
             pass
         capsys.readouterr()
 
-        # add
+        # add — no --mode under the new contract.
         monkeypatch.setattr(
             'sys.argv',
             [
                 'collect-fragments.py', 'add',
-                '--plan-id', plan_id, '--mode', 'live',
+                '--plan-id', plan_id,
                 '--aspect', 'x',
                 '--fragment-file', str(fragment),
             ],
@@ -907,10 +999,10 @@ class TestMainEntryPoint:
             pass
         capsys.readouterr()
 
-        # finalize
+        # finalize — no --mode under the new contract.
         monkeypatch.setattr(
             'sys.argv',
-            ['collect-fragments.py', 'finalize', '--plan-id', plan_id, '--mode', 'live'],
+            ['collect-fragments.py', 'finalize', '--plan-id', plan_id],
         )
         try:
             module.main()
@@ -943,14 +1035,16 @@ def _init_bundle(plan_id: str) -> None:
 
 
 def _add_aspect(plan_id: str, aspect: str, fragment_path: Path) -> None:
-    """Run ``add`` for the given aspect in live mode and assert success."""
+    """Run ``add`` for the given aspect and assert success.
+
+    ``--mode`` is no longer passed: the mode is read from the bundle's
+    persisted ``_meta.mode``.
+    """
     result = run_script(
         SCRIPT_PATH,
         'add',
         '--plan-id',
         plan_id,
-        '--mode',
-        'live',
         '--aspect',
         aspect,
         '--fragment-file',
