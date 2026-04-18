@@ -123,8 +123,13 @@ def _read_fragment(fragment_path: Path) -> Any:
 def _write_bundle(bundle_path: Path, bundle: dict[str, Any]) -> None:
     """Serialize ``bundle`` to TOON and write it atomically.
 
-    An empty dict serializes to an empty string; we emit a trailing newline
-    so shell consumers can ``test -s`` the file without surprises.
+    An empty dict deliberately serializes to an empty file. The bundle is a
+    transient internal artifact consumed only by ``compile-report run`` (which
+    reads and parses it via ``parse_toon``); no shell consumer ever runs
+    ``test -s`` against it, so adding a trailing newline would just waste a
+    byte and diverge from the tested contract in
+    ``test_collect_fragments.TestInitLiveMode`` (bundle content must equal
+    ``''`` immediately after ``init``).
     """
     content = serialize_toon(bundle) if bundle else ''
     atomic_write_file(bundle_path, content)
