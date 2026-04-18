@@ -1,0 +1,21 @@
+status: success
+aspect: artifact_consistency
+plan_id: lesson-2026-04-18-13-001
+plan_dir: .plan/local/plans/lesson-2026-04-18-13-001
+checks[5]{name,status,message}:
+  solution_outline_sections,pass,All required sections present
+  deliverable_count,pass,2 deliverables declared
+  task_deliverable_match,pass,All 2 deliverables covered by tasks
+  affected_files_recall,pass,Recall 100% meets threshold
+  metrics_generated,pass,metrics.md present
+findings[0]:
+summary:
+  passed: 5
+  failed: 0
+  skipped: 0
+details:
+  affected_files_recall:
+    declared: 3
+    found: 3
+    missing[0]:
+    recall_pct: 100.0

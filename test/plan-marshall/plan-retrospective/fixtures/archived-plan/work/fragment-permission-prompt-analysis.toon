@@ -1,0 +1,6 @@
+aspect: permission_prompt_analysis
+status: success
+plan_id: lesson-2026-04-18-13-001
+prompts[0]:
+findings[1]{severity,message}:
+  info,"No permission prompts detected — session-id not provided and chat-history aspect skipped"

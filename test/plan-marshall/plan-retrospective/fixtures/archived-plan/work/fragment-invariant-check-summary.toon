@@ -1,0 +1,16 @@
+status: success
+aspect: invariant_summary
+plan_id: lesson-2026-04-18-13-001
+phases[0]:
+drift[0]:
+findings[1]{severity,invariant,message}:
+  warning,phase_handshake,No phase_handshake data in status.metadata
+expected_invariants[8]:
+  - main_sha
+  - main_dirty
+  - task_state_hash
+  - qgate_open_count
+  - config_hash
+  - phase_steps_complete
+  - worktree_sha
+  - worktree_dirty

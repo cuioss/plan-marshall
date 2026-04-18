@@ -1,0 +1,6 @@
+aspect: llm_to_script_opportunities
+status: success
+plan_id: lesson-2026-04-18-13-001
+candidates[0]:
+findings[1]{severity,message}:
+  info,"No repeated LLM deterministic patterns observed — plan scope was too small (3 files) to surface scripting opportunities"
