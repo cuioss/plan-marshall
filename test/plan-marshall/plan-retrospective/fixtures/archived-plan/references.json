@@ -1,0 +1,16 @@
+{
+  "branch": "feature/lesson-2026-04-18-13-001",
+  "base_branch": "main",
+  "modified_files": [
+    "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/collect-fragments.py",
+    "marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md",
+    "test/plan-marshall/plan-retrospective/test_collect_fragments.py"
+  ],
+  "worktree_path": ".claude/worktrees/lesson-2026-04-18-13-001",
+  "domains": [
+    "plan-marshall-plugin-dev"
+  ],
+  "track": "simple",
+  "scope": "few_files",
+  "compatibility": "breaking"
+}

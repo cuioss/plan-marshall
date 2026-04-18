@@ -1,0 +1,9 @@
+aspect: lessons_proposal
+status: success
+plan_id: lesson-2026-04-18-13-001
+proposals[3]{component,category,title,body_preview,confidence,source_aspects}:
+  "plan-marshall:phase-5-execute",anti-pattern,"Document manage-tasks finalize-step --outcome valid choices","LLM invoked manage-tasks finalize-step with --outcome=in_progress during task 2 execution; valid choices are done/skipped/failed only",medium,["script_failure_analysis"]
+  "plan-marshall:phase-4-plan",anti-pattern,"Clarify manage-tasks uses prepare-add/commit-add not add","LLM invoked manage-tasks add during plan phase; correct flow is prepare-add then commit-add",medium,["script_failure_analysis"]
+  "plan-marshall:plan-retrospective",improvement,"analyze-logs should classify ERROR entries in script-execution.log","log_analysis fragment reported errors_script=0 despite 4 ERROR entries in script-execution.log — counter missed non-zero-exit entries",medium,["log_analysis","script_failure_analysis"]
+findings[1]{severity,message}:
+  info,"3 medium-confidence lesson proposals surfaced; no high-confidence auto-record candidates"

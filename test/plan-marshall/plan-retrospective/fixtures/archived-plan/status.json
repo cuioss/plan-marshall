@@ -1,0 +1,80 @@
+{
+  "title": "collect-fragments add/finalize should infer mode from bundle, not require --mode on every call",
+  "current_phase": "6-finalize",
+  "phases": [
+    {
+      "name": "1-init",
+      "status": "done"
+    },
+    {
+      "name": "2-refine",
+      "status": "done"
+    },
+    {
+      "name": "3-outline",
+      "status": "done"
+    },
+    {
+      "name": "4-plan",
+      "status": "done"
+    },
+    {
+      "name": "5-execute",
+      "status": "done"
+    },
+    {
+      "name": "6-finalize",
+      "status": "done"
+    }
+  ],
+  "created": "2026-04-18T11:46:36Z",
+  "updated": "2026-04-18T12:46:47Z",
+  "metadata": {
+    "worktree_path": ".claude/worktrees/lesson-2026-04-18-13-001",
+    "change_type": "enhancement",
+    "phase_steps": {
+      "6-finalize": {
+        "commit-push": {
+          "outcome": "done",
+          "display_detail": "-> 3455b3fd"
+        },
+        "create-pr": {
+          "outcome": "done",
+          "display_detail": "#235"
+        },
+        "automated-review": {
+          "outcome": "done",
+          "display_detail": "0 comments actionable (1 info reviewed)"
+        },
+        "knowledge-capture": {
+          "outcome": "done",
+          "display_detail": "no new pattern saved"
+        },
+        "lessons-capture": {
+          "outcome": "done",
+          "display_detail": "no lessons recorded"
+        },
+        "finalize-step-plugin-doctor": {
+          "outcome": "done",
+          "display_detail": "scan clean (1 skill)"
+        },
+        "branch-cleanup": {
+          "outcome": "done",
+          "display_detail": "main pulled, branch deleted (local+remote), worktree removed"
+        },
+        "finalize-step-sync-plugin-cache": {
+          "outcome": "done",
+          "display_detail": "10 bundles synced to ~/.claude/plugins/cache"
+        },
+        "record-metrics": {
+          "outcome": "done",
+          "display_detail": "2286s / 403111 tokens"
+        },
+        "plan-retrospective": {
+          "outcome": "done",
+          "display_detail": "15 findings across 10 aspects"
+        }
+      }
+    }
+  }
+}

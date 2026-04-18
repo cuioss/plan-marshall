@@ -37,6 +37,7 @@ _lifecycle = _load_module('_status_cmd_lifecycle', '_cmd_lifecycle.py')
 _query = _load_module('_status_cmd_query', '_status_query.py')
 
 cmd_create, cmd_delete_plan = _lifecycle.cmd_create, _lifecycle.cmd_delete_plan
+cmd_transition = _lifecycle.cmd_transition
 cmd_get_context = _query.cmd_get_context
 cmd_metadata = _query.cmd_metadata
 cmd_progress = _query.cmd_progress
@@ -466,6 +467,107 @@ def test_cli_transition_not_found_exits_zero():
         assert result.success, f'Should exit 0, got: {result.stderr}'
         assert 'status: error' in result.stdout
         assert 'file_not_found' in result.stdout
+
+
+# =============================================================================
+# Regression Tests: cmd_transition(completed='5-execute') empty-diff guard
+# =============================================================================
+#
+# A bug in the earlier lesson allowed cmd_transition to wipe a previously
+# populated ``references.modified_files`` whenever ``git diff`` returned
+# nothing (e.g., after a squash-merge reset the branch diff to empty). The
+# fix added a guard: if the new diff is empty AND the existing list is
+# non-empty, preserve the existing list; only replace when the new diff
+# has entries (or the prior value is absent/empty). These tests pin both
+# halves of that guard so neither branch regresses silently.
+
+
+def _seed_execute_phase_plan(ctx, plan_id: str, modified_files: list) -> None:
+    """Create a plan with 1-init done, 5-execute in_progress, base_branch set,
+    and refs.modified_files pre-populated. Returns nothing; mutates the
+    fixture directory directly.
+    """
+    cmd_create(
+        Namespace(
+            plan_id=plan_id,
+            title='Transition Test',
+            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            force=False,
+        )
+    )
+    # Advance phases until 5-execute is the current (in_progress) phase.
+    for phase in ('1-init', '2-refine', '3-outline', '4-plan'):
+        cmd_update_phase(Namespace(plan_id=plan_id, phase=phase, status='done'))
+    cmd_set_phase(Namespace(plan_id=plan_id, phase='5-execute'))
+
+    # Write references.json with a base_branch (required by the guard code
+    # path) and the pre-populated modified_files we want to protect.
+    refs = {
+        'base_branch': 'main',
+        'modified_files': list(modified_files),
+    }
+    refs_path = ctx.plan_dir / 'references.json'
+    refs_path.write_text(json.dumps(refs), encoding='utf-8')
+
+
+def _read_modified_files(ctx, plan_id: str) -> list:
+    """Read ``references.modified_files`` back from disk for assertion."""
+    refs_path = ctx.plan_dir / 'references.json'
+    return json.loads(refs_path.read_text(encoding='utf-8'))['modified_files']
+
+
+def test_transition_5_execute_preserves_modified_files_when_diff_empty(monkeypatch):
+    """Regression: empty diff MUST NOT wipe a pre-populated modified_files.
+
+    Stub ``_collect_modified_files`` on the lifecycle module so we can
+    simulate a squash-merge scenario where ``git diff`` returns no
+    entries. The guard in cmd_transition must preserve the existing list.
+    """
+    with PlanContext(plan_id='transition-guard-preserve') as ctx:
+        _seed_execute_phase_plan(ctx, 'transition-guard-preserve', ['a', 'b', 'c'])
+
+        # Act: stub the git collection to return empty, then transition.
+        monkeypatch.setattr(_lifecycle, '_collect_modified_files', lambda *args, **kwargs: [])
+        result = cmd_transition(
+            Namespace(plan_id='transition-guard-preserve', completed='5-execute')
+        )
+
+        # Assert: transition succeeded AND the modified_files guard preserved
+        # the pre-populated list despite the empty diff.
+        assert result['status'] == 'success'
+        preserved = _read_modified_files(ctx, 'transition-guard-preserve')
+        assert preserved == ['a', 'b', 'c'], (
+            f'Empty-diff guard failed: expected preserved [a,b,c], got {preserved}. '
+            f'This regression means cmd_transition is wiping modified_files again.'
+        )
+
+
+def test_transition_5_execute_replaces_modified_files_when_diff_nonempty(monkeypatch):
+    """Regression sibling: non-empty diff MUST replace the existing list.
+
+    The guard only protects against empty-diff wipes — when git returns
+    real entries, cmd_transition must update refs.modified_files to
+    reflect the current branch state.
+    """
+    with PlanContext(plan_id='transition-guard-replace') as ctx:
+        _seed_execute_phase_plan(ctx, 'transition-guard-replace', ['a', 'b', 'c'])
+
+        # Act: stub the git collection to return ['x','y'], then transition.
+        monkeypatch.setattr(
+            _lifecycle, '_collect_modified_files', lambda *args, **kwargs: ['x', 'y']
+        )
+        result = cmd_transition(
+            Namespace(plan_id='transition-guard-replace', completed='5-execute')
+        )
+
+        # Assert: transition succeeded AND the modified_files was replaced
+        # with the new diff contents (not appended, not preserved).
+        assert result['status'] == 'success'
+        replaced = _read_modified_files(ctx, 'transition-guard-replace')
+        assert replaced == ['x', 'y'], (
+            f'Non-empty diff replacement failed: expected [x,y], got {replaced}. '
+            f'The guard must only preserve on EMPTY diff — real diffs must win.'
+        )
 
 
 def test_cli_get_routing_context_not_found_exits_zero():

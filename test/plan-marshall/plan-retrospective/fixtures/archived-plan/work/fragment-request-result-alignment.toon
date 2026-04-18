@@ -1,0 +1,11 @@
+aspect: request_result_alignment
+status: success
+plan_id: lesson-2026-04-18-13-001
+goals[2]{text,status,evidence}:
+  "Persist mode in bundle and drop --mode from add/finalize (script + tests)",fulfilled,"TASK-001 and TASK-002 completed; 37 module tests pass; collect-fragments.py + test_collect_fragments.py modified per outline"
+  "Drop --mode from SKILL.md add/finalize example commands",fulfilled,"TASK-003 completed; SKILL.md Step 3/4 updated"
+gaps[0]:
+scope_creep[0]:
+findings[2]{severity,message}:
+  info,"Both declared deliverables fulfilled; PR #235 merged cleanly"
+  info,"No scope creep — 3 affected files exactly match outline declaration"
