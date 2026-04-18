@@ -85,6 +85,50 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
 ```
 
+### Rebase on Execute Start
+
+```
+AskUserQuestion:
+  question: "Sync feature branch against origin/{base} at the start of phase-5-execute?"
+  header: "Sync"
+  options:
+    - label: "Enabled (Recommended)"
+      description: "Run the sync-with-main step before the task loop; catches drift before coding starts"
+    - label: "Disabled"
+      description: "Skip the sync step; rely on phase-6-finalize 'pr update-branch' as the only sync point"
+  multiSelect: false
+```
+
+Maps to values: `true`, `false` (default `true`)
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field rebase_on_execute_start --value {true|false}
+```
+
+### Rebase Strategy
+
+```
+AskUserQuestion:
+  question: "Strategy used by the phase-5-execute sync-with-main step?"
+  header: "Rebase"
+  options:
+    - label: "Merge (Recommended)"
+      description: "git merge --no-edit origin/{base} — no history rewrite, PR-safe"
+    - label: "Rebase"
+      description: "git rebase origin/{base} — rewrites history, requires force-push when PR is already open"
+  multiSelect: false
+```
+
+Maps to values: `merge`, `rebase` (default `merge`)
+
+Apply selection:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field rebase_strategy --value {merge|rebase}
+```
+
 ---
 
 ## Review Gates

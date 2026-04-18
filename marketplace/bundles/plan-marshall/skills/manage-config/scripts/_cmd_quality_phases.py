@@ -18,7 +18,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
-from _config_defaults import get_default_config
+from _config_defaults import get_default_config, validate_rebase_strategy
 from constants import PHASES  # type: ignore[import-not-found]
 
 # Valid phase sections - derived from centralized PHASES with 'phase-' prefix for marshal.json keys
@@ -126,6 +126,12 @@ def cmd_phase(args, phase_section: str) -> dict:
     elif args.verb == 'set' and phase_section in (SCALAR_PHASES | LIST_STEP_PHASES):
         field = args.field
         value = _coerce_value(args.value)
+        # Enum fields: reject invalid values before mutating config
+        if phase_section == 'phase-5-execute' and field == 'rebase_strategy':
+            try:
+                validate_rebase_strategy(value)
+            except ValueError as e:
+                return error_exit(str(e))
         section[field] = value
         plan_config[phase_section] = section
         config['plan'] = plan_config
