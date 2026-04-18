@@ -79,6 +79,14 @@ Exit code `1` → base has moved forward; continue to strategy application.
 
 ### 5. Apply strategy
 
+First, record the current HEAD so the success path (section 7) can compute the incorporated commit range:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Record the output as `{previous_HEAD}`. Then apply the chosen strategy:
+
 **`merge`**:
 
 ```bash
@@ -112,13 +120,13 @@ If the strategy command exits non-zero:
 
 ### 7. Success path — record incorporated commits
 
-On a successful merge or rebase, compute the short-SHA range of commits that were pulled in from base:
+On a successful merge or rebase, compute the short-SHA range of commits that were pulled in from base, using the `{previous_HEAD}` captured at the start of section 5:
 
 ```bash
 git -C {worktree_path} rev-list --abbrev-commit --reverse {previous_HEAD}..HEAD
 ```
 
-Where `{previous_HEAD}` is the feature-branch tip recorded before the strategy command ran. Log to `decision.log`:
+Record the output as `{short_sha_range}`. Log to `decision.log`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
