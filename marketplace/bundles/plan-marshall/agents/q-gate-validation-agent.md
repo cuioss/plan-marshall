@@ -193,6 +193,66 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --trace-plan-id {plan_id}
 ```
 
+#### 2.8 Downstream Consumer Check
+
+Detect downstream consumers of a skill that is being deleted but that remain hard-coded elsewhere in the repo. A deletion deliverable that lists every file under a skill directory still fails in practice when pytest `conftest.py` files, test path references, script notations, or `Skill:` directives continue to point at the deleted paths — the failure surfaces only during a holistic `module-tests` run, long after the outline should have self-corrected.
+
+**Activation condition**: Runs only when the deliverable's `affected_files` contains at least one path matching `marketplace/bundles/*/skills/{name}/**` or `.claude/skills/{name}/**` AND the deliverable is a deletion (detected via `change_type: tech_debt` OR explicit deletion language in the deliverable's `Change per file` field, e.g., "delete", "remove", "drop", `git rm`). If neither condition is met, skip this check and continue to the next deliverable.
+
+**Per-skill-directory loop**: For each deleted skill directory inferred from `affected_files`, derive:
+- `{skill_dir}` — the root skill directory, e.g., `.claude/skills/verify-workflow` or `marketplace/bundles/plan-marshall/skills/phase-3-outline`
+- `{bundle}` — the bundle segment when the path is under `marketplace/bundles/{bundle}/skills/`, otherwise empty
+- `{skill_name}` — the final path segment of `{skill_dir}`
+
+Execute the four greps below against the worktree root. Each grep must be a separate Bash call (one command per call).
+
+Pattern A — `importlib` / `spec_from_file_location` loads pointing inside the deleted skill directory (pytest conftest loaders):
+
+```bash
+rg -n "spec_from_file_location\\([^)]*{skill_name}" --type py test/
+```
+
+Pattern B — relative path references to `.claude/skills/{skill_name}/` or `marketplace/bundles/{bundle}/skills/{skill_name}/` anywhere under `test/` (excluding caches):
+
+```bash
+rg -n "{skill_dir}" test/ --glob '!**/__pycache__/**'
+```
+
+Pattern C — three-part script notations `{bundle}:{skill_name}:` referring to the deleted skill in `marshal.json`, plan scripts, and the executor mapping:
+
+```bash
+rg -n "{bundle}:{skill_name}:" marshal.json .plan/
+```
+
+Pattern D — `Skill: {bundle}:{skill_name}` loader directives in markdown (SKILL.md, agent.md, command.md):
+
+```bash
+rg -n "^Skill:\\s*{bundle}:{skill_name}\\b" marketplace/ .claude/
+```
+
+**Suppression rule**: For each grep match, extract `{consumer_path}` (the file containing the match). The match is resolved (no finding emitted) when `{consumer_path}` appears in EITHER:
+- the same deletion deliverable's `affected_files` list (indicating the consumer is co-deleted or updated in this deliverable), OR
+- any other deliverable's `affected_files` list in the same `solution_outline.md` (indicating a sibling deliverable removes or updates the consumer)
+
+Only emit findings for unresolved matches.
+
+**Pass criteria**: Every grep returns no matches, OR every match is resolved per the suppression rule above.
+
+**Fail criteria**: At least one grep match references `{skill_dir}` and its `{consumer_path}` is not listed in any deliverable's `affected_files`.
+
+**FLAG format** — For each unresolved match, record a blocking Q-Gate finding:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 3-outline --source qgate --type triage \
+  --title "Q-Gate: Downstream consumer for deletion of {skill_dir}" \
+  --detail "{pattern_letter}-{pattern_name} match at {consumer_path}:{line} references deleted skill {skill_dir} but is not listed in any deliverable's affected files. Outline must either add {consumer_path} to the deletion deliverable's affected files or include a follow-up deliverable that removes/updates it." \
+  --file-path "{consumer_path}" \
+  --trace-plan-id {plan_id}
+```
+
+**Worked example (lesson 2026-04-18-05-002)**: Plan `plan-retrospective-opt-in-audit` Deliverable 4 listed every file under `.claude/skills/verify-workflow/` for deletion. Pattern A run against the worktree produced `test/verify-workflow/conftest.py:12` loading `scripts/verify-structure.py` via `spec_from_file_location`. `test/verify-workflow/` was not listed as an affected file of any deliverable in the outline, so the suppression rule did not apply and a Q-Gate finding would now be emitted — blocking phase-3-outline until the outline adds `test/verify-workflow/` to the deletion deliverable (or adds a follow-up deliverable that removes it). With this check in place, task 10 (holistic `module-tests`) would never have hit the `FileNotFoundError` at pytest collection time.
+
 ---
 
 ### Step 5: Check Missing Coverage
