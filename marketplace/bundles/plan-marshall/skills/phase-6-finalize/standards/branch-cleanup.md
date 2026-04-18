@@ -134,6 +134,8 @@ Extract `value` as `{pr_merge_strategy}` (default: `squash`). Valid values: `squ
 
 ### Update Branch (if behind)
 
+This step is a second-line safety net. The primary drift-sync now runs at the start of phase-5-execute when `rebase_on_execute_start=true` (the default), so by the time finalize runs the branch is typically already up to date with the base branch and this section is a no-op. When `rebase_on_execute_start=false`, `pr update-branch` remains the only sync point and this section is the sole mechanism that keeps a stale branch mergeable. The `pr update-branch` logic itself is unchanged.
+
 **Only if `state == open`**: Before merging, check whether the PR branch is behind the base branch. The `merge_state` field from the earlier `pr view` output contains GitHub's `mergeStateStatus`. If the value is `behind`, the branch must be updated before a merge attempt — otherwise `pr merge` fails with 'head branch not up to date' and the auto-merge fallback stalls because GitHub will not auto-update the branch without explicit intervention.
 
 **If `merge_state == behind`**:

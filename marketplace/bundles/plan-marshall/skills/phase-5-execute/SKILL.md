@@ -32,12 +32,12 @@ Skill: plan-marshall:dev-general-practices
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
-- On phase entry (Step 3), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run. If present, every subsequent Edit/Write/Read must reference that path as the root.
+- On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run. If present, every subsequent Edit/Write/Read must reference that path as the root.
 - Every subagent dispatch (Task / Skill / phase-agent invocation) MUST embed the `worktree_path` directly in the dispatch prompt when a worktree is active (see **Dispatch Protocol** below) AND MUST pass it as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `phase-agent`). Prompt embedding and parameter passing are both required — the former propagates the constraint through free-form delegation, the latter satisfies the structured interface.
 
 ## Dispatch Protocol (Worktree Header)
 
-**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 3), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the following header:
+**REQUIREMENT**: When the plan runs in an isolated worktree (see the `[STATUS] Active worktree` work-log line from Step 4), every subagent dispatch prompt — including `Task:`, `Skill:` invocations that accept free-form prompts, and `phase-agent` delegations — MUST begin with the following header:
 
 ```
 WORKTREE: {worktree_path}
@@ -46,13 +46,13 @@ All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mv
 
 The `[STATUS] Active worktree: ...` work-log line remains the observability signal that the worktree was detected, but it is informational only — the active propagation mechanism is embedding the header in every dispatch prompt. Skip the header only when no worktree is active.
 
-This applies to every dispatch in the execution loop, including (but not limited to) **Step 5 (Execute Steps)** task dispatches and **Step 8 (Independent Change Verification)** subagent invocations. Child agents must echo the same header verbatim into any further dispatches they issue. The Bucket B `--project-dir` clause exists so that verification commands resolved by `task-executor` (`module-tests`, `compile`, `quality-gate`, etc.) run against the worktree's uncommitted state rather than the main checkout — without it, pytest silently collects tests from the main working tree and reports green while leaving the worktree's new tests entirely unexercised. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
+This applies to every dispatch in the execution loop, including (but not limited to) **Step 6 (Execute Steps)** task dispatches and **Step 9 (Independent Change Verification)** subagent invocations. Child agents must echo the same header verbatim into any further dispatches they issue. The Bucket B `--project-dir` clause exists so that verification commands resolved by `task-executor` (`module-tests`, `compile`, `quality-gate`, etc.) run against the worktree's uncommitted state rather than the main checkout — without it, pytest silently collects tests from the main working tree and reports green while leaving the worktree's new tests entirely unexercised. See `plan-marshall:tools-script-executor/standards/cwd-policy.md` for the authoritative Bucket A/B split.
 
 See `standards/operations.md` for the complete set of dispatch pattern templates updated with this header.
 
 ## cwd for `.plan/execute-script.py` calls
 
-> `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass `--project-dir`, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) take `--project-dir {worktree_path}` explicitly when a worktree is active. `{worktree_path}` is the `[STATUS] Active worktree` line surfaced at Step 3 entry. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
+> `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass `--project-dir`, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) take `--project-dir {worktree_path}` explicitly when a worktree is active. `{worktree_path}` is the `[STATUS] Active worktree` line surfaced at Step 4 entry. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
 
 ---
 
@@ -152,7 +152,7 @@ Skill: {step_reference}
   Arguments: --plan-id {plan_id}
 ```
 
-Input contract: `--plan-id` only. Retry logic is managed by the task runner (Step 10 triage loop with `verification_max_iterations`), not by the step itself.
+Input contract: `--plan-id` only. Retry logic is managed by the task runner (Step 11 triage loop with `verification_max_iterations`), not by the step itself.
 
 **Return Contract** (required TOON output from external steps):
 
@@ -167,12 +167,123 @@ src/Bar.java,10,Missing null check,error
 ```
 
 - `status: passed` → step complete, continue to next step
-- `status: failed` + `findings[]` → findings fed into Step 10 triage (fix task creation, suppress, or accept)
+- `status: failed` + `findings[]` → findings fed into Step 11 triage (fix task creation, suppress, or accept)
 - `status: failed` without `findings[]` → treated as single unstructured failure, triaged as one finding
 
 ---
 
-### Step 3: Log Phase Start and Surface Active Worktree (Once per phase)
+### Step 3: Sync Worktree With Main (Once per phase)
+
+Before the execute loop begins, bring the feature branch up to date against `origin/{base_branch}` so coding starts on a current base rather than one potentially stale since `phase-1-init`. Full procedure, git invocations, fast-path semantics, conflict contract, and main-checkout fallback are documented in [standards/sync-with-main.md](standards/sync-with-main.md).
+
+Inlined flow:
+
+1. **Read `rebase_on_execute_start`** (default `true`):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     plan phase-5-execute get --field rebase_on_execute_start --trace-plan-id {plan_id}
+   ```
+
+   If the returned `value` is `false`, skip this step and log:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO \
+     --message "[STATUS] (plan-marshall:phase-5-execute) Sync skipped: rebase_on_execute_start=false"
+   ```
+
+   Proceed to Step 4.
+
+2. **Read `rebase_strategy`** (default `merge`, valid values `merge` | `rebase`):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+     plan phase-5-execute get --field rebase_strategy --trace-plan-id {plan_id}
+   ```
+
+   Record the returned `value` as `{strategy}` — it is referenced in points 6, 7, and 8 below.
+
+3. **Resolve `base_branch` and `worktree_path`** from `references.json` (written at `phase-1-init` Step 6):
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
+     --plan-id {plan_id} --file references.json
+   ```
+
+   Extract `base_branch` and `worktree_path`. If `worktree_path` is absent, the plan runs against the main checkout; substitute `.` for `{worktree_path}` in every git command below.
+
+4. **Fetch base**:
+
+   ```bash
+   git -C {worktree_path} fetch origin {base_branch}
+   ```
+
+5. **Fast-path check** — if the current branch tip already contains `origin/{base_branch}`, skip strategy application:
+
+   ```bash
+   git -C {worktree_path} merge-base --is-ancestor origin/{base_branch} HEAD
+   ```
+
+   Exit code `0` means already up to date. Log and continue to Step 4:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO \
+     --message "[STATUS] (plan-marshall:phase-5-execute) Sync skipped: already up to date with origin/{base_branch}"
+   ```
+
+6. **Apply strategy** — first record the current HEAD so the success path (point 8) can compute the incorporated commit range:
+
+   ```bash
+   git -C {worktree_path} rev-parse HEAD
+   ```
+
+   Record the output as `{previous_HEAD}`. Then apply the chosen strategy:
+
+   - `merge`:
+
+     ```bash
+     git -C {worktree_path} merge --no-edit origin/{base_branch}
+     ```
+
+   - `rebase`:
+
+     ```bash
+     git -C {worktree_path} rebase origin/{base_branch}
+     ```
+
+7. **Conflict contract** — if the strategy command exits non-zero, ABORT the phase fail-loud: do NOT auto-resolve, do NOT continue to Step 4. Leave conflict markers in the worktree, surface the failure in `work.log` at ERROR level with `{worktree_path}` and the conflicted files, and exit without entering the task loop. First capture the conflicted files:
+
+   ```bash
+   git -C {worktree_path} diff --name-only --diff-filter=U
+   ```
+
+   Record the output as `{files}`. Then log the conflict:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level ERROR \
+     --message "[ERROR] (plan-marshall:phase-5-execute) Sync conflict at {worktree_path} — strategy={strategy}, conflicted files: {files}. Phase aborted; resolve manually and re-run."
+   ```
+
+8. **Success** — compute the incorporated commit range from `{previous_HEAD}` captured in point 6:
+
+   ```bash
+   git -C {worktree_path} rev-list --abbrev-commit --reverse {previous_HEAD}..HEAD
+   ```
+
+   Record the output as `{short_sha_range}`. Then record to `decision.log`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-5-execute) Synced worktree with origin/{base_branch} via {strategy} — commits {short_sha_range}"
+   ```
+
+Proceed to Step 4.
+
+### Step 4: Log Phase Start and Surface Active Worktree (Once per phase)
 
 At the start of execute or finalize phase:
 
@@ -201,7 +312,7 @@ When `worktree_path` is absent (main-checkout mode), the `cd && git` prohibition
 
 For each task in current phase:
 
-### Step 4: Locate Task with Context
+### Step 5: Locate Task with Context
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
@@ -211,14 +322,14 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next \
 
 Returns next task with status `pending` or `in_progress`, including embedded goal context (title, body) for immediate use without additional script calls.
 
-### Step 5: Execute Steps
+### Step 6: Execute Steps
 
 For each step in task's `steps[]` array:
 1. Parse the step text
 2. Execute the action (delegate if specified) — when delegating to a subagent via `Task:`, `Skill:` (prompt-accepting), or `phase-agent`, the prompt MUST begin with the Worktree Header from the **Dispatch Protocol** section above (omit only when no worktree is active).
 3. Mark step complete via `manage-tasks:finalize-step`
 
-### Step 6: Mark Step Complete
+### Step 7: Mark Step Complete
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
@@ -228,7 +339,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
   --outcome done
 ```
 
-### Step 7: Log Task Completion
+### Step 8: Log Task Completion
 
 After each task completes:
 
@@ -237,13 +348,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
-### Step 8: Independent Change Verification
+### Step 9: Independent Change Verification
 
 **Applies to**: `implementation` and `module_testing` profile tasks only. Skip this step for `verification` profile tasks.
 
 After task completion but before committing, independently verify that the task agent produced genuine results rather than trusting self-reports. Any subagent dispatch made during this step (e.g., a follow-up Task invocation) MUST embed the Worktree Header per the **Dispatch Protocol** section above.
 
-**8a. File-change invariant**: Verify that at least one file was modified in the worktree. Run in the worktree directory (or main checkout if no worktree):
+**9a. File-change invariant**: Verify that at least one file was modified in the worktree. Run in the worktree directory (or main checkout if no worktree):
 
 ```bash
 git -C {worktree_path} diff --name-only HEAD
@@ -256,9 +367,9 @@ If the diff output is empty (no files changed) for an `implementation` or `modul
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-5-execute) No file-system changes detected for {task_id} — marking blocked"
   ```
-- Skip Steps 8b and 8c, proceed to Step 10 (Triage)
+- Skip Steps 9b and 9c, proceed to Step 11 (Triage)
 
-**8b. Obfuscation spot-check** (conditional): When the task's verification criteria include checking for absence of a specific token (e.g., "zero grep hits for `--body`"), grep the modified files for common obfuscation patterns around that token:
+**9b. Obfuscation spot-check** (conditional): When the task's verification criteria include checking for absence of a specific token (e.g., "zero grep hits for `--body`"), grep the modified files for common obfuscation patterns around that token:
 - String concatenation splitting the token (e.g., `'--' + 'body'`, `"--" + "body"`)
 - Variable assignment that reconstructs the token from parts
 
@@ -270,7 +381,7 @@ If any obfuscation pattern is found:
   ```
 - Do NOT auto-block (false positives are possible) — flag for human review only
 
-**8c. Verification cross-check**: Re-execute the task's `verification.commands` independently and compare the exit code against what the agent reported:
+**9c. Verification cross-check**: Re-execute the task's `verification.commands` independently and compare the exit code against what the agent reported:
 
 ```bash
 # Run the same verification command the agent claims to have passed
@@ -284,11 +395,11 @@ If the agent reported `verification.passed: true` but the independent run return
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-5-execute) Verification mismatch for {task_id}: agent reported pass but independent run failed — marking blocked"
   ```
-- Proceed to Step 10 (Triage)
+- Proceed to Step 11 (Triage)
 
-If independent verification also passes, continue to Step 9.
+If independent verification also passes, continue to Step 10.
 
-### Step 9: Conditional Per-Deliverable Commit
+### Step 10: Conditional Per-Deliverable Commit
 
 If `commit_strategy == per_deliverable` (cached from Step 2):
 
@@ -313,11 +424,11 @@ If `commit_strategy == per_deliverable` (cached from Step 2):
 
 If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
-### Step 10: Triage Verification Failure
+### Step 11: Triage Verification Failure
 
 **Applies when**:
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
-- Step 8 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
+- Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
 **For `no_changes_detected` blocks**: The implementation task produced no file changes. Triage options:
 - **RETRY** → reset task to `pending` for re-execution
@@ -330,13 +441,13 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 
 **For verification task failures** (original behavior):
 
-**10a**: Read `verify_iteration` counter from task metadata (default: 0).
+**11a**: Read `verify_iteration` counter from task metadata (default: 0).
 
-**10b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 11.
+**11b**: If `verify_iteration >= verification_max_iterations` (from phase-5-execute config, default 5) → mark task `blocked`, log, continue to Step 12.
 
-**10c**: Load domain triage extension via extension-api (`provides_triage()`).
+**11c**: Load domain triage extension via extension-api (`provides_triage()`).
 
-**10d**: Persist findings to Q-Gate:
+**11d**: Persist findings to Q-Gate:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   qgate add --plan-id {plan_id} --phase 5-execute \
@@ -344,22 +455,22 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --message "{finding_message}" --detail "{file}:{line}"
 ```
 
-**10e**: Triage each finding:
+**11e**: Triage each finding:
 - **FIX** → create fix task (`origin: fix`, `profile: implementation`, depends on nothing)
 - **SUPPRESS** → log suppression, resolve finding
 - **ACCEPT** → log as technical debt, resolve finding
 
-**10f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
+**11f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
 
-**10g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 11.
+**11g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 12.
 
-### Step 11: Next Task or Phase
+### Step 12: Next Task or Phase
 
 - If more tasks in phase → Continue to next task
 - If phase complete → Log phase outcome and auto-transition to next phase
 - If all phases complete → Mark plan complete
 
-### Step 12: Log Phase Completion (When phase completes)
+### Step 13: Log Phase Completion (When phase completes)
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
