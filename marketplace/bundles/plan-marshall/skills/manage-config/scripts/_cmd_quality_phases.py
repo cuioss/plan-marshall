@@ -129,7 +129,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         # Enum fields: reject invalid values before mutating config
         if phase_section == 'phase-5-execute' and field == 'rebase_strategy':
             try:
-                validate_rebase_strategy(value)
+                validate_rebase_strategy(str(value))
             except ValueError as e:
                 return error_exit(str(e))
         section[field] = value
