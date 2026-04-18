@@ -90,6 +90,21 @@ Typical groups:
 * Corner cases / edge cases
 * Error paths
 
+## Test Helper Module Organization
+
+Private helper modules co-located with tests (shared fixtures, factory helpers, utility functions used across multiple test files) MUST be named so that they do not collide with any framework-reserved test-collection module name. Framework-reserved names trigger implicit discovery or loading semantics that are reserved for the framework's own use; reusing such a name for a private helper causes subtle, silent breakage that is hard to diagnose.
+
+### Rules
+
+* **Never name a helper module after a framework-reserved collection module.** Reserved names are owned by the test framework and are resolved by name through framework-specific search rules (e.g., nearest-ancestor lookup). A helper that happens to match a reserved name can shadow the project-root module of the same name from subdirectories, silently replacing the intended module for tests below that directory.
+* **Canonical helper module name: `_fixtures.py`** (or the direct-equivalent spelling in the target language, e.g., `_fixtures.js`, `_Fixtures.java`). The leading underscore signals "private helper, not a test target" and keeps the module out of any auto-discovery pattern that matches on `test_*` / `*_test` / `*Test` names.
+* Prefer a short, descriptive unqualified name with the underscore prefix over framework-specific conventions that collide with reserved names. If a helper needs further specialization, use a descriptive suffix (`_fixtures_http.py`, `_fixtures_db.py`) rather than layering more reserved names.
+* The shadowing-avoidance rationale is the load-bearing constraint — it is the reason the rule exists, not a stylistic preference. Placing a helper with a reserved name in a subdirectory causes the framework's nearest-ancestor resolution to pick up the helper instead of the project-root module, breaking every test below that directory.
+
+### Language/framework-specific detail
+
+For the pytest-specific resolution behavior (how pytest discovers `conftest.py` via nearest-ancestor walk, and why a subdirectory `conftest.py` shadows the project-root `conftest.py`), see `pm-dev-python:pytest-testing` — `standards/testing-pytest.md`. That document contains the authoritative pytest resolution detail and the concrete diagnosis checklist when shadowing is suspected. This section defines the language-agnostic rule; the pytest skill documents the framework-specific mechanics.
+
 ## Test Naming
 
 Test names should describe the expected behavior:
