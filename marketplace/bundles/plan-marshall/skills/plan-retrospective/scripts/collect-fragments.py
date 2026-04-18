@@ -37,6 +37,7 @@ from file_ops import (  # type: ignore[import-not-found]
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 _ARCHIVED_TMP_SUBDIR = 'plan-retrospective'
+_META_KEY = '_meta'
 
 
 def resolve_bundle_path(mode: str, plan_id: str, archived_plan_path: str | None = None) -> Path:
@@ -123,23 +124,49 @@ def _read_fragment(fragment_path: Path) -> Any:
 def _write_bundle(bundle_path: Path, bundle: dict[str, Any]) -> None:
     """Serialize ``bundle`` to TOON and write it atomically.
 
-    An empty dict deliberately serializes to an empty file. The bundle is a
-    transient internal artifact consumed only by ``compile-report run`` (which
-    reads and parses it via ``parse_toon``); no shell consumer ever runs
-    ``test -s`` against it, so adding a trailing newline would just waste a
-    byte and diverge from the tested contract in
-    ``test_collect_fragments.TestInitLiveMode`` (bundle content must equal
-    ``''`` immediately after ``init``).
+    After ``init`` the bundle is seeded with a ``_meta`` entry recording the
+    resolution mode (e.g. ``_meta: mode: live``), so it is never literally
+    empty on disk. An empty dict would still serialize to an empty string,
+    but that code path is retained only for defensive symmetry — production
+    callers always pass at least the ``_meta`` seed. The bundle is a
+    transient internal artifact consumed only by ``compile-report run``
+    (which reads and parses it via ``parse_toon``); no shell consumer runs
+    ``test -s`` against it.
     """
     content = serialize_toon(bundle) if bundle else ''
     atomic_write_file(bundle_path, content)
 
 
+def _read_mode_from_bundle(bundle: dict[str, Any], bundle_path: Path) -> str:
+    """Return the persisted resolution mode from the bundle's ``_meta`` block.
+
+    Args:
+        bundle: Parsed bundle dict (as returned by ``_read_bundle``).
+        bundle_path: Source path for the bundle, included in error messages
+            so callers can trace which artifact is malformed.
+
+    Returns:
+        The mode string (``'live'`` or ``'archived'``).
+
+    Raises:
+        ValueError: When ``_meta.mode`` is missing — indicates the bundle
+            was created by an incompatible ``init`` (pre-persisted-mode or
+            hand-crafted) and cannot be used by ``add``/``finalize``.
+    """
+    meta = bundle.get(_META_KEY)
+    if not isinstance(meta, dict) or 'mode' not in meta:
+        raise ValueError(
+            f'Bundle missing _meta.mode — was it created by a compatible '
+            f'init? bundle_path={bundle_path}'
+        )
+    return str(meta['mode'])
+
+
 def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
-    """Create (or overwrite) an empty bundle file at the mode-appropriate path."""
+    """Create (or overwrite) a bundle file seeded with the resolution mode."""
     bundle_path = resolve_bundle_path(args.mode, args.plan_id, args.archived_plan_path)
     bundle_path.parent.mkdir(parents=True, exist_ok=True)
-    _write_bundle(bundle_path, {})
+    _write_bundle(bundle_path, {_META_KEY: {'mode': args.mode}})
     return {
         'status': 'success',
         'operation': 'init',
@@ -149,14 +176,44 @@ def cmd_init(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _locate_bundle(args: argparse.Namespace) -> Path:
+    """Probe live then archived candidate paths; return the first that exists.
+
+    Returns the ``live`` path when neither exists so ``_read_bundle`` raises
+    a consistent "Bundle file does not exist" error.
+    """
+    live_path = resolve_bundle_path('live', args.plan_id, args.archived_plan_path)
+    if live_path.exists():
+        return live_path
+    archived_path = resolve_bundle_path('archived', args.plan_id, args.archived_plan_path)
+    if archived_path.exists():
+        return archived_path
+    return live_path
+
+
 def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
     """Merge a fragment file into the bundle under the given aspect key."""
-    bundle_path = resolve_bundle_path(args.mode, args.plan_id, args.archived_plan_path)
-    bundle = _read_bundle(bundle_path)
-
     aspect = args.aspect
     if not aspect:
         raise ValueError('--aspect is required')
+    if aspect.startswith('_'):
+        raise ValueError(
+            'Reserved aspect key: keys starting with "_" are internal metadata'
+        )
+
+    bundle_path = _locate_bundle(args)
+    bundle = _read_bundle(bundle_path)
+    mode = _read_mode_from_bundle(bundle, bundle_path)
+
+    # Sanity guard: the path we found the bundle at must match the path the
+    # persisted mode resolves to. A mismatch means the bundle was moved or
+    # hand-crafted with a contradictory _meta.mode.
+    expected_path = resolve_bundle_path(mode, args.plan_id, args.archived_plan_path)
+    if bundle_path.resolve() != expected_path.resolve():
+        raise ValueError(
+            f'Bundle path mismatch: found at {bundle_path} but _meta.mode='
+            f'{mode!r} resolves to {expected_path}'
+        )
 
     already_present = aspect in bundle
     if already_present and not args.overwrite:
@@ -179,36 +236,57 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
         'plan_id': args.plan_id,
         'aspect': aspect,
         'bundle_path': str(bundle_path),
-        'aspects': sorted(bundle.keys()),
+        'aspects': sorted(k for k in bundle.keys() if not k.startswith('_')),
         'overwrote': already_present,
     }
 
 
 def cmd_finalize(args: argparse.Namespace) -> dict[str, Any]:
     """Return the bundle path and aspect list for hand-off to compile-report."""
-    bundle_path = resolve_bundle_path(args.mode, args.plan_id, args.archived_plan_path)
+    bundle_path = _locate_bundle(args)
     bundle = _read_bundle(bundle_path)
+    mode = _read_mode_from_bundle(bundle, bundle_path)
+    aspects = sorted(k for k in bundle.keys() if not k.startswith('_'))
     return {
         'status': 'success',
         'operation': 'finalize',
         'plan_id': args.plan_id,
-        'mode': args.mode,
+        'mode': mode,
         'bundle_path': str(bundle_path),
-        'aspects': sorted(bundle.keys()),
-        'aspect_count': len(bundle),
+        'aspects': aspects,
+        'aspect_count': len(aspects),
     }
 
 
-def _add_common_args(parser: argparse.ArgumentParser, *, require_mode: bool = True) -> None:
-    """Attach the flags shared by all subcommands."""
+def _add_init_args(parser: argparse.ArgumentParser) -> None:
+    """Attach flags for ``init``: ``--plan-id``, ``--mode``, ``--archived-plan-path``.
+
+    ``--mode`` is required here because ``init`` persists it into the
+    bundle's ``_meta`` block; ``add`` and ``finalize`` later read it back
+    from the bundle rather than taking it as an argument.
+    """
     parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
     parser.add_argument(
         '--mode',
         choices=['live', 'archived'],
-        required=require_mode,
-        default=None if require_mode else 'live',
-        help='Resolution mode (live | archived)',
+        required=True,
+        help='Resolution mode (live | archived) — persisted into the bundle',
     )
+    parser.add_argument(
+        '--archived-plan-path',
+        dest='archived_plan_path',
+        default=None,
+        help='Accepted for symmetry with compile-report; archived bundles live in OS tmp',
+    )
+
+
+def _add_add_finalize_args(parser: argparse.ArgumentParser) -> None:
+    """Attach flags for ``add`` and ``finalize``: ``--plan-id``, ``--archived-plan-path``.
+
+    Mode is deliberately omitted — both subcommands read it from the
+    bundle's persisted ``_meta.mode`` entry (written by ``init``).
+    """
+    parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
     parser.add_argument(
         '--archived-plan-path',
         dest='archived_plan_path',
@@ -231,7 +309,7 @@ def main() -> int:
         help='Create an empty fragment bundle at the mode-appropriate path',
         allow_abbrev=False,
     )
-    _add_common_args(init_parser)
+    _add_init_args(init_parser)
     init_parser.set_defaults(func=cmd_init)
 
     # add
@@ -240,7 +318,7 @@ def main() -> int:
         help='Merge a fragment file into the bundle under an aspect key',
         allow_abbrev=False,
     )
-    _add_common_args(add_parser)
+    _add_add_finalize_args(add_parser)
     add_parser.add_argument('--aspect', required=True, help='Aspect key to register')
     add_parser.add_argument(
         '--fragment-file',
@@ -261,7 +339,7 @@ def main() -> int:
         help='Return the bundle path and aspect list',
         allow_abbrev=False,
     )
-    _add_common_args(finalize_parser)
+    _add_add_finalize_args(finalize_parser)
     finalize_parser.set_defaults(func=cmd_finalize)
 
     args = parser.parse_args()
