@@ -68,10 +68,12 @@ After resolving stale targets and BEFORE loading the task context, inspect every
 
 **Rewrite rule**: Replace the trailing `conftest.py` segment with `_fixtures.py`, keeping the parent directory unchanged. For example, `test/plan-marshall/execute-task/conftest.py` becomes `test/plan-marshall/execute-task/_fixtures.py`.
 
-**Decision log requirement**: For each rewrite, emit a decision.log entry via `plan-marshall:manage-logging:manage-logging` using the exact format below:
+**Decision log requirement**: For each rewrite, emit a decision.log entry via `plan-marshall:manage-logging:manage-logging` using the exact command below:
 
-```
-(plan-marshall:execute-task) Deviation: rewrote {original_path} → {rewritten_path} (reason: sibling conftest.py would shadow top-level test/conftest.py)
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:execute-task) Deviation: rewrote {original_path} → {rewritten_path} (reason: sibling conftest.py would shadow top-level test/conftest.py)"
 ```
 
 **Rationale**: A sibling `conftest.py` placed under `test/<bundle>/<skill>/` is auto-loaded by pytest and will shadow the top-level `test/conftest.py`, silently disabling shared fixtures and producing misleading green runs. The canonical convention is a sibling `_fixtures.py` imported explicitly where needed. See `plan-marshall:dev-general-module-testing` for the authoritative `_fixtures.py` convention and the reasoning behind the allow-list.

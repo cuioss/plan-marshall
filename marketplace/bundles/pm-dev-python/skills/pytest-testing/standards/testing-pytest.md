@@ -310,12 +310,15 @@ def run_script(script_path, *args):
 
 ```
 test/
-├── conftest.py              # Shared fixtures
+├── conftest.py              # Shared fixtures (single top-level conftest)
+├── _fixtures.py             # Shared plain-Python helpers (no pytest magic)
 ├── bundle_name/
-│   ├── conftest.py          # Bundle-specific fixtures
+│   ├── _fixtures.py         # Bundle-specific private helpers
 │   ├── test_feature.py
 │   └── test_integration.py
 ```
+
+Nested sibling `conftest.py` files under skill/bundle test directories are prohibited — see "Conftest Scoping and Module Shadowing" below for the rationale and allow-list.
 
 ## Conftest Scoping and Module Shadowing
 
