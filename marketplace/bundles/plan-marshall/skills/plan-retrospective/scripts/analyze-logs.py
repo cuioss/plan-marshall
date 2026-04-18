@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze ``work.log``, ``script.log``, and ``decision.log`` for a plan.
+"""Analyze ``work.log``, ``script-execution.log``, and ``decision.log`` for a plan.
 
 Counts entries by level, phase, and tag; extracts script durations and
 error-tag frequencies. Output is a deterministic TOON fragment consumed by
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -64,12 +65,27 @@ def resolve_logs_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
 
 
 def read_log(path: Path) -> list[str]:
-    """Return the non-empty lines of ``path`` or an empty list if absent."""
+    """Return the non-empty lines of ``path``.
+
+    A missing target file is surfaced as a stderr WARN line so callers (and
+    plan retrospectives) notice silent log-source drift, rather than treating
+    an absent log as "no entries". OSError on read is treated the same way:
+    the operator needs to know the input was unreadable, not get a green
+    fragment with zero counts.
+    """
     if not path.exists():
+        print(
+            f'WARN: analyze-logs missing log file: {path}',
+            file=sys.stderr,
+        )
         return []
     try:
         content = path.read_text(encoding='utf-8')
-    except OSError:
+    except OSError as exc:
+        print(
+            f'WARN: analyze-logs failed to read log file {path}: {exc}',
+            file=sys.stderr,
+        )
         return []
     return [line for line in content.splitlines() if line.strip()]
 
@@ -152,7 +168,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     work = read_log(logs_dir / 'work.log')
     decision = read_log(logs_dir / 'decision.log')
-    script = read_log(logs_dir / 'script.log')
+    script = read_log(logs_dir / 'script-execution.log')
 
     work_levels = count_levels(work)
     script_levels = count_levels(script)

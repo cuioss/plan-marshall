@@ -119,7 +119,7 @@ def check_affected_files_recall(
     except (OSError, json.JSONDecodeError) as e:
         return 'fail', f'references.json unreadable: {e}', {'declared': len(declared)}
 
-    actual_raw = refs.get('affected_files', [])
+    actual_raw = refs.get('modified_files', [])
     if isinstance(actual_raw, str):
         actual_raw = [actual_raw]
     actual = {str(p).strip() for p in actual_raw if p}

@@ -30,21 +30,25 @@ from file_ops import base_path, output_toon, safe_main  # type: ignore[import-no
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Section order matches ``references/report-structure.md``.
+# Fragment keys MUST match the hyphenated aspect names produced by
+# ``collect-fragments add --aspect <name>``. Underscored variants silently
+# drop the corresponding section because the consumer lookup never finds the
+# producer's payload.
 _SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     # (heading, fragment_key, conditional_trigger)
     # ``conditional_trigger`` is the fragment key whose presence is required
     # for the section to be emitted. ``None`` means always emit.
-    ('Executive Summary', '_executive_summary', None),
-    ('Goals vs Outcomes', 'request_result_alignment', None),
-    ('Artifact Consistency', 'artifact_consistency', None),
-    ('Log Analysis', 'log_analysis', None),
-    ('Invariant Outcomes', 'invariant_summary', None),
-    ('Plan Efficiency', 'plan_efficiency', None),
-    ('LLM-to-Script Opportunities', 'llm_to_script_opportunities', None),
-    ('Logging Gaps', 'logging_gap_analysis', None),
-    ('Script Failure Analysis', 'script_failure_analysis', 'script_failure_analysis'),
-    ('Permission Prompt Analysis', 'permission_prompt_analysis', 'permission_prompt_analysis'),
-    ('Proposed Lessons', 'lessons_proposal', None),
+    ('Executive Summary', '_executive-summary', None),
+    ('Goals vs Outcomes', 'request-result-alignment', None),
+    ('Artifact Consistency', 'artifact-consistency', None),
+    ('Log Analysis', 'log-analysis', None),
+    ('Invariant Outcomes', 'invariant-summary', None),
+    ('Plan Efficiency', 'plan-efficiency', None),
+    ('LLM-to-Script Opportunities', 'llm-to-script-opportunities', None),
+    ('Logging Gaps', 'logging-gap-analysis', None),
+    ('Script Failure Analysis', 'script-failure-analysis', 'script-failure-analysis'),
+    ('Permission Prompt Analysis', 'permission-prompt-analysis', 'permission-prompt-analysis'),
+    ('Proposed Lessons', 'lessons-proposal', None),
 )
 
 
@@ -178,9 +182,9 @@ def build_document(
     parts: list[str] = [build_header(plan_id, mode, plan_dir, session_id)]
 
     # Executive summary is synthesized from fragment data — if the caller
-    # provided one under ``_executive_summary``, use it verbatim; otherwise
+    # provided one under ``_executive-summary``, use it verbatim; otherwise
     # emit a placeholder.
-    exec_fragment = fragments.get('_executive_summary')
+    exec_fragment = fragments.get('_executive-summary')
     if isinstance(exec_fragment, dict) and exec_fragment.get('summary'):
         exec_text = str(exec_fragment['summary']).strip()
     elif isinstance(exec_fragment, str) and exec_fragment.strip():
@@ -189,7 +193,7 @@ def build_document(
         exec_text = '_No executive summary provided._'
 
     for heading, fragment_key, trigger in _SECTION_SPEC:
-        if fragment_key == '_executive_summary':
+        if fragment_key == '_executive-summary':
             parts.append(f'## {heading}\n\n{exec_text}\n')
             written.append(heading)
             continue

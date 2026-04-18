@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import sys
 import time
 from argparse import Namespace
@@ -13,6 +14,42 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _fixtures import setup_archived_plan, setup_live_plan  # noqa: E402
 
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+
+# Absolute path to the committed stripped-archive fixture. The regression
+# test below copies this tree into a tmp dir and drives the full
+# collect-fragments + compile-report pipeline end-to-end. The fixture lives
+# under version control so regressions in fragment key naming, bundle
+# mode-propagation, or section rendering are caught deterministically.
+_STRIPPED_ARCHIVE_FIXTURE = (
+    Path(__file__).parent / 'fixtures' / 'archived-plan'
+)
+
+_COLLECT_FRAGMENTS_SCRIPT = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'plan-retrospective'
+    / 'scripts'
+    / 'collect-fragments.py'
+)
+
+# Mapping from committed fragment filename (``fragment-{slug}.toon``) to the
+# ``--aspect`` key that ``compile-report`` expects in _SECTION_SPEC. The
+# ``invariant-check-summary`` filename intentionally differs from the
+# consumer key ``invariant-summary`` — producers and consumers agreed on a
+# rename and the fixture records the producer-side filename verbatim.
+_FRAGMENT_TO_ASPECT = {
+    'fragment-artifact-consistency.toon': 'artifact-consistency',
+    'fragment-invariant-check-summary.toon': 'invariant-summary',
+    'fragment-lessons-proposal.toon': 'lessons-proposal',
+    'fragment-llm-to-script-opportunities.toon': 'llm-to-script-opportunities',
+    'fragment-log-analysis.toon': 'log-analysis',
+    'fragment-logging-gap-analysis.toon': 'logging-gap-analysis',
+    'fragment-permission-prompt-analysis.toon': 'permission-prompt-analysis',
+    'fragment-plan-efficiency.toon': 'plan-efficiency',
+    'fragment-request-result-alignment.toon': 'request-result-alignment',
+    'fragment-script-failure-analysis.toon': 'script-failure-analysis',
+}
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT
@@ -39,42 +76,46 @@ def _write_fragments(tmp_path: Path, with_failure_aspects: bool = False) -> Path
     The conditional aspects include at least one ``failures``/``prompts``
     item so ``should_emit`` recognizes them as non-empty.
     """
+    # Top-level fragment keys are HYPHENATED to match the keys produced by
+    # ``collect-fragments add --aspect <name>`` and consumed by
+    # ``compile-report.py`` _SECTION_SPEC. Underscored variants would be
+    # silently dropped by the consumer lookup.
     lines = [
-        '_executive_summary:',
+        '_executive-summary:',
         '  summary: "All green. 2 warnings worth reviewing."',
-        'request_result_alignment:',
+        'request-result-alignment:',
         '  status: success',
         '  aspect: request_result_alignment',
-        'artifact_consistency:',
+        'artifact-consistency:',
         '  status: success',
         '  aspect: artifact_consistency',
-        'log_analysis:',
+        'log-analysis:',
         '  status: success',
         '  aspect: log_analysis',
-        'invariant_summary:',
+        'invariant-summary:',
         '  status: success',
         '  aspect: invariant_summary',
-        'plan_efficiency:',
+        'plan-efficiency:',
         '  status: success',
         '  aspect: plan_efficiency',
-        'llm_to_script_opportunities:',
+        'llm-to-script-opportunities:',
         '  status: success',
         '  aspect: llm_to_script_opportunities',
-        'logging_gap_analysis:',
+        'logging-gap-analysis:',
         '  status: success',
         '  aspect: logging_gap_analysis',
-        'lessons_proposal:',
+        'lessons-proposal:',
         '  status: success',
         '  aspect: lessons_proposal',
     ]
     if with_failure_aspects:
         lines.extend([
-            'script_failure_analysis:',
+            'script-failure-analysis:',
             '  status: success',
             '  aspect: script_failure_analysis',
             '  failures[1]{notation,exit_code}:',
             '    plan-marshall:foo:bar,1',
-            'permission_prompt_analysis:',
+            'permission-prompt-analysis:',
             '  status: success',
             '  aspect: permission_prompt_analysis',
             '  prompts[1]{tool,resource}:',
@@ -208,6 +249,140 @@ class TestArchivedMode:
         assert data_a['output_path'] != data_b['output_path']
         assert Path(data_a['output_path']).exists()
         assert Path(data_b['output_path']).exists()
+
+
+class TestStrippedArchiveIntegration:
+    """Regression: full retrospective pipeline on the committed stripped archive.
+
+    Copies the production-shape archived-plan fixture into a tmp dir and
+    drives collect-fragments init → add (x10) → finalize → compile-report
+    run end-to-end. Asserts the rendered report contains real content for
+    every registered section (no ``_No data provided._`` placeholders and
+    no missing headings). This is the integration test that would have
+    caught all four bugs the parent plan fixes: wrong key names, wrong
+    filenames, wrong log-source filenames, and missing-file silent-swallow.
+    """
+
+    def test_full_retrospective_on_stripped_archive(self, tmp_path):
+        # Arrange: copy the committed fixture so the test never mutates the
+        # checked-in tree. Use a unique plan_id to avoid collisions with
+        # the OS-tmp bundle path used by collect-fragments in archived
+        # mode (``/tmp/plan-retrospective/retro-fragments-<plan_id>.toon``).
+        archived = tmp_path / 'archived-plan-copy'
+        shutil.copytree(_STRIPPED_ARCHIVE_FIXTURE, archived)
+        plan_id = 'stripped-archive-integration-test'
+
+        # Act 1: init the bundle in archived mode.
+        result_init = run_script(
+            _COLLECT_FRAGMENTS_SCRIPT,
+            'init',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'archived',
+            '--archived-plan-path',
+            str(archived),
+        )
+        assert result_init.success, result_init.stderr
+
+        # Act 2: add each of the 10 committed fragment files under its
+        # consumer-expected aspect key.
+        work_dir = archived / 'work'
+        for fragment_name, aspect in _FRAGMENT_TO_ASPECT.items():
+            fragment_path = work_dir / fragment_name
+            assert fragment_path.exists(), (
+                f'Fixture drift: missing fragment file {fragment_path}'
+            )
+            result_add = run_script(
+                _COLLECT_FRAGMENTS_SCRIPT,
+                'add',
+                '--plan-id',
+                plan_id,
+                '--archived-plan-path',
+                str(archived),
+                '--aspect',
+                aspect,
+                '--fragment-file',
+                str(fragment_path),
+            )
+            assert result_add.success, (
+                f'add failed for aspect={aspect}: {result_add.stderr}'
+            )
+
+        # Act 3: finalize — returns the bundle path compile-report consumes.
+        result_finalize = run_script(
+            _COLLECT_FRAGMENTS_SCRIPT,
+            'finalize',
+            '--plan-id',
+            plan_id,
+            '--archived-plan-path',
+            str(archived),
+        )
+        assert result_finalize.success, result_finalize.stderr
+        finalize_data = result_finalize.toon()
+        bundle_path = finalize_data['bundle_path']
+        assert int(finalize_data['aspect_count']) == 10
+        try:
+            # Act 4: compile the report in archived mode.
+            result_compile = run_script(
+                SCRIPT_PATH,
+                'run',
+                '--archived-plan-path',
+                str(archived),
+                '--mode',
+                'archived',
+                '--fragments-file',
+                bundle_path,
+            )
+            assert result_compile.success, result_compile.stderr
+            data = result_compile.toon()
+            output_path = Path(data['output_path'])
+            assert output_path.exists()
+
+            # Assert: every section expected in _SECTION_SPEC was written —
+            # none were omitted silently.
+            sections_written = data.get('sections_written') or []
+            sections_omitted = data.get('sections_omitted') or []
+            expected_headings = {
+                'Executive Summary',
+                'Goals vs Outcomes',
+                'Artifact Consistency',
+                'Log Analysis',
+                'Invariant Outcomes',
+                'Plan Efficiency',
+                'LLM-to-Script Opportunities',
+                'Logging Gaps',
+                'Script Failure Analysis',
+                'Permission Prompt Analysis',
+                'Proposed Lessons',
+            }
+            missing = expected_headings - set(sections_written)
+            assert not missing, (
+                f'Sections missing from report: {sorted(missing)} '
+                f'(omitted={sections_omitted})'
+            )
+
+            # Assert: the rendered markdown carries real content for every
+            # section, not the ``_No data provided._`` placeholder that
+            # ``render_section_body`` emits when a fragment is missing.
+            content = output_path.read_text(encoding='utf-8')
+            assert '_No data provided._' not in content, (
+                'Every registered section must render with real fragment '
+                'data on the production-shape archive fixture.'
+            )
+            # Sanity: each non-executive section heading appears in the body.
+            for heading in expected_headings:
+                assert f'## {heading}' in content, (
+                    f'Expected heading "## {heading}" not found in report'
+                )
+        finally:
+            # compile-report auto-deletes the bundle on success but may
+            # leave it behind on failure — clean up so we never leak into
+            # the OS tmpdir across runs.
+            try:
+                Path(bundle_path).unlink()
+            except FileNotFoundError:
+                pass
 
 
 class TestFaultPaths:

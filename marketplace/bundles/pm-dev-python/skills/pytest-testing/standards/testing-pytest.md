@@ -310,12 +310,64 @@ def run_script(script_path, *args):
 
 ```
 test/
-├── conftest.py              # Shared fixtures
+├── conftest.py              # Shared fixtures (single top-level conftest)
+├── _fixtures.py             # Shared plain-Python helpers (no pytest magic)
 ├── bundle_name/
-│   ├── conftest.py          # Bundle-specific fixtures
+│   ├── _fixtures.py         # Bundle-specific private helpers
 │   ├── test_feature.py
 │   └── test_integration.py
 ```
+
+Nested sibling `conftest.py` files under skill/bundle test directories are prohibited — see "Conftest Scoping and Module Shadowing" below for the rationale and allow-list.
+
+## Conftest Scoping and Module Shadowing
+
+Pytest resolves `conftest` imports by Python module name, not by path. When a test file executes `from conftest import helper`, Python locates the **nearest ancestor `conftest.py`** — which is whichever `conftest.py` sits closest in the module resolution chain. This creates a silent shadowing hazard in multi-level test trees.
+
+### The Shadowing Hazard
+
+If `test/conftest.py` exports shared helpers (e.g., `get_script_path`, `run_script`), and a skill-level test directory introduces its own sibling `conftest.py`, that sibling **shadows** the root `conftest.py` by module name. Any sibling test module that imports via `from conftest import ...` will bind to the skill-local `conftest.py` and break when the helpers it expects are absent.
+
+```
+test/
+├── conftest.py                    # exports get_script_path, run_script
+├── skill_a/
+│   ├── conftest.py                # sibling — SHADOWS root conftest for skill_a tests
+│   └── test_feature.py            # from conftest import get_script_path  → ImportError
+```
+
+The failure is subtle: pytest collects and runs fine in isolation (when only the root `conftest.py` is on the path), but breaks the moment another `conftest.py` appears alongside the tests — even if that sibling was added for an unrelated purpose.
+
+### Prescription: `_fixtures.py` for Private Helpers
+
+Use `_fixtures.py` — or `{feature}_fixtures.py` for multi-feature suites — as the canonical private helper module for pytest suites. The leading underscore has two effects:
+
+1. **Signals "private helper, not a test target"** — readers immediately recognize the module as support code rather than a test module.
+2. **Avoids pytest's automatic test collection** — pytest's default `test_*.py` / `*_test.py` collection patterns do not match `_fixtures.py`, so the helper module is never mistaken for a test file.
+
+```
+test/
+├── conftest.py                    # pytest fixtures only (no re-exported helpers)
+├── _fixtures.py                   # shared plain-Python helpers
+├── skill_a/
+│   ├── _skill_a_fixtures.py       # skill-specific helpers
+│   └── test_feature.py            # from _fixtures import get_script_path
+```
+
+Import helpers directly by module name (`from _fixtures import ...` or `from test._fixtures import ...` depending on PYTHONPATH), bypassing the conftest resolution chain entirely.
+
+### Allow-List: When a Nested `conftest.py` Is Acceptable
+
+A `conftest.py` at `test/` root, or a narrowly-scoped nested `conftest.py` that does **not** re-export shared helpers, is acceptable. Examples:
+
+- `test/conftest.py` — the canonical location for shared pytest fixtures and plugins.
+- `test/adapters/conftest.py` — narrowly scoped for `sys.path` setup or directory-specific fixtures, without re-exporting shared helpers used by sibling modules.
+
+The invariant: a nested `conftest.py` must not define or re-export symbols that sibling test files import by bare module name.
+
+### Cross-Reference
+
+This is the Python/pytest-specific realization of the language-agnostic rule. See [plan-marshall:dev-general-module-testing — Test Helper Module Organization](../../../plan-marshall/skills/dev-general-module-testing/standards/testing-methodology.md) for the general principle applied across languages.
 
 ## Running Tests
 

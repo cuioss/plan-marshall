@@ -1,0 +1,13 @@
+aspect: logging_gap_analysis
+status: success
+plan_id: lesson-2026-04-18-13-001
+expected_vs_actual[5]{category,expected_min,observed}:
+  STATUS,12,20
+  DECISION,6,12
+  ARTIFACT,8,11
+  VERIFY,6,1
+  ERROR,any,0
+gaps[1]{skill_or_phase,category,detail}:
+  "plan-marshall:execute-task",VERIFY,"Only 1 VERIFY entry across 3 implementation tasks + 3 holistic tasks — verification events underreported"
+findings[1]{severity,message}:
+  warning,"VERIFY entries sparse (1 observed vs 6 expected) — build/test runs not consistently announced in work.log"
