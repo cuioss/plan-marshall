@@ -470,6 +470,22 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
   update --plan-id {plan_id}
 ```
 
+#### 10d: Test Helper File Naming
+
+**Rule**: When a deliverable's `**Affected files:**` list references test helpers (shared fixtures, setup utilities, sys.path shims, or any non-test Python module living under a skill test directory), the file MUST be named `_fixtures.py` (or another descriptive `_*.py` name that clearly is not a test collection file). It MUST NOT be named `conftest.py` under any path matching `test/**/` that corresponds to a skill or script test directory.
+
+**Why**: pytest auto-discovers `conftest.py` and evaluates it as a fixture-collection module for every test run. Adding a `conftest.py` under `test/{bundle}/{skill}/` changes pytest collection semantics globally for that bundle's tests, causing hidden coupling, duplicate-fixture warnings, and in the worst case test collection failures unrelated to the plan's intent. Using `_fixtures.py` (imported explicitly by the tests that need it) keeps the helper local, scoped, and reviewable as plain Python.
+
+**Allow-list**: Only two `conftest.py` files are permitted in this repository and MUST NOT be added to or duplicated by deliverables:
+- `test/conftest.py` — top-level pytest configuration for the whole suite
+- `test/adapters/conftest.py` — sys.path shim required by the adapters package
+
+Any other `conftest.py` in an `**Affected files:**` list is a defect. Replace with `_fixtures.py` (or a similarly scoped helper name) and update any `Change per file:` text to describe explicit imports from the tests that consume it.
+
+**Cross-references**:
+- `plan-marshall:dev-general-module-testing` — testing methodology (AAA pattern, coverage, test organization) this rule supports
+- `pm-dev-python:pytest-testing` — pytest framework standards including fixture discovery semantics that motivate the `conftest.py` restriction
+
 #### Log Completion
 
 ```bash

@@ -87,10 +87,35 @@ BUILT_IN_VERIFY_STEP_DESCRIPTIONS = {
     'default:coverage_check': 'Run coverage build and verify threshold',
 }
 
+# Valid values for phase-5-execute.rebase_strategy — enum controlling how the
+# worktree syncs against origin/{base_branch} at execute start.
+#   - 'rebase': git rebase origin/{base} (rewrites history; requires force-push when PR is open)
+#   - 'merge':  git merge --no-edit origin/{base} (no history rewrite; PR-safe; default)
+VALID_REBASE_STRATEGIES = ('rebase', 'merge')
+
+
+def validate_rebase_strategy(value: str) -> None:
+    """Validate that `rebase_strategy` is one of the allowed enum values.
+
+    Raises:
+        ValueError: If ``value`` is not in :data:`VALID_REBASE_STRATEGIES`.
+    """
+    if value not in VALID_REBASE_STRATEGIES:
+        raise ValueError(
+            f"Invalid rebase_strategy '{value}'. Allowed: {list(VALID_REBASE_STRATEGIES)}"
+        )
+
+
 DEFAULT_PLAN_EXECUTE = {
     'commit_strategy': 'per_plan',
     'finalize_without_asking': True,
     'verification_max_iterations': 5,
+    # When True, phase-5-execute runs a sync step against origin/{base_branch}
+    # at phase start (primary drift-sync point). When False, phase-6-finalize's
+    # `pr update-branch` remains the only sync point.
+    'rebase_on_execute_start': True,
+    # Enum: see VALID_REBASE_STRATEGIES / validate_rebase_strategy.
+    'rebase_strategy': 'merge',
     'steps': list(BUILT_IN_VERIFY_STEPS),
 }
 

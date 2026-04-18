@@ -107,7 +107,12 @@ def test_system_retention_get():
 
 
 def test_plan_phase_5_execute_get():
-    """Test plan phase-5-execute get."""
+    """Test plan phase-5-execute get.
+
+    Also asserts the two rebase-control keys (rebase_on_execute_start,
+    rebase_strategy) appear in the merged phase section with their documented
+    defaults — see marshal.json schema in _config_defaults.DEFAULT_PLAN_EXECUTE.
+    """
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
         patch_config_paths(ctx.fixture_dir)
@@ -116,6 +121,65 @@ def test_plan_phase_5_execute_get():
 
         assert result['status'] == 'success'
         assert 'commit_strategy' in result
+        # rebase-control keys must be present with documented defaults
+        assert result['rebase_on_execute_start'] is True
+        assert result['rebase_strategy'] == 'merge'
+
+
+def test_plan_phase_5_execute_set_rebase_strategy_invalid_rejected():
+    """Test plan phase-5-execute set rejects invalid rebase_strategy values.
+
+    SKILL.md documents `rebase_strategy` as an enum(rebase|merge); the config
+    setter must reject any other value and must not mutate marshal.json.
+    """
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
+
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set',
+                field='rebase_strategy',
+                value='squash',
+            )
+        )
+
+        assert result['status'] == 'error', (
+            f"Invalid rebase_strategy must be rejected; got {result}"
+        )
+
+        # Verify default was not overwritten on disk
+        verify = cmd_plan(
+            Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy')
+        )
+        assert verify['status'] == 'success'
+        assert verify['value'] == 'merge'
+
+
+def test_plan_phase_5_execute_set_rebase_strategy_valid_accepted():
+    """Test plan phase-5-execute set accepts documented enum values."""
+    with PlanContext() as ctx:
+        create_marshal_json(ctx.fixture_dir)
+        patch_config_paths(ctx.fixture_dir)
+
+        result = cmd_plan(
+            Namespace(
+                sub_noun='phase-5-execute',
+                verb='set',
+                field='rebase_strategy',
+                value='rebase',
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['value'] == 'rebase'
+
+        # Verify persisted
+        verify = cmd_plan(
+            Namespace(sub_noun='phase-5-execute', verb='get', field='rebase_strategy')
+        )
+        assert verify['value'] == 'rebase'
 
 
 def test_plan_phase_6_finalize_get():

@@ -112,8 +112,12 @@ class TestFaultInjection:
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         # Fixture declares 3 files in outline (foo, bar, baz). Drop two of
         # them so recall = 1/3 ≈ 33%, which is below the 70% threshold.
+        # Production-shape: ``check-artifact-consistency.py`` consults
+        # ``modified_files``, so the partial-recall fixture must use the same
+        # key — using ``affected_files`` would yield a 0% recall instead of
+        # the 33% the test description claims.
         (plan_dir / 'references.json').write_text(
-            json.dumps({'affected_files': ['src/foo.py'], 'domains': []}),
+            json.dumps({'modified_files': ['src/foo.py'], 'domains': []}),
             encoding='utf-8',
         )
 
@@ -137,6 +141,64 @@ class TestArchivedMode:
         data = result.toon()
         assert data['status'] == 'success'
         assert _check_by_name(data['checks'], 'deliverable_count')['status'] == 'pass'
+
+
+class TestRegression:
+    """Regression tests locking in the production-shape recall calculation.
+
+    Before the fix, ``check_affected_files_recall`` consulted the legacy
+    ``affected_files`` key in ``references.json`` and returned 0% recall
+    against a production plan whose references were populated via
+    ``modified_files``. These tests pin the computed ``recall_pct`` to the
+    exact expected value so a regression to the old key name or a silent
+    failure-path return is caught immediately.
+    """
+
+    def test_recall_pct_is_100_when_modified_files_matches_declared(self, tmp_path, monkeypatch):
+        """Production-shape happy path: declared == modified_files → 100%.
+
+        The happy-path fixture declares ``src/foo.py``, ``src/bar.py``,
+        ``src/baz.py`` in the outline and populates the same three in
+        ``references.json['modified_files']``. This test pins
+        ``recall_pct`` to ``100.0`` so a regression to the old ``affected_files``
+        lookup (which would yield ``0.0``) is caught.
+        """
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        details = data['details']['affected_files_recall']
+        assert int(details['declared']) == 3
+        assert int(details['found']) == 3
+        # recall_pct serializes as a float; parse_toon may return int or str
+        # depending on payload shape, so coerce before comparing.
+        assert float(details['recall_pct']) == 100.0, (
+            f'Expected recall_pct == 100.0 when modified_files matches '
+            f'declared, got {details["recall_pct"]}. This regression means '
+            f'check-artifact-consistency is reading the wrong key again.'
+        )
+
+    def test_recall_fails_when_modified_files_empty(self, tmp_path, monkeypatch):
+        """Failure-path sibling: declared present, modified_files empty → 0%.
+
+        Complements the happy-path pin above: ensures the check still
+        fails correctly (not a false-positive pass) when the references
+        file is missing the ``modified_files`` entries entirely.
+        """
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': [], 'domains': []}),
+            encoding='utf-8',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        recall = _check_by_name(data['checks'], 'affected_files_recall')
+        assert recall['status'] == 'fail'
+        details = data['details']['affected_files_recall']
+        assert int(details['declared']) == 3
+        assert int(details['found']) == 0
+        assert float(details['recall_pct']) == 0.0
 
 
 def _outline_with_affected_files(files: list[str]) -> str:
@@ -171,6 +233,11 @@ def _setup_exact_match_plan(
     caller-supplied file lists. Reuses ``build_happy_plan_dir`` to keep the
     surrounding structural checks (metrics, tasks, status) green, then
     overwrites the two files the exact-match check consults.
+
+    The ``references.json`` is populated under the ``modified_files`` key
+    because the production peer (``check_affected_files_recall``) now
+    reads that key; the exact-match port in this branch was realigned to
+    use the same key after the base-branch change to recall.
     """
     base = tmp_path / 'base'
     base.mkdir()
@@ -192,9 +259,10 @@ def _setup_exact_match_plan(
         encoding='utf-8',
     )
 
-    # Overwrite references.json with the caller's list.
+    # Overwrite references.json with the caller's list, keyed on the
+    # production-shape ``modified_files`` field (see peer recall check).
     (plan_dir / 'references.json').write_text(
-        json.dumps({'affected_files': references_files, 'domains': []}),
+        json.dumps({'modified_files': references_files, 'domains': []}),
         encoding='utf-8',
     )
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))

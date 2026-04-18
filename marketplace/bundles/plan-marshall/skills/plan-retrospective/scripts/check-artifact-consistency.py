@@ -119,7 +119,7 @@ def check_affected_files_recall(
     except (OSError, json.JSONDecodeError) as e:
         return 'fail', f'references.json unreadable: {e}', {'declared': len(declared)}
 
-    actual_raw = refs.get('affected_files', [])
+    actual_raw = refs.get('modified_files', [])
     if isinstance(actual_raw, str):
         actual_raw = [actual_raw]
     actual = {str(p).strip() for p in actual_raw if p}
@@ -236,7 +236,10 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     if rec_status == 'fail':
         findings.append({'severity': 'warning', 'message': rec_message})
 
-    # Affected-files exact-match (strict variant, peer to recall)
+    # Affected-files exact-match (strict variant, peer to recall).
+    # Reads the same ``modified_files`` key used by
+    # ``check_affected_files_recall`` — both checks must agree on the source
+    # of truth in ``references.json``.
     outline_files = set(extract_affected_files_per_deliverable(solution_content))
     references_files: set[str] = set()
     if references_path.exists():
@@ -244,10 +247,10 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             refs_data = json.loads(references_path.read_text(encoding='utf-8'))
             if not isinstance(refs_data, dict):
                 # ``references.json`` must be an object; a top-level ``null`` or
-                # ``[]`` literal is treated as "no declared affected files".
+                # ``[]`` literal is treated as "no declared files".
                 actual_raw: Any = []
             else:
-                actual_raw = refs_data.get('affected_files', [])
+                actual_raw = refs_data.get('modified_files', [])
             if isinstance(actual_raw, str):
                 actual_raw = [actual_raw]
             if not isinstance(actual_raw, list):

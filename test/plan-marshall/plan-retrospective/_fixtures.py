@@ -38,7 +38,11 @@ Overview text goes here.
 """
 
 _HAPPY_REFERENCES = {
-    'affected_files': ['src/foo.py', 'src/bar.py', 'src/baz.py'],
+    # ``check-artifact-consistency.py`` reads ``modified_files`` (the field
+    # actually populated by ``manage-references add-file``). The legacy
+    # ``affected_files`` key is no longer consulted; the fixture must match
+    # the production-shape so the recall check finds the declared files.
+    'modified_files': ['src/foo.py', 'src/bar.py', 'src/baz.py'],
     'domains': ['plan-marshall-plugin-dev'],
 }
 
@@ -112,7 +116,10 @@ def build_happy_plan_dir(plan_dir: Path) -> Path:
         '2026-04-17T10:00:30Z INFO (plan-marshall:phase-3-outline) picked option A\n',
         encoding='utf-8',
     )
-    (logs_dir / 'script.log').write_text(
+    # ``manage-logging`` emits to ``script-execution.log`` (not ``script.log``);
+    # ``analyze-logs.py`` reads the same filename. The fixture must match so the
+    # script_entries / errors_script counters land non-zero.
+    (logs_dir / 'script-execution.log').write_text(
         '2026-04-17T10:00:01Z INFO plan-marshall:manage-tasks:manage-tasks add (0.12s)\n'
         '2026-04-17T10:00:05Z INFO plan-marshall:manage-status:manage_status read (2.5s)\n'
         '2026-04-17T10:00:10Z ERROR plan-marshall:manage-files:manage-files add (0.05s)\n',

@@ -126,8 +126,19 @@ def cmd_transition(args: argparse.Namespace) -> dict | None:
         if refs and (base_branch := refs.get('base_branch')):
             modified = _collect_modified_files(args.plan_id, status, base_branch)
             if modified is not None:
-                refs['modified_files'] = modified
-                write_references(args.plan_id, refs)
+                # WHY: An empty git diff at phase-completion can mean the
+                # branch already merged its commits upstream (e.g. squash
+                # merge resets the diff to empty). Overwriting a
+                # previously-populated ``modified_files`` with [] would
+                # destroy the audit trail downstream consumers
+                # (plan-retrospective, finalize) rely on. Preserve the
+                # existing list whenever the new diff is empty AND we have
+                # a prior non-empty value; only replace when the diff has
+                # entries or the prior value is absent/empty.
+                existing = refs.get('modified_files') or []
+                if modified or not existing:
+                    refs['modified_files'] = modified
+                    write_references(args.plan_id, refs)
 
     # Determine next phase
     if completed_idx + 1 < len(phases):
