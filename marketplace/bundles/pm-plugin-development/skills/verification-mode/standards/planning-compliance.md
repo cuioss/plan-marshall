@@ -21,7 +21,7 @@ Execute this protocol after EVERY phase transition (1-init → 3-outline, 4-plan
 
 ### Step 1 — Chat History Error Check
 
-Scan the conversation for non-zero exit codes, error messages in tool output, `status: error` in script responses, and agent failures/exceptions since the phase started. If any are found, STOP and run `Skill: pm-plugin-development:tools-analyze-script-failures` before proceeding.
+Scan the conversation for non-zero exit codes, error messages in tool output, `status: error` in script responses, and agent failures/exceptions since the phase started. If any are found, STOP and run `Skill: plan-marshall:plan-retrospective` (aspect: `script-failure-analysis`) before proceeding.
 
 ### Step 2 — Script Execution Log Check
 

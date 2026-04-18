@@ -15,9 +15,6 @@
     "./agents/ext-outline-inventory-agent.md",
     "./agents/tool-coverage-agent.md"
   ],
-  "commands": [
-    "./commands/tools-analyze-user-prompted.md"
-  ],
   "skills": [
     "./skills/ext-outline-workflow",
     "./skills/ext-triage-plugin",
@@ -29,7 +26,6 @@
     "./skills/plugin-plan-implement",
     "./skills/plugin-script-architecture",
     "./skills/plugin-task-plan",
-    "./skills/tools-analyze-script-failures",
     "./skills/tools-marketplace-inventory",
     "./skills/verification-mode"
   ]

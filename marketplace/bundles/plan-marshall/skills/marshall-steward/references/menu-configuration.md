@@ -194,6 +194,29 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fi
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-finalize-steps
 ```
+
+The `list-finalize-steps` output includes four sources: built-in (`default:*`), project-local (`project:*`), extension-provided, and **bundle-optional** (`OPTIONAL_BUNDLE_FINALIZE_STEPS`). Bundle-optional entries — such as `plan-marshall:plan-retrospective` — surface in the multi-select but are intentionally absent from the default `plan.phase-6-finalize.steps` list, so operators must opt in explicitly by selecting them here. Example multi-select presentation (built-ins plus the opt-in retrospective):
+
+```
+AskUserQuestion:
+  question: "Which finalize steps to include?"
+  header: "Finalize Steps"
+  multiSelect: true
+  options:
+    - label: "default:commit-push (Recommended)"
+      description: "Commit and push changes"
+    - label: "default:create-pr"
+      description: "Create pull request"
+    - label: "default:automated-review"
+      description: "CI automated review"
+    - label: "default:knowledge-capture (Recommended)"
+      description: "Capture learnings to memory"
+    - label: "default:lessons-capture (Recommended)"
+      description: "Record lessons learned"
+    - label: "plan-marshall:plan-retrospective (Opt-in)"
+      description: "Capture a structured retrospective of the completed plan"
+```
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set-steps --steps {comma_separated_selected_steps}

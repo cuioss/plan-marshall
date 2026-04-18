@@ -166,13 +166,13 @@ When verification mode detects a failure:
 
 ## Deep Analysis Follow-Up
 
-For complex failures requiring origin tracing and fix proposals, recommend:
+For complex failures requiring origin tracing and fix proposals, recommend the plan-retrospective skill (aspect: `script-failure-analysis`):
 
 ```
-/pm-plugin-development:tools-analyze-script-failures
+Skill: plan-marshall:plan-retrospective
 ```
 
-This command provides:
+This aspect provides:
 - **Origin tracing**: Which command/agent/skill triggered the failure
 - **Instruction path analysis**: How LLM interpreted instructions to produce the failed call
 - **Fix proposals**: Specific code changes to prevent recurrence

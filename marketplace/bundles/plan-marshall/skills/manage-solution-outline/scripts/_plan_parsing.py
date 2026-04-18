@@ -3,7 +3,7 @@
 Shared plan document parsing utilities.
 
 Provides common parsing functions for plan documents (solution outlines,
-deliverables) used across plan-marshall and verify-workflow scripts.
+deliverables) used across plan-marshall and plan-retrospective scripts.
 
 Usage:
     from _plan_parsing import (

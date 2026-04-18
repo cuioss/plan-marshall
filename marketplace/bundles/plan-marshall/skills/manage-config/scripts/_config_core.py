@@ -153,7 +153,7 @@ def get_skill_description(skill_notation: str) -> str:
     - Project-level: "project:skill" → .claude/skills/{skill}/SKILL.md
 
     Args:
-        skill_notation: e.g., "pm-dev-java:java-core" or "project:verify-workflow"
+        skill_notation: e.g., "pm-dev-java:java-core" or "project:sync-plugin-cache"
 
     Returns:
         Description string or skill name as fallback

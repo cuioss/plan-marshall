@@ -130,7 +130,7 @@ plan-marshall:
 project-skills:
   path: .claude/skills
   skills[N]:
-    - verify-workflow
+    - plan-retrospective
     - sync-plugin-cache
   scripts[N]:
     - collect-artifacts

@@ -415,7 +415,12 @@ def _discover_all_finalize_steps() -> list[dict]:
     authoritative file/return dict does not declare one. Sorting and collision
     handling are the caller's responsibility (marshall-steward).
     """
-    from _config_defaults import BUILT_IN_FINALIZE_STEP_DESCRIPTIONS, BUILT_IN_FINALIZE_STEPS
+    from _config_defaults import (
+        BUILT_IN_FINALIZE_STEP_DESCRIPTIONS,
+        BUILT_IN_FINALIZE_STEPS,
+        OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS,
+        OPTIONAL_BUNDLE_FINALIZE_STEPS,
+    )
 
     all_steps: list[dict] = []
 
@@ -474,6 +479,42 @@ def _discover_all_finalize_steps() -> list[dict]:
                     'order': _read_frontmatter_order(skill_md),
                 }
             )
+
+    # Source 4: Bundle-optional finalize steps (opt-in via OPTIONAL_BUNDLE_FINALIZE_STEPS)
+    # These appear in list-finalize-steps but are absent from DEFAULT_PLAN_FINALIZE,
+    # so projects must explicitly add them to marshal.json to activate. Each entry
+    # is a fully-qualified `bundle:skill` reference; we resolve to the SKILL.md path
+    # under BUNDLES_DIR (marketplace layout) and parse frontmatter for order +
+    # description.
+    #
+    # Source ordering: emitted before Source 3 (extension) so that the existing
+    # contract — every non-extension step precedes every extension step — is
+    # preserved. De-duplication against earlier sources mirrors the project-skill
+    # filter above.
+    seen_names = {entry['name'] for entry in all_steps}
+    for step_ref in OPTIONAL_BUNDLE_FINALIZE_STEPS:
+        if step_ref in seen_names:
+            continue
+        if ':' not in step_ref:
+            continue
+        bundle, skill = step_ref.split(':', 1)
+        skill_md = BUNDLES_DIR / bundle / 'skills' / skill / 'SKILL.md'
+        description = get_skill_description(step_ref)
+        # Fall back to the curated description map when SKILL.md is missing or
+        # has no description field (get_skill_description returns the bare
+        # notation in that case).
+        if description == step_ref:
+            description = OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS.get(step_ref, step_ref)
+        all_steps.append(
+            {
+                'name': step_ref,
+                'description': description,
+                'type': 'skill',
+                'source': 'bundle-optional',
+                'order': _read_frontmatter_order(skill_md),
+            }
+        )
+        seen_names.add(step_ref)
 
     # Source 3: Extension provides_finalize_steps()
     extensions = discover_all_extensions()
