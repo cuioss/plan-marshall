@@ -6,7 +6,7 @@ Identify deterministic, repetitive work that the LLM performed which could be re
 
 - `work.log` — tagged entries reveal LLM action patterns.
 - `script.log` — where scripts already covered the deterministic path.
-- `references.json` `modified_files` — patterns in the file list.
+- `references.json` `affected_files` — patterns in the file list.
 
 ## Detection Heuristics
 
@@ -29,7 +29,7 @@ aspect: llm_to_script_opportunities
 status: success
 plan_id: {plan_id}
 candidates[*]{task,repetition_count,complexity,proposal}:
-  "parse references.json modified_files",5,low,"add manage-references modified-files-summary subcommand"
+  "parse references.json affected_files",5,low,"add manage-references modified-files-summary subcommand"
   "enumerate lesson files by date",3,low,"extend manage-lessons list with --since filter"
 findings[*]{severity,message}:
   info,"2 scripting opportunities identified"

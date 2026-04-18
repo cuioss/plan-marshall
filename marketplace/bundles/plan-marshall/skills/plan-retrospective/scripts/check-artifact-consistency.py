@@ -12,7 +12,7 @@ Checks performed:
 - ``task_deliverable_match`` — each declared deliverable has a matching
   ``TASK-*.json`` whose ``deliverable`` field aligns with its index.
 - ``affected_files_recall`` — files declared in the solution outline's
-  ``Affected files:`` bullets appear in ``references.json`` ``modified_files``
+  ``Affected files:`` bullets appear in ``references.json`` ``affected_files``
   with >= 70% coverage.
 - ``metrics_generated`` — ``metrics.md`` exists.
 
@@ -119,7 +119,7 @@ def check_affected_files_recall(
     except (OSError, json.JSONDecodeError) as e:
         return 'fail', f'references.json unreadable: {e}', {'declared': len(declared)}
 
-    actual_raw = refs.get('modified_files', [])
+    actual_raw = refs.get('affected_files', [])
     if isinstance(actual_raw, str):
         actual_raw = [actual_raw]
     actual = {str(p).strip() for p in actual_raw if p}

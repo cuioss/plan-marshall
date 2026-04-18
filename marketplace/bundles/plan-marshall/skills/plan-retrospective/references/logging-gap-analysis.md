@@ -6,7 +6,7 @@ Identifies places where the LLM or a component should have logged but didn't —
 
 - `work.log`, `decision.log`, `script.log` — what was actually logged.
 - Skill reference documents in scope (loaded from marketplace based on `references.json` domains).
-- `references.json` `modified_files` — evidence of actions that should produce log entries.
+- `references.json` `affected_files` — evidence of actions that should produce log entries.
 
 ## Expected Log Patterns
 

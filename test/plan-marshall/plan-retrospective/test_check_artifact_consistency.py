@@ -108,7 +108,7 @@ class TestFaultInjection:
         # Fixture declares 3 files in outline (foo, bar, baz). Drop two of
         # them so recall = 1/3 ≈ 33%, which is below the 70% threshold.
         (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['src/foo.py'], 'domains': []}),
+            json.dumps({'affected_files': ['src/foo.py'], 'domains': []}),
             encoding='utf-8',
         )
 

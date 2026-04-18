@@ -7,7 +7,7 @@ Did the plan deliver what the user asked for? Purely LLM-driven — no script pr
 - `request.md` — original user request, plus refine-phase clarifications.
 - `solution_outline.md` — goals and deliverables captured in outline phase.
 - `metrics.md` — final totals (when present).
-- `references.json` — `modified_files` list.
+- `references.json` — `affected_files` list.
 - `work.log` — phase transitions and decisions.
 
 ## TOON Fragment Shape
@@ -31,8 +31,8 @@ findings[*]{severity,message}:
 ## LLM Interpretation Rules
 
 - Extract goals from the `Summary` and `Deliverables` sections of `solution_outline.md`. Each deliverable heading is a top-level goal.
-- A goal is `fulfilled` when `modified_files` intersects its declared `Affected files` list AND task status is `done`.
-- A goal is `partial` when task is `done` but `modified_files` coverage is < 70% of declared Affected files.
+- A goal is `fulfilled` when `affected_files` intersects its declared `Affected files` list AND task status is `done`.
+- A goal is `partial` when task is `done` but `affected_files` coverage is < 70% of declared Affected files.
 - A goal is `missed` when no task with matching deliverable index reached `done`.
 - Scope creep = modified files NOT covered by any deliverable's declared Affected files. Small amounts (< 5 files) are acceptable; larger amounts indicate outline drift.
 

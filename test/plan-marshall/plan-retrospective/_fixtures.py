@@ -38,7 +38,7 @@ Overview text goes here.
 """
 
 _HAPPY_REFERENCES = {
-    'modified_files': ['src/foo.py', 'src/bar.py', 'src/baz.py'],
+    'affected_files': ['src/foo.py', 'src/bar.py', 'src/baz.py'],
     'domains': ['plan-marshall-plugin-dev'],
 }
 

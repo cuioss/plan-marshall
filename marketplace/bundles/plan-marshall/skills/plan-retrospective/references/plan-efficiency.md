@@ -6,7 +6,7 @@ How much time and how many tokens did the plan consume relative to its scope? LL
 
 - `metrics.md` — total_duration_seconds, total_tokens, per-phase breakdown.
 - `log_analysis` fragment (already computed) — entry counts, script durations.
-- `references.json` `modified_files` — scope size.
+- `references.json` `affected_files` — scope size.
 
 ## TOON Fragment Shape
 
