@@ -1,0 +1,13 @@
+aspect: script_failure_analysis
+status: success
+plan_id: lesson-2026-04-18-13-001
+failures[4]{notation,exit_code,category,source_component,source_file,proposal}:
+  "plan-marshall:manage-plan-documents:manage-plan-documents request clarify",2,llm_invented_script,"plan-marshall:phase-2-refine","marketplace/bundles/plan-marshall/skills/phase-2-refine/SKILL.md","Document valid request verbs (create/read/path/exists/remove/mark-clarified) in refine skill; LLM invented 'clarify' subcommand"
+  "plan-marshall:manage-tasks:manage-tasks add",2,llm_invented_script,"plan-marshall:phase-4-plan","marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md","LLM used legacy 'add' verb; correct commands are prepare-add/commit-add. Clarify in phase-4-plan SKILL.md"
+  "plan-marshall:manage-tasks:manage-tasks get-task",2,llm_invented_script,"plan-marshall:phase-5-execute","marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md","LLM invented 'get-task' verb; correct is 'get --number N'"
+  "plan-marshall:manage-tasks:manage-tasks finalize-step",2,wrong_parameters,"plan-marshall:phase-5-execute","marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md","LLM used --outcome=in_progress; valid choices are done/skipped/failed. Clarify finalize-step outcome options"
+findings[4]{severity,message}:
+  error,"manage-plan-documents request: LLM invented 'clarify' verb in phase-2-refine"
+  error,"manage-tasks: LLM invented 'add' verb (correct: prepare-add/commit-add) in phase-4-plan"
+  error,"manage-tasks: LLM invented 'get-task' verb (correct: get --number) in phase-5-execute"
+  error,"manage-tasks finalize-step: LLM passed invalid --outcome=in_progress in phase-5-execute"

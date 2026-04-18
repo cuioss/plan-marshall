@@ -1,0 +1,28 @@
+status: success
+aspect: log_analysis
+plan_id: lesson-2026-04-18-13-001
+counts:
+  work_entries: 80
+  decision_entries: 12
+  script_entries: 30
+  errors_work: 0
+  errors_script: 4
+  warnings_work: 0
+  warnings_script: 0
+phases_seen[6]:
+  - 1-init
+  - 2-refine
+  - 3-outline
+  - 4-plan
+  - 5-execute
+  - 6-finalize
+script_duration_p50_ms: 290.0
+script_duration_p95_ms: 850.0
+script_duration_max_ms: 850.0
+slowest_scripts[3]{notation,duration_ms}:
+  plan-marshall:manage-worktree:manage-worktree,850.0
+  plan-marshall:manage-metrics:manage_metrics,480.0
+  plan-marshall:manage-tasks:manage-tasks,430.0
+top_tags[1]{tag,count}:
+  INFO,80
+top_error_tags[0]:
