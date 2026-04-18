@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -217,6 +218,22 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     output_path = resolve_output_path(args.mode, plan_dir)
     output_path.write_text(content, encoding='utf-8')
+
+    # Auto-cleanup: delete the fragments bundle after a successful report
+    # write. Any error BEFORE this point retains the bundle for debugging
+    # (we never reach this cleanup). A missing bundle is a silent no-op;
+    # other OSError conditions log a warning to stderr but do NOT abort.
+    fragments_path = Path(args.fragments_file)
+    try:
+        fragments_path.unlink()
+    except FileNotFoundError:
+        # Already gone — treat as successful cleanup.
+        pass
+    except OSError as exc:
+        print(
+            f'WARN: failed to delete fragments bundle {fragments_path}: {exc}',
+            file=sys.stderr,
+        )
 
     return {
         'status': 'success',

@@ -89,3 +89,14 @@ In finalize-step mode, always record lessons for `severity: error` failures; nev
 
 - Fixing the underlying script bug — the retrospective surfaces the category and proposal only.
 - Analyzing non-failed scripts — that is llm-to-script-opportunities.
+
+## Persistence
+
+After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `work/fragment-script-failure-analysis.toon` via the `Write` tool and registers it with the bundle:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
+  --plan-id {plan_id} --aspect script-failure-analysis --fragment-file work/fragment-script-failure-analysis.toon
+```
+
+`compile-report run --fragments-file` consumes the assembled bundle in Step 4 of SKILL.md. The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.

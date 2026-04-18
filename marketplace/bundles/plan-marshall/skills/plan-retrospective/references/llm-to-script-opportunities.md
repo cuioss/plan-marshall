@@ -55,3 +55,14 @@ impact: "{estimated LLM calls saved per plan}"
 
 - Refactoring existing scripts — this aspect only proposes new ones.
 - Evaluating LLM prompt quality — that is logging-gap-analysis and chat-history-analysis.
+
+## Persistence
+
+After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `work/fragment-llm-to-script-opportunities.toon` via the `Write` tool and registers it with the bundle:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
+  --plan-id {plan_id} --aspect llm-to-script-opportunities --fragment-file work/fragment-llm-to-script-opportunities.toon
+```
+
+`compile-report run --fragments-file` consumes the assembled bundle in Step 4 of SKILL.md. The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.
