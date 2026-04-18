@@ -242,9 +242,16 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     if references_path.exists():
         try:
             refs_data = json.loads(references_path.read_text(encoding='utf-8'))
-            actual_raw = refs_data.get('affected_files', [])
+            if not isinstance(refs_data, dict):
+                # ``references.json`` must be an object; a top-level ``null`` or
+                # ``[]`` literal is treated as "no declared affected files".
+                actual_raw: Any = []
+            else:
+                actual_raw = refs_data.get('affected_files', [])
             if isinstance(actual_raw, str):
                 actual_raw = [actual_raw]
+            if not isinstance(actual_raw, list):
+                actual_raw = []
             references_files = {str(p).strip() for p in actual_raw if p}
         except (OSError, json.JSONDecodeError):
             references_files = set()
