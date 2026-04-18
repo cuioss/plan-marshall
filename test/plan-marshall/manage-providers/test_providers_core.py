@@ -348,29 +348,30 @@ class TestValidAuthTypes:
 class TestCheckCompletenessSystem:
     """Tests for check_credential_completeness with auth_type=system."""
 
-    def test_system_auth_reports_complete(self, tmp_path):
+    def test_system_auth_reports_complete(self, tmp_path, monkeypatch):
         """auth_type=system credential with no secret fields reports complete."""
         from _providers_core import check_credential_completeness  # type: ignore[import-not-found]
+
+        creds_dir = tmp_path / 'creds'
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'test-system-complete'
         data = {
             'skill': skill,
             'auth_type': 'system',
         }
-        try:
-            save_credential(skill, data, 'global')
-            result = check_credential_completeness(skill, 'global')
-            assert result['exists'] is True
-            assert result['complete'] is True
-            assert result['placeholders'] == []
-        finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
-            if path.exists():
-                path.unlink()
+        save_credential(skill, data, 'global')
+        result = check_credential_completeness(skill, 'global')
+        assert result['exists'] is True
+        assert result['complete'] is True
+        assert result['placeholders'] == []
 
-    def test_system_auth_no_token_check(self, tmp_path):
+    def test_system_auth_no_token_check(self, tmp_path, monkeypatch):
         """auth_type=system must not check for missing token field."""
         from _providers_core import check_credential_completeness  # type: ignore[import-not-found]
+
+        creds_dir = tmp_path / 'creds'
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'test-system-no-token'
         data = {
@@ -378,15 +379,10 @@ class TestCheckCompletenessSystem:
             'auth_type': 'system',
             # Deliberately no 'token' field
         }
-        try:
-            save_credential(skill, data, 'global')
-            result = check_credential_completeness(skill, 'global')
-            assert result['complete'] is True
-            assert 'token' not in result['placeholders']
-        finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
-            if path.exists():
-                path.unlink()
+        save_credential(skill, data, 'global')
+        result = check_credential_completeness(skill, 'global')
+        assert result['complete'] is True
+        assert 'token' not in result['placeholders']
 
 
 # =============================================================================
@@ -401,27 +397,24 @@ class TestGetAuthenticatedClientSystem:
         """System auth with URL configured returns a RestClient with no auth headers."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
+        creds_dir = tmp_path / 'creds'
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'test-system-client'
         data = {
             'skill': skill,
             'auth_type': 'system',
         }
-        try:
-            save_credential(skill, data, 'global')
-            # Write URL to marshal.json provider config
-            from _providers_core import write_provider_config  # type: ignore[import-not-found]
-            write_provider_config(skill, {'url': 'https://api.example.com'})
+        save_credential(skill, data, 'global')
+        # Write URL to marshal.json provider config
+        from _providers_core import write_provider_config  # type: ignore[import-not-found]
+        write_provider_config(skill, {'url': 'https://api.example.com'})
 
-            client = get_authenticated_client(skill)
-            # System auth should produce no Authorization header
-            assert 'Authorization' not in client._headers
-            assert client.url == 'https://api.example.com'
-            client.close()
-        finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
-            if path.exists():
-                path.unlink()
+        client = get_authenticated_client(skill)
+        # System auth should produce no Authorization header
+        assert 'Authorization' not in client._headers
+        assert client.url == 'https://api.example.com'
+        client.close()
 
     def test_system_auth_without_url_raises(self, tmp_path, monkeypatch):
         """System auth without URL raises ValueError with helpful message."""
@@ -429,42 +422,36 @@ class TestGetAuthenticatedClientSystem:
         (tmp_path / '.plan').mkdir()
         # Write empty provider config (no URL)
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
+        creds_dir = tmp_path / 'creds'
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'test-system-no-url'
         data = {
             'skill': skill,
             'auth_type': 'system',
         }
-        try:
-            save_credential(skill, data, 'global')
-            with pytest.raises(ValueError, match='no URL configured'):
-                get_authenticated_client(skill)
-        finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
-            if path.exists():
-                path.unlink()
+        save_credential(skill, data, 'global')
+        with pytest.raises(ValueError, match='no URL configured'):
+            get_authenticated_client(skill)
 
     def test_system_auth_no_secrets_in_credential(self, tmp_path, monkeypatch):
         """System auth credential file should not contain token/username/password."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
+        creds_dir = tmp_path / 'creds'
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
         skill = 'test-system-no-secrets'
         data = {
             'skill': skill,
             'auth_type': 'system',
         }
-        try:
-            save_credential(skill, data, 'global')
-            loaded = load_credential(skill, 'global')
-            assert loaded is not None
-            assert 'token' not in loaded
-            assert 'username' not in loaded
-            assert 'password' not in loaded
-        finally:
-            path = CREDENTIALS_DIR / f'{skill}.json'
-            if path.exists():
-                path.unlink()
+        save_credential(skill, data, 'global')
+        loaded = load_credential(skill, 'global')
+        assert loaded is not None
+        assert 'token' not in loaded
+        assert 'username' not in loaded
+        assert 'password' not in loaded
 
 
 # =============================================================================
