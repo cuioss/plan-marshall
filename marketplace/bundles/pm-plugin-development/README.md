@@ -11,7 +11,6 @@ This bundle follows the **goal-based organization** pattern where components are
 - **CREATE** - Create new components
 - **DOCTOR** - Diagnose and fix issues (unified workflow)
 - **MAINTAIN** - Keep marketplace healthy
-- **ANALYZE** - Investigate failures and permission prompts
 
 ## Components
 
@@ -23,13 +22,7 @@ This bundle follows the **goal-based organization** pattern where components are
 | `ext-outline-inventory-agent` | Load marketplace inventory and perform initial scope assessment |
 | `tool-coverage-agent` | Analyze tool declarations vs actual usage in a component file |
 
-### Commands (1)
-
-| Command | Description |
-|---------|-------------|
-| `tools-analyze-user-prompted` | Analyze permission prompts to identify source and provide solutions |
-
-### Skills - User-Invocable (5)
+### Skills - User-Invocable (4)
 
 | Skill | Description |
 |-------|-------------|
@@ -37,7 +30,6 @@ This bundle follows the **goal-based organization** pattern where components are
 | `plugin-create` | Create new marketplace components (agents, commands, skills, bundles) with proper structure and standards compliance |
 | `plugin-doctor` | Diagnose and fix quality issues with automated safe fixes and prompted risky fixes |
 | `plugin-maintain` | Update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance |
-| `tools-analyze-script-failures` | Analyze script failures to identify source components and propose fixes |
 
 ### Skills - Context-Loaded (8)
 

@@ -452,21 +452,16 @@ To run without verification:
 
 ### Deep Failure Analysis
 
-For post-hoc analysis of script failures with origin tracing and fix proposals:
+For post-hoc analysis of script failures with origin tracing and fix proposals, use the plan-retrospective skill (aspect: `script-failure-analysis`):
 
 ```
-Skill: pm-plugin-development:tools-analyze-script-failures
+Skill: plan-marshall:plan-retrospective
 ```
 
-Or invoke via command:
-```
-/pm-plugin-development:tools-analyze-script-failures
-```
-
-**When to use**: After verification mode catches a failure, use analyze-script-failures to:
+**When to use**: After verification mode catches a failure, use plan-retrospective to:
 - Trace which component (command/agent/skill) triggered the failure
 - Analyze how instructions led to the incorrect script call
 - Get specific code fix proposals
 - Record findings as lessons learned
 
-**Difference**: Verification mode stops and analyzes in real-time; analyze-script-failures performs deep post-hoc analysis with origin tracing.
+**Difference**: Verification mode stops and analyzes in real-time; plan-retrospective performs deep post-hoc analysis with origin tracing as part of opt-in retrospective aspects.

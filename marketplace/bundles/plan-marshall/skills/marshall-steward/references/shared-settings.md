@@ -165,7 +165,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ### Finalize Steps
 
-Discover available finalize steps from three sources:
+Discover available finalize steps from four sources:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -176,8 +176,9 @@ This returns all discoverable steps from:
 1. **Built-in steps**: Hard-coded in `_config_defaults.BUILT_IN_FINALIZE_STEPS` with descriptions
 2. **Project steps**: Discovered from `.claude/skills/finalize-step-*` directories
 3. **Extension steps**: Discovered via `provides_finalize_steps()` on domain extensions
+4. **Bundle-optional steps**: Declared in `_config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS` (e.g., `plan-marshall:plan-retrospective`). These surface in the discovery list but are intentionally omitted from `DEFAULT_PLAN_FINALIZE['steps']`, so projects must explicitly select them here to opt in.
 
-Precedence: extension steps > project steps > built-in steps (names must be unique).
+Precedence: extension steps > project steps > built-in steps (names must be unique). Bundle-optional entries are deduplicated against the earlier three sources and appended last.
 
 Present the merged list as a multi-select. If total steps exceed 4, use paging (4 options per page with "More..." option).
 
@@ -205,6 +206,9 @@ AskUserQuestion:
       description: "Merge PR (with --delete-branch) and pull latest"
     - label: "archive"
       description: "Archive the completed plan"
+    # Bundle-optional steps (opt-in; listed but absent from default config):
+    - label: "plan-marshall:plan-retrospective (Opt-in)"
+      description: "Capture a structured retrospective of the completed plan"
     # Extension/project steps (dynamic, from list-finalize-steps):
     # - label: "{step_name}"
     #   description: "{step_description}"

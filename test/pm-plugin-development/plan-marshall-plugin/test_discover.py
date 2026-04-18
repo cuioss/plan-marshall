@@ -207,13 +207,12 @@ class TestDiscoverCommands(unittest.TestCase):
             plugin_data = load_plugin_json(plugin_path)
             packages = discover_commands(bundle_dir, plugin_data)
 
-            # Should find commands
-            self.assertGreater(len(packages), 0)
-
-            for key in packages:
-                self.assertTrue(key.startswith('command:'))
-            for pkg in packages.values():
-                self.assertEqual(pkg['type'], 'command')
+            # pm-plugin-development may have zero commands; when present, validate shape.
+            if packages:
+                for key in packages:
+                    self.assertTrue(key.startswith('command:'))
+                for pkg in packages.values():
+                    self.assertEqual(pkg['type'], 'command')
 
 
 class TestBuildBundleModule(unittest.TestCase):

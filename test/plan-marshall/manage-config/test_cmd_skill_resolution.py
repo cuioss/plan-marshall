@@ -31,6 +31,7 @@ def _load_module(name, filename):
 
 _cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
 _cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
+_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
 
 cmd_get_skills_by_profile = _cmd_skill_resolution.cmd_get_skills_by_profile
 cmd_list_finalize_steps = _cmd_skill_resolution.cmd_list_finalize_steps
@@ -601,6 +602,138 @@ def test_list_finalize_steps_extension_order_from_return_dict(tmp_path):
     without_order = next(s for s in steps if s['name'] == 'ext:without-order')
     assert with_order['order'] == 500
     assert without_order['order'] is None
+
+
+# =============================================================================
+# OPTIONAL_BUNDLE_FINALIZE_STEPS discovery tests (deliverable 2)
+# =============================================================================
+
+
+def test_list_finalize_steps_includes_optional_bundle_step(tmp_path):
+    """`plan-marshall:plan-retrospective` is surfaced by list-finalize-steps.
+
+    The step is declared in OPTIONAL_BUNDLE_FINALIZE_STEPS and must appear in
+    the discovered list with `source: bundle-optional` so it is visible to
+    marshall-steward's step picker even when the project has not yet added
+    it to marshal.json.
+    """
+    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
+        steps = _run_discovery_in_cwd(tmp_path)
+
+    names = [s['name'] for s in steps]
+    assert 'plan-marshall:plan-retrospective' in names, (
+        f'Expected plan-marshall:plan-retrospective among discovered steps, got {names}'
+    )
+    retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
+    assert retro['source'] == 'bundle-optional'
+    assert retro['type'] == 'skill'
+
+
+def test_default_config_excludes_optional_bundle_finalize_steps():
+    """Opt-in bundle finalize steps are absent from the default phase-6 steps list.
+
+    The whole point of OPTIONAL_BUNDLE_FINALIZE_STEPS is that they are
+    discoverable (list-finalize-steps) but not activated by default —
+    projects must add them to marshal.json explicitly.
+    """
+    config = _config_defaults.get_default_config()
+    finalize_steps = config['plan']['phase-6-finalize']['steps']
+
+    for optional_ref in _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS:
+        assert optional_ref not in finalize_steps, (
+            f'Optional bundle step {optional_ref!r} must not be in default finalize steps '
+            f'(found in {finalize_steps})'
+        )
+    # Sanity check: retrospective must be one of the opt-in entries
+    assert 'plan-marshall:plan-retrospective' in _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEPS
+
+
+def test_list_finalize_steps_optional_bundle_order_from_frontmatter(tmp_path):
+    """`order` for plan-retrospective is resolved from its SKILL.md frontmatter.
+
+    The skill declares `order: 995` in frontmatter; discovery must surface that
+    exact value (not None) so marshall-steward can slot it into the sorted
+    execution order.
+    """
+    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
+        steps = _run_discovery_in_cwd(tmp_path)
+
+    retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
+    assert retro['order'] == 995, (
+        f'Expected order=995 from SKILL.md frontmatter, got {retro["order"]!r}'
+    )
+
+
+def test_list_finalize_steps_optional_bundle_description_populated(tmp_path):
+    """Description is populated for the opt-in step (from SKILL.md or fallback map).
+
+    When SKILL.md is present, `get_skill_description` returns the frontmatter
+    description. When it cannot parse one, discovery falls back to
+    OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS. Either way the final value
+    must never equal the bare notation (which is the sentinel the resolver
+    uses when nothing was found).
+    """
+    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=[]):
+        steps = _run_discovery_in_cwd(tmp_path)
+
+    retro = next(s for s in steps if s['name'] == 'plan-marshall:plan-retrospective')
+    description = retro['description']
+    assert description, 'description must not be empty'
+    assert description != 'plan-marshall:plan-retrospective', (
+        'description must not fall through to the bare notation — the fallback map '
+        'should have supplied a human-readable string'
+    )
+    # Fallback map supplies a curated human-readable description for the
+    # retrospective step; the Source 4 path also accepts the frontmatter
+    # description parsed from SKILL.md. Both are acceptable outcomes — the
+    # only regression we guard against is the bare-notation sentinel.
+    fallback = _config_defaults.OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS[
+        'plan-marshall:plan-retrospective'
+    ]
+    assert description != 'plan-marshall:plan-retrospective'
+    # Sanity check: description is meaningfully longer than the bare notation.
+    assert len(description) > len('plan-marshall:plan-retrospective'), (
+        f'Description {description!r} is suspiciously short — expected either '
+        f'the frontmatter description or fallback {fallback!r}'
+    )
+
+
+def test_list_finalize_steps_optional_bundle_precedes_extensions(tmp_path):
+    """Optional bundle steps emit before extension-provided steps.
+
+    The source ordering contract: built-in + project + bundle-optional all
+    precede every extension entry. A regression that reversed Source 3/4 in
+    _discover_all_finalize_steps() would break marshall-steward's assumption
+    that extensions come last.
+    """
+    class _FakeExtModule:
+        @staticmethod
+        def provides_finalize_steps():
+            return [
+                {'name': 'ext:finalize-step-from-extension', 'description': 'Provided by extension'},
+            ]
+
+    fake_extensions = [{'bundle': 'fake-bundle', 'module': _FakeExtModule()}]
+
+    with patch.object(_cmd_skill_resolution, 'discover_all_extensions', return_value=fake_extensions):
+        steps = _run_discovery_in_cwd(tmp_path)
+
+    names = [s['name'] for s in steps]
+    assert 'plan-marshall:plan-retrospective' in names
+    assert 'ext:finalize-step-from-extension' in names
+
+    retro_idx = names.index('plan-marshall:plan-retrospective')
+    ext_idx = names.index('ext:finalize-step-from-extension')
+    assert retro_idx < ext_idx, (
+        f'Opt-in bundle step (idx {retro_idx}) must precede extension step (idx {ext_idx})'
+    )
+    # Every extension entry must appear after the retrospective entry
+    for idx, step in enumerate(steps):
+        if step['source'] == 'extension':
+            assert idx > retro_idx, (
+                f'Extension step {step["name"]!r} at {idx} must come after bundle-optional '
+                f'retrospective at {retro_idx}'
+            )
 
 
 # =============================================================================

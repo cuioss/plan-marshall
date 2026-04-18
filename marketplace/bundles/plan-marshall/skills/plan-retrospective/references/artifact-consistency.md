@@ -1,0 +1,65 @@
+# Aspect: Artifact Consistency
+
+Cross-checks between plan artifacts to catch drift, missing files, and mismatched counts. Facts come from `check-artifact-consistency.py`; this document tells the LLM how to judge the facts.
+
+## Inputs
+
+The script consumes:
+- `status.toon` (phase position, metadata)
+- `solution_outline.md` (deliverables section)
+- `references.json` / `references.toon` (affected_files, domains)
+- `tasks/TASK-*.json` (task step targets)
+- `metrics.md` (when present)
+
+## TOON Fragment Shape
+
+```toon
+aspect: artifact_consistency
+status: success
+plan_id: {plan_id}
+files_present{name,present,path}:
+  status.toon,true,...
+  solution_outline.md,true,...
+  references.json,true,...
+  metrics.md,false,...
+checks[*]{name,status,message}:
+  solution_outline_sections,pass,"all required sections present"
+  deliverable_count,pass,"6 deliverables declared"
+  task_deliverable_match,pass,"6 tasks linked to 6 deliverables"
+  affected_files_recall,partial,"5/6 expected files found in references.json"
+  metrics_generated,fail,"metrics.md not found (record-metrics skipped?)"
+findings[*]{severity,message}:
+  error,"metrics.md missing — record-metrics step did not run"
+  warning,"1 expected file missing from references.json"
+summary:
+  passed: N
+  failed: N
+  partial: N
+```
+
+## Novel Checks (from verify-structure.py)
+
+- **solution_outline_sections**: required sections are `summary`, `overview`, `deliverables`.
+- **deliverable_count**: extracted from the Deliverables section using heading level 3 (`### `).
+- **task_deliverable_match**: each deliverable index (1..N) MUST have a corresponding task whose `deliverable` field matches.
+- **affected_files_recall**: when `solution_outline.md` declares `Affected files:` bullets per deliverable, references.json `affected_files` SHOULD contain at least 70% of them. < 70% is a fail.
+
+## LLM Interpretation Rules
+
+- `fail` checks MUST surface in the final report.
+- `partial` checks surface only when their message is actionable (e.g., missing files named).
+- Presence of `metrics.md` is required when the plan ran `default:record-metrics`. Absence implies either the step was skipped OR an earlier step crashed.
+
+## Finding Shape
+
+```toon
+aspect: artifact_consistency
+severity: info|warning|error
+check: {check_name}
+message: "{one-line summary}"
+```
+
+## Out of Scope
+
+- Validating the content quality of each artifact — that belongs to request-result-alignment.
+- Checking log completeness — that is logging-gap-analysis.

@@ -108,6 +108,14 @@ BUILT_IN_FINALIZE_STEPS = [
     'default:archive-plan',
 ]
 
+# Optional bundle-provided finalize steps (opt-in)
+# These appear in `list-finalize-steps` output but are intentionally omitted from
+# DEFAULT_PLAN_FINALIZE['steps'], so projects must explicitly add them to
+# marshal.json to activate. Each entry is a fully-qualified `bundle:skill` reference.
+OPTIONAL_BUNDLE_FINALIZE_STEPS = [
+    'plan-marshall:plan-retrospective',
+]
+
 # Human-readable descriptions for built-in finalize steps
 BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:commit-push': 'Commit and push changes',
@@ -119,6 +127,13 @@ BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
     'default:branch-cleanup': 'Merge PR (with --delete-branch) and pull latest',
     'default:record-metrics': 'Record final plan metrics before archive',
     'default:archive-plan': 'Archive the completed plan',
+}
+
+# Human-readable descriptions for optional bundle-provided finalize steps
+# Used as a fallback when the skill's SKILL.md frontmatter cannot be parsed for
+# a description; surfaced through `list-finalize-steps`.
+OPTIONAL_BUNDLE_FINALIZE_STEP_DESCRIPTIONS = {
+    'plan-marshall:plan-retrospective': 'Capture a structured retrospective of the completed plan',
 }
 
 DEFAULT_PLAN_FINALIZE = {

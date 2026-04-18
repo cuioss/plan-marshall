@@ -216,7 +216,7 @@ implements: plan-marshall:extension-api/standards/ext-point-triage
 ### User-Invocable Guidelines
 
 **Use `user-invocable: true` when**:
-- Skill provides a user-facing workflow (e.g., `/plugin-doctor`, `/verify-workflow`)
+- Skill provides a user-facing workflow (e.g., `/plugin-doctor`, `/plan-retrospective`)
 - Skill should appear in slash menu for direct invocation
 - Skill is the primary entry point for a capability
 

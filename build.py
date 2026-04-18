@@ -71,7 +71,13 @@ def cmd_compile(module: str | None) -> int:
     if module:
         return run(['uv', 'run', 'mypy', path], f'compile: mypy {path}', env=mypy_env)
     else:
-        paths = [path, str(CLAUDE_DIR)]
+        paths = [path]
+        # Include .claude/ only if it exists and contains at least one .py file.
+        # Passing an empty directory makes mypy fail with "There are no .py[i]
+        # files in directory '.claude'" (exit 2), which breaks CI whenever the
+        # repo happens to not ship any top-level skill scripts there.
+        if CLAUDE_DIR.exists() and any(CLAUDE_DIR.rglob('*.py')):
+            paths.append(str(CLAUDE_DIR))
         return run(['uv', 'run', 'mypy'] + paths, f'compile: mypy {" ".join(paths)}', env=mypy_env)
 
 

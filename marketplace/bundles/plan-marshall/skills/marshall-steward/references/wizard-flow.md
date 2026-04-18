@@ -449,12 +449,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 status: success
 count: 2
 skills:
-  - notation: project:verify-workflow
-    name: verify-workflow
-    description: Verify workflow outputs using hybrid script + LLM assessment
   - notation: project:sync-plugin-cache
     name: sync-plugin-cache
     description: Synchronize all marketplace bundles to the Claude plugin cache
+  - notation: project:finalize-step-plugin-doctor
+    name: finalize-step-plugin-doctor
+    description: Finalize-phase wrapper that runs plugin-doctor against skills touched by the plan
 ```
 
 If skills are found (`count > 0`), present them to the user with `AskUserQuestion`:
