@@ -106,23 +106,34 @@ def build_happy_plan_dir(plan_dir: Path) -> Path:
 
     logs_dir = plan_dir / 'logs'
     logs_dir.mkdir()
+    # Production log shape emitted by ``manage-logging``:
+    # ``[ts] [LEVEL] [hash] [CATEGORY] (caller) msg`` — every bracketed
+    # token is required so ``analyze-logs`` extractors are exercised
+    # against the real format, not a fixture-only one.
     (logs_dir / 'work.log').write_text(
-        '2026-04-17T10:00:00Z INFO [STATUS] (plan-marshall:phase-1-init) Starting\n'
-        '2026-04-17T10:01:00Z INFO [ARTIFACT] (plan-marshall:phase-3-outline) created\n'
-        '2026-04-17T10:02:00Z WARN [STATUS] (plan-marshall:phase-5-execute) slow\n',
+        '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [STATUS] '
+        '(plan-marshall:phase-1-init) Starting\n'
+        '[2026-04-17T10:01:00Z] [INFO] [bbbbbb] [ARTIFACT] '
+        '(plan-marshall:phase-3-outline) created\n'
+        '[2026-04-17T10:02:00Z] [WARN] [cccccc] [STATUS] '
+        '(plan-marshall:phase-5-execute) slow\n',
         encoding='utf-8',
     )
     (logs_dir / 'decision.log').write_text(
-        '2026-04-17T10:00:30Z INFO (plan-marshall:phase-3-outline) picked option A\n',
+        '[2026-04-17T10:00:30Z] [INFO] [dddddd] '
+        '(plan-marshall:phase-3-outline) picked option A\n',
         encoding='utf-8',
     )
     # ``manage-logging`` emits to ``script-execution.log`` (not ``script.log``);
     # ``analyze-logs.py`` reads the same filename. The fixture must match so the
     # script_entries / errors_script counters land non-zero.
     (logs_dir / 'script-execution.log').write_text(
-        '2026-04-17T10:00:01Z INFO plan-marshall:manage-tasks:manage-tasks add (0.12s)\n'
-        '2026-04-17T10:00:05Z INFO plan-marshall:manage-status:manage_status read (2.5s)\n'
-        '2026-04-17T10:00:10Z ERROR plan-marshall:manage-files:manage-files add (0.05s)\n',
+        '[2026-04-17T10:00:01Z] [INFO] [eeeeee] '
+        'plan-marshall:manage-tasks:manage-tasks add (0.12s)\n'
+        '[2026-04-17T10:00:05Z] [INFO] [ffffff] '
+        'plan-marshall:manage-status:manage_status read (2.5s)\n'
+        '[2026-04-17T10:00:10Z] [ERROR] [111111] '
+        'plan-marshall:manage-files:manage-files add (0.05s)\n',
         encoding='utf-8',
     )
     return plan_dir
