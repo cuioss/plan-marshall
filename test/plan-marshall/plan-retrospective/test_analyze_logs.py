@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -128,6 +129,98 @@ class TestRegression:
             f'Expected errors_script == 3 on a 3-ERROR script-execution.log, '
             f'got {data["counts"]["errors_script"]}. This regression means '
             f'analyze-logs is reading the wrong filename again.'
+        )
+
+    def test_artifact_entries_always_present_in_counts(self, tmp_path, monkeypatch):
+        """``counts.artifact_entries`` MUST appear on every run regardless of
+        modified_files / log state. Operators rely on its presence as a
+        boolean signal that the counter is wired up.
+        """
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-artifact-present')
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert 'artifact_entries' in data['counts'], (
+            'counts.artifact_entries missing — regression in analyze-logs output shape'
+        )
+
+    def test_modified_files_with_artifacts_produces_no_finding(self, tmp_path, monkeypatch):
+        """Case (a): modified_files non-empty AND artifact_entries > 0 →
+        no error finding. The happy-path fixture already satisfies this.
+        """
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-artifact-happy')
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert int(data['counts']['artifact_entries']) >= 1
+        findings = data.get('findings') or []
+        assert not any(
+            f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '')
+            for f in findings
+        ), (
+            f'Did not expect ARTIFACT-missing finding when work.log has '
+            f'ARTIFACT entries; got findings: {findings}'
+        )
+
+    def test_modified_files_without_artifacts_emits_error_finding(self, tmp_path, monkeypatch):
+        """Case (b): modified_files non-empty AND artifact_entries == 0 →
+        an error finding MUST be produced so the retrospective surfaces
+        the gap between declared artifacts and log evidence.
+        """
+        plan_id, plan_dir = setup_live_plan(
+            tmp_path, monkeypatch, plan_id='retro-artifact-missing'
+        )
+        # Overwrite work.log with entries that contain NO ARTIFACT tag.
+        work_log = plan_dir / 'logs' / 'work.log'
+        work_log.write_text(
+            '2026-04-17T10:00:00Z INFO [STATUS] (plan-marshall:phase-1-init) Starting\n'
+            '2026-04-17T10:02:00Z WARN [STATUS] (plan-marshall:phase-5-execute) slow\n',
+            encoding='utf-8',
+        )
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert int(data['counts']['artifact_entries']) == 0
+        findings = data.get('findings') or []
+        assert any(
+            f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '')
+            for f in findings
+        ), (
+            f'Expected an ARTIFACT-missing error finding when modified_files '
+            f'is non-empty and artifact_entries == 0; got findings: {findings}'
+        )
+
+    def test_empty_modified_files_produces_no_finding(self, tmp_path, monkeypatch):
+        """Case (c): modified_files empty AND artifact_entries == 0 →
+        no finding. Nothing was declared, so there is nothing to flag.
+        """
+        plan_id, plan_dir = setup_live_plan(
+            tmp_path, monkeypatch, plan_id='retro-artifact-nothing-declared'
+        )
+        # Clear modified_files and strip ARTIFACT entries from work.log.
+        references_path = plan_dir / 'references.json'
+        references = json.loads(references_path.read_text(encoding='utf-8'))
+        references['modified_files'] = []
+        references_path.write_text(json.dumps(references), encoding='utf-8')
+
+        work_log = plan_dir / 'logs' / 'work.log'
+        work_log.write_text(
+            '2026-04-17T10:00:00Z INFO [STATUS] (plan-marshall:phase-1-init) Starting\n',
+            encoding='utf-8',
+        )
+
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+        assert int(data['counts']['artifact_entries']) == 0
+        findings = data.get('findings') or []
+        assert not any(
+            f.get('severity') == 'error' and 'ARTIFACT' in f.get('message', '')
+            for f in findings
+        ), (
+            f'Did not expect ARTIFACT-missing finding when modified_files '
+            f'is empty; got findings: {findings}'
         )
 
     def test_read_log_missing_path_emits_stderr_warn(self, tmp_path, capsys):

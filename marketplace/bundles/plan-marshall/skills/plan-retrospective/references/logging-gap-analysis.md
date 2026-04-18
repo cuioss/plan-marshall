@@ -40,7 +40,7 @@ findings[*]{severity,message}:
 
 - The ratio `observed / expected_min < 0.5` is a `warning`.
 - Zero `DECISION` entries in phases that made visible choices (outline packaging, plan task ordering) is always a `warning`.
-- Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced.
+- Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced. `phase-5-execute` is expected to emit one `[ARTIFACT]` entry per file operation at task completion, so the canonical check is `counts.artifact_entries > 0` whenever `references.modified_files` is non-empty; this is enforced programmatically by the retrospective pipeline rather than being treated as a known offender.
 - `ERROR` entries are expected to be zero; count them but do not flag count itself — the errors surface via log-analysis / script-failure-analysis.
 
 ## Finding Shape

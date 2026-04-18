@@ -122,6 +122,32 @@ Work log messages embed the category in the message text as `[CATEGORY] (caller)
 [2025-12-11T11:15:24Z] [INFO] [f1a9b3] [ARTIFACT] (plan-marshall:phase-1-init) Created plan: Migrate agent outputs to TOON
 ```
 
+##### Extended caller for phase-5-execute task artifacts
+
+The ARTIFACT category supports a single sanctioned **three-segment caller form** used exclusively by `plan-marshall:phase-5-execute` when logging file-system artifacts produced while executing a specific task:
+
+```
+(plan-marshall:phase-5-execute:{task_number})
+```
+
+**Rationale**: Retrospective consumers and audit tooling need to group artifact writes by task without cross-correlating timestamps against `TASK-*.json` step windows. Embedding `{task_number}` directly in the caller segment turns task-level grouping into a trivial prefix match on the work-log stream, eliminating a brittle join step.
+
+**Message shapes**: Only three shapes are sanctioned under this extended caller — all follow the pattern `{Verb} {path}` (or `{Verb} {old} -> {new}` for renames):
+
+```
+[2025-12-11T11:20:01Z] [INFO] [a1b2c3] [ARTIFACT] (plan-marshall:phase-5-execute:4) Wrote marketplace/bundles/plan-marshall/skills/manage-logging/standards/log-format.md
+```
+
+```
+[2025-12-11T11:20:02Z] [INFO] [d4e5f6] [ARTIFACT] (plan-marshall:phase-5-execute:4) Deleted marketplace/bundles/plan-marshall/skills/legacy-skill/SKILL.md
+```
+
+```
+[2025-12-11T11:20:03Z] [INFO] [g7h8i9] [ARTIFACT] (plan-marshall:phase-5-execute:4) Renamed marketplace/bundles/plan-marshall/skills/old-name -> marketplace/bundles/plan-marshall/skills/new-name
+```
+
+**Scope restriction**: This is the **only** sanctioned three-segment caller in the logging system. All other skills — including other `phase-*` skills, `manage-*` scripts, recipes, and user workflows — MUST continue to use the standard two-segment `(bundle:skill)` caller shape documented throughout this specification. Introducing additional three-segment callers would undermine the prefix-match grouping contract that retrospective consumers rely on.
+
 #### ERROR
 
 ```
