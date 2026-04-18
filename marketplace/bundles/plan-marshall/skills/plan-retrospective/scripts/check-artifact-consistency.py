@@ -139,6 +139,24 @@ def check_affected_files_recall(
     return 'fail', f'Recall {recall * 100:.0f}% below {int(_RECALL_THRESHOLD * 100)}% threshold', details
 
 
+def check_affected_files_exact_match(
+    outline_files: set[str], references_files: set[str]
+) -> tuple[str, str, list[str], list[str]]:
+    """Return ``(status, message, outline_only, references_only)`` for the exact-match check.
+
+    Strict variant of the recall check: passes only when the outline and references
+    sets agree exactly (including both empty). Any drift — files declared in the
+    outline but missing from references, or listed in references but not declared
+    in the outline — produces a ``warn`` with both sides surfaced for the
+    retrospective synthesizer.
+    """
+    if outline_files == references_files:
+        return 'pass', 'Outline and references agree exactly', [], []
+    outline_only = sorted(outline_files - references_files)
+    references_only = sorted(references_files - outline_files)
+    return 'warn', 'Set mismatch', outline_only, references_only
+
+
 def check_task_deliverable_match(
     deliverables: list[dict[str, str]], tasks_dir: Path
 ) -> tuple[str, str]:
@@ -209,13 +227,37 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         findings.append({'severity': 'error', 'message': tm_message})
 
     # Affected-files recall
+    references_path = plan_dir / 'references.json'
     rec_status, rec_message, rec_details = check_affected_files_recall(
-        solution_content, plan_dir / 'references.json'
+        solution_content, references_path
     )
     checks.append({'name': 'affected_files_recall', 'status': rec_status, 'message': rec_message})
     details['affected_files_recall'] = rec_details
     if rec_status == 'fail':
         findings.append({'severity': 'warning', 'message': rec_message})
+
+    # Affected-files exact-match (strict variant, peer to recall)
+    outline_files = set(extract_affected_files_per_deliverable(solution_content))
+    references_files: set[str] = set()
+    if references_path.exists():
+        try:
+            refs_data = json.loads(references_path.read_text(encoding='utf-8'))
+            actual_raw = refs_data.get('affected_files', [])
+            if isinstance(actual_raw, str):
+                actual_raw = [actual_raw]
+            references_files = {str(p).strip() for p in actual_raw if p}
+        except (OSError, json.JSONDecodeError):
+            references_files = set()
+    exact_status, exact_message, outline_only, references_only = check_affected_files_exact_match(
+        outline_files, references_files
+    )
+    checks.append({
+        'name': 'affected_files_exact_match',
+        'status': exact_status,
+        'message': exact_message,
+    })
+    if exact_status == 'warn':
+        findings.append({'severity': 'warning', 'message': exact_message})
 
     # metrics.md presence
     m_status, m_message = check_metrics_generated(plan_dir)
@@ -238,6 +280,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'findings': findings,
         'summary': summary,
         'details': details,
+        'affected_files_exact_match': {
+            'status': exact_status,
+            'outline_only': outline_only,
+            'references_only': references_only,
+        },
     }
 
 

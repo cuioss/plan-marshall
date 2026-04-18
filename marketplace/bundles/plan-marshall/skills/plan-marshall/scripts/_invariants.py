@@ -64,6 +64,35 @@ class PhaseStepsIncomplete(Exception):
         )
 
 
+class TaskGraphInvalid(Exception):
+    """Raised by the ``task_graph_valid`` invariant capture when the plan's
+    task dependency graph has a cycle or a dangling reference (a
+    ``depends_on`` entry that does not match any existing task number).
+
+    Shaped like :class:`PhaseStepsIncomplete`: the constructor formats a
+    descriptive message and keeps the structured fields (``cycle``,
+    ``dangling``) as attributes so callers can surface a structured error
+    payload and refuse to persist the handshake row — thereby blocking the
+    phase transition on a broken task graph.
+    """
+
+    def __init__(
+        self,
+        cycle: list[str],
+        dangling: list[dict[str, str]],
+    ):
+        self.cycle = cycle
+        self.dangling = dangling
+        parts: list[str] = []
+        if cycle:
+            parts.append(f'cycle={cycle}')
+        if dangling:
+            parts.append(f'dangling={dangling}')
+        super().__init__(
+            'task_graph_valid failed: ' + ', '.join(parts)
+        )
+
+
 AppliesFn = Callable[[str, dict[str, Any]], bool]
 CaptureFn = Callable[[str, dict[str, Any], str], Any]
 
@@ -249,6 +278,170 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
     return _hash_dict(reduced)
 
 
+def _normalize_task_ref(raw: Any) -> int | None:
+    """Normalize a ``depends_on`` entry to an integer task number.
+
+    Accepts integers directly and strings of the shape ``TASK-1`` or
+    ``TASK-001`` (the two formats produced by ``_build_done_set``).
+    Returns ``None`` when the value cannot be parsed so the caller can
+    surface it as a dangling reference.
+    """
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith('TASK-'):
+            text = text[len('TASK-'):]
+        if text.isdigit():
+            return int(text)
+    return None
+
+
+def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
+    """Validate the plan's task dependency graph.
+
+    Loads every task via ``manage-tasks list`` (for the full number set)
+    and then ``manage-tasks get`` (for each task's ``depends_on``), builds
+    the adjacency graph, and checks two properties:
+
+    - **No cycles** — DFS with WHITE/GRAY/BLACK coloring; a GRAY-hit edge
+      closes a cycle and the GRAY stack from entry to hit is captured as
+      the cycle path (formatted as ``TASK-{n}`` strings).
+    - **No dangling references** — every ``depends_on`` entry must resolve
+      to an existing task number.
+
+    On success returns ``_hash_dict(sorted_edges)`` where edges are
+    ``(src, dst)`` integer tuples — a stable 16-char hex SHA256 prefix
+    matching the pattern used by the other hash invariants. An empty task
+    list yields the zero-edge hash (stable, non-raising).
+
+    On failure raises :class:`TaskGraphInvalid` so ``cmd_capture`` refuses
+    to persist the handshake row and blocks the phase transition.
+
+    Returns ``None`` if the tasks cannot be loaded (e.g. executor missing
+    during a unit-test harness that doesn't provide the plan directory).
+    """
+    stdout = _run_script(
+        [
+            'plan-marshall:manage-tasks:manage-tasks',
+            'list',
+            '--plan-id',
+            plan_id,
+        ]
+    )
+    if stdout is None:
+        return None
+    try:
+        parsed = parse_toon(stdout)
+    except Exception:
+        return None
+    tasks_table = parsed.get('tasks_table') or parsed.get('tasks') or []
+    if not isinstance(tasks_table, list):
+        return None
+
+    # Collect task numbers from the list; an empty list is valid (zero-edge).
+    numbers: list[int] = []
+    for row in tasks_table:
+        if not isinstance(row, dict):
+            continue
+        n = _normalize_task_ref(row.get('number'))
+        if n is not None:
+            numbers.append(n)
+
+    # Pull depends_on per task via ``get`` — ``list`` does not surface it.
+    adjacency: dict[int, list[int | None]] = {n: [] for n in numbers}
+    dangling: list[dict[str, str]] = []
+    for n in numbers:
+        task_stdout = _run_script(
+            [
+                'plan-marshall:manage-tasks:manage-tasks',
+                'get',
+                '--plan-id',
+                plan_id,
+                '--number',
+                str(n),
+            ]
+        )
+        if task_stdout is None:
+            continue
+        try:
+            task_parsed = parse_toon(task_stdout)
+        except Exception:
+            continue
+        task = task_parsed.get('task') or {}
+        if not isinstance(task, dict):
+            continue
+        deps = task.get('depends_on') or []
+        if not isinstance(deps, list):
+            continue
+        for raw in deps:
+            target = _normalize_task_ref(raw)
+            if target is None or target not in adjacency:
+                dangling.append({'task': f'TASK-{n}', 'missing': str(raw)})
+                continue
+            adjacency[n].append(target)
+
+    # DFS cycle detection (WHITE=0, GRAY=1, BLACK=2). Capture the first cycle
+    # found, formatted as TASK-{n} strings from entry node through closing edge.
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[int, int] = dict.fromkeys(adjacency, WHITE)
+    cycle_path: list[str] = []
+
+    def _dfs(start: int) -> bool:
+        stack: list[tuple[int, int]] = [(start, 0)]
+        path: list[int] = []
+        color[start] = GRAY
+        path.append(start)
+        while stack:
+            node, idx = stack[-1]
+            neighbors = adjacency.get(node, [])
+            if idx >= len(neighbors):
+                color[node] = BLACK
+                stack.pop()
+                if path:
+                    path.pop()
+                continue
+            # Advance pointer for this stack frame before recursing.
+            stack[-1] = (node, idx + 1)
+            nxt = neighbors[idx]
+            if nxt is None:
+                continue
+            state = color.get(nxt, WHITE)
+            if state == GRAY:
+                # Close the cycle from the first occurrence of nxt in path.
+                try:
+                    cut = path.index(nxt)
+                except ValueError:
+                    cut = 0
+                cycle_nodes = path[cut:] + [nxt]
+                cycle_path.extend(f'TASK-{m}' for m in cycle_nodes)
+                return True
+            if state == WHITE:
+                color[nxt] = GRAY
+                path.append(nxt)
+                stack.append((nxt, 0))
+        return False
+
+    for start in sorted(adjacency.keys()):
+        if color[start] == WHITE:
+            if _dfs(start):
+                break
+
+    if cycle_path or dangling:
+        raise TaskGraphInvalid(cycle=cycle_path, dangling=dangling)
+
+    edges: list[tuple[int, int]] = []
+    for src in sorted(adjacency.keys()):
+        for dst in adjacency[src]:
+            if dst is None:
+                continue
+            edges.append((src, dst))
+    edges.sort()
+    # JSON serialization turns tuples into lists; normalize up front for
+    # deterministic hashing across Python versions.
+    return _hash_dict([list(edge) for edge in edges])
+
+
 def _capture_qgate_open_count(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
     stdout = _run_script(
         [
@@ -371,6 +564,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('qgate_open_count', _always, _capture_qgate_open_count),
     ('config_hash', _always, _capture_config_hash),
     ('phase_steps_complete', _always, _capture_phase_steps_complete),
+    ('task_graph_valid', _always, _capture_task_graph_valid),
 ]
 
 

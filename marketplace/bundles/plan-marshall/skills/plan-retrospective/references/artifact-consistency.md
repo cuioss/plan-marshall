@@ -42,7 +42,7 @@ summary:
 - **solution_outline_sections**: required sections are `summary`, `overview`, `deliverables`.
 - **deliverable_count**: extracted from the Deliverables section using heading level 3 (`### `).
 - **task_deliverable_match**: each deliverable index (1..N) MUST have a corresponding task whose `deliverable` field matches.
-- **affected_files_recall**: when `solution_outline.md` declares `Affected files:` bullets per deliverable, references.json `affected_files` SHOULD contain at least 70% of them. < 70% is a fail.
+- **affected_files_recall**: when `solution_outline.md` declares `Affected files:` bullets per deliverable, references.json `affected_files` SHOULD contain at least 70% of them. < 70% is a fail. When the peer top-level key `affected_files_exact_match` reports `status: warn`, the retrospective synthesizer MUST surface the drift in the report naming `outline_only` and `references_only` verbatim.
 
 ## LLM Interpretation Rules
 
