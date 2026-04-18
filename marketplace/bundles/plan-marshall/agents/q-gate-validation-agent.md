@@ -209,19 +209,19 @@ Execute the four greps below against the worktree root. Each grep must be a sepa
 Pattern A — `importlib` / `spec_from_file_location` loads pointing inside the deleted skill directory (pytest conftest loaders):
 
 ```bash
-rg -n "spec_from_file_location\\([^)]*{skill_name}" --type py test/
+rg -n "spec_from_file_location\\([^)]*\\b{skill_name}\\b" --type py test/
 ```
 
 Pattern B — relative path references to `.claude/skills/{skill_name}/` or `marketplace/bundles/{bundle}/skills/{skill_name}/` anywhere under `test/` (excluding caches):
 
 ```bash
-rg -n "{skill_dir}" test/ --glob '!**/__pycache__/**'
+rg -n "{skill_dir}\\b" test/ --glob '!**/__pycache__/**'
 ```
 
 Pattern C — three-part script notations `{bundle}:{skill_name}:` referring to the deleted skill in `marshal.json`, plan scripts, and the executor mapping:
 
 ```bash
-rg -n "{bundle}:{skill_name}:" marshal.json .plan/
+rg -n "{bundle}:\\b{skill_name}\\b:" marshal.json .plan/
 ```
 
 Pattern D — `Skill: {bundle}:{skill_name}` loader directives in markdown (SKILL.md, agent.md, command.md):
