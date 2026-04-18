@@ -261,6 +261,16 @@ To prevent compound-word mis-interpretation (e.g. `review-knowledge` being descr
 
    description: 'review-knowledge'. Review knowledge captured by prior plans (lessons-learned and memories) against this plan's changes. <additional task-specific detail>.
 
+3. **Structural-token preservation (mitigation 3)**: Any structural token appearing in the parent deliverable body MUST be preserved verbatim in `task.description`. Structural tokens are:
+
+   - **Numeric literals** from the deliverable body (e.g. `990`, `1000`, `85`, `3.14`) — including order values, priority values, port numbers, thresholds, and any other numeric constants.
+   - **Flag-style tokens** (e.g. `--plan-id`, `--name`, `order:`, `priority:`) — including CLI flags, TOON/YAML field prefixes, and option names.
+   - **Quoted identifiers** surfaced in Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, or Success Criteria — including backticked paths, single-quoted names, and double-quoted strings.
+
+   Paraphrasing, reformatting, or "regularizing" these tokens into sequential multiples, rounded values, or stylistically neater forms is explicitly prohibited. In particular, rewriting `order: 990 / 1000` as `order: 90 / 100` to make the numbers "look nicer" — or collapsing `990`→`99`, `1000`→`100`, `85`→`80`, etc. — is forbidden, because the numeric values are load-bearing data from the source outline, not decorative placeholders.
+
+   **Worked example** (from source lesson `2026-04-17-20-001`): A deliverable body specifies task-ordering values `order: 990 / 1000` in its Change per file section. The canonical violation is a task description that paraphrases these as `order: 90 / 100` — a "regularization" from the four-digit spacing (`990`/`1000`) down to a two-digit spacing (`90`/`100`). The description MUST instead carry the literal tokens `order: 990 / 1000` verbatim. This same rule applies whenever the outline supplies specific numeric or flag-shaped data: copy the tokens exactly as written, do not "improve" them.
+
 **CRITICAL — Shell Metacharacter Sanitization**: Before interpolating values into the `--content` string, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
 
 ```bash
@@ -398,7 +408,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 After all tasks are created, scan each `task.description` for planning-domain keywords that the author may have substituted for the deliverable's actual semantics. For each task:
 
 1. Build a deny-list of planning-domain keywords: `PR review`, `CI`, `merge comments`, `pipeline`, `automated review`, `build check`, `review comments`.
-2. Build an outline-text haystack: concatenate the parent deliverable's Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text.
+2. Build an outline-text haystack: concatenate the parent deliverable's Title, Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text.
 3. For each keyword present in the `description` but ABSENT from the haystack, emit a warning Q-Gate finding:
 
 ```bash
@@ -407,6 +417,27 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --type warning \
   --title "Description drift: TASK-{N} uses '{keyword}' not present in deliverable outline" \
   --detail "{description excerpt}; deliverable {deliverable_number} outline does not mention '{keyword}'"
+```
+
+**Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
+
+### Structural-token-drift check (warn-only)
+
+After all tasks are created, scan each `task.description` for structural tokens that are not present in the parent deliverable body. Structural tokens are numeric literals, flag-style tokens, and quoted identifiers — the same three categories defined in Step 6 mitigation 3 ("Structural-token preservation"). This check catches silent regularization of structural data (e.g. `990 / 1000` rewritten as `90 / 100`) that the Keyword-drift check does not cover.
+
+1. Build an outline-text haystack: concatenate the parent deliverable's Title, Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text. The Title is included because mitigation 1 requires `task.description` to begin with a verbatim title quote — any structural tokens in the title must therefore also be present in the haystack, otherwise they surface as false-positive drift findings.
+2. Extract structural tokens from `task.description`:
+   - **Numeric literals** (e.g. `990`, `1000`, `85`, `3.14`) — integers and decimals appearing as standalone tokens.
+   - **Flag-style tokens** (e.g. `--plan-id`, `--name`, `order:`, `priority:`) — CLI flags and TOON/YAML field prefixes.
+   - **Quoted identifiers** — single-quoted or double-quoted strings. (Backticks are stripped from `task.description` at creation time per the Shell Metacharacter Sanitization rule in Step 6, so backticked tokens never appear in the description and are not part of this extraction.)
+3. For each extracted token present in `task.description` but ABSENT from the haystack (using anchored matching with word boundaries to prevent substring collisions — e.g. the token `90` must not match `990` in the haystack), emit a warning Q-Gate finding:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
+  qgate add --plan-id {plan_id} --phase 4-plan --source qgate \
+  --type warning \
+  --title "Description drift: TASK-{N} uses structural token '{token}' not present in deliverable outline" \
+  --detail "{description excerpt}; deliverable {deliverable_number} outline does not mention '{token}'"
 ```
 
 **Rigor**: this check is warn-only. Phase-4-plan MUST proceed to completion regardless of warnings — the operator reviews findings at the phase-4 gate.
