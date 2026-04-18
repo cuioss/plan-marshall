@@ -57,3 +57,14 @@ message: "{one-line}"
 
 - Proposing new log statements line-by-line — emit findings, not diffs.
 - Parsing of log bodies beyond tag counts — log-analysis owns that.
+
+## Persistence
+
+After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `work/fragment-logging-gap-analysis.toon` via the `Write` tool and registers it with the bundle:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
+  --plan-id {plan_id} --aspect logging-gap-analysis --fragment-file work/fragment-logging-gap-analysis.toon
+```
+
+`compile-report run --fragments-file` consumes the assembled bundle in Step 4 of SKILL.md. The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.

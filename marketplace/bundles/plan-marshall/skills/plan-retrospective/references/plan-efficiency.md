@@ -51,3 +51,14 @@ metric: "{metric name + value}"
 
 - Root-cause of individual slow scripts — log-analysis surfaces candidates; the detailed analysis is out of the retrospective's scope.
 - Comparing against prior plans — this is a single-plan aspect.
+
+## Persistence
+
+After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `work/fragment-plan-efficiency.toon` via the `Write` tool and registers it with the bundle:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
+  --plan-id {plan_id} --aspect plan-efficiency --fragment-file work/fragment-plan-efficiency.toon
+```
+
+`compile-report run --fragments-file` consumes the assembled bundle in Step 4 of SKILL.md. The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.

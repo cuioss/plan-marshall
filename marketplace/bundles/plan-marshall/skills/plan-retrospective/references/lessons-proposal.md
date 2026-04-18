@@ -86,3 +86,14 @@ Only `confidence: high` proposals are auto-recorded. `medium` proposals are incl
 
 - Reviewing existing lessons for overlap (that is `default:review-knowledge` in finalize).
 - Updating skill documentation — lessons propose changes; applying them belongs to `plugin-apply-lessons-learned`.
+
+## Persistence
+
+After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `work/fragment-lessons-proposal.toon` via the `Write` tool and registers it with the bundle:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
+  --plan-id {plan_id} --aspect lessons-proposal --fragment-file work/fragment-lessons-proposal.toon
+```
+
+`compile-report run --fragments-file` consumes the assembled bundle in Step 4 of SKILL.md. The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.

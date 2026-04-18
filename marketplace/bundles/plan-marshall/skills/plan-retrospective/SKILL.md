@@ -86,7 +86,16 @@ Capture the manifest TOON for later aspects.
 
 ### Step 3: Dispatch Aspects (in order)
 
-For each aspect in the list below, load the reference doc on-demand and produce a TOON fragment. The orchestrator holds fragments in model context and passes them to `compile-report.py` in Step 5.
+Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode writes to an OS tmp directory so the archived plan stays read-only. Capture the returned `bundle_path` for use in Step 4.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
+  init --plan-id {plan_id} --mode {live|archived} [--archived-plan-path {path}]
+```
+
+Parse `bundle_path` from the TOON output.
+
+For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect}.toon` (live mode) or the tmp equivalent (archived mode), then register it via `collect-fragments add`. Fragments are persisted to disk so that `compile-report` in Step 4 can consume them from a single bundle file assembled by `collect-fragments`.
 
 | Order | Aspect | Script(s) | Reference |
 |-------|--------|-----------|-----------|
@@ -104,18 +113,45 @@ For each aspect in the list below, load the reference doc on-demand and produce 
 
 **Aspect 10** is skipped when `--session-id` is absent.
 
-Each aspect reference is loaded via `Read` against the relative path (`references/{name}.md`). LLM-only aspects produce a TOON fragment conforming to the shape documented in the reference.
+**Per-aspect capture pattern**:
+
+**Deterministic aspects (1-3, script-backed)** — pipe the script's stdout to the fragment file, then register it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:{script} \
+  run --plan-id {plan_id} --mode {live|archived} > work/fragment-{aspect}.toon
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
+  add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
+```
+
+**LLM aspects (4-9 and 11)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
+  add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
+```
+
+**Aspect 10 (chat-history, conditional)** — when `--session-id` is present, follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
 
 ### Step 4: Compile Report
 
-Script: `plan-marshall:plan-retrospective:compile-report`. Accepts an input bundle of aspect TOON fragments and writes the report markdown file to the correct location per mode.
+Finalize the fragment bundle and pass it to `compile-report run`. `collect-fragments finalize` prints the `bundle_path` and the list of registered aspects in its TOON output; use that path as the `--fragments-file` input to `compile-report`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
+  finalize --plan-id {plan_id}
+```
+
+Parse `bundle_path` from the TOON output, then:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:compile-report \
-  run --plan-id {plan_id} --mode {live|archived} --fragments-file {path_to_fragments.toon}
+  run --plan-id {plan_id} --mode {live|archived} --fragments-file {bundle_path}
 ```
 
 The script returns the report's absolute path and the list of sections written. Section order follows `references/report-structure.md`.
+
+**Cleanup**: `compile-report run` auto-deletes the fragment bundle after a successful report write. On failure paths (before the report is flushed to disk), the bundle is retained so the aspect fragments remain available for debugging.
 
 ### Step 5: Propose Lessons (optional, interactive)
 
