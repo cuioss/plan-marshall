@@ -398,7 +398,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 After all tasks are created, scan each `task.description` for planning-domain keywords that the author may have substituted for the deliverable's actual semantics. For each task:
 
 1. Build a deny-list of planning-domain keywords: `PR review`, `CI`, `merge comments`, `pipeline`, `automated review`, `build check`, `review comments`.
-2. Build an outline-text haystack: concatenate the parent deliverable's Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text.
+2. Build an outline-text haystack: concatenate the parent deliverable's Title, Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text.
 3. For each keyword present in the `description` but ABSENT from the haystack, emit a warning Q-Gate finding:
 
 ```bash
@@ -415,12 +415,12 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 After all tasks are created, scan each `task.description` for structural tokens that are not present in the parent deliverable body. Structural tokens are numeric literals, flag-style tokens, and quoted identifiers — the same three categories defined in Step 6 mitigation 3 ("Structural-token preservation"). This check catches silent regularization of structural data (e.g. `990 / 1000` rewritten as `90 / 100`) that the Keyword-drift check does not cover.
 
-1. Build an outline-text haystack: concatenate the parent deliverable's Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text. (This is identical to the haystack used by the Keyword-drift check above.)
+1. Build an outline-text haystack: concatenate the parent deliverable's Title, Metadata, Intent gloss, Profiles, Affected files, Change per file, Verification, and Success Criteria sections as plain text. The Title is included because mitigation 1 requires `task.description` to begin with a verbatim title quote — any structural tokens in the title must therefore also be present in the haystack, otherwise they surface as false-positive drift findings.
 2. Extract structural tokens from `task.description`:
    - **Numeric literals** (e.g. `990`, `1000`, `85`, `3.14`) — integers and decimals appearing as standalone tokens.
    - **Flag-style tokens** (e.g. `--plan-id`, `--name`, `order:`, `priority:`) — CLI flags and TOON/YAML field prefixes.
-   - **Quoted identifiers** — backticked, single-quoted, or double-quoted strings.
-3. For each extracted token present in `task.description` but ABSENT from the haystack, emit a warning Q-Gate finding:
+   - **Quoted identifiers** — single-quoted or double-quoted strings. (Backticks are stripped from `task.description` at creation time per the Shell Metacharacter Sanitization rule in Step 6, so backticked tokens never appear in the description and are not part of this extraction.)
+3. For each extracted token present in `task.description` but ABSENT from the haystack (using anchored matching with word boundaries to prevent substring collisions — e.g. the token `90` must not match `990` in the haystack), emit a warning Q-Gate finding:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
