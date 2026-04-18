@@ -256,3 +256,19 @@ Test doubles substitute real dependencies in unit tests. Choose the simplest dou
 | Over-mocking | Tests prove mocks work, not code | Mock at boundaries only, prefer real collaborators |
 | Mocking by default | Mock libraries add complexity and hide bugs | Only use mocks when they save significant setup; prefer real objects, fakes, or in-memory implementations |
 | Testing implementation | Brittle tests break on refactoring | Test behavior, not implementation |
+| Pinning known-wrong behaviour as a "documented limitation" | A test that asserts the bug creates friction against fixing it — the test itself becomes the obstacle to the improvement | Assert the *correct* behaviour and mark the test expected-to-fail (see below) or skipped with a TODO; never assert the wrong behaviour |
+
+### Surfacing limitations without locking them in
+
+When writing tests surfaces a real limitation in the code under test (e.g. a comparator that uses substring matching where boundary matching is required), resist the temptation to write a test that asserts the broken behaviour and label it a "documented limitation". Such a test does not express intent — it expresses a workaround masquerading as intent, and a future reviewer wanting to fix the bug must argue both for the fix and for deleting the test that "proves" the bug is intentional.
+
+Instead:
+
+1. **Fix the limitation in the same task** if the fix is small (a handful of lines) and the code path is already being touched.
+2. **Write a test that asserts the *correct* behaviour** even if the code currently fails it, and mark it expected-to-fail with a clear TODO referencing where the fix will land. Use the language's idiom for expected failure:
+   * Python / pytest: `pytest.xfail("TODO: fix boundary matching — see LESSON-nnnn")` or `@pytest.mark.skip(reason="…")`.
+   * JUnit 5: `Assumptions.abort("TODO: …")` or `@Disabled("TODO: …")`.
+   * Jest / Vitest: `test.failing("…")` or `test.skip("…")` with a TODO comment.
+3. **Surface the limitation up the chain** — record it in a lesson, a PR body, or an issue — so the follow-up is tracked. Do not encode it as a regression test that future-you has to argue against.
+
+Signals that the anti-pattern is about to be committed: the test name contains phrases like "documented limitation", "known behaviour", "future-work", or "trade-off"; the test's docstring explains *why* the assertion is intentionally wrong; the rationale claims an alternative implementation "would be a breaking change" for the test. When reviewing, ask: would the author still write this test if the underlying bug were fixed five minutes before the review? If the answer is "no, the test would be deleted", the test does not deserve to land.
