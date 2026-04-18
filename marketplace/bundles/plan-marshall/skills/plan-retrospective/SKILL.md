@@ -86,7 +86,7 @@ Capture the manifest TOON for later aspects.
 
 ### Step 3: Dispatch Aspects (in order)
 
-Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode writes to an OS tmp directory so the archived plan stays read-only. Capture the returned `bundle_path` for use in Step 4.
+Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode writes to an OS tmp directory so the archived plan stays read-only. Capture the returned `bundle_path` for use in Step 4. The mode is persisted into the bundle by `init`, so subsequent register and finalize calls read it back automatically and accept only `--plan-id` and the fragment inputs.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \

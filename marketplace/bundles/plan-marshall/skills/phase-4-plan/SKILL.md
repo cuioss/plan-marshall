@@ -48,6 +48,16 @@ Skill: plan-marshall:dev-general-practices
 - Validation rejects tasks with non-file-path steps
 - Exception: `verification` profile tasks use verification commands as steps (file-path validation is skipped)
 
+### Test Helper File Naming
+
+When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before calling `manage-tasks add`. Only the two repository-wide `conftest.py` files listed in the allow-list below are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
+
+**Allow-list** (MUST NOT be duplicated or added to by task steps):
+- `test/conftest.py`
+- `test/adapters/conftest.py`
+
+If a deliverable's `Affected files` list names a disallowed `conftest.py`, phase-4-plan MUST rewrite the target to `_fixtures.py` (preserving the parent directory) before persisting the step. Cross-reference: phase-3-outline owns the outline-time rule and rationale in [outline-workflow-detail.md §10d "Test Helper File Naming"](../phase-3-outline/standards/outline-workflow-detail.md#10d-test-helper-file-naming); this subsection enforces the same constraint at task-creation time so that any late-surviving `conftest.py` target is corrected before tasks reach phase-5-execute.
+
 ## Input
 
 | Parameter | Type | Required | Description |

@@ -25,16 +25,12 @@ Syncs all bundles after making changes to marketplace components.
 
 ### Step 1: Identify Bundles and Versions
 
-Find all bundles and extract their versions from plugin.json:
+Enumerate bundles and their plugin.json versions by invoking the helper script:
 ```bash
-for bundle in marketplace/bundles/*/; do
-  name=$(basename "$bundle")
-  version=$(python3 -c "import json; print(json.load(open('${bundle}.claude-plugin/plugin.json'))['version'])" 2>/dev/null || echo "unknown")
-  echo "$name:$version"
-done
+python3 .claude/skills/sync-plugin-cache/scripts/list_bundles_and_versions.py
 ```
 
-This outputs bundle:version pairs like `{bundle}:{version}`.
+The script prints a TOON `bundles[N]{name,version}` table — each row is `{bundle}`,`{version}`. Bundles whose `plugin.json` is missing or malformed emit `version: unknown`. Parse the rows and reuse the `{bundle}` / `{version}` pairs as template substitutions in Step 3.
 
 ### Step 2: Determine Cache Location
 

@@ -90,6 +90,21 @@ Typical groups:
 * Corner cases / edge cases
 * Error paths
 
+## Test Helper Module Organization
+
+Private helper modules co-located with tests (shared fixtures, factory helpers, utility functions used across multiple test files) MUST be named so that they do not collide with any framework-reserved test-collection module name. Framework-reserved names trigger implicit discovery or loading semantics that are reserved for the framework's own use; reusing such a name for a private helper causes subtle, silent breakage that is hard to diagnose.
+
+### Rules
+
+* **Never name a helper module after a framework-reserved collection module.** Reserved names are owned by the test framework and are resolved by name through framework-specific search rules (e.g., nearest-ancestor lookup). A helper that happens to match a reserved name can shadow the project-root module of the same name from subdirectories, silently replacing the intended module for tests below that directory.
+* **Canonical helper module name: `_fixtures.py`** (or the direct-equivalent spelling in the target language, e.g., `_fixtures.js`, `_Fixtures.java`). The leading underscore signals "private helper, not a test target" and keeps the module out of any auto-discovery pattern that matches on `test_*` / `*_test` / `*Test` names.
+* Prefer a short, descriptive unqualified name with the underscore prefix over framework-specific conventions that collide with reserved names. If a helper needs further specialization, use a descriptive suffix (`_fixtures_http.py`, `_fixtures_db.py`) rather than layering more reserved names.
+* The shadowing-avoidance rationale is the load-bearing constraint — it is the reason the rule exists, not a stylistic preference. Placing a helper with a reserved name in a subdirectory causes the framework's nearest-ancestor resolution to pick up the helper instead of the project-root module, breaking every test below that directory.
+
+### Language/framework-specific detail
+
+For the pytest-specific resolution behavior (how pytest discovers `conftest.py` via nearest-ancestor walk, and why a subdirectory `conftest.py` shadows the project-root `conftest.py`), see `pm-dev-python:pytest-testing` — `standards/testing-pytest.md`. That document contains the authoritative pytest resolution detail and the concrete diagnosis checklist when shadowing is suspected. This section defines the language-agnostic rule; the pytest skill documents the framework-specific mechanics.
+
 ## Test Naming
 
 Test names should describe the expected behavior:
@@ -256,3 +271,19 @@ Test doubles substitute real dependencies in unit tests. Choose the simplest dou
 | Over-mocking | Tests prove mocks work, not code | Mock at boundaries only, prefer real collaborators |
 | Mocking by default | Mock libraries add complexity and hide bugs | Only use mocks when they save significant setup; prefer real objects, fakes, or in-memory implementations |
 | Testing implementation | Brittle tests break on refactoring | Test behavior, not implementation |
+| Pinning known-wrong behavior as a "documented limitation" | A test that asserts the bug creates friction against fixing it — the test itself becomes the obstacle to the improvement | Assert the *correct* behavior and mark the test expected-to-fail (see below) or skipped with a TODO; never assert the wrong behavior |
+
+### Surfacing limitations without locking them in
+
+When writing tests surfaces a real limitation in the code under test (e.g. a comparator that uses substring matching where boundary matching is required), resist the temptation to write a test that asserts the broken behavior and label it a "documented limitation". Such a test does not express intent — it expresses a workaround masquerading as intent, and a future reviewer wanting to fix the bug must argue both for the fix and for deleting the test that "proves" the bug is intentional.
+
+Instead:
+
+1. **Fix the limitation in the same task** if the fix is small (a handful of lines) and the code path is already being touched.
+2. **Write a test that asserts the *correct* behavior** even if the code currently fails it, and mark it expected-to-fail with a clear TODO referencing where the fix will land. Use the language's idiom for expected failure:
+   * Python / pytest: `@pytest.mark.xfail(reason="TODO: fix boundary matching — see LESSON-nnnn")` (preferred — reports `XPASS` when the bug is fixed) or `@pytest.mark.skip(reason="…")`.
+   * JUnit 5: `Assumptions.abort("TODO: …")` or `@Disabled("TODO: …")`.
+   * Jest: `test.skip("TODO: …")` with a TODO comment (Jest has no native expected-fail marker). Vitest: `test.fails("…")` runs the test and records it as a known failure.
+3. **Surface the limitation up the chain** — record it in a lesson, a PR body, or an issue — so the follow-up is tracked. Do not encode it as a regression test that future-you has to argue against.
+
+Signals that the anti-pattern is about to be committed: the test name contains phrases like "documented limitation", "known behavior", "future-work", or "trade-off"; the test's docstring explains *why* the assertion is intentionally wrong; the rationale claims an alternative implementation "would be a breaking change" for the test. When reviewing, ask: would the author still write this test if the underlying bug were fixed five minutes before the review? If the answer is "no, the test would be deleted", the test does not deserve to land.

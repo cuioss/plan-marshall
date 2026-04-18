@@ -57,6 +57,27 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files exists \
 
 If `exists: true`, the rename mapping has already been applied to task step targets at recording time (by the `rename-path` subcommand). No further action needed — proceed to Load Task Context. The mapping file serves as an audit trail of path changes during the plan.
 
+### Step: Rewrite shadow-risk conftest targets
+
+After resolving stale targets and BEFORE loading the task context, inspect every pending `step.target` on the incoming task. If a target matches the regex `test/.+/conftest\.py$` (a sibling `conftest.py` nested under a skill test directory) AND the full path is NOT in the allow-list below, rewrite the target in-place to the sibling `_fixtures.py` before execution.
+
+**Allow-list** (these paths are the canonical top-level conftests and MUST NOT be rewritten):
+
+- `test/conftest.py`
+- `test/adapters/conftest.py`
+
+**Rewrite rule**: Replace the trailing `conftest.py` segment with `_fixtures.py`, keeping the parent directory unchanged. For example, `test/plan-marshall/execute-task/conftest.py` becomes `test/plan-marshall/execute-task/_fixtures.py`.
+
+**Decision log requirement**: For each rewrite, emit a decision.log entry via `plan-marshall:manage-logging:manage-logging` using the exact command below:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:execute-task) Deviation: rewrote {original_path} → {rewritten_path} (reason: sibling conftest.py would shadow top-level test/conftest.py)"
+```
+
+**Rationale**: A sibling `conftest.py` placed under `test/<bundle>/<skill>/` is auto-loaded by pytest and will shadow the top-level `test/conftest.py`, silently disabling shared fixtures and producing misleading green runs. The canonical convention is a sibling `_fixtures.py` imported explicitly where needed. See `plan-marshall:dev-general-module-testing` for the authoritative `_fixtures.py` convention and the reasoning behind the allow-list.
+
 ### Step: Load Task Context
 
 ```bash
