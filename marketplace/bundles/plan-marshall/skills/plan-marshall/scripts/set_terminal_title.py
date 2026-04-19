@@ -72,14 +72,13 @@ def _walk_up_for_plan(start: Path) -> Path | None:
 def _resolve_status_file(cwd: str, plan_id: str) -> Path | None:
     common_dir = _git_common_dir(cwd)
     if common_dir is not None:
-        repo_root = common_dir.parent
-        candidate = repo_root / ".plan" / "local" / "plans" / plan_id / "status.json"
+        candidate = common_dir.parent / ".plan" / "local" / "plans" / plan_id / "status.json"
         if candidate.is_file():
             return candidate
-    repo_root = _walk_up_for_plan(Path(cwd))
-    if repo_root is None:
+    walk_root = _walk_up_for_plan(Path(cwd))
+    if walk_root is None:
         return None
-    candidate = repo_root / ".plan" / "local" / "plans" / plan_id / "status.json"
+    candidate = walk_root / ".plan" / "local" / "plans" / plan_id / "status.json"
     return candidate if candidate.is_file() else None
 
 
