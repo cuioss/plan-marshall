@@ -636,5 +636,225 @@ def test_checklist_sections_extracted():
 
 
 # =============================================================================
+# Markdown Subcommand Tests - mark-step-done Argument Validation
+# =============================================================================
+
+
+def _canonical_mark_step_done_block(extra_args: str = '') -> str:
+    """Build a canonical (correct) mark-step-done bash fence.
+
+    Uses the underscored notation ``manage-status:manage_status`` and always
+    supplies ``--phase`` and ``--outcome``. Callers can inject additional args
+    via ``extra_args`` (appended after the required ones) for variants that
+    should still be considered canonical.
+    """
+
+    return (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
+        '--step my-step --display-detail "ok"' + (f' {extra_args}' if extra_args else '') + '\n'
+        '```\n'
+    )
+
+
+def _mark_step_done_codes(violations: list) -> list:
+    """Extract the ``code`` field from each violation entry for easy assertion."""
+
+    return [v.get('code') for v in violations]
+
+
+def test_mark_step_done_bad_notation_detected():
+    """Hyphenated `manage-status:manage-status` notation triggers BAD_NOTATION."""
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+        'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
+        '--step s --display-detail "x"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        codes = _mark_step_done_codes(violations)
+        assert codes.count('MARK_STEP_DONE_BAD_NOTATION') == 1, (
+            f'Expected exactly one BAD_NOTATION finding, got codes={codes}'
+        )
+    finally:
+        temp_file.unlink()
+
+
+def test_mark_step_done_missing_phase_detected():
+    """Canonical-notation invocation without --phase triggers MISSING_PHASE."""
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'mark-step-done --plan-id foo --outcome done '
+        '--step s --display-detail "x"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        codes = _mark_step_done_codes(violations)
+        assert codes.count('MARK_STEP_DONE_MISSING_PHASE') == 1, (
+            f'Expected exactly one MISSING_PHASE finding, got codes={codes}'
+        )
+        # Canonical notation + outcome present → no other defect codes expected.
+        assert 'MARK_STEP_DONE_BAD_NOTATION' not in codes
+        assert 'MARK_STEP_DONE_MISSING_OUTCOME' not in codes
+    finally:
+        temp_file.unlink()
+
+
+def test_mark_step_done_missing_outcome_detected():
+    """Canonical-notation invocation without --outcome triggers MISSING_OUTCOME."""
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'mark-step-done --plan-id foo --phase 6-finalize '
+        '--step s --display-detail "x"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        codes = _mark_step_done_codes(violations)
+        assert codes.count('MARK_STEP_DONE_MISSING_OUTCOME') == 1, (
+            f'Expected exactly one MISSING_OUTCOME finding, got codes={codes}'
+        )
+        assert 'MARK_STEP_DONE_BAD_NOTATION' not in codes
+        assert 'MARK_STEP_DONE_MISSING_PHASE' not in codes
+    finally:
+        temp_file.unlink()
+
+
+def test_mark_step_done_canonical_form_no_findings():
+    """Fully canonical mark-step-done invocation produces zero findings."""
+    content = _canonical_mark_step_done_block()
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        assert violations == [], f'Canonical form should yield no findings, got {violations!r}'
+    finally:
+        temp_file.unlink()
+
+
+def test_mark_step_done_non_bash_fence_no_false_positive():
+    """`mark-step-done` inside a non-bash fence or plain prose is ignored."""
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Background\n\n'
+        'The old habit was to call mark-step-done with hyphen notation like '
+        '`plan-marshall:manage-status:manage-status mark-step-done` in prose — '
+        'we now warn about it only inside bash fences.\n\n'
+        '```text\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+        'mark-step-done --plan-id foo\n'
+        '```\n\n'
+        '```python\n'
+        '# Commentary-only python block also mentions mark-step-done but must not trigger.\n'
+        'cmd = "mark-step-done"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        assert violations == [], (
+            f'Non-bash fences and prose should not trigger mark-step-done rule, got {violations!r}'
+        )
+    finally:
+        temp_file.unlink()
+
+
+def test_mark_step_done_multiline_continuation_assembled():
+    """Backslash-continued invocation is assembled so --phase/--outcome on later lines are seen."""
+    # Canonical notation split across three lines via trailing backslash
+    # continuation. --phase and --outcome live on continuation lines, so the
+    # single-line check would miss them; the rule must assemble the full
+    # invocation before evaluating MISSING_PHASE / MISSING_OUTCOME.
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \\\n'
+        '  mark-step-done --plan-id foo \\\n'
+        '  --phase 6-finalize \\\n'
+        '  --outcome done --step s --display-detail "x"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        assert violations == [], (
+            f'Multi-line canonical invocation should produce no findings once assembled, got {violations!r}'
+        )
+    finally:
+        temp_file.unlink()
+
+
+def test_mark_step_done_multiline_continuation_detects_bad_notation():
+    """Bad notation on a continuation line after `mark-step-done` is still caught after assembly.
+
+    The rule anchors on the line that contains ``mark-step-done`` and walks
+    forward over trailing-backslash continuations to assemble the full
+    invocation. This test pins that forward-assembly behaviour: the offending
+    hyphenated notation appears on a continuation line below the anchor line,
+    yet the rule must still flag BAD_NOTATION on the anchor line.
+    """
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py mark-step-done \\\n'
+        '  --notation plan-marshall:manage-status:manage-status \\\n'
+        '  --plan-id foo --phase 6-finalize --outcome done \\\n'
+        '  --step s --display-detail "x"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        codes = _mark_step_done_codes(violations)
+        assert codes.count('MARK_STEP_DONE_BAD_NOTATION') == 1, (
+            f'Expected exactly one BAD_NOTATION finding across continuation lines, got codes={codes}'
+        )
+        # --phase and --outcome are present on the continuation → no MISSING_* codes.
+        assert 'MARK_STEP_DONE_MISSING_PHASE' not in codes
+        assert 'MARK_STEP_DONE_MISSING_OUTCOME' not in codes
+    finally:
+        temp_file.unlink()
+
+
+# =============================================================================
 # Main
 # =============================================================================
