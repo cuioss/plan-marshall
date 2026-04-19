@@ -7,40 +7,11 @@ Provides common fixtures and utilities used across all test modules.
 import json
 from pathlib import Path
 
-import pytest
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import get_script_path
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')
-
-
-def patch_config_paths(monkeypatch: pytest.MonkeyPatch, fixture_dir: Path) -> None:
-    """Redirect ``_config_core`` module-level paths for direct import (Tier 2) tests.
-
-    ``_config_core`` computes ``PLAN_BASE_DIR`` and ``MARSHAL_PATH`` at
-    import time from the ``PLAN_BASE_DIR`` env var. Since tests change
-    this env var per ``PlanContext``, we redirect the module-level
-    constants to match. Using ``monkeypatch.setattr`` (instead of the
-    previous bare attribute assignment) ensures the override is undone
-    at test teardown — no leak into sibling tests or real host paths.
-
-    Callers MUST pass in the test's ``monkeypatch`` fixture. Direct
-    attribute assignment to ``_config_core`` module constants is no
-    longer supported — it bypassed restoration and could leave stale
-    paths pointing into a ``PlanContext`` fixture directory after it was
-    torn down.
-
-    Args:
-        monkeypatch: The pytest ``monkeypatch`` fixture from the test.
-        fixture_dir: The ``PlanContext`` fixture directory (``ctx.fixture_dir``).
-    """
-    import _config_core
-
-    monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', fixture_dir)
-    monkeypatch.setattr(_config_core, 'MARSHAL_PATH', fixture_dir / 'marshal.json')
-    monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', fixture_dir / 'run-configuration.json')
 
 
 def create_run_config(fixture_dir: Path, config: dict | None = None) -> Path:

@@ -180,7 +180,7 @@ def _add_task_empty(plan_id, slot=None):
 
 def _get_ns(plan_id='test-plan', number=1):
     """Build Namespace for cmd_get."""
-    return Namespace(plan_id=plan_id, number=number)
+    return Namespace(plan_id=plan_id, task=number)
 
 
 def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False):
@@ -208,7 +208,7 @@ def _update_ns(
     """Build Namespace for cmd_update."""
     return Namespace(
         plan_id=plan_id,
-        number=number,
+        task=number,
         title=title,
         description=description,
         depends_on=depends_on,
@@ -222,7 +222,7 @@ def _update_ns(
 
 def _remove_ns(plan_id='test-plan', number=1):
     """Build Namespace for cmd_remove."""
-    return Namespace(plan_id=plan_id, number=number)
+    return Namespace(plan_id=plan_id, task=number)
 
 
 def _finalize_step_ns(plan_id='test-plan', task=1, step=1, outcome='done', reason=None):

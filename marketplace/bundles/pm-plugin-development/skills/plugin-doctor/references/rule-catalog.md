@@ -63,6 +63,62 @@ Four detection modes:
 
 **checklist-pattern**: Checkbox patterns (`- [ ]`, `- [x]`) in LLM-consumed files. These are human UI elements with zero value for LLMs. Exception: files in `/templates/` directories (rendered by GitHub).
 
+## Phase-6 Finalize Step Termination
+
+Three rules guard against defective `mark-step-done` invocations inside marketplace skill/agent markdown. They fire on any bash code fence that references `mark-step-done` and inspect the single logical invocation (including backslash-continued continuation lines). Each defect code is emitted independently, so a single malformed invocation may produce multiple findings.
+
+**Rationale**: Phase-6 finalize step termination is a silent-failure surface. A mistyped notation resolves to a non-existent script and is swallowed by the executor; a missing `--phase` routes the termination to the wrong phase record; a missing `--outcome` leaves the step in an ambiguous `in_progress` state even though the workflow believes it completed. Static detection in plugin-doctor is the cheapest way to catch these errors before they ship.
+
+**MARK_STEP_DONE_BAD_NOTATION** (severity: error): The invocation line contains the hyphenated notation `manage-status:manage-status` instead of the canonical underscored form `manage-status:manage_status`. The executor uses notation segments as literal keys — the hyphenated form simply does not resolve. Detection is a substring check on every line of the invocation (including continuation lines, since the notation often lives on the command line itself).
+
+Incorrect:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --phase phase-6-finalize --outcome done
+```
+
+Correct:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  mark-step-done --phase phase-6-finalize --outcome done
+```
+
+**MARK_STEP_DONE_MISSING_PHASE** (severity: error): The full `mark-step-done` invocation (single line or backslash-continued multi-line) does not contain `--phase`. Without it, the status manager cannot route the step termination to the correct phase record, and finalize-phase orchestration reads stale status.
+
+Incorrect:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  mark-step-done --outcome done
+```
+
+Correct:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  mark-step-done --phase phase-6-finalize --outcome done
+```
+
+**MARK_STEP_DONE_MISSING_OUTCOME** (severity: error): The full invocation does not contain `--outcome`. Without an explicit outcome (e.g. `done`, `skipped`, `deferred`), the step cannot be definitively terminated and the phase status entry remains ambiguous.
+
+Incorrect:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  mark-step-done --phase phase-6-finalize
+```
+
+Correct:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
+  mark-step-done --phase phase-6-finalize --outcome done
+```
+
+Detection lives in `_analyze_markdown.py::check_mark_step_done_violations`; findings are surfaced through the standard markdown reporting channel in `_doctor_analysis.py::extract_issues_from_markdown_analysis` with the defect code as the issue `type`.
+
 ## PM-Workflow Rules
 
 **pm-implicit-script-call** (PM-001): Script operations without explicit bash code blocks.
