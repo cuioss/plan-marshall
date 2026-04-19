@@ -508,43 +508,33 @@ def isolated_credentials(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def isolated_run_config(tmp_path, monkeypatch):
-    """Redirect run-configuration.json writes to a per-test tmp directory.
-
-    Patches ``_config_core.PLAN_BASE_DIR``, ``_config_core.MARSHAL_PATH`` and
-    ``_config_core.RUN_CONFIG_PATH`` via ``monkeypatch.setattr`` so in-process
-    callers write under ``tmp_path``. Also sets ``PLAN_BASE_DIR`` via
-    ``monkeypatch.setenv`` so subprocess invocations inherit the same redirect.
-
-    Yields ``tmp_path`` (the redirected plan base directory).
-    """
-    import _config_core  # type: ignore[import-not-found]
-    monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
-    monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / 'marshal.json')
-    monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', tmp_path / 'run-configuration.json')
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
-    return tmp_path
-
-
-@pytest.fixture
-def plan_context(tmp_path):
+def plan_context(tmp_path, monkeypatch):
     """
     Pytest fixture for plan-based tests.
 
     Creates a plan directory structure and sets up the PLAN_BASE_DIR environment
-    variable. Automatically cleans up after the test.
+    variable. Also redirects ``_config_core.PLAN_BASE_DIR``, ``_config_core.MARSHAL_PATH``
+    and ``_config_core.RUN_CONFIG_PATH`` via ``monkeypatch.setattr`` so in-process
+    callers resolve against ``tmp_path`` instead of the real repo-local paths.
+    Automatically cleans up after the test.
+
+    ``_config_core`` is imported lazily inside the fixture body to avoid
+    top-level import cycles during test bootstrap.
 
     Yields:
-        PlanContext: Context object with fixture_dir, plan_id, and plan_dir attributes
+        Context: Context object with fixture_dir, plan_id, and plan_dir attributes
     """
     plan_id = 'pytest-test'
     plan_dir = tmp_path / 'plans' / plan_id
     plan_dir.mkdir(parents=True)
 
-    original_base = os.environ.get('PLAN_BASE_DIR')
-    original_name = os.environ.get('PLAN_DIR_NAME')
-    os.environ['PLAN_BASE_DIR'] = str(tmp_path)
-    os.environ['PLAN_DIR_NAME'] = PLAN_DIR_NAME
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('PLAN_DIR_NAME', PLAN_DIR_NAME)
+
+    import _config_core  # type: ignore[import-not-found]
+    monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+    monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / 'marshal.json')
+    monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', tmp_path / 'run-configuration.json')
 
     class Context:
         def __init__(self):
@@ -553,15 +543,6 @@ def plan_context(tmp_path):
             self.plan_dir = plan_dir
 
     yield Context()
-
-    if original_base is None:
-        os.environ.pop('PLAN_BASE_DIR', None)
-    else:
-        os.environ['PLAN_BASE_DIR'] = original_base
-    if original_name is None:
-        os.environ.pop('PLAN_DIR_NAME', None)
-    else:
-        os.environ['PLAN_DIR_NAME'] = original_name
 
 
 @pytest.fixture
@@ -661,6 +642,10 @@ class PlanContext:
 
     __test__ = False  # Not a test class - prevent pytest collection warning
 
+    # Sentinel used to distinguish "attribute was missing" from "attribute was None"
+    # in the _config_core save/restore book-keeping.
+    _MISSING = object()
+
     def __init__(self, plan_id: str = 'test-plan'):
         """
         Initialize the test context.
@@ -673,6 +658,10 @@ class PlanContext:
         self.plan_dir: Path | None = None
         self._original_plan_base_dir: str | None = None
         self._is_standalone: bool = False
+        # Book-keeping for _config_core attribute restoration. Populated in
+        # __enter__ so the module stays lazily imported.
+        self._config_core_module: Any = None
+        self._config_core_saved: dict[str, Any] = {}
 
     def __enter__(self) -> 'PlanContext':
         """Set up the test context."""
@@ -689,10 +678,39 @@ class PlanContext:
         os.environ['PLAN_BASE_DIR'] = str(self.fixture_dir)
         os.environ['PLAN_DIR_NAME'] = PLAN_DIR_NAME
 
+        # Redirect _config_core module-level paths so in-process callers
+        # resolve against the fixture tree instead of the real repo-local
+        # .plan/local/. Imported lazily to avoid top-level import cycles
+        # during test bootstrap. Save originals for restoration in __exit__.
+        import _config_core  # type: ignore[import-not-found]
+        self._config_core_module = _config_core
+        overrides = {
+            'PLAN_BASE_DIR': self.fixture_dir,
+            'MARSHAL_PATH': self.fixture_dir / 'marshal.json',
+            'RUN_CONFIG_PATH': self.fixture_dir / 'run-configuration.json',
+        }
+        for attr, new_value in overrides.items():
+            self._config_core_saved[attr] = getattr(_config_core, attr, self._MISSING)
+            setattr(_config_core, attr, new_value)
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Clean up the test context."""
+        # Restore _config_core attributes first so any teardown code that
+        # touches it sees the original values.
+        if self._config_core_module is not None:
+            for attr, saved in self._config_core_saved.items():
+                if saved is self._MISSING:
+                    try:
+                        delattr(self._config_core_module, attr)
+                    except AttributeError:
+                        pass
+                else:
+                    setattr(self._config_core_module, attr, saved)
+            self._config_core_saved = {}
+            self._config_core_module = None
+
         # Clean up the plan_dir to ensure test isolation
         # (when via runner, fixture_dir is shared but each test should get fresh plan_dir)
         if self.plan_dir and self.plan_dir.exists():
