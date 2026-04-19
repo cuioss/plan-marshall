@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from collections import Counter
@@ -34,7 +35,15 @@ from file_ops import base_path, output_toon, safe_main  # type: ignore[import-no
 # Recognized log level tokens in the work/decision logs.
 _LEVELS = ('INFO', 'WARN', 'ERROR')
 
+# Level tokens also appear as bracketed [LEVEL] tokens inside the production
+# log shape; ``extract_tags`` filters them out so only category tags like
+# [STATUS] / [ARTIFACT] / [VERIFY] surface in the counter.
+_LEVEL_TOKENS = frozenset(_LEVELS)
+
 # Regex to extract ``[TAG]`` square-bracket prefixes from work-log messages.
+# Production work-log lines are shaped ``[ts] [LEVEL] [hash] [CATEGORY] ...``
+# so a plain ``search`` returns ``LEVEL`` and never sees ``CATEGORY``; the
+# consumers use ``findall`` and drop level tokens instead.
 _TAG_RE = re.compile(r'\[([A-Z]+)\]')
 
 # Regex for work/decision phase markers. Phase names match the 6-phase
@@ -49,19 +58,47 @@ _DURATION_RE = re.compile(r'\((\d+\.?\d*)s\)')
 _NOTATION_RE = re.compile(r'([a-z][\w-]*:[\w-]+:[\w-]+)')
 
 
-def resolve_logs_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
-    """Resolve the plan's ``logs/`` directory."""
+def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
+    """Resolve the plan directory for ``mode``."""
     if mode == 'live':
         if not plan_id:
             raise ValueError('--plan-id is required for live mode')
-        plan_dir = base_path('plans', plan_id)
-    elif mode == 'archived':
+        return base_path('plans', plan_id)
+    if mode == 'archived':
         if not archived_plan_path:
             raise ValueError('--archived-plan-path is required for archived mode')
-        plan_dir = Path(archived_plan_path)
-    else:
-        raise ValueError(f"Unknown mode: {mode!r}")
-    return plan_dir / 'logs'
+        return Path(archived_plan_path)
+    raise ValueError(f"Unknown mode: {mode!r}")
+
+
+def resolve_logs_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
+    """Resolve the plan's ``logs/`` directory."""
+    return resolve_plan_dir(mode, plan_id, archived_plan_path) / 'logs'
+
+
+def read_modified_files(plan_dir: Path) -> list[str]:
+    """Return the ``modified_files`` list from ``references.json``.
+
+    A missing or unreadable references file is treated as an empty list so the
+    regression check cannot falsely fire for plans that simply never recorded
+    references. This mirrors the defensive reads elsewhere in the
+    retrospective pipeline.
+    """
+    references_path = plan_dir / 'references.json'
+    if not references_path.exists():
+        return []
+    try:
+        refs = json.loads(references_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(
+            f'WARN: analyze-logs failed to read references.json: {exc}',
+            file=sys.stderr,
+        )
+        return []
+    raw = refs.get('modified_files', [])
+    if isinstance(raw, str):
+        raw = [raw]
+    return [str(p).strip() for p in raw if p]
 
 
 def read_log(path: Path) -> list[str]:
@@ -91,24 +128,33 @@ def read_log(path: Path) -> list[str]:
 
 
 def count_levels(lines: list[str]) -> dict[str, int]:
-    """Count ``INFO``/``WARN``/``ERROR`` occurrences across lines."""
+    """Count ``INFO``/``WARN``/``ERROR`` occurrences across lines.
+
+    Matches the bracketed production shape ``[LEVEL]`` emitted by
+    ``manage-logging``. At most one level contributes per line.
+    """
     counts = dict.fromkeys(_LEVELS, 0)
     for line in lines:
         for level in _LEVELS:
-            # Level tokens appear as whole words after the timestamp.
-            if f' {level} ' in line:
+            if f'[{level}]' in line:
                 counts[level] += 1
                 break
     return counts
 
 
 def extract_tags(lines: list[str]) -> list[str]:
-    """Extract every ``[TAG]`` prefix found in log lines."""
+    """Extract every category ``[TAG]`` occurrence across log lines.
+
+    Production work-log lines carry multiple bracketed uppercase tokens
+    (``[LEVEL]`` plus one or more ``[CATEGORY]`` tokens), so every match
+    per line is collected and level tokens are filtered out afterwards.
+    """
     tags: list[str] = []
     for line in lines:
-        match = _TAG_RE.search(line)
-        if match:
-            tags.append(match.group(1))
+        for tag in _TAG_RE.findall(line):
+            if tag in _LEVEL_TOKENS:
+                continue
+            tags.append(tag)
     return tags
 
 
@@ -164,7 +210,8 @@ def top_n(counter: Counter, n: int) -> list[dict[str, Any]]:
 
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
-    logs_dir = resolve_logs_dir(args.mode, args.plan_id, args.archived_plan_path)
+    plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
+    logs_dir = plan_dir / 'logs'
 
     work = read_log(logs_dir / 'work.log')
     decision = read_log(logs_dir / 'decision.log')
@@ -177,11 +224,23 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     tag_counter = Counter(tags)
     error_lines = [line for line in work if ' ERROR ' in line]
     error_tags = Counter(extract_tags(error_lines))
+    artifact_entries = tag_counter.get('ARTIFACT', 0)
 
     durations = extract_script_durations(script)
     duration_values = [ms for _, ms in durations]
     # Build slowest-scripts list deterministically: sort by duration desc, then notation.
     slowest = sorted(durations, key=lambda x: (-x[1], x[0]))[:3]
+
+    modified_files = read_modified_files(plan_dir)
+    findings: list[dict[str, str]] = []
+    if modified_files and artifact_entries == 0:
+        findings.append({
+            'severity': 'error',
+            'message': (
+                f'ARTIFACT entries missing: modified_files={len(modified_files)} '
+                f'but artifact_entries=0'
+            ),
+        })
 
     return {
         'status': 'success',
@@ -195,6 +254,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'errors_script': script_levels['ERROR'],
             'warnings_work': work_levels['WARN'],
             'warnings_script': script_levels['WARN'],
+            'artifact_entries': artifact_entries,
         },
         'phases_seen': extract_phases(work + decision),
         'script_duration_p50_ms': round(percentile(duration_values, 50.0), 3),
@@ -206,6 +266,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         ],
         'top_tags': top_n(tag_counter, 5),
         'top_error_tags': top_n(error_tags, 5),
+        'findings': findings,
     }
 
 

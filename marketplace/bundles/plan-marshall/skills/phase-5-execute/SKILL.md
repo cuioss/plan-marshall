@@ -348,6 +348,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[OUTCOME] (plan-marshall:phase-5-execute) Completed {task_id}: {task_title} ({steps_completed} steps)"
 ```
 
+Immediately after the `[OUTCOME]` line, emit one `[ARTIFACT]` work-log entry per file the task changed by diffing the task-start SHA (recorded at `in_progress` transition as `task_start_sha`) against the current HEAD. See `standards/workflow.md` § **Artifact Emission at Task Completion** for the authoritative procedure, status-code mapping, and rename-handling rule. The artifact entries use a deliberate three-segment caller prefix `(plan-marshall:phase-5-execute:{task_number})` — a documented exception to the usual two-segment `(bundle:skill)` convention in [manage-logging/standards/log-format.md](../manage-logging/standards/log-format.md). Emit nothing when the diff is empty. This step precedes `manage-tasks next` so the audit trail for each task is flushed before the orchestrator advances.
+
 ### Step 9: Independent Change Verification
 
 **Applies to**: `implementation` and `module_testing` profile tasks only. Skip this step for `verification` profile tasks.
