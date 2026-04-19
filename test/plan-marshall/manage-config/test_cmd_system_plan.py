@@ -13,7 +13,7 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from test_helpers import SCRIPT_PATH, create_marshal_json, patch_config_paths
+from test_helpers import SCRIPT_PATH, create_marshal_json
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
@@ -44,7 +44,6 @@ def test_system_retention_get(monkeypatch):
     """Test system retention get."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_system(Namespace(sub_noun='retention', verb='get'))
 
@@ -57,7 +56,6 @@ def test_system_retention_set(monkeypatch):
     """Test system retention set."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_system(Namespace(sub_noun='retention', verb='set', field='logs_days', value='7'))
 
@@ -74,7 +72,6 @@ def test_system_retention_set_boolean(monkeypatch):
     """Test system retention set with boolean value."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_system(
             Namespace(sub_noun='retention', verb='set', field='temp_on_maintenance', value='false')

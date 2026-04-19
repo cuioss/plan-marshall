@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     # update
     p_update = subparsers.add_parser('update', help='Update an existing task', allow_abbrev=False)
     add_plan_id_arg(p_update)
-    p_update.add_argument('--number', required=True, type=int, help='Task number')
+    p_update.add_argument('--task', required=True, type=int, help='Task number')
     p_update.add_argument('--title', help='New title')
     p_update.add_argument('--description', help='New description')
     p_update.add_argument('--depends-on', nargs='*', help='Update dependencies (TASK-N references or "none" to clear)')
@@ -106,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     # remove
     p_remove = subparsers.add_parser('remove', help='Remove a task', allow_abbrev=False)
     add_plan_id_arg(p_remove)
-    p_remove.add_argument('--number', required=True, type=int, help='Task number')
+    p_remove.add_argument('--task', required=True, type=int, help='Task number')
 
     # list
     p_list = subparsers.add_parser('list', help='List all tasks', allow_abbrev=False)
@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
     p_get = subparsers.add_parser('get', help='Get a single task', allow_abbrev=False)
     add_plan_id_arg(p_get)
-    p_get.add_argument('--number', required=True, type=int, help='Task number')
+    p_get.add_argument('--task', required=True, type=int, help='Task number')
 
     # next
     p_next = subparsers.add_parser('next', help='Get next pending task/step', allow_abbrev=False)

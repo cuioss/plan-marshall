@@ -201,7 +201,7 @@ Read the task file to understand what needs to be done:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
   --plan-id {plan_id} \
-  --number {task_number}
+  --task {task_number}
 ```
 
 Extract key fields:
@@ -261,7 +261,7 @@ Where `{resolve_command}` depends on the profile:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
   --plan-id {plan_id} \
-  --number {task_number} \
+  --task {task_number} \
   --status done
 ```
 
@@ -278,7 +278,7 @@ If still failing after max iterations:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
   --plan-id {plan_id} \
-  --number {task_number} \
+  --task {task_number} \
   --status blocked
 ```
 

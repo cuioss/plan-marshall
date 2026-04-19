@@ -108,33 +108,38 @@ This logging is REQUIRED for audit trail and debugging.
 
 ### Step 6: Create Optimized Tasks
 
-For aggregated deliverables or single deliverables, create tasks using `--content` with `\n`-encoded TOON or heredoc stdin.
+For aggregated deliverables or single deliverables, create tasks using the three-step path-allocate flow: (1) `prepare-add` allocates a scratch TOON file under `<plan>/work/pending-tasks/`, (2) the skill writes the task definition to that path with the Write tool, (3) `commit-add` validates and creates `TASK-NNN.json`. No multi-line content crosses the shell boundary.
 
 **CRITICAL**: The `steps` field MUST contain file paths copied from the deliverable's `Affected files` section.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} \
-  --content "$(cat <<'EOF'
-title: {Action Verb} {Target}: {Scope}
-deliverable: {n}
-domain: plan-marshall-plugin-dev
-phase: 5-execute
-description: {combined description}
-steps:
-  - marketplace/bundles/{bundle}/agents/{file1}.md
-  - marketplace/bundles/{bundle}/agents/{file2}.md
-depends_on: {TASK-N | none}
-delegation:
-  skill: {suggested_skill}
-  workflow: {suggested_workflow}
-  context_skills: {context_skills - MUST include even if empty []}
-verification:
-  commands:
-    - {verification.command}
-  criteria: {verification.criteria}
-EOF
-)"
+# Step 1: allocate a scratch path
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  prepare-add --plan-id {plan_id}
+# → returns {path: /abs/.../work/pending-tasks/default.toon}
+
+# Step 2: Write tool writes the TOON task definition to the returned path, e.g.:
+#   title: {Action Verb} {Target}: {Scope}
+#   deliverable: {n}
+#   domain: plan-marshall-plugin-dev
+#   phase: 5-execute
+#   description: {combined description}
+#   steps:
+#     - marketplace/bundles/{bundle}/agents/{file1}.md
+#     - marketplace/bundles/{bundle}/agents/{file2}.md
+#   depends_on: {TASK-N | none}
+#   delegation:
+#     skill: {suggested_skill}
+#     workflow: {suggested_workflow}
+#     context_skills: {context_skills - MUST include even if empty []}
+#   verification:
+#     commands:
+#       - {verification.command}
+#     criteria: {verification.criteria}
+
+# Step 3: commit — validates the file and creates TASK-NNN.json
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  commit-add --plan-id {plan_id}
 ```
 
 **Field mapping from deliverable to task**:
@@ -154,9 +159,34 @@ EOF
 **Example with real paths**:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id migrate-json-to-toon \
-  --content "title: Migrate plan-marshall Agents to TOON Format\ndeliverable: 2\ndomain: plan-marshall-plugin-dev\nphase: 5-execute\ndescription: Convert all JSON output blocks to TOON format in plan-marshall phase components.\nsteps:\n  - marketplace/bundles/plan-marshall/agents/phase-agent.md\n  - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md\n  - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md\n  - marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md\ndepends_on: TASK-1\ndelegation:\n  skill: pm-plugin-development:plugin-maintain\n  workflow: update-component\n  context_skills: []\nverification:\n  commands:\n    - grep -r '```json' marketplace/bundles/plan-marshall/agents/\n  criteria: Returns no matches (exit code 1)"
+# Step 1: allocate
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  prepare-add --plan-id migrate-json-to-toon
+
+# Step 2: Write tool writes the following TOON body to the returned path:
+#   title: Migrate plan-marshall Agents to TOON Format
+#   deliverable: 2
+#   domain: plan-marshall-plugin-dev
+#   phase: 5-execute
+#   description: Convert all JSON output blocks to TOON format in plan-marshall phase components.
+#   steps:
+#     - marketplace/bundles/plan-marshall/agents/phase-agent.md
+#     - marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md
+#     - marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md
+#     - marketplace/bundles/plan-marshall/skills/phase-5-execute/SKILL.md
+#   depends_on: TASK-1
+#   delegation:
+#     skill: pm-plugin-development:plugin-maintain
+#     workflow: update-component
+#     context_skills: []
+#   verification:
+#     commands:
+#       - grep -r '```json' marketplace/bundles/plan-marshall/agents/
+#     criteria: Returns no matches (exit code 1)
+
+# Step 3: commit
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  commit-add --plan-id migrate-json-to-toon
 ```
 
 ### Step 7: Record Issues as Lessons
@@ -382,7 +412,7 @@ If deliverable lacks required parameters:
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read solution and list deliverables (list-deliverables, read)
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X --content "...")
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks via the three-step path-allocate flow (`prepare-add` → Write TOON → `commit-add`)
 - `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)
 - `plan-marshall:manage-logging:manage-logging` - Log progress (work)
 
