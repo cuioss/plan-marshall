@@ -109,7 +109,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_remove.add_argument('--task', required=True, type=int, help='Task number')
 
     # list
-    p_list = subparsers.add_parser('list', help='List all tasks', allow_abbrev=False)
+    p_list = subparsers.add_parser(
+        'list',
+        help='List all tasks (tabular — see description for shape contract)',
+        description=(
+            'List all tasks in a plan.\n\n'
+            'Shape contract — authoritative for downstream callers:\n'
+            '  Emits a TABULAR ``tasks_table[N]{...}`` whose reachable fields are\n'
+            '  exactly: number, title, domain, profile, deliverable, status,\n'
+            '  progress. Rich fields (``depends_on``, ``sub_steps``/``steps``,\n'
+            '  ``description``, ``verification``, ``skills``) are NOT reachable\n'
+            '  from ``list``. Callers that need them must iterate ``tasks_table``\n'
+            '  for task numbers and then call ``get --task N`` per task.\n'
+            '  Invariants such as ``_capture_task_state_hash`` rely on this\n'
+            '  contract.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
     add_plan_id_arg(p_list)
     p_list.add_argument(
         '--status', choices=['pending', 'in_progress', 'done', 'blocked', 'all'], default='all', help='Filter by status'
