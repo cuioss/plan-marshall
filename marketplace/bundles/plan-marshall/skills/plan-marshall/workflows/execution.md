@@ -118,10 +118,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-6-finalize"
 ```
 
+Pass `session_id` (the current Claude Code conversation ID) alongside `plan_id` so `default:record-metrics` can call `manage-metrics enrich` on the live plan directory before `default:archive-plan` moves it:
+
 ```
 Skill: plan-marshall:phase-6-finalize
 operation: finalize
 plan_id: {plan_id}
+session_id: {session_id}
 ```
 
 Handles:
@@ -131,29 +134,11 @@ Handles:
 - Sonar roundtrip (if configured)
 - Knowledge capture (advisory)
 - Lessons capture (advisory)
+- Record final metrics (`end-phase` + `enrich` + `generate`, inside `default:record-metrics`)
 - Mark plan complete
 - Archive plan (move to `.plan/archived-plans/`)
 
-**Metrics**: After finalize completes, record phase end with aggregated token data from any agent-dispatched steps (see phase-6-finalize SKILL.md for which steps run as agents):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 6-finalize \
-  --total-tokens {sum of total_tokens from agent-dispatched step <usage> tags} \
-  --tool-uses {sum of tool_uses from agent-dispatched step <usage> tags} \
-  --duration-ms {sum of duration_ms from agent-dispatched step <usage> tags}
-```
-
-**JSONL enrichment** — captures main-context token usage for phases without agents (2-refine, 6-finalize) and supplements agent-tracked phases with any main-context overhead. The session ID is the current Claude Code conversation ID:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
-  --plan-id {plan_id} --session-id {session_id}
-```
-
-**Generate final report** (single call after all data updates):
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
-  --plan-id {plan_id}
-```
+All three `manage-metrics` commands (`end-phase`, `enrich`, `generate`) are executed inside `default:record-metrics` on the live plan directory before `default:archive-plan` runs. Do NOT add any `manage-metrics` invocation after `Skill: plan-marshall:phase-6-finalize` returns — a post-archive write recreates `.plan/local/plans/{plan_id}/` as an orphan directory.
 
 ### Finalize Validation
 

@@ -2,6 +2,7 @@
 """Tests for manage-status.py script."""
 
 import json
+import subprocess
 from argparse import Namespace
 from pathlib import Path
 
@@ -585,3 +586,91 @@ def test_cli_get_routing_context_not_found_exits_zero():
         assert result.success, f'Should exit 0, got: {result.stderr}'
         assert 'status: error' in result.stdout
         assert 'file_not_found' in result.stdout
+
+
+# =============================================================================
+# Regression Tests: _collect_modified_files captures working tree at 5-execute
+# =============================================================================
+#
+# Phase-5-execute completes BEFORE default:commit-push runs (commit-push lives
+# in phase-6-finalize). Earlier code used ``git diff --name-only
+# {base_branch}...HEAD`` (three-dot range) to populate references.modified_files
+# at transition time — but with no feature commits yet on HEAD, the diff was
+# always empty and modified_files became []. The fix uses ``git diff
+# --name-only {base_branch}`` (no dots) to compare the working tree against
+# the base branch, capturing pending modifications. These tests pin the new
+# behavior across the three scenarios called out in the driving lesson:
+#
+# 1. Two-file working-tree change → modified_files length = 2.
+# 2. Multi-file working-tree change → modified_files length matches.
+# 3. No metadata.worktree_path → still collects from the cwd checkout
+#    (pre-worktree-migration plans).
+
+
+def _init_collection_repo(repo: Path) -> None:
+    """Create a git repo on ``main`` with a baseline commit so subsequent
+    working-tree edits show up under ``git diff --name-only main``.
+    """
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True)
+    subprocess.run(['git', '-C', str(repo), 'config', 'user.email', 't@t.test'], check=True)
+    subprocess.run(['git', '-C', str(repo), 'config', 'user.name', 'Test'], check=True)
+    (repo / 'README.md').write_text('baseline\n', encoding='utf-8')
+    subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+    subprocess.run(['git', '-C', str(repo), 'commit', '-q', '-m', 'init'], check=True)
+
+
+def test_collect_modified_files_two_file_change(tmp_path):
+    """Two uncommitted files → modified_files length 2 with expected paths."""
+    _init_collection_repo(tmp_path)
+    (tmp_path / 'a.py').write_text('print("a")\n', encoding='utf-8')
+    (tmp_path / 'b.py').write_text('print("b")\n', encoding='utf-8')
+
+    status = {'metadata': {'worktree_path': str(tmp_path)}}
+    result = _lifecycle._collect_modified_files('plan-2-files', status, 'main')
+
+    assert result == ['a.py', 'b.py'], (
+        f'Expected [a.py, b.py] from working-tree diff, got {result}. '
+        f'A regression here means _cmd_lifecycle.py:92 reverted to the '
+        f'three-dot {{base_branch}}...HEAD range that always returns []'
+        f' before commit-push runs.'
+    )
+
+
+def test_collect_modified_files_multi_file_change(tmp_path):
+    """Mix of tracked edits and new untracked files → union captured."""
+    _init_collection_repo(tmp_path)
+    # Modify an existing tracked file → exercises ``git diff --name-only``.
+    (tmp_path / 'README.md').write_text('baseline changed\n', encoding='utf-8')
+    # New untracked files (incl. nested) → exercises ``git ls-files --others``.
+    (tmp_path / 'one.py').write_text('1\n', encoding='utf-8')
+    (tmp_path / 'two.py').write_text('2\n', encoding='utf-8')
+    sub = tmp_path / 'pkg'
+    sub.mkdir()
+    (sub / 'four.py').write_text('4\n', encoding='utf-8')
+    (sub / 'five.py').write_text('5\n', encoding='utf-8')
+
+    status = {'metadata': {'worktree_path': str(tmp_path)}}
+    result = _lifecycle._collect_modified_files('plan-multi-files', status, 'main')
+
+    expected = ['README.md', 'one.py', 'pkg/five.py', 'pkg/four.py', 'two.py']
+    assert result == expected, (
+        f'Multi-file working-tree probe failed: expected {expected}, got {result}. '
+        f'modified_files must union tracked modifications (README.md) and new '
+        f'untracked files (one.py, two.py, pkg/*) at 5-execute completion.'
+    )
+
+
+def test_collect_modified_files_no_worktree_path(tmp_path, monkeypatch):
+    """Plan without metadata.worktree_path → diffs the cwd checkout."""
+    _init_collection_repo(tmp_path)
+    (tmp_path / 'changed.py').write_text('x\n', encoding='utf-8')
+    monkeypatch.chdir(tmp_path)
+
+    status = {'metadata': {}}  # No worktree_path — pre-migration plan shape
+    result = _lifecycle._collect_modified_files('plan-no-worktree', status, 'main')
+
+    assert result == ['changed.py'], (
+        f'Pre-worktree plan path failed: expected [changed.py] from cwd diff, '
+        f'got {result}. The function must fall through to ``git diff`` (no -C) '
+        f'when metadata.worktree_path is absent.'
+    )

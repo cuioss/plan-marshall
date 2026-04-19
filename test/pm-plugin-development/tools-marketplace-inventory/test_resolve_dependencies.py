@@ -556,10 +556,10 @@ class TestScopeOptions:
         data = parse_toon(result.stdout)
         assert data.get('total_components', 0) > 0
 
-    def test_marketplace_scope(self, isolated_run_config):
+    def test_marketplace_scope(self, plan_context):
         """Test marketplace scope.
 
-        Uses ``isolated_run_config`` to redirect ``PLAN_BASE_DIR`` so the
+        Uses ``plan_context`` to redirect ``PLAN_BASE_DIR`` so the
         validate subprocess resolves paths under ``tmp_path`` instead of
         the repo's real ``.plan/local/run-configuration.json``.
         """
@@ -569,7 +569,7 @@ class TestScopeOptions:
             '--direct-result',
             '--scope',
             'marketplace',
-            env_overrides={'PLAN_BASE_DIR': str(isolated_run_config)},
+            env_overrides={'PLAN_BASE_DIR': str(plan_context.fixture_dir)},
         )
         # Should work and find components
         assert result.returncode in (0, 1)

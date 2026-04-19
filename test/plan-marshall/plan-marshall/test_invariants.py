@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 # ruff: noqa: I001, E402
-"""Tests for the ``task_graph_valid`` invariant in ``_invariants.py``.
+"""Tests for the ``task_graph_valid`` and ``task_state_hash`` invariants.
 
-Drives ``_capture_task_graph_valid`` directly with real task fixtures
-created via the ``manage-tasks`` command API (no direct TASK-*.json
-writes). ``_run_script`` is stubbed to invoke the manage-tasks query
-commands in-process and serialize their TOON output — this avoids
-relying on a live ``.plan/execute-script.py`` being present in the
-test worktree while still exercising the real cycle/dangling/hash
-pipeline inside the invariant.
+Drives ``_capture_task_graph_valid`` and ``_capture_task_state_hash``
+directly with real task fixtures created via the ``manage-tasks``
+command API (no direct TASK-*.json writes). ``_run_script`` is stubbed
+to invoke the manage-tasks query commands in-process and serialize
+their TOON output — this avoids relying on a live
+``.plan/execute-script.py`` being present in the test worktree while
+still exercising the real cycle/dangling/hash pipeline inside the
+invariants.
 
-Cases covered:
+``task_graph_valid`` cases:
     a. Healthy linear graph  → deterministic 16-char hex hash.
     b. Healthy branching graph → different deterministic hash.
     c. Self-cycle → TaskGraphInvalid with non-empty cycle.
@@ -18,6 +19,16 @@ Cases covered:
     e. Dangling reference → TaskGraphInvalid with non-empty dangling.
     f. Empty task list → stable zero-edge hash, no raise.
     g. capture_all surfaces TaskGraphInvalid on broken graph.
+
+``task_state_hash`` cases:
+    h. Non-empty plan → non-empty 16-char hex hash (regression guard
+       against the ``parsed.get('tasks')`` bug where the invariant
+       silently hashed an empty list regardless of task count).
+    i. Changing task ``status`` changes the hash.
+    j. Changing task ``depends_on`` changes the hash.
+    k. Changing a step's status via ``finalize-step`` changes the hash.
+    l. No-op recapture yields the same hash (determinism).
+    m. Empty-task-list plan yields the stable zero-task hash.
 """
 
 from __future__ import annotations
@@ -70,12 +81,14 @@ def _load_mt_module(name: str, filename: str):
 
 _crud = _load_mt_module('_invariants_test_tasks_crud', '_tasks_crud.py')
 _query = _load_mt_module('_invariants_test_tasks_query', '_tasks_query.py')
+_step = _load_mt_module('_invariants_test_tasks_step', '_cmd_step.py')
 
 cmd_prepare_add = _crud.cmd_prepare_add
 cmd_commit_add = _crud.cmd_commit_add
 cmd_update = _crud.cmd_update
 cmd_list = _query.cmd_list
 cmd_get = _query.cmd_get
+cmd_finalize_step = _step.cmd_finalize_step
 
 
 # =============================================================================
@@ -130,7 +143,7 @@ def _set_depends_on(plan_id: str, number: int, depends_on: list[str]) -> None:
     result = cmd_update(
         Namespace(
             plan_id=plan_id,
-            number=number,
+            task=number,
             title=None,
             description=None,
             depends_on=depends_on,
@@ -142,6 +155,33 @@ def _set_depends_on(plan_id: str, number: int, depends_on: list[str]) -> None:
         )
     )
     assert result.get('status') == 'success', f'update failed: {result}'
+
+
+def _set_status(plan_id: str, number: int, status: str) -> None:
+    """Retroactively set a task's ``status`` field."""
+    result = cmd_update(
+        Namespace(
+            plan_id=plan_id,
+            task=number,
+            title=None,
+            description=None,
+            depends_on=None,
+            status=status,
+            domain=None,
+            profile=None,
+            skills=None,
+            deliverable=None,
+        )
+    )
+    assert result.get('status') == 'success', f'update failed: {result}'
+
+
+def _finalize_step(plan_id: str, task: int, step: int, outcome: str) -> None:
+    """Mark a step with outcome (done/skipped/failed)."""
+    result = cmd_finalize_step(
+        Namespace(plan_id=plan_id, task=task, step=step, outcome=outcome)
+    )
+    assert result.get('status') == 'success', f'finalize-step failed: {result}'
 
 
 # =============================================================================
@@ -175,9 +215,9 @@ def _make_stub_run_script():
             )
             return serialize_toon(cmd_list(ns))
         if subcommand == 'get':
-            # args[4] == '--number', args[5] == str(n)
+            # args[4] == '--task', args[5] == str(n)
             number = int(args[5])
-            ns = Namespace(plan_id=plan_id, number=number)
+            ns = Namespace(plan_id=plan_id, task=number)
             return serialize_toon(cmd_get(ns))
         return None
 
@@ -427,3 +467,151 @@ def test_capture_all_surfaces_task_graph_invalid(
             inv.capture_all('inv-capture-all', {}, '5-execute')
 
     assert excinfo.value.dangling, 'dangling must propagate through capture_all'
+
+
+# =============================================================================
+# task_state_hash — (h) Non-empty plan → non-empty hex hash
+# =============================================================================
+#
+# Regression guard: the previous implementation read ``parsed.get('tasks')``
+# from ``manage-tasks list``, but ``list`` actually emits ``tasks_table``.
+# The result was a silent no-op hash (empty list) regardless of task count.
+# This test would fail against that broken implementation because the hash
+# of a 1-task plan would equal the hash of a 0-task plan.
+# =============================================================================
+
+
+def test_state_hash_non_empty_plan_differs_from_empty(stub_run_script) -> None:
+    """A plan with ≥1 task must not hash to the same value as an empty plan."""
+    with PlanContext(plan_id='inv-state-empty'):
+        empty_hash = inv._capture_task_state_hash(
+            'inv-state-empty', {}, '5-execute'
+        )
+
+    with PlanContext(plan_id='inv-state-one-task'):
+        _add_task('inv-state-one-task', 'T1', 1)
+        one_task_hash = inv._capture_task_state_hash(
+            'inv-state-one-task', {}, '5-execute'
+        )
+
+    assert isinstance(empty_hash, str) and len(empty_hash) == 16
+    assert isinstance(one_task_hash, str) and len(one_task_hash) == 16
+    assert all(c in '0123456789abcdef' for c in one_task_hash)
+    assert one_task_hash != empty_hash, (
+        'hash for a 1-task plan must differ from the zero-task hash — '
+        "if this fails, _capture_task_state_hash is reading the wrong "
+        'key from manage-tasks list (should be tasks_table, not tasks)'
+    )
+
+
+# =============================================================================
+# task_state_hash — (i) Changing task status changes hash
+# =============================================================================
+
+
+def test_state_hash_changes_when_task_status_changes(stub_run_script) -> None:
+    """Updating a task's status field must change the captured hash."""
+    with PlanContext(plan_id='inv-state-status'):
+        _add_task('inv-state-status', 'T1', 1)
+        before = inv._capture_task_state_hash(
+            'inv-state-status', {}, '5-execute'
+        )
+        _set_status('inv-state-status', 1, 'in_progress')
+        after = inv._capture_task_state_hash(
+            'inv-state-status', {}, '5-execute'
+        )
+
+    assert before != after, (
+        'hash must change when a task status transitions '
+        'pending -> in_progress'
+    )
+
+
+# =============================================================================
+# task_state_hash — (j) Changing depends_on changes hash
+# =============================================================================
+
+
+def test_state_hash_changes_when_depends_on_changes(stub_run_script) -> None:
+    """Adding a dependency edge must change the captured hash."""
+    with PlanContext(plan_id='inv-state-deps'):
+        _add_task('inv-state-deps', 'T1', 1)
+        _add_task('inv-state-deps', 'T2', 2)
+        before = inv._capture_task_state_hash(
+            'inv-state-deps', {}, '5-execute'
+        )
+        _set_depends_on('inv-state-deps', 2, ['TASK-1'])
+        after = inv._capture_task_state_hash(
+            'inv-state-deps', {}, '5-execute'
+        )
+
+    assert before != after, (
+        'hash must change when a task acquires a new depends_on entry'
+    )
+
+
+# =============================================================================
+# task_state_hash — (k) Changing a step's status via finalize-step
+# =============================================================================
+
+
+def test_state_hash_changes_when_step_status_changes(stub_run_script) -> None:
+    """Marking a step done via finalize-step must change the captured hash."""
+    with PlanContext(plan_id='inv-state-step'):
+        _add_task('inv-state-step', 'T1', 1)
+        before = inv._capture_task_state_hash(
+            'inv-state-step', {}, '5-execute'
+        )
+        _finalize_step('inv-state-step', task=1, step=1, outcome='done')
+        after = inv._capture_task_state_hash(
+            'inv-state-step', {}, '5-execute'
+        )
+
+    assert before != after, (
+        'hash must change when a step transitions pending -> done'
+    )
+
+
+# =============================================================================
+# task_state_hash — (l) No-op recapture yields the same hash
+# =============================================================================
+
+
+def test_state_hash_is_stable_for_no_op_recapture(stub_run_script) -> None:
+    """Two captures without any intervening change must produce the same hash."""
+    with PlanContext(plan_id='inv-state-noop'):
+        _add_task('inv-state-noop', 'T1', 1)
+        _add_task('inv-state-noop', 'T2', 2, depends_on='TASK-1')
+        first = inv._capture_task_state_hash(
+            'inv-state-noop', {}, '5-execute'
+        )
+        second = inv._capture_task_state_hash(
+            'inv-state-noop', {}, '5-execute'
+        )
+
+    assert first == second, (
+        'recapture without intervening state changes must yield the same hash'
+    )
+
+
+# =============================================================================
+# task_state_hash — (m) Empty task list → stable hash, no raise
+# =============================================================================
+
+
+def test_state_hash_empty_plan_returns_stable_hash(stub_run_script) -> None:
+    """Two empty plans must produce the same zero-task hash without raising."""
+    with PlanContext(plan_id='inv-state-empty-a'):
+        hash_a = inv._capture_task_state_hash(
+            'inv-state-empty-a', {}, '5-execute'
+        )
+
+    with PlanContext(plan_id='inv-state-empty-b'):
+        hash_b = inv._capture_task_state_hash(
+            'inv-state-empty-b', {}, '5-execute'
+        )
+
+    assert isinstance(hash_a, str) and len(hash_a) == 16
+    assert hash_a == hash_b, (
+        'zero-task hash must be stable across plans (deterministic empty state)'
+    )

@@ -184,17 +184,17 @@ def test_analyze_returns_valid_toon():
     assert 'total_issues' in data, 'Should have total_issues field'
 
 
-def test_analyze_summary_structure(isolated_run_config):
+def test_analyze_summary_structure(plan_context):
     """Test analyze has correct summary fields.
 
-    Uses ``isolated_run_config`` to redirect ``PLAN_BASE_DIR`` so the
+    Uses ``plan_context`` to redirect ``PLAN_BASE_DIR`` so the
     doctor subprocess never resolves against the repo's real
     ``.plan/local/run-configuration.json``.
     """
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    env = {'PLAN_BASE_DIR': str(isolated_run_config)}
+    env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
 
     result = run_script(SCRIPT_PATH, 'scan', env_overrides=env)
     scan_data = parse_output(result)
@@ -385,17 +385,17 @@ def test_report_summary_structure():
     assert 'risky_fixes' in summary, 'Summary should have risky_fixes'
 
 
-def test_report_has_llm_review_items(isolated_run_config):
+def test_report_has_llm_review_items(plan_context):
     """Test report file includes LLM review items.
 
-    Uses ``isolated_run_config`` to redirect ``PLAN_BASE_DIR`` so the
+    Uses ``plan_context`` to redirect ``PLAN_BASE_DIR`` so the
     doctor subprocess writes the report under ``tmp_path`` instead of
     the repo's ``.plan/temp/plugin-doctor-report/``.
     """
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    env = {'PLAN_BASE_DIR': str(isolated_run_config)}
+    env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
 
     result = run_script(SCRIPT_PATH, 'scan', env_overrides=env)
     scan_data = parse_output(result)

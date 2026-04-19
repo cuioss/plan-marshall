@@ -82,7 +82,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
-  --plan-id {plan_id} --number {task_number}
+  --plan-id {plan_id} --task {task_number}
 ```
 
 Extract key fields: `domain`, `profile`, `skills`, `description`, `steps`, `verification`, `depends_on`. Verify `profile` matches the expected profile for this execution.

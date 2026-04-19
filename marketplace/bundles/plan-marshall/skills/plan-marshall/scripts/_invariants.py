@@ -235,7 +235,20 @@ def _capture_worktree_dirty(_plan_id: str, metadata: dict[str, Any], _phase: str
 
 
 def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    stdout = _run_script(
+    """Drift-detection hash over every task's status, depends_on, and step outcomes.
+
+    ``manage-tasks list`` emits a *tabular* ``tasks_table`` whose reachable
+    fields are only ``number, title, domain, profile, deliverable, status,
+    progress`` — ``depends_on`` and ``sub_steps``/``steps`` are NOT on that
+    table. To access the rich fields this hash depends on, we iterate the
+    task numbers from the table and call ``manage-tasks get --task N`` per
+    task (same pattern as :func:`_capture_task_graph_valid`).
+
+    Returns ``None`` when ``list`` or any ``get`` cannot be parsed, matching
+    the other capture functions' "not applicable" semantics. An empty plan
+    yields the stable zero-task hash.
+    """
+    list_stdout = _run_script(
         [
             'plan-marshall:manage-tasks:manage-tasks',
             'list',
@@ -243,20 +256,45 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
             plan_id,
         ]
     )
-    if stdout is None:
+    if list_stdout is None:
         return None
     try:
-        parsed = parse_toon(stdout)
+        list_parsed = parse_toon(list_stdout)
     except Exception:
         return None
-    tasks = parsed.get('tasks') or []
-    if not isinstance(tasks, list):
+    tasks_table = list_parsed.get('tasks_table') or []
+    if not isinstance(tasks_table, list):
         return None
-    # Reduce each task to the fields that matter for drift detection.
-    reduced = []
-    for task in tasks:
-        if not isinstance(task, dict):
+
+    numbers: list[int] = []
+    for row in tasks_table:
+        if not isinstance(row, dict):
             continue
+        n = _normalize_task_ref(row.get('number'))
+        if n is not None:
+            numbers.append(n)
+
+    reduced: list[dict[str, Any]] = []
+    for n in numbers:
+        task_stdout = _run_script(
+            [
+                'plan-marshall:manage-tasks:manage-tasks',
+                'get',
+                '--plan-id',
+                plan_id,
+                '--task',
+                str(n),
+            ]
+        )
+        if task_stdout is None:
+            return None
+        try:
+            task_parsed = parse_toon(task_stdout)
+        except Exception:
+            return None
+        task = task_parsed.get('task')
+        if not isinstance(task, dict):
+            return None
         steps = task.get('steps') or []
         step_outcomes: list[str] = []
         if isinstance(steps, list):
@@ -268,12 +306,13 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
             depends = []
         reduced.append(
             {
-                'n': task.get('number'),
+                'n': n,
                 's': str(task.get('status', '')),
                 'o': step_outcomes,
                 'd': sorted(str(d) for d in depends),
             }
         )
+
     reduced.sort(key=lambda x: x.get('n') or 0)
     return _hash_dict(reduced)
 
@@ -358,7 +397,7 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
                 'get',
                 '--plan-id',
                 plan_id,
-                '--number',
+                '--task',
                 str(n),
             ]
         )

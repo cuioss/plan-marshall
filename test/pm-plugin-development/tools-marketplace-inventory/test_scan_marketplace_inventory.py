@@ -609,15 +609,15 @@ def test_default_file_output_summary_has_statistics(tmp_path, monkeypatch):
     assert 'total_skills:' in output, 'Summary should contain total_skills'
 
 
-def test_default_file_output_with_filters(isolated_run_config):
+def test_default_file_output_with_filters(plan_context):
     """Test default file mode works with bundle filter.
 
-    Uses ``isolated_run_config`` to redirect ``PLAN_BASE_DIR`` so the
+    Uses ``plan_context`` to redirect ``PLAN_BASE_DIR`` so the
     scan subprocess resolves paths under ``tmp_path`` instead of the
     repo's real ``.plan/local/run-configuration.json``. The fixture
-    yields ``tmp_path``, which serves as the ``PLAN_BASE_DIR`` root.
+    yields a ``Context`` whose ``fixture_dir`` is the ``PLAN_BASE_DIR`` root.
     """
-    plan_dir = isolated_run_config
+    plan_dir = plan_context.fixture_dir
 
     result = run_script(SCRIPT_PATH, '--bundles', 'pm-dev-java')
     assert result.returncode == 0, f'Script returned error: {result.stderr}'

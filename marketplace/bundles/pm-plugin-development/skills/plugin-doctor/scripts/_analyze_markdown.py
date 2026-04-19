@@ -370,6 +370,85 @@ def check_prose_parameter_consistency(content: str) -> list:
     return violations
 
 
+def check_mark_step_done_violations(content: str) -> list:
+    """Check mark-step-done invocations inside bash code fences for argument defects.
+
+    Scans each fenced ```bash ... ``` block for lines referencing `mark-step-done`
+    (typically the `plan-marshall:manage-status:...` subcommand used at phase-6
+    finalize step termination). For every invocation, emits up to three distinct
+    findings:
+
+    - ``MARK_STEP_DONE_BAD_NOTATION``: the line contains the hyphenated notation
+      ``manage-status:manage-status`` instead of the canonical underscored form
+      ``manage-status:manage_status``. The hyphenated form does not resolve via
+      the script executor and silently fails — see driving lesson that motivated
+      this rule family.
+    - ``MARK_STEP_DONE_MISSING_PHASE``: the full invocation (single line or
+      backslash-continued multi-line) does not contain ``--phase``. Phase-6 step
+      termination requires ``--phase`` to route the finalize status update.
+    - ``MARK_STEP_DONE_MISSING_OUTCOME``: the full invocation does not contain
+      ``--outcome``. Without ``--outcome``, the step cannot be terminated with a
+      definitive result (done/skipped/deferred).
+
+    Each finding is returned as a dict with ``line`` (1-indexed line number of
+    the first mark-step-done line of the invocation) and ``code`` (the defect
+    code).
+    """
+    violations = []
+
+    # Find every ```bash (or ```sh) fenced block together with its start offset
+    # so we can translate intra-block positions back to file line numbers.
+    fence_pattern = re.compile(r'```(?:bash|sh)\s*\n(.*?)```', re.DOTALL)
+
+    for fence_match in fence_pattern.finditer(content):
+        block = fence_match.group(1)
+        # Line number of the first content line inside the fence (1-indexed).
+        block_start_line = content[: fence_match.start()].count('\n') + 2
+
+        block_lines = block.split('\n')
+
+        # Group lines into logical commands first, so that mark-step-done can
+        # live on ANY line of a backslash-continued command (including a
+        # continuation line below a `manage-status:manage-status \` prefix).
+        # The previous line-walker anchored on the mark-step-done line and only
+        # looked forward, which missed notation appearing on lines before it.
+        logical_commands: list[list[tuple[int, str]]] = []
+        current_cmd: list[tuple[int, str]] = []
+        for idx, cmd_line in enumerate(block_lines):
+            current_cmd.append((idx, cmd_line))
+            if not cmd_line.rstrip().endswith('\\'):
+                logical_commands.append(current_cmd)
+                current_cmd = []
+        if current_cmd:
+            logical_commands.append(current_cmd)
+
+        for cmd in logical_commands:
+            # Find lines containing `mark-step-done` — anchor reporting on the
+            # first occurrence for stable line numbers.
+            mark_done_indices = [idx for idx, cmd_line in cmd if 'mark-step-done' in cmd_line]
+            if not mark_done_indices:
+                continue
+
+            invocation_line = block_start_line + mark_done_indices[0]
+            invocation_text = '\n'.join(cmd_line for _idx, cmd_line in cmd)
+
+            # MARK_STEP_DONE_BAD_NOTATION: hyphenated notation anywhere in the
+            # assembled logical command (word-bounded to avoid partial matches).
+            if re.search(r'\bmanage-status:manage-status\b', invocation_text):
+                violations.append({'line': invocation_line, 'code': 'MARK_STEP_DONE_BAD_NOTATION'})
+
+            # MARK_STEP_DONE_MISSING_PHASE — anchored matching prevents
+            # `--phase-override` (or similar) from spoofing a present `--phase`.
+            if not re.search(r'(?<![A-Za-z0-9_-])--phase(?![A-Za-z0-9_-])', invocation_text):
+                violations.append({'line': invocation_line, 'code': 'MARK_STEP_DONE_MISSING_PHASE'})
+
+            # MARK_STEP_DONE_MISSING_OUTCOME — same anchored guard.
+            if not re.search(r'(?<![A-Za-z0-9_-])--outcome(?![A-Za-z0-9_-])', invocation_text):
+                violations.append({'line': invocation_line, 'code': 'MARK_STEP_DONE_MISSING_OUTCOME'})
+
+    return violations
+
+
 def check_rule_violations(content: str, frontmatter: str, component_type: str, has_tools: bool, file_path: str) -> dict:
     """Check for rule violations."""
     agent_task_tool_prohibited = False
@@ -409,6 +488,9 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     # Prose-parameter consistency (all component types)
     workflow_prose_param_violations = check_prose_parameter_consistency(content)
 
+    # mark-step-done argument validation (phase-6 finalize step termination)
+    mark_step_done_violations = check_mark_step_done_violations(content)
+
     return {
         'agent_task_tool_prohibited': agent_task_tool_prohibited,
         'agent_maven_restricted': agent_maven_restricted,
@@ -417,6 +499,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
         'command_self_contained_violations': command_self_contained_violations,
         'agent_skill_tool_visibility': agent_skill_tool_visibility,
         'workflow_prose_param_violations': workflow_prose_param_violations,
+        'mark_step_done_violations': mark_step_done_violations,
     }
 
 
