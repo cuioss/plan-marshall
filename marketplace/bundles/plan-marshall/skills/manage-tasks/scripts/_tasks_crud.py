@@ -181,9 +181,9 @@ def cmd_update(args) -> dict:
     """Handle 'update' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
-    filepath = find_task_file(task_dir, args.number)
+    filepath = find_task_file(task_dir, args.task)
     if not filepath:
-        return output_error(f'Task TASK-{args.number} not found')
+        return output_error(f'Task TASK-{args.task} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)
@@ -250,9 +250,9 @@ def cmd_remove(args) -> dict:
     """Handle 'remove' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
-    filepath = find_task_file(task_dir, args.number)
+    filepath = find_task_file(task_dir, args.task)
     if not filepath:
-        return output_error(f'Task TASK-{args.number} not found')
+        return output_error(f'Task TASK-{args.task} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)

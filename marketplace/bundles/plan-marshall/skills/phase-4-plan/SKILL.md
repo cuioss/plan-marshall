@@ -50,7 +50,7 @@ Skill: plan-marshall:dev-general-practices
 
 ### Test Helper File Naming
 
-When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before calling `manage-tasks add`. Only the two repository-wide `conftest.py` files listed in the allow-list below are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
+When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before invoking `manage-tasks prepare-add` / `commit-add`. Only the two repository-wide `conftest.py` files listed in the allow-list below are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
 
 **Allow-list** (MUST NOT be duplicated or added to by task steps):
 - `test/conftest.py`
@@ -243,7 +243,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 6: Create Tasks
 
-For each deliverable, create tasks using `--content` with `\n`-encoded TOON (one task per profile):
+For each deliverable, create tasks using the three-step path-allocate flow (one task per profile): (1) `prepare-add` allocates a scratch path under `<plan>/work/pending-tasks/`, (2) the phase writes the TOON task definition to that path with the Write tool, (3) `commit-add` reads the file, validates it, and creates `TASK-NNN.json`. No multi-line content crosses the shell boundary.
 
 ### Description Anchoring Contract
 
@@ -271,12 +271,35 @@ To prevent compound-word mis-interpretation (e.g. `review-knowledge` being descr
 
    **Worked example** (from source lesson `2026-04-17-20-001`): A deliverable body specifies task-ordering values `order: 990 / 1000` in its Change per file section. The canonical violation is a task description that paraphrases these as `order: 90 / 100` — a "regularization" from the four-digit spacing (`990`/`1000`) down to a two-digit spacing (`90`/`100`). The description MUST instead carry the literal tokens `order: 990 / 1000` verbatim. This same rule applies whenever the outline supplies specific numeric or flag-shaped data: copy the tokens exactly as written, do not "improve" them.
 
-**CRITICAL — Shell Metacharacter Sanitization**: Before interpolating values into the `--content` string, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
+**CRITICAL — Shell Metacharacter Sanitization**: Before writing values into the TOON task file, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts if they later reach a shell. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} \
-  --content "title: {task title}\ndeliverable: {deliverable_number}\ndomain: {domain}\nprofile: {profile}\ndescription: {description}\nsteps:\n  - {file1}\n  - {file2}\ndepends_on: {TASK-N | none}\nskills:\n  - {skill1}\n  - {skill2}\nverification:\n  commands:\n    - {cmd1}\n  criteria: {criteria}"
+# Step 1: allocate a scratch path under <plan>/work/pending-tasks/
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  prepare-add --plan-id {plan_id}
+# → returns {path: /abs/.../work/pending-tasks/default.toon}
+
+# Step 2: write the TOON task definition to the returned path via the Write tool:
+#   title: {task title}
+#   deliverable: {deliverable_number}
+#   domain: {domain}
+#   profile: {profile}
+#   description: {description}
+#   steps:
+#     - {file1}
+#     - {file2}
+#   depends_on: {TASK-N | none}
+#   skills:
+#     - {skill1}
+#     - {skill2}
+#   verification:
+#     commands:
+#       - {cmd1}
+#     criteria: {criteria}
+
+# Step 3: commit — validates the file and creates TASK-NNN.json
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  commit-add --plan-id {plan_id}
 ```
 
 > **TOON quoting rule for `verification.commands` (ENFORCED)**
@@ -557,7 +580,7 @@ If deliverable metadata incomplete:
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks (add --plan-id X --content "...")
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks via the three-step path-allocate flow (`prepare-add` → Write TOON → `commit-add`)
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)
 

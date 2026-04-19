@@ -123,7 +123,7 @@ def _add_ns(plan_id='test-plan', content=''):
 
 def _get_ns(plan_id='test-plan', number=1):
     """Build Namespace for cmd_get."""
-    return Namespace(plan_id=plan_id, number=number)
+    return Namespace(plan_id=plan_id, task=number)
 
 
 def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False):
@@ -151,7 +151,7 @@ def _update_ns(
     """Build Namespace for cmd_update."""
     return Namespace(
         plan_id=plan_id,
-        number=number,
+        task=number,
         title=title,
         description=description,
         depends_on=depends_on,

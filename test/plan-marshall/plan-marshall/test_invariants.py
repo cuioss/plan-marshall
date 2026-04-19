@@ -130,7 +130,7 @@ def _set_depends_on(plan_id: str, number: int, depends_on: list[str]) -> None:
     result = cmd_update(
         Namespace(
             plan_id=plan_id,
-            number=number,
+            task=number,
             title=None,
             description=None,
             depends_on=depends_on,
@@ -175,9 +175,9 @@ def _make_stub_run_script():
             )
             return serialize_toon(cmd_list(ns))
         if subcommand == 'get':
-            # args[4] == '--number', args[5] == str(n)
+            # args[4] == '--task', args[5] == str(n)
             number = int(args[5])
-            ns = Namespace(plan_id=plan_id, number=number)
+            ns = Namespace(plan_id=plan_id, task=number)
             return serialize_toon(cmd_get(ns))
         return None
 

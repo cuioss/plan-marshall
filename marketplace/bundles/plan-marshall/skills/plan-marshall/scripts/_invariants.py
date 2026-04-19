@@ -358,7 +358,7 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
                 'get',
                 '--plan-id',
                 plan_id,
-                '--number',
+                '--task',
                 str(n),
             ]
         )
