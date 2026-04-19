@@ -54,6 +54,13 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 
 ---
 
+## Input Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `plan_id` | string | Yes | Plan identifier |
+| `session_id` | string | Yes | Current Claude Code conversation ID — forwarded to `default:record-metrics` for `manage-metrics enrich`, which reads the matching transcript JSONL to capture main-context token usage. Without it, `enrich` cannot locate the transcript and session tokens are lost from the final report. |
+
 ## Configuration Source
 
 All config is read in Step 2 as a single TOON response:
@@ -271,6 +278,14 @@ Iterate over the `steps` list from config. For each step reference:
 **Inline-only built-in steps** (require user interaction or sequential dependency):
 - `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
+Before entering the loop, initialise a running token tally in model context:
+
+```
+agent_usage_totals = {total_tokens: 0, tool_uses: 0, duration_ms: 0}
+```
+
+`default:record-metrics` reads this accumulator at `end-phase` time.
+
 ```
 FOR each step_ref in steps:
   1. Log step start:
@@ -293,6 +308,9 @@ FOR each step_ref in steps:
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
          Arguments: --plan-id {plan_id} --iteration {iteration}
+
+  4b. Accumulate agent usage (only when the dispatched step ran as a Task agent):
+      Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag and add them to agent_usage_totals. Inline steps contribute nothing and are skipped — their cost is picked up later by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`.
 
   5. Capture archive result (only when step_ref == "default:archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 5 (Render Final Output Template).
@@ -324,8 +342,10 @@ After the snapshot is captured, dispatch `default:archive-plan` normally (step 4
 
 **Built-in step notes**:
 - `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
-- `default:record-metrics`: MUST immediately precede `default:archive-plan`. `manage-metrics generate` writes `metrics.md` inside the live plan directory; if archive runs first, the target directory no longer exists.
+- `default:record-metrics`: MUST immediately precede `default:archive-plan`. This step executes three sequenced `manage-metrics` commands (`end-phase`, `enrich`, `generate`) on the live plan directory. If archive runs first, the target directory no longer exists and each command would recreate a post-archive orphan under `.plan/local/plans/{plan_id}/`.
 - `default:archive-plan`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
+
+Do NOT add any further `manage-metrics` invocations after `default:archive-plan` or after `Skill: plan-marshall:phase-6-finalize` returns to its caller. The three-command bookkeeping is fully contained by `default:record-metrics`.
 
 ### Step 4: Mark Plan Complete
 
