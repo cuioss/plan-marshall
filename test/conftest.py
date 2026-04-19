@@ -657,6 +657,7 @@ class PlanContext:
         self.fixture_dir: Path | None = None
         self.plan_dir: Path | None = None
         self._original_plan_base_dir: str | None = None
+        self._original_plan_dir_name: str | None = None
         self._is_standalone: bool = False
         # Book-keeping for _config_core attribute restoration. Populated in
         # __enter__ so the module stays lazily imported.
