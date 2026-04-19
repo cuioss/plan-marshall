@@ -63,6 +63,47 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
   --outcome done
 ```
 
+### Artifact Emission at Task Completion
+
+After all steps of a task are complete and verification has passed, but **before** the orchestrator calls `manage-tasks next` to advance to the following task, the orchestrator MUST emit one `[ARTIFACT]` work-log entry per changed path so that a plan-level audit can reconstruct which file system effects each task produced.
+
+**Baseline SHA**: Record the worktree's HEAD SHA the moment a task transitions to `in_progress` and persist it as `task_start_sha` in task metadata. This is the single source of truth for the task's starting point. Capture it with:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+(Or `git -C . rev-parse HEAD` when no worktree is active — the `cd && git` compound is prohibited; see `dev-general-practices` Hard Rules.)
+
+**Diff computation**: At task completion, compute the name-status diff from the recorded baseline to the current HEAD:
+
+```bash
+git -C {worktree_path} diff --name-status {task_start_sha} HEAD
+```
+
+Walk each entry of the output and map it to exactly one `[ARTIFACT]` message. Each line of `diff --name-status` output has the shape `{status}\t{path}` (or `{status}\t{old_path}\t{new_path}` for renames/copies):
+
+| Status code | Message shape |
+|-------------|---------------|
+| `A`, `M` | `[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Wrote {relative_path}` |
+| `D` | `[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Deleted {relative_path}` |
+| `R*` (rename, any similarity score) | `[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Renamed {old_path} -> {new_path}` |
+| `C*` (copy) | Treat as `A` for `{new_path}` — emit a single `Wrote` entry |
+
+Rename entries produce **exactly one** `Renamed` message — never a delete entry for the old path plus a write entry for the new path. This keeps the audit trail unambiguous about the operation's intent.
+
+Emit each entry via the work logger:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Wrote {relative_path}"
+```
+
+Substitute the appropriate message shape per row. Paths are **worktree-relative** (as git emits them). If the diff is empty (no paths changed), emit **nothing** — an empty artifact list is a valid outcome (for example, a pre-implemented task or a verification-profile task that legitimately modified no files). The absence of artifact entries in the work log is itself meaningful signal.
+
+**Caller-format exception**: The `(plan-marshall:phase-5-execute:{task_number})` caller prefix deliberately uses a three-segment form (`bundle:skill:task_number`) rather than the usual two-segment `(bundle:skill)` convention documented in [manage-logging log-format.md](../../manage-logging/standards/log-format.md). The trailing `:{task_number}` segment is an approved extension specific to artifact emission so a log reader can attribute each file change to the exact task that produced it without cross-referencing timestamps against task transitions. The third segment in this exception is always a **numeric task id** — this is distinct from other skills that already carry a third segment of a different kind (e.g., `(plan-marshall:phase-6-finalize:record-metrics)` where the third segment names a sub-topic within the skill). No other skill may emit the three-segment `bundle:skill:{numeric}` form; the numeric-tail shape is reserved for `plan-marshall:phase-5-execute` artifact entries.
+
 ## Phase Transition
 
 When all tasks in phase complete:

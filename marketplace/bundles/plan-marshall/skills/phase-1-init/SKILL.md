@@ -348,6 +348,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **IF `branch_strategy == "direct"`**: Keep current branch — no action needed. `use_worktree` is ignored in direct mode.
 
+**Note — no drift-sync at init time**: Worktree and feature branch are created here against `{branch_name}` as-is. Drift-sync against `origin/{base_branch}` runs later at the start of phase-5-execute (see its Step 3 "Sync Worktree With Main") when `rebase_on_execute_start=true` (default). No additional fetch/rebase is needed at phase-1-init time — the plan may sit in refine/outline/plan for arbitrarily long, so syncing now would give a stale base by the time execution starts.
+
 ### Step 7: Detect Domain
 
 Query configured domains from marshal.json and select appropriate domain for the task.

@@ -157,7 +157,7 @@ See [provider-setup.md](provider-setup.md#provider-discovery-and-activation-step
 
 ## Step 6: Plan Phase Settings (Optional)
 
-Ask the user to accept defaults (`branch=feature`, `compatibility=breaking`, `commits=per_deliverable`) or configure each field interactively. If configuring, apply each choice via manage-config:
+Ask the user to accept defaults (`branch=feature`, `compatibility=breaking`, `commits=per_deliverable`, `rebase_on_execute_start=true`, `rebase_strategy=merge`) or configure each field interactively. If configuring, apply each choice via manage-config:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -166,7 +166,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-2-refine set --field compatibility --value {breaking|deprecation|smart_and_ask}
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field rebase_on_execute_start --value {true|false}
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field rebase_strategy --value {merge|rebase}
 ```
+
+The two `rebase_*` fields control the sync-with-main step at the start of phase-5-execute: `rebase_on_execute_start` toggles the step on/off (default `true`), and `rebase_strategy` selects between `merge` (default, PR-safe) and `rebase` (rewrites history, requires force-push when a PR is already open).
 
 ---
 

@@ -94,6 +94,18 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field commit_strategy --value {per_deliverable|per_plan|none}
 ```
 
+**Rebase on execute start** (phase-5-execute): `true` (recommended, default) or `false`. Controls whether phase-5-execute runs a sync-with-main step before the task loop.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field rebase_on_execute_start --value {true|false}
+```
+
+**Rebase strategy** (phase-5-execute): `merge` (recommended, default) or `rebase`. Used by the sync-with-main step — `merge` runs `git merge --no-edit origin/{base}` (PR-safe, no history rewrite); `rebase` runs `git rebase origin/{base}` (rewrites history, requires force-push when a PR is already open).
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-5-execute set --field rebase_strategy --value {merge|rebase}
+```
+
 **Confidence threshold** (phase-2-refine, menu-only): `95` (recommended), `90`, or `100`
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
