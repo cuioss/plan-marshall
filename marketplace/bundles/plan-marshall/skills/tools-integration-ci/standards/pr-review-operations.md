@@ -8,16 +8,41 @@ Operations for interacting with pull request reviews: comments, replies, thread 
 
 **Pattern**: Provider-Agnostic Router
 
-Post a comment on a pull request.
+Post a comment on a pull request using the three-step path-allocate pattern.
+The script owns path allocation — callers never invent scratch paths. Markdown
+bodies are written directly by the main context with its native Write tool, and
+the `pr reply` subcommand consumes the prepared file. No multi-line markdown
+crosses the shell boundary, so Claude Code's shell-heading heuristic never
+fires.
 
-### Step 1: Resolve and Execute
+### Step 1: Allocate Scratch Body Path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-comment \
+    --plan-id {plan_id} --for reply --slot {unique_slot}
+```
+
+Read the `path` field from the returned TOON. It is the canonical, script-owned
+location for the reply body, bound to this plan and slot. Pick a `--slot` value
+that is unique for each concurrent reply so their bodies do not collide.
+
+### Step 2: Write the Reply Body
+
+```
+Write({path from prepare-comment}) with reply body markdown content
+```
+
+### Step 3: Post the Reply
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr reply \
-    --pr-number 123 --body "Fixed as suggested."
+    --pr-number 123 --plan-id {plan_id} --slot {unique_slot}
 ```
 
-### Step 2: Process Result
+The subcommand reads the body from the prepared scratch file, posts the
+comment, and deletes the scratch on success.
+
+### Step 4: Process Result
 
 ```toon
 status: success
@@ -54,16 +79,43 @@ thread_id: PRRT_abc123
 
 **Pattern**: Provider-Agnostic Router
 
-Reply to a specific review thread (inline code comment), not a top-level PR comment.
+Reply to a specific review thread (inline code comment), not a top-level PR
+comment, using the three-step path-allocate pattern. The script owns path
+allocation — callers never invent scratch paths. Markdown bodies are written
+directly by the main context with its native Write tool, and the `pr
+thread-reply` subcommand consumes the prepared file. No multi-line markdown
+crosses the shell boundary, so Claude Code's shell-heading heuristic never
+fires.
 
-### Step 1: Resolve and Execute
+### Step 1: Allocate Scratch Body Path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-comment \
+    --plan-id {plan_id} --for thread-reply --slot {unique_slot}
+```
+
+Read the `path` field from the returned TOON. It is the canonical, script-owned
+location for the thread-reply body, bound to this plan and slot. Pick a
+`--slot` value that is unique for each concurrent thread-reply so their bodies
+do not collide.
+
+### Step 2: Write the Thread-Reply Body
+
+```
+Write({path from prepare-comment}) with thread-reply body markdown content
+```
+
+### Step 3: Post the Thread-Reply
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr thread-reply \
-    --pr-number 123 --thread-id PRRT_abc123 --body "Fixed as suggested."
+    --pr-number 123 --thread-id PRRT_abc123 --plan-id {plan_id} --slot {unique_slot}
 ```
 
-### Step 2: Process Result
+The subcommand reads the body from the prepared scratch file, posts the
+thread-reply, and deletes the scratch on success.
+
+### Step 4: Process Result
 
 ```toon
 status: success
