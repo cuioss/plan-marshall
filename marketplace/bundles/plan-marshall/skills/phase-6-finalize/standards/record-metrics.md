@@ -17,9 +17,9 @@ Close out the 6-finalize phase timing/token ledger using the running totals aggr
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
   --plan-id {plan_id} --phase 6-finalize \
-  --total-tokens {sum of total_tokens from agent-dispatched step <usage> tags} \
-  --tool-uses {sum of tool_uses from agent-dispatched step <usage> tags} \
-  --duration-ms {sum of duration_ms from agent-dispatched step <usage> tags}
+  --total-tokens {agent_usage_totals.total_tokens} \
+  --tool-uses {agent_usage_totals.tool_uses} \
+  --duration-ms {agent_usage_totals.duration_ms}
 ```
 
 If no agent-dispatched steps ran (all configured steps were inline-only), omit the three token/duration flags — `end-phase` records the phase boundary from its own timestamps.
