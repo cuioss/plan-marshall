@@ -406,44 +406,45 @@ def check_mark_step_done_violations(content: str) -> list:
         block_start_line = content[: fence_match.start()].count('\n') + 2
 
         block_lines = block.split('\n')
-        i = 0
-        while i < len(block_lines):
-            line = block_lines[i]
-            if 'mark-step-done' not in line:
-                i += 1
+
+        # Group lines into logical commands first, so that mark-step-done can
+        # live on ANY line of a backslash-continued command (including a
+        # continuation line below a `manage-status:manage-status \` prefix).
+        # The previous line-walker anchored on the mark-step-done line and only
+        # looked forward, which missed notation appearing on lines before it.
+        logical_commands: list[list[tuple[int, str]]] = []
+        current_cmd: list[tuple[int, str]] = []
+        for idx, cmd_line in enumerate(block_lines):
+            current_cmd.append((idx, cmd_line))
+            if not cmd_line.rstrip().endswith('\\'):
+                logical_commands.append(current_cmd)
+                current_cmd = []
+        if current_cmd:
+            logical_commands.append(current_cmd)
+
+        for cmd in logical_commands:
+            # Find lines containing `mark-step-done` — anchor reporting on the
+            # first occurrence for stable line numbers.
+            mark_done_indices = [idx for idx, cmd_line in cmd if 'mark-step-done' in cmd_line]
+            if not mark_done_indices:
                 continue
 
-            # Line number of this `mark-step-done` line in the source file.
-            invocation_line = block_start_line + i
+            invocation_line = block_start_line + mark_done_indices[0]
+            invocation_text = '\n'.join(cmd_line for _idx, cmd_line in cmd)
 
-            # Collect the full invocation: continuation lines are those ending
-            # with a trailing backslash. Gather them into a single logical
-            # command for --phase / --outcome presence checks.
-            invocation_parts = [line]
-            j = i
-            while j < len(block_lines) and block_lines[j].rstrip().endswith('\\'):
-                j += 1
-                if j < len(block_lines):
-                    invocation_parts.append(block_lines[j])
-            invocation_text = '\n'.join(invocation_parts)
-
-            # MARK_STEP_DONE_BAD_NOTATION: hyphenated notation on the
-            # mark-step-done line itself (check every part because the
-            # notation may live on a continuation line).
-            if any('manage-status:manage-status' in part for part in invocation_parts):
+            # MARK_STEP_DONE_BAD_NOTATION: hyphenated notation anywhere in the
+            # assembled logical command (word-bounded to avoid partial matches).
+            if re.search(r'\bmanage-status:manage-status\b', invocation_text):
                 violations.append({'line': invocation_line, 'code': 'MARK_STEP_DONE_BAD_NOTATION'})
 
-            # MARK_STEP_DONE_MISSING_PHASE
-            if '--phase' not in invocation_text:
+            # MARK_STEP_DONE_MISSING_PHASE — anchored matching prevents
+            # `--phase-override` (or similar) from spoofing a present `--phase`.
+            if not re.search(r'(?<![A-Za-z0-9_-])--phase(?![A-Za-z0-9_-])', invocation_text):
                 violations.append({'line': invocation_line, 'code': 'MARK_STEP_DONE_MISSING_PHASE'})
 
-            # MARK_STEP_DONE_MISSING_OUTCOME
-            if '--outcome' not in invocation_text:
+            # MARK_STEP_DONE_MISSING_OUTCOME — same anchored guard.
+            if not re.search(r'(?<![A-Za-z0-9_-])--outcome(?![A-Za-z0-9_-])', invocation_text):
                 violations.append({'line': invocation_line, 'code': 'MARK_STEP_DONE_MISSING_OUTCOME'})
-
-            # Advance past the entire invocation to avoid double-reporting
-            # across continuation lines.
-            i = j + 1
 
     return violations
 

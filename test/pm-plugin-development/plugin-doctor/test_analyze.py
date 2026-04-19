@@ -855,6 +855,77 @@ def test_mark_step_done_multiline_continuation_detects_bad_notation():
         temp_file.unlink()
 
 
+def test_mark_step_done_bad_notation_on_line_before_anchor():
+    """Bad notation on a continuation line ABOVE `mark-step-done` is still caught.
+
+    A real-world pattern is:
+
+        python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \\
+          mark-step-done --plan-id foo --phase 6-finalize --outcome done
+
+    Here the offending hyphenated notation lives on the line that ends with a
+    trailing backslash, and ``mark-step-done`` is on the continuation line
+    below. The rule must assemble the full logical command (regardless of
+    which line anchors ``mark-step-done``) and still flag BAD_NOTATION.
+    """
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \\\n'
+        '  mark-step-done --plan-id foo --phase 6-finalize --outcome done \\\n'
+        '  --step s --display-detail "x"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        codes = _mark_step_done_codes(violations)
+        assert codes.count('MARK_STEP_DONE_BAD_NOTATION') == 1, (
+            f'Expected BAD_NOTATION across a backward-referenced continuation, got codes={codes}'
+        )
+        assert 'MARK_STEP_DONE_MISSING_PHASE' not in codes
+        assert 'MARK_STEP_DONE_MISSING_OUTCOME' not in codes
+    finally:
+        temp_file.unlink()
+
+
+def test_mark_step_done_phase_prefix_does_not_spoof_missing_phase():
+    """A flag like ``--phase-override`` must NOT satisfy the ``--phase`` presence check.
+
+    Substring matching (``'--phase' in text``) would let a partial-match flag
+    such as ``--phase-override`` spoof the presence of the real ``--phase``
+    argument. The rule uses anchored matching with word boundaries so that
+    MARK_STEP_DONE_MISSING_PHASE still fires in this case.
+    """
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'mark-step-done --plan-id foo --phase-override "hack" --outcome done '
+        '--step s --display-detail "x"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('mark_step_done_violations', [])
+        codes = _mark_step_done_codes(violations)
+        assert codes.count('MARK_STEP_DONE_MISSING_PHASE') == 1, (
+            f'Expected MISSING_PHASE even though --phase-override is present, got codes={codes}'
+        )
+        assert 'MARK_STEP_DONE_BAD_NOTATION' not in codes
+        assert 'MARK_STEP_DONE_MISSING_OUTCOME' not in codes
+    finally:
+        temp_file.unlink()
+
+
 # =============================================================================
 # Main
 # =============================================================================
