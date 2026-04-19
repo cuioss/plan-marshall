@@ -141,8 +141,10 @@ def test_github_branch_delete_success_http_204(monkeypatch):
     assert result['remote_only'] is True
     assert result['already_gone'] is False
     # The stub should have been asked to DELETE the heads ref for the branch.
+    # The branch segment is URL-encoded (``/`` → ``%2F``) so names like
+    # ``feature/x`` serialize as a single safe path segment.
     assert captured == [
-        ['api', '-X', 'DELETE', 'repos/octo/repo/git/refs/heads/feature/x']
+        ['api', '-X', 'DELETE', 'repos/octo/repo/git/refs/heads/feature%2Fx']
     ]
 
 

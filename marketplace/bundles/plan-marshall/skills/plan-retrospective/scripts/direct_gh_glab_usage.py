@@ -60,13 +60,21 @@ _DIFF_ADD_RE = re.compile(r'^\+(?!\+)')
 # Local-git mutation tokens for the wrapper-tangle heuristic. A subprocess
 # args list that contains BOTH a CLI name (gh/glab) AND one of these tokens
 # in the same call is flagged as a wrapper tangle.
-_MUTATION_TOKENS = (
-    'checkout',
-    'branch -d',
-    'branch -D',
-    '--delete-branch',
-    '--remove-source-branch',
+#
+# Self-contained tokens are matched as anchored patterns so prefix collisions
+# (e.g. ``branch_delete`` for ``checkout``-like names, ``--delete-branch-me``
+# for the long flags) cannot trigger a false positive.
+_MUTATION_TOKEN_PATTERNS = (
+    re.compile(r'\bcheckout\b'),
+    re.compile(r'(?<![\w-])--delete-branch(?![\w-])'),
+    re.compile(r'(?<![\w-])--remove-source-branch(?![\w-])'),
 )
+
+# Tokeniser for the ``branch -d`` / ``branch -D`` pair: split on whitespace,
+# brackets, parens, commas, and quotes so both shell-style strings
+# (``'git branch -d foo'``) and Python list-style args
+# (``['git', 'branch', '-d', 'foo']``) decompose to the same token stream.
+_TOKEN_SPLIT_RE = re.compile(r"[\s()\[\],'\"]+")
 
 # Wrapper-tangle scan scope. Paths are relative to the repository root and
 # are resolved against the current working directory at scan time (tests
@@ -270,24 +278,47 @@ def _line_is_in_docstring(lines: list[str], index: int) -> bool:
 
 
 def _line_tangles_git(line: str) -> bool:
-    """True when ``line`` contains a mutation token from _MUTATION_TOKENS."""
-    # Use literal substring search — none of the tokens contain regex
-    # metacharacters, and this keeps the heuristic readable.
-    return any(tok in line for tok in _MUTATION_TOKENS)
+    """True when ``line`` carries a local-git mutation token.
+
+    Self-contained tokens (``checkout``, ``--delete-branch``,
+    ``--remove-source-branch``) are matched with anchored regexes that
+    refuse adjacent word characters or hyphens, so prefix collisions like
+    ``branch_delete`` or ``--delete-branch-me`` cannot trigger a false
+    positive.
+
+    The ``branch -d`` / ``branch -D`` pair is recognised by tokenising on
+    whitespace, brackets, parens, commas and quotes, then looking for a
+    ``branch`` token immediately followed by ``-d`` or ``-D``. This shape
+    captures both shell-style strings (``'git branch -d foo'``) and
+    Python list-style args (``['git', 'branch', '-d', 'foo']``) without
+    flagging unrelated identifiers like ``branch_delete``.
+    """
+    if any(pattern.search(line) for pattern in _MUTATION_TOKEN_PATTERNS):
+        return True
+    tokens = [tok for tok in _TOKEN_SPLIT_RE.split(line) if tok]
+    for idx, tok in enumerate(tokens):
+        if tok == 'branch' and idx + 1 < len(tokens) and tokens[idx + 1] in ('-d', '-D'):
+            return True
+    return False
 
 
 def _scan_wrappers_for_tangle(project_root: Path) -> list[dict[str, Any]]:
     """Surface C: scan CI wrapper sources for tangled gh/glab+git calls.
 
-    Heuristic: a ``subprocess`` call is flagged when its argument list
-    contains both the CLI name (``gh``/``glab``) and any of the
-    mutation tokens. In practice the args list can span several lines,
-    so the scan looks at a rolling window of up to 8 lines starting at
-    each ``subprocess.`` call site — enough to cover realistic
+    Heuristic: a wrapper-level CLI invocation is flagged when its argument
+    list contains both the CLI name (``gh``/``glab``) and any of the
+    mutation tokens. Call sites are anchored on either ``subprocess.``
+    (raw subprocess use) or the project's ``run_gh(`` / ``run_glab(``
+    wrappers, which are the standard entry points inside the CI
+    abstraction — missing them would let an abstraction leak slip
+    through Surface C entirely. In practice the args list can span
+    several lines, so the scan looks at a rolling window of up to 8
+    lines starting at each call site — enough to cover realistic
     multi-line args literals without pulling in unrelated code.
     """
     findings: list[dict[str, Any]] = []
-    subprocess_re = re.compile(r'\bsubprocess\.')
+    subprocess_call_re = re.compile(r'\bsubprocess\.')
+    wrapper_call_re = re.compile(r'\b(run_gh|run_glab)\(')
     for py_path in _iter_python_files(_WRAPPER_DIRS, project_root):
         try:
             text = py_path.read_text(encoding='utf-8')
@@ -300,14 +331,21 @@ def _scan_wrappers_for_tangle(project_root: Path) -> list[dict[str, Any]]:
                 continue
             if _line_is_in_docstring(lines, idx):
                 continue
-            if not subprocess_re.search(line):
+            is_subprocess_site = bool(subprocess_call_re.search(line))
+            is_wrapper_site = bool(wrapper_call_re.search(line))
+            if not (is_subprocess_site or is_wrapper_site):
                 continue
             # Collect a small window for multi-line calls. 8 lines is
             # empirically enough for wrapper call sites in the bundle.
             window_end = min(idx + 8, len(lines))
             window = lines[idx:window_end]
             window_text = '\n'.join(window)
-            has_cli = bool(_SOURCE_INVOKE_RE.search(window_text))
+            # ``run_gh(`` / ``run_glab(`` calls have the CLI name implicit
+            # in the wrapper itself — there is no need for an additional
+            # ``gh``/``glab`` literal in the args window. ``subprocess.``
+            # call sites still require the literal CLI name to ensure we
+            # only flag genuine CLI invocations.
+            has_cli = is_wrapper_site or bool(_SOURCE_INVOKE_RE.search(window_text))
             if not has_cli:
                 continue
             if not any(_line_tangles_git(w) for w in window):

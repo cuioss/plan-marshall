@@ -340,6 +340,156 @@ class TestWrapperTangle:
             f'got {tangles}'
         )
 
+    def test_positive_gh_plus_list_style_branch_dash_d(self, tmp_path, monkeypatch):
+        """Regression: PR #256 (gemini-code-assist, thread PRRT_kwDOQ3xasM58Bftr).
+
+        ``subprocess.run(['gh', 'auth', '...'], check=...)`` followed by a
+        downstream ``['git', 'branch', '-d', branch]`` call inside the same
+        wrapper window must be flagged. The old substring heuristic
+        (``'branch -d' in line``) only matched when the args were stringified
+        with spaces and missed list-style invocations entirely. Token-aware
+        matching handles both shapes.
+        """
+        plan_id, _ = setup_broken_plan(
+            tmp_path, monkeypatch, plan_id='retro-ghglab-listdash'
+        )
+        wrapper_rel = (
+            'marketplace/bundles/plan-marshall/skills/'
+            'workflow-integration-github/scripts/list_dash_leak.py'
+        )
+        _write_wrapper(
+            tmp_path,
+            wrapper_rel,
+            '"""List-style branch -d fixture."""\n'
+            'import subprocess\n'
+            'def cleanup(branch: str) -> None:\n'
+            "    subprocess.run(['gh', 'pr', 'merge', branch], check=True)\n"
+            "    subprocess.run(['git', 'branch', '-d', branch], check=True)\n",
+        )
+
+        result = run_script(
+            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
+            '--project-root', str(tmp_path),
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
+        assert any('list_dash_leak.py' in f['file'] for f in tangles), (
+            f'Expected wrapper_tangle finding for gh + list-style branch -d call; '
+            f'got {tangles}'
+        )
+
+    def test_positive_run_gh_wrapper_plus_delete_branch(self, tmp_path, monkeypatch):
+        """Regression: PR #256 (gemini-code-assist, thread PRRT_kwDOQ3xasM58Bfts).
+
+        The CI abstraction routes calls through ``run_gh(`` / ``run_glab(``
+        wrappers, not raw ``subprocess.run``. A wrapper-only call site
+        (``run_gh(['pr', 'merge', '--delete-branch'])``) must therefore
+        anchor Surface C just like a ``subprocess.`` call site does;
+        otherwise the leak hides behind the wrapper and the heuristic
+        misses its primary target.
+        """
+        plan_id, _ = setup_broken_plan(
+            tmp_path, monkeypatch, plan_id='retro-ghglab-rungh'
+        )
+        wrapper_rel = (
+            'marketplace/bundles/plan-marshall/skills/'
+            'workflow-integration-github/scripts/run_gh_leak.py'
+        )
+        _write_wrapper(
+            tmp_path,
+            wrapper_rel,
+            '"""run_gh wrapper fixture."""\n'
+            'def run_gh(args, *, capture_json=False, timeout=60):\n'
+            '    return 0, "", ""\n'
+            'def merge(pr_number: str) -> None:\n'
+            "    run_gh(['pr', 'merge', pr_number, '--delete-branch'])\n",
+        )
+
+        result = run_script(
+            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
+            '--project-root', str(tmp_path),
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
+        assert any('run_gh_leak.py' in f['file'] for f in tangles), (
+            f'Expected wrapper_tangle finding for run_gh + --delete-branch call; '
+            f'got {tangles}'
+        )
+
+    def test_positive_run_glab_wrapper_plus_remove_source_branch(
+        self, tmp_path, monkeypatch
+    ):
+        """Symmetric coverage for the GitLab wrapper:
+        ``run_glab(['mr', 'merge', '--remove-source-branch'])`` must surface
+        as a wrapper tangle even though no ``subprocess.`` literal appears
+        in the call site.
+        """
+        plan_id, _ = setup_broken_plan(
+            tmp_path, monkeypatch, plan_id='retro-ghglab-runglab'
+        )
+        wrapper_rel = (
+            'marketplace/bundles/plan-marshall/skills/'
+            'workflow-integration-gitlab/scripts/run_glab_leak.py'
+        )
+        _write_wrapper(
+            tmp_path,
+            wrapper_rel,
+            '"""run_glab wrapper fixture."""\n'
+            'def run_glab(args, *, capture_json=False, timeout=60):\n'
+            '    return 0, "", ""\n'
+            'def merge(mr_number: str) -> None:\n'
+            "    run_glab(['mr', 'merge', mr_number, '--remove-source-branch'])\n",
+        )
+
+        result = run_script(
+            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
+            '--project-root', str(tmp_path),
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
+        assert any('run_glab_leak.py' in f['file'] for f in tangles), (
+            f'Expected wrapper_tangle finding for run_glab + --remove-source-branch '
+            f'call; got {tangles}'
+        )
+
+    def test_negative_branch_delete_identifier_not_flagged(self, tmp_path, monkeypatch):
+        """Prefix-collision guard: an identifier like ``branch_delete`` (used
+        as a function/command name in the project) must NOT be misread as the
+        ``branch -d`` mutation token. Anchored matching prevents the false
+        positive that motivated the gemini-code-assist review comment.
+        """
+        plan_id, _ = setup_broken_plan(
+            tmp_path, monkeypatch, plan_id='retro-ghglab-branchid'
+        )
+        wrapper_rel = (
+            'marketplace/bundles/plan-marshall/skills/'
+            'workflow-integration-github/scripts/branch_delete_caller.py'
+        )
+        _write_wrapper(
+            tmp_path,
+            wrapper_rel,
+            '"""Identifier-only fixture — no real local-git mutation."""\n'
+            'import subprocess\n'
+            'def call_remote_branch_delete(branch: str) -> None:\n'
+            "    subprocess.run(['gh', 'api', '-X', 'DELETE', "
+            "f'repos/o/r/git/refs/heads/{branch}'], check=True)\n",
+        )
+
+        result = run_script(
+            SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live',
+            '--project-root', str(tmp_path),
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+        tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
+        assert tangles == [], (
+            f'Identifier ``branch_delete`` must not match the branch -d/-D '
+            f'mutation token; got unexpected tangles: {tangles}'
+        )
+
     def test_negative_pure_remote_gh_api_not_flagged(self, tmp_path, monkeypatch):
         """Case (e): ``gh api repos/...`` with no local-git mutation token
         is a class-A remote-only call — the wrapper-tangle heuristic MUST NOT
