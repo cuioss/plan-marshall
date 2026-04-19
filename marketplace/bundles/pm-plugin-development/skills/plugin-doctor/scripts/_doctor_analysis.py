@@ -226,6 +226,29 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
+    # mark-step-done argument validation (phase-6 finalize step termination)
+    _mark_step_done_descriptions = {
+        'MARK_STEP_DONE_BAD_NOTATION': (
+            'mark-step-done invocation uses hyphenated notation '
+            '`manage-status:manage-status` instead of `manage-status:manage_status`'
+        ),
+        'MARK_STEP_DONE_MISSING_PHASE': 'mark-step-done invocation is missing required `--phase` argument',
+        'MARK_STEP_DONE_MISSING_OUTCOME': 'mark-step-done invocation is missing required `--outcome` argument',
+    }
+    for violation in rules.get('mark_step_done_violations', []):
+        code = violation.get('code', '')
+        issues.append(
+            {
+                'type': code,
+                'file': file_path,
+                'line': violation.get('line'),
+                'severity': 'error',
+                'fixable': False,
+                'description': _mark_step_done_descriptions.get(code, f'mark-step-done defect: {code}'),
+                'details': violation,
+            }
+        )
+
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})
     if ci.get('format', {}).get('agent_lessons_via_skill'):
