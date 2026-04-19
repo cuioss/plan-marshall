@@ -150,6 +150,23 @@ If you discover issues or improvements during execution, record them:
 1. **Activate skill**: `Skill: plan-marshall:manage-lessons`
 2. **Record lesson** with category `bug`, `improvement`, or `anti-pattern` and component in `{bundle}:{skill}` notation (e.g., `plan-marshall:manage-tasks`)
 
+## Terminal Title Integration
+
+Each Claude Code session tab can display the active plan, current phase, and a live status icon (`▶` running, `?` waiting, `◯` idle, `✓` done). The integration is hook-driven — four `hooks` entries and one `statusLine` entry invoke [`scripts/set_terminal_title.py`](scripts/set_terminal_title.py) by absolute path:
+
+| Claude Code event | Status arg | Effect |
+|-------------------|-----------|--------|
+| `SessionStart` (matcher-less) | `idle` | Initial label on startup / resume / compact |
+| `SessionStart` (`matcher: "clear"`) | `idle` | Restores the label after `/clear` so the session can be reused |
+| `UserPromptSubmit` | `running` | Flips to `▶` when Claude begins work |
+| `Notification` | `waiting` | Flips to `?` when Claude is blocked on input |
+| `Stop` | `idle` | Returns to `◯` when the turn ends |
+| `statusLine` command | — | Prints the same title to Claude Code's statusline (mirrored via `/remote-control`) |
+
+The script resolves the active plan from the worktree cwd (`.claude/worktrees/<id>`) or the `$PLAN_ID` env variable, reads `current_phase` from the main checkout's `status.json`, and silently falls back to `◯ claude` on any read error — hooks never break the session.
+
+Configure via `/marshall-steward` → **Configuration** → **Terminal Title** (see [menu-terminal-title.md](../marshall-steward/references/menu-terminal-title.md)).
+
 ## Related
 
 | Skill | Purpose |
