@@ -61,10 +61,10 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 |---------|------------|-------------|
 | `prepare-add` | `--plan-id [--slot]` | Allocate a scratch path under `<plan>/work/pending-tasks/` (Step 1 of add flow) |
 | `commit-add` | `--plan-id [--slot]` | Read the prepared TOON file, validate, create TASK-NNN.json, delete scratch (Step 3 of add flow) |
-| `update` | `--plan-id --number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
-| `remove` | `--plan-id --number` | Remove a task |
+| `update` | `--plan-id --task [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
+| `remove` | `--plan-id --task` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
-| `get` | `--plan-id --number` | Get single task details |
+| `get` | `--plan-id --task` | Get single task details |
 | `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
 | `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
@@ -308,7 +308,7 @@ LOOP:
 
 Implement agents execute steps:
 ```
-1. manage-tasks get --plan-id {plan_id} --number {N}
+1. manage-tasks get --plan-id {plan_id} --task {N}
 2. FOR EACH step: execute → finalize-step --outcome done|failed
 3. RUN verification
 ```

@@ -160,7 +160,7 @@ The plan-marshall bundle uses a two-tier skill loading pattern for domain-agnost
 │  │   ┌────────────────────────────────────────────────────────────┐    │  │
 │  │   │  Step 1: Read Task                                         │    │  │
 │  │   │                                                            │    │  │
-│  │   │  manage-tasks get --plan-id X --number 1                   │    │  │
+│  │   │  manage-tasks get --plan-id X --task 1                     │    │  │
 │  │   │  → module: oauth-sheriff-core                              │    │  │
 │  │   │  → domain: java                                            │    │  │
 │  │   │  → profile: implementation                                 │    │  │

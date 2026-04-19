@@ -232,7 +232,7 @@ def test_command_args_passthrough_preserved_verbatim():
     # Arrange
     command = (
         'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks '
-        'get --plan-id foo --number 3'
+        'get --plan-id foo --task 3'
     )
 
     # Act
@@ -361,7 +361,7 @@ def test_cli_entrypoint_emits_toon_on_passthrough(tmp_path):
     # Arrange
     command = (
         'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks '
-        'get --plan-id my-plan --number 1'
+        'get --plan-id my-plan --task 1'
     )
     expected_rewritten, injected = inject_project_dir(command, WORKTREE)
     assert injected is False  # sanity — Bucket A must not trigger injection
