@@ -73,12 +73,20 @@ def cmd_create(args: argparse.Namespace) -> dict:
 
 
 def _collect_modified_files(plan_id: str, status: dict, base_branch: str) -> list[str] | None:
-    """Collect modified files via git diff when completing 5-execute.
+    """Collect modified files via git when completing 5-execute.
 
-    Uses ``git diff --name-only {base_branch}...HEAD`` to determine which files
-    were modified during the execute phase.  When the plan runs inside a
-    worktree (``metadata.worktree_path`` is set), ``git -C {worktree_path}`` is
-    used so the diff is resolved against the correct working tree.
+    Phase-5-execute completes before ``commit-push`` runs, so feature commits
+    do not yet exist on HEAD.  Two git probes capture the pending work:
+
+    * ``git diff --name-only {base_branch}`` — modifications to tracked files
+      relative to the base branch (includes staged and unstaged edits).
+    * ``git ls-files --others --exclude-standard`` — newly created files that
+      are not yet tracked (new source files, new tests, etc.).
+
+    The union of both probes is the complete set of files modified during
+    the execute phase.  When the plan runs inside a worktree
+    (``metadata.worktree_path`` is set), ``git -C {worktree_path}`` is used so
+    both probes are resolved against the correct working tree.
 
     Returns:
         Sorted list of relative file paths, or ``None`` on any error.
@@ -86,16 +94,31 @@ def _collect_modified_files(plan_id: str, status: dict, base_branch: str) -> lis
     metadata = status.get('metadata', {})
     worktree_path = metadata.get('worktree_path')
 
-    cmd: list[str] = ['git']
+    base_cmd: list[str] = ['git']
     if worktree_path:
-        cmd.extend(['-C', worktree_path])
-    cmd.extend(['diff', '--name-only', f'{base_branch}...HEAD'])
+        base_cmd.extend(['-C', worktree_path])
+
+    diff_cmd = [*base_cmd, 'diff', '--name-only', base_branch]
+    untracked_cmd = [*base_cmd, 'ls-files', '--others', '--exclude-standard']
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
-        return sorted(line.strip() for line in result.stdout.splitlines() if line.strip())
+        diff_result = subprocess.run(diff_cmd, capture_output=True, text=True, check=True, timeout=30)  # noqa: S603
+        untracked_result = subprocess.run(
+            untracked_cmd, capture_output=True, text=True, check=True, timeout=30,  # noqa: S603
+        )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
         return None
+
+    collected: set[str] = set()
+    for line in diff_result.stdout.splitlines():
+        entry = line.strip()
+        if entry:
+            collected.add(entry)
+    for line in untracked_result.stdout.splitlines():
+        entry = line.strip()
+        if entry:
+            collected.add(entry)
+    return sorted(collected)
 
 
 def cmd_transition(args: argparse.Namespace) -> dict | None:
