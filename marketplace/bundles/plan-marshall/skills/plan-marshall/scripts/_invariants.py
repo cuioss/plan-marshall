@@ -292,7 +292,7 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
             task_parsed = parse_toon(task_stdout)
         except Exception:
             return None
-        task = task_parsed.get('task') or {}
+        task = task_parsed.get('task')
         if not isinstance(task, dict):
             return None
         steps = task.get('steps') or []
