@@ -149,10 +149,12 @@ def test_pr_merge_delete_branch_happy_path(monkeypatch):
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert '--delete-branch' not in merge_call, merge_call
 
-    # A REST DELETE was issued via cmd_branch_delete.
+    # A REST DELETE was issued via cmd_branch_delete. The branch segment is
+    # URL-encoded (``/`` → ``%2F``) so names like ``feature/x`` serialize
+    # safely as a single path segment.
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert len(delete_calls) == 1, delete_calls
-    assert delete_calls[0][-1].endswith('/git/refs/heads/feature/x')
+    assert delete_calls[0][-1].endswith('/git/refs/heads/feature%2Fx')
 
     _assert_no_delete_branch_flag(captured)
 
@@ -338,11 +340,12 @@ def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
     merge_call = next(c for c in captured if c[:2] == ['pr', 'merge'])
     assert '--delete-branch' not in merge_call, merge_call
 
-    # Contract (3): remote branch delete went through the REST leaf.
+    # Contract (3): remote branch delete went through the REST leaf. The
+    # branch segment is URL-encoded so ``/`` becomes ``%2F``.
     delete_calls = [c for c in captured if c[:3] == ['api', '-X', 'DELETE']]
     assert len(delete_calls) == 1, delete_calls
     endpoint = delete_calls[0][-1]
-    assert endpoint == 'repos/octo/repo/git/refs/heads/feature/x', endpoint
+    assert endpoint == 'repos/octo/repo/git/refs/heads/feature%2Fx', endpoint
 
     # Compound-success shape (see happy path).
     assert result['status'] == 'success', result
@@ -351,3 +354,83 @@ def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
     assert result['already_gone'] is False
 
     _assert_no_delete_branch_flag(captured)
+
+
+# ---------------------------------------------------------------------------
+# cmd_branch_delete — URL-encoding of the branch segment
+# ---------------------------------------------------------------------------
+
+
+def _branch_ns(branch: str) -> argparse.Namespace:
+    return argparse.Namespace(branch=branch, remote_only=True)
+
+
+def _capture_branch_delete_run_gh(returncode: int = 0, stderr: str = ''):
+    """Minimal run_gh stub for cmd_branch_delete tests."""
+    captured: list[list[str]] = []
+
+    def run_gh_stub(args, capture_json=False, timeout=60):
+        captured.append(list(args))
+        return returncode, '', stderr
+
+    return run_gh_stub, captured
+
+
+def test_branch_delete_url_encodes_slash_in_branch_name(monkeypatch):
+    """Regression: PR #256 review (gemini-code-assist).
+
+    Branch names containing ``/`` must be URL-encoded into a single path
+    segment — ``feature/x`` → ``feature%2Fx`` — otherwise the REST path
+    becomes ``/git/refs/heads/feature/x`` which GitHub interprets as
+    ``refs/heads/feature`` + an extra ``/x`` segment (malformed ref path).
+    ``urllib.parse.quote(branch, safe='')`` is the canonical fix and mirrors
+    the pattern already in use in ``gitlab_ops.py``.
+    """
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_branch_delete_run_gh(returncode=0)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_branch_delete(_branch_ns('feature/x'))
+
+    assert result['status'] == 'success', result
+    assert result['branch'] == 'feature/x'
+    assert result['already_gone'] is False
+
+    assert len(captured) == 1, captured
+    endpoint = captured[0][-1]
+    assert endpoint == 'repos/octo/repo/git/refs/heads/feature%2Fx', endpoint
+    # Raw unencoded slash must NOT appear in the branch segment.
+    assert '/feature/x' not in endpoint, endpoint
+
+
+def test_branch_delete_url_encodes_special_characters(monkeypatch):
+    """Branch names with reserved characters (``#``, ``?``, space) must be
+    percent-encoded so the REST path stays a single well-formed segment.
+    """
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_branch_delete_run_gh(returncode=0)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_branch_delete(_branch_ns('feat/bug#42?x y'))
+
+    assert result['status'] == 'success', result
+
+    endpoint = captured[0][-1]
+    # ``/`` → %2F, ``#`` → %23, ``?`` → %3F, space → %20.
+    assert endpoint == 'repos/octo/repo/git/refs/heads/feat%2Fbug%2342%3Fx%20y', endpoint
+
+
+def test_branch_delete_simple_branch_name_is_unchanged(monkeypatch):
+    """Plain branch names (no reserved characters) pass through quote() as
+    identity — nothing to encode, so the endpoint keeps its literal form.
+    """
+    _install_common(monkeypatch)
+    run_gh_stub, captured = _capture_branch_delete_run_gh(returncode=0)
+    monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
+
+    result = github_ops.cmd_branch_delete(_branch_ns('main'))
+
+    assert result['status'] == 'success', result
+
+    endpoint = captured[0][-1]
+    assert endpoint == 'repos/octo/repo/git/refs/heads/main', endpoint

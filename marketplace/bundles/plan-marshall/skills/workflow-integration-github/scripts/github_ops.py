@@ -59,6 +59,7 @@ import argparse
 import json
 import sys
 from typing import Any
+from urllib.parse import quote
 
 from ci_base import (  # type: ignore[import-not-found]
     BODY_KIND_ISSUE_CREATE,
@@ -931,7 +932,13 @@ def cmd_branch_delete(args: argparse.Namespace) -> dict:
         return make_error('branch_delete', 'Failed to resolve repository owner/name from current cwd')
 
     branch = args.branch
-    endpoint = f'repos/{owner}/{repo}/git/refs/heads/{branch}'
+    # URL-encode the branch segment so names like ``feature/x`` serialize as
+    # ``feature%2Fx``. ``safe=''`` ensures ``/`` is encoded (mirrors the same
+    # pattern used in gitlab_ops.py). Without this, branch names containing
+    # ``/``, ``#``, ``?``, or other reserved characters would produce a
+    # malformed REST path.
+    branch_encoded = quote(branch, safe='')
+    endpoint = f'repos/{owner}/{repo}/git/refs/heads/{branch_encoded}'
     returncode, _stdout, stderr = run_gh(['api', '-X', 'DELETE', endpoint])
     if returncode != 0:
         stderr_text = stderr.strip()
