@@ -50,9 +50,13 @@ cmd_update_phase = _query.cmd_update_phase
 # =============================================================================
 
 
-def test_create_status():
+def test_create_status(monkeypatch):
     """Test creating a status.json with standard 6-phase model."""
-    with PlanContext(plan_id='test-plan'):
+    with PlanContext(plan_id='test-plan') as ctx:
+        # Pin HOME and credentials dir defensively so status creation
+        # cannot leak into real host paths.
+        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
         result = cmd_create(
             Namespace(
                 plan_id='test-plan',
@@ -212,9 +216,13 @@ def test_progress_initial():
         assert result['progress']['percent'] == 0
 
 
-def test_progress_after_completion():
+def test_progress_after_completion(monkeypatch):
     """Test progress calculation after completing phases."""
-    with PlanContext(plan_id='progress-done-plan'):
+    with PlanContext(plan_id='progress-done-plan') as ctx:
+        # Pin HOME and credentials dir defensively so progress calculation
+        # cannot leak into real host paths.
+        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
         cmd_create(
             Namespace(
                 plan_id='progress-done-plan',

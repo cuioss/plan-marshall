@@ -67,6 +67,10 @@ class TestListProviders:
         plan_dir.mkdir()
         (plan_dir / 'marshal.json').write_text(_json.dumps({'skill_domains': {}}))
         monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        # Redirect credential dir for the subprocess so nothing lands in
+        # the real ~/.plan-marshall-credentials/.
+        monkeypatch.setenv('HOME', str(tmp_path))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
 
         # Activate git provider (minimum valid selection)
         persist = run_script(SCRIPT_PATH, 'discover-and-persist',
@@ -85,6 +89,10 @@ class TestListProviders:
         plan_dir.mkdir()
         (plan_dir / 'marshal.json').write_text(_json.dumps({'skill_domains': {}}))
         monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+        # Redirect credential dir for the subprocess so nothing lands in
+        # the real ~/.plan-marshall-credentials/.
+        monkeypatch.setenv('HOME', str(tmp_path))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
 
         # Discovery-only mode: scans bundle script directories for *_provider.py files
         discover = run_script(SCRIPT_PATH, 'discover-and-persist')

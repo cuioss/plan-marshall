@@ -50,8 +50,16 @@ class TestGetProjectName:
         assert '..' not in name
         assert '!' not in name
 
-    def test_falls_back_to_cwd_name(self):
-        """Without marshal.json, uses cwd basename."""
+    def test_falls_back_to_cwd_name(self, tmp_path, monkeypatch):
+        """Without marshal.json, uses cwd basename.
+
+        Redirect CREDENTIALS_DIR defensively — get_project_name() only
+        reads marshal.json today, but a future change that touches the
+        credentials tree would otherwise leak. monkeypatch.setattr
+        restores automatically at teardown.
+        """
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+        monkeypatch.chdir(tmp_path)
         name = get_project_name()
         assert len(name) > 0
         assert all(c.isalnum() or c in '._-' for c in name)
@@ -70,15 +78,15 @@ class TestResolveCredentialPath:
         path = resolve_credential_path('test-skill', 'project', 'my-project')
         assert path == CREDENTIALS_DIR / 'my-project' / 'test-skill.json'
 
-    def test_rejects_symlink_escape(self, tmp_path):
+    def test_rejects_symlink_escape(self, tmp_path, monkeypatch):
         """Paths that escape CREDENTIALS_DIR via symlinks are rejected."""
-        with patch('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds'):
-            (tmp_path / 'creds').mkdir()
-            # Create a symlink that points outside
-            evil_link = tmp_path / 'creds' / 'evil'
-            evil_link.symlink_to(tmp_path / 'outside')
-            with pytest.raises(ValueError, match='escapes credentials directory'):
-                resolve_credential_path('../../etc/passwd', 'global')
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+        (tmp_path / 'creds').mkdir()
+        # Create a symlink that points outside
+        evil_link = tmp_path / 'creds' / 'evil'
+        evil_link.symlink_to(tmp_path / 'outside')
+        with pytest.raises(ValueError, match='escapes credentials directory'):
+            resolve_credential_path('../../etc/passwd', 'global')
 
 
 # =============================================================================
@@ -166,11 +174,11 @@ class TestRemoveCredential:
             assert remove_credential('test', 'global') is True
             assert not path.exists()
 
-    def test_returns_false_for_missing(self, tmp_path):
+    def test_returns_false_for_missing(self, tmp_path, monkeypatch):
         """Remove returns False for non-existent credential."""
-        with patch('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds'):
-            (tmp_path / 'creds').mkdir(mode=0o700)
-            assert remove_credential('nonexistent', 'global') is False
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+        (tmp_path / 'creds').mkdir(mode=0o700)
+        assert remove_credential('nonexistent', 'global') is False
 
 
 # =============================================================================

@@ -498,9 +498,13 @@ def test_write_includes_compatibility():
         assert 'breaking' in result['validation']['compatibility']
 
 
-def test_write_validates_existing_file():
+def test_write_validates_existing_file(monkeypatch):
     """Test that write detects validation errors in file on disk."""
     with PlanContext(plan_id='solution-invalid') as ctx:
+        # Pin HOME and credentials dir for defense-in-depth against any
+        # path resolution that might hit real ~/.plan-marshall-credentials.
+        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
         (ctx.plan_dir / 'solution_outline.md').write_text('# Just a title\n\nNo required sections here.')
 
         result = cmd_write(_write_ns(plan_id='solution-invalid'))
@@ -632,9 +636,13 @@ def test_invalid_plan_id_underscore():
 # =============================================================================
 
 
-def test_cli_validate_success():
+def test_cli_validate_success(monkeypatch):
     """CLI plumbing: validate subcommand works end-to-end."""
     with PlanContext(plan_id='cli-validate') as ctx:
+        # Pin HOME and credentials dir for the subprocess so solution-outline
+        # CLI side-effects cannot touch the real host paths.
+        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(SCRIPT_PATH, 'validate', '--plan-id', 'cli-validate')
@@ -667,9 +675,13 @@ def test_cli_invalid_plan_id():
         assert data['error'] == 'invalid_plan_id'
 
 
-def test_cli_read_section_and_deliverable_mutually_exclusive():
+def test_cli_read_section_and_deliverable_mutually_exclusive(monkeypatch):
     """CLI plumbing: --section and --deliverable-number cannot be combined."""
     with PlanContext(plan_id='cli-section-mutex') as ctx:
+        # Pin HOME and credentials dir for the subprocess so any eager
+        # initialization cannot touch the real host paths.
+        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
         (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
 
         result = run_script(

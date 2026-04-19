@@ -40,11 +40,11 @@ from conftest import PlanContext, run_script  # noqa: E402
 # =============================================================================
 
 
-def test_system_retention_get():
+def test_system_retention_get(monkeypatch):
     """Test system retention get."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_system(Namespace(sub_noun='retention', verb='get'))
 
@@ -53,11 +53,11 @@ def test_system_retention_get():
         assert result['retention']['logs_days'] == 1
 
 
-def test_system_retention_set():
+def test_system_retention_set(monkeypatch):
     """Test system retention set."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_system(Namespace(sub_noun='retention', verb='set', field='logs_days', value='7'))
 
@@ -70,11 +70,11 @@ def test_system_retention_set():
         assert verify['retention']['logs_days'] == 7
 
 
-def test_system_retention_set_boolean():
+def test_system_retention_set_boolean(monkeypatch):
     """Test system retention set with boolean value."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_system(
             Namespace(sub_noun='retention', verb='set', field='temp_on_maintenance', value='false')

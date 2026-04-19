@@ -85,9 +85,13 @@ def test_clean_logs():
         assert recent_log.exists(), 'Recent log should be kept'
 
 
-def test_clean_archived_plans():
+def test_clean_archived_plans(monkeypatch):
     """Clean old archived plans."""
     with PlanContext(plan_id='test-clean-archived') as ctx:
+        # Pin HOME and credentials dir for the subprocess so cleanup's
+        # run-configuration side-effects cannot touch the real host paths.
+        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
         setup_marshal_json(ctx.fixture_dir)
 
         archived_dir = ctx.fixture_dir / 'archived-plans'
@@ -116,9 +120,13 @@ def test_clean_archived_plans():
         assert recent_plan.exists(), 'Recent plan should be kept'
 
 
-def test_clean_memory():
+def test_clean_memory(monkeypatch):
     """Clean old memory files."""
     with PlanContext(plan_id='test-clean-memory') as ctx:
+        # Pin HOME and credentials dir for the subprocess so cleanup's
+        # run-configuration side-effects cannot touch the real host paths.
+        monkeypatch.setenv('HOME', str(ctx.fixture_dir))
+        monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(ctx.fixture_dir / 'creds'))
         setup_marshal_json(ctx.fixture_dir)
 
         memory_dir = ctx.fixture_dir / 'memory' / 'handoffs'

@@ -46,11 +46,11 @@ from conftest import PlanContext, run_script  # noqa: E402
 # =============================================================================
 
 
-def test_resolve_domain_skills_java_implementation():
+def test_resolve_domain_skills_java_implementation(monkeypatch):
     """Test resolve-domain-skills for java + implementation profile."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_domain_skills(Namespace(domain='java', profile='implementation'))
 
@@ -63,11 +63,11 @@ def test_resolve_domain_skills_java_implementation():
         assert 'pm-dev-java:junit-core' not in defaults_str
 
 
-def test_resolve_domain_skills_java_testing():
+def test_resolve_domain_skills_java_testing(monkeypatch):
     """Test resolve-domain-skills for java + module_testing profile."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_domain_skills(Namespace(domain='java', profile='module_testing'))
 
@@ -81,11 +81,11 @@ def test_resolve_domain_skills_java_testing():
         assert 'pm-dev-java:java-cdi' not in optionals_str
 
 
-def test_resolve_domain_skills_javascript_implementation():
+def test_resolve_domain_skills_javascript_implementation(monkeypatch):
     """Test resolve-domain-skills for javascript + implementation profile."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_domain_skills(Namespace(domain='javascript', profile='implementation'))
 
@@ -96,11 +96,11 @@ def test_resolve_domain_skills_javascript_implementation():
         assert 'pm-dev-frontend:lint-config' in optionals_str
 
 
-def test_resolve_domain_skills_unknown_domain():
+def test_resolve_domain_skills_unknown_domain(monkeypatch):
     """Test resolve-domain-skills with unknown domain returns error."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_domain_skills(Namespace(domain='unknown', profile='implementation'))
 
@@ -108,11 +108,11 @@ def test_resolve_domain_skills_unknown_domain():
         assert 'unknown' in result['error'].lower()
 
 
-def test_resolve_domain_skills_unknown_profile():
+def test_resolve_domain_skills_unknown_profile(monkeypatch):
     """Test resolve-domain-skills with unknown profile returns error."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_domain_skills(Namespace(domain='java', profile='invalid-profile'))
 
@@ -120,11 +120,11 @@ def test_resolve_domain_skills_unknown_profile():
         assert 'profile' in result['error'].lower()
 
 
-def test_resolve_domain_skills_java_quality():
+def test_resolve_domain_skills_java_quality(monkeypatch):
     """Test resolve-domain-skills for java + quality profile (finalize phase)."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_domain_skills(Namespace(domain='java', profile='quality'))
 
@@ -139,11 +139,11 @@ def test_resolve_domain_skills_java_quality():
 # =============================================================================
 
 
-def test_resolve_workflow_skill_extension_java_outline():
+def test_resolve_workflow_skill_extension_java_outline(monkeypatch):
     """Test resolve-workflow-skill-extension returns outline extension for java."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_workflow_skill_extension(Namespace(domain='java', type='outline'))
 
@@ -153,11 +153,11 @@ def test_resolve_workflow_skill_extension_java_outline():
         assert result['type'] == 'outline'
 
 
-def test_resolve_workflow_skill_extension_java_triage():
+def test_resolve_workflow_skill_extension_java_triage(monkeypatch):
     """Test resolve-workflow-skill-extension returns triage extension for java."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_workflow_skill_extension(Namespace(domain='java', type='triage'))
 
@@ -165,11 +165,11 @@ def test_resolve_workflow_skill_extension_java_triage():
         assert result['extension'] == 'pm-dev-java:ext-triage-java'
 
 
-def test_resolve_workflow_skill_extension_javascript_outline():
+def test_resolve_workflow_skill_extension_javascript_outline(monkeypatch):
     """Test resolve-workflow-skill-extension returns outline extension for javascript."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_workflow_skill_extension(Namespace(domain='javascript', type='outline'))
 
@@ -177,11 +177,11 @@ def test_resolve_workflow_skill_extension_javascript_outline():
         assert result['extension'] == 'pm-dev-frontend:ext-outline-frontend'
 
 
-def test_resolve_workflow_skill_extension_missing_type():
+def test_resolve_workflow_skill_extension_missing_type(monkeypatch):
     """Test resolve-workflow-skill-extension returns null for missing extension type."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_workflow_skill_extension(Namespace(domain='javascript', type='triage'))
 
@@ -189,11 +189,11 @@ def test_resolve_workflow_skill_extension_missing_type():
         assert result['extension'] is None
 
 
-def test_resolve_workflow_skill_extension_unknown_domain():
+def test_resolve_workflow_skill_extension_unknown_domain(monkeypatch):
     """Test resolve-workflow-skill-extension returns null for unknown domain (not error)."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_workflow_skill_extension(Namespace(domain='unknown', type='outline'))
 
@@ -201,11 +201,11 @@ def test_resolve_workflow_skill_extension_unknown_domain():
         assert result['extension'] is None
 
 
-def test_resolve_workflow_skill_extension_plugin_dev():
+def test_resolve_workflow_skill_extension_plugin_dev(monkeypatch):
     """Test resolve-workflow-skill-extension returns extensions for plugin-dev domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_workflow_skill_extension(Namespace(
             domain='plan-marshall-plugin-dev', type='outline',
@@ -220,11 +220,11 @@ def test_resolve_workflow_skill_extension_plugin_dev():
 # =============================================================================
 
 
-def test_get_skills_by_profile_java():
+def test_get_skills_by_profile_java(monkeypatch):
     """Test get-skills-by-profile loads profile-keyed skills from extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_get_skills_by_profile(Namespace(domain='java'))
 
@@ -236,11 +236,11 @@ def test_get_skills_by_profile_java():
         assert 'integration_testing' not in result['skills_by_profile']
 
 
-def test_get_skills_by_profile_includes_core_skills():
+def test_get_skills_by_profile_includes_core_skills(monkeypatch):
     """Test get-skills-by-profile includes core skills in all profiles."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_get_skills_by_profile(Namespace(domain='java'))
 
@@ -250,11 +250,11 @@ def test_get_skills_by_profile_includes_core_skills():
             assert 'pm-dev-java:java-core' in profile_skills
 
 
-def test_get_skills_by_profile_includes_profile_skills():
+def test_get_skills_by_profile_includes_profile_skills(monkeypatch):
     """Test get-skills-by-profile includes profile-specific skills."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_get_skills_by_profile(Namespace(domain='java'))
 
@@ -262,11 +262,11 @@ def test_get_skills_by_profile_includes_profile_skills():
         assert 'pm-dev-java:junit-core' in result['skills_by_profile']['module_testing']
 
 
-def test_get_skills_by_profile_javascript():
+def test_get_skills_by_profile_javascript(monkeypatch):
     """Test get-skills-by-profile works for javascript domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_get_skills_by_profile(Namespace(domain='javascript'))
 
@@ -276,11 +276,11 @@ def test_get_skills_by_profile_javascript():
         assert 'pm-dev-frontend:javascript' in all_skills
 
 
-def test_get_skills_by_profile_unknown_domain():
+def test_get_skills_by_profile_unknown_domain(monkeypatch):
     """Test get-skills-by-profile returns error for unknown domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_get_skills_by_profile(Namespace(domain='unknown'))
 
@@ -288,11 +288,11 @@ def test_get_skills_by_profile_unknown_domain():
         assert 'unknown' in result['error'].lower()
 
 
-def test_get_skills_by_profile_flat_domain_fallback():
+def test_get_skills_by_profile_flat_domain_fallback(monkeypatch):
     """Test get-skills-by-profile returns core skills for flat structure domain (no bundle)."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_get_skills_by_profile(Namespace(domain='java'))
 
@@ -305,11 +305,11 @@ def test_get_skills_by_profile_flat_domain_fallback():
 # =============================================================================
 
 
-def test_list_finalize_steps_returns_built_in():
+def test_list_finalize_steps_returns_built_in(monkeypatch):
     """Test list-finalize-steps returns built-in steps with default: prefix."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_list_finalize_steps(Namespace())
 
@@ -322,11 +322,11 @@ def test_list_finalize_steps_returns_built_in():
         assert 'default:branch-cleanup' in step_names
 
 
-def test_list_finalize_steps_count():
+def test_list_finalize_steps_count(monkeypatch):
     """Test list-finalize-steps returns correct count for built-in steps."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_list_finalize_steps(Namespace())
 

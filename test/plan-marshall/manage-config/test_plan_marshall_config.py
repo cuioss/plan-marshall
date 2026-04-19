@@ -57,10 +57,10 @@ from conftest import PlanContext, run_script  # noqa: E402
 # =============================================================================
 
 
-def test_init_creates_marshal_json():
+def test_init_creates_marshal_json(monkeypatch):
     """Test init creates marshal.json with defaults."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
 
@@ -70,11 +70,11 @@ def test_init_creates_marshal_json():
         assert marshal_path.exists(), 'marshal.json should be created'
 
 
-def test_skill_domains_list():
+def test_skill_domains_list(monkeypatch):
     """Test skill-domains list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='list'))
 
@@ -82,11 +82,11 @@ def test_skill_domains_list():
         assert 'java' in result['domains']
 
 
-def test_skill_domains_get():
+def test_skill_domains_get(monkeypatch):
     """Test skill-domains get."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get', domain='java'))
 
@@ -94,11 +94,11 @@ def test_skill_domains_get():
         assert 'pm-dev-java:java-core' in result['defaults']
 
 
-def test_system_retention_get():
+def test_system_retention_get(monkeypatch):
     """Test system retention get."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_system(Namespace(sub_noun='retention', verb='get'))
 
@@ -106,11 +106,11 @@ def test_system_retention_get():
         assert 'logs_days' in result['retention']
 
 
-def test_plan_phase_5_execute_get():
+def test_plan_phase_5_execute_get(monkeypatch):
     """Test plan phase-5-execute get."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
@@ -118,11 +118,11 @@ def test_plan_phase_5_execute_get():
         assert 'commit_strategy' in result
 
 
-def test_plan_phase_6_finalize_get():
+def test_plan_phase_6_finalize_get(monkeypatch):
     """Test plan phase-6-finalize get returns config including pr_merge_strategy."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field=None))
 
@@ -130,11 +130,11 @@ def test_plan_phase_6_finalize_get():
         assert result['pr_merge_strategy'] == 'squash'
 
 
-def test_plan_phase_6_finalize_get_field_pr_merge_strategy():
+def test_plan_phase_6_finalize_get_field_pr_merge_strategy(monkeypatch):
     """Test plan phase-6-finalize get --field pr_merge_strategy."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='pr_merge_strategy'))
 
@@ -142,11 +142,11 @@ def test_plan_phase_6_finalize_get_field_pr_merge_strategy():
         assert result['value'] == 'squash'
 
 
-def test_plan_phase_6_finalize_set_pr_merge_strategy():
+def test_plan_phase_6_finalize_set_pr_merge_strategy(monkeypatch):
     """Test plan phase-6-finalize set --field pr_merge_strategy --value rebase."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set', field='pr_merge_strategy', value='rebase'))
 
@@ -158,11 +158,11 @@ def test_plan_phase_6_finalize_set_pr_merge_strategy():
         assert result2['value'] == 'rebase'
 
 
-def test_resolve_domain_skills():
+def test_resolve_domain_skills(monkeypatch):
     """Test resolve-domain-skills command."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_resolve_domain_skills(Namespace(domain='java', profile='implementation'))
 
@@ -170,10 +170,10 @@ def test_resolve_domain_skills():
         assert 'pm-dev-java:java-core' in result['defaults']
 
 
-def test_error_without_marshal_json():
+def test_error_without_marshal_json(monkeypatch):
     """Test operations fail gracefully without marshal.json."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
         # Don't create marshal.json
 
         result = cmd_skill_domains(Namespace(verb='list'))
@@ -190,11 +190,11 @@ def test_error_without_marshal_json():
 # =============================================================================
 
 
-def test_ext_defaults_set_adds_value():
+def test_ext_defaults_set_adds_value(monkeypatch):
     """Test ext-defaults set adds a value."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_ext_defaults(Namespace(verb='set', key='test.key', value='test-value'))
 
@@ -202,11 +202,11 @@ def test_ext_defaults_set_adds_value():
         assert result['key'] == 'test.key'
 
 
-def test_ext_defaults_set_updates_existing():
+def test_ext_defaults_set_updates_existing(monkeypatch):
     """Test ext-defaults set overwrites existing value."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         # Set initial value
         cmd_ext_defaults(Namespace(verb='set', key='test.key', value='initial'))
@@ -218,33 +218,33 @@ def test_ext_defaults_set_updates_existing():
         assert result['value'] == 'updated'
 
 
-def test_ext_defaults_set_json_array():
+def test_ext_defaults_set_json_array(monkeypatch):
     """Test ext-defaults set with JSON array value."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_ext_defaults(Namespace(verb='set', key='test.array', value='["a","b","c"]'))
 
         assert result['status'] == 'success'
 
 
-def test_ext_defaults_set_json_object():
+def test_ext_defaults_set_json_object(monkeypatch):
     """Test ext-defaults set with JSON object value."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_ext_defaults(Namespace(verb='set', key='test.obj', value='{"nested": true}'))
 
         assert result['status'] == 'success'
 
 
-def test_ext_defaults_set_plain_string():
+def test_ext_defaults_set_plain_string(monkeypatch):
     """Test ext-defaults set with plain string (not JSON)."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_ext_defaults(Namespace(verb='set', key='test.str', value='hello-world'))
 
@@ -252,11 +252,11 @@ def test_ext_defaults_set_plain_string():
         assert result['value'] == 'hello-world'
 
 
-def test_ext_defaults_get_existing():
+def test_ext_defaults_get_existing(monkeypatch):
     """Test ext-defaults get retrieves existing value."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
         cmd_ext_defaults(Namespace(verb='set', key='my.key', value='my-value'))
 
         result = cmd_ext_defaults(Namespace(verb='get', key='my.key'))
@@ -265,22 +265,22 @@ def test_ext_defaults_get_existing():
         assert result['value'] == 'my-value'
 
 
-def test_ext_defaults_get_nonexistent():
+def test_ext_defaults_get_nonexistent(monkeypatch):
     """Test ext-defaults get returns not_found for missing key."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_ext_defaults(Namespace(verb='get', key='nonexistent'))
 
         assert result['status'] == 'not_found'
 
 
-def test_ext_defaults_set_default_adds_new():
+def test_ext_defaults_set_default_adds_new(monkeypatch):
     """Test ext-defaults set-default adds value when key doesn't exist."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_ext_defaults(Namespace(verb='set-default', key='new.key', value='new-value'))
 
@@ -288,11 +288,11 @@ def test_ext_defaults_set_default_adds_new():
         assert result['value'] == 'new-value'
 
 
-def test_ext_defaults_set_default_skips_existing():
+def test_ext_defaults_set_default_skips_existing(monkeypatch):
     """Test ext-defaults set-default skips when key exists."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
         cmd_ext_defaults(Namespace(verb='set', key='existing.key', value='original'))
 
         result = cmd_ext_defaults(Namespace(verb='set-default', key='existing.key', value='new'))
@@ -301,11 +301,11 @@ def test_ext_defaults_set_default_skips_existing():
         assert result['reason'] == 'key_exists'
 
 
-def test_ext_defaults_list_all():
+def test_ext_defaults_list_all(monkeypatch):
     """Test ext-defaults list shows all values."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
         cmd_ext_defaults(Namespace(verb='set', key='key1', value='value1'))
         cmd_ext_defaults(Namespace(verb='set', key='key2', value='value2'))
 
@@ -316,11 +316,11 @@ def test_ext_defaults_list_all():
         assert 'key2' in result['extension_defaults']
 
 
-def test_ext_defaults_list_empty():
+def test_ext_defaults_list_empty(monkeypatch):
     """Test ext-defaults list with no values."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_ext_defaults(Namespace(verb='list'))
 
@@ -328,11 +328,11 @@ def test_ext_defaults_list_empty():
         assert result['count'] == 0
 
 
-def test_ext_defaults_remove_existing():
+def test_ext_defaults_remove_existing(monkeypatch):
     """Test ext-defaults remove deletes existing key."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
         cmd_ext_defaults(Namespace(verb='set', key='to.remove', value='value'))
 
         result = cmd_ext_defaults(Namespace(verb='remove', key='to.remove'))
@@ -341,11 +341,11 @@ def test_ext_defaults_remove_existing():
         assert result['action'] == 'removed'
 
 
-def test_ext_defaults_remove_nonexistent_skips():
+def test_ext_defaults_remove_nonexistent_skips(monkeypatch):
     """Test ext-defaults remove skips non-existent key."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_ext_defaults(Namespace(verb='remove', key='nonexistent'))
 
