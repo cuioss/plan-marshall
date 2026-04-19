@@ -44,11 +44,11 @@ from conftest import PlanContext, run_script  # noqa: E402
 # =============================================================================
 
 
-def test_skill_domains_list():
+def test_skill_domains_list(monkeypatch):
     """Test skill-domains list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='list'))
 
@@ -56,11 +56,11 @@ def test_skill_domains_list():
         assert 'java' in result['domains']
 
 
-def test_skill_domains_get():
+def test_skill_domains_get(monkeypatch):
     """Test skill-domains get."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get', domain='java'))
 
@@ -68,11 +68,11 @@ def test_skill_domains_get():
         assert 'pm-dev-java:java-core' in result['defaults']
 
 
-def test_skill_domains_get_defaults():
+def test_skill_domains_get_defaults(monkeypatch):
     """Test skill-domains get-defaults."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get-defaults', domain='java'))
 
@@ -80,11 +80,11 @@ def test_skill_domains_get_defaults():
         assert 'pm-dev-java:java-core' in result['defaults']
 
 
-def test_skill_domains_get_optionals():
+def test_skill_domains_get_optionals(monkeypatch):
     """Test skill-domains get-optionals."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get-optionals', domain='java'))
 
@@ -92,11 +92,11 @@ def test_skill_domains_get_optionals():
         assert 'pm-dev-java:java-cdi' in result['optionals']
 
 
-def test_skill_domains_unknown_domain():
+def test_skill_domains_unknown_domain(monkeypatch):
     """Test skill-domains get with unknown domain returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get', domain='unknown'))
 
@@ -104,11 +104,11 @@ def test_skill_domains_unknown_domain():
         assert 'unknown' in result['error'].lower()
 
 
-def test_skill_domains_add():
+def test_skill_domains_add(monkeypatch):
     """Test skill-domains add."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='add',
@@ -124,11 +124,11 @@ def test_skill_domains_add():
         assert 'pm-dev-python:cui-python-core' in verify['defaults']
 
 
-def test_skill_domains_validate():
+def test_skill_domains_validate(monkeypatch):
     """Test skill-domains validate."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='validate',
@@ -140,11 +140,11 @@ def test_skill_domains_validate():
         assert result['valid'] is True
 
 
-def test_skill_domains_validate_returns_location():
+def test_skill_domains_validate_returns_location(monkeypatch):
     """Test skill-domains validate returns in_defaults or in_optionals."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         # Skill in defaults
         result_defaults = cmd_skill_domains(Namespace(
@@ -159,11 +159,11 @@ def test_skill_domains_validate_returns_location():
         assert result_optionals['in_optionals'] is True
 
 
-def test_skill_domains_validate_invalid_skill():
+def test_skill_domains_validate_invalid_skill(monkeypatch):
     """Test skill-domains validate with invalid skill returns false."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='validate', domain='java', skill='pm-dev-java:invalid-skill',
@@ -178,11 +178,11 @@ def test_skill_domains_validate_invalid_skill():
 # =============================================================================
 
 
-def test_skill_domains_get_nested_structure():
+def test_skill_domains_get_nested_structure(monkeypatch):
     """Test skill-domains get returns nested structure for domains with bundle reference."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get', domain='java'))
 
@@ -192,11 +192,11 @@ def test_skill_domains_get_nested_structure():
         assert 'workflow_skill_extensions' in result
 
 
-def test_skill_domains_get_defaults_nested():
+def test_skill_domains_get_defaults_nested(monkeypatch):
     """Test skill-domains get-defaults loads core.defaults from extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get-defaults', domain='java'))
 
@@ -205,11 +205,11 @@ def test_skill_domains_get_defaults_nested():
         assert 'pm-dev-java:java-core' in defaults_str
 
 
-def test_skill_domains_get_optionals_nested():
+def test_skill_domains_get_optionals_nested(monkeypatch):
     """Test skill-domains get-optionals loads core.optionals from extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get-optionals', domain='java'))
 
@@ -242,11 +242,11 @@ def test_skill_domains_validate_nested_profile_skill():
         assert 'in_defaults' in result.stdout.lower()
 
 
-def test_skill_domains_get_system_has_execute_task_skills():
+def test_skill_domains_get_system_has_execute_task_skills(monkeypatch):
     """Test skill-domains get returns system domain with execute_task_skills."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get', domain='system'))
 
@@ -261,7 +261,7 @@ def test_skill_domains_get_system_has_execute_task_skills():
 # =============================================================================
 
 
-def test_skill_domains_detect_runs():
+def test_skill_domains_detect_runs(monkeypatch):
     """Test skill-domains detect command runs successfully."""
     with PlanContext() as ctx:
         config = {
@@ -294,7 +294,7 @@ def test_skill_domains_detect_runs():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='detect'))
 
@@ -302,7 +302,7 @@ def test_skill_domains_detect_runs():
         assert 'detected' in result
 
 
-def test_skill_domains_detect_no_overwrite():
+def test_skill_domains_detect_no_overwrite(monkeypatch):
     """Test skill-domains detect does not overwrite existing domains."""
     with PlanContext() as ctx:
         config = {
@@ -341,7 +341,7 @@ def test_skill_domains_detect_no_overwrite():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='detect'))
 
@@ -357,11 +357,11 @@ def test_skill_domains_detect_no_overwrite():
 # =============================================================================
 
 
-def test_get_extensions_java():
+def test_get_extensions_java(monkeypatch):
     """Test get-extensions returns extensions for java domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get-extensions', domain='java'))
 
@@ -371,22 +371,22 @@ def test_get_extensions_java():
         assert 'triage' in result['extensions']
 
 
-def test_get_extensions_unknown_domain():
+def test_get_extensions_unknown_domain(monkeypatch):
     """Test get-extensions returns error for unknown domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get-extensions', domain='unknown'))
 
         assert result['status'] == 'error'
 
 
-def test_set_extensions():
+def test_set_extensions(monkeypatch):
     """Test set-extensions adds extension to domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='set-extensions',
@@ -405,7 +405,7 @@ def test_set_extensions():
 # =============================================================================
 
 
-def test_get_available_uses_discovery():
+def test_get_available_uses_discovery(monkeypatch):
     """Test get-available uses discovery for domains."""
     with PlanContext() as ctx:
         config = {
@@ -438,7 +438,7 @@ def test_get_available_uses_discovery():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get-available'))
 
@@ -470,7 +470,7 @@ def test_get_available_domain_only_extensions_use_applies_to_module():
         assert 'applicable' in domain, f"Domain {domain['key']} missing 'applicable' field"
 
 
-def test_configure_domains():
+def test_configure_domains(monkeypatch):
     """Test configure adds system domain and selected domains."""
     with PlanContext() as ctx:
         config = {
@@ -503,7 +503,7 @@ def test_configure_domains():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='configure', domains='java,javascript'))
 
@@ -517,7 +517,7 @@ def test_configure_domains():
         assert 'javascript' in updated['skill_domains']
 
 
-def test_configure_always_adds_system():
+def test_configure_always_adds_system(monkeypatch):
     """Test configure always adds system domain even with empty selection."""
     with PlanContext() as ctx:
         config = {
@@ -550,7 +550,7 @@ def test_configure_always_adds_system():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='configure', domains=''))
 
@@ -565,11 +565,11 @@ def test_configure_always_adds_system():
 # =============================================================================
 
 
-def test_set_with_profile_returns_error():
+def test_set_with_profile_returns_error(monkeypatch):
     """Test set with --profile returns error since profiles are in extension.py."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='set',
@@ -587,7 +587,7 @@ def test_set_with_profile_returns_error():
 # =============================================================================
 
 
-def test_get_available_works_without_skill_domains():
+def test_get_available_works_without_skill_domains(monkeypatch):
     """Test get-available works without skill_domains being configured."""
     with PlanContext() as ctx:
         config = {
@@ -619,7 +619,7 @@ def test_get_available_works_without_skill_domains():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get-available'))
 
@@ -627,7 +627,7 @@ def test_get_available_works_without_skill_domains():
         assert 'discovered_domains' in result
 
 
-def test_configure_works_without_skill_domains():
+def test_configure_works_without_skill_domains(monkeypatch):
     """Test configure works without skill_domains being configured."""
     with PlanContext() as ctx:
         config = {
@@ -659,7 +659,7 @@ def test_configure_works_without_skill_domains():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
@@ -672,7 +672,7 @@ def test_configure_works_without_skill_domains():
         assert 'java' in updated['skill_domains']
 
 
-def test_list_requires_skill_domains():
+def test_list_requires_skill_domains(monkeypatch):
     """Test list verb requires skill_domains to be configured."""
     with PlanContext() as ctx:
         config = {
@@ -704,7 +704,7 @@ def test_list_requires_skill_domains():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='list'))
 
@@ -753,11 +753,11 @@ def test_discover_project_returns_structured_output():
         assert 'count: ' in result.stdout
 
 
-def test_attach_project_to_domain():
+def test_attach_project_to_domain(monkeypatch):
     """Test attach-project adds project skills to a domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='attach-project',
@@ -774,11 +774,11 @@ def test_attach_project_to_domain():
         assert 'project:my-custom-skill' in updated['skill_domains']['java']['project_skills']
 
 
-def test_attach_project_to_system_domain():
+def test_attach_project_to_system_domain(monkeypatch):
     """Test attach-project works with system domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='attach-project',
@@ -793,11 +793,11 @@ def test_attach_project_to_system_domain():
         assert 'project:cross-domain-skill' in updated['skill_domains']['system']['project_skills']
 
 
-def test_attach_project_rejects_invalid_notation():
+def test_attach_project_rejects_invalid_notation(monkeypatch):
     """Test attach-project rejects skills not starting with project:."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='attach-project',
@@ -808,11 +808,11 @@ def test_attach_project_rejects_invalid_notation():
         assert result['status'] == 'error'
 
 
-def test_attach_project_rejects_unknown_domain():
+def test_attach_project_rejects_unknown_domain(monkeypatch):
     """Test attach-project rejects unknown domain."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(
             verb='attach-project',
@@ -823,11 +823,11 @@ def test_attach_project_rejects_unknown_domain():
         assert result['status'] == 'error'
 
 
-def test_attach_project_no_duplicates():
+def test_attach_project_no_duplicates(monkeypatch):
     """Test attach-project does not add duplicate skills."""
     with PlanContext() as ctx:
         create_nested_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         # Attach first time
         cmd_skill_domains(Namespace(verb='attach-project', domain='java', skills='project:my-skill'))
@@ -842,7 +842,7 @@ def test_attach_project_no_duplicates():
         assert project_skills.count('project:my-skill') == 1
 
 
-def test_configure_preserves_project_skills():
+def test_configure_preserves_project_skills(monkeypatch):
     """Test configure preserves existing project_skills when reconfiguring domains."""
     with PlanContext() as ctx:
         config = {
@@ -886,7 +886,7 @@ def test_configure_preserves_project_skills():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
@@ -897,7 +897,7 @@ def test_configure_preserves_project_skills():
         assert 'project:java-helper' in updated['skill_domains']['java']['project_skills']
 
 
-def test_configure_drops_project_skills_for_removed_domains():
+def test_configure_drops_project_skills_for_removed_domains(monkeypatch):
     """Test configure drops project_skills for domains that are no longer selected."""
     with PlanContext() as ctx:
         config = {
@@ -934,7 +934,7 @@ def test_configure_drops_project_skills_for_removed_domains():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='configure', domains='java'))
 
@@ -945,7 +945,7 @@ def test_configure_drops_project_skills_for_removed_domains():
         assert 'javascript' not in updated['skill_domains']
 
 
-def test_get_nested_includes_project_skills():
+def test_get_nested_includes_project_skills(monkeypatch):
     """Test skill-domains get includes project_skills in output for nested domains."""
     with PlanContext() as ctx:
         config = {
@@ -984,7 +984,7 @@ def test_get_nested_includes_project_skills():
         }
         marshal_path = ctx.fixture_dir / 'marshal.json'
         marshal_path.write_text(json.dumps(config, indent=2))
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_skill_domains(Namespace(verb='get', domain='system'))
 
@@ -998,11 +998,11 @@ def test_get_nested_includes_project_skills():
 # =============================================================================
 
 
-def test_list_verify_steps_returns_built_in():
+def test_list_verify_steps_returns_built_in(monkeypatch):
     """Test list-verify-steps returns built-in steps with default: prefix."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_list_verify_steps(Namespace())
 

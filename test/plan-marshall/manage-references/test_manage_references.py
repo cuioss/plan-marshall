@@ -414,19 +414,37 @@ def test_cli_get_not_found_exits_zero():
         assert 'file_not_found' in result.stdout
 
 
-def test_cli_read_not_found_exits_zero():
-    """Regression: read with missing references.json exits 0 with TOON error output."""
-    with PlanContext():
-        result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
-        assert result.success, f'Should exit 0, got: {result.stderr}'
-        assert 'status: error' in result.stdout
-        assert 'file_not_found' in result.stdout
+def test_cli_read_not_found_exits_zero(tmp_path, monkeypatch):
+    """Regression: read with missing references.json exits 0 with TOON error output.
+
+    PlanContext pins PLAN_BASE_DIR to its fixture_dir, but the spawned
+    subprocess can still write to ``~/.plan-marshall-credentials`` during
+    provider initialization. Redirect HOME and CREDENTIALS_DIR as well so
+    nothing leaks into the real host paths.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+    result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'nonexistent')
+    assert result.success, f'Should exit 0, got: {result.stderr}'
+    assert 'status: error' in result.stdout
+    assert 'file_not_found' in result.stdout
 
 
-def test_cli_get_context_not_found_exits_zero():
-    """Regression: get-context with missing references.json exits 0 with TOON error output."""
-    with PlanContext():
-        result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
-        assert result.success, f'Should exit 0, got: {result.stderr}'
-        assert 'status: error' in result.stdout
-        assert 'file_not_found' in result.stdout
+def test_cli_get_context_not_found_exits_zero(tmp_path, monkeypatch):
+    """Regression: get-context with missing references.json exits 0 with TOON error output.
+
+    PlanContext pins PLAN_BASE_DIR to its fixture_dir, but the spawned
+    subprocess can still write to ``~/.plan-marshall-credentials`` during
+    provider initialization. Redirect HOME and CREDENTIALS_DIR as well so
+    nothing leaks into the real host paths.
+    """
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(tmp_path / 'creds'))
+    monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+    result = run_script(SCRIPT_PATH, 'get-context', '--plan-id', 'nonexistent')
+    assert result.success, f'Should exit 0, got: {result.stderr}'
+    assert 'status: error' in result.stdout
+    assert 'file_not_found' in result.stdout

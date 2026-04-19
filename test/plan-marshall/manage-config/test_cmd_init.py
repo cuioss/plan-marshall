@@ -40,10 +40,10 @@ from conftest import PlanContext, run_script  # noqa: E402
 # =============================================================================
 
 
-def test_init_creates_marshal_json():
+def test_init_creates_marshal_json(monkeypatch):
     """Test init creates marshal.json with defaults."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
 
@@ -58,11 +58,11 @@ def test_init_creates_marshal_json():
         assert 'plan' in config, 'Should have plan'
 
 
-def test_init_fails_if_exists():
+def test_init_fails_if_exists(monkeypatch):
     """Test init fails if marshal.json already exists."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
 
@@ -70,12 +70,12 @@ def test_init_fails_if_exists():
         assert 'already exists' in result['error'].lower()
 
 
-def test_init_force_overwrites():
+def test_init_force_overwrites(monkeypatch):
     """Test init --force overwrites existing marshal.json."""
     with PlanContext() as ctx:
         # Create existing with custom content
         create_marshal_json(ctx.fixture_dir, {'custom': True})
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=True))
 
@@ -87,10 +87,10 @@ def test_init_force_overwrites():
         assert 'custom' not in config, 'Should not have old custom content'
 
 
-def test_init_creates_parent_directory():
+def test_init_creates_parent_directory(monkeypatch):
     """Test init creates .plan directory if missing."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
 
@@ -98,10 +98,10 @@ def test_init_creates_parent_directory():
         assert (ctx.fixture_dir / 'marshal.json').exists()
 
 
-def test_init_preserves_system_domain():
+def test_init_preserves_system_domain(monkeypatch):
     """Test init includes system domain in defaults."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
 
@@ -112,14 +112,14 @@ def test_init_preserves_system_domain():
         assert 'system' in config.get('skill_domains', {}), 'Should include system domain'
 
 
-def test_init_no_build_systems_key():
+def test_init_no_build_systems_key(monkeypatch):
     """Test init does NOT create build_systems key in marshal.json.
 
     Build systems are determined at runtime via extension discovery,
     not persisted in marshal.json.
     """
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
 
@@ -130,14 +130,14 @@ def test_init_no_build_systems_key():
         assert 'build_systems' not in config, 'marshal.json should NOT contain build_systems key'
 
 
-def test_init_no_extension_defaults_key():
+def test_init_no_extension_defaults_key(monkeypatch):
     """Test init does NOT create extension_defaults key in marshal.json.
 
     extension_defaults is auto-created on first access by get_extension_defaults(),
     so it does not need to be in the init defaults.
     """
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
 
@@ -148,13 +148,13 @@ def test_init_no_extension_defaults_key():
         assert 'extension_defaults' not in config, 'marshal.json should NOT contain extension_defaults key'
 
 
-def test_init_key_ordering():
+def test_init_key_ordering(monkeypatch):
     """Test init creates marshal.json with correct key order.
 
     Canonical order: plan, skill_domains, system
     """
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
 
@@ -176,10 +176,10 @@ def test_init_key_ordering():
         assert actual_order == expected_filtered, f'Key order should be {expected_filtered}, got {actual_order}'
 
 
-def test_init_includes_verification_in_phase_5_execute():
+def test_init_includes_verification_in_phase_5_execute(monkeypatch):
     """Test init creates marshal.json with verification config in phase-5-execute."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
@@ -193,10 +193,10 @@ def test_init_includes_verification_in_phase_5_execute():
         assert execute['steps'] == ['default:quality_check', 'default:build_verify', 'default:coverage_check']
 
 
-def test_init_includes_phase_6_finalize():
+def test_init_includes_phase_6_finalize(monkeypatch):
     """Test init creates marshal.json with plan.phase-6-finalize section."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
@@ -222,10 +222,10 @@ def test_init_includes_phase_6_finalize():
         assert '1_commit_push' not in finalize, 'Old boolean keys should not exist'
 
 
-def test_init_includes_phase_1_init():
+def test_init_includes_phase_1_init(monkeypatch):
     """Test init creates marshal.json with plan.phase-1-init section."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
@@ -237,10 +237,10 @@ def test_init_includes_phase_1_init():
         assert plan['phase-1-init']['branch_strategy'] == 'feature'
 
 
-def test_init_no_top_level_verification():
+def test_init_no_top_level_verification(monkeypatch):
     """Test init does NOT create top-level verification key."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
@@ -250,10 +250,10 @@ def test_init_no_top_level_verification():
         assert 'verification' not in config, 'Should NOT have top-level verification key'
 
 
-def test_init_no_top_level_finalize():
+def test_init_no_top_level_finalize(monkeypatch):
     """Test init does NOT create top-level finalize key."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'
@@ -263,10 +263,10 @@ def test_init_no_top_level_finalize():
         assert 'finalize' not in config, 'Should NOT have top-level finalize key'
 
 
-def test_init_no_plan_defaults():
+def test_init_no_plan_defaults(monkeypatch):
     """Test init does NOT create plan.defaults key."""
     with PlanContext() as ctx:
-        patch_config_paths(ctx.fixture_dir)
+        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_init(Namespace(force=False))
         assert result['status'] == 'success'

@@ -224,17 +224,39 @@ class TestGitignoreSetupCLI(ScriptTestCase):
     skill = 'marshall-steward'
     script = 'gitignore_setup.py'
 
+    def _isolated_env(self) -> dict[str, str]:
+        """Env overrides that redirect run-configuration + credential paths.
+
+        Subprocess-invoking tests cannot use pytest's ``monkeypatch`` fixture
+        (this is a ``unittest.TestCase`` subclass), so we redirect
+        ``PLAN_BASE_DIR`` and ``HOME`` via ``run_script(env_overrides=...)``
+        instead. The subprocess reads both at import time, so this pins
+        every path-resolving computation to ``self.temp_dir`` — no leaks
+        into the real ``.plan/local/run-configuration.json`` or
+        ``~/.plan-marshall-credentials/``.
+        """
+        return {
+            'PLAN_BASE_DIR': str(self.temp_dir / '.plan'),
+            'HOME': str(self.temp_dir),
+        }
+
     def test_nonexistent_project_root_fails(self):
         """Should fail when project root doesn't exist."""
         nonexistent = self.temp_dir / 'nonexistent'
 
-        result = run_script(SCRIPT_PATH, '--project-root', str(nonexistent))
+        result = run_script(
+            SCRIPT_PATH, '--project-root', str(nonexistent),
+            env_overrides=self._isolated_env(),
+        )
         self.assert_success(result)
         self.assertIn('project_root_not_found', result.stdout)
 
     def test_toon_output_format(self):
         """Output should be valid TOON format."""
-        result = run_script(SCRIPT_PATH, '--project-root', str(self.temp_dir))
+        result = run_script(
+            SCRIPT_PATH, '--project-root', str(self.temp_dir),
+            env_overrides=self._isolated_env(),
+        )
         self.assert_success(result)
 
         lines = result.stdout.strip().split('\n')

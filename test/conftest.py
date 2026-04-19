@@ -107,10 +107,21 @@ import run_config as _run_config  # noqa: F401, E402
 
 # Add test subdirectories with shared helpers to sys.path so tests can
 # import them without manual sys.path manipulation
-_TEST_HELPER_DIRS = [str(TEST_ROOT / 'plan-marshall')]
+_TEST_HELPER_DIRS = [
+    str(TEST_ROOT / 'plan-marshall'),
+    str(TEST_ROOT / 'pm-plugin-development'),
+]
 for _helper_dir in _TEST_HELPER_DIRS:
     if _helper_dir not in sys.path:
         sys.path.insert(0, _helper_dir)
+
+# Shared isolation fixtures live directly in this root conftest rather than
+# in bundle-scoped ``_fixtures.py`` modules: the production modules they
+# redirect (``_providers_core``, ``_config_core``) live in the plan-marshall
+# bundle but are used by tests across every bundle, so a single root-level
+# fixture avoids duplication. Bundle-scoped fixture modules via
+# ``pytest_plugins`` are still the right pattern for anything genuinely
+# bundle-specific.
 
 
 # =============================================================================
@@ -399,62 +410,55 @@ def _restore_cwd():
         os.chdir(original_cwd)
 
 
-_REAL_RUN_CONFIG_PATH = PROJECT_ROOT / PLAN_DIR_NAME / 'local' / 'run-configuration.json'
 _REAL_CREDENTIALS_DIR = Path.home() / '.plan-marshall-credentials'
 
+# NOTE: ``.plan/local/run-configuration.json`` is intentionally NOT watched by
+# the pollution guard. The ``pw`` build harness writes adaptive-timeout
+# telemetry there on every invocation of ``module-tests``/``verify``/``coverage``,
+# which is legitimate and necessary for timeout learning across runs. The guard
+# cannot distinguish harness-authored writes from test-authored writes via
+# mtime, so watching that file produces only false positives once tests are
+# correctly isolated via ``plan_context`` (which sets ``PLAN_BASE_DIR`` so test
+# subprocesses write to ``tmp_path`` rather than the real path anyway).
 
-def _snapshot_real_paths() -> tuple[float | None, list[str]]:
-    """Snapshot the mtime of the real run-configuration.json and the file
-    list of the real credentials directory.
 
-    Returns (mtime_or_None, sorted_filenames).
+def _snapshot_real_paths() -> list[str]:
+    """Snapshot the file listing of the real credentials directory.
+
+    Returns a sorted list of relative filenames (empty if the directory does
+    not exist).
     """
     try:
-        mtime = _REAL_RUN_CONFIG_PATH.stat().st_mtime
-    except FileNotFoundError:
-        mtime = None
-    try:
-        creds = sorted(
+        return sorted(
             str(p.relative_to(_REAL_CREDENTIALS_DIR))
             for p in _REAL_CREDENTIALS_DIR.rglob('*')
         )
     except FileNotFoundError:
-        creds = []
-    return mtime, creds
+        return []
 
 
 @pytest.fixture(autouse=True)
 def _pollution_guard(request):
-    """Fail loudly if a test mutates the real run-configuration.json or
-    the real ``~/.plan-marshall-credentials/`` directory.
+    """Fail loudly if a test mutates the real ``~/.plan-marshall-credentials/``
+    directory.
 
-    Any test that legitimately needs to exercise the real paths (none
-    expected today) can opt out with ``@pytest.mark.allow_pollution``.
+    Any test that legitimately needs to exercise the real credentials path
+    (none expected today) can opt out with ``@pytest.mark.allow_pollution``.
     """
     if request.node.get_closest_marker('allow_pollution'):
         yield
         return
 
-    before_mtime, before_creds = _snapshot_real_paths()
+    before_creds = _snapshot_real_paths()
     yield
-    after_mtime, after_creds = _snapshot_real_paths()
+    after_creds = _snapshot_real_paths()
 
-    failures: list[str] = []
-    if before_mtime != after_mtime:
-        failures.append(
-            f'Test mutated {_REAL_RUN_CONFIG_PATH} '
-            f'(mtime {before_mtime} -> {after_mtime})'
-        )
     if before_creds != after_creds:
-        failures.append(
-            f'Test mutated {_REAL_CREDENTIALS_DIR} '
-            f'(listing {before_creds} -> {after_creds})'
-        )
-    if failures:
         pytest.fail(
             f'Pollution guard: test {request.node.nodeid} leaked into real paths:\n  '
-            + '\n  '.join(failures)
-            + '\n\nIsolate via plan_context + monkeypatch.setattr(\'_providers_core.CREDENTIALS_DIR\', ...), '
+            f'Test mutated {_REAL_CREDENTIALS_DIR} '
+            f'(listing {before_creds} -> {after_creds})'
+            '\n\nIsolate via plan_context + monkeypatch.setattr(\'_providers_core.CREDENTIALS_DIR\', ...), '
             "or mark with @pytest.mark.allow_pollution if intentional."
         )
 
@@ -463,8 +467,8 @@ def pytest_configure(config):
     """Register the allow_pollution marker used by _pollution_guard."""
     config.addinivalue_line(
         'markers',
-        'allow_pollution: test may legitimately mutate the real run-configuration.json '
-        'or ~/.plan-marshall-credentials/ (bypasses the pollution guard).',
+        'allow_pollution: test may legitimately mutate the real '
+        '~/.plan-marshall-credentials/ directory (bypasses the pollution guard).',
     )
 
 
@@ -480,6 +484,45 @@ def fixture_dir(tmp_path):
     Returns:
         Path: Temporary directory path
     """
+    return tmp_path
+
+
+@pytest.fixture
+def isolated_credentials(tmp_path, monkeypatch):
+    """Redirect credential writes to a per-test tmp directory.
+
+    Patches ``_providers_core.CREDENTIALS_DIR`` via ``monkeypatch.setattr`` so
+    in-process calls to ``save_credential()`` / ``load_credential()`` resolve
+    against ``tmp_path/credentials/``. Also redirects the ``HOME`` env var so
+    subprocess invocations that compute ``Path.home() / '.plan-marshall-credentials'``
+    at import time land under tmp_path as well.
+
+    Yields the credentials directory path (not eagerly created — production
+    code creates it on first write).
+    """
+    creds_dir = tmp_path / 'credentials'
+    import _providers_core  # type: ignore[import-not-found]
+    monkeypatch.setattr(_providers_core, 'CREDENTIALS_DIR', creds_dir)
+    monkeypatch.setenv('HOME', str(tmp_path))
+    return creds_dir
+
+
+@pytest.fixture
+def isolated_run_config(tmp_path, monkeypatch):
+    """Redirect run-configuration.json writes to a per-test tmp directory.
+
+    Patches ``_config_core.PLAN_BASE_DIR``, ``_config_core.MARSHAL_PATH`` and
+    ``_config_core.RUN_CONFIG_PATH`` via ``monkeypatch.setattr`` so in-process
+    callers write under ``tmp_path``. Also sets ``PLAN_BASE_DIR`` via
+    ``monkeypatch.setenv`` so subprocess invocations inherit the same redirect.
+
+    Yields ``tmp_path`` (the redirected plan base directory).
+    """
+    import _config_core  # type: ignore[import-not-found]
+    monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
+    monkeypatch.setattr(_config_core, 'MARSHAL_PATH', tmp_path / 'marshal.json')
+    monkeypatch.setattr(_config_core, 'RUN_CONFIG_PATH', tmp_path / 'run-configuration.json')
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     return tmp_path
 
 

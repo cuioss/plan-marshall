@@ -184,19 +184,26 @@ def test_analyze_returns_valid_toon():
     assert 'total_issues' in data, 'Should have total_issues field'
 
 
-def test_analyze_summary_structure():
-    """Test analyze has correct summary fields."""
+def test_analyze_summary_structure(isolated_run_config):
+    """Test analyze has correct summary fields.
+
+    Uses ``isolated_run_config`` to redirect ``PLAN_BASE_DIR`` so the
+    doctor subprocess never resolves against the repo's real
+    ``.plan/local/run-configuration.json``.
+    """
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan')
+    env = {'PLAN_BASE_DIR': str(isolated_run_config)}
+
+    result = run_script(SCRIPT_PATH, 'scan', env_overrides=env)
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle)
+    result = run_script(SCRIPT_PATH, 'analyze', '--bundles', first_bundle, env_overrides=env)
     data = parse_output(result)
 
     assert 'total_components' in data, 'Should have total_components'
@@ -378,21 +385,29 @@ def test_report_summary_structure():
     assert 'risky_fixes' in summary, 'Summary should have risky_fixes'
 
 
-def test_report_has_llm_review_items():
-    """Test report file includes LLM review items."""
+def test_report_has_llm_review_items(isolated_run_config):
+    """Test report file includes LLM review items.
+
+    Uses ``isolated_run_config`` to redirect ``PLAN_BASE_DIR`` so the
+    doctor subprocess writes the report under ``tmp_path`` instead of
+    the repo's ``.plan/temp/plugin-doctor-report/``.
+    """
     if not marketplace_available():
         return  # Skip if marketplace not available
 
-    result = run_script(SCRIPT_PATH, 'scan')
+    env = {'PLAN_BASE_DIR': str(isolated_run_config)}
+
+    result = run_script(SCRIPT_PATH, 'scan', env_overrides=env)
     scan_data = parse_output(result)
     if not scan_data['bundles']:
         return
 
     first_bundle = scan_data['bundles'][0]['name']
 
-    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle)
+    result = run_script(SCRIPT_PATH, 'report', '--bundles', first_bundle, env_overrides=env)
     response = parse_output(result)
 
+    # report_file is absolute; joining with PROJECT_ROOT preserves absolute path.
     report_path = Path(PROJECT_ROOT) / response['report_file']
     assert report_path.exists(), f'Report file should exist: {report_path}'
 
@@ -511,7 +526,7 @@ def test_fixture_scan():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'scan', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'scan', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Scan failed: {result.stderr}'
 
         data = parse_output(result)
@@ -527,7 +542,7 @@ def test_fixture_analyze_finds_issues():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -543,7 +558,7 @@ def test_fixture_fix_dry_run():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'fix', '--dry-run', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'fix', '--dry-run', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Fix dry-run failed: {result.stderr}'
 
         data = parse_output(result)
@@ -558,7 +573,7 @@ def test_fixture_report():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        result = run_script(SCRIPT_PATH, 'report', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'report', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Report failed: {result.stderr}'
 
         response = parse_output(result)
@@ -615,7 +630,7 @@ Read `references/guide.md` for standards.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -666,7 +681,7 @@ Read `references/bloated-guide.md` for standards.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -691,7 +706,7 @@ def test_fixture_analyze_no_subdoc_for_normal_files():
     (skill_refs_dir / 'small-guide.md').write_text('# Small Guide\n\nJust a few lines.\n')
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -720,7 +735,7 @@ def test_fixture_analyze_detects_subdoc_hardcoded_path():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -748,7 +763,7 @@ def test_fixture_analyze_detects_rule_11():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -775,7 +790,7 @@ def test_fixture_analyze_no_rule_11_with_skill():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -798,7 +813,7 @@ def test_fixture_analyze_no_rule_11_without_tools():
     )
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
@@ -833,7 +848,7 @@ This skill provides testing capabilities.
 """)
 
     try:
-        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan')})
+        result = run_script(SCRIPT_PATH, 'analyze', '--type', 'skills', env_overrides={'PM_MARKETPLACE_ROOT': str(temp_dir / 'marketplace'), 'PLAN_BASE_DIR': str(temp_dir / '.plan'), 'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_dir / 'credentials')})
         assert result.returncode == 0, f'Analyze failed: {result.stderr}'
 
         data = parse_output(result)
