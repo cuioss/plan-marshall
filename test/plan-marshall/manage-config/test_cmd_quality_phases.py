@@ -13,7 +13,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from test_helpers import SCRIPT_PATH, create_marshal_json, patch_config_paths
+from test_helpers import SCRIPT_PATH, create_marshal_json
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent
@@ -45,7 +45,6 @@ def test_execute_verify_get(monkeypatch):
     """Test plan phase-5-execute get returns steps list config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
@@ -59,7 +58,6 @@ def test_execute_verify_set_max_iterations(monkeypatch):
     """Test plan phase-5-execute set-max-iterations for verification."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='set-max-iterations', value=10))
 
@@ -74,7 +72,6 @@ def test_execute_set_steps(monkeypatch):
     """Test plan phase-5-execute set-steps replaces entire steps list, sorted by order."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         # Persist an override for the non-discoverable extension step so set-steps can resolve its order.
         cmd_plan(Namespace(
@@ -105,7 +102,6 @@ def test_execute_add_step(monkeypatch):
     """Test plan phase-5-execute add-step inserts into list at the order-sorted position."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         cmd_plan(Namespace(
             sub_noun='phase-5-execute',
@@ -134,7 +130,6 @@ def test_execute_remove_step(monkeypatch):
     """Test plan phase-5-execute remove-step removes from steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-5-execute',
@@ -154,7 +149,6 @@ def test_execute_verify_get_field(monkeypatch):
     """Test plan phase-5-execute get --field returns specific verification field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-5-execute',
@@ -170,7 +164,6 @@ def test_execute_add_step_duplicate(monkeypatch):
     """Test plan phase-5-execute add-step with existing step returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-5-execute',
@@ -187,7 +180,6 @@ def test_execute_remove_step_not_found(monkeypatch):
     """Test plan phase-5-execute remove-step with missing step returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-5-execute',
@@ -208,7 +200,6 @@ def test_finalize_get(monkeypatch):
     """Test plan phase-6-finalize get returns steps list config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field=None))
 
@@ -222,7 +213,6 @@ def test_finalize_set_steps(monkeypatch):
     """Test plan phase-6-finalize set-steps replaces entire steps list."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -241,7 +231,6 @@ def test_finalize_set_steps_empty_error(monkeypatch):
     """Test plan phase-6-finalize set-steps with empty list returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set-steps', steps=''))
 
@@ -252,7 +241,6 @@ def test_finalize_add_step(monkeypatch):
     """Test plan phase-6-finalize add-step inserts into list at the order-sorted position."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -283,7 +271,6 @@ def test_finalize_add_step_sorts_by_order(monkeypatch):
     """Test plan phase-6-finalize add-step places the step according to its resolved order (positional arg ignored)."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -311,7 +298,6 @@ def test_finalize_add_step_duplicate_error(monkeypatch):
     """Test plan phase-6-finalize add-step with duplicate returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -327,7 +313,6 @@ def test_finalize_remove_step(monkeypatch):
     """Test plan phase-6-finalize remove-step removes a step."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -346,7 +331,6 @@ def test_finalize_remove_step_not_found_error(monkeypatch):
     """Test plan phase-6-finalize remove-step with missing step returns error."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -361,7 +345,6 @@ def test_finalize_set_max_iterations(monkeypatch):
     """Test plan phase-6-finalize set-max-iterations."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='set-max-iterations', value=7))
 
@@ -380,7 +363,6 @@ def test_finalize_set_steps_sorts_by_order(monkeypatch):
     """set-steps persists the steps list sorted by ascending resolved order."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         # Pass built-in steps in reverse order to prove sorting.
         result = cmd_plan(Namespace(
@@ -402,7 +384,6 @@ def test_finalize_set_steps_missing_order_returns_error(monkeypatch):
     """set-steps fails with `error: missing_order` when a step has no resolvable order."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -420,7 +401,6 @@ def test_finalize_set_steps_order_collision_returns_error(monkeypatch):
     """set-steps fails with `error: order_collision` when two steps share the same resolved order."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         # Reassign commit-push to share order=20 with create-pr.
         cmd_plan(Namespace(
@@ -447,7 +427,6 @@ def test_finalize_set_step_order_override_persists(monkeypatch):
     """set-step-order-override persists `step_order_overrides` in marshal.json."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -468,7 +447,6 @@ def test_finalize_override_precedence_over_discovery(monkeypatch):
     """Overrides trump discovery-time order values during set-steps resolution."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         # Push commit-push (discovery order 10) to the end via override.
         cmd_plan(Namespace(
@@ -496,7 +474,6 @@ def test_finalize_remove_step_order_override_clears_entry(monkeypatch):
     """remove-step-order-override deletes the persisted entry and returns success."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -524,7 +501,6 @@ def test_finalize_remove_step_order_override_missing_returns_error(monkeypatch):
     """remove-step-order-override returns an error when no override exists for the step."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-6-finalize',
@@ -541,7 +517,6 @@ def test_execute_add_step_order_collision_returns_error(monkeypatch):
     """add-step fails with `error: order_collision` mirroring set-steps semantics."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         # Place the new step at the same order as the existing built-in quality_check (10).
         cmd_plan(Namespace(
@@ -572,7 +547,6 @@ def test_phase_1_init_get(monkeypatch):
     """Test plan phase-1-init get returns config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-1-init', verb='get', field=None))
 
@@ -584,7 +558,6 @@ def test_phase_1_init_set(monkeypatch):
     """Test plan phase-1-init set updates a field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-1-init',
@@ -603,7 +576,6 @@ def test_phase_2_refine_get(monkeypatch):
     """Test plan phase-2-refine get returns config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-2-refine', verb='get', field=None))
 
@@ -615,7 +587,6 @@ def test_phase_2_refine_set(monkeypatch):
     """Test plan phase-2-refine set updates a field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-2-refine',
@@ -634,7 +605,6 @@ def test_phase_5_execute_get(monkeypatch):
     """Test plan phase-5-execute get returns config."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field=None))
 
@@ -647,7 +617,6 @@ def test_phase_5_execute_set(monkeypatch):
     """Test plan phase-5-execute set updates a field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-5-execute',
@@ -666,7 +635,6 @@ def test_phase_2_refine_get_includes_compatibility(monkeypatch):
     """Test plan phase-2-refine get returns compatibility."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(sub_noun='phase-2-refine', verb='get', field=None))
 
@@ -679,7 +647,6 @@ def test_phase_2_refine_set_compatibility(monkeypatch):
     """Test plan phase-2-refine set updates compatibility field."""
     with PlanContext() as ctx:
         create_marshal_json(ctx.fixture_dir)
-        patch_config_paths(monkeypatch, ctx.fixture_dir)
 
         result = cmd_plan(Namespace(
             sub_noun='phase-2-refine',

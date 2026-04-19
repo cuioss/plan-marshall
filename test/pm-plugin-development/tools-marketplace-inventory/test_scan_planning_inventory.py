@@ -99,17 +99,17 @@ def test_statistics_has_required_fields():
 # =============================================================================
 
 
-def test_core_has_plan_skills(isolated_run_config):
+def test_core_has_plan_skills(plan_context):
     """Test core bundle contains planning-related skills.
 
-    Uses ``isolated_run_config`` to redirect ``PLAN_BASE_DIR`` so the
+    Uses ``plan_context`` to redirect ``PLAN_BASE_DIR`` so the
     scan subprocess resolves paths under ``tmp_path`` instead of the
     repo's real ``.plan/local/run-configuration.json``. This test was a
     pollution-guard victim in Incident 1 — adopting the fixture
     guarantees future runs are not affected by whatever parallel worker
     originally polluted the shared path.
     """
-    result = run_script(SCRIPT_PATH, env_overrides={'PLAN_BASE_DIR': str(isolated_run_config)})
+    result = run_script(SCRIPT_PATH, env_overrides={'PLAN_BASE_DIR': str(plan_context.fixture_dir)})
     assert result.returncode == 0, f'Script returned error: {result.stderr}'
 
     data = parse_toon(result.stdout)
