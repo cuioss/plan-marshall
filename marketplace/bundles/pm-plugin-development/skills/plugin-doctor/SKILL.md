@@ -299,7 +299,17 @@ Loaded per workflow via Progressive Disclosure table above. Key files:
 
 ## Rule Definitions
 
-See [references/rule-catalog.md](references/rule-catalog.md) for the complete catalog of rules that plugin-doctor validates (agent, workflow, command, skill, and PM-workflow rules).
+See [references/rule-catalog.md](references/rule-catalog.md) for the complete catalog of rules that plugin-doctor validates (agent, workflow, command, skill, script, content, and PM-workflow rules).
+
+Representative rule ids by category:
+
+- **Agent**: `agent-task-tool-prohibited`, `agent-maven-restricted`, `agent-lessons-via-skill`, `agent-skill-tool-visibility`
+- **Workflow**: `workflow-explicit-script-calls`, `workflow-hardcoded-script-path`, `workflow-prose-parameter-consistency`, `prose-verb-chain-consistency`
+- **Command**: `command-self-contained-notation`, `command-thin-wrapper`, `command-progressive-disclosure`, `command-completion-checks`, `command-no-embedded-standards`
+- **Skill**: `skill-enforcement-block-required`, `skill-unused-tools-declared`, `skill-naming-noun-suffix`
+- **Script**: `argparse_safety`
+- **Content**: `checklist-pattern`
+- **PM-Workflow**: `pm-implicit-script-call` through `pm-contract-non-compliance`
 
 ---
 
