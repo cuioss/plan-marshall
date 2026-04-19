@@ -11,6 +11,7 @@ from _analyze import (
     analyze_markdown_file,
     analyze_skill_structure,
     analyze_tool_coverage,
+    analyze_verb_chains,
 )
 from _analyze_markdown import check_checklist_patterns, check_forbidden_metadata, get_bloat_classification
 
@@ -97,7 +98,48 @@ def analyze_component(component: dict) -> dict:
             analysis['subdocuments'] = subdoc_results
             issues.extend(extract_issues_from_subdoc_analysis(subdoc_results, str(skill_dir)))
 
+        # Prose verb-chain consistency scan (AST-based, per-skill scope).
+        # Mirrors the argparse_safety integration pattern: lightweight static
+        # analyzer whose findings merge into the main issue stream as
+        # unfixable error-severity entries.
+        issues.extend(extract_issues_from_verb_chain_analysis(analyze_verb_chains(skill_dir)))
+
     return {'component': component, 'analysis': analysis, 'issues': issues, 'issue_count': len(issues)}
+
+
+def extract_issues_from_verb_chain_analysis(findings: list[dict]) -> list[dict]:
+    """Translate ``analyze_verb_chains`` output into plugin-doctor issue dicts.
+
+    The scanner returns findings with the native shape
+    (``rule_id``/``file``/``line``/``script_notation``/``verb_chain``/
+    ``first_unknown_segment``). Plugin-doctor's downstream categorizer keys
+    on ``type``/``fixable`` (see ``categorize_all_issues``), so this helper
+    adapts each finding to the same schema argparse_safety findings use —
+    preserving the scanner's rule-specific fields under ``details``.
+    """
+    issues: list[dict] = []
+    for finding in findings:
+        unknown = finding.get('first_unknown_segment')
+        notation = finding.get('script_notation', '')
+        issues.append(
+            {
+                'type': 'prose-verb-chain-consistency',
+                'rule_id': 'prose-verb-chain-consistency',
+                'file': finding.get('file', ''),
+                'line': finding.get('line'),
+                'severity': 'error',
+                'fixable': False,
+                'description': (
+                    f'Stale script verb `{unknown}` referenced for `{notation}` — '
+                    'update prose to match the script\'s registered subparsers '
+                    '(prose-verb-chain-consistency)'
+                ),
+                'script_notation': notation,
+                'verb_chain': finding.get('verb_chain', []),
+                'first_unknown_segment': unknown,
+            }
+        )
+    return issues
 
 
 def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, component_type: str) -> list[dict]:

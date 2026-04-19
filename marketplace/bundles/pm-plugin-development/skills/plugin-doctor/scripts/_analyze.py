@@ -27,6 +27,7 @@ from _analyze_shared import (
     extract_frontmatter,
 )
 from _analyze_structure import analyze_skill_structure, cmd_structure
+from _analyze_verb_chains import analyze_verb_chains
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 
 # Public API surface — used by _doctor_analysis.py and other scripts
@@ -34,6 +35,7 @@ __all__ = [
     'analyze_markdown_file',
     'analyze_skill_structure',
     'analyze_tool_coverage',
+    'analyze_verb_chains',
     'detect_component_type',
     'extract_frontmatter',
 ]
