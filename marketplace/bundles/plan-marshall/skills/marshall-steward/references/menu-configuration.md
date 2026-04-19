@@ -11,6 +11,7 @@ Sub-menu for skill domains and project structure configuration.
 - [Configuration: Quality Pipelines](#configuration-quality-pipelines)
 - [Configuration: Skill Domains](#configuration-skill-domains)
 - [Configuration: Project Structure](#configuration-project-structure)
+- [Configuration: Terminal Title](#configuration-terminal-title)
 
 ---
 
@@ -38,6 +39,9 @@ AskUserQuestion:
     - label: "Credentials & Secrets"
       description: "Manage external tool credentials"
       value: "credentials"
+    - label: "Terminal Title"
+      description: "Dynamic terminal tab title + statusline (hook-driven)"
+      value: "terminal-title"
     - label: "Full Reconfigure"
       description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
       value: "wizard"
@@ -53,6 +57,7 @@ AskUserQuestion:
 | review-gates | Execute "Configuration: Review Gates" below |
 | structure | Execute "Configuration: Project Structure" below |
 | credentials | Execute "Configuration: Credentials & Secrets" below |
+| terminal-title | Load `Read references/menu-terminal-title.md` → Execute |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
 
 ---
@@ -655,6 +660,20 @@ Non-secret field updates via CLI args. For secret changes, user edits the creden
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-providers:credentials check --skill {skill}
    ```
+
+---
+
+## Configuration: Terminal Title
+
+Configure the dynamic terminal-title + statusline integration so each terminal tab shows the active plan-marshall phase and live status (running / waiting / idle / done) for the Claude Code session running in it. See [Terminal title integration](../../plan-marshall/SKILL.md#terminal-title-integration) in the plan-marshall skill for the runtime contract.
+
+Load and execute the dedicated reference:
+
+```
+Read references/menu-terminal-title.md
+```
+
+After completion, return to Main Menu.
 
 ---
 
