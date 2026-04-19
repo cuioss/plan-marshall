@@ -14,7 +14,7 @@ order: 995
 
 ## Enforcement
 
-**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 11 aspect references in the documented order, compile the report, propose lessons, then emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
+**Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 12 aspect references in the documented order, compile the report, propose lessons, then emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
 
 **Prohibited actions**:
 - Never re-run invariant capture. Read `status.metadata.phase_handshake` or `status.metadata.invariants` directly — invariants are already captured by phase transitions.
@@ -108,14 +108,15 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 7 | Logging gap analysis | (LLM on references + logs) | `references/logging-gap-analysis.md` |
 | 8 | Script failure analysis | (LLM on work/script logs) | `references/script-failure-analysis.md` |
 | 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
-| 10 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
-| 11 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
+| 10 | Direct gh/glab usage | `direct_gh_glab_usage` | `references/direct-gh-glab-usage.md` |
+| 11 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
+| 12 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
-**Aspect 10** is skipped when `--session-id` is absent.
+**Aspect 11** is skipped when `--session-id` is absent.
 
 **Per-aspect capture pattern**:
 
-**Deterministic aspects (1-3, script-backed)** — pipe the script's stdout to the fragment file, then register it:
+**Deterministic aspects (1-3 and 10, script-backed)** — pipe the script's stdout to the fragment file, then register it:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:{script} \
@@ -124,14 +125,14 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**LLM aspects (4-9 and 11)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
+**LLM aspects (4-9 and 12)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**Aspect 10 (chat-history, conditional)** — when `--session-id` is present, follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
+**Aspect 11 (chat-history, conditional)** — when `--session-id` is present, follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
 
 ### Step 4: Compile Report
 

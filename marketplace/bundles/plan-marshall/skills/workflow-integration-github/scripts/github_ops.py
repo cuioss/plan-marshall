@@ -835,7 +835,19 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_merge(args: argparse.Namespace) -> dict:
-    """Handle 'pr merge' subcommand - merge a pull request."""
+    """Handle 'pr merge' subcommand - merge a pull request.
+
+    When ``--delete-branch`` is requested, the merge is performed WITHOUT the
+    ``--delete-branch`` pass-through to ``gh pr merge``; instead, after a
+    successful merge, the PR's head branch is deleted remotely via the
+    ``cmd_branch_delete`` handler (REST ``DELETE /git/refs/heads/{branch}``).
+    Local git state is never touched by this handler — callers who want a
+    local branch gone must invoke ``git -C {path} branch -D`` separately.
+
+    On branch-delete failure after a successful merge, a compound result is
+    returned with ``merged: true`` and ``branch_delete_error`` populated. The
+    merge is NOT retried.
+    """
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('pr_merge', err)
@@ -846,18 +858,105 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
 
     gh_args = ['pr', 'merge', identifier, f'--{args.strategy}']
-    if args.delete_branch:
-        gh_args.append('--delete-branch')
 
     returncode, stdout, stderr = run_gh(gh_args)
     if returncode != 0:
         return make_error('pr_merge', f'Failed to merge PR {identifier}', stderr.strip())
 
-    return {
+    result: dict = {
         'status': 'success',
         'operation': 'pr_merge',
         'pr_number': args.pr_number if args.pr_number else identifier,
         'strategy': args.strategy,
+    }
+
+    # Branch-delete is an optional follow-up. The merge has already succeeded;
+    # we never retry the merge on branch-delete failure.
+    if args.delete_branch:
+        result['merged'] = True
+
+        # Resolve the PR head branch name via existing PR metadata.
+        # ``gh pr view`` accepts either a PR number or a branch name as the
+        # positional, so ``identifier`` (already resolved) is passed through
+        # directly.
+        pr_view = view_pr_data(head=identifier)
+        if pr_view.get('status') != 'success':
+            result['branch_delete_error'] = (
+                f"Merge succeeded but could not resolve head branch for delete: "
+                f"{pr_view.get('error', 'pr_view failed')}"
+            )
+            return result
+
+        head_branch = pr_view.get('head_branch') or ''
+        if not head_branch:
+            result['branch_delete_error'] = 'Merge succeeded but pr_view returned empty head_branch'
+            return result
+
+        # Invoke the branch_delete handler with a synthesized argparse.Namespace.
+        delete_args = argparse.Namespace(branch=head_branch)
+        delete_result = cmd_branch_delete(delete_args)
+        if delete_result.get('status') != 'success':
+            result['branch_delete_error'] = delete_result.get(
+                'error', f'Failed to delete remote branch {head_branch}'
+            )
+            return result
+
+        result['branch_deleted'] = head_branch
+        result['already_gone'] = delete_result.get('already_gone', False)
+
+    return result
+
+
+def cmd_branch_delete(args: argparse.Namespace) -> dict:
+    """Handle 'branch delete' subcommand - delete a remote branch via REST API.
+
+    Uses the GitHub REST API endpoint ``DELETE /repos/{owner}/{repo}/git/refs/heads/{branch}``
+    invoked through ``gh api``. The ``--remote-only`` flag is required and explicit:
+    local branch management is out of scope and handled via ``git -C {path} branch``.
+
+    HTTP semantics:
+      - 204 No Content  → ``status: success`` (normal delete)
+      - 404 Not Found   → ``status: success`` with ``already_gone: true``
+        (branch does not exist remotely; deletion is idempotent).
+      - 422 Unprocessable Entity → ``status: success`` with ``already_gone: true``
+        (GitHub returns 422 when the ref is already gone; same idempotent semantics).
+      - Anything else   → ``status: error``
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('branch_delete', err)
+
+    owner, repo = get_repo_info()
+    if not owner or not repo:
+        return make_error('branch_delete', 'Failed to resolve repository owner/name from current cwd')
+
+    branch = args.branch
+    endpoint = f'repos/{owner}/{repo}/git/refs/heads/{branch}'
+    returncode, _stdout, stderr = run_gh(['api', '-X', 'DELETE', endpoint])
+    if returncode != 0:
+        stderr_text = stderr.strip()
+        # gh api surfaces the HTTP status in stderr as "(HTTP 404)" / "(HTTP 422)".
+        # Treat those as success (already gone) — deletion is idempotent by design.
+        if 'HTTP 404' in stderr_text or 'HTTP 422' in stderr_text:
+            return {
+                'status': 'success',
+                'operation': 'branch_delete',
+                'branch': branch,
+                'remote_only': True,
+                'already_gone': True,
+            }
+        return make_error(
+            'branch_delete',
+            f'Failed to delete remote branch {branch}',
+            stderr_text,
+        )
+
+    return {
+        'status': 'success',
+        'operation': 'branch_delete',
+        'branch': branch,
+        'remote_only': True,
+        'already_gone': False,
     }
 
 
@@ -1522,7 +1621,7 @@ def main() -> int:
     if project_dir is not None:
         set_default_cwd(project_dir)
 
-    parser, pr_sub, ci_sub, issue_sub = build_parser('GitHub operations via gh CLI')
+    parser, pr_sub, ci_sub, issue_sub, branch_sub = build_parser('GitHub operations via gh CLI')
 
     # GitHub-specific parser additions
     add_pr_create_args(pr_sub)
@@ -1564,7 +1663,12 @@ def main() -> int:
         ('issue', 'close'): cmd_issue_close,
         ('issue', 'wait-for-close'): cmd_issue_wait_for_close,
         ('issue', 'wait-for-label'): cmd_issue_wait_for_label,
+        ('branch', 'delete'): cmd_branch_delete,
     }
+
+    # branch_sub is registered by ci_base.build_parser; acknowledge the returned
+    # handle so static analysis does not flag it as unused.
+    _ = branch_sub
 
     result = dispatch(args, handlers, parser)
     print(serialize_toon(result, table_separator='\t'))

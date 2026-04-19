@@ -420,11 +420,12 @@ def build_parser(
     argparse._SubParsersAction,
     argparse._SubParsersAction,
     argparse._SubParsersAction,
+    argparse._SubParsersAction,
 ]:
-    """Build the 3-tier argparse tree shared by all CI providers.
+    """Build the 4-tier argparse tree shared by all CI providers.
 
     Returns:
-        ``(parser, pr_subparsers, ci_subparsers, issue_subparsers)``
+        ``(parser, pr_subparsers, ci_subparsers, issue_subparsers, branch_subparsers)``
         so that providers can customise individual sub-parsers if needed.
     """
     parser = argparse.ArgumentParser(description=description, allow_abbrev=False)
@@ -699,7 +700,32 @@ def build_parser(
         help=f'Poll interval in seconds (default: {DEFAULT_CI_INTERVAL})',
     )
 
-    return parser, pr_sub, ci_sub, issue_sub
+    # -- branch -------------------------------------------------------
+    branch_parser = subparsers.add_parser('branch', help='Branch operations', allow_abbrev=False)
+    branch_sub = branch_parser.add_subparsers(dest='branch_command', required=True)
+
+    # branch delete — remote branch deletion via REST API.
+    # The --remote-only flag is required and explicit: it signals that the caller has
+    # already handled any local cleanup and the operation targets only the remote ref.
+    # No local-branch mode is provided; local branches are managed via `git -C {path} branch`.
+    branch_delete = branch_sub.add_parser(
+        'delete',
+        help='Delete a remote branch via REST API',
+        allow_abbrev=False,
+    )
+    branch_delete.add_argument(
+        '--remote-only',
+        action='store_true',
+        required=True,
+        help='Required flag: confirms the operation targets only the remote branch',
+    )
+    branch_delete.add_argument(
+        '--branch',
+        required=True,
+        help='Branch name to delete from the remote',
+    )
+
+    return parser, pr_sub, ci_sub, issue_sub, branch_sub
 
 
 def add_pr_create_args(
@@ -986,6 +1012,8 @@ def dispatch(args: argparse.Namespace, handlers: HandlerMap, parser: argparse.Ar
         key = ('ci', args.ci_command)
     elif command == 'issue':
         key = ('issue', args.issue_command)
+    elif command == 'branch':
+        key = ('branch', args.branch_command)
     else:
         parser.print_help()
         return make_error('dispatch', 'Unknown command')

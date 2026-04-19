@@ -77,9 +77,10 @@ Extract count and details of other open PRs (excluding the current PR).
 
 **MANDATORY**: Present all context and ask user before any destructive action.
 
-Determine planned actions based on PR state:
-- **If `state == open`**: Actions = merge PR (with --delete-branch), wait for CI, pull latest
-- **If `state == merged`**: Actions = switch to base branch, pull latest, delete local branch
+Determine planned actions based on PR state. Local cleanup (switch to base branch, pull, delete local feature branch) is uniform across both paths; only the remote-side action differs (`--delete-branch` deletes the remote branch only when we merge this run):
+
+- **If `state == open`**: Actions = merge PR (with --delete-branch, which deletes the remote branch), wait for CI, switch to base branch, pull latest, delete local feature branch
+- **If `state == merged`**: Actions = switch to base branch, pull latest, delete local feature branch
 
 ```
 AskUserQuestion:
@@ -92,11 +93,11 @@ AskUserQuestion:
         **Other open PRs for this branch**: {count} {details if any}
 
         **Actions**:
-        {- Merge PR #{pr_number} with --delete-branch (if state == open)}
+        {- Merge PR #{pr_number} with --delete-branch (if state == open; deletes remote branch only)}
         {- Wait for CI checks to complete (if merging)}
-        {- Switch to {base_branch} (if state == merged)}
+        - Switch to {base_branch}
         - Pull latest
-        {- Delete local branch {head_branch} (if state == merged)}
+        - Delete local branch {head_branch}
       options:
         - label: "Yes, proceed"
           description: "Execute branch cleanup"
@@ -245,21 +246,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Then return — do NOT proceed with branch deletion while the worktree still exists.
 
-### Switch to Base Branch and Pull (state-dependent)
+### Switch to Base Branch, Pull, and Delete Local Branch
 
 All git calls in this section target the main checkout via `git -C {main_checkout}` because the worktree has been removed above.
 
-**If `state == open`** (we just merged with `--delete-branch`):
+**Uniform local cleanup (both `state == open` and `state == merged`)**:
 
-The `--delete-branch` flag already deletes the remote branch, deletes the local branch, and switches the main checkout to the base branch. Only `git pull` is needed to fetch the merge commit.
-
-```bash
-git -C {main_checkout} pull
-```
-
-**If `state == merged`** (PR was already merged without `--delete-branch`):
-
-The main checkout may still be on the feature branch and the local branch may still exist. Explicitly switch to base branch, pull, and clean up.
+The `--delete-branch` flag on `pr merge` deletes ONLY the remote branch (via the provider REST API). It does NOT touch the local clone — local branch deletion and base-branch checkout are always the workflow's responsibility and must run here regardless of the prior merge path. After worktree removal, the main checkout may still be on the feature branch and the local feature branch still exists, so switch to the base branch, pull the merge commit, and delete the local feature branch:
 
 ```bash
 git -C {main_checkout} checkout {base_branch}
@@ -273,13 +266,18 @@ git -C {main_checkout} pull
 git -C {main_checkout} branch -d {head_branch}
 ```
 
-If `git branch -d` fails → log warning (branch may not exist locally):
+Notes on the two entry paths:
+
+- **`state == open`** (we just merged this run with `--delete-branch`): the remote branch is already gone. The sequence above performs the local-only cleanup.
+- **`state == merged`** (PR was already merged on a prior run, possibly without `--delete-branch`): the remote branch may still exist. The local cleanup sequence is identical; any leftover remote branch is left as-is and can be cleaned up by a separate workflow if desired.
+
+If `git branch -d` fails → log warning (branch may not exist locally, e.g. another process already deleted it):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist)"
 ```
 
-**Error handling** (both paths):
+**Error handling**:
 
 If checkout or pull fails → log error and abort:
 ```bash

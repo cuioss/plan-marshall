@@ -304,14 +304,14 @@ def test_pr_create_parser_accepts_slot():
 
 def test_build_parser_pr_view_accepts_head_flag():
     """build_parser should register --head on pr view (was: no args)."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(['pr', 'view', '--head', 'feature/x'])
     assert args.head == 'feature/x'
 
 
 def test_build_parser_pr_merge_pr_number_optional():
     """pr merge should accept --head as alternative to --pr-number (both optional)."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     # --head alone is allowed
     args = parser.parse_args(['pr', 'merge', '--head', 'feature/x'])
     assert args.head == 'feature/x'
@@ -324,7 +324,7 @@ def test_build_parser_pr_merge_pr_number_optional():
 
 def test_build_parser_pr_auto_merge_pr_number_optional():
     """pr auto-merge should accept --head as alternative to --pr-number."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(['pr', 'auto-merge', '--head', 'feature/x'])
     assert args.head == 'feature/x'
     assert args.pr_number is None
@@ -332,7 +332,7 @@ def test_build_parser_pr_auto_merge_pr_number_optional():
 
 def test_build_parser_ci_status_pr_number_optional():
     """ci status should accept --head as alternative to --pr-number."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(['ci', 'status', '--head', 'feature/x'])
     assert args.head == 'feature/x'
     assert args.pr_number is None
@@ -345,7 +345,7 @@ def test_build_parser_ci_status_pr_number_optional():
 
 def test_build_parser_registers_pr_prepare_body():
     """`pr prepare-body` must be registered and require --plan-id."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(['pr', 'prepare-body', '--plan-id', 'my-plan'])
     assert args.command == 'pr'
     assert args.pr_command == 'prepare-body'
@@ -364,7 +364,7 @@ def test_build_parser_registers_pr_prepare_body():
 
 def test_build_parser_registers_pr_prepare_comment():
     """`pr prepare-comment` must be registered with reply/thread-reply modes."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(['pr', 'prepare-comment', '--plan-id', 'my-plan'])
     assert args.pr_command == 'prepare-comment'
     assert args.prepare_for == 'reply'
@@ -377,7 +377,7 @@ def test_build_parser_registers_pr_prepare_comment():
 
 def test_build_parser_registers_issue_prepare_body():
     """`issue prepare-body` must be registered and require --plan-id."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(['issue', 'prepare-body', '--plan-id', 'my-plan'])
     assert args.command == 'issue'
     assert args.issue_command == 'prepare-body'
@@ -390,7 +390,7 @@ def test_build_parser_registers_issue_prepare_body():
 
 
 def test_pr_reply_rejects_body_flag():
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(
             ['pr', 'reply', '--pr-number', '1', '--plan-id', 'p', '--body', 'X']
@@ -398,7 +398,7 @@ def test_pr_reply_rejects_body_flag():
 
 
 def test_pr_thread_reply_rejects_body_flag():
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -417,7 +417,7 @@ def test_pr_thread_reply_rejects_body_flag():
 
 
 def test_pr_edit_rejects_body_flag():
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(
             ['pr', 'edit', '--pr-number', '1', '--plan-id', 'p', '--body', 'X']
@@ -425,7 +425,7 @@ def test_pr_edit_rejects_body_flag():
 
 
 def test_issue_create_rejects_body_flag():
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(
             ['issue', 'create', '--title', 'T', '--plan-id', 'p', '--body', 'X']
@@ -433,7 +433,7 @@ def test_issue_create_rejects_body_flag():
 
 
 def test_consumers_require_plan_id():
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(['pr', 'reply', '--pr-number', '1'])
     with pytest.raises(SystemExit):
@@ -663,7 +663,7 @@ def test_run_cli_handles_file_not_found_without_touching_cwd(
 
 def test_ci_wait_for_status_flip_registered():
     """`ci wait-for-status-flip` subcommand must be registered under the ci subparser."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         ['ci', 'wait-for-status-flip', '--pr-number', '42']
     )
@@ -674,14 +674,14 @@ def test_ci_wait_for_status_flip_registered():
 
 def test_ci_wait_for_status_flip_requires_pr_number():
     """`ci wait-for-status-flip` must exit when --pr-number is omitted."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(['ci', 'wait-for-status-flip'])
 
 
 def test_ci_wait_for_status_flip_defaults():
     """--timeout and --interval default to module constants; --expected defaults to 'any'."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         ['ci', 'wait-for-status-flip', '--pr-number', '7']
     )
@@ -692,7 +692,7 @@ def test_ci_wait_for_status_flip_defaults():
 
 def test_ci_wait_for_status_flip_accepts_custom_timeout_and_interval():
     """--timeout and --interval should accept integer overrides."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         [
             'ci',
@@ -712,7 +712,7 @@ def test_ci_wait_for_status_flip_accepts_custom_timeout_and_interval():
 @pytest.mark.parametrize('expected', ['success', 'failure', 'any'])
 def test_ci_wait_for_status_flip_accepts_valid_expected_values(expected):
     """--expected accepts success, failure, and any."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         ['ci', 'wait-for-status-flip', '--pr-number', '7', '--expected', expected]
     )
@@ -721,7 +721,7 @@ def test_ci_wait_for_status_flip_accepts_valid_expected_values(expected):
 
 def test_ci_wait_for_status_flip_rejects_invalid_expected_value():
     """--expected must reject values outside the success|failure|any choice set."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
@@ -742,7 +742,7 @@ def test_ci_wait_for_status_flip_rejects_invalid_expected_value():
 
 def test_issue_wait_for_close_registered():
     """`issue wait-for-close` subcommand must be registered under the issue subparser."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         ['issue', 'wait-for-close', '--issue-number', '99']
     )
@@ -753,14 +753,14 @@ def test_issue_wait_for_close_registered():
 
 def test_issue_wait_for_close_requires_issue_number():
     """`issue wait-for-close` must exit when --issue-number is omitted."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(['issue', 'wait-for-close'])
 
 
 def test_issue_wait_for_close_defaults():
     """--timeout and --interval default to module constants."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         ['issue', 'wait-for-close', '--issue-number', '99']
     )
@@ -770,7 +770,7 @@ def test_issue_wait_for_close_defaults():
 
 def test_issue_wait_for_close_accepts_custom_timeout_and_interval():
     """--timeout and --interval should accept integer overrides."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         [
             'issue',
@@ -794,7 +794,7 @@ def test_issue_wait_for_close_accepts_custom_timeout_and_interval():
 
 def test_issue_wait_for_label_registered():
     """`issue wait-for-label` subcommand must be registered under the issue subparser."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         [
             'issue',
@@ -813,14 +813,14 @@ def test_issue_wait_for_label_registered():
 
 def test_issue_wait_for_label_requires_issue_number():
     """`issue wait-for-label` must exit when --issue-number is omitted."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(['issue', 'wait-for-label', '--label', 'ready'])
 
 
 def test_issue_wait_for_label_requires_label():
     """`issue wait-for-label` must exit when --label is omitted."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(
             ['issue', 'wait-for-label', '--issue-number', '99']
@@ -829,7 +829,7 @@ def test_issue_wait_for_label_requires_label():
 
 def test_issue_wait_for_label_defaults():
     """--timeout and --interval default to module constants; --mode defaults to 'present'."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         [
             'issue',
@@ -847,7 +847,7 @@ def test_issue_wait_for_label_defaults():
 
 def test_issue_wait_for_label_accepts_custom_timeout_and_interval():
     """--timeout and --interval should accept integer overrides."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         [
             'issue',
@@ -869,7 +869,7 @@ def test_issue_wait_for_label_accepts_custom_timeout_and_interval():
 @pytest.mark.parametrize('mode', ['present', 'absent'])
 def test_issue_wait_for_label_accepts_valid_mode_values(mode):
     """--mode accepts present and absent."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     args = parser.parse_args(
         [
             'issue',
@@ -887,7 +887,7 @@ def test_issue_wait_for_label_accepts_valid_mode_values(mode):
 
 def test_issue_wait_for_label_rejects_invalid_mode_value():
     """--mode must reject values outside the present|absent choice set."""
-    parser, _, _, _ = build_parser('test')
+    parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
         parser.parse_args(
             [
