@@ -443,10 +443,14 @@ def _attr_receiver_name(call: ast.Call) -> str | None:
 
 
 def _pick_root_parser(tree: ast.AST, parsers: dict[str, _ParserNode]) -> _ParserNode | None:
-    """Pick the root ``_ParserNode`` — the first ``ArgumentParser`` assignment."""
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
-            continue
+    """Pick the root ``_ParserNode`` — the first ``ArgumentParser`` assignment.
+
+    Uses ``_collect_assignments`` (sorted by ``lineno``/``col_offset``) to
+    guarantee deterministic source-order traversal. ``ast.walk`` alone does
+    not guarantee source order across the tree, so selecting "the first"
+    ArgumentParser assignment requires the explicit sort.
+    """
+    for node in _collect_assignments(tree):
         if not isinstance(node.value, ast.Call):
             continue
         if _call_func_name(node.value) != 'ArgumentParser':
