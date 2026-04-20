@@ -101,6 +101,24 @@ The two `SessionStart` entries are intentional: the matcher-less entry covers `s
 
 If an existing `statusLine` is present, ask the user before overwriting — they may have a custom command there.
 
+### Env entry to merge
+
+```jsonc
+{
+  "env": {
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
+  }
+}
+```
+
+Disables Claude Code's built-in OSC title emitter so our hook-set title is not overwritten (tracked in anthropic/claude-code issues #3396, #4765, #15802, #23355).
+
+Handle the existing `settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"]` value with the same three-branch pattern used for `statusLine`:
+
+- **Absent**: insert the key with value `"1"`.
+- **Present with value `"1"`**: no-op (already correct).
+- **Present with any other value**: ask the user via `AskUserQuestion` before overwriting. Respect the user's choice — if they decline, leave the existing value untouched.
+
 ### Merge procedure
 
 The marshall-steward skill writes the merge as a small inline Python operation (no new helper script):
@@ -109,7 +127,8 @@ The marshall-steward skill writes the merge as a small inline Python operation (
 2. Ensure `settings["hooks"]` exists.
 3. For each of the four event keys, append the new entry objects to `settings["hooks"][event]` (create the list if missing).
 4. Set `settings["statusLine"]` to the command dict unless the user declined the overwrite.
-5. `json.dump(settings, path, indent=2)` with `sort_keys=False` to preserve key order.
+5. Ensure `settings["env"]` exists, then apply the three-branch logic above to set `settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "1"` (unless the user declined an overwrite of a non-`"1"` existing value).
+6. `json.dump(settings, path, indent=2)` with `sort_keys=False` to preserve key order.
 
 ---
 
@@ -131,6 +150,18 @@ Try it out:
 Statusline will appear inside Claude Code's UI and mirror through
 /remote-control clients (mobile/web).
 ```
+
+### If your VS Code tab label doesn't change
+
+VS Code's integrated terminal ignores OSC title escape sequences by default — the tab label is controlled by VS Code, not the shell. If iTerm2 / Ghostty / Kitty / Terminal.app show the dynamic title correctly but VS Code does not, add the following to your VS Code user settings (`~/Library/Application Support/Code/User/settings.json` on macOS, or via `Cmd+,` → "Open Settings (JSON)"):
+
+```jsonc
+{
+  "terminal.integrated.tabs.title": "${sequence}"
+}
+```
+
+This is a VS Code-side setting; the wizard does not patch it because `settings.json` (Claude Code) and VS Code's user settings are distinct files owned by different tools. iTerm2, Ghostty, Kitty, and Terminal.app honor the OSC sequence out of the box and need no additional configuration.
 
 ---
 

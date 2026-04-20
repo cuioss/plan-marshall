@@ -8,14 +8,15 @@ subprocess tests to exercise the CLI plumbing + real stdout emission.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
 from unittest import mock
 
-from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script
-
 import set_terminal_title  # type: ignore[import-not-found]  # noqa: E402
+
+from conftest import MARKETPLACE_ROOT, ScriptTestCase, run_script  # noqa: E402
 
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'scripts' / 'set_terminal_title.py'
 
@@ -205,6 +206,20 @@ class TestEmitOsc(ScriptTestCase):
             set_terminal_title._emit_osc('hello')
 
         self.assertEqual(written, ['\x1b]0;hello\x07'])
+
+    def test_falls_back_to_stdout_when_tty_unavailable(self):
+        """When /dev/tty cannot be opened (TTY-less hook subprocess under
+        VS Code), _emit_osc must emit the OSC escape to sys.stdout so the
+        controlling terminal still sees the title update."""
+        fake_stdout = io.StringIO()
+        with mock.patch('builtins.open', side_effect=OSError('no tty')), \
+             mock.patch.object(set_terminal_title.sys, 'stdout', fake_stdout):
+            set_terminal_title._emit_osc('hello')
+
+        captured = fake_stdout.getvalue()
+        self.assertIn('\033]0;', captured)
+        self.assertIn('\007', captured)
+        self.assertIn('hello', captured)
 
 
 class TestCliIntegration(ScriptTestCase):
