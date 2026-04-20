@@ -1,6 +1,6 @@
 # PR Operations
 
-Pull request lifecycle operations: create, view, merge, auto-merge, close, ready, edit.
+Pull request lifecycle operations: create, view, merge, auto-merge, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup.
 
 ## Worktree-Isolated Plans
 
@@ -273,3 +273,58 @@ status: success
 operation: pr_edit
 pr_number: 123
 ```
+
+---
+
+## Workflow: Delete Remote Branch
+
+**Pattern**: Provider-Agnostic Router (REST API)
+
+Delete a branch from the remote. This leaf is the canonical replacement for
+direct `git push origin --delete {branch}` calls in post-merge cleanup and
+other remote-only branch disposal scenarios. Local branch management stays in
+`git -C {path} branch` territory and is intentionally out of scope.
+
+Under the hood:
+
+| Provider | API call |
+|----------|----------|
+| GitHub | `DELETE /repos/{owner}/{repo}/git/refs/heads/{branch}` via `gh api` |
+| GitLab | `DELETE /projects/{id}/repository/branches/{branch}` via `glab api` (project path is URL-encoded as the `{id}`) |
+
+The `--remote-only` flag is **required**: it is an explicit acknowledgement
+from the caller that any needed local cleanup has already been handled and
+that this call targets only the remote ref. Omitting the flag fails argparse
+validation before any network call.
+
+### Step 1: Execute
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci branch delete \
+    --remote-only --branch {branch_name}
+```
+
+When invoking from the main checkout against a worktree-isolated plan, use the
+standard `--project-dir` router flag to target the worktree's remote
+configuration, exactly as with other CI leaves.
+
+### Step 2: Process Result
+
+```toon
+status: success
+operation: branch_delete
+branch: feature/old-branch
+remote_only: true
+already_gone: false
+```
+
+When the branch is already gone remotely (HTTP 404 from either provider, or
+HTTP 422 from GitHub when the ref has just been removed), the script still
+returns `status: success` but with `already_gone: true`. Deletion is
+idempotent by design: callers can invoke this leaf safely without needing a
+prior existence check.
+
+On other failures (e.g. insufficient permissions, non-idempotent API errors),
+the script returns `status: error` with `operation: branch_delete` and a
+`message`/`context` pair carrying the underlying `gh`/`glab` stderr — no
+retries are attempted.

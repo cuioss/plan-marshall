@@ -46,10 +46,9 @@
 - Present user confirmation dialog with PR link, state, branch, other PRs, and planned actions
 - Only proceed with explicit user approval (skip gracefully if declined)
 - Abort if other open PRs use this branch as head
-- Merge PR if not yet merged (via CI abstraction with `--delete-branch`)
+- Merge PR if not yet merged (via CI abstraction with `--delete-branch`, which deletes the remote branch only)
 - Wait for post-merge CI with 30-minute timeout
-- If merged with `--delete-branch`: pull latest (branch cleanup already done)
-- If already merged: switch to base branch, pull latest, delete local branch
+- Always switch to base branch, pull latest, and delete the local feature branch — the `--delete-branch` flag does not perform local cleanup, so this sequence runs regardless of prior merge path (freshly merged or already merged)
 - Handle merge failures, checkout failures, and pull failures
 
 ## Completion

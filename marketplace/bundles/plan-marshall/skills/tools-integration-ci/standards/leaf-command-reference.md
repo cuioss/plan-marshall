@@ -85,6 +85,16 @@ Source: [ci-operations.md](ci-operations.md)
 
 ---
 
+## branch — Branch Operations
+
+Source: [pr-operations.md](pr-operations.md)
+
+| Subcommand | Required Flags | Optional Flags | Purpose |
+|------------|----------------|----------------|---------|
+| `branch delete` | `--remote-only`, `--branch {name}` | — | Delete a remote branch via REST API. `--remote-only` is required and explicit — local branches are managed via `git -C {path} branch`, never via this leaf. |
+
+---
+
 ## issue — Issue Operations
 
 Source: [issue-operations.md](issue-operations.md)

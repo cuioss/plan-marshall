@@ -22,6 +22,7 @@ Subcommands:
     issue create    Create an issue
     issue view      View issue details
     issue close     Close an issue
+    branch delete   Delete a remote branch via REST API
 
 Usage (bodies supplied via path-allocate pattern: prepare-body → write file → consume):
     python3 gitlab.py pr prepare-body --plan-id my-plan [--for create|edit] [--slot name]
@@ -1043,7 +1044,20 @@ def cmd_issue_view(args: argparse.Namespace) -> dict:
 
 
 def cmd_pr_merge(args: argparse.Namespace) -> dict:
-    """Handle 'pr merge' subcommand - merge a merge request."""
+    """Handle 'pr merge' subcommand - merge a merge request.
+
+    When ``--delete-branch`` is requested, the merge is performed WITHOUT
+    passing a branch-delete flag to ``glab mr merge``; instead, after a
+    successful merge, the MR's source branch is deleted remotely via the
+    ``cmd_branch_delete`` handler (REST
+    ``DELETE /projects/{id}/repository/branches/{branch}``). Local git state is
+    never touched by this handler — callers who want a local branch gone must
+    invoke ``git -C {path} branch -D`` separately.
+
+    On branch-delete failure after a successful merge, a compound result is
+    returned with ``merged: true`` and ``branch_delete_error`` populated. The
+    merge is NOT retried.
+    """
     is_auth, err = check_auth()
     if not is_auth:
         return make_error('pr_merge', err)
@@ -1056,18 +1070,109 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     glab_args = ['mr', 'merge', iid]
     if args.strategy == 'squash':
         glab_args.append('--squash')
-    if args.delete_branch:
-        glab_args.append('--remove-source-branch')
 
     returncode, stdout, stderr = run_glab(glab_args)
     if returncode != 0:
         return make_error('pr_merge', f'Failed to merge MR {iid}', stderr.strip())
 
-    return {
+    result: dict = {
         'status': 'success',
         'operation': 'pr_merge',
         'pr_number': args.pr_number if args.pr_number else iid,
         'strategy': args.strategy,
+    }
+
+    # Branch-delete is an optional follow-up. The merge has already succeeded;
+    # we never retry the merge on branch-delete failure.
+    if args.delete_branch:
+        result['merged'] = True
+
+        # Resolve the MR source branch name via existing MR metadata.
+        # ``glab mr view`` accepts either an MR IID or a branch name as the
+        # positional, so ``iid`` (already resolved) is passed through directly.
+        mr_view = view_pr_data(head=iid)
+        if mr_view.get('status') != 'success':
+            result['branch_delete_error'] = (
+                f"Merge succeeded but could not resolve source branch for delete: "
+                f"{mr_view.get('error', 'pr_view failed')}"
+            )
+            return result
+
+        source_branch = mr_view.get('head_branch') or ''
+        if not source_branch:
+            result['branch_delete_error'] = (
+                'Merge succeeded but pr_view returned empty source_branch'
+            )
+            return result
+
+        # Invoke the branch_delete handler with a synthesized argparse.Namespace.
+        delete_args = argparse.Namespace(branch=source_branch)
+        delete_result = cmd_branch_delete(delete_args)
+        if delete_result.get('status') != 'success':
+            result['branch_delete_error'] = delete_result.get(
+                'error', f'Failed to delete remote branch {source_branch}'
+            )
+            return result
+
+        result['branch_deleted'] = source_branch
+        result['already_gone'] = delete_result.get('already_gone', False)
+
+    return result
+
+
+def cmd_branch_delete(args: argparse.Namespace) -> dict:
+    """Handle 'branch delete' subcommand - delete a remote branch via REST API.
+
+    Uses the GitLab REST API endpoint ``DELETE /projects/{id}/repository/branches/{branch}``
+    invoked through ``glab api``. The project is identified by its URL-encoded
+    namespaced path (e.g. ``group%2Frepo``) which GitLab accepts as ``{id}``.
+    The ``--remote-only`` flag is required and explicit: local branch management
+    is out of scope and handled via ``git -C {path} branch``.
+
+    HTTP semantics:
+      - 204 No Content  → ``status: success`` (normal delete)
+      - 404 Not Found   → ``status: success`` with ``already_gone: true``
+        (branch does not exist remotely; deletion is idempotent).
+      - 422 Unprocessable Entity → ``status: success`` with ``already_gone: true``
+        (symmetric with the GitHub provider for consistent caller semantics).
+      - Anything else   → ``status: error``
+    """
+    is_auth, err = check_auth()
+    if not is_auth:
+        return make_error('branch_delete', err)
+
+    project_path = get_project_path()
+    if not project_path:
+        return make_error('branch_delete', 'Failed to resolve project path from current cwd')
+
+    project_id = quote(project_path, safe='')
+    branch_encoded = quote(args.branch, safe='')
+    endpoint = f'projects/{project_id}/repository/branches/{branch_encoded}'
+    returncode, _stdout, stderr = run_glab(['api', '-X', 'DELETE', endpoint])
+    if returncode != 0:
+        stderr_text = stderr.strip()
+        # glab api surfaces the HTTP status in stderr as "HTTP 404" / "HTTP 422".
+        # Treat those as success (already gone) — deletion is idempotent by design.
+        if 'HTTP 404' in stderr_text or 'HTTP 422' in stderr_text:
+            return {
+                'status': 'success',
+                'operation': 'branch_delete',
+                'branch': args.branch,
+                'remote_only': True,
+                'already_gone': True,
+            }
+        return make_error(
+            'branch_delete',
+            f'Failed to delete remote branch {args.branch}',
+            stderr_text,
+        )
+
+    return {
+        'status': 'success',
+        'operation': 'branch_delete',
+        'branch': args.branch,
+        'remote_only': True,
+        'already_gone': False,
     }
 
 
@@ -1329,7 +1434,7 @@ def main() -> int:
     if project_dir is not None:
         set_default_cwd(project_dir)
 
-    parser, pr_sub, ci_sub, issue_sub = build_parser('GitLab operations via glab CLI')
+    parser, pr_sub, ci_sub, issue_sub, branch_sub = build_parser('GitLab operations via glab CLI')
 
     # GitLab-specific parser additions
     add_pr_create_args(pr_sub)
@@ -1367,7 +1472,12 @@ def main() -> int:
         ('issue', 'close'): cmd_issue_close,
         ('issue', 'wait-for-close'): cmd_issue_wait_for_close,
         ('issue', 'wait-for-label'): cmd_issue_wait_for_label,
+        ('branch', 'delete'): cmd_branch_delete,
     }
+
+    # branch_sub is registered by ci_base.build_parser; acknowledge the returned
+    # handle so static analysis does not flag it as unused.
+    _ = branch_sub
 
     result = dispatch(args, handlers, parser)
     print(serialize_toon(result, table_separator='\t'))
