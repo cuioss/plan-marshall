@@ -132,7 +132,11 @@ def _emit_osc(title: str) -> None:
             tty.write(escape)
             tty.flush()
     except OSError:
-        return
+        try:
+            sys.stdout.write(escape)
+            sys.stdout.flush()
+        except OSError:
+            return
 
 
 def build_title(status: str, cwd: str) -> str:

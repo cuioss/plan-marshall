@@ -17,8 +17,7 @@ through the REST leaf, never through local git.
 
 import argparse
 
-import github_ops  # type: ignore[import-not-found]
-
+import github_ops  # type: ignore[import-not-found]  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
