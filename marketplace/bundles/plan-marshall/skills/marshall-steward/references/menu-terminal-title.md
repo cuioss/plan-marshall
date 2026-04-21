@@ -1,32 +1,12 @@
 # Menu Option: Terminal Title
 
-Configure dynamic terminal titles + statusline for Claude Code sessions. Writes hook entries and a `statusLine` command into `~/.claude/settings.json` and/or `./.claude/settings.json` so each terminal tab reflects the active plan-marshall phase and live status (`running`, `waiting`, `idle`, `done`).
+Configure dynamic terminal titles + statusline for Claude Code sessions. Writes hook entries, a `statusLine` command, and the `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` env key into `./.claude/settings.local.json` (project-local, per-developer, gitignored by Claude Code convention) so each terminal tab reflects the active plan-marshall phase and live status (`running`, `waiting`, `idle`, `done`).
 
 The hooks invoke `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/set_terminal_title.py` by absolute path — no executor or plugin cache dependency at runtime.
 
 ---
 
-## Step 1: Choose Scope
-
-```
-AskUserQuestion:
-  question: "Where should the terminal-title hooks be written?"
-  header: "Scope"
-  options:
-    - label: "Both (Recommended)"
-      description: "Global (~/.claude/settings.json) + Project (./.claude/settings.json)"
-    - label: "Global"
-      description: "~/.claude/settings.json only"
-    - label: "Project"
-      description: "./.claude/settings.json only"
-  multiSelect: false
-```
-
-Remember the selected scope — it drives which settings.json files are patched in Step 4.
-
----
-
-## Step 2: Choose Icon Set
+## Step 1: Choose Icon Set
 
 ```
 AskUserQuestion:
@@ -44,7 +24,7 @@ The current script ships only the Unicode set. "Text-only" is reserved for a fut
 
 ---
 
-## Step 3: Resolve Script Path
+## Step 2: Resolve Script Path
 
 Read `${PLUGIN_ROOT}` from `.plan/local/marshall-state.toon` and compute the absolute path to the script:
 
@@ -56,11 +36,11 @@ Glob `{PLUGIN_ROOT}/plan-marshall/*/skills/plan-marshall/scripts/set_terminal_ti
 
 ---
 
-## Step 4: Patch settings.json
+## Step 3: Patch settings.local.json
 
-For each selected target (`~/.claude/settings.json` and/or `./.claude/settings.json`):
+Patch the project-local `./.claude/settings.local.json` (create the file with `{}` if it does not yet exist):
 
-1. Read the existing settings.json (or start from `{}` if the file is missing).
+1. Read the existing `./.claude/settings.local.json` (or start from `{}` if the file is missing).
 2. Merge the following entries **without clobbering** any existing hooks (`PreToolUse`, `PostToolUse`, etc. must stay intact). Within each event array, append the new entry; do not replace entries written by other integrations.
 3. Write the file atomically (write-then-rename).
 
@@ -123,7 +103,7 @@ Handle the existing `settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"]` valu
 
 The marshall-steward skill writes the merge as a small inline Python operation (no new helper script):
 
-1. `import json`; load existing settings (or `{}`).
+1. `import json`; load existing `./.claude/settings.local.json` (or `{}` if the file is missing).
 2. Ensure `settings["hooks"]` exists.
 3. For each of the four event keys, append the new entry objects to `settings["hooks"][event]` (create the list if missing).
 4. Set `settings["statusLine"]` to the command dict unless the user declined the overwrite.
@@ -132,7 +112,7 @@ The marshall-steward skill writes the merge as a small inline Python operation (
 
 ---
 
-## Step 5: Test It
+## Step 4: Test It
 
 Print the following instructions to the user:
 
@@ -161,7 +141,7 @@ VS Code's integrated terminal ignores OSC title escape sequences by default — 
 }
 ```
 
-This is a VS Code-side setting; the wizard does not patch it because `settings.json` (Claude Code) and VS Code's user settings are distinct files owned by different tools. iTerm2, Ghostty, Kitty, and Terminal.app honor the OSC sequence out of the box and need no additional configuration.
+This is a VS Code-side setting; the wizard does not patch it because `settings.local.json` (Claude Code) and VS Code's user settings are distinct files owned by different tools. iTerm2, Ghostty, Kitty, and Terminal.app honor the OSC sequence out of the box and need no additional configuration.
 
 ---
 

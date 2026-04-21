@@ -165,7 +165,7 @@ Each Claude Code session tab can display the active plan, current phase, and a l
 
 The script resolves the active plan from the worktree cwd (`.claude/worktrees/<id>`) or the `$PLAN_ID` env variable, reads `current_phase` from the main checkout's `status.json`, and silently falls back to `◯ claude` on any read error — hooks never break the session.
 
-Configure via `/marshall-steward` → **Configuration** → **Terminal Title** (see [menu-terminal-title.md](../marshall-steward/references/menu-terminal-title.md)).
+Configure via `/marshall-steward` → **Configuration** → **Terminal Title** — the wizard writes only to `./.claude/settings.local.json` (project-local, per-developer, gitignored). See [menu-terminal-title.md](../marshall-steward/references/menu-terminal-title.md).
 
 ## Related
 

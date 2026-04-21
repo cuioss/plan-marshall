@@ -1,0 +1,45 @@
+= Usage
+:toc:
+:toclevels: 3
+
+Operational guidance for running plan-marshall in day-to-day work. Each top-level section covers one self-contained topic; add new sections as new workflows land.
+
+== Terminal title in VS Code
+
+The `/marshall-steward` → Configuration → Terminal title wizard wires hooks and a `statusLine` entry into `./.claude/settings.local.json` so each Claude Code session tab shows `▶` (running), `?` (waiting), `◯` (idle), or `✓` (done) followed by the active plan and phase. It also sets `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to stop Claude Code's built-in OSC emitter from clobbering the title on every render cycle.
+
+iTerm2, Ghostty, Kitty, and Terminal.app pick up the OSC-set title automatically and need no additional configuration. **VS Code does not** — its integrated terminal ignores OSC title sequences unless you opt in.
+
+=== Scope
+
+Installation is project-local and per-developer. The wizard writes exclusively to `./.claude/settings.local.json`, which is gitignored by Claude Code convention so absolute per-user paths never enter version control. There is no global-scope option and no wizard path to uninstall — removing the feature is a manual edit of the file.
+
+=== One-time VS Code user-settings change
+
+Open VS Code user settings (`Cmd+,` → "Open Settings (JSON)" icon, or edit `~/Library/Application Support/Code/User/settings.json` directly) and add:
+
+[source,jsonc]
+----
+"terminal.integrated.tabs.title": "${sequence}"
+----
+
+This is a VS Code-owned setting; the wizard cannot patch it because VS Code's user settings and Claude Code's `settings.local.json` are distinct files owned by different tools.
+
+=== Why this is needed
+
+VS Code's default tab-title template is `"${process}"` — the tab shows the running process name (`zsh`, `node`, `claude`) regardless of OSC escapes received from the shell. The `${sequence}` placeholder switches the template to use whatever was set via OSC 0/2, i.e. the title our hook emits.
+
+If you have Settings Sync enabled, the change propagates across all your VS Code installs. Workspace-level `.vscode/settings.json` files that override `terminal.integrated.tabs.title` still win for that workspace only.
+
+=== Verification
+
+1. Restart VS Code (or reload the window) so the setting takes effect.
+2. Open a fresh terminal tab and `cd` into a plan worktree under `.claude/worktrees/<plan-id>/`, or `export PLAN_ID=<plan-id>` for a non-worktree shell.
+3. Run `claude`. The tab should flip through `◯ <plan>:<phase>` → `▶` → `?` → `◯` across a session turn.
+4. Confirm Claude Code's version string (e.g. `2.1.114`) never reappears in the tab — that indicates `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` is in effect.
+
+=== Troubleshooting
+
+* **Tab still shows the process name** — the user-settings edit didn't stick. Verify the key is present in `~/Library/Application Support/Code/User/settings.json` and no workspace override is masking it (`Cmd+Shift+P` → "Preferences: Open Workspace Settings (JSON)").
+* **Tab shows `2.1.114` intermittently** — `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` is missing or set to a non-`"1"` value in `./.claude/settings.local.json`. Re-run `/marshall-steward` → Configuration → Terminal title, or add the key manually under the `env` block.
+* **Tab label is blank inside Claude Code** — the hook subprocess couldn't open `/dev/tty` and fell back to stdout; check `~/.claude/plugins/cache/plan-marshall/plan-marshall/<version>/skills/plan-marshall/scripts/set_terminal_title.py` is on disk and executable by your Python 3.
