@@ -23,7 +23,7 @@ Open VS Code user settings (`Cmd+,` → "Open Settings (JSON)" icon, or edit `~/
 "terminal.integrated.tabs.title": "${sequence}"
 ----
 
-This is a VS Code-owned setting; the wizard cannot patch it because VS Code's user settings and Claude Code's `settings.json` are distinct files owned by different tools.
+This is a VS Code-owned setting; the wizard cannot patch it because VS Code's user settings and Claude Code's `settings.local.json` are distinct files owned by different tools.
 
 === Why this is needed
 
