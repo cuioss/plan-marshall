@@ -411,22 +411,14 @@ Passing `lesson_id` triggers `phase-1-init` Step 4 ("From Lesson") to resolve th
 
 When "Analyze all lessons" is selected, run the analyze workflow. This is an interactive LLM workflow — no plan is created.
 
-**Step 1**: Get all lessons with full body content:
+**Step 1**: List lessons with full body content:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list --full
 ```
 
-**Step 2**: For each lesson, verify validity against the current codebase:
-- Read the component/file referenced in the lesson
-- Check whether the described fix, improvement, or anti-pattern mitigation has already been implemented
-- Check whether other lessons reference the same component and root cause (combination candidates)
+**Step 2**: Classify each lesson per `plan-marshall:manage-lessons:references/dedup-analysis.md` — the authoritative Close / Merge / Keep-open (i.e. `already_closed` / `merge_into` / `new`) classification rule shared with the `plan-retrospective` lessons-proposal caller. Verify each lesson's validity against the current codebase as part of that classification.
 
-Classify each lesson into one of three categories:
-- **Close** — the fix/improvement has already landed in code
-- **Merge** — two or more lessons share the same root cause and should be combined (specify target lesson)
-- **Keep open** — still actionable, not yet addressed
-
-**Step 3**: Present a single batch summary via `AskUserQuestion`:
+**Step 3**: Present a single batch summary via `AskUserQuestion` (cleanup-side caller contract from `dedup-analysis.md` — one confirmation per batch, not per candidate):
 
 ```
 AskUserQuestion:
@@ -455,22 +447,13 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-**Step 4**: If user selects "Proceed", execute actions and log:
+**Step 4**: If user selects "Proceed", execute close and merge actions per `dedup-analysis.md` (delete stale files for `already_closed`, Edit target lesson with `## Recurrence — YYYY-MM-DD (context)` section for `merge_into`). Log each action:
 
-For each **close** action:
-1. Delete the lesson file (it lives in `.plan/local/lessons-learned/{id}.md`)
-2. Log:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO --message "(plan-marshall:lessons-analyze) Closed lesson {id}: {title} — {reasoning}"
 ```
 
-For each **merge** action:
-1. Read the target lesson file content
-2. Append the source lesson's key content to the target lesson body
-3. Update the target lesson's title if needed to reflect the broader scope
-4. Delete the source lesson file
-5. Log:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO --message "(plan-marshall:lessons-analyze) Merged lesson {source_id} into {target_id}: {reasoning}"
