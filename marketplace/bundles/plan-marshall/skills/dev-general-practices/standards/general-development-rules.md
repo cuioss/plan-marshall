@@ -173,6 +173,12 @@ For complete patterns including file operations, content search, and Bash safety
 
 **Example:** Don't silently add Guava to pom.xml — ask: "I need collection utilities for {feature}. I recommend Google Guava because {reasons}. Should I add this dependency?"
 
+## Workflow Discipline (Hard Rules)
+
+These rules apply to ALL development work in plan-marshall-governed repositories — ad-hoc tasks, plan execution, and subagent work alike. They exist because Claude regularly violates them despite softer guidance, so skill-level reinforcement is necessary.
+
+- **No `general-purpose` subagents inside plan-marshall phase work** — Never spawn `Agent(subagent_type="general-purpose")` for any work inside a phase (1-init through 6-finalize). Use `plan-marshall:phase-agent` with an explicit `skill=` argument, a dedicated named plan-marshall agent, or inline main-context execution. `general-purpose` has no plan-marshall enforcement context, has `*` tool access, and will violate workflow hard rules. Subagent rules propagate through the agent definition, not through the caller's `prompt` field. (Lesson: `2026-04-24-12-001`.)
+
 ## Quick Reference
 
 ### Decision Matrix
@@ -185,4 +191,5 @@ For complete patterns including file operations, content search, and Bash safety
 | File operations (find/read/search/write/edit) | See Principle 4 for complete tool selection guide |
 | Need to create document | Ask user first |
 | Need to add dependency | Ask user first |
+| About to spawn `Agent(subagent_type="general-purpose")` for phase work | Use `plan-marshall:phase-agent`, a named plan-marshall agent, or inline main-context execution |
 

@@ -272,11 +272,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Iterate over the `steps` list from config. For each step reference:
 
-**Agent-suitable built-in steps** (self-contained, no user interaction):
-- `create-pr`, `automated-review`, `sonar-roundtrip`, `knowledge-capture`, `lessons-capture`
+**Agent-suitable built-in steps** (self-contained, no user interaction) — each dispatches to a named, enforcement-bearing agent (NOT a generic Task agent):
+
+| Step reference | Dispatch target (agent) |
+|----------------|-------------------------|
+| `default:create-pr` | `plan-marshall:create-pr-agent` |
+| `default:automated-review` | `plan-marshall:automated-review-agent` |
+| `default:sonar-roundtrip` | `plan-marshall:sonar-roundtrip-agent` |
+| `default:knowledge-capture` | `plan-marshall:knowledge-capture-agent` |
+| `default:lessons-capture` | `plan-marshall:lessons-capture-agent` |
 
 **Inline-only built-in steps** (require user interaction or sequential dependency):
-- `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
+- `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate — classification sub-calls dispatch to `plan-marshall:classify-knowledge-agent`, see `standards/review-knowledge.md` §3f), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
 Before entering the loop, initialise a running token tally in model context:
 
@@ -301,10 +308,15 @@ FOR each step_ref in steps:
      See "Pre-Archive Snapshot Hook" subsection below. Capture the snapshot into model context, then proceed to step 4 to dispatch archive-plan normally.
 
   4. Dispatch:
-     - BUILT-IN (agent-suitable: create-pr, automated-review, sonar-roundtrip, knowledge-capture, lessons-capture):
-       Run as Task agent — read the standards document and execute all steps within the agent context.
+     - BUILT-IN (agent-suitable) — route each step_ref to its named agent via the Task tool. Dispatch MUST name the specific agent below so the step's enforcement envelope (input contract, required skill loads, prohibited actions) is carried into the subagent context; a generic unscoped agent selection is NOT valid:
+         * default:create-pr        -> Task(subagent_type: plan-marshall:create-pr-agent)
+         * default:automated-review -> Task(subagent_type: plan-marshall:automated-review-agent)
+         * default:sonar-roundtrip  -> Task(subagent_type: plan-marshall:sonar-roundtrip-agent)
+         * default:knowledge-capture -> Task(subagent_type: plan-marshall:knowledge-capture-agent)
+         * default:lessons-capture  -> Task(subagent_type: plan-marshall:lessons-capture-agent)
+       Each agent reads its corresponding standards document (standards/{name}.md) and executes all steps within the agent context. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}`. Embed the Worktree Header from `plan-marshall:phase-5-execute` Dispatch Protocol in every agent prompt so the worktree constraint propagates.
      - BUILT-IN (inline-only: commit-push, branch-cleanup, review-knowledge, record-metrics, archive-plan):
-       Read the standards document from dispatch table and follow all steps in main context.
+       Read the standards document from dispatch table and follow all steps in main context. For `review-knowledge` §3f classification sub-dispatches, route each candidate through `plan-marshall:classify-knowledge-agent` — see `standards/review-knowledge.md` for the prompt body.
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
          Arguments: --plan-id {plan_id} --iteration {iteration}
