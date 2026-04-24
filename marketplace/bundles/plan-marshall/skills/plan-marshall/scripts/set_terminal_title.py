@@ -178,7 +178,7 @@ def _build_title(
 
 
 def _read_hook_payload() -> dict[str, str | None]:
-    empty = {"cwd": None, "prompt": None, "session_id": None}
+    empty: dict[str, str | None] = {"cwd": None, "prompt": None, "session_id": None}
     if sys.stdin is None or sys.stdin.isatty():
         return empty
     try:
