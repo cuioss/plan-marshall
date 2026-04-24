@@ -108,7 +108,7 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 7 | Logging gap analysis | (LLM on references + logs) | `references/logging-gap-analysis.md` |
 | 8 | Script failure analysis | (LLM on work/script logs) | `references/script-failure-analysis.md` |
 | 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
-| 10 | Direct gh/glab usage | `direct_gh_glab_usage` | `references/direct-gh-glab-usage.md` |
+| 10 | Direct gh/glab usage | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
 | 11 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
 | 12 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 

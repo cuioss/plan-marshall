@@ -46,7 +46,7 @@ Surface A (logs) does not apply comment/docstring filters because log lines are 
 ## Output TOON Schema
 
 ```toon
-aspect: direct_gh_glab_usage
+aspect: direct-gh-glab-usage
 status: success
 plan_id: {plan_id}
 counts:
@@ -71,7 +71,7 @@ findings[N]{surface,file,line,snippet,category,severity}:
 ## Finding Shape
 
 ```toon
-aspect: direct_gh_glab_usage
+aspect: direct-gh-glab-usage
 severity: error
 category: {log_leak|diff_leak|wrapper_tangle}
 file: {relative path}
