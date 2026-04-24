@@ -197,6 +197,38 @@ in the `tools-integration-ci` standards for the full pattern (polling cadence,
 timeout semantics, TOON contract for wait-for-* results, and guidance on
 adding new wait-for-* subcommands).
 
+### Reading environment variables
+
+`echo "TERM_PROGRAM=$TERM_PROGRAM"` is the **only** allow-listed env-var Bash
+pattern in plan-marshall — installed by the marshall-steward wizard for IDE
+hand-off (VS Code vs. default platform opener). Any other `$VAR` expansion
+trips the Bash sandbox's `simple_expansion` heuristic and pops a permission
+prompt — which is a workflow break, not a heuristic signal.
+
+Forbidden forms (all trigger the sandbox):
+
+- `echo "$ANY_VAR"` for any variable other than `TERM_PROGRAM` — including
+  plausible-looking names like `CLAUDE_SESSION_ID` that Claude Code does not
+  publish
+- `printenv`, `env`, `env | grep` — any form of env-var listing
+- `$(...)` command substitution and backticks in Bash calls
+
+For Claude Code runtime state (session id, conversation id, plan id from main
+context) the shell is **not** the source — the skill input contract plus the
+domain-specific resolver is. For `session_id` specifically, use:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session current
+```
+
+The resolver reads a cache populated by the terminal-title hook on every
+`UserPromptSubmit`. It never shells out beyond `git rev-parse`, never reads
+env vars, and never prompts. See `plan-marshall/SKILL.md` → "Session ID
+Resolver" for the cache contract. The same pattern (dedicated resolver script,
+no env-var reach) applies when new runtime identifiers emerge — do not
+generalize the `TERM_PROGRAM` read into "this is how env vars work" and invent
+a variable name.
+
 ## Performance Tips
 
 - **Glob once, then Read selectively** — discover files first, read only what you need

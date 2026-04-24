@@ -12,6 +12,7 @@ and exit 0 so the user's session is never disrupted.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -204,6 +205,35 @@ def _sanitize_plan_label(raw: str | None) -> str | None:
     return stripped
 
 
+def _session_cache_paths(cwd: str) -> tuple[Path, Path] | None:
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return None
+    base = home / ".cache" / "plan-marshall" / "sessions"
+    cwd_hash = hashlib.sha256(cwd.encode("utf-8")).hexdigest()
+    return base / "by-cwd" / cwd_hash, base / "current"
+
+
+def _write_session_cache(session_id: str | None, cwd: str) -> None:
+    if not session_id or not cwd:
+        return
+    paths = _session_cache_paths(cwd)
+    if paths is None:
+        return
+    by_cwd, current = paths
+    try:
+        by_cwd.parent.mkdir(parents=True, exist_ok=True)
+        by_cwd.write_text(session_id, encoding="utf-8")
+    except OSError:
+        pass
+    try:
+        current.parent.mkdir(parents=True, exist_ok=True)
+        current.write_text(session_id, encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _build_title(
     status: str,
     plan_id: str | None,
@@ -329,6 +359,7 @@ def main(argv: list[str] | None = None) -> int:
     # Only hook invocations (no --statusline) mutate session state.
     # The statusLine command fires continuously and must be a pure read.
     if not args.statusline and session_id:
+        _write_session_cache(session_id, cwd)
         if args.status == "running" and payload["prompt"]:
             token = _extract_command_token(payload["prompt"])
             if token:

@@ -74,13 +74,15 @@ Present 1-4 solutions per prompt, concrete snippets:
 
 - Never propose `Bash(*)` or equivalent overly broad permission.
 - Prefer project-local permissions.
-- Each prompt becomes a finding with severity `warning` (the plan completed despite the prompt).
+- **Severity floor**: a permission prompt is an observed event, not an inference. Every prompt-derived finding MUST carry at minimum `severity: warning` with `confidence: high`. Elevate to `severity: error` when the user explicitly interrupted the call (e.g., chose "No" / cancelled the prompt) — that signals a workflow break, not a tolerated nag. Never downgrade to `medium` / `low`; doing so causes finalize-step's auto-record filter to drop the finding, which is how the `session_id`-resolver gap slipped through without a recorded lesson (see lesson `2026-04-24-15-001`).
+- Rationale: prompts are objective state. The retrospective sees the screenshot or chat entry directly; there is no inference chain whose confidence could reasonably be below high. Calibration is not a modulation dial here — it is a floor.
 
 ## Finding Shape
 
 ```toon
 aspect: permission_prompt_analysis
-severity: warning
+severity: {warning|error}
+confidence: high
 category: {category}
 tool: {tool}
 source_file: {path}
