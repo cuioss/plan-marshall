@@ -1,4 +1,4 @@
-"""Tests for ``direct_gh_glab_usage.py``.
+"""Tests for ``direct-gh-glab-usage.py``.
 
 Covers the five detection scenarios required by the aspect:
 
@@ -35,7 +35,7 @@ SCRIPT_PATH = (
     / 'skills'
     / 'plan-retrospective'
     / 'scripts'
-    / 'direct_gh_glab_usage.py'
+    / 'direct-gh-glab-usage.py'
 )
 
 
@@ -99,7 +99,7 @@ def _commit_file(repo_dir: Path, rel_path: str, content: str) -> None:
 
 def _write_wrapper(project_root: Path, rel_path: str, content: str) -> None:
     """Write a wrapper-scope Python file whose path matches one of the three
-    directories ``direct_gh_glab_usage.py`` scans (surface C).
+    directories ``direct-gh-glab-usage.py`` scans (surface C).
     """
     target = project_root / rel_path
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -134,7 +134,7 @@ class TestLogLeaks:
         assert result.success, result.stderr
         data = result.toon()
 
-        assert data['aspect'] == 'direct_gh_glab_usage'
+        assert data['aspect'] == 'direct-gh-glab-usage'
         log_findings = [f for f in data['findings'] if f['surface'] == 'log_leak']
         assert len(log_findings) >= 1, (
             'Expected at least one log_leak finding for "gh pr view" in work.log'

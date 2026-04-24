@@ -37,6 +37,7 @@
         "project:finalize-step-plugin-doctor",
         "default:branch-cleanup",
         "project:finalize-step-sync-plugin-cache",
+        "project:finalize-step-regenerate-executor",
         "default:record-metrics",
         "plan-marshall:plan-retrospective",
         "default:archive-plan"

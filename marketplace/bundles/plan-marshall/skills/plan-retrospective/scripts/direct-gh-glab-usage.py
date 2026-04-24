@@ -21,8 +21,8 @@ matches the convention in ``analyze-logs.py`` and
 fragments regardless of whether individual aspects found issues.
 
 Usage:
-    python3 direct_gh_glab_usage.py run --plan-id my-plan --mode live
-    python3 direct_gh_glab_usage.py run --archived-plan-path /abs --mode archived
+    python3 direct-gh-glab-usage.py run --plan-id my-plan --mode live
+    python3 direct-gh-glab-usage.py run --archived-plan-path /abs --mode archived
 """
 
 from __future__ import annotations
@@ -379,7 +379,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         'status': 'success',
-        'aspect': 'direct_gh_glab_usage',
+        'aspect': 'direct-gh-glab-usage',
         'plan_id': args.plan_id or Path(args.archived_plan_path or '').name,
         'counts': {
             'total': len(findings),
