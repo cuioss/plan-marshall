@@ -25,6 +25,16 @@ Accepts the standard finalize-step arguments:
 
 MUST be ordered **after** `project:finalize-step-sync-plugin-cache` in the steps list — the generator scans the plugin cache and will miss newly added scripts if the cache is stale at regeneration time.
 
+## cwd contract
+
+This wrapper is a **Bucket C meta-tool** (see [tools-script-executor/standards/cwd-policy.md](../../marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md)) and is designed to run **after `default:branch-cleanup`** has completed. At that point:
+
+- The PR has been merged, the base branch has been pulled into the main checkout, and the worktree has been removed. So `modified_files` references on disk resolve against the main checkout rather than a vanished worktree.
+- `.plan/marshal.json` and `.plan/execute-script.py` resolve via `git rev-parse --git-common-dir` to the main checkout's `.plan/` directory — exactly where the regenerated executor must land.
+- The plugin cache has been refreshed by `project:finalize-step-sync-plugin-cache` in the immediately preceding step, so the generator scans a cache that matches the merged source.
+
+All three invariants are properties of the surrounding step order in `.plan/marshal.json`. Do **not** attempt to relocate this wrapper before `branch-cleanup` or between cache-sync and itself — those positions break one of the three assumptions above.
+
 ## Workflow
 
 ### Step 1: Read modified files
