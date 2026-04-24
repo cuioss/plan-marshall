@@ -664,3 +664,115 @@ class TestCliCommandCapture(ScriptTestCase):
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), '◯ claude')
+
+
+class TestPlanLabelSanitize(ScriptTestCase):
+    """_sanitize_plan_label: length, control chars, whitespace handling."""
+
+    bundle = 'plan-marshall'
+    skill = 'plan-marshall'
+    script = 'set_terminal_title.py'
+
+    def test_accepts_typical_short_description(self):
+        self.assertEqual(
+            set_terminal_title._sanitize_plan_label('Refactor_title_handling'),
+            'Refactor_title_handling',
+        )
+
+    def test_strips_surrounding_whitespace(self):
+        self.assertEqual(
+            set_terminal_title._sanitize_plan_label('  padded  '),
+            'padded',
+        )
+
+    def test_none_and_empty_return_none(self):
+        self.assertIsNone(set_terminal_title._sanitize_plan_label(None))
+        self.assertIsNone(set_terminal_title._sanitize_plan_label(''))
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('   '))
+
+    def test_rejects_oversized_label(self):
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('x' * 100))
+
+    def test_rejects_control_characters(self):
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('bad\x00label'))
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('bad\nlabel'))
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('bad\x07label'))
+
+    def test_allows_ellipsis_tail(self):
+        # short_description truncation can leave a unicode ellipsis at the end.
+        self.assertEqual(
+            set_terminal_title._sanitize_plan_label('truncated_label…'),
+            'truncated_label…',
+        )
+
+
+class TestBuildTitleDoneEmission(ScriptTestCase):
+    """Terminal 'done' emission with --plan-label bypasses resolution chain."""
+
+    bundle = 'plan-marshall'
+    skill = 'plan-marshall'
+    script = 'set_terminal_title.py'
+
+    def test_done_with_plan_label_bypasses_resolution(self):
+        title = set_terminal_title._build_title(
+            'done', None, None, None, None, plan_label='Refactor_title_handling',
+        )
+        self.assertEqual(title, '✓ pm:done:Refactor_title_handling')
+
+    def test_plan_label_ignored_on_running_status(self):
+        # Only 'done' honours --plan-label; other statuses fall through to the
+        # normal resolution chain (empty here → claude fallback).
+        title = set_terminal_title._build_title(
+            'running', None, None, None, None, plan_label='ignored',
+        )
+        self.assertEqual(title, '▶ claude')
+
+    def test_done_without_plan_label_falls_back_to_resolution(self):
+        # No explicit label → normal chain; with no plan context this lands on claude.
+        title = set_terminal_title._build_title('done', None, None, None, None)
+        self.assertEqual(title, '✓ claude')
+
+    def test_build_title_wrapper_shortcircuits_on_done_label(self):
+        # Even with a resolvable plan in env + status.json, done+label short-circuits
+        # so the caller's label wins over any ambient resolution.
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
+        _write_status(plan_dir, '6-finalize', short_description='Old_derived')
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
+             mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False):
+            title = set_terminal_title.build_title(
+                'done', str(self.temp_dir), plan_label='Explicit_label',
+            )
+        self.assertEqual(title, '✓ pm:done:Explicit_label')
+
+    def test_cli_done_with_plan_label_statusline(self):
+        # Subprocess path: --plan-label is wired through argparse → build_title.
+        env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
+        result = run_script(
+            SCRIPT_PATH,
+            '--statusline',
+            'done',
+            '--plan-label',
+            'Wired_through_cli',
+            input_data='',
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), '✓ pm:done:Wired_through_cli')
+
+    def test_cli_done_with_malformed_plan_label_falls_back(self):
+        # A control character in the label is rejected → normal resolution →
+        # fallback to claude (no plan context here).
+        env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
+        result = run_script(
+            SCRIPT_PATH,
+            '--statusline',
+            'done',
+            '--plan-label',
+            'bad\x07label',
+            input_data='',
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), '✓ claude')

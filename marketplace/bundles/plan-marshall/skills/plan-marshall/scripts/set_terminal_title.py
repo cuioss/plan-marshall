@@ -33,6 +33,11 @@ _WORKTREE_RE = re.compile(r".*/\.claude/worktrees/(?P<id>[^/]+)(?:/.*)?$")
 _COMMAND_TOKEN_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9:_-]*)")
 _COMMAND_MAX_LEN = 40
 
+# Upper bound for the explicit --plan-label value used by the finalize-phase
+# done emission. Generous headroom above the ~36-char short_description cap so
+# legitimate labels always pass while still rejecting pathological input.
+_PLAN_LABEL_MAX_LEN = 60
+
 # Slash-command alias map: verbose tokens collapse to short display labels.
 # Applied at read time, so captured state is verbatim but rendering is aliased.
 _COMMAND_ALIASES: dict[str, str] = {
@@ -181,14 +186,39 @@ def _clear_active_command(session_id: str | None) -> None:
         return
 
 
+def _sanitize_plan_label(raw: str | None) -> str | None:
+    """Validate a caller-supplied ``--plan-label`` value.
+
+    Returns the stripped label when it is non-empty, within
+    ``_PLAN_LABEL_MAX_LEN``, and free of control characters. Any failure
+    yields ``None`` so the done emission falls back to the ordinary render
+    chain rather than producing a malformed title.
+    """
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    if not stripped or len(stripped) > _PLAN_LABEL_MAX_LEN:
+        return None
+    if any(ord(c) < 32 or ord(c) == 127 for c in stripped):
+        return None
+    return stripped
+
+
 def _build_title(
     status: str,
     plan_id: str | None,
     phase: str | None,
     active_command: str | None = None,
     short_description: str | None = None,
+    plan_label: str | None = None,
 ) -> str:
     icon = _STATUS_ICONS.get(status, _FALLBACK_ICON)
+    # Terminal 'done' emission from phase-6-finalize: the caller supplies the
+    # label directly so we can render without any cwd/status.json resolution.
+    # By the time this path fires the plan has been archived and the worktree
+    # removed, so the normal resolution chain would return the fallback.
+    if status == "done" and plan_label:
+        return f"{icon} pm:done:{plan_label}"
     if plan_id and phase:
         # Plan-active: collapse the plan_id prefix to the constant `pm` alias
         # and append the auto-derived short description when available.
@@ -240,7 +270,17 @@ def _emit_osc(title: str) -> None:
             return
 
 
-def build_title(status: str, cwd: str, session_id: str | None = None) -> str:
+def build_title(
+    status: str,
+    cwd: str,
+    session_id: str | None = None,
+    plan_label: str | None = None,
+) -> str:
+    # Terminal 'done' emission short-circuits resolution when an explicit
+    # plan label is supplied — by this point the live plan directory is
+    # already archived and the worktree removed.
+    if status == "done" and plan_label:
+        return _build_title(status, None, None, None, None, plan_label=plan_label)
     plan_id = _resolve_plan_id(cwd)
     phase: str | None = None
     short_description: str | None = None
@@ -268,6 +308,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print the title to stdout for Claude Code statusline (instead of OSC to /dev/tty)",
     )
+    parser.add_argument(
+        "--plan-label",
+        dest="plan_label",
+        type=str,
+        default=None,
+        help=(
+            "Explicit plan label for the 'done' status. When provided with "
+            "--status done, the title renders as '{icon} pm:done:{label}' "
+            "and bypasses cwd/status.json resolution — used by the "
+            "phase-6-finalize terminal emission after the plan is archived."
+        ),
+    )
     args = parser.parse_args(argv)
 
     payload = _read_hook_payload()
@@ -284,7 +336,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.status == "idle":
             _clear_active_command(session_id)
 
-    title = build_title(args.status, cwd, session_id)
+    plan_label = _sanitize_plan_label(args.plan_label)
+    title = build_title(args.status, cwd, session_id, plan_label=plan_label)
 
     if args.statusline:
         sys.stdout.write(title)
