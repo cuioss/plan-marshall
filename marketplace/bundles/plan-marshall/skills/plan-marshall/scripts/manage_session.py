@@ -88,13 +88,13 @@ def main() -> int:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    current = subparsers.add_parser(
-        "current", help="Return the current session_id", allow_abbrev=False
-    )
-    current.set_defaults(func=cmd_current)
+    subparsers.add_parser("current", help="Return the current session_id", allow_abbrev=False)
 
     args = parser.parse_args()
-    return args.func(args)
+    if args.command == "current":
+        return cmd_current(args)
+    parser.error(f"Unknown command: {args.command}")
+    return 2
 
 
 if __name__ == "__main__":
