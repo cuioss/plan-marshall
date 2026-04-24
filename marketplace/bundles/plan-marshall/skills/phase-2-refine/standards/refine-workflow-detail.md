@@ -150,6 +150,64 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ---
 
+## Step 3c: Proposed-Fix Verification
+
+**Purpose**: Challenge whether a proposed fix actually solves the documented symptom. Source premise verification (Step 3b) confirms that claims about existing code are accurate; Step 3c confirms that the proposed change is **sufficient** to address the symptom. Runs after Step 3b and before confidence aggregation.
+
+**Trigger**: Activates via **semantic LLM judgment** when the request narrative proposes a specific code change — concrete command strings, regex substitutions, function bodies, patch snippets, or config keys with new values. Source-agnostic (lesson, issue, PR review, free-form). Do **not** gate activation on header tokens like `## Proposed fix` — judge on semantic content. If the narrative only describes a symptom without proposing a change, skip to Step 4.
+
+For the complete extraction rules, probe construction, and worked example, see [proposed-fix-verification.md](proposed-fix-verification.md).
+
+### Execute Verification
+
+1. Extract up to 3 proposed fixes from the request, prioritizing load-bearing changes (the plan's intent depends on them succeeding)
+2. For each fix, construct a synthetic probe:
+   - Re-read the symptom and enumerate triggering inputs
+   - Construct a concrete scenario that reflects those inputs
+   - Reason about the fix's command/code semantics against the scenario — do not execute code
+3. Classify each probe as Valid, Insufficient, or Inconclusive
+
+### Handle Results
+
+**If all probes are valid**: Log and continue to Step 4.
+
+**If any probe is insufficient**: Emit a `CORRECTNESS: ISSUE — Proposed fix incomplete` finding per insufficient fix. These findings feed into Step 8 (Analyze Request Quality) under the same Correctness dimension as Step 3b (20% weight, shared) and impact the confidence score in Step 10.
+
+**Finding format**:
+
+```
+CORRECTNESS: ISSUE — Proposed fix incomplete
+  Fix: "{fix_description}"
+  Mechanism: {fix_mechanism}
+  Scenario: {concrete scenario from probe}
+  Gap: {what the probe showed is missing}
+  Impact: {how this affects the plan's intent}
+```
+
+### Example Probe
+
+Request proposes: *change `git diff --name-only {base}...HEAD` to `git diff --name-only {base}` to capture working-tree changes*.
+
+Probe: construct a working tree with one modified tracked file AND one untracked new file. Reason about `git diff --name-only {base}`: it reports only modifications to tracked files; untracked files are invisible. Phase-5-execute `Write` operations create untracked files — the fix misses them.
+
+Evaluation: **insufficient**. Emit finding, drop Correctness, route to Step 11 clarification.
+
+### Log Verification
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[REFINE:3c] (plan-marshall:phase-2-refine) Proposed-fix verification: {N} fixes probed, {M} valid, {K} insufficient"
+```
+
+When probes are insufficient, also log to decision.log at WARN:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-2-refine) Insufficient proposed fix: {fix_summary} — gap: {gap_summary}"
+```
+
+---
+
 ## Step 4: Load Confidence Threshold
 
 Read the confidence threshold from project configuration.

@@ -55,7 +55,7 @@ Before creating deliverables (phase-3-outline), ensure the request is:
 
 ## Workflow Overview
 
-The refine phase executes Steps 1-14 (with optional Step 3b). Steps 8-12 form an iterative loop that repeats until confidence reaches the threshold.
+The refine phase executes Steps 1-14 (with optional Steps 3b and 3c). Steps 8-12 form an iterative loop that repeats until confidence reaches the threshold.
 
 ### Step 1: Check for Unresolved Q-Gate Findings
 
@@ -74,6 +74,12 @@ Recipe-sourced plans skip quality analysis entirely. Check `plan_source` metadat
 Verify code references in the request narrative against the current codebase before quality analysis. Activates when the request contains verifiable code references (file paths, flags, API names, behavior descriptions). Findings feed into the Correctness dimension in Step 8/10.
 
 For the complete verification procedure, see [source-premise-verification.md](standards/source-premise-verification.md).
+
+### Step 3c: Proposed-Fix Verification
+
+Challenge whether a proposed fix actually solves the documented symptom before confidence aggregation. Activates via semantic LLM judgment when the request narrative proposes a specific code change (command, regex, function body, config edit) — source-agnostic, not gated on header tokens. Constructs a synthetic "would the proposed fix change behavior in the failure scenario?" probe and emits `CORRECTNESS: ISSUE — Proposed fix incomplete` when the probe exposes a gap. Findings feed the same Correctness dimension as Step 3b.
+
+For the complete procedure (extraction, probe construction, result handling, worked example), see [proposed-fix-verification.md](standards/proposed-fix-verification.md).
 
 ### Step 4: Load Confidence Threshold
 
@@ -209,6 +215,7 @@ Transition from refine to outline with `manage-status transition --completed 2-r
 - [workflow-overview.md](references/workflow-overview.md) - Visual workflow diagrams and data flow
 - [refine-workflow-detail.md](standards/refine-workflow-detail.md) - Detailed step-by-step procedures
 - [source-premise-verification.md](standards/source-premise-verification.md) - Source premise verification patterns for Step 3b
+- [proposed-fix-verification.md](standards/proposed-fix-verification.md) - Proposed-fix verification patterns for Step 3c
 
 ---
 
