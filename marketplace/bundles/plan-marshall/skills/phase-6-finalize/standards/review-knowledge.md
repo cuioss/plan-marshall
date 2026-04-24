@@ -72,10 +72,10 @@ If the union of survivors from 3c and 3d is empty, skip the classification loop 
 
 ### 3f. Classification loop
 
-For each surviving candidate from 3c and 3d, spawn exactly ONE inline `Task` agent using the templated prompt below. The prompt is authoritative — every finalize run uses the same instructions verbatim. The `{kind}` placeholder resolves to `lesson` or `memory`; `{id}` is the lesson identifier (e.g., `lesson-2026-04-17-004`) or the memory `identifier` value; `{body}` is the full lesson markdown body or the memory `content` JSON string.
+For each surviving candidate from 3c and 3d, spawn exactly ONE inline `Task` agent using the templated prompt below. The dispatch MUST route through `plan-marshall:classify-knowledge-agent` so the classification call carries the agent's enforcement envelope (verdict-vocabulary validation and output-contract) — any unscoped agent type is not valid for this call. The prompt body is authoritative — every finalize run uses the same instructions verbatim. The `{kind}` placeholder resolves to `lesson` or `memory`; `{id}` is the lesson identifier (e.g., `lesson-2026-04-17-004`) or the memory `identifier` value; `{body}` is the full lesson markdown body or the memory `content` JSON string.
 
 ```
-subagent_type: general-purpose
+subagent_type: plan-marshall:classify-knowledge-agent
 prompt: "Classify whether the plan's changes resolve / partially resolve / supersede the following {kind}. Return exactly one verdict word and (only for partially_resolved) a revised body.
 
 PLAN TITLE: {plan.title}

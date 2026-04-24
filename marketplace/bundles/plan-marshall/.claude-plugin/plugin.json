@@ -11,10 +11,16 @@
   "repository": "https://github.com/cuioss/plan-marshall.git",
   "keywords": ["environment", "permissions", "utilities", "configuration", "workflow", "task", "pr", "implementation", "quality", "orchestration"],
   "agents": [
+    "./agents/automated-review-agent.md",
+    "./agents/classify-knowledge-agent.md",
+    "./agents/create-pr-agent.md",
     "./agents/detect-change-type-agent.md",
+    "./agents/knowledge-capture-agent.md",
+    "./agents/lessons-capture-agent.md",
     "./agents/phase-agent.md",
     "./agents/q-gate-validation-agent.md",
-    "./agents/research-best-practices-agent.md"
+    "./agents/research-best-practices-agent.md",
+    "./agents/sonar-roundtrip-agent.md"
   ],
   "commands": [
     "./commands/tools-fix-intellij-diagnostics.md",
