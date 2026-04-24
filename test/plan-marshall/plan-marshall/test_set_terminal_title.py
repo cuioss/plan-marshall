@@ -24,10 +24,13 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 
 PLAN_ID = 'my-plan'
 
 
-def _write_status(plan_dir: Path, phase: str) -> Path:
+def _write_status(plan_dir: Path, phase: str, short_description: str | None = None) -> Path:
     plan_dir.mkdir(parents=True, exist_ok=True)
     status = plan_dir / 'status.json'
-    status.write_text(json.dumps({'current_phase': phase}), encoding='utf-8')
+    payload: dict[str, str] = {'current_phase': phase}
+    if short_description is not None:
+        payload['short_description'] = short_description
+    status.write_text(json.dumps(payload), encoding='utf-8')
     return status
 
 
@@ -61,28 +64,6 @@ class TestPlanIdResolution(ScriptTestCase):
             self.assertIsNone(set_terminal_title._resolve_plan_id('/tmp/nowhere'))
 
 
-class TestPlanShort(ScriptTestCase):
-    """_plan_short truncation."""
-
-    bundle = 'plan-marshall'
-    skill = 'plan-marshall'
-    script = 'set_terminal_title.py'
-
-    def test_short_verbatim(self):
-        self.assertEqual(set_terminal_title._plan_short('short-id'), 'short-id')
-
-    def test_at_boundary_verbatim(self):
-        plan_id = 'a' * 20
-        self.assertEqual(set_terminal_title._plan_short(plan_id), plan_id)
-
-    def test_long_truncated_with_ellipsis(self):
-        plan_id = 'dynamic-terminal-title-statusline'  # 32 chars
-        result = set_terminal_title._plan_short(plan_id)
-        self.assertTrue(result.startswith('\u2026'))
-        self.assertEqual(len(result), 15)  # ellipsis (1) + tail (14)
-        self.assertTrue(plan_id.endswith(result[1:]))
-
-
 class TestBuildTitle(ScriptTestCase):
     """_build_title icon + plan-phase formatting."""
 
@@ -92,26 +73,92 @@ class TestBuildTitle(ScriptTestCase):
 
     def test_running_with_plan(self):
         title = set_terminal_title._build_title('running', 'my-plan', '5-execute')
-        self.assertEqual(title, '\u25b6 my-plan:5-execute')
+        self.assertEqual(title, '▶ pm:5-execute')
 
     def test_waiting_with_plan(self):
         title = set_terminal_title._build_title('waiting', 'my-plan', '2-refine')
         self.assertTrue(title.startswith('? '))
         self.assertIn(':2-refine', title)
+        self.assertIn('pm:', title)
 
     def test_idle_with_plan(self):
         title = set_terminal_title._build_title('idle', 'my-plan', '6-finalize')
-        self.assertTrue(title.startswith('\u25ef '))
+        self.assertTrue(title.startswith('◯ '))
 
     def test_done_with_plan(self):
         title = set_terminal_title._build_title('done', 'my-plan', '6-finalize')
-        self.assertTrue(title.startswith('\u2713 '))
+        self.assertTrue(title.startswith('✓ '))
 
     def test_no_plan_fallback(self):
-        self.assertEqual(set_terminal_title._build_title('idle', None, None), '\u25ef claude')
+        self.assertEqual(set_terminal_title._build_title('idle', None, None), '◯ claude')
 
     def test_no_phase_falls_back(self):
-        self.assertEqual(set_terminal_title._build_title('running', 'my-plan', None), '\u25b6 my-plan:None' if False else '\u25b6 claude')
+        # When phase is missing, plan-active branch does not render; falls through to claude.
+        self.assertEqual(set_terminal_title._build_title('running', 'my-plan', None), '▶ claude')
+
+    def test_plan_active_with_short_description(self):
+        """A non-empty short_description is appended after `pm:{phase}`."""
+        title = set_terminal_title._build_title(
+            'running', 'my-plan', '4-plan', short_description='Refactor_title_handling'
+        )
+        self.assertEqual(title, '▶ pm:4-plan:Refactor_title_handling')
+
+    def test_plan_active_missing_short_description(self):
+        """A None short_description yields the 2-segment plan-active form."""
+        title = set_terminal_title._build_title(
+            'running', 'my-plan', '2-refine', short_description=None
+        )
+        self.assertEqual(title, '▶ pm:2-refine')
+
+    def test_plan_active_empty_short_description(self):
+        """An empty-string short_description is treated as missing (no trailing colon)."""
+        title = set_terminal_title._build_title(
+            'running', 'my-plan', '2-refine', short_description=''
+        )
+        self.assertEqual(title, '▶ pm:2-refine')
+
+
+class TestReadPlanMeta(ScriptTestCase):
+    """_read_plan_meta extracts (current_phase, short_description) from status.json."""
+
+    bundle = 'plan-marshall'
+    skill = 'plan-marshall'
+    script = 'set_terminal_title.py'
+
+    def test_returns_both_fields_when_present(self):
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
+        status = _write_status(plan_dir, '4-plan', short_description='Refactor_title_handling')
+        phase, short = set_terminal_title._read_plan_meta(status)
+        self.assertEqual(phase, '4-plan')
+        self.assertEqual(short, 'Refactor_title_handling')
+
+    def test_returns_phase_only_when_short_description_missing(self):
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
+        status = _write_status(plan_dir, '2-refine')
+        phase, short = set_terminal_title._read_plan_meta(status)
+        self.assertEqual(phase, '2-refine')
+        self.assertIsNone(short)
+
+    def test_empty_short_description_treated_as_none(self):
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
+        status = _write_status(plan_dir, '3-outline', short_description='')
+        phase, short = set_terminal_title._read_plan_meta(status)
+        self.assertEqual(phase, '3-outline')
+        self.assertIsNone(short)
+
+    def test_malformed_json_returns_none_tuple(self):
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
+        plan_dir.mkdir(parents=True)
+        bad = plan_dir / 'status.json'
+        bad.write_text('not-json', encoding='utf-8')
+        self.assertEqual(set_terminal_title._read_plan_meta(bad), (None, None))
+
+    def test_non_dict_payload_returns_none_tuple(self):
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
+        plan_dir.mkdir(parents=True)
+        bad = plan_dir / 'status.json'
+        bad.write_text('[1,2,3]', encoding='utf-8')
+        self.assertEqual(set_terminal_title._read_plan_meta(bad), (None, None))
 
 
 class TestStatusFileResolution(ScriptTestCase):
@@ -159,19 +206,27 @@ class TestBuildTitleEndToEnd(ScriptTestCase):
         with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
              mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False):
             title = set_terminal_title.build_title('running', str(self.temp_dir))
-        self.assertEqual(title, '\u25b6 my-plan:3-outline')
+        self.assertEqual(title, '▶ pm:3-outline')
+
+    def test_with_env_plan_and_short_description(self):
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
+        _write_status(plan_dir, '4-plan', short_description='Refactor_title_handling')
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
+             mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False):
+            title = set_terminal_title.build_title('running', str(self.temp_dir))
+        self.assertEqual(title, '▶ pm:4-plan:Refactor_title_handling')
 
     def test_fallback_when_no_plan(self):
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
         with mock.patch.dict(os.environ, env, clear=True):
             title = set_terminal_title.build_title('idle', str(self.temp_dir))
-        self.assertEqual(title, '\u25ef claude')
+        self.assertEqual(title, '◯ claude')
 
     def test_fallback_when_status_missing(self):
         with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
              mock.patch.dict(os.environ, {'PLAN_ID': 'absent-plan'}, clear=False):
             title = set_terminal_title.build_title('running', str(self.temp_dir))
-        self.assertEqual(title, '\u25b6 claude')
+        self.assertEqual(title, '▶ claude')
 
 
 class TestEmitOsc(ScriptTestCase):
@@ -240,7 +295,7 @@ class TestCliIntegration(ScriptTestCase):
             env_overrides=env_overrides,
         )
         self.assertTrue(result.success, msg=result.stderr)
-        self.assertEqual(result.stdout.strip(), '\u25ef claude')
+        self.assertEqual(result.stdout.strip(), '◯ claude')
 
     def test_statusline_reads_stdin_cwd(self):
         plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
@@ -262,7 +317,8 @@ class TestCliIntegration(ScriptTestCase):
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertIn(':5-execute', result.stdout)
-        self.assertTrue(result.stdout.startswith('\u25b6 '))
+        self.assertIn('pm:', result.stdout)
+        self.assertTrue(result.stdout.startswith('▶ '))
 
     def test_exit_zero_on_missing_status_file(self):
         # No status.json anywhere → script must still exit 0 with fallback.
@@ -419,6 +475,22 @@ class TestActiveCommandState(ScriptTestCase):
         with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
             set_terminal_title._clear_active_command('phantom-sess')
 
+    def test_read_aliases_plan_marshall_namespaced_token_to_pm(self):
+        """Captured verbose token `plan-marshall:plan-marshall` renders as `pm`."""
+        with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
+            set_terminal_title._write_active_command('sess-alias', 'plan-marshall:plan-marshall')
+            self.assertEqual(
+                set_terminal_title._read_active_command('sess-alias'), 'pm'
+            )
+
+    def test_read_passes_unaliased_tokens_through_unchanged(self):
+        """Tokens without an alias entry are returned verbatim."""
+        with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
+            set_terminal_title._write_active_command('sess-plain', 'sync-plugin-cache')
+            self.assertEqual(
+                set_terminal_title._read_active_command('sess-plain'), 'sync-plugin-cache'
+            )
+
 
 class TestBuildTitlePrecedence(ScriptTestCase):
     """Precedence: plan+phase > active_command > claude."""
@@ -429,7 +501,7 @@ class TestBuildTitlePrecedence(ScriptTestCase):
 
     def test_plan_phase_wins_over_command(self):
         title = set_terminal_title._build_title('running', 'my-plan', '5-execute', 'plan-marshall')
-        self.assertEqual(title, '▶ my-plan:5-execute')
+        self.assertEqual(title, '▶ pm:5-execute')
 
     def test_command_when_no_plan(self):
         title = set_terminal_title._build_title('running', None, None, 'plan-marshall')
@@ -471,7 +543,7 @@ class TestBuildTitleWithSession(ScriptTestCase):
         with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
              mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID, 'HOME': str(self.temp_dir)}, clear=False):
             title = set_terminal_title.build_title('running', str(self.temp_dir), 'sess-1')
-        self.assertEqual(title, '▶ my-plan:3-outline')
+        self.assertEqual(title, '▶ pm:3-outline')
 
     def test_falls_back_to_claude_when_no_session_nor_plan(self):
         env = {k: v for k, v in os.environ.items() if k != 'PLAN_ID'}
@@ -486,6 +558,52 @@ class TestCliCommandCapture(ScriptTestCase):
     bundle = 'plan-marshall'
     skill = 'plan-marshall'
     script = 'set_terminal_title.py'
+
+    def test_active_command_alias_pm(self):
+        """A UserPromptSubmit carrying `/plan-marshall:plan-marshall foo` renders
+        the active-command segment of the title as `pm`, not the verbose token."""
+        submit_payload = json.dumps({
+            'cwd': str(self.temp_dir),
+            'prompt': '/plan-marshall:plan-marshall foo',
+            'session_id': 'sess-alias-cli',
+        })
+        env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
+        result = run_script(
+            SCRIPT_PATH, 'running',
+            input_data=submit_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+
+        status_payload = json.dumps({'cwd': str(self.temp_dir), 'session_id': 'sess-alias-cli'})
+        result = run_script(
+            SCRIPT_PATH, '--statusline', 'idle',
+            input_data=status_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), '◯ pm')
+
+    def test_active_command_no_alias_passthrough(self):
+        """A prompt starting with `/sync-plugin-cache` — a token with no alias —
+        renders verbatim in the statusline."""
+        submit_payload = json.dumps({
+            'cwd': str(self.temp_dir),
+            'prompt': '/sync-plugin-cache',
+            'session_id': 'sess-plain-cli',
+        })
+        env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
+        result = run_script(
+            SCRIPT_PATH, 'running',
+            input_data=submit_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+
+        status_payload = json.dumps({'cwd': str(self.temp_dir), 'session_id': 'sess-plain-cli'})
+        result = run_script(
+            SCRIPT_PATH, '--statusline', 'idle',
+            input_data=status_payload, cwd=str(self.temp_dir), env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), '◯ sync-plugin-cache')
 
     def test_running_captures_command_and_statusline_reads_it(self):
         # 1. Simulate UserPromptSubmit hook: status=running, prompt=/plan-marshall, session_id=s1
@@ -546,3 +664,115 @@ class TestCliCommandCapture(ScriptTestCase):
         )
         self.assertTrue(result.success, msg=result.stderr)
         self.assertEqual(result.stdout.strip(), '◯ claude')
+
+
+class TestPlanLabelSanitize(ScriptTestCase):
+    """_sanitize_plan_label: length, control chars, whitespace handling."""
+
+    bundle = 'plan-marshall'
+    skill = 'plan-marshall'
+    script = 'set_terminal_title.py'
+
+    def test_accepts_typical_short_description(self):
+        self.assertEqual(
+            set_terminal_title._sanitize_plan_label('Refactor_title_handling'),
+            'Refactor_title_handling',
+        )
+
+    def test_strips_surrounding_whitespace(self):
+        self.assertEqual(
+            set_terminal_title._sanitize_plan_label('  padded  '),
+            'padded',
+        )
+
+    def test_none_and_empty_return_none(self):
+        self.assertIsNone(set_terminal_title._sanitize_plan_label(None))
+        self.assertIsNone(set_terminal_title._sanitize_plan_label(''))
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('   '))
+
+    def test_rejects_oversized_label(self):
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('x' * 100))
+
+    def test_rejects_control_characters(self):
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('bad\x00label'))
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('bad\nlabel'))
+        self.assertIsNone(set_terminal_title._sanitize_plan_label('bad\x07label'))
+
+    def test_allows_ellipsis_tail(self):
+        # short_description truncation can leave a unicode ellipsis at the end.
+        self.assertEqual(
+            set_terminal_title._sanitize_plan_label('truncated_label…'),
+            'truncated_label…',
+        )
+
+
+class TestBuildTitleDoneEmission(ScriptTestCase):
+    """Terminal 'done' emission with --plan-label bypasses resolution chain."""
+
+    bundle = 'plan-marshall'
+    skill = 'plan-marshall'
+    script = 'set_terminal_title.py'
+
+    def test_done_with_plan_label_bypasses_resolution(self):
+        title = set_terminal_title._build_title(
+            'done', None, None, None, None, plan_label='Refactor_title_handling',
+        )
+        self.assertEqual(title, '✓ pm:done:Refactor_title_handling')
+
+    def test_plan_label_ignored_on_running_status(self):
+        # Only 'done' honours --plan-label; other statuses fall through to the
+        # normal resolution chain (empty here → claude fallback).
+        title = set_terminal_title._build_title(
+            'running', None, None, None, None, plan_label='ignored',
+        )
+        self.assertEqual(title, '▶ claude')
+
+    def test_done_without_plan_label_falls_back_to_resolution(self):
+        # No explicit label → normal chain; with no plan context this lands on claude.
+        title = set_terminal_title._build_title('done', None, None, None, None)
+        self.assertEqual(title, '✓ claude')
+
+    def test_build_title_wrapper_shortcircuits_on_done_label(self):
+        # Even with a resolvable plan in env + status.json, done+label short-circuits
+        # so the caller's label wins over any ambient resolution.
+        plan_dir = self.temp_dir / '.plan' / 'local' / 'plans' / PLAN_ID
+        _write_status(plan_dir, '6-finalize', short_description='Old_derived')
+        with mock.patch.object(set_terminal_title, '_git_common_dir', return_value=None), \
+             mock.patch.dict(os.environ, {'PLAN_ID': PLAN_ID}, clear=False):
+            title = set_terminal_title.build_title(
+                'done', str(self.temp_dir), plan_label='Explicit_label',
+            )
+        self.assertEqual(title, '✓ pm:done:Explicit_label')
+
+    def test_cli_done_with_plan_label_statusline(self):
+        # Subprocess path: --plan-label is wired through argparse → build_title.
+        env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
+        result = run_script(
+            SCRIPT_PATH,
+            '--statusline',
+            'done',
+            '--plan-label',
+            'Wired_through_cli',
+            input_data='',
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), '✓ pm:done:Wired_through_cli')
+
+    def test_cli_done_with_malformed_plan_label_falls_back(self):
+        # A control character in the label is rejected → normal resolution →
+        # fallback to claude (no plan context here).
+        env_overrides = {'PLAN_ID': '', 'HOME': str(self.temp_dir)}
+        result = run_script(
+            SCRIPT_PATH,
+            '--statusline',
+            'done',
+            '--plan-label',
+            'bad\x07label',
+            input_data='',
+            cwd=str(self.temp_dir),
+            env_overrides=env_overrides,
+        )
+        self.assertTrue(result.success, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), '✓ claude')

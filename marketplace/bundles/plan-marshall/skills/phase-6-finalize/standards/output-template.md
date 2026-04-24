@@ -130,6 +130,15 @@ Capture the following into in-memory state (no work file is written):
 
    Extract the `content` field on success. On `section_not_found` or empty content, store the sentinel value `None` — the emission procedure substitutes the defensive placeholder. This read MUST happen BEFORE `default:archive-plan` runs, because archive moves `solution_outline.md` into the archived-plans directory.
 
+7. **Plan short_description** — the compact label used by the phase-6-finalize terminal `done` emission. Extracted from the live `status.json` before archive moves it.
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read \
+     --plan-id {plan_id}
+   ```
+
+   Extract `plan.short_description` (or `status.metadata.short_description`, whichever field is populated by `phase-1-init`). Store the raw string, or `None` when the field is absent/empty. The emission procedure hands this value to `set_terminal_title.py --plan-label` verbatim; the script clamps and rejects malformed values on its side.
+
 Keep this snapshot in model context. It is passed to the emission procedure AFTER `default:archive-plan` returns.
 
 ## Emission Procedure
