@@ -118,14 +118,26 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-6-finalize"
 ```
 
-Pass `session_id` (the current Claude Code conversation ID) alongside `plan_id` so `default:record-metrics` can call `manage-metrics enrich` on the live plan directory before `default:archive-plan` moves it:
+Resolve the current Claude Code `session_id` from the hook-populated cache before dispatching the skill. Pass it alongside `plan_id` so `default:record-metrics` can call `manage-metrics enrich` on the live plan directory before `default:archive-plan` moves it.
+
+**Resolve `session_id`:**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session current
+```
+
+Parse `session_id` from the TOON output. On `status: error\nerror: session_id_unavailable`, abort the finalize phase with a clear message — do **not** invent a filler value and do **not** reach for any `$VAR` expansion. See `phase-6-finalize/SKILL.md` → "How to obtain session_id" for the full resolver contract and forbidden patterns.
+
+**Dispatch the skill:**
 
 ```
 Skill: plan-marshall:phase-6-finalize
 operation: finalize
 plan_id: {plan_id}
-session_id: {session_id}
+session_id: {resolved session_id from resolver above}
 ```
+
+> **Placeholder contract**: every `{}` in a `Skill:` dispatch template in this workflow must have a documented resolver adjacent to it. `{plan_id}` is the top-level workflow parameter; `{session_id}` is resolved by the script above. Do not add new `{}` placeholders without naming the resolver alongside.
 
 Handles:
 - Commit and push changes

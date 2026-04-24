@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Resolve the active Claude Code session_id from the hook-populated cache.
+
+The terminal-title hook (`set_terminal_title.py`) writes the session_id into
+`~/.cache/plan-marshall/sessions/{by-cwd/{sha256(cwd)},current}` on every
+UserPromptSubmit. This script reads those caches back so main-context skill
+calls can obtain the id without reaching for an environment variable.
+
+Usage:
+    manage_session.py current
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from file_ops import output_toon, output_toon_error, safe_main  # type: ignore[import-not-found]
+
+
+def _cache_base() -> Path | None:
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return None
+    return home / ".cache" / "plan-marshall" / "sessions"
+
+
+def _resolve_cwd() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return str(Path.cwd())
+    if result.returncode != 0:
+        return str(Path.cwd())
+    root = result.stdout.strip()
+    return root or str(Path.cwd())
+
+
+def _read_text(path: Path) -> str | None:
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+    return raw or None
+
+
+def cmd_current(_args: argparse.Namespace) -> int:
+    base = _cache_base()
+    if base is None:
+        output_toon_error("session_id_unavailable", "Home directory not resolvable")
+        return 0
+
+    cwd = _resolve_cwd()
+    cwd_hash = hashlib.sha256(cwd.encode("utf-8")).hexdigest()
+
+    by_cwd = base / "by-cwd" / cwd_hash
+    session_id = _read_text(by_cwd)
+
+    if session_id is None:
+        current = base / "current"
+        session_id = _read_text(current)
+
+    if session_id is None:
+        output_toon_error("session_id_unavailable", "No session_id cached for this cwd or singleton")
+        return 0
+
+    output_toon({"status": "success", "session_id": session_id})
+    return 0
+
+
+@safe_main
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Resolve the active Claude Code session_id from the hook cache",
+        allow_abbrev=False,
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    current = subparsers.add_parser(
+        "current", help="Return the current session_id", allow_abbrev=False
+    )
+    current.set_defaults(func=cmd_current)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

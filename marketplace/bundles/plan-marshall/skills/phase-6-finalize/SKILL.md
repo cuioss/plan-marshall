@@ -61,6 +61,24 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 | `plan_id` | string | Yes | Plan identifier |
 | `session_id` | string | Yes | Current Claude Code conversation ID — forwarded to `default:record-metrics` for `manage-metrics enrich`, which reads the matching transcript JSONL to capture main-context token usage. Without it, `enrich` cannot locate the transcript and session tokens are lost from the final report. |
 
+### How to obtain session_id
+
+Claude Code exposes `session_id` only in the JSON stdin payload delivered to hook invocations — it is **not** available via any environment variable or Bash command from a main-context skill run. The outer workflow obtains it by calling the resolver script, which reads a cache populated by the terminal-title hook on every `UserPromptSubmit`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session current
+```
+
+Parse `session_id` from the TOON output. Resolution order: `~/.cache/plan-marshall/sessions/by-cwd/{sha256(cwd)}` → `~/.cache/plan-marshall/sessions/current` → `status: error\nerror: session_id_unavailable`. On error, the caller decides whether to abort finalize or degrade (skipping `enrich`); the contract here stays `Yes` / required and the caller is responsible for producing a valid value before dispatching this skill.
+
+**Forbidden resolution patterns** (all trip the Bash sandbox or produce garbage):
+
+- `echo "$CLAUDE_SESSION_ID"` — invented env-var name, not exposed by Claude Code; expansion triggers the `simple_expansion` sandbox heuristic and prompts the user
+- `printenv`, `env | grep`, `$(...)` command substitution — forbidden by `workflows/planning.md` for the one env-var case it handles; same prohibition applies here
+- Any other `$VAR` expansion — the **only** allow-listed env-var read pattern in plan-marshall is `echo "TERM_PROGRAM=$TERM_PROGRAM"` (installed by the marshall-steward wizard for IDE hand-off)
+
+As a last resort (fresh checkout, stripped `.claude` config, hook has not fired yet), use `AskUserQuestion` to ask the user for the id — but prefer the resolver in every other case, since users typically do not know where to find the id in the Claude Code UI.
+
 ## Configuration Source
 
 All config is read in Step 2 as a single TOON response:
