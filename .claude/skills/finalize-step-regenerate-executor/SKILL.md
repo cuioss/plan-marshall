@@ -27,7 +27,7 @@ MUST be ordered **after** `project:finalize-step-sync-plugin-cache` in the steps
 
 ## cwd contract
 
-This wrapper is a **Bucket C meta-tool** (see [tools-script-executor/standards/cwd-policy.md](../../marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md)) and is designed to run **after `default:branch-cleanup`** has completed. At that point:
+This wrapper is a **Bucket C meta-tool** (see [marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md](../../../marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md)) and is designed to run **after `default:branch-cleanup`** has completed. At that point:
 
 - The PR has been merged, the base branch has been pulled into the main checkout, and the worktree has been removed. So `modified_files` references on disk resolve against the main checkout rather than a vanished worktree.
 - `.plan/marshal.json` and `.plan/execute-script.py` resolve via `git rev-parse --git-common-dir` to the main checkout's `.plan/` directory — exactly where the regenerated executor must land.
