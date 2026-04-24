@@ -156,7 +156,23 @@ The script returns the report's absolute path and the list of sections written. 
 
 ### Step 5: Propose Lessons (optional, interactive)
 
-Load `references/lessons-proposal.md`. For each proposed lesson, allocate a lesson file via the two-step path-allocate flow and write the body directly:
+Load `references/lessons-proposal.md`. Recording proceeds in two sub-steps: **5a** classifies each proposal against the existing corpus, and **5b** records only what the classification admits.
+
+#### Step 5a: Classify (required before any recording)
+
+Load `plan-marshall:manage-lessons:references/dedup-analysis.md` and classify every proposal into exactly one of three statuses:
+
+| Status | Meaning | Caller action |
+|--------|---------|---------------|
+| `new` | No existing lesson covers this component + root cause | Proceed to 5b `manage-lessons add` |
+| `merge_into` | An existing lesson shares component + root cause (`target_id` recorded) | Skip add; `Edit` target lesson file to append `## Recurrence — YYYY-MM-DD ({plan_id})` section |
+| `already_closed` | Existing lesson filed AND code fix has since landed (`target_id` recorded) | Skip add; record target_id in report; delete stale lesson file (requires user confirmation in finalize-step mode) |
+
+Dedup-gate enforcement is documented in `references/lessons-proposal.md` ("Dedup gate (required before recording)" section) and authoritatively specified in `dedup-analysis.md`. Recording without classification is prohibited.
+
+#### Step 5b: Record (gated by 5a)
+
+Only `status: new` proposals reach `manage-lessons add`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
@@ -164,7 +180,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
   --title "{lesson title}"
 ```
 
-Parse `path` from the output and `Write` the body. The `references/lessons-proposal.md` document defines the prompting rules and category choices.
+Parse `path` from the output and `Write` the body. `references/lessons-proposal.md` defines the prompting rules and category choices. `merge_into` proposals are applied via `Edit` on the target file; `already_closed` proposals are surfaced in the report only.
 
 In non-interactive finalize-step mode, emit lessons automatically only when confidence is high (documented in the reference). User-invocable mode uses `AskUserQuestion` for each draft.
 
