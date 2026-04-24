@@ -9,6 +9,7 @@ import subprocess
 from typing import Any
 
 from _references_core import read_references, write_references  # type: ignore[import-not-found]
+from _short_description import derive_short_description  # type: ignore[import-not-found]
 from _status_core import (
     get_archive_dir,
     get_status_path,
@@ -53,6 +54,7 @@ def cmd_create(args: argparse.Namespace) -> dict:
 
     status: dict[str, Any] = {
         'title': args.title,
+        'short_description': derive_short_description(args.title),
         'current_phase': phases[0],
         'phases': [{'name': p, 'status': PHASE_STATUS_PENDING} for p in phases],
         'created': now,

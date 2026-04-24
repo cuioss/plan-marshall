@@ -30,11 +30,14 @@ _FALLBACK_ICON = _STATUS_ICONS["idle"]
 
 _WORKTREE_RE = re.compile(r".*/\.claude/worktrees/(?P<id>[^/]+)(?:/.*)?$")
 
-_PLAN_SHORT_MAX = 20
-_PLAN_SHORT_TAIL = 14
-
 _COMMAND_TOKEN_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9:_-]*)")
 _COMMAND_MAX_LEN = 40
+
+# Slash-command alias map: verbose tokens collapse to short display labels.
+# Applied at read time, so captured state is verbatim but rendering is aliased.
+_COMMAND_ALIASES: dict[str, str] = {
+    "plan-marshall:plan-marshall": "pm",
+}
 
 
 def _resolve_plan_id(cwd: str) -> str | None:
@@ -86,21 +89,34 @@ def _resolve_status_file(cwd: str, plan_id: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def _read_phase(status_file: Path) -> str | None:
+def _read_plan_meta(status_file: Path) -> tuple[str | None, str | None]:
+    """Return ``(current_phase, short_description)`` from status.json.
+
+    Both fields are optional; a missing, empty, or non-string value yields
+    ``None`` for that slot. Any parse/read failure yields ``(None, None)`` —
+    the title builder treats this identically to "no active plan".
+    """
     try:
         data = json.loads(status_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
-    phase = data.get("current_phase") if isinstance(data, dict) else None
-    if isinstance(phase, str) and phase:
-        return phase
-    return None
+        return None, None
+    if not isinstance(data, dict):
+        return None, None
+    phase = data.get("current_phase")
+    short_description = data.get("short_description")
+    phase_value = phase if isinstance(phase, str) and phase else None
+    short_value = short_description if isinstance(short_description, str) and short_description else None
+    return phase_value, short_value
 
 
-def _plan_short(plan_id: str) -> str:
-    if len(plan_id) <= _PLAN_SHORT_MAX:
-        return plan_id
-    return "…" + plan_id[-_PLAN_SHORT_TAIL:]
+def _read_phase(status_file: Path) -> str | None:
+    """Backwards-compatible wrapper returning only the phase field.
+
+    Retained so tests and any external callers that only need the phase
+    continue to work. New code should prefer :func:`_read_plan_meta`.
+    """
+    phase, _ = _read_plan_meta(status_file)
+    return phase
 
 
 def _command_state_path(session_id: str) -> Path | None:
@@ -148,7 +164,9 @@ def _read_active_command(session_id: str | None) -> str | None:
         return None
     if not raw or len(raw) > _COMMAND_MAX_LEN:
         return None
-    return raw
+    # Collapse known verbose slash-command tokens to their short display aliases.
+    # The on-disk state stays verbatim; only the rendered label is aliased.
+    return _COMMAND_ALIASES.get(raw, raw)
 
 
 def _clear_active_command(session_id: str | None) -> None:
@@ -168,10 +186,15 @@ def _build_title(
     plan_id: str | None,
     phase: str | None,
     active_command: str | None = None,
+    short_description: str | None = None,
 ) -> str:
     icon = _STATUS_ICONS.get(status, _FALLBACK_ICON)
     if plan_id and phase:
-        return f"{icon} {_plan_short(plan_id)}:{phase}"
+        # Plan-active: collapse the plan_id prefix to the constant `pm` alias
+        # and append the auto-derived short description when available.
+        if short_description:
+            return f"{icon} pm:{phase}:{short_description}"
+        return f"{icon} pm:{phase}"
     if active_command:
         return f"{icon} {active_command}"
     return f"{icon} claude"
@@ -220,16 +243,18 @@ def _emit_osc(title: str) -> None:
 def build_title(status: str, cwd: str, session_id: str | None = None) -> str:
     plan_id = _resolve_plan_id(cwd)
     phase: str | None = None
+    short_description: str | None = None
     if plan_id:
         status_file = _resolve_status_file(cwd, plan_id)
         if status_file is not None:
-            phase = _read_phase(status_file)
+            phase, short_description = _read_plan_meta(status_file)
     if plan_id and not phase:
         plan_id = None
+        short_description = None
     active_command: str | None = None
     if not (plan_id and phase):
         active_command = _read_active_command(session_id)
-    return _build_title(status, plan_id, phase, active_command)
+    return _build_title(status, plan_id, phase, active_command, short_description)
 
 
 def main(argv: list[str] | None = None) -> int:
