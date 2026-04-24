@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Emit a terminal title (OSC) and/or statusline string that reflects the
-active plan-marshall plan and phase plus a live status icon.
+active plan-marshall plan and phase, the active slash command (if any),
+plus a live status icon.
 
 Invoked from Claude Code hooks (SessionStart / UserPromptSubmit / Notification /
-Stop) and from the Claude Code statusline command. Never raises to the caller:
-any failure falls back to `<icon> claude` and exit 0 so the user's session is
-never disrupted.
+PostToolUse(AskUserQuestion) / Stop) and from the Claude Code statusline
+command. Never raises to the caller: any failure falls back to `<icon> claude`
+and exit 0 so the user's session is never disrupted.
 """
 
 from __future__ import annotations
@@ -19,10 +20,10 @@ import sys
 from pathlib import Path
 
 _STATUS_ICONS = {
-    "running": "\u25b6",   # ▶
+    "running": "▶",   # ▶
     "waiting": "?",
-    "idle": "\u25ef",      # ◯
-    "done": "\u2713",      # ✓
+    "idle": "◯",      # ◯
+    "done": "✓",      # ✓
 }
 
 _FALLBACK_ICON = _STATUS_ICONS["idle"]
@@ -31,6 +32,9 @@ _WORKTREE_RE = re.compile(r".*/\.claude/worktrees/(?P<id>[^/]+)(?:/.*)?$")
 
 _PLAN_SHORT_MAX = 20
 _PLAN_SHORT_TAIL = 14
+
+_COMMAND_TOKEN_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9:_-]*)")
+_COMMAND_MAX_LEN = 40
 
 
 def _resolve_plan_id(cwd: str) -> str | None:
@@ -96,33 +100,107 @@ def _read_phase(status_file: Path) -> str | None:
 def _plan_short(plan_id: str) -> str:
     if len(plan_id) <= _PLAN_SHORT_MAX:
         return plan_id
-    return "\u2026" + plan_id[-_PLAN_SHORT_TAIL:]
+    return "…" + plan_id[-_PLAN_SHORT_TAIL:]
 
 
-def _build_title(status: str, plan_id: str | None, phase: str | None) -> str:
+def _command_state_path(session_id: str) -> Path | None:
+    if not session_id or "/" in session_id or "\\" in session_id or session_id in ("..", "."):
+        return None
+    try:
+        home = Path.home()
+    except (OSError, RuntimeError):
+        return None
+    return home / ".cache" / "plan-marshall" / "sessions" / session_id / "active-command"
+
+
+def _extract_command_token(prompt: str) -> str | None:
+    if not isinstance(prompt, str):
+        return None
+    match = _COMMAND_TOKEN_RE.match(prompt.lstrip())
+    if not match:
+        return None
+    token = match.group(1)
+    if not token or len(token) > _COMMAND_MAX_LEN:
+        return None
+    return token
+
+
+def _write_active_command(session_id: str, command: str) -> None:
+    path = _command_state_path(session_id)
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(command, encoding="utf-8")
+    except OSError:
+        return
+
+
+def _read_active_command(session_id: str | None) -> str | None:
+    if not session_id:
+        return None
+    path = _command_state_path(session_id)
+    if path is None or not path.is_file():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+    if not raw or len(raw) > _COMMAND_MAX_LEN:
+        return None
+    return raw
+
+
+def _clear_active_command(session_id: str | None) -> None:
+    if not session_id:
+        return
+    path = _command_state_path(session_id)
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        return
+
+
+def _build_title(
+    status: str,
+    plan_id: str | None,
+    phase: str | None,
+    active_command: str | None = None,
+) -> str:
     icon = _STATUS_ICONS.get(status, _FALLBACK_ICON)
     if plan_id and phase:
         return f"{icon} {_plan_short(plan_id)}:{phase}"
+    if active_command:
+        return f"{icon} {active_command}"
     return f"{icon} claude"
 
 
-def _read_cwd_from_stdin() -> str | None:
+def _read_hook_payload() -> dict[str, str | None]:
+    empty = {"cwd": None, "prompt": None, "session_id": None}
     if sys.stdin is None or sys.stdin.isatty():
-        return None
+        return empty
     try:
         raw = sys.stdin.read()
     except OSError:
-        return None
+        return empty
     if not raw.strip():
-        return None
+        return empty
     try:
         payload = json.loads(raw)
     except ValueError:
-        return None
+        return empty
     if not isinstance(payload, dict):
-        return None
+        return empty
     cwd = payload.get("cwd")
-    return cwd if isinstance(cwd, str) and cwd else None
+    prompt = payload.get("prompt")
+    session_id = payload.get("session_id")
+    return {
+        "cwd": cwd if isinstance(cwd, str) and cwd else None,
+        "prompt": prompt if isinstance(prompt, str) else None,
+        "session_id": session_id if isinstance(session_id, str) and session_id else None,
+    }
 
 
 def _emit_osc(title: str) -> None:
@@ -139,7 +217,7 @@ def _emit_osc(title: str) -> None:
             return
 
 
-def build_title(status: str, cwd: str) -> str:
+def build_title(status: str, cwd: str, session_id: str | None = None) -> str:
     plan_id = _resolve_plan_id(cwd)
     phase: str | None = None
     if plan_id:
@@ -148,7 +226,10 @@ def build_title(status: str, cwd: str) -> str:
             phase = _read_phase(status_file)
     if plan_id and not phase:
         plan_id = None
-    return _build_title(status, plan_id, phase)
+    active_command: str | None = None
+    if not (plan_id and phase):
+        active_command = _read_active_command(session_id)
+    return _build_title(status, plan_id, phase, active_command)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -164,8 +245,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    cwd = _read_cwd_from_stdin() or os.getcwd()
-    title = build_title(args.status, cwd)
+    payload = _read_hook_payload()
+    cwd = payload["cwd"] or os.getcwd()
+    session_id = payload["session_id"]
+
+    # Only hook invocations (no --statusline) mutate session state.
+    # The statusLine command fires continuously and must be a pure read.
+    if not args.statusline and session_id:
+        if args.status == "running" and payload["prompt"]:
+            token = _extract_command_token(payload["prompt"])
+            if token:
+                _write_active_command(session_id, token)
+        elif args.status == "idle":
+            _clear_active_command(session_id)
+
+    title = build_title(args.status, cwd, session_id)
 
     if args.statusline:
         sys.stdout.write(title)

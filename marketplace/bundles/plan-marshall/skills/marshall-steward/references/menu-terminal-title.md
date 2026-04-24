@@ -61,12 +61,17 @@ Patch the project-local `./.claude/settings.local.json` (create the file with `{
     ],
     "Stop": [
       { "hooks": [{ "type": "command", "command": "python3 <ABS_PATH>/set_terminal_title.py idle" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "python3 <ABS_PATH>/set_terminal_title.py running" }] }
     ]
   }
 }
 ```
 
 The two `SessionStart` entries are intentional: the matcher-less entry covers `startup` / `resume` / `compact`, and the `matcher: "clear"` entry restores the title after `/clear` so the user can reuse the session without a stale label.
+
+The `PostToolUse` / `AskUserQuestion` entry closes the waiting loop: `Notification` fires `waiting` when Claude blocks on an `AskUserQuestion`, but Claude Code emits no event when the user's answer returns to Claude — `UserPromptSubmit` only fires on fresh prompts from the input box. Without this hook the title would stay `?` for the rest of the turn until `Stop`. The `PostToolUse` hook with `matcher: "AskUserQuestion"` fires as soon as the tool result is delivered to Claude, re-stamping `running` (idempotent — if the title is already `▶`, the re-stamp is a no-op).
 
 ### Statusline entry to merge
 
@@ -105,7 +110,7 @@ The marshall-steward skill writes the merge as a small inline Python operation (
 
 1. `import json`; load existing `./.claude/settings.local.json` (or `{}` if the file is missing).
 2. Ensure `settings["hooks"]` exists.
-3. For each of the four event keys, append the new entry objects to `settings["hooks"][event]` (create the list if missing).
+3. For each of the five event keys (`SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`, `PostToolUse`), append the new entry objects to `settings["hooks"][event]` (create the list if missing). Dedup on the exact `command` string within each matcher group so re-running the wizard on a previously-configured project does not duplicate entries.
 4. Set `settings["statusLine"]` to the command dict unless the user declined the overwrite.
 5. Ensure `settings["env"]` exists, then apply the three-branch logic above to set `settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "1"` (unless the user declined an overwrite of a non-`"1"` existing value).
 6. `json.dump(settings, path, indent=2)` with `sort_keys=False` to preserve key order.
