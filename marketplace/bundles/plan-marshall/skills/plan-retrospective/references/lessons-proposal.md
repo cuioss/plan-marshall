@@ -84,7 +84,7 @@ Before any proposal is recorded, classify each one per `plan-marshall:manage-les
 
 - **`new`** → proceed with `manage-lessons add --component {c} --category {cat} --title "{title}"` and `Write` the body.
 - **`merge_into`** → skip the add; `Edit` the target lesson file at `.plan/local/lessons-learned/{target_id}.md` to append a `## Recurrence — YYYY-MM-DD ({plan_id})` section with the candidate's body content (Context, Root cause, Evidence at minimum).
-- **`already_closed`** → skip both add and append; record the `target_id` in the retrospective report's "Proposed Lessons" section as `"Observed again but already closed by lesson {target_id}"`.
+- **`already_closed`** → skip both add and append; record the `target_id` in the retrospective report's "Proposed Lessons" section as `"Observed again but already closed by lesson {target_id}"`; delete the stale lesson file at `.plan/local/lessons-learned/{target_id}.md` (requires user confirmation in finalize-step mode because deletion is destructive).
 
 Caller-specific behavior (per `dedup-analysis.md` Caller contracts): finalize-step mode executes `new` adds and `merge_into` appends automatically, but `already_closed` always requires user confirmation because deletion is destructive. User-invocable mode asks per candidate.
 

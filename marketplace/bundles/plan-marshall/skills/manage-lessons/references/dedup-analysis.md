@@ -22,7 +22,7 @@ For each candidate, choose exactly one status:
   - Action: caller proceeds with `manage-lessons add` and writes the body.
 
 - **`merge_into`** — one or more existing lessons share the same component and same root cause.
-  - Action: caller appends evidence to the target instead of creating, via `Edit` on the target file under `.plan/local/lessons-learned/{target_id}.md`. Append a new section with heading `## Recurrence — YYYY-MM-DD (context)`.
+  - Action: caller appends evidence to the target instead of creating, via `Edit` on the target file under `.plan/local/lessons-learned/{target_id}.md`. Append a new section with heading `## Recurrence — YYYY-MM-DD ({plan_id})`.
   - Record: `target_id` (the ID being merged into) and the appended section heading.
 
 - **`already_closed`** — an existing lesson filed the finding AND the code fix has since landed.

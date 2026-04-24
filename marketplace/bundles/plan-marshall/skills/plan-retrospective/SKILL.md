@@ -180,7 +180,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
   --title "{lesson title}"
 ```
 
-Parse `path` from the output and `Write` the body. `references/lessons-proposal.md` defines the prompting rules and category choices. `merge_into` proposals are applied via `Edit` on the target file; `already_closed` proposals are surfaced in the report only.
+Parse `path` from the output and `Write` the body. `references/lessons-proposal.md` defines the prompting rules and category choices. `merge_into` proposals are applied via `Edit` on the target file; `already_closed` proposals are surfaced in the report and the stale lesson file at `.plan/local/lessons-learned/{target_id}.md` is deleted (requires user confirmation in finalize-step mode because deletion is destructive).
 
 In non-interactive finalize-step mode, emit lessons automatically only when confidence is high (documented in the reference). User-invocable mode uses `AskUserQuestion` for each draft.
 
