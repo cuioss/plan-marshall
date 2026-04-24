@@ -181,6 +181,28 @@ Analyze request to derive a content pattern for targeted discovery:
 
 Identify component types in scope (skills, agents, commands, scripts, tests) and bundle scope from module_mapping.
 
+### Step 1b: Flag-Rename Detection and Scope Expansion
+
+When the clarified request describes a CLI-flag or script-parameter rename, the default module-scoped inventory from Step 2 is insufficient — flag callers and argparse `dest` references typically live outside `module_mapping`. Activate the heuristic below to expand discovery.
+
+**Trigger detection** — activate when the clarified request contains any of these keywords:
+
+- `rename`
+- `flag`
+- `parameter`
+- `--{old}` (the literal old flag, e.g., `--number`)
+- `--{new}` (the literal new flag, e.g., `--task`)
+
+**Expanded discovery** — when triggered, override the module-scoped inventory of Step 2:
+
+1. Full grep for the old flag literal `--{old}` across **all** bundles in `marketplace/` and **all** `test/**` directories — not only the modules identified by `module_mapping`.
+2. Additional Python-specific grep for `Namespace(..., {old_dest}=` and `args.{old_dest}` to catch argparse `dest` references in test helpers and handlers. Derive `{old_dest}` from `{old}` by replacing `-` with `_` (argparse's default `dest` normalization).
+3. Every match becomes a CERTAIN_INCLUDE candidate Affected file unless its path falls under an explicitly excluded context:
+   - `.plan/archived-plans/**` (frozen historical fixtures)
+   - vendored snapshots (any path whose enclosing directory is marked as a vendored/third-party snapshot)
+
+Log a decision entry summarizing the expanded scope (e.g., `(phase-3-outline) Flag-rename detected: --number → --task; scope expanded to {N} files across {M} bundles`).
+
 ### Step 2: Inventory Scan
 
 Follow ext-outline-workflow **Inventory Scan** with the component types and bundle scope from Step 1.
@@ -237,4 +259,4 @@ Add test update and bundle verification deliverables as needed. Validate all del
 
 **MUST NOT**: Change behavior (refactor = structure only). Violate compatibility setting. Skip analysis step (must assess each component).
 
-**MUST DO**: Use content filter for targeted discovery. Respect compatibility setting. Use ext-outline-workflow shared constraints.
+**MUST DO**: Use content filter for targeted discovery. Respect compatibility setting. Use ext-outline-workflow shared constraints. For flag-rename / parameter-rename requests, expand discovery to all bundles and `test/**` per Step 1b — do NOT rely on `module_mapping` scope alone.
