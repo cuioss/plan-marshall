@@ -1,20 +1,16 @@
 # Lessons Integration
 
-How lessons learned are captured during the finalize phase.
+Conceptual companion to `lessons-capture.md`. Describes WHY lessons capture exists and the criteria for recording or skipping a lesson. The mechanical executor lives in `standards/lessons-capture.md`; this document carries no dispatch logic of its own.
 
 ## Purpose
 
-At plan completion (Step 7 - Lessons Capture), notable patterns, decisions, and improvements discovered during implementation should be recorded for future reference.
+At plan completion, notable patterns, decisions, and improvements discovered during implementation should be recorded for future reference.
 
 ## When to Capture Lessons
 
-Lessons are captured as an **advisory step** near plan completion:
+Activation is decided by the manifest, not by this document. When `lessons-capture` is in `manifest.phase_6.steps`, the dispatcher runs the `lessons-capture` standards document on every Phase 6 entry. The composer in `manage-execution-manifest:compose` includes `lessons-capture` for every change-type that produces non-trivial work; the only documented exclusion is the rule-1 early-terminate analysis path.
 
-```
-Step 6: Knowledge Capture (advisory)
-Step 7: Lessons Capture (advisory) ← This step
-Step 8: Mark Plan Complete
-```
+Within an active `lessons-capture` run, the agent applies the criteria below to decide whether to allocate a lesson file or record `no lessons recorded`. This is content judgement, not step activation.
 
 ## Lesson Categories
 
@@ -105,10 +101,9 @@ Step B — Write tool appends the following body to the returned path:
 
 ## Advisory Nature
 
-Lessons capture is **advisory only**:
-- Does not block finalize if skipped
+Lessons capture is **advisory only** at the content level:
 - Does not require user interaction
-- Logged but failure does not affect plan status
+- A timeout on the agent (5-minute budget per the SKILL.md Step 3 dispatch wrapper) records `outcome=failed` but does not block subsequent finalize steps
 
 ## Logging
 

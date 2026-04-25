@@ -46,10 +46,16 @@ Use /plan-marshall to complete 1-init through 4-plan phases first.
 
 ## Execute Phase (DUMB LOOP Pattern)
 
-**Metrics**: Record phase start at the beginning of execute:
+**Metrics**: The start of `5-execute` was already recorded by the
+`4-plan → 5-execute` fused boundary call emitted at the end of the planning
+workflow (see `workflows/planning.md`). When the execute workflow is entered
+directly (e.g. via `/plan-marshall action=execute plan={plan_id}` against a
+plan already past `4-plan`), use a fused boundary call to close the
+previously active phase and start `5-execute` in one step:
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
-  --plan-id {plan_id} --phase 5-execute
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute
 ```
 
 The execute phase iterates through tasks using a simple loop:
@@ -72,16 +78,21 @@ For each task:
 
 After all tasks complete, transition and check auto-continue:
 
-**Metrics**: During the task loop, maintain a running sum of `total_tokens`, `tool_uses`, and `duration_ms` from each task agent's `<usage>` tag. After all tasks complete, pass the aggregated totals to `end-phase`:
+**Metrics**: During the task loop, maintain a running sum of `total_tokens`,
+`tool_uses`, and `duration_ms` from each task agent's `<usage>` tag. After
+all tasks complete, record the `5-execute → 6-finalize` boundary in a single
+fused call (forwarding the aggregated totals to the closing phase):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 5-execute \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase 5-execute --next-phase 6-finalize \
   --total-tokens {sum of total_tokens from all task agent <usage> tags} \
   --tool-uses {sum of tool_uses from all task agent <usage> tags} \
   --duration-ms {sum of duration_ms from all task agent <usage> tags}
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
-  --plan-id {plan_id}
 ```
+
+The fused call already recorded the start of `6-finalize`; the
+**Finalize Phase** section below MUST NOT call `start-phase 6-finalize`
+again.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
@@ -107,10 +118,17 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Finalize Phase
 
-**Metrics**: Record phase start:
+**Metrics**: The start of `6-finalize` was already recorded by the
+`5-execute → 6-finalize` fused boundary call above (or by an equivalent
+boundary when the finalize workflow is entered directly). Skip any explicit
+`start-phase 6-finalize` invocation here. When entering this section
+directly without a preceding execute phase in the same orchestration cycle,
+use a fused boundary call to close the previously active phase and start
+`6-finalize`:
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
-  --plan-id {plan_id} --phase 6-finalize
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 6-finalize
 ```
 
 ```bash
@@ -146,11 +164,11 @@ Handles:
 - Sonar roundtrip (if configured)
 - Knowledge capture (advisory)
 - Lessons capture (advisory)
-- Record final metrics (`end-phase` + `enrich` + `generate`, inside `default:record-metrics`)
+- Record final metrics (`end-phase` + `enrich` + `generate`, inside `default:record-metrics` — plan finalization has no "next phase" so the fused `phase-boundary` does not apply here)
 - Mark plan complete
 - Archive plan (move to `.plan/archived-plans/`)
 
-All three `manage-metrics` commands (`end-phase`, `enrich`, `generate`) are executed inside `default:record-metrics` on the live plan directory before `default:archive-plan` runs. Do NOT add any `manage-metrics` invocation after `Skill: plan-marshall:phase-6-finalize` returns — a post-archive write recreates `.plan/local/plans/{plan_id}/` as an orphan directory.
+All three `manage-metrics` commands (`end-phase`, `enrich`, `generate`) are executed inside `default:record-metrics` on the live plan directory before `default:archive-plan` runs. The fused `phase-boundary` subcommand is intentionally NOT used here because plan finalization has no "next phase" to start. Do NOT add any `manage-metrics` invocation after `Skill: plan-marshall:phase-6-finalize` returns — a post-archive write recreates `.plan/local/plans/{plan_id}/` as an orphan directory.
 
 ### Finalize Validation
 

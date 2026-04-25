@@ -3,10 +3,21 @@
 ## Configuration
 
 - Accept `plan_id` parameter (never paths)
-- Read finalize config from marshal.json: `plan.phase-6-finalize` (step booleans), `plan.phase-1-init` (branch_strategy)
+- Read the per-plan execution manifest (`execution.toon`) for `phase_6.steps` — the authoritative step list
+- Read non-step configuration from `marshal.json`: `plan.phase-6-finalize.review_bot_buffer_seconds`, `plan.phase-6-finalize.max_iterations`, `plan.phase-1-init.branch_strategy`, `plan.phase-5-execute.commit_strategy`
 - Read context from references.json: `branch`, `base_branch`, `issue_url`, `build_system`
 
-## Commit Workflow (ALWAYS)
+## Manifest Authority
+
+The validation pass MUST refuse to enforce or report on any step that is NOT present in `manifest.phase_6.steps`. A step listed in `required-steps.md` but absent from the manifest for the running plan is NOT a missing-step violation — it is a manifest pruning decision made at outline time, and validation respects it. Concretely:
+
+- The `phase_steps_complete` handshake invariant only enforces required steps that are also in `manifest.phase_6.steps`.
+- The output-template renderer's `[FAILED]` precedence rule only considers manifest steps.
+- A validation report enumerating "checks passed" only counts checks whose corresponding step is in the manifest.
+
+Per-step validation criteria below apply when the corresponding step appears in `manifest.phase_6.steps`. When a step is absent from the manifest, the section is not enforced for the current plan.
+
+## Commit Workflow (when `commit-push` is in the manifest)
 
 - Stage all changes in working directory
 - Create commit with descriptive message (from request.md summary)
@@ -15,7 +26,7 @@
 - Handle commit failures (conflicts, network)
 - Handle push failures (remote rejected, authentication)
 
-## PR Creation (if create_pr == true)
+## PR Creation (when `create-pr` is in the manifest)
 
 - Read issue reference from references.json
 - Create PR using template from templates/pr-template.md
@@ -23,24 +34,30 @@
 - Link PR to issue if present (Closes #N format)
 - Set appropriate labels/reviewers if configured
 
-## Automated Review (if PR created)
+## Automated Review (when `automated-review` is in the manifest)
 
 - Monitor CI status via workflow-integration-github
 - Address review comments (iterative - may require looping back to execute)
-- Handle Sonar quality gate via workflow-integration-sonar
 - Create fix tasks and loop back to 5-execute if issues found (max 3 iterations)
+- Per-agent timeout 15 min — on expiry, dispatcher records `outcome=failed` and continues
 
-## Knowledge and Lessons (Advisory)
+## Sonar Roundtrip (when `sonar-roundtrip` is in the manifest)
+
+- Handle Sonar quality gate via workflow-integration-sonar
+- Per-agent timeout 15 min — on expiry, dispatcher records `outcome=failed` and continues
+
+## Knowledge and Lessons (when `knowledge-capture` / `lessons-capture` are in the manifest)
 
 - Capture significant patterns via manage-memories (advisory, non-blocking)
 - Capture lessons learned via manage-lessons (advisory, non-blocking)
+- Per-agent timeout 5 min — on expiry, dispatcher records `outcome=failed` and continues
 
-## Archive (if 7_archive == true)
+## Archive (when `archive-plan` is in the manifest)
 
 - Archive plan via manage-status archive
 - Handle archive failures (missing plan directory, permissions)
 
-## Branch Cleanup (if 8_branch_cleanup == true)
+## Branch Cleanup (when `branch-cleanup` is in the manifest)
 
 - Gather PR state, branch name, and other open PRs for context
 - Present user confirmation dialog with PR link, state, branch, other PRs, and planned actions
@@ -67,14 +84,7 @@
 
 ## Resumability
 
-The skill checks current state before each step:
-
-- Are there uncommitted changes? Skip commit if clean
-- Is branch pushed? Skip push if remote is current
-- Does PR exist? Skip creation if PR exists
-- Is automated review complete? Skip if already processed
-- Is Sonar roundtrip complete? Skip if already processed
-- Is plan already complete? Skip if finalize done
+Step activation is decided by `manifest.phase_6.steps`; per-step idempotency is decided by the resumable re-entry check in SKILL.md Step 3 (skip if already `done`, retry if `failed`). Standards documents do not contain skip-if-already-applied logic of their own — within an active dispatch, each step records its own outcome and `display_detail`. The dispatcher's re-entry check is the only authority for skipping a previously-completed step.
 
 ## Output Format
 

@@ -27,10 +27,10 @@ Skill: plan-marshall:tools-integration-ci
 
 **Prohibited actions:**
 - Never access `.plan/` files directly — all access must go through `python3 .plan/execute-script.py` manage-* scripts
-- Never skip config gate checks (Steps 3-10 each have an IF gate)
+- Never execute a step that is NOT listed in `manifest.phase_6.steps`. The manifest is the single authority — there is no fallback to a default step set, no inference from `marshal.json` config booleans, no per-step skip logic.
 - Never skip phase transitions — use `manage-status transition`, never set status directly
 - Never improvise script subcommands — use only those documented in this skill's workflow steps
-- Never skip config-gated steps based on PR state (approval, merge status, or CI status). The ONLY valid skip condition for each step is its config gate being `false`. Standards documents have their own user confirmation gates that handle runtime state decisions.
+- Never skip a step in the manifest list based on PR state, CI state, or earlier step outcomes. The ONLY valid skip condition is the resumable re-entry check (skip if already marked `done` from a previous invocation). Standards documents handle their own runtime state decisions inside their dispatched bodies.
 - Never issue a raw `git` Bash call without `git -C {worktree_path}` (pre-worktree-removal) or `git -C {main_checkout}` (post-worktree-removal). No `cd` chaining, no implicit cwd. `{worktree_path}` and `{main_checkout}` MUST be resolved by the Step 0 entry step before any standards document runs.
 - Never invoke a build, CI, Sonar, or GitHub/GitLab script (`ci`, `python_build`, `sonar`, `workflow-integration-*`) without forwarding `--project-dir {worktree_path}` (or `--project-dir {main_checkout}` after worktree removal). The executor is cwd-pass-through; cwd control is explicit at the call site.
 
@@ -79,31 +79,31 @@ Parse `session_id` from the TOON output. Resolution order: `~/.cache/plan-marsha
 
 As a last resort (fresh checkout, stripped `.claude` config, hook has not fired yet), use `AskUserQuestion` to ask the user for the id — but prefer the resolver in every other case, since users typically do not know where to find the id in the Claude Code UI.
 
-## Configuration Source
+## Configuration Sources
 
-All config is read in Step 2 as a single TOON response:
+The phase-6-finalize step list lives in the **per-plan execution manifest**, not in `marshal.json`. The manifest is composed at outline time by `plan-marshall:manage-execution-manifest:compose` and is the single source of truth for which steps fire on this plan.
+
+**Manifest** (read in Step 2):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --trace-plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  read --plan-id {plan_id}
 ```
-
-**Config Fields Used**:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `steps` | list | Ordered list of step references to execute |
-| `review_bot_buffer_seconds` | integer | Max seconds to wait after CI for new review-bot comments (used as `--timeout` for `pr wait-for-comments`; ceiling, not fixed delay; default: 180) |
-| `max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
+| `phase_6.steps` | list | Ordered list of bare step IDs to execute (e.g., `commit-push`, `create-pr`, …). Authoritative. |
 
-A step is active if it appears in the `steps` list. Absent steps are skipped. The order of steps in the list is the execution order.
+**Cross-phase config from `marshal.json`** (read in Step 2 alongside the manifest):
 
-Cross-phase settings:
+| Field | Type | Description |
+|-------|------|-------------|
+| `phase-6-finalize.review_bot_buffer_seconds` | integer | Max seconds to wait after CI for new review-bot comments (used as `--timeout` for `pr wait-for-comments`; ceiling, not fixed delay; default: 180) |
+| `phase-6-finalize.max_iterations` | integer | Maximum finalize-verify loops (default: 3) |
+| `phase-5-execute.commit_strategy` | string | per_deliverable / per_plan / none |
+| `phase-1-init.branch_strategy` | string | feature / direct |
 
-| Source | Field | Description |
-|--------|-------|-------------|
-| phase-5-execute | `commit_strategy` | per_deliverable/per_plan/none |
-| phase-1-init | `branch_strategy` | feature/direct |
+A step is active if and only if it appears in `manifest.phase_6.steps`. Absent steps are NEVER executed. The order of steps in the manifest list is the execution order. There is no `steps` field on `marshal.json` for phase-6-finalize anymore — any leftover field is informational only and MUST NOT drive runtime dispatch.
 
 ---
 
@@ -253,7 +253,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize:qgate) Finding {hash_id} [qgate]: fixed — {resolution_detail}"
 ```
 
-### Step 2: Read Configuration
+### Step 2: Read Manifest and Cross-Phase Configuration
+
+The phase-6-finalize step list is read from the **per-plan execution manifest** (`execution.toon`), not from `marshal.json`. The manifest is composed at outline time by `plan-marshall:manage-execution-manifest:compose` and is the single source of truth for which Phase 6 steps fire for this plan. This skill reads the manifest verbatim and dispatches — it carries NO per-step skip logic of its own.
+
+#### Read the execution manifest
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  read --plan-id {plan_id}
+```
+
+Extract `phase_6.steps` — the ordered list of step IDs (e.g., `commit-push`, `create-pr`, `automated-review`, …) to execute. Step IDs in the manifest are **bare names** (no `default:` prefix). The dispatcher in Step 3 prepends `default:` when looking up built-in steps, but otherwise iterates the list verbatim.
+
+**If the manifest is missing** (`status: error, error: file_not_found`): abort finalize with an explicit error — the manifest is REQUIRED. Re-run `plan-marshall:manage-execution-manifest:compose` from outline phase to repair.
+
+#### Read cross-phase configuration
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -270,6 +285,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --trace-plan-id {plan_id}
 ```
 
+Read the config blocks for `review_bot_buffer_seconds`, `max_iterations`, `commit_strategy`, and `branch_strategy`. **Do not** read a `steps` field from `marshal.json` — that field is no longer authoritative for Phase 6. The manifest's `phase_6.steps` list is the only valid source.
+
 Also read references context for branch and issue information:
 
 ```bash
@@ -277,18 +294,30 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id {plan_id}
 ```
 
-Extract the `steps` list from phase-6-finalize config. This is the ordered list of step references to execute.
-
 **After reading configuration**, log the finalize strategy decision:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Finalize strategy: commit={commit_strategy}, steps={steps_count}, branch={branch_strategy}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Finalize strategy: commit={commit_strategy}, manifest_steps={steps_count}, branch={branch_strategy}"
 ```
 
-### Step 3: Execute Step Pipeline
+### Step 3: Execute Step Pipeline (Manifest-Driven, Resumable, Timeout-Wrapped)
 
-Iterate over the `steps` list from config. For each step reference:
+Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest's authoritative ordering — neither this skill nor any standards document re-orders, filters, or skip-conditional any step.
+
+**Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
+
+**Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where Claude Code already manages call timeouts. Budgets:
+
+| Step | Budget | Rationale |
+|------|--------|-----------|
+| `default:sonar-roundtrip` | 15 min (900s) | Full Sonar gate roundtrip plus optional fix-task creation |
+| `default:automated-review` | 15 min (900s) | CI wait + review-bot buffer + comment triage |
+| `default:knowledge-capture` | 5 min (300s) | Bounded `manage-memories save` workflow |
+| `default:lessons-capture` | 5 min (300s) | Bounded `manage-lessons add` + Write workflow |
+| All other steps | no explicit budget | Fall under Claude Code's default per-call ceiling |
+
+For each step reference:
 
 **Agent-suitable built-in steps** (self-contained, no user interaction) — each dispatches to a named, enforcement-bearing agent (NOT a generic Task agent):
 
@@ -312,44 +341,71 @@ agent_usage_totals = {total_tokens: 0, tool_uses: 0, duration_ms: 0}
 `default:record-metrics` reads this accumulator at `end-phase` time.
 
 ```
-FOR each step_ref in steps:
-  1. Log step start:
+FOR each step_id in manifest.phase_6.steps:
+  step_ref = "default:" + step_id   # manifest holds bare names; dispatcher prepends prefix
+
+  1. Resumable re-entry check:
+     Read status.metadata.phase_steps["6-finalize"][step_id]:
+       - IF outcome == "done": SKIP this step (continue to next iteration)
+       - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
+       - IF no record OR any other value: dispatch normally
+     Log skip/retry decisions at INFO level so the work.log reflects the re-entry path.
+
+  2. Log step start:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Executing step: {step_ref}"
 
-  2. Determine step type:
-     - IF step_ref starts with "default:" -> BUILT-IN type (strip prefix for dispatch table lookup)
-     - ELSE IF step_ref starts with "project:" -> PROJECT type
+  3. Determine step type:
+     - IF step_ref starts with "default:" -> BUILT-IN type (use step_id for dispatch table lookup)
+     - ELSE IF step_ref starts with "project:" -> PROJECT type (manifest may someday include extension steps)
      - ELSE IF step_ref contains ":" -> SKILL type
 
-  3. Pre-archive snapshot hook (run BEFORE dispatching the step if step_ref == "default:archive-plan"):
-     See "Pre-Archive Snapshot Hook" subsection below. Capture the snapshot into model context, then proceed to step 4 to dispatch archive-plan normally.
+  4. Pre-archive snapshot hook (run BEFORE dispatching the step if step_id == "archive-plan"):
+     See "Pre-Archive Snapshot Hook" subsection below. Capture the snapshot into model context, then proceed to step 5 to dispatch archive-plan normally.
 
-  4. Dispatch:
-     - BUILT-IN (agent-suitable) — route each step_ref to its named agent via the Task tool. Dispatch MUST name the specific agent below so the step's enforcement envelope (input contract, required skill loads, prohibited actions) is carried into the subagent context; a generic unscoped agent selection is NOT valid:
+  5. Dispatch with timeout wrapper:
+     Resolve the per-agent timeout budget from the table above (15 min for sonar/automated-review, 5 min for knowledge/lessons; no explicit budget for other steps).
+
+     - BUILT-IN (agent-suitable) — route each step_ref to its named agent via the Task tool, wrapped with the resolved timeout. Dispatch MUST name the specific agent below so the step's enforcement envelope (input contract, required skill loads, prohibited actions) is carried into the subagent context; a generic unscoped agent selection is NOT valid:
          * default:create-pr        -> Task(subagent_type: plan-marshall:create-pr-agent)
-         * default:automated-review -> Task(subagent_type: plan-marshall:automated-review-agent)
-         * default:sonar-roundtrip  -> Task(subagent_type: plan-marshall:sonar-roundtrip-agent)
-         * default:knowledge-capture -> Task(subagent_type: plan-marshall:knowledge-capture-agent)
-         * default:lessons-capture  -> Task(subagent_type: plan-marshall:lessons-capture-agent)
+         * default:automated-review -> Task(subagent_type: plan-marshall:automated-review-agent, timeout: 900s)
+         * default:sonar-roundtrip  -> Task(subagent_type: plan-marshall:sonar-roundtrip-agent, timeout: 900s)
+         * default:knowledge-capture -> Task(subagent_type: plan-marshall:knowledge-capture-agent, timeout: 300s)
+         * default:lessons-capture  -> Task(subagent_type: plan-marshall:lessons-capture-agent, timeout: 300s)
        Each agent reads its corresponding standards document (standards/{name}.md) and executes all steps within the agent context. Pass `--plan-id {plan_id}` and, when an `{iteration}` counter applies, `--iteration {iteration}`. Embed the Worktree Header from `plan-marshall:phase-5-execute` Dispatch Protocol in every agent prompt so the worktree constraint propagates.
+
+       **On timeout** (the dispatch does not return within the budget):
+         a. Log ERROR:
+            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+              work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Step {step_ref} timed out after {budget}s — marking failed and continuing"
+         b. Mark step failed:
+            python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+              --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
+              --display-detail "timed out after {budget}s"
+         c. Continue to the next step in the loop — DO NOT abort the pipeline.
+
      - BUILT-IN (inline-only: commit-push, branch-cleanup, review-knowledge, record-metrics, archive-plan):
-       Read the standards document from dispatch table and follow all steps in main context. For `review-knowledge` §3f classification sub-dispatches, route each candidate through `plan-marshall:classify-knowledge-agent` — see `standards/review-knowledge.md` for the prompt body.
+       Read the standards document from dispatch table and follow all steps in main context. Inline steps are not timeout-wrapped — they execute under Claude Code's standard per-call ceiling. For `review-knowledge` §3f classification sub-dispatches, route each candidate through `plan-marshall:classify-knowledge-agent` — see `standards/review-knowledge.md` for the prompt body.
+
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
          Arguments: --plan-id {plan_id} --iteration {iteration}
 
-  4b. Accumulate agent usage (only when the dispatched step ran as a Task agent):
-      Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag and add them to agent_usage_totals. Inline steps contribute nothing and are skipped — their cost is picked up later by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`.
+  5b. Accumulate agent usage (only when the dispatched step ran as a Task agent and did NOT time out):
+      Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag and add them to agent_usage_totals. Inline steps and timed-out steps contribute nothing — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`.
 
-  5. Capture archive result (only when step_ref == "default:archive-plan"):
+  6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 5 (Render Final Output Template).
 
-  6. Log step completion:
+  7. Log step completion:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
        work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
 END FOR
 ```
+
+**Critical invariant**: This loop iterates **only** the manifest list. A step that is NOT in `manifest.phase_6.steps` MUST NOT fire under any circumstance — there is no fallback to a "default" step set, no inference from config booleans, no per-step skip logic. The manifest is the contract. If a deployment requires a different step set, recompose the manifest at outline time.
+
+**Lessons-capture unconditionality**: When `lessons-capture` IS in `manifest.phase_6.steps` (the composer includes it for every non-trivial change-type), this loop dispatches it on every Phase 6 entry. It is not gated on PR state, CI state, or earlier step outcomes — reaching Phase 6 is itself the trigger.
 
 #### Pre-Archive Snapshot Hook
 
@@ -361,7 +417,7 @@ Capture the following values:
 
 1. **`status.metadata.phase_steps["6-finalize"]`** — dict of `{step_name: {outcome, display_detail}}` from `manage-status read --plan-id {plan_id}`.
 2. **Deliverables list** — from `manage-solution-outline read --plan-id {plan_id}` (ordered list of titles and per-deliverable state).
-3. **Configured `steps` list** — from phase-6-finalize config (`manage-config plan phase-6-finalize get --plan-id {plan_id} --field steps`).
+3. **Manifest `phase_6.steps` list** — from `manage-execution-manifest read --plan-id {plan_id}` (already fetched in Step 2; capture the bare-name list for renderer ordering).
 4. **Repository state** — branch via `git -C {main_checkout} branch --show-current`, porcelain via `git -C {main_checkout} status --porcelain`.
 5. **PR state + number** — via `ci pr view --project-dir {main_checkout}`. Treat error (no PR for branch) as `state=n/a, number=n/a`.
 6. **Solution outline Summary** — the 2-3 sentence Summary body that feeds the Goal block. Fetch via `manage-solution-outline read --plan-id {plan_id} --section summary` and extract the `content` field. On `section_not_found` or empty content, store the sentinel value `None`; the emission procedure substitutes the defensive placeholder `(no summary recorded)`.
@@ -373,10 +429,10 @@ After the snapshot is captured, dispatch `default:archive-plan` normally (step 4
 
 **Built-in step notes**:
 - `default:branch-cleanup`: Do NOT preemptively skip based on PR state. The `standards/branch-cleanup.md` standard has its own `AskUserQuestion` confirmation gate.
-- `default:record-metrics`: MUST immediately precede `default:archive-plan`. This step executes three sequenced `manage-metrics` commands (`end-phase`, `enrich`, `generate`) on the live plan directory. If archive runs first, the target directory no longer exists and each command would recreate a post-archive orphan under `.plan/local/plans/{plan_id}/`.
+- `default:record-metrics`: MUST immediately precede `default:archive-plan`. This step finalizes the `6-finalize` phase with two `manage-metrics` writes (`end-phase` for the closing phase + `generate` for `metrics.md`) and a separate `enrich` for session token capture. Plan finalization has no "next phase" so the fused `phase-boundary` subcommand does not apply here — see `standards/record-metrics.md` for the authoritative sequence. All writes MUST land on the live plan directory; if archive runs first, the target directory no longer exists and each command would recreate a post-archive orphan under `.plan/local/plans/{plan_id}/`.
 - `default:archive-plan`: This step MUST be last in the default order because it moves plan files (including status.json), which breaks manage-* scripts. All plan operations must complete before archive.
 
-Do NOT add any further `manage-metrics` invocations after `default:archive-plan` or after `Skill: plan-marshall:phase-6-finalize` returns to its caller. The three-command bookkeeping is fully contained by `default:record-metrics`.
+Do NOT add any further `manage-metrics` invocations after `default:archive-plan` or after `Skill: plan-marshall:phase-6-finalize` returns to its caller. The plan-finalization bookkeeping (`end-phase` + `enrich` + `generate`) is fully contained by `default:record-metrics`.
 
 ### Step 4: Mark Plan Complete
 
@@ -542,14 +598,24 @@ See `standards/validation.md` for specific error scenarios and recovery actions.
 
 ## Resumability
 
-Step activation is determined by presence in the `steps` list — absent steps are not executed.
+Step activation is determined by presence in `manifest.phase_6.steps` — absent steps are NEVER executed under any circumstance.
 
-State checks (for present steps):
+The Step 3 dispatch loop is fully resumable across re-entries: each step's `status.metadata.phase_steps["6-finalize"][step_id].outcome` drives the per-step decision on a fresh phase-6 invocation:
 
-1. **Uncommitted changes?** `git status --porcelain` — empty → skip commit_push
-2. **Branch pushed?** `git log @{u}..HEAD --oneline` — empty → skip push
-3. **PR exists?** `ci pr view` — `status: success` → skip creation, use returned `pr_number`
-4. **Plan complete?** `manage-status read` — `current_phase: complete` → skip all
+| Outcome on re-entry | Action |
+|---------------------|--------|
+| `done` | Skip dispatch entirely. The step ran successfully on a previous invocation; do not re-execute. |
+| `failed` | Retry from scratch. The previous run produced a `failed` record (typically a timeout or step-internal abort); the new invocation gets exactly one fresh attempt. |
+| (no record) | Dispatch as a first-time run. |
+| any other value | Dispatch as a first-time run (treat as a degraded record). |
+
+This makes finalize safe to interrupt and re-enter — completed work is preserved, failed work gets a retry, never-run work runs for the first time. There is no separate "resume" mode; every Phase 6 entry is implicitly resumable.
+
+In-step state checks (consulted by individual standards docs after dispatch — these guard idempotent operations, not skip activation):
+
+1. **Uncommitted changes?** `git status --porcelain` — empty → `commit-push` records "no changes" and marks done.
+2. **PR exists?** `ci pr view` — `status: success` → `create-pr` re-uses the existing PR.
+3. **Plan complete?** `manage-status read` — `current_phase: complete` → finalize has nothing to do; return immediately.
 
 ---
 
@@ -595,3 +661,13 @@ State checks (for present steps):
 | `plan-marshall:phase-5-execute` | Loop-back target for fix task execution |
 | `plan-marshall:manage-memories` | Knowledge capture |
 | `plan-marshall:manage-lessons` | Lessons capture |
+
+### Phase-boundary metric bookkeeping
+
+Phase finalization has no "next phase" — it closes the plan. The fused
+`manage-metrics phase-boundary` subcommand therefore does NOT apply at this
+boundary. The closing sequence (`end-phase 6-finalize` → `enrich` →
+`generate`) lives in `standards/record-metrics.md` and remains a three-call
+sequence by design. The fused `phase-boundary` call is only used at
+inter-phase transitions (`1-init → 2-refine` … `5-execute → 6-finalize`),
+recorded by the orchestrator workflows.

@@ -376,7 +376,30 @@ Validate that the request respects module boundaries (`arch_context.modules[].pu
 
 ### Scope Size Estimation
 
-Classify the scope as `single_file` (one file), `single_module` (<5 files in one module), `few_files` (1-2 modules with 5-15 files), `multi_module` (3+ modules or 15+ files), or `codebase_wide` (cross-cutting or "all X" patterns). Emit `SCOPE_ESTIMATE: {class}` with modules affected, estimated file count, and rationale.
+Derive `scope_estimate` from the `module_mapping` produced earlier in this step. The value is a single enum drawn from `none | surgical | single_module | multi_module | broad`. The same enum is consumed by `manage-solution-outline` (see `manage-solution-outline:standards/solution-outline-standard.md` § Solution Metadata) and by the surgical Q-Gate bypass in `phase-3-outline`, so the derivation rules below must be applied verbatim — no synonyms, no intermediate vocabulary.
+
+#### Derivation Rules
+
+Apply the rules in order; the first match wins. The "files" referenced below are the union of every concrete file path captured in `module_mapping` (patterns and globs are NOT counted as files for the count comparisons — they trigger the `broad` branch directly).
+
+1. **`none`** — Pure analysis with no affected files. The request describes a report-only outcome (verbs like "analyze", "investigate", "review" with explicit report-only intent) AND `module_mapping` lists no concrete file paths.
+2. **`surgical`** — All affected files map to a single module AND the count is ≤3 AND no file is in a public API surface (e.g., a published package's `__init__.py`, exported header, `index.{ts,js}`, or any file documented as a stable interface). When the request is ambiguous about public surface, default to `single_module`.
+3. **`single_module`** — All affected files map to a single module AND the count is ≤10 (and the surgical rule did not match because count > 3 or a public API surface is touched).
+4. **`multi_module`** — Affected files map to more than one module.
+5. **`broad`** — Codebase-wide changes: `module_mapping` uses globs/patterns instead of explicit file paths, OR the affected file set is unbounded (e.g., "all *.py", sweeping refactor across the repo).
+
+Emit a `SCOPE_ESTIMATE: {value}` finding containing `value` (one of the five enum strings), the modules affected, the concrete-file count (or `glob_only`/`unbounded`), and the rationale identifying which rule fired.
+
+#### Persistence
+
+Persist the derived value to `references.json` immediately so phase-3-outline and the manifest composer read a single source of truth:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field scope_estimate --value {scope_estimate}
+```
+
+The same value MUST appear in the Step 13 return TOON under the key `scope_estimate`. `phase-3-outline` MAY refine the value after deliverables crystalize (e.g., a Simple Track plan whose final deliverable list collapses to ≤3 files in one module is downgraded to `surgical`); when it does, it overwrites the field via the same `manage-references set` call.
 
 ### Track Selection
 
@@ -388,7 +411,7 @@ Classify the scope as `single_file` (one file), `single_module` (<5 files in one
 
 ```
 Step A — Check Complex Track triggers (hard gates, OR logic):
-  [T1] scope_estimate is multi_module or codebase_wide
+  [T1] scope_estimate is multi_module or broad
   [T2] Request contains scope words (see list below)
   [T3] module_mapping uses patterns/globs instead of explicit file paths
   [T4] Domain requires discovery (see list below)
@@ -397,7 +420,7 @@ Step A — Check Complex Track triggers (hard gates, OR logic):
   → If ANY of T1-T4 is true (after escape hatch) → track = complex (STOP, do not evaluate Simple)
 
 Step B — Only if ALL of T1-T4 are false, check Simple Track:
-  [S1] scope_estimate is single_file, single_module, or few_files
+  [S1] scope_estimate is none, surgical, or single_module
   [S2] module_mapping explicitly specifies target file(s) by full path
   [S3] Request is localized (add, create, implement specific thing)
 
@@ -417,7 +440,7 @@ These domains have no standard structure and always need discovery:
 **T4 Escape Hatch**:
 T4 is skipped (does not fire) when BOTH conditions are true:
 1. `module_mapping` contains only explicit file paths (no patterns, globs, or approximate counts)
-2. `scope_estimate` is `single_file` or `single_module`
+2. `scope_estimate` is `none`, `surgical`, or `single_module`
 
 When the escape hatch applies, phase-2-refine has already identified the exact targets — the codebase discovery that T4 mandates would be redundant. The escape hatch does NOT apply when T1, T2, or T3 have already fired (those are evaluated first).
 
@@ -602,8 +625,19 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
 "
 ```
 
-**Note**: Track, scope, and compatibility are NOT persisted to references.json:
-- **Track/scope**: Already logged to decision.log (Step 9, Step 13)
+### Persist scope_estimate to references.json
+
+Persist the `scope_estimate` value derived in Step 9 so phase-3-outline, the manifest composer, and the surgical Q-Gate bypass read a single source of truth:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field scope_estimate --value {scope_estimate}
+```
+
+The accepted enum values are `none | surgical | single_module | multi_module | broad` — the same enum documented in `manage-solution-outline:standards/solution-outline-standard.md`. The value is also returned in the Step 13 TOON below.
+
+**Note**: Track and compatibility are NOT persisted to references.json:
+- **Track**: Already logged to decision.log (Step 9, Step 13)
 - **Compatibility**: Read directly from marshal.json by consumers
 
 ### Log Decisions (with duplicate guard)

@@ -12,10 +12,20 @@ with `- ` are ignored by the parser. Step names must match the
 of each corresponding standards document.
 
 **Ordering note**: declared order in this file is informational only.
-Runtime execution order is the `steps` list in `marshal.json`, which
-`marshall-steward` sorts by each step's `order` frontmatter value when
-the list is written. phase-6-finalize iterates that list as written and
-does not re-sort or validate ordering at runtime.
+Runtime execution order is `manifest.phase_6.steps` (composed at outline
+time by `manage-execution-manifest:compose` and stored in
+`.plan/local/plans/{plan_id}/execution.toon`). phase-6-finalize iterates
+that list as written and does not re-sort or validate ordering at
+runtime. The composer applies the per-step `order` frontmatter values
+documented on each standards doc when assembling the manifest list.
+
+**Activation note**: presence in this file makes a step REQUIRED for the
+`phase_steps_complete` handshake when the step also appears in the
+manifest. A step listed here but ABSENT from `manifest.phase_6.steps`
+for the running plan is NOT enforced — the handshake checks completion
+only for steps that the manifest actually scheduled. The handshake
+parser MUST refuse to enforce a step that is not in the manifest;
+otherwise a manifest pruning would deadlock the phase transition.
 
 ## Steps
 

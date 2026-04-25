@@ -61,6 +61,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 |---------|------------|-------------|
 | `prepare-add` | `--plan-id [--slot]` | Allocate a scratch path under `<plan>/work/pending-tasks/` (Step 1 of add flow) |
 | `commit-add` | `--plan-id [--slot]` | Read the prepared TOON file, validate, create TASK-NNN.json, delete scratch (Step 3 of add flow) |
+| `batch-add` | `--plan-id [--tasks-json]` | Atomically create N tasks from a JSON array (via `--tasks-json` or stdin). All-or-nothing semantics: if any entry fails validation, no TASK-NNN.json is written. |
 | `update` | `--plan-id --task [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
 | `remove` | `--plan-id --task` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
@@ -207,6 +208,36 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
   commit-add --plan-id my-feature --slot tests
 ```
+
+### Atomic batch add (many tasks in one call)
+
+`batch-add` accepts a JSON array of task records and atomically appends every
+task in a single invocation. It is the recommended path when the caller already
+has a structured task plan (e.g. `phase-4-plan` creating multiple tasks per
+deliverable) and would otherwise run N×(`prepare-add` + Write + `commit-add`).
+
+Semantics:
+
+- **All-or-nothing**: every entry is validated before any file is written. On
+  any validation failure the whole batch is rejected and no `TASK-NNN.json`
+  file is created.
+- **Sequential numbering**: numbers are assigned starting at the next
+  available slot at call time and increment in array order.
+- **Empty array** (`"[]"`) is a documented no-op that returns
+  `tasks_created: 0`.
+- The JSON array shape is documented in
+  `standards/task-contract.md` § "Atomic Batch Insertion (`batch-add`)".
+
+```bash
+# Provide the array via --tasks-json (single-line JSON safe for shell args)
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-add \
+  --plan-id my-feature \
+  --tasks-json '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":["src/main/java/A.java"]},{"title":"Task B","deliverable":1,"domain":"java","profile":"module_testing","skills":[],"steps":["src/test/java/ATest.java"],"depends_on":["TASK-1"]}]'
+```
+
+The batch path replaces the per-task `prepare-add` + Write + `commit-add`
+sequence in callers that produce many tasks at once. Single ad-hoc adds may
+keep using the path-allocate flow.
 
 ### Get next task/step (respects dependencies)
 

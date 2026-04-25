@@ -28,6 +28,8 @@ cmd_exists = _mod.cmd_exists
 cmd_resolve_path = _mod.cmd_resolve_path
 cmd_write = _mod.cmd_write
 cmd_update = _mod.cmd_update
+cmd_get_field = _mod.cmd_get_field
+SCOPE_ESTIMATE_VALUES = _mod.SCOPE_ESTIMATE_VALUES
 
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # type: ignore[import-not-found]  # noqa: E402
@@ -42,6 +44,10 @@ compatibility: breaking — Clean-slate approach, no deprecation nor transitiona
 ## Summary
 
 Implement JWT validation service for authentication.
+
+## Solution Metadata
+
+- scope_estimate: surgical
 
 ## Overview
 
@@ -186,6 +192,11 @@ def _write_ns(plan_id='test-plan', force=False):
 def _update_ns(plan_id='test-plan'):
     """Build Namespace for cmd_update."""
     return Namespace(plan_id=plan_id)
+
+
+def _get_field_ns(plan_id='test-plan', field='scope_estimate'):
+    """Build Namespace for cmd_get_field."""
+    return Namespace(plan_id=plan_id, field=field)
 
 
 # =============================================================================
@@ -629,6 +640,187 @@ def test_invalid_plan_id_underscore():
         with pytest.raises(SystemExit) as exc_info:
             cmd_validate(_validate_ns(plan_id='my_plan'))
         assert exc_info.value.code == 0
+
+
+# =============================================================================
+# Tier 2: scope_estimate (Solution Metadata) — read, validate, get-field
+# =============================================================================
+
+
+SOLUTION_NO_METADATA = """# Solution: No Metadata
+
+## Summary
+
+Brief summary
+
+## Overview
+
+Diagram here
+
+## Deliverables
+
+### 1. First deliverable
+
+**Metadata:**
+- change_type: feature
+- execution_mode: automated
+- domain: java
+- module: jwt-service
+- depends: none
+
+**Profiles:**
+- implementation
+
+**Affected files:**
+- `src/main/java/Foo.java`
+
+**Verification:**
+- Command: `mvn test`
+- Criteria: All tests pass
+
+**Success Criteria:**
+- Works
+"""
+
+
+def _solution_with_scope(value: str) -> str:
+    """Return a VALID_SOLUTION variant with the scope_estimate replaced."""
+    return VALID_SOLUTION.replace('- scope_estimate: surgical', f'- scope_estimate: {value}')
+
+
+def test_validate_surfaces_scope_estimate():
+    """Validate exposes scope_estimate from the Solution Metadata block."""
+    with PlanContext(plan_id='scope-surface') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = cmd_validate(_validate_ns(plan_id='scope-surface'))
+        assert result['status'] == 'success'
+        assert result['validation']['scope_estimate'] == 'surgical'
+        # solution_metadata listed first in sections_found
+        assert 'solution_metadata' in result['validation']['sections_found']
+
+
+def test_validate_rejects_missing_solution_metadata():
+    """Validate fails when the Solution Metadata section is absent."""
+    with PlanContext(plan_id='scope-missing-section') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
+
+        result = cmd_validate(_validate_ns(plan_id='scope-missing-section'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'validation_failed'
+        assert any('Solution Metadata' in issue for issue in result['issues'])
+
+
+def test_validate_rejects_missing_scope_estimate_field():
+    """Validate fails when Solution Metadata exists but scope_estimate is absent."""
+    no_field = VALID_SOLUTION.replace(
+        '## Solution Metadata\n\n- scope_estimate: surgical',
+        '## Solution Metadata\n\n- something_else: foo',
+    )
+    with PlanContext(plan_id='scope-missing-field') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(no_field)
+
+        result = cmd_validate(_validate_ns(plan_id='scope-missing-field'))
+        assert result['status'] == 'error'
+        assert any('Missing scope_estimate' in issue for issue in result['issues'])
+
+
+def test_validate_rejects_invalid_scope_estimate_enum():
+    """Validate fails when scope_estimate is not in the enum."""
+    bad_value = _solution_with_scope('huge')
+    with PlanContext(plan_id='scope-bad-enum') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(bad_value)
+
+        result = cmd_validate(_validate_ns(plan_id='scope-bad-enum'))
+        assert result['status'] == 'error'
+        joined = ' '.join(result['issues'])
+        assert "Invalid scope_estimate 'huge'" in joined
+        for v in SCOPE_ESTIMATE_VALUES:
+            assert v in joined
+
+
+def test_write_rejects_missing_scope_estimate():
+    """write rejects a document missing the scope_estimate field."""
+    with PlanContext(plan_id='scope-write-missing') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
+
+        result = cmd_write(_write_ns(plan_id='scope-write-missing'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'validation_failed'
+        # Either Solution Metadata section absent OR scope_estimate missing
+        assert any('scope_estimate' in issue or 'Solution Metadata' in issue for issue in result['issues'])
+
+
+def test_update_rejects_invalid_scope_estimate_enum():
+    """update rejects a document whose scope_estimate is out of enum."""
+    with PlanContext(plan_id='scope-update-bad') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(_solution_with_scope('massive'))
+
+        result = cmd_update(_update_ns(plan_id='scope-update-bad'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'validation_failed'
+        assert any("Invalid scope_estimate 'massive'" in issue for issue in result['issues'])
+
+
+def test_read_surfaces_scope_estimate():
+    """Reading the full document surfaces scope_estimate at the top level."""
+    with PlanContext(plan_id='scope-read') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = cmd_read(_read_ns(plan_id='scope-read'))
+        assert result['status'] == 'success'
+        assert result['scope_estimate'] == 'surgical'
+
+
+def test_get_field_scope_estimate_success():
+    """get-field returns the persisted scope_estimate value."""
+    with PlanContext(plan_id='get-field-ok') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = cmd_get_field(_get_field_ns(plan_id='get-field-ok', field='scope_estimate'))
+        assert result['status'] == 'success'
+        assert result['field'] == 'scope_estimate'
+        assert result['value'] == 'surgical'
+
+
+def test_get_field_scope_estimate_not_found():
+    """get-field returns field_not_found when scope_estimate is absent from disk."""
+    with PlanContext(plan_id='get-field-missing') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(SOLUTION_NO_METADATA)
+
+        result = cmd_get_field(_get_field_ns(plan_id='get-field-missing', field='scope_estimate'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'field_not_found'
+        assert result['field'] == 'scope_estimate'
+
+
+def test_get_field_unknown_field():
+    """get-field rejects unsupported field names."""
+    with PlanContext(plan_id='get-field-unknown') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(VALID_SOLUTION)
+
+        result = cmd_get_field(_get_field_ns(plan_id='get-field-unknown', field='not_a_field'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_field'
+
+
+def test_get_field_document_not_found():
+    """get-field returns document_not_found when the solution outline does not exist."""
+    with PlanContext(plan_id='get-field-no-doc'):
+        result = cmd_get_field(_get_field_ns(plan_id='get-field-no-doc', field='scope_estimate'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'document_not_found'
+
+
+@pytest.mark.parametrize('value', list(SCOPE_ESTIMATE_VALUES))
+def test_validate_accepts_each_enum_value(value):
+    """Every documented scope_estimate enum value validates successfully."""
+    with PlanContext(plan_id=f'scope-enum-{value.replace("_", "-")}') as ctx:
+        (ctx.plan_dir / 'solution_outline.md').write_text(_solution_with_scope(value))
+
+        result = cmd_validate(_validate_ns(plan_id=f'scope-enum-{value.replace("_", "-")}'))
+        assert result['status'] == 'success', f"Enum value '{value}' should validate"
+        assert result['validation']['scope_estimate'] == value
 
 
 # =============================================================================

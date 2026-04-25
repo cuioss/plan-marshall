@@ -6,12 +6,13 @@ order: 20
 
 # Create PR
 
-Create a pull request for the feature branch.
+Pure executor for the `create-pr` finalize step. Creates a pull request for the feature branch.
 
-## Prerequisites
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `create-pr` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
-- Config field `2_create_pr` is `true`
-- Branch has been pushed (Step 3)
+## Inputs
+
+- Branch has been pushed (handled by `commit-push` earlier in the manifest list)
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `ci` script invocations below MUST pass `--project-dir {worktree_path}`.
 
 ## Execution
@@ -98,10 +99,4 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --display-detail "existing PR #{pr_number}"
 ```
 
-**Branch C — PR creation skipped** (config `2_create_pr` is `false` or otherwise gated):
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done \
-  --display-detail "skipped"
-```
+Note: there is no "skipped" branch — when the manifest excludes `create-pr`, the dispatcher does not run this document at all, so no step record is written. The renderer treats absent records as "not configured" rather than "skipped".

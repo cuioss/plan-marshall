@@ -6,12 +6,14 @@ order: 70
 
 # Branch Cleanup
 
-Switch back to base branch and clean up after plan completion. Behavior adapts based on whether `default:create-pr` is in the finalize steps list.
+Pure executor for the `branch-cleanup` finalize step. Switches back to base branch and cleans up after plan completion. Behavior adapts based on whether `create-pr` is in `manifest.phase_6.steps`.
 
-## Prerequisites
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `branch-cleanup` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
+
+## Inputs
 
 - Branch name available from references context (`branch` field)
-- The finalize `steps` list has been read from config (Step 2 of phase-6-finalize)
+- The manifest's `phase_6.steps` list has been read in SKILL.md Step 2 (used here for Mode Detection only)
 - `{worktree_path}` and `{main_checkout}` have been resolved at finalize entry (see SKILL.md Step 0). All pre-removal git commands use `git -C {worktree_path}`. Post-removal git commands (after worktree is gone) use `git -C {main_checkout}`. All `ci` invocations pass `--project-dir {worktree_path}` while the worktree exists, and `--project-dir {main_checkout}` after removal.
 
 ## Constraints
@@ -36,16 +38,16 @@ Before any branch deletion, the worktree MUST be removed. The order is:
 
 ## Mode Detection
 
-Check whether `default:create-pr` appears in the finalize `steps` list (already available from Step 2 config read):
+Check whether `create-pr` appears in `manifest.phase_6.steps` (already available from SKILL.md Step 2 manifest read):
 
-- **PR mode** (`default:create-pr` IS in `steps`): Full PR merge workflow — merge PR, wait for CI, clean up branches.
-- **Local-only mode** (`default:create-pr` is NOT in `steps`): PR creation and merging are handled outside this workflow. Only switch to base branch, pull latest, and remove the local feature branch.
+- **PR mode** (`create-pr` IS in `manifest.phase_6.steps`): Full PR merge workflow — merge PR, wait for CI, clean up branches.
+- **Local-only mode** (`create-pr` is NOT in `manifest.phase_6.steps`): PR creation and merging are handled outside this workflow. Only switch to base branch, pull latest, and remove the local feature branch.
 
 ---
 
 ## Execution: PR Mode
 
-Applies when `default:create-pr` is present in the finalize steps list.
+Applies when `create-pr` is present in `manifest.phase_6.steps`.
 
 ### Gather Context
 
@@ -296,7 +298,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ## Execution: Local-Only Mode
 
-Applies when `default:create-pr` is NOT in the finalize steps list. PR creation and merging are handled outside this workflow.
+Applies when `create-pr` is NOT in `manifest.phase_6.steps`. PR creation and merging are handled outside this workflow.
 
 ### Gather Context
 

@@ -10,6 +10,7 @@ Each task references deliverables from solution_outline.md.
 Subcommands:
   prepare-add      - Allocate a scratch path for a pending task definition
   commit-add       - Read the prepared file and create TASK-NNN.json
+  batch-add        - Atomically create multiple tasks from a JSON array
   update           - Update an existing task
   remove           - Remove a task
   list             - List all tasks (summary)
@@ -48,7 +49,7 @@ import argparse
 
 from _cmd_rename import cmd_rename_path
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
-from _tasks_crud import cmd_commit_add, cmd_prepare_add, cmd_remove, cmd_update
+from _tasks_crud import cmd_batch_add, cmd_commit_add, cmd_prepare_add, cmd_remove, cmd_update
 from _tasks_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
@@ -88,6 +89,27 @@ def build_parser() -> argparse.ArgumentParser:
         '--slot',
         default=None,
         help='Slot identifier matching the prior prepare-add call (default: "default")',
+    )
+
+    # batch-add: atomically add multiple tasks from a JSON array
+    p_batch = subparsers.add_parser(
+        'batch-add',
+        help='Atomically add multiple tasks from a JSON array (one transaction)',
+        description=(
+            'Atomically append every task record in a JSON array to the plan. '
+            'Pass the array via --tasks-json or stdin. Validation is performed '
+            'before any file is written; on any validation failure no '
+            'TASK-NNN.json file is created. On success, sequential TASK numbers '
+            'are assigned and a single result describes the created tasks.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(p_batch)
+    p_batch.add_argument(
+        '--tasks-json',
+        default=None,
+        help='Raw JSON array of task records. If omitted, the array is read from stdin.',
     )
 
     # update
@@ -205,6 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
 COMMANDS = {
     'prepare-add': cmd_prepare_add,
     'commit-add': cmd_commit_add,
+    'batch-add': cmd_batch_add,
     'update': cmd_update,
     'remove': cmd_remove,
     'list': cmd_list,

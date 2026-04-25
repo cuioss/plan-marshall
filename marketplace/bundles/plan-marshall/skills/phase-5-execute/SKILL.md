@@ -101,7 +101,7 @@ phases:
 
 Use `current_phase` for logging, `skill` for dynamic routing, and `completed_phases/total_phases` for progress display.
 
-### Step 2: Read Commit Strategy (Once at start)
+### Step 2: Read Commit Strategy and Execution Manifest (Once at start)
 
 Cache the commit strategy for the entire execute loop:
 
@@ -112,13 +112,34 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 Extract `commit_strategy` from output. Valid values: `per_deliverable`, `per_plan`, `none`.
 
-Also extract the `steps` list — these are the verification steps to execute as verification tasks. See **Verification Step Types** below for dispatch rules.
+**Read the execution manifest** — the manifest is the single source of truth for which Phase 5 verification steps fire. It is composed by `phase-4-plan` Step 8b and stored at `.plan/local/plans/{plan_id}/execution.toon`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  read --plan-id {plan_id}
+```
+
+Extract `phase_5.early_terminate` (bool) and `phase_5.verification_steps` (list[string]) from the output.
+
+**Early-terminate decision**: If `phase_5.early_terminate == true`, log the decision and transition directly to `phase-6-finalize` — skip the entire execute loop including Steps 3 through 12:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-5-execute) Early terminate — manifest.phase_5.early_terminate=true; skipping execute loop and transitioning directly to phase-6-finalize"
+```
+
+Then jump directly to **Phase Transition** (below) to advance to finalize. Do NOT execute Steps 3–12.
+
+**Otherwise** (`early_terminate == false`): the verification steps to execute at end of phase come from `phase_5.verification_steps` — this **replaces** today's lookup of `marshal.json`'s `phase-5-execute.steps`. The list is consumed by Step 11b (Final Quality Sweep) and the verification dispatch loop. See **Verification Step Types** below for dispatch rules.
+
+The step IDs in the manifest are **bare** (e.g., `quality-gate`, `module-tests`, `coverage`) — translate them to the `default:` prefixed names used by the Built-in Step Dispatch Table by prepending `default:` for built-in steps. Steps that already contain `:` are passed through verbatim (project/skill steps).
 
 ---
 
 ## Verification Step Types
 
-The `steps` list in phase-5-execute config contains verification step references. Three step types are supported, distinguished by prefix notation (same model as phase-6-finalize):
+The `phase_5.verification_steps` list from the manifest contains verification step references. Three step types are supported, distinguished by prefix notation (same model as phase-6-finalize):
 
 | Type | Notation | Resolution |
 |------|----------|------------|
@@ -464,7 +485,34 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **11f**: If fix tasks created → increment `verify_iteration` in task metadata, reset verification task to `pending`, continue execution loop (fix tasks will execute before the re-queued verification task via `depends_on`).
 
-**11g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 12.
+**11g**: If no fix tasks → mark verification task complete (all findings suppressed/accepted), continue to Step 11b.
+
+### Step 11b: Final Quality Sweep (After All Tasks)
+
+After every task in the phase has completed (and Step 11 has resolved any per-task verification failures), but **before** Step 12 transitions the phase, run **one canonical `quality-gate` invocation** as a final sweep — but ONLY when `phase_5.verification_steps` (cached from Step 2) is non-empty.
+
+**Skip rule**: If `phase_5.verification_steps` is empty (e.g., docs-only plans where the manifest composer dropped all verification steps), skip this step entirely — no final sweep, no log, proceed directly to Step 12.
+
+**When `phase_5.verification_steps` is non-empty** — exactly one quality sweep, regardless of whether `quality-gate` already appears in the list:
+
+1. Resolve the canonical `quality-gate` build command via the architecture API:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+     resolve --command quality-gate --trace-plan-id {plan_id}
+   ```
+
+2. Execute the returned `executable`. On non-zero exit, route the failure through the Step 11 triage loop (treat as a single-finding verification failure) so the Step 11 fix-task / suppress / accept branch handles remediation. After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
+
+3. Log the outcome:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level INFO \
+     --message "[STATUS] (plan-marshall:phase-5-execute) Final quality sweep: {pass|fail}"
+   ```
+
+This step is the single source of "did the phase end clean?" — it appends the canonical `quality-gate` once after all task-level verification has settled, providing a stable end-of-phase quality signal. Only the manifest's `verification_steps` list controls whether it fires; per-doc skip logic in `quality_check.md` / `build_verify.md` / `coverage_check.md` has been removed in favor of this manifest-driven gate.
 
 ### Step 12: Next Task or Phase
 
@@ -572,4 +620,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ### Related Skills
 - **phase-4-plan** - Creates tasks from deliverables (previous phase)
 - **phase-6-finalize** - Shipping workflow (commit, PR) (next phase)
+
+### Phase-boundary metric bookkeeping
+
+This skill does not invoke `manage-metrics` itself. The orchestrator
+(`plan-marshall:plan-marshall` workflows) records the `5-execute → 6-finalize`
+boundary via the fused `manage-metrics phase-boundary` call — see
+`marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
+`phase-boundary` for the API. Per-task `manage-tasks finalize-step` calls
+during the execution loop are unchanged.
 

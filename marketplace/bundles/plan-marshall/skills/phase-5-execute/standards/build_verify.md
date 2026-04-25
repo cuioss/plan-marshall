@@ -12,6 +12,8 @@ Built-in verification step that runs the full test suite to verify the build.
 
 Resolved from the `default:` prefix by `phase-5-execute` via the Built-in Step Dispatch Table. Execution is inlined — no external skill is loaded.
 
+**Whether this step fires is decided exclusively by `phase_5.verification_steps` in the per-plan execution manifest** (`manage-execution-manifest read`). This document carries **no embedded skip logic** — `module-tests` / `verify` runs iff `manage-execution-manifest`'s decision matrix included it in the manifest's `verification_steps` list. Any skip rule (e.g., docs-only plans, recipe paths, early-terminate analysis) is encoded in the matrix, not here.
+
 Resolve the command via:
 
 ```bash

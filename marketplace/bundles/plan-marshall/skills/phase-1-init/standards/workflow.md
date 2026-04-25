@@ -60,6 +60,8 @@ lesson_id: "2025-12-02-001"
 - Fetched via `manage-lessons` skill
 - Extracts: title, category, component, detail, related
 - Context section populated with lesson metadata
+- After ingestion, the lesson file is **moved** out of `lessons-learned/` into the plan directory (Step 5b) — this guarantees the lesson is owned by exactly one plan and prevents duplicate work across re-runs.
+- A doc-shaped lesson body triggers the **lesson auto-suggest hook** (Step 5c) which sets `plan_source=recipe` + `recipe_key=lesson_cleanup` in status metadata. See § "Lesson auto-suggest hook" below.
 
 ### Issue URL
 ```
@@ -69,6 +71,33 @@ issue: "https://github.com/org/repo/issues/123"
 - Fetched via `tools-integration-ci:issue-view` operation
 - Extracts: title, body, labels, milestone, assignees
 - Context section populated with issue metadata
+
+## Lesson auto-suggest hook
+
+**Where**: Step 5c, immediately after Step 5b moves the lesson into the plan directory and immediately before Step 6 initializes references.
+
+**Why**: Most lessons-learned describe small, prescriptive cleanups — fix this wording, add this cross-reference, drop this anti-pattern doc. Routing those through the full refine → outline → Q-Gate → plan pipeline costs minutes of LLM time and produces a heavyweight manifest with `automated-review`, `sonar-roundtrip`, and `knowledge-capture` steps that are wholly unnecessary for a doc-only change. The auto-suggest hook short-circuits that path by routing doc-shaped lessons through `recipe-lesson-cleanup`, which forces `scope_estimate=surgical` and lets the manifest composer collapse Phase 5 and Phase 6 to the minimum safe set.
+
+**Heuristic** (all three must hold for "doc-shaped"):
+
+1. **No code-touching fences**: body contains no fenced code blocks tagged `python`/`py`/`java`/`js`/`javascript`/`ts`/`typescript`. Markdown, text, bash, and untagged fences are fine.
+2. **No primary code-action verb**: the first non-empty line of each `## Directive` (or `## Actions`) section does not start with `test`, `refactor`, `implement`, `add code`, `write code`, or `migrate`.
+3. **Has at least one directive**: at least one `## Directive` or `## Actions` heading exists.
+
+**Outcome**:
+
+- **Doc-shaped** → set `plan_source=recipe`, `recipe_key=lesson_cleanup` in status metadata; emit a `Recipe auto-suggested` decision log entry. No prompt — auto-suggest is silent.
+- **Code-shaped** → no metadata change; emit an `Auto-suggest declined` decision log entry so the audit trail records the negative result. The plan continues through the normal refine → outline → plan pipeline.
+
+**Override**: The user can override auto-suggest on a subsequent run by passing `--recipe lesson_cleanup` explicitly (which sets the same metadata fields up-front and skips the heuristic), or by editing status metadata directly. The hook never overrides an explicit user choice — when `source == recipe` the hook is skipped entirely.
+
+**Integration with the lesson-conversion path**:
+
+- Step 5b owns the file move (lesson file leaves `lessons-learned/`, lands in `.plan/local/plans/{plan_id}/lesson-{lesson_id}.md`).
+- Step 5c owns the routing decision (recipe vs. full pipeline) by reading the file Step 5b just placed.
+- Steps 6–11 are unaffected by auto-suggest — they always run regardless of `plan_source`. The recipe routing is consumed downstream by `phase-3-outline` Step 2.5 (loads `recipe-lesson-cleanup` when `recipe_key` is set).
+
+This separation keeps the lesson-conversion mechanics (file ownership) decoupled from the routing policy (which pipeline runs next) — either step can change without breaking the other.
 
 ## Plan ID Derivation
 

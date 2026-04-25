@@ -203,8 +203,30 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-maintenance.md` | Regenerate executor, cleanup | Menu option 1 |
 | `menu-healthcheck.md` | Verify setup, diagnose issues | Menu option 2 |
 | `menu-configuration.md` | Build systems, skill domains | Menu option 3 |
+| `menu-recipes.md` | Built-in recipes available in the wizard | Linked from `menu-configuration.md` |
 | `shared-settings.md` | **DEPRECATED** — Plan phases, review gates, quality pipelines now delegate to `manage-config` | Retained for transition reference only |
 | `error-handling.md` | Error types and recovery | On error conditions |
+
+---
+
+## Built-In Recipes
+
+The steward exposes the following built-in recipes (registered via `provides_recipes()` in `plan-marshall-plugin/extension.py`). Recipes are loaded by `phase-3-outline` when a plan's status metadata sets `plan_source=recipe` and `recipe_key=<key>`.
+
+| Recipe key | Recipe skill | Default change_type | Scope |
+|------------|--------------|---------------------|-------|
+| `refactor-to-profile-standards` | `plan-marshall:recipe-refactor-to-profile-standards` | `tech_debt` | `codebase_wide` |
+| `lesson_cleanup` | `plan-marshall:recipe-lesson-cleanup` | _derived from lesson kind_ (see below) | `single_lesson` |
+
+**lesson_cleanup derived change_type**:
+
+| Lesson kind | change_type |
+|-------------|-------------|
+| `bug` | `bug_fix` |
+| `improvement` | `enhancement` |
+| `anti-pattern` | `tech_debt` |
+
+The `lesson_cleanup` recipe is auto-suggested by `phase-1-init` Step 5c when `source == lesson` and the lesson body is doc-shaped (no code-touching fences, no code-action verbs as primary subject). See `references/menu-recipes.md` for the wizard-facing description and `marketplace/bundles/plan-marshall/skills/recipe-lesson-cleanup/SKILL.md` for the recipe contract.
 
 > **Note**: `shared-doc-check.md` content has been inlined into `wizard-flow.md` and `menu-maintenance.md`. For TOON output format, see `plan-marshall:ref-toon-format`.
 

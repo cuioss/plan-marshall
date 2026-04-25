@@ -6,13 +6,15 @@ order: 60
 
 # Lessons Capture
 
-Record lessons learned from the implementation. Advisory only — does not block.
+Pure executor for the `lessons-capture` finalize step. Records lessons learned from the implementation. Advisory only — does not block.
 
 See also `standards/lessons-integration.md` for conceptual guidance on when and what to capture.
 
-## Prerequisites
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `lessons-capture` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
-- Config field `6_lessons_capture` is `true`
+**Unconditional dispatch when manifested**: Whenever this step appears in the manifest, the dispatcher runs it on every Phase 6 entry. It is NOT gated on PR state, CI status, Sonar gate result, or any earlier step's outcome — reaching Phase 6 is itself the trigger. The composer in `manage-execution-manifest:compose` includes `lessons-capture` for every change-type that produces non-trivial work (the rule-1 early-terminate analysis path is the only documented exclusion).
+
+This step runs as a Task agent (`plan-marshall:lessons-capture-agent`) under a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
 
 ## Execution
 

@@ -86,6 +86,64 @@ Duration is computed as wall-clock time from start/end timestamps and formatted 
 
 > Phase names follow the standard 6-phase model. See [manage-contract.md](../../ref-workflow-architecture/standards/manage-contract.md) § Phase Names for the canonical definition.
 
+## Phase Boundary Record
+
+The fused `phase-boundary` subcommand writes the same persisted state as the
+sequence `end-phase {prev}` → `start-phase {next}` → `generate`. After a
+boundary call, the per-phase fields recorded for the previous phase are
+exactly those `end-phase` would have written, and the next phase has a
+`start_time` field as if `start-phase` had been called next. `metrics.md` is
+regenerated from the resulting state.
+
+### Persisted Fields After `phase-boundary`
+
+For the **previous phase** (closed):
+
+| Field | Source |
+|-------|--------|
+| `end_time` | Timestamp at boundary call |
+| `duration_seconds` | Computed from `start_time` - `end_time` if `start_time` present |
+| `agent_duration_ms` | `--duration-ms` (when forwarded) |
+| `agent_duration_seconds` | Derived from `--duration-ms` (when forwarded) |
+| `total_tokens` | `--total-tokens` (when forwarded) |
+| `tool_uses` | `--tool-uses` (when forwarded) |
+
+For the **next phase** (entered):
+
+| Field | Source |
+|-------|--------|
+| `start_time` | Timestamp at boundary call (always equal to or just after the previous phase `end_time`) |
+
+### Equivalence Guarantee
+
+The fused call produces output that is byte-equivalent to the prior
+three-call sequence for the same inputs at the same instant. The only
+observable difference is fewer script invocations and a single timestamp
+reused for both `end_time` (previous phase) and `start_time` (next phase) —
+removing the small wall-clock gap that would otherwise appear between two
+separate calls. Treat the gap removal as intentional: phase transitions are
+modelled as instantaneous handoffs.
+
+### Boundary Output (TOON)
+
+```toon
+status: success
+plan_id: my-plan
+prev_phase: 1-init
+next_phase: 2-refine
+end_time: 2026-03-27T10:03:00+00:00
+start_time: 2026-03-27T10:03:00+00:00
+prev_duration_seconds: 180.0
+prev_total_tokens: 25514
+metrics_file: metrics.md
+phases_recorded: 2
+```
+
+If `generate` cannot run (no phase data at all — only possible at plan
+start), the boundary call still writes the start/end records and surfaces the
+generate status in `generate_status` / `generate_message` instead of
+`metrics_file` / `phases_recorded`.
+
 ## Token Data Sources
 
 | Source | When Used | Granularity |

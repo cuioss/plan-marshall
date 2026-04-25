@@ -6,12 +6,26 @@ order: 30
 
 # Automated Review
 
-Wait for CI, handle review bot comments, and resolve or loop-back on findings.
+Pure executor for the `automated-review` finalize step. Waits for CI, handles review bot comments, and resolves or loops back on findings.
 
-## Prerequisites
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `automated-review` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
-- Config field `3_automated_review` is `true`
-- A PR exists (from create-pr step or pre-existing)
+## Timeout Contract
+
+This step runs as a Task agent (`plan-marshall:automated-review-agent`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full sequence: CI wait, review-bot buffer, comment fetching, triage, thread replies, and thread resolution.
+
+**Graceful degradation**: When the wrapper expires:
+
+1. The dispatcher logs an ERROR entry at `[ERROR] (plan-marshall:phase-6-finalize) Step default:automated-review timed out after 900s — marking failed and continuing`.
+2. The dispatcher marks this step `failed` via `manage-status mark-step-done … --outcome failed --display-detail "timed out after 900s"`.
+3. The dispatcher continues with the next manifest step. The pipeline does NOT abort; later steps still run.
+4. On the next Phase 6 entry, the resumable re-entry check sees `outcome=failed` and retries this step from scratch (one fresh attempt per invocation).
+
+There is no internal soft-timeout, polling cap, or partial-progress checkpoint inside this document — the wrapper is the only timeout authority. Standards-internal commands (CI wait, `pr wait-for-comments`) carry their own short polling intervals but never their own outer ceiling.
+
+## Inputs
+
+- A PR exists (from `create-pr` earlier in the manifest list, or pre-existing on the branch)
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All `ci` script invocations below MUST pass `--project-dir {worktree_path}`.
 
 ## Execution
@@ -24,7 +38,7 @@ Use the `pr_number` from the create-pr step. If not available:
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr view
 ```
 
-Read `pr_number` from the TOON output. If no PR exists, skip automated review.
+Read `pr_number` from the TOON output. If `ci pr view` returns `status: error` (no PR exists for the branch), the underlying workflow returns immediately with no comments to process — the step still records `done` with a `display_detail` that reflects "no PR available" rather than re-entering the skip-logic anti-pattern.
 
 ### Load and execute automated review workflow
 
@@ -78,12 +92,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --display-detail "{N} comment(s) resolved (no loop-back)"
 ```
 
-**Branch B — skipped** (no PR exists, config disabled, or otherwise gated):
+**Branch B — no PR available** (the dispatcher ran this step but no PR exists for the branch — the underlying workflow returned immediately with no comments to process):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step automated-review --outcome done \
-  --display-detail "skipped"
+  --display-detail "no PR available"
 ```
 
 **Branch C — loop-back recorded** (intermediate pass; used only when a non-terminal iteration must be surfaced in the output): `{iteration}` is the current loop-back iteration number (1..3). This branch is informational — the terminal pass still uses Branch A when review eventually goes clean.

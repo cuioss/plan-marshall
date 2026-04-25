@@ -6,13 +6,14 @@ order: 80
 
 # Review Knowledge
 
-Review existing lessons-learned and memories against the current plan's diff; propose deletes/updates.
+Pure executor for the `review-knowledge` finalize step. Reviews existing lessons-learned and memories against the current plan's diff; proposes deletes/updates.
 
-## Prerequisites
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `review-knowledge` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer. The composer in `manage-execution-manifest:compose` decides whether `review-knowledge` is part of the manifest for a given plan; this document does not second-guess that decision.
 
-- Step is active when `default:review-knowledge` appears in the `phase-6-finalize` config `steps` list. The step is opt-in: projects that want the review gate must list it explicitly — it is never implied by any other flag.
+## Inputs
+
 - `{worktree_path}` and `{main_checkout}` have been resolved at Step 0 of `phase-6-finalize/SKILL.md`. Both paths are required: `{worktree_path}` is the execution root for the running plan, and `{main_checkout}` is the read-only anchor used by `ci`/`git`-style calls that must operate outside the worktree.
-- The `AskUserQuestion` gate in sub-step 3h forbids agent-mode dispatch. This step MUST run inline in the finalize main context — it is listed alongside `default:commit-push`, `default:branch-cleanup`, `default:record-metrics`, and `default:archive-plan` as inline-only.
+- The `AskUserQuestion` gate in sub-step 3h forbids agent-mode dispatch. This step MUST run inline in the finalize main context — it is listed alongside `commit-push`, `branch-cleanup`, `record-metrics`, and `archive-plan` as inline-only.
 
 ## Execution
 

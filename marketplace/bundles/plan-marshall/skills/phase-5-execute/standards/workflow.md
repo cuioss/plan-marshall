@@ -104,6 +104,22 @@ Substitute the appropriate message shape per row. Paths are **worktree-relative*
 
 **Caller-format exception**: The `(plan-marshall:phase-5-execute:{task_number})` caller prefix deliberately uses a three-segment form (`bundle:skill:task_number`) rather than the usual two-segment `(bundle:skill)` convention documented in [manage-logging log-format.md](../../manage-logging/standards/log-format.md). The trailing `:{task_number}` segment is an approved extension specific to artifact emission so a log reader can attribute each file change to the exact task that produced it without cross-referencing timestamps against task transitions. The third segment in this exception is always a **numeric task id** — this is distinct from other skills that already carry a third segment of a different kind (e.g., `(plan-marshall:phase-6-finalize:record-metrics)` where the third segment names a sub-topic within the skill). No other skill may emit the three-segment `bundle:skill:{numeric}` form; the numeric-tail shape is reserved for `plan-marshall:phase-5-execute` artifact entries.
 
+## Manifest-Driven Step Selection
+
+The set of Phase 5 verification steps that fire — and whether the entire execute loop runs at all — is **not** chosen at runtime by per-task heuristics or per-standard skip rules. Instead, `phase-4-plan` Step 8b composes a per-plan **execution manifest** (`manage-execution-manifest compose`) that names exactly which built-in verification steps belong to this plan, plus a single `early_terminate` flag for analysis-only plans with no affected files.
+
+`phase-5-execute` is a **dumb manifest executor**:
+
+1. **At phase entry (Step 2)**, read the manifest via `manage-execution-manifest read`.
+2. **If `phase_5.early_terminate == true`** — log the decision and transition directly to `phase-6-finalize`, skipping every task and the entire verification loop. This handles analysis-only plans surgically without ever entering the execute loop.
+3. **Otherwise** — execute tasks sequentially as documented in `Task Execution` above. The verification step list (`quality-gate`, `module-tests`, `coverage`, etc.) consumed by Step 11b "Final Quality Sweep" comes from `phase_5.verification_steps`.
+4. **If `phase_5.verification_steps` is empty** (e.g., docs-only plans where the manifest composer dropped all verification steps) — Step 11b fires no quality sweep at all. The phase still completes normally; absence of a sweep is a valid manifest-driven outcome.
+5. **If `phase_5.verification_steps` is non-empty** — Step 11b appends exactly **one** canonical `quality-gate` invocation as the end-of-phase sweep, regardless of whether `quality-gate` already appears in the list. This is the single source of "did the phase end clean?" signal.
+
+**Per-doc skip logic is forbidden in this skill's standards.** The built-in step docs (`quality_check.md`, `build_verify.md`, `coverage_check.md`) carry no embedded skip rules — every "should this step run" decision is encoded in `manage-execution-manifest`'s seven-row decision matrix and flows into the manifest's `verification_steps` list. If a step appears in the manifest, it runs; if it does not, it does not.
+
+The `manage-execution-manifest` skill's [decision-rules.md](../../manage-execution-manifest/standards/decision-rules.md) is the authoritative table for which step combinations fire under which inputs.
+
 ## Phase Transition
 
 When all tasks in phase complete:

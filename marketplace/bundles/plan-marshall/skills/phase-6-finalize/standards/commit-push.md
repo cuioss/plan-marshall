@@ -6,12 +6,13 @@ order: 10
 
 # Commit and Push
 
-Commit all changes and push to remote. Respects `commit_strategy` from phase-5-execute config.
+Pure executor for the `commit-push` finalize step. Commits all changes and pushes to remote. Respects `commit_strategy` from phase-5-execute config.
 
-## Prerequisites
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `commit-push` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
-- Config field `1_commit_push` is `true`
-- `commit_strategy` from phase-5-execute config (per_deliverable/per_plan/none)
+## Inputs
+
+- `commit_strategy` from phase-5-execute config (per_deliverable / per_plan / none)
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All git commands below MUST use `git -C {worktree_path}`.
 
 ## Execution

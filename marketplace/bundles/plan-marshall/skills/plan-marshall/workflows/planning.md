@@ -83,15 +83,16 @@ Task: plan-marshall:phase-agent
   Output: plan_id, domains array
 ```
 
-**Metrics**: After agent completes and `plan_id` is known, record phase metrics with token data from `<usage>` tag:
+**Metrics**: After the init agent completes and `plan_id` is known, record the
+`1-init → 2-refine` boundary in a single fused call (forwarding the agent's
+`<usage>` data to the closing phase). The fused command persists the same
+state as the prior `end-phase` + `start-phase` + `generate` sequence:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 1-init \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase 1-init --next-phase 2-refine \
   --total-tokens {total_tokens from <usage>} \
   --duration-ms {duration_ms from <usage>} \
   --tool-uses {tool_uses from <usage>}
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
-  --plan-id {plan_id}
 ```
 
 **Automatic Continuation**:
@@ -101,11 +102,8 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics gene
 
 **2-Refine Phase**: Load refine phase skill directly (maintains main context for user interaction)
 
-**Metrics**: Record phase start:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
-  --plan-id {plan_id} --phase 2-refine
-```
+The `phase-boundary` call above already recorded the start of `2-refine` — do
+not call `start-phase 2-refine` again.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -119,15 +117,16 @@ Skill: plan-marshall:phase-2-refine
 
 The skill runs in main conversation context so `AskUserQuestion` works directly with the user. Do NOT run this as a Task agent — the 12-step workflow requires too many tool calls for a subagent turn budget, and Step 9 (user clarification) needs direct user access.
 
-**Metrics**: After refine completes, record phase end (no token data — main context):
+**Metrics**: After refine completes, record the `2-refine → 3-outline` boundary
+in a single fused call (no token args — refine ran in main context):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 2-refine
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
-  --plan-id {plan_id}
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline
 ```
 
-Then continue to **Action: outline** with the same plan_id.
+The fused call already recorded the start of `3-outline`; the **Action: outline**
+section below MUST NOT call `start-phase 3-outline` again. Continue to
+**Action: outline** with the same plan_id.
 
 ---
 
@@ -147,10 +146,19 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 **Step 2**: Load outline phase skill directly (maintains main context)
 
-**Metrics**: Record phase start:
+**Metrics**: The start of `3-outline` was already recorded by the
+`2-refine → 3-outline` fused boundary call above (or by the
+`1-init → 3-outline` boundary when refine was skipped because the action was
+entered directly via `outline`). Skip any explicit `start-phase 3-outline`
+invocation here — calling it again would clobber the fused timestamp.
+
+When entering this action directly (no preceding refine/init phase in the
+same orchestration cycle), use a fused call to close the previous active
+phase and start `3-outline`:
+
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
-  --plan-id {plan_id} --phase 3-outline
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 3-outline
 ```
 
 ```bash
@@ -198,16 +206,21 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
   --plan-id {plan_id} --completed 3-outline
 ```
 
-**Metrics**: After outline completes, record phase end with aggregated token data from agents spawned during this phase (detect-change-type-agent and q-gate-validation-agent). Sum `total_tokens`, `tool_uses`, and `duration_ms` from each agent's `<usage>` tag:
+**Metrics**: After outline completes, record the `3-outline → 4-plan` boundary
+in a single fused call (forwarding the aggregated `<usage>` data from the
+agents spawned during this phase — detect-change-type-agent and
+q-gate-validation-agent). Sum `total_tokens`, `tool_uses`, and `duration_ms`
+across each agent's `<usage>` tag:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 3-outline \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase 3-outline --next-phase 4-plan \
   --total-tokens {sum of total_tokens from all agent <usage> tags} \
   --tool-uses {sum of tool_uses from all agent <usage> tags} \
   --duration-ms {sum of duration_ms from all agent <usage> tags}
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
-  --plan-id {plan_id}
 ```
+
+The fused call already recorded the start of `4-plan`; Step 4 below MUST NOT
+call `start-phase 4-plan` again.
 
 **Step 2d**: Auto-open solution outline in IDE for user review:
 
@@ -305,11 +318,9 @@ AskUserQuestion:
 
 Only execute this step AFTER user approves in Step 3.
 
-**Metrics**: Record phase start before agent invocation:
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics start-phase \
-  --plan-id {plan_id} --phase 4-plan
-```
+**Metrics**: The start of `4-plan` was already recorded by the
+`3-outline → 4-plan` fused boundary call above — do NOT call
+`start-phase 4-plan` here.
 
 ```
 Task: plan-marshall:phase-agent
@@ -317,15 +328,15 @@ Task: plan-marshall:phase-agent
   Output: tasks created with domain, profile, skills
 ```
 
-**Metrics**: After agent completes, record phase end with token data from `<usage>` tag:
+**Metrics**: After the plan agent completes, record the `4-plan → 5-execute`
+boundary in a single fused call (forwarding the agent's `<usage>` data to
+the closing phase):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 4-plan \
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute \
   --total-tokens {total_tokens from <usage>} \
   --duration-ms {duration_ms from <usage>} \
   --tool-uses {tool_uses from <usage>}
-python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate \
-  --plan-id {plan_id}
 ```
 
 Log task plan agent invocation:

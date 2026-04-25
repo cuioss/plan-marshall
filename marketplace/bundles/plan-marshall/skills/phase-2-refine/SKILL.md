@@ -125,13 +125,13 @@ Four sub-analyses using `arch_context`:
 
 **Feasibility Check**: Validate request against module boundaries, dependency direction, extension points, and technology fit.
 
-**Scope Size Estimation**: Classify as `single_file`, `single_module`, `few_files`, `multi_module`, or `codebase_wide`.
+**Scope Size Estimation**: Derive `scope_estimate` from the `module_mapping` using the standard derivation helper (see `standards/refine-workflow-detail.md` Step 9 — Derivation Rules). Allowed values: `none | surgical | single_module | multi_module | broad`. The same enum and rule of thumb is documented in `manage-solution-outline:standards/solution-outline-standard.md` so the value flows unchanged into the solution outline. Persist the derived value to `references.json` via `manage-references set --field scope_estimate` and include it in the Step 13 return TOON.
 
 **Track Selection**: Determine `simple` vs `complex` track using hard-gate triggers:
 
 ```
 Complex Track triggers (hard gates, OR logic):
-  [T1] scope_estimate is multi_module or codebase_wide
+  [T1] scope_estimate is multi_module or broad
   [T2] Request contains scope words (all, every, migrate, refactor, etc.)
   [T3] module_mapping uses patterns/globs instead of explicit file paths
   [T4] Domain requires discovery (plugin-dev, documentation, requirements)
@@ -170,9 +170,10 @@ Record clarifications via the three-step path-allocate flow: (1) call `manage-pl
 When confidence reaches threshold:
 
 1. **Persist module mapping** to `work/module_mapping.toon`
-2. **Log decisions** to decision.log (scope, domains -- with duplicate guard)
-3. **Run Q-Gate verification checks**: module mapping completeness, track-scope consistency, scope realism, confidence justification
-4. **Return output**:
+2. **Persist `scope_estimate`** to `references.json` via `manage-references set --field scope_estimate --value {scope_estimate}` (one of `none | surgical | single_module | multi_module | broad`)
+3. **Log decisions** to decision.log (scope, domains -- with duplicate guard)
+4. **Run Q-Gate verification checks**: module mapping completeness, track-scope consistency, scope realism, confidence justification
+5. **Return output**:
 
 ```toon
 status: success
@@ -216,6 +217,15 @@ Transition from refine to outline with `manage-status transition --completed 2-r
 - [refine-workflow-detail.md](standards/refine-workflow-detail.md) - Detailed step-by-step procedures
 - [source-premise-verification.md](standards/source-premise-verification.md) - Source premise verification patterns for Step 3b
 - [proposed-fix-verification.md](standards/proposed-fix-verification.md) - Proposed-fix verification patterns for Step 3c
+
+### Phase-boundary metric bookkeeping
+
+This skill does not invoke `manage-metrics` itself. The orchestrator
+(`plan-marshall:plan-marshall` workflows) records the `2-refine → 3-outline`
+boundary via the fused `manage-metrics phase-boundary` call — see
+`marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
+`phase-boundary` for the API. The legacy `end-phase` + `start-phase` +
+`generate` sequence is no longer used at orchestrator boundaries.
 
 ---
 
