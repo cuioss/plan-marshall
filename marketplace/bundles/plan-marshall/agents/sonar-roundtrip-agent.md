@@ -6,7 +6,7 @@ description: |
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
   - Output: TOON with status, issues_fetched, issues_fixed, issues_suppressed, issues_accepted
-tools: Read, Bash, Skill
+tools: Read, Write, Bash, Skill
 ---
 
 # Sonar Roundtrip Agent

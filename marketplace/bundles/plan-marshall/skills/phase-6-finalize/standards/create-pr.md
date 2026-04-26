@@ -17,6 +17,15 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Execution
 
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:phase-6-finalize) Loading plan-marshall:tools-integration-ci"
+```
+
+```
+Skill: plan-marshall:tools-integration-ci
+```
+
 ### Check if PR already exists
 
 ```bash

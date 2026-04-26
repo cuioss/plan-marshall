@@ -6,7 +6,7 @@ description: |
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
   - Output: TOON with status, lessons_created
-tools: Read, Bash, Skill
+tools: Read, Write, Bash, Skill
 ---
 
 # Lessons Capture Agent

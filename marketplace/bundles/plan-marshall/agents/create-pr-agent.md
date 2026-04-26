@@ -1,12 +1,12 @@
 ---
 name: create-pr-agent
 description: |
-  Named agent that performs the finalize-phase Create PR step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/create-pr.md, using plan-marshall:workflow-integration-git for the commit + push and plan-marshall:tools-integration-ci for PR creation.
+  Named agent that performs the finalize-phase Create PR step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/create-pr.md, using plan-marshall:tools-integration-ci for PR creation.
 
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
   - Output: TOON with status, pr_url, pr_number, commit_sha
-tools: Read, Bash, Skill
+tools: Read, Write, Bash, Skill
 ---
 
 # Create PR Agent

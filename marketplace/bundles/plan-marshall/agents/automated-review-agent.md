@@ -6,7 +6,7 @@ description: |
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
   - Output: TOON with status, comments_processed, comments_resolved, fix_tasks_created
-tools: Read, Bash, Skill
+tools: Read, Write, Bash, Skill
 ---
 
 # Automated Review Agent
