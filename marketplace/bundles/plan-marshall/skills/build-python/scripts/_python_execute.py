@@ -28,6 +28,7 @@ from _build_execute_factory import (
     default_build_command_fn,
     default_command_key_fn,
 )
+from _build_result import DirectCommandResult
 from _build_shared import DEFAULT_BUILD_TIMEOUT, cmd_run_common
 from _python_cmd_parse import parse_log
 
@@ -91,11 +92,11 @@ def _matches_self_heal_symptoms(haystack: str) -> bool:
     return False
 
 
-def _should_self_heal(result: dict, project_dir: str) -> bool:
+def _should_self_heal(result: DirectCommandResult, project_dir: str) -> bool:
     """True when the failure matches a documented cache-corruption symptom and the rename target is free."""
     if result.get('status') != 'error':
         return False
-    haystack = _read_log(result.get('log_file', '')) + '\n' + str(result.get('error', ''))
+    haystack = _read_log(result.get('log_file', '') or '') + '\n' + str(result.get('error', ''))
     if not _matches_self_heal_symptoms(haystack):
         return False
     cache_dir = Path(project_dir) / '.pyprojectx'
