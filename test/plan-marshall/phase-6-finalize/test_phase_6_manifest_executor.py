@@ -81,6 +81,7 @@ def _compose_ns(
     affected_files_count: int = 5,
     phase_5_steps: str | None = ','.join(DEFAULT_PHASE_5_STEPS),
     phase_6_steps: str | None = ','.join(DEFAULT_PHASE_6_STEPS),
+    commit_strategy: str | None = None,
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -91,6 +92,7 @@ def _compose_ns(
         affected_files_count=affected_files_count,
         phase_5_steps=phase_5_steps,
         phase_6_steps=phase_6_steps,
+        commit_strategy=commit_strategy,
     )
 
 

@@ -109,6 +109,7 @@ def _compose_ns(plan_id: str) -> Namespace:
         affected_files_count=5,
         phase_5_steps=','.join(DEFAULT_PHASE_5_STEPS),
         phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+        commit_strategy=None,
     )
 
 

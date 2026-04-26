@@ -103,7 +103,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 | `phase-5-execute.commit_strategy` | string | per_deliverable / per_plan / none |
 | `phase-1-init.branch_strategy` | string | feature / direct |
 
-A step is active if and only if it appears in `manifest.phase_6.steps`. Absent steps are NEVER executed. The order of steps in the manifest list is the execution order. There is no `steps` field on `marshal.json` for phase-6-finalize anymore — any leftover field is informational only and MUST NOT drive runtime dispatch.
+A step is active if and only if it appears in `manifest.phase_6.steps`. Absent steps are NEVER executed. The order of steps in the manifest list is the execution order. The `plan.phase-6-finalize.steps` field in `marshal.json` is the *candidate set* — the input list `phase-4-plan` Step 8b passes to `manage-execution-manifest compose --phase-6-steps`. The manifest's `phase_6.steps` is the *resolved per-plan instance* of that candidate set and is the only authority this skill consults at dispatch time. The candidate set drives dispatch transitively; this skill itself never reads `marshal.json` for step selection.
 
 ---
 
@@ -285,7 +285,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init get --trace-plan-id {plan_id}
 ```
 
-Read the config blocks for `review_bot_buffer_seconds`, `max_iterations`, `commit_strategy`, and `branch_strategy`. **Do not** read a `steps` field from `marshal.json` — that field is no longer authoritative for Phase 6. The manifest's `phase_6.steps` list is the only valid source.
+Read the config blocks for `review_bot_buffer_seconds`, `max_iterations`, `commit_strategy`, and `branch_strategy`. **Do not** read the `steps` field from `marshal.json` here — that field is the candidate set consumed by `phase-4-plan` Step 8b, not by this skill. The manifest's `phase_6.steps` list is the only valid source for runtime dispatch.
 
 Also read references context for branch and issue information:
 

@@ -61,6 +61,9 @@ VALID_SCOPE_ESTIMATES = (
 
 VALID_TRACKS = ('simple', 'complex')
 
+VALID_COMMIT_STRATEGIES = ('per_plan', 'per_deliverable', 'none')
+DEFAULT_COMMIT_STRATEGY = 'per_plan'
+
 # Default candidate step sets when callers don't pass --phase-5-steps / --phase-6-steps.
 DEFAULT_PHASE_5_STEPS = ('quality-gate', 'module-tests')
 DEFAULT_PHASE_6_STEPS = (
@@ -254,41 +257,29 @@ def _looks_docs_only(phase_5_candidates: list[str]) -> bool:
 # =============================================================================
 
 
-def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
-    """Emit one ``decision.log`` entry for the rule that fired.
+def _resolve_executor() -> Path | None:
+    """Locate ``.plan/execute-script.py`` by walking up from this script.
 
-    The composer must produce one entry per applied rule per plan run, per the
-    request example. We invoke ``manage-logging decision`` via the executor so
-    the entry lands in the canonical decision log location.
+    Mirrors the bootstrap pattern in ``file_ops.py``. Returns ``None`` if no
+    executor sibling is found (e.g. running under an exotic test fixture).
     """
-    phase_5 = body.get('phase_5', {})
-    phase_6 = body.get('phase_6', {})
-    p5_steps = phase_5.get('verification_steps', [])
-    p6_steps = phase_6.get('steps', [])
-    early = phase_5.get('early_terminate', False)
-    message = (
-        f'(plan-marshall:manage-execution-manifest:compose) Rule {rule} fired — '
-        f'early_terminate={early}, phase_5.verification_steps={p5_steps}, '
-        f'phase_6.steps={p6_steps}'
-    )
-
-    # Resolve the executor relative to the marketplace root. We walk up from
-    # this script until we find the .plan/execute-script.py sibling, the same
-    # bootstrap pattern file_ops.py uses.
     here = Path(__file__).resolve()
-    executor: Path | None = None
     for ancestor in here.parents:
         candidate = ancestor / '.plan' / 'execute-script.py'
         if candidate.is_file():
-            executor = candidate
-            break
+            return candidate
+    return None
 
+
+def _emit_decision_log(plan_id: str, message: str) -> None:
+    """Best-effort decision-log emission via the executor.
+
+    Logging is non-load-bearing — manifest content is the contract — so any
+    executor lookup miss or subprocess error is swallowed silently.
+    """
+    executor = _resolve_executor()
     if executor is None:
-        # Decision logging is best-effort. If the executor isn't resolvable
-        # (e.g., running under an exotic test fixture), fall back silently —
-        # the manifest itself is the load-bearing artifact.
         return
-
     try:
         subprocess.run(
             [
@@ -309,8 +300,35 @@ def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
             check=False,
         )
     except (subprocess.SubprocessError, OSError):
-        # Best-effort logging — never fail the compose call on a logging issue.
         return
+
+
+def _log_decision(plan_id: str, rule: str, body: dict[str, Any]) -> None:
+    """Emit one ``decision.log`` entry for the rule that fired.
+
+    The composer must produce one entry per applied rule per plan run, per the
+    request example. We invoke ``manage-logging decision`` via the executor so
+    the entry lands in the canonical decision log location.
+    """
+    phase_5 = body.get('phase_5', {})
+    phase_6 = body.get('phase_6', {})
+    p5_steps = phase_5.get('verification_steps', [])
+    p6_steps = phase_6.get('steps', [])
+    early = phase_5.get('early_terminate', False)
+    message = (
+        f'(plan-marshall:manage-execution-manifest:compose) Rule {rule} fired — '
+        f'early_terminate={early}, phase_5.verification_steps={p5_steps}, '
+        f'phase_6.steps={p6_steps}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
+def _log_commit_push_omitted(plan_id: str) -> None:
+    """Emit the decision-log entry for the ``commit_strategy_none`` pre-filter."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none'
+    )
+    _emit_decision_log(plan_id, message)
 
 
 # =============================================================================
@@ -344,8 +362,27 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': f'Invalid track: {args.track!r}. Must be one of {list(VALID_TRACKS)}',
         }
 
+    commit_strategy = args.commit_strategy if args.commit_strategy is not None else DEFAULT_COMMIT_STRATEGY
+    if commit_strategy not in VALID_COMMIT_STRATEGIES:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_commit_strategy',
+            'message': f'Invalid commit_strategy: {commit_strategy!r}. Must be one of {list(VALID_COMMIT_STRATEGIES)}',
+        }
+
     phase_5_candidates = _split_csv(args.phase_5_steps, DEFAULT_PHASE_5_STEPS)
     phase_6_candidates = _split_csv(args.phase_6_steps, DEFAULT_PHASE_6_STEPS)
+
+    # Pre-filter: when commit_strategy == none, drop commit-push from the
+    # Phase 6 candidate list before the seven-row matrix evaluates. This keeps
+    # the row matrix orthogonal to commit_strategy — every row that emits a
+    # Phase 6 list operates on the already-filtered candidate set, so the
+    # resulting phase_6.steps will never contain commit-push.
+    commit_push_omitted = False
+    if commit_strategy == 'none' and 'commit-push' in phase_6_candidates:
+        phase_6_candidates = [s for s in phase_6_candidates if s != 'commit-push']
+        commit_push_omitted = True
 
     affected_files_count = max(0, int(args.affected_files_count or 0))
     recipe_key = args.recipe_key or None
@@ -366,6 +403,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         **body,
     }
     write_manifest(plan_id, manifest)
+    if commit_push_omitted:
+        _log_commit_push_omitted(plan_id)
     _log_decision(plan_id, rule, body)
 
     return {
@@ -382,6 +421,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'steps_count': len(body['phase_6']['steps']),
         },
         'rule_fired': rule,
+        'commit_strategy': commit_strategy,
+        'commit_push_omitted': commit_push_omitted,
     }
 
 
@@ -507,6 +548,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     compose_parser.add_argument('--phase-5-steps', default=None, help='Comma-separated candidate Phase 5 step IDs')
     compose_parser.add_argument('--phase-6-steps', default=None, help='Comma-separated candidate Phase 6 step IDs')
+    compose_parser.add_argument(
+        '--commit-strategy',
+        default=None,
+        help='Resolved commit_strategy from phase-5-execute config (per_plan|per_deliverable|none). '
+        'When omitted defaults to per_plan. When set to none, commit-push is omitted from phase_6.steps.',
+    )
 
     read_parser = subparsers.add_parser('read', help='Read execution.toon as TOON', allow_abbrev=False)
     add_plan_id_arg(read_parser)
