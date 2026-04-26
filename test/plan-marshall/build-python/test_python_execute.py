@@ -141,3 +141,100 @@ def test_execute_direct_error_on_missing_wrapper(tmp_path):
         )
         assert result['status'] == 'error'
         assert result['exit_code'] == -1
+
+
+# =============================================================================
+# Self-Heal Retry
+# =============================================================================
+
+
+def _make_log(tmp_path: Path, text: str) -> str:
+    log_path = tmp_path / 'build.log'
+    log_path.write_text(text)
+    return str(log_path)
+
+
+def _patched_execute_direct(call_results):
+    """Patch the inner execute_direct to return a sequence of results."""
+    iterator = iter(call_results)
+    calls = []
+
+    def fake(**kwargs):
+        calls.append(kwargs)
+        return next(iterator)
+
+    return fake, calls
+
+
+def test_self_heal_retries_on_uv_missing(tmp_path):
+    """Self-heal renames .pyprojectx and retries when 'uv: command not found' is observed."""
+    cache_dir = tmp_path / '.pyprojectx'
+    cache_dir.mkdir()
+    log_file = _make_log(tmp_path, '/bin/sh: uv: command not found\nexit 127')
+    failure = {'status': 'error', 'exit_code': 127, 'log_file': log_file, 'command': './pw verify', 'error': ''}
+    success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
+    fake, calls = _patched_execute_direct([failure, success])
+    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    assert result['status'] == 'success'
+    assert len(calls) == 2
+    assert (tmp_path / '.pyprojectx.broken').is_dir()
+    assert not cache_dir.exists()
+
+
+def test_self_heal_retries_on_directory_not_empty(tmp_path):
+    """Self-heal retries on 'Failed to create virtual environment ... Directory not empty'."""
+    (tmp_path / '.pyprojectx').mkdir()
+    log_text = (
+        'error: Failed to create virtual environment\n'
+        'Caused by: failed to remove directory bin: Directory not empty (os error 66)\n'
+    )
+    log_file = _make_log(tmp_path, log_text)
+    failure = {'status': 'error', 'exit_code': 1, 'log_file': log_file, 'command': './pw verify', 'error': ''}
+    success = {'status': 'success', 'exit_code': 0, 'log_file': log_file, 'command': './pw verify'}
+    fake, calls = _patched_execute_direct([failure, success])
+    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    assert result['status'] == 'success'
+    assert len(calls) == 2
+    assert (tmp_path / '.pyprojectx.broken').is_dir()
+
+
+def test_self_heal_skipped_for_unrelated_failure(tmp_path):
+    """Unrelated errors (e.g. test failure) do not trigger self-heal."""
+    (tmp_path / '.pyprojectx').mkdir()
+    log_file = _make_log(tmp_path, 'FAILED tests/test_foo.py::test_bar - AssertionError')
+    failure = {'status': 'error', 'exit_code': 1, 'log_file': log_file, 'command': './pw verify', 'error': ''}
+    fake, calls = _patched_execute_direct([failure])
+    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    assert result is failure
+    assert len(calls) == 1
+    assert not (tmp_path / '.pyprojectx.broken').exists()
+    assert (tmp_path / '.pyprojectx').is_dir()
+
+
+def test_self_heal_skipped_when_broken_dir_already_exists(tmp_path):
+    """Self-heal short-circuits when .pyprojectx.broken already exists."""
+    (tmp_path / '.pyprojectx').mkdir()
+    (tmp_path / '.pyprojectx.broken').mkdir()
+    log_file = _make_log(tmp_path, '/bin/sh: uv: command not found')
+    failure = {'status': 'error', 'exit_code': 127, 'log_file': log_file, 'command': './pw verify', 'error': ''}
+    fake, calls = _patched_execute_direct([failure])
+    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    assert result is failure
+    assert len(calls) == 1
+    assert (tmp_path / '.pyprojectx').is_dir()
+
+
+def test_self_heal_passthrough_on_success(tmp_path):
+    """Successful first run is unaffected by the self-heal layer."""
+    (tmp_path / '.pyprojectx').mkdir()
+    success = {'status': 'success', 'exit_code': 0, 'log_file': '', 'command': './pw verify'}
+    fake, calls = _patched_execute_direct([success])
+    with patch.object(_python_execute_mod, '_inner_execute_direct', side_effect=fake):
+        result = execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
+    assert result is success
+    assert len(calls) == 1
+    assert not (tmp_path / '.pyprojectx.broken').exists()
