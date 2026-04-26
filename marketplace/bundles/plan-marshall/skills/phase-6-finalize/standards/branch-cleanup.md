@@ -8,7 +8,7 @@ order: 70
 
 Pure executor for the `branch-cleanup` finalize step. Switches back to base branch and cleans up after plan completion. Behavior adapts based on whether `create-pr` is in `manifest.phase_6.steps`.
 
-This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `branch-cleanup` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `branch-cleanup` in `manifest.phase_6.steps`. When the dispatcher runs this step, the executor always runs to completion and records `outcome=done`. Runtime no-op cases (no PR found, branch already in sync) are recorded with an honest `display_detail` rather than a "skip". The user-prompt branches (interactive `AskUserQuestion` decline paths) remain permitted by `validation.md` and are unchanged.
 
 ## Inputs
 
@@ -61,10 +61,16 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 
 Extract: `pr_number`, `pr_url`, `state` (open/merged/closed), `head_branch`, `base_branch`.
 
-If no PR found (status: error) → skip cleanup, log:
+If no PR found (status: error) → there is nothing to clean up on the remote side. Record the no-op outcome and return via **Mark Step Complete** with:
+
+```
+--outcome done --display-detail "no PR — nothing to clean up"
+```
+
+Log the decision:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup skipped: no PR found for current branch"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: no PR found for current branch — nothing to clean up"
 ```
 
 #### Check for other open PRs using this branch
@@ -175,7 +181,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: updated PR branch with base branch changes, CI passed"
 ```
 
-**If `merge_state != behind`**: Skip this step — the branch is already up to date with the base branch.
+**If `merge_state != behind`**: The branch is already up to date with the base branch — no update is required. Continue to the next sub-step ("Merge PR"). If this is the only branch-update outcome reached on this run (i.e. the run terminates here without performing a merge), record the no-op via **Mark Step Complete** with:
+
+```
+--outcome done --display-detail "branch not behind — already in sync"
+```
+
+Log the decision:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: branch already in sync with base — no update required"
+```
 
 ### Merge PR (if not yet merged)
 
@@ -413,4 +429,20 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   --display-detail "declined by user"
+```
+
+**Branch D — no PR found** (PR mode, `pr view` returned status: error — there is no PR for the current branch, so there is nothing to clean up on the remote side):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --display-detail "no PR — nothing to clean up"
+```
+
+**Branch E — branch already in sync** (PR mode, `merge_state != behind` was the terminal outcome — the branch is up to date with the base branch and no update was required; the run terminates here without merging):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --display-detail "branch not behind — already in sync"
 ```

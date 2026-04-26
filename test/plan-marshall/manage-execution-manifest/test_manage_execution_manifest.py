@@ -67,6 +67,7 @@ def _compose_ns(
     affected_files_count: int = 5,
     phase_5_steps: str | None = 'quality-gate,module-tests',
     phase_6_steps: str | None = ','.join(DEFAULT_PHASE_6_STEPS),
+    commit_strategy: str | None = None,
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -77,6 +78,7 @@ def _compose_ns(
         affected_files_count=affected_files_count,
         phase_5_steps=phase_5_steps,
         phase_6_steps=phase_6_steps,
+        commit_strategy=commit_strategy,
     )
 
 
@@ -497,6 +499,7 @@ def test_compose_default_phase_6_steps_when_csv_omitted():
                 affected_files_count=12,
                 phase_5_steps=None,  # Falls back to DEFAULT_PHASE_5_STEPS.
                 phase_6_steps=None,  # Falls back to DEFAULT_PHASE_6_STEPS.
+                commit_strategy=None,
             )
         )
         manifest = read_manifest('matrix-default-csv')
@@ -599,6 +602,168 @@ def test_validate_detects_plan_id_mismatch():
 
 
 # =============================================================================
+# commit_strategy pre-filter tests
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    'commit_strategy,expect_commit_push,expect_omitted',
+    [
+        ('per_plan', True, False),
+        ('per_deliverable', True, False),
+        (None, True, False),  # Absent flag defaults to per_plan.
+        ('none', False, True),
+    ],
+)
+def test_commit_strategy_pre_filter(commit_strategy, expect_commit_push, expect_omitted):
+    """Pre-filter: commit_strategy=none drops commit-push; other values retain it."""
+    # plan_id may not contain underscores — convert any underscored strategy
+    # value to a hyphenated slug.
+    slug = (commit_strategy or 'absent').replace('_', '-')
+    plan_id = f'matrix-cs-{slug}'
+    with PlanContext(plan_id=plan_id):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=8,
+                commit_strategy=commit_strategy,
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['commit_push_omitted'] is expect_omitted
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        if expect_commit_push:
+            assert 'commit-push' in manifest['phase_6']['steps']
+        else:
+            assert 'commit-push' not in manifest['phase_6']['steps']
+
+
+def test_commit_strategy_none_emits_decision_log_message():
+    """commit_strategy=none triggers the dedicated decision-log emission helper."""
+    captured: list[str] = []
+    original_helper = _mem._log_commit_push_omitted
+
+    def _capture(plan_id):
+        captured.append(plan_id)
+
+    _mem._log_commit_push_omitted = _capture
+    try:
+        with PlanContext(plan_id='matrix-cs-log'):
+            cmd_compose(
+                _compose_ns(
+                    plan_id='matrix-cs-log',
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=4,
+                    commit_strategy='none',
+                )
+            )
+    finally:
+        _mem._log_commit_push_omitted = original_helper
+    assert captured == ['matrix-cs-log']
+
+
+def test_commit_strategy_none_decision_log_message_matches_contract():
+    """commit_strategy=none emits the exact decision-log line from the deliverable contract."""
+    captured: list[tuple[str, str]] = []
+    original_emit = _mem._emit_decision_log
+
+    def _capture(plan_id, message):
+        captured.append((plan_id, message))
+
+    _mem._emit_decision_log = _capture
+    try:
+        with PlanContext(plan_id='matrix-cs-msg'):
+            cmd_compose(
+                _compose_ns(
+                    plan_id='matrix-cs-msg',
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=4,
+                    commit_strategy='none',
+                )
+            )
+    finally:
+        _mem._emit_decision_log = original_emit
+
+    # Expect at least the omission entry; the rule-fired entry is also emitted.
+    omission_entries = [
+        (pid, msg) for pid, msg in captured
+        if 'commit-push omitted' in msg
+    ]
+    assert len(omission_entries) == 1, f'expected one omission entry, got {captured!r}'
+    pid, msg = omission_entries[0]
+    assert pid == 'matrix-cs-msg'
+    assert msg == (
+        '(plan-marshall:manage-execution-manifest:compose) '
+        'commit-push omitted — commit_strategy=none'
+    )
+
+
+def test_commit_strategy_default_does_not_emit_omission_log():
+    """When commit_strategy is absent (defaults to per_plan), no omission log fires."""
+    captured: list[str] = []
+    original_helper = _mem._log_commit_push_omitted
+
+    def _capture(plan_id):
+        captured.append(plan_id)
+
+    _mem._log_commit_push_omitted = _capture
+    try:
+        with PlanContext(plan_id='matrix-cs-default-nolog'):
+            cmd_compose(
+                _compose_ns(
+                    plan_id='matrix-cs-default-nolog',
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=4,
+                    commit_strategy=None,
+                )
+            )
+    finally:
+        _mem._log_commit_push_omitted = original_helper
+    assert captured == []
+
+
+def test_commit_strategy_invalid_value_rejected():
+    """Invalid commit_strategy values produce a structured error response."""
+    with PlanContext(plan_id='matrix-cs-bad'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='matrix-cs-bad',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=2,
+                commit_strategy='nope',
+            )
+        )
+        assert result is not None and result['status'] == 'error'
+        assert result['error'] == 'invalid_commit_strategy'
+
+
+def test_commit_strategy_none_with_recipe_still_drops_commit_push():
+    """Pre-filter applies before the row matrix — recipe rule still loses commit-push."""
+    with PlanContext(plan_id='matrix-cs-recipe'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='matrix-cs-recipe',
+                change_type='tech_debt',
+                scope_estimate='surgical',
+                recipe_key='lesson_cleanup',
+                affected_files_count=2,
+                commit_strategy='none',
+            )
+        )
+        assert result is not None and result['rule_fired'] == 'recipe'
+        manifest = read_manifest('matrix-cs-recipe')
+        assert manifest is not None
+        assert 'commit-push' not in manifest['phase_6']['steps']
+
+
+# =============================================================================
 # CLI plumbing (subprocess) tests — keep small, just confirm wiring
 # =============================================================================
 
@@ -688,6 +853,30 @@ def test_cli_validate_happy_path():
         assert data['status'] == 'success'
         # TOON parser may coerce booleans — accept both shapes defensively.
         assert data['valid'] in (True, 'true', 1)
+
+
+def test_cli_compose_commit_strategy_none_omits_commit_push():
+    """CLI accepts --commit-strategy none and emits a manifest without commit-push."""
+    with PlanContext(plan_id='cli-cs-none'):
+        result = run_script(
+            SCRIPT_PATH,
+            'compose',
+            '--plan-id', 'cli-cs-none',
+            '--change-type', 'feature',
+            '--track', 'complex',
+            '--scope-estimate', 'multi_module',
+            '--commit-strategy', 'none',
+        )
+        assert result.success, f'compose failed: stderr={result.stderr!r}'
+        compose_data = result.toon()
+        assert compose_data['status'] == 'success'
+        # TOON parser may coerce the bool — accept both shapes defensively.
+        assert compose_data['commit_push_omitted'] in (True, 'true', 1)
+
+        read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-cs-none')
+        assert read_result.success
+        manifest = read_result.toon()
+        assert 'commit-push' not in manifest['phase_6']['steps']
 
 
 def test_cli_read_missing_manifest_emits_toon_error():

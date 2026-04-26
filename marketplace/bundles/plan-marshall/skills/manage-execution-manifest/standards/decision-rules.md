@@ -11,6 +11,7 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `scope_estimate` | `solution_outline.md` solution-level metadata (deliverable 2) | enum: `none|surgical|single_module|multi_module|broad` |
 | `recipe_key` | `status.json` `plan_source` metadata when sourced via a recipe | string or absent |
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
+| `commit_strategy` | `manage-config plan phase-5-execute get --field commit_strategy` | enum: `per_plan|per_deliverable|none` (default: `per_plan`) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
 
@@ -22,9 +23,27 @@ For each rule the composer emits:
 - `phase_5.verification_steps` — ordered list[string] subset of `phase_5_candidates`.
 - `phase_6.steps` — ordered list[string] subset of `phase_6_candidates`.
 
+## Pre-Filter: `commit_strategy_none`
+
+Before evaluating the seven-row matrix below, the composer applies a pre-filter to the `phase_6_candidates` list:
+
+**Condition**: `commit_strategy == none`.
+
+**Effect**: `commit-push` is removed from `phase_6_candidates` before the rows are evaluated. Every row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered list, so the resulting `phase_6.steps` will never contain `commit-push` when this pre-filter fires.
+
+**Why a pre-filter (not an eighth row)**: `commit_strategy` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the seven rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
+
+**Decision log line** (in addition to the row's own log line):
+
+```
+(plan-marshall:manage-execution-manifest:compose) commit-push omitted — commit_strategy=none
+```
+
+When `commit_strategy ∈ {per_plan, per_deliverable}` (or absent — the default is `per_plan`), the pre-filter is a no-op and emits no log entry.
+
 ## The Seven-Row Matrix
 
-The seven rows below are evaluated top-down; the first match wins.
+The seven rows below are evaluated top-down; the first match wins. They operate on the (possibly pre-filtered) `phase_6_candidates` list described above.
 
 ### Row 1 — `early_terminate_analysis`
 

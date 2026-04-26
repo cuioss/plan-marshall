@@ -6,29 +6,21 @@ order: 10
 
 # Commit and Push
 
-Pure executor for the `commit-push` finalize step. Commits all changes and pushes to remote. Respects `commit_strategy` from phase-5-execute config.
+Pure executor for the `commit-push` finalize step. Commits all changes and pushes to remote.
 
-This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `commit-push` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `commit-push` in `manifest.phase_6.steps`. When the dispatcher runs this step, the executor always runs to completion and records `outcome=done` regardless of whether a commit was produced — the `display_detail` payload distinguishes the branches. The `commit_strategy == none` case is handled at composition time by the manifest's `commit_strategy_none` pre-filter (see `manage-execution-manifest/standards/decision-rules.md`), so this step is never dispatched in that case.
 
 ## Inputs
 
-- `commit_strategy` from phase-5-execute config (per_deliverable / per_plan / none)
+- `commit_strategy` from phase-5-execute config (per_deliverable / per_plan). The `none` value is filtered out at manifest composition time and never reaches this executor.
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All git commands below MUST use `git -C {worktree_path}`.
 
 ## Execution
 
-### Check commit_strategy
+### Strategy context (informational)
 
-**If `commit_strategy == none`**: Skip commit entirely.
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Commit skipped: commit_strategy=none"
-```
-
-**If `commit_strategy == per_deliverable`**: Only commit if there are uncommitted changes remaining (some changes may already be committed per-deliverable during execute phase).
-
-**If `commit_strategy == per_plan`**: Commit all changes as a single commit (default behavior).
+- **`per_deliverable`**: Some changes may already be committed per-deliverable during execute phase; commit only the remainder.
+- **`per_plan`**: Commit all changes as a single commit (default behavior).
 
 ### Check for uncommitted changes
 
@@ -36,7 +28,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 git -C {worktree_path} status --porcelain
 ```
 
-If output is empty → no changes to commit, done.
+If output is empty, the executor records the no-changes path and proceeds to **Mark Step Complete** (Branch B). Otherwise it continues with the load-and-commit path below.
 
 ### Load git_workflow skill
 
@@ -68,7 +60,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --display-detail "-> {commit_hash}"
 ```
 
-**Branch B — no uncommitted changes** (skipped path from "Check for uncommitted changes" above):
+**Branch B — no uncommitted changes** (no-changes path from "Check for uncommitted changes" above — `git status --porcelain` returned empty):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \

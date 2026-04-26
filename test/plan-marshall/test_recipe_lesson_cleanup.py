@@ -432,6 +432,7 @@ class TestRecipePathEndToEnd:
                 affected_files_count=2,
                 phase_5_steps='quality-gate,module-tests',
                 phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+                commit_strategy=None,
             )
             result = cmd_compose(ns)
             assert result is not None and result['status'] == 'success'
@@ -481,6 +482,7 @@ class TestRecipePathEndToEnd:
                 affected_files_count=1,
                 phase_5_steps='quality-gate,module-tests',
                 phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+                commit_strategy=None,
             )
             result = cmd_compose(ns)
             assert result is not None
@@ -507,6 +509,7 @@ class TestRecipePathEndToEnd:
                 affected_files_count=1,
                 phase_5_steps='quality-gate,module-tests',
                 phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+                commit_strategy=None,
             )
             result = cmd_compose(ns)
             assert result is not None
@@ -528,6 +531,7 @@ class TestRecipePathEndToEnd:
                 affected_files_count=2,
                 phase_5_steps='quality-gate,module-tests',
                 phase_6_steps=','.join(DEFAULT_PHASE_6_STEPS),
+                commit_strategy=None,
             )
             result = cmd_compose(ns)
             assert result is not None

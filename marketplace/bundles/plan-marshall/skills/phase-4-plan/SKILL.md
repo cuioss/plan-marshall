@@ -415,6 +415,7 @@ This step runs after Step 8 (execution order) and before Step 9 (Q-Gate). It MUS
 - `affected_files_count` — `manage-references get --field affected_files`, count entries.
 - `phase-5-steps` candidate — `manage-config plan phase-5-execute get --field steps` value, comma-joined.
 - `phase-6-steps` candidate — `manage-config plan phase-6-finalize get --field steps` value, comma-joined.
+- `commit_strategy` — read from `manage-config plan phase-5-execute get --field commit_strategy`. One of `per_plan|per_deliverable|none`. Forwarded to `compose --commit-strategy` so the manifest's `commit_strategy_none` pre-filter can omit `commit-push` when the value is `none`. Omit the flag when the field is unset; the composer defaults to `per_plan`.
 
 **Compose**:
 
@@ -428,7 +429,8 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   [--recipe-key {recipe_key}] \
   --affected-files-count {N} \
   --phase-5-steps "{p5_csv}" \
-  --phase-6-steps "{p6_csv}"
+  --phase-6-steps "{p6_csv}" \
+  [--commit-strategy {commit_strategy}]
 ```
 
 **Validate** (immediately after compose, before Q-Gate):
