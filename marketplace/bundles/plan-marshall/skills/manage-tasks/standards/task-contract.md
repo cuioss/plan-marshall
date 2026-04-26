@@ -394,6 +394,97 @@ For each deliverable, for each profile in deliverable.profiles:
 
 **Constraint**: Each task maps to exactly one deliverable. No aggregation.
 
+## Atomic Batch Insertion (`batch-add`)
+
+The `batch-add` subcommand creates multiple tasks atomically — either every
+task in the input array is persisted or no `TASK-NNN.json` file is created.
+This is the canonical path for callers that already hold a list of structured
+task records (e.g. `phase-4-plan` after composing tasks across deliverables).
+
+### Semantics
+
+- **All-or-nothing**: every entry is validated before any file is written. A
+  single rejected entry aborts the entire batch with the original on-disk
+  state untouched.
+- **Sequential numbering**: numbers start at the next available slot at call
+  time and increment in array order. Numbers are immutable on success and
+  collisions are impossible because allocation happens once per call.
+- **Empty array** (`"[]"`) is a documented no-op that returns
+  `tasks_created: 0`.
+- **Origin defaults**: when an entry omits `origin`, it defaults to `plan` —
+  identical to the single-task add flow.
+- **Logging**: a single `[MANAGE-TASKS] batch-add created {N} tasks` entry is
+  written to `work.log`, summarising the assigned number range.
+
+### JSON Array Schema
+
+Each entry in the array is a JSON object with the same field semantics as the
+TOON task definition consumed by `commit-add`. Field types:
+
+```jsonc
+[
+  {
+    "title": "Implement CacheConfig",                 // string, required
+    "deliverable": 1,                                  // integer, required (0 only for holistic origin)
+    "domain": "java",                                  // string, required
+    "profile": "implementation",                       // string, default "implementation"
+    "origin": "plan",                                  // string, default "plan"
+    "description": "Create CacheConfig with Redis…",   // string, optional
+    "skills": ["pm-dev-java:java-core"],               // string[], optional
+    "depends_on": [],                                  // string[] OR comma-separated string OR "none"
+    "steps": [                                         // string[], required (≥ 1)
+      "src/main/java/CacheConfig.java"
+    ],
+    "verification": {                                  // object, optional
+      "commands": ["mvn test -Dtest=CacheConfigTest"], // string[]
+      "criteria": "All tests pass",                    // string
+      "manual": false                                  // bool
+    }
+  }
+]
+```
+
+### Field Rules
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `title` | Yes | Non-empty string |
+| `deliverable` | Yes | Non-negative integer; `0` only valid when `origin == "holistic"` |
+| `domain` | Yes | Non-empty string (validated against marshal.json at execution) |
+| `profile` | No (default `implementation`) | Step-path validation is skipped when `profile == "verification"` |
+| `origin` | No (default `plan`) | Must match the standard origin set (`plan`, `fix`, `sonar`, `pr`, `lint`, `security`, `documentation`, `holistic`) |
+| `skills` | No | Each entry must follow `bundle:skill` format |
+| `depends_on` | No | Accepts a JSON array of `TASK-N`/integer strings, a comma-separated string, or `"none"` |
+| `steps` | Yes | Array of strings; for non-verification profiles every entry must look like a file path |
+| `verification.commands` | No | Strings only (no list-of-list); copied verbatim |
+
+### Failure Modes
+
+| Cause | Response |
+|-------|----------|
+| Payload missing or empty | `error: error`, message `batch-add requires a JSON array via --tasks-json or stdin` |
+| Payload not valid JSON | `error: error`, message includes line/column |
+| Payload not a JSON array | `error: error`, message names the actual top-level type |
+| Any entry fails validation | `error: error`, message prefixed with `batch entry [{index}]:` |
+| Filesystem write error mid-batch | `error: error`, message starts with `batch-add aborted while writing tasks:`; any partially-written files are removed |
+
+### Success Output
+
+```toon
+status: success
+plan_id: my-plan
+tasks_created: 3
+starting_task_number: 4
+total_tasks: 6
+tasks[3]{number,title,file,domain,profile,deliverable,origin,step_count}:
+  4,Implement CacheConfig,TASK-004.json,java,implementation,1,plan,1
+  5,Test CacheConfig,TASK-005.json,java,module_testing,1,plan,1
+  6,Wire CacheManager,TASK-006.json,java,implementation,2,plan,2
+```
+
+The `tasks` table reports each created task with its assigned number. Use this
+in callers that need to log per-task creation events after a successful batch.
+
 ## Task Creation API
 
 Uses stdin-based API with heredoc to avoid shell metacharacter issues:

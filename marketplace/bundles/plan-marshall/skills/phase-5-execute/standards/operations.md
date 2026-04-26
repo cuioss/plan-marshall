@@ -2,6 +2,8 @@
 
 Reference for executing common checklist items. The executor uses these patterns when encountering specific checklist items.
 
+**Manifest-driven execution**: This document does not encode any skip-conditional language for verification steps. Whether `quality-gate`, `module-tests`, or `coverage` fires at the end of Phase 5 is decided by the per-plan execution manifest (`manage-execution-manifest read`) Step 2 of `SKILL.md` consumes — the dispatch templates here are unconditional and only run when the manifest's `phase_5.verification_steps` list includes the corresponding step name.
+
 ## Worktree Header Protocol (Applies to ALL Dispatch Patterns)
 
 When the plan runs in an isolated worktree, every `Task:` dispatch (and every other subagent dispatch that accepts a free-form prompt) below MUST have its `prompt:` block BEGIN with the following header, with `{worktree_path}` substituted by the active worktree absolute path surfaced by phase-5-execute's `[STATUS] Active worktree` work-log line:

@@ -334,7 +334,52 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Purpose**: Lightweight verification for simple track.
 
+#### Q-Gate Surgical Bypass Rule
+
+**Evaluated BEFORE running the per-deliverable verification checks below.**
+
+Bypass the Simple Q-Gate when ALL of the following predicates hold:
+
+1. `scope_estimate == surgical` (read from references.json — phase-2-refine sets it in Step 13; phase-3-outline MAY refine it in Step 6 after deliverables crystalize).
+2. `change_type ∈ {bug_fix, tech_debt, verification}` (read from status.json metadata — set in Step 4 by detect-change-type-agent).
+3. `deliverable_count == 1` (exactly one deliverable was created in Step 7).
+
+When all three predicates hold, emit the bypass decision log entry and skip directly to Step 12 (do NOT execute the per-deliverable checks):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate-bypass) Q-Gate skipped — scope_estimate=surgical, change_type={change_type}, 1 deliverable"
+```
+
+Where `{change_type}` is the literal value (`bug_fix`, `tech_debt`, or `verification`).
+
+**Worked examples — when bypass fires**:
+
+| `scope_estimate` | `change_type` | deliverables | Bypass? | Reason |
+|------------------|---------------|--------------|---------|--------|
+| `surgical` | `bug_fix` | 1 | YES | All three predicates hold |
+| `surgical` | `tech_debt` | 1 | YES | All three predicates hold |
+| `surgical` | `verification` | 1 | YES | All three predicates hold |
+
+**Worked examples — when bypass does NOT fire** (Q-Gate runs normally):
+
+| `scope_estimate` | `change_type` | deliverables | Bypass? | Reason |
+|------------------|---------------|--------------|---------|--------|
+| `surgical` | `feature` | 1 | NO | `feature` is outside the bug_fix/tech_debt/verification set |
+| `surgical` | `enhancement` | 1 | NO | `enhancement` is outside the bug_fix/tech_debt/verification set |
+| `surgical` | `bug_fix` | 2 | NO | More than one deliverable invalidates the "single surgical change" assumption |
+| `single_module` | `bug_fix` | 1 | NO | `scope_estimate` is not `surgical` |
+| `multi_module` | `bug_fix` | 1 | NO | `scope_estimate` is not `surgical` |
+| `broad` | `tech_debt` | 1 | NO | `scope_estimate` is not `surgical` |
+| `none` | `verification` | 1 | NO | `scope_estimate` is not `surgical` |
+
+**Recipe-sourced plans** are unaffected: Step 3 (Recipe Detection) already short-circuits Steps 4-11 (including the Q-Gate dispatch) for `plan_source == recipe`. The bypass rule applies only to non-recipe Simple Track plans that reach Step 8.
+
+**Rationale**: A surgical bug-fix / tech-debt / verification single-deliverable plan is precisely the shape where the Q-Gate's coverage and request-alignment checks add latency without finding new problems — the deliverable's scope is already minimal and pinned, the change type is corrective (not generative), and there is no second deliverable that could compete for the same files. Generative change types (`feature`, `enhancement`) and multi-deliverable plans still go through Q-Gate because their scope can drift.
+
 #### Verify Deliverables
+
+If the bypass rule above did NOT fire, run the per-deliverable checks:
 
 For each deliverable:
 
@@ -499,7 +544,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Purpose**: Verify skill output meets quality standards.
 
+#### Q-Gate Surgical Bypass Rule
+
+**Evaluated BEFORE spawning the Q-Gate validation agent.**
+
+The same predicate that gates the Simple Track Q-Gate (Step 8) ALSO gates the Complex Track Q-Gate (Step 11). Bypass when ALL of:
+
+1. `scope_estimate == surgical` (phase-3-outline MAY refine `scope_estimate` in Step 10 after Complex Track discovery — e.g., `multi_module` → `single_module` → `surgical` once final Affected files are known).
+2. `change_type ∈ {bug_fix, tech_debt, verification}`.
+3. `deliverable_count == 1`.
+
+When all three predicates hold, emit the bypass decision log entry and skip directly to Step 12 (do NOT spawn the Q-Gate validation agent):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate-bypass) Q-Gate skipped — scope_estimate=surgical, change_type={change_type}, 1 deliverable"
+```
+
+The worked-examples table in Step 8 (above) applies verbatim to Step 11 — the rule, predicates, and log message are identical across both tracks. Recipe plans never reach Step 11 (Step 3 short-circuits them).
+
 #### Spawn Q-Gate Agent
+
+If the bypass rule above did NOT fire, spawn the Q-Gate validation agent:
 
 ```
 Task: plan-marshall:q-gate-validation-agent

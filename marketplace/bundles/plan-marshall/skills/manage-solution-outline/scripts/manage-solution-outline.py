@@ -36,6 +36,33 @@ ARCHITECTURE_DIR = 'project-architecture'
 DERIVED_DATA_FILE = 'derived-data.json'
 LLM_ENRICHED_FILE = 'llm-enriched.json'
 
+# Solution-level metadata: scope_estimate enum (see standards/solution-outline-standard.md)
+SCOPE_ESTIMATE_VALUES = ('none', 'surgical', 'single_module', 'multi_module', 'broad')
+
+# Allowlist of solution-level fields readable via `get-field`.
+SUPPORTED_FIELDS = ('scope_estimate',)
+
+
+def extract_scope_estimate(solution_metadata: str) -> str | None:
+    """Extract scope_estimate value from the Solution Metadata section body.
+
+    Looks for a line matching ``- scope_estimate: VALUE`` (with optional leading
+    whitespace and tolerant of `*` bullets). Returns the trimmed value, or
+    ``None`` when the field is absent.
+    """
+    if not solution_metadata:
+        return None
+    for raw_line in solution_metadata.split('\n'):
+        line = raw_line.strip()
+        # Accept "- scope_estimate: X", "* scope_estimate: X", or "scope_estimate: X"
+        if line.startswith('- '):
+            line = line[2:].strip()
+        elif line.startswith('* '):
+            line = line[2:].strip()
+        if line.startswith('scope_estimate:'):
+            return line.split(':', 1)[1].strip()
+    return None
+
 
 def get_solution_path(plan_id: str) -> Path:
     """Get the solution outline file path."""
@@ -56,8 +83,8 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
 
     sections = parse_document_sections(content)
 
-    # Required sections
-    required_sections = ['summary', 'overview', 'deliverables']
+    # Required sections (Solution Metadata first to keep ordering stable)
+    required_sections = ['solution_metadata', 'summary', 'overview', 'deliverables']
     for section in required_sections:
         if section in sections:
             info['sections_found'].append(section)
@@ -76,6 +103,20 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
         if line.startswith('compatibility:'):
             info['compatibility'] = line.split(':', 1)[1].strip()
             break
+
+    # Validate Solution Metadata block: scope_estimate is required and must be in enum.
+    solution_metadata_body = sections.get('solution_metadata', '')
+    if 'solution_metadata' in sections:
+        scope_value = extract_scope_estimate(solution_metadata_body)
+        if scope_value is None:
+            errors.append('Missing scope_estimate in Solution Metadata')
+        elif scope_value not in SCOPE_ESTIMATE_VALUES:
+            errors.append(
+                f"Invalid scope_estimate '{scope_value}' "
+                f"(must be one of: {', '.join(SCOPE_ESTIMATE_VALUES)})"
+            )
+        else:
+            info['scope_estimate'] = scope_value
 
     # Validate deliverables section
     if 'deliverables' in sections:
@@ -243,6 +284,8 @@ def cmd_validate(args) -> dict:
 
     if 'compatibility' in info:
         validation['compatibility'] = info['compatibility']
+    if 'scope_estimate' in info:
+        validation['scope_estimate'] = info['scope_estimate']
 
     result: dict[str, Any] = {
         'status': 'success',
@@ -375,7 +418,76 @@ def cmd_read(args) -> dict:
         return {'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'raw': True}
     else:
         sections = parse_document_sections(content)
-        return {'status': 'success', 'plan_id': args.plan_id, 'file': SOLUTION_FILE, 'content': sections}
+        result: dict[str, Any] = {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'content': sections,
+        }
+        scope_value = extract_scope_estimate(sections.get('solution_metadata', ''))
+        if scope_value is not None:
+            result['scope_estimate'] = scope_value
+        return result
+
+
+def cmd_get_field(args) -> dict:
+    """Read a single solution-level metadata field.
+
+    Currently supports: scope_estimate. Returns ``unknown_field`` for unsupported
+    field names; ``field_not_found`` when the persisted document does not carry
+    the requested field; ``document_not_found`` when the file is absent.
+    """
+    require_valid_plan_id(args)
+
+    field_name = getattr(args, 'field', None)
+    if field_name not in SUPPORTED_FIELDS:
+        return {
+            'status': 'error',
+            'error': 'unknown_field',
+            'plan_id': args.plan_id,
+            'field': field_name,
+            'supported': list(SUPPORTED_FIELDS),
+        }
+
+    file_path = get_solution_path(args.plan_id)
+    if not file_path.exists():
+        return {
+            'status': 'error',
+            'error': 'document_not_found',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'field': field_name,
+        }
+
+    content = file_path.read_text(encoding='utf-8')
+    sections = parse_document_sections(content)
+
+    # Currently only scope_estimate is supported (lives in Solution Metadata).
+    if field_name == 'scope_estimate':
+        value = extract_scope_estimate(sections.get('solution_metadata', ''))
+        if value is None:
+            return {
+                'status': 'error',
+                'error': 'field_not_found',
+                'plan_id': args.plan_id,
+                'file': SOLUTION_FILE,
+                'field': field_name,
+            }
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'file': SOLUTION_FILE,
+            'field': field_name,
+            'value': value,
+        }
+
+    # Unreachable: SUPPORTED_FIELDS gates the field name above.
+    return {
+        'status': 'error',
+        'error': 'unknown_field',
+        'plan_id': args.plan_id,
+        'field': field_name,
+    }
 
 
 def cmd_exists(args) -> dict:
@@ -435,6 +547,8 @@ def _validate_file_on_disk(plan_id: str, file_path: Path) -> tuple[int, dict[str
 
     if 'compatibility' in info:
         validation['compatibility'] = info['compatibility']
+    if 'scope_estimate' in info:
+        validation['scope_estimate'] = info['scope_estimate']
 
     result: dict[str, Any] = {
         'status': 'success',
@@ -607,6 +721,21 @@ def main() -> int:
     exists_parser = subparsers.add_parser('exists', help='Check if solution exists', allow_abbrev=False)
     add_plan_id_arg(exists_parser)
     exists_parser.set_defaults(func=cmd_exists)
+
+    # get-field
+    get_field_parser = subparsers.add_parser(
+        'get-field',
+        help='Read a single solution-level metadata field (e.g., scope_estimate)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(get_field_parser)
+    get_field_parser.add_argument(
+        '--field',
+        type=str,
+        required=True,
+        help=f'Field name (supported: {", ".join(SUPPORTED_FIELDS)})',
+    )
+    get_field_parser.set_defaults(func=cmd_get_field)
 
     # resolve-path
     resolve_parser = subparsers.add_parser(

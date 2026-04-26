@@ -6,7 +6,9 @@ order: 1000
 
 # Archive Plan
 
-Archive the completed plan to `.plan/archived-plans/`.
+Pure executor for the `archive-plan` finalize step. Archives the completed plan to `.plan/archived-plans/`.
+
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `archive-plan` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
 **CRITICAL**: Archive MUST be the last step in the pipeline because it moves plan files (including status.json), which breaks `manage-status transition` and other manage-* scripts. All plan operations must complete before archive.
 

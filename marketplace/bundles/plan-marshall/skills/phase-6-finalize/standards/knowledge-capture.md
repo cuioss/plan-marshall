@@ -6,11 +6,11 @@ order: 50
 
 # Knowledge Capture
 
-Record significant patterns discovered during implementation. Advisory only — does not block.
+Pure executor for the `knowledge-capture` finalize step. Records significant patterns discovered during implementation. Advisory only — does not block.
 
-## Prerequisites
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `knowledge-capture` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
-- Config field `5_knowledge_capture` is `true`
+This step runs as a Task agent (`plan-marshall:knowledge-capture-agent`) under a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — knowledge capture is advisory and never blocks the rest of the pipeline.
 
 ## Execution
 

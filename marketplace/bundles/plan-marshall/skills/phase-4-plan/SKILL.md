@@ -50,7 +50,7 @@ Skill: plan-marshall:dev-general-practices
 
 ### Test Helper File Naming
 
-When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before invoking `manage-tasks prepare-add` / `commit-add`. Only the two repository-wide `conftest.py` files listed in the allow-list below are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
+When a task step target lives under a skill test directory (any path matching `test/**/`) and represents a test helper (shared fixtures, sys.path shims, or other non-test Python module), the filename MUST NOT be `conftest.py`. Rename the target to `_fixtures.py` (or another descriptive `_*.py` name that is clearly not a pytest collection file) during task creation — before composing the JSON array passed to `manage-tasks batch-add`. Only the two repository-wide `conftest.py` files listed in the allow-list below are permitted; any additional `conftest.py` under `test/{bundle}/{skill}/` changes pytest's global collection semantics for that bundle and causes hidden coupling or spurious collection failures.
 
 **Allow-list** (MUST NOT be duplicated or added to by task steps):
 - `test/conftest.py`
@@ -243,7 +243,18 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 6: Create Tasks
 
-For each deliverable, create tasks using the three-step path-allocate flow (one task per profile): (1) `prepare-add` allocates a scratch path under `<plan>/work/pending-tasks/`, (2) the phase writes the TOON task definition to that path with the Write tool, (3) `commit-add` reads the file, validates it, and creates `TASK-NNN.json`. No multi-line content crosses the shell boundary.
+For each deliverable, compose one task record per profile, then persist all
+records in a single atomic call via `manage-tasks batch-add`. The batch path
+replaces the legacy per-task `prepare-add` → Write → `commit-add` loop with
+one atomic transaction (all-or-nothing semantics — see
+`marketplace/bundles/plan-marshall/skills/manage-tasks/standards/task-contract.md`
+§ "Atomic Batch Insertion (`batch-add`)" for the JSON array schema and
+failure modes).
+
+The legacy three-step path-allocate flow remains available for ad-hoc
+single-task additions (Q-Gate auto-loop, fix tasks dispatched outside this
+phase) but MUST NOT be used here when more than one task is being created in
+the same phase invocation.
 
 ### Description Anchoring Contract
 
@@ -274,32 +285,27 @@ To prevent compound-word mis-interpretation (e.g. `review-knowledge` being descr
 **CRITICAL — Shell Metacharacter Sanitization**: Before writing values into the TOON task file, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts if they later reach a shell. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
 
 ```bash
-# Step 1: allocate a scratch path under <plan>/work/pending-tasks/
+# Compose every task record for this phase invocation into one JSON array,
+# then persist them atomically. Each entry mirrors the TOON task schema:
+#   {
+#     "title": "{task title}",
+#     "deliverable": {deliverable_number},
+#     "domain": "{domain}",
+#     "profile": "{profile}",
+#     "description": "{description}",
+#     "steps": ["{file1}", "{file2}"],
+#     "depends_on": [],            # or ["TASK-1", ...]
+#     "skills": ["{bundle:skill}", ...],
+#     "verification": {
+#       "commands": ["{cmd1}"],
+#       "criteria": "{criteria}"
+#     }
+#   }
+#
+# Sequential numbering is assigned in array order at call time. On any
+# validation failure no TASK-NNN.json is written.
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
-  prepare-add --plan-id {plan_id}
-# → returns {path: /abs/.../work/pending-tasks/default.toon}
-
-# Step 2: write the TOON task definition to the returned path via the Write tool:
-#   title: {task title}
-#   deliverable: {deliverable_number}
-#   domain: {domain}
-#   profile: {profile}
-#   description: {description}
-#   steps:
-#     - {file1}
-#     - {file2}
-#   depends_on: {TASK-N | none}
-#   skills:
-#     - {skill1}
-#     - {skill2}
-#   verification:
-#     commands:
-#       - {cmd1}
-#     criteria: {criteria}
-
-# Step 3: commit — validates the file and creates TASK-NNN.json
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
-  commit-add --plan-id {plan_id}
+  batch-add --plan-id {plan_id} --tasks-json '{json_array}'
 ```
 
 > **TOON quoting rule for `verification.commands` (ENFORCED)**
@@ -394,6 +400,64 @@ execution_order:
 - Tasks with no `depends_on` go in first group
 - Tasks depending on same prior tasks can run in parallel
 - Sequential dependencies remain sequential
+
+### Step 8b: Compose Execution Manifest
+
+**Purpose**: Emit the per-plan execution manifest so that Phase 5 and Phase 6 can dispatch their steps as dumb manifest executors. The manifest is the single source of truth for which Phase 5 verification steps and Phase 6 finalize steps fire for this plan — per-doc skip logic in their standards is removed in favor of this single artifact.
+
+This step runs after Step 8 (execution order) and before Step 9 (Q-Gate). It MUST run on every successful plan-phase invocation; the manifest is required by phase-5-execute on entry.
+
+**Inputs**:
+- `change_type` — read from solution outline metadata (use the first deliverable's `change_type` when the outline has more than one; the plan-level summary in `solution_outline.md` Summary block also surfaces it).
+- `track` — read from `manage-references get --field track` (`simple` or `complex`).
+- `scope_estimate` — read from `manage-references get --field scope_estimate` (deliverables 2 / 3 wire this in earlier in the plan lifecycle).
+- `recipe_key` — read from `manage-status read` `plan_source` metadata (when sourced from a recipe).
+- `affected_files_count` — `manage-references get --field affected_files`, count entries.
+- `phase-5-steps` candidate — `manage-config plan phase-5-execute get --field steps` value, comma-joined.
+- `phase-6-steps` candidate — `manage-config plan phase-6-finalize get --field steps` value, comma-joined.
+
+**Compose**:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  compose \
+  --plan-id {plan_id} \
+  --change-type {change_type} \
+  --track {simple|complex} \
+  --scope-estimate {scope_estimate} \
+  [--recipe-key {recipe_key}] \
+  --affected-files-count {N} \
+  --phase-5-steps "{p5_csv}" \
+  --phase-6-steps "{p6_csv}"
+```
+
+**Validate** (immediately after compose, before Q-Gate):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  validate \
+  --plan-id {plan_id} \
+  --phase-5-steps "{p5_csv}" \
+  --phase-6-steps "{p6_csv}"
+```
+
+**Log manifest path** (after a successful compose+validate):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[ARTIFACT] (plan-marshall:phase-4-plan) Composed execution manifest at .plan/local/plans/{plan_id}/execution.toon (rule={rule_fired})"
+```
+
+**Error path**: If `validate` returns `status: error` (`error: invalid_manifest`), the phase MUST fail loudly — do NOT proceed to Q-Gate or Step 11 transition. Surface the error message in the phase return TOON and abort:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level ERROR \
+  --message "[STATUS] (plan-marshall:phase-4-plan) Manifest validation failed — aborting phase. {validation_message}"
+```
+
+The composer's `decision.log` entry (one per applied rule) provides the audit trail; the manifest itself stays lean and diffable. The seven-row matrix is documented in `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`.
 
 ### Step 9: Q-Gate Verification Checks
 
@@ -580,9 +644,18 @@ If deliverable metadata incomplete:
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks via the three-step path-allocate flow (`prepare-add` → Write TOON → `commit-add`)
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add` (preferred for multi-task creation in this phase). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`).
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)
+- `plan-marshall:manage-execution-manifest:manage-execution-manifest` - Compose / validate the per-plan execution manifest in Step 8b (compose, validate)
 
 **Consumed By**:
 - `plan-marshall:phase-5-execute` skill - Reads tasks and executes them
+
+### Phase-boundary metric bookkeeping
+
+This skill does not invoke `manage-metrics` itself. The orchestrator
+(`plan-marshall:plan-marshall` workflows) records the `4-plan → 5-execute`
+boundary via the fused `manage-metrics phase-boundary` call — see
+`marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
+`phase-boundary` for the API.

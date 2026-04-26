@@ -48,6 +48,10 @@ _SECTION_SPEC: tuple[tuple[str, str, str | None], ...] = (
     ('Logging Gaps', 'logging-gap-analysis', None),
     ('Script Failure Analysis', 'script-failure-analysis', 'script-failure-analysis'),
     ('Permission Prompt Analysis', 'permission-prompt-analysis', 'permission-prompt-analysis'),
+    # Manifest Decisions is conditional on its own fragment being present —
+    # ``check-manifest-consistency`` only emits a fragment when execution.toon
+    # exists, so plans pre-dating the manifest deliverable get no section.
+    ('Manifest Decisions', 'manifest-decisions', 'manifest-decisions'),
     ('Proposed Lessons', 'lessons-proposal', None),
 )
 
@@ -107,6 +111,12 @@ def should_emit(section_key: str, trigger_key: str | None, fragments: dict[str, 
         value = fragment.get(key)
         if isinstance(value, list) and value:
             return True
+    # Manifest-decisions is a special case: a clean run has zero findings but
+    # still carries the manifest body + decision-log entries that the report
+    # needs to surface (manifest = WHAT, decision.log = WHY). Emit whenever
+    # the fragment claims a present manifest, regardless of finding count.
+    if trigger_key == 'manifest-decisions' and fragment.get('manifest_present') is True:
+        return True
     return False
 
 

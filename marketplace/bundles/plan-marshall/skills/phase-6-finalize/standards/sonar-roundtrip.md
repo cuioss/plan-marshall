@@ -6,11 +6,25 @@ order: 40
 
 # Sonar Roundtrip
 
-Sonar quality gate check and issue resolution.
+Pure executor for the `sonar-roundtrip` finalize step. Runs the Sonar quality gate check and (on findings) the loop-back-to-execute fix flow.
 
-## Prerequisites
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `sonar-roundtrip` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
-- Config field `4_sonar_roundtrip` is `true`
+## Timeout Contract
+
+This step runs as a Task agent (`plan-marshall:sonar-roundtrip-agent`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full roundtrip: gate fetch, issue triage, optional fix-task creation, and (on loop-back) the `manage-status transition --loop-back 5-execute` handoff.
+
+**Graceful degradation**: When the wrapper expires:
+
+1. The dispatcher logs an ERROR entry at `[ERROR] (plan-marshall:phase-6-finalize) Step default:sonar-roundtrip timed out after 900s — marking failed and continuing`.
+2. The dispatcher marks this step `failed` via `manage-status mark-step-done … --outcome failed --display-detail "timed out after 900s"`.
+3. The dispatcher continues with the next manifest step. Sonar timeouts MUST NOT block the rest of finalize — knowledge/lessons capture, branch cleanup, archive, and metrics still run.
+4. On the next Phase 6 entry, the resumable re-entry check sees `outcome=failed` and retries this step from scratch (one fresh attempt per invocation).
+
+There is no internal soft-timeout, polling cap, or partial-progress checkpoint inside this document — the wrapper is the only timeout authority.
+
+## Inputs
+
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). The Sonar workflow below forwards `--project-dir {worktree_path}` to every sonar/build subprocess it spawns.
 
 ## Execution
@@ -53,10 +67,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --display-detail "quality gate failed"
 ```
 
-**Branch C — skipped** (config `4_sonar_roundtrip` is `false`, or the workflow-integration-sonar skill determined Sonar is not configured for this project):
+**Branch C — Sonar not configured for project** (the dispatcher ran this step but the workflow-integration-sonar skill determined Sonar is not configured — e.g., no SonarQube/SonarCloud credentials, no project key):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step sonar-roundtrip --outcome done \
-  --display-detail "skipped"
+  --display-detail "Sonar not configured"
 ```
+
+Note: there is no "config disabled" branch — when the manifest excludes `sonar-roundtrip`, the dispatcher does not run this document at all, so no step record is written.

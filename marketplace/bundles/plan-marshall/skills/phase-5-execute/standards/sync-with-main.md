@@ -2,6 +2,8 @@
 
 Full procedure for the `phase-5-execute` Step 3 "Sync Worktree With Main" action. The SKILL.md inlines the step flow; this document is the authoritative reference for git invocations, fast-path semantics, the conflict contract, and the main-checkout fallback.
 
+**Scope note**: The `rebase_on_execute_start` opt-out documented below is a **user-facing config switch** for the sync step itself — it is **not** part of the manifest-driven verification-step selection (which lives in `phase_5.verification_steps` from `manage-execution-manifest`). Sync is a worktree-hygiene action that always runs unless the user explicitly opted out via config; whether it fires has nothing to do with the manifest's verification-step decisions.
+
 ## Purpose
 
 Between `phase-1-init` and `phase-5-execute` the user may spend significant time in refine/outline/plan while `origin/{base_branch}` moves forward. Syncing at the start of execute keeps coding on a current base rather than discovering drift at `phase-6-finalize` (after the entire execute phase has already run). `phase-6-finalize`'s `pr update-branch` remains as a second-line safety net for long-running execute runs or plans where the sync step was skipped.

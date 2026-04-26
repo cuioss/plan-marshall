@@ -109,10 +109,13 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 8 | Script failure analysis | (LLM on work/script logs) | `references/script-failure-analysis.md` |
 | 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
 | 10 | Direct gh/glab usage | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
-| 11 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
-| 12 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
+| 11 | Manifest decisions (conditional) | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
+| 12 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
+| 13 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
-**Aspect 11** is skipped when `--session-id` is absent.
+**Aspect 11 (manifest decisions)** is skipped when `execution.toon` is absent (legacy plans pre-dating the manifest deliverable). When present, the aspect loads the manifest via `plan-marshall:manage-execution-manifest:manage-execution-manifest read --plan-id {plan-id}` and pairs it with matching `(plan-marshall:phase-4-plan:manifest)` decision-log entries — manifest = WHAT was decided, decision.log = WHY. The cross-check engine is `plan-marshall:plan-retrospective:check-manifest-consistency` which evaluates each manifest assumption against the actual end-of-execute diff and emits one finding per violation. See `standards/manifest-crosscheck.md` for the cross-check matrix.
+
+**Aspect 12** is skipped when `--session-id` is absent.
 
 **Per-aspect capture pattern**:
 
@@ -132,7 +135,18 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**Aspect 11 (chat-history, conditional)** — when `--session-id` is present, follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
+**Aspect 11 (manifest-decisions, conditional)** — when `execution.toon` exists in the plan directory, run the deterministic script pattern with aspect name `manifest-decisions`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-consistency \
+  run --plan-id {plan_id} --mode {live|archived} > work/fragment-manifest-decisions.toon
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
+  add --plan-id {plan_id} --aspect manifest-decisions --fragment-file work/fragment-manifest-decisions.toon
+```
+
+Skip the aspect entirely when the manifest file is absent (legacy plans).
+
+**Aspect 12 (chat-history, conditional)** — when `--session-id` is present, follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
 
 ### Step 4: Compile Report
 

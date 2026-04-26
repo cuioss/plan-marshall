@@ -21,9 +21,23 @@ This skill provides structure guidelines, examples, and operations for `solution
 
 ## Document Structure
 
-Required sections: **Summary** (2-3 sentences), **Overview** (ASCII diagram), **Deliverables** (numbered `###` sections). Optional: Approach, Dependencies, Risks and Mitigations.
+Required sections: **Solution Metadata** (top-level `## Solution Metadata` block with `scope_estimate`), **Summary** (2-3 sentences), **Overview** (ASCII diagram), **Deliverables** (numbered `###` sections). Optional: Approach, Dependencies, Risks and Mitigations.
 
 See [standards/solution-outline-standard.md](standards/solution-outline-standard.md) for the complete section specification, content guidelines, and validation rules.
+
+### Solution Metadata Field: scope_estimate
+
+`scope_estimate` is a solution-level field (not per-deliverable) that classifies the change footprint. It powers downstream Q-Gate bypass and execution-manifest decisions.
+
+| Value | Meaning |
+|-------|---------|
+| `none` | Pure analysis — no affected files |
+| `surgical` | ≤3 files in a single module, no public API surface |
+| `single_module` | ≤10 files in one module |
+| `multi_module` | Touches more than one module |
+| `broad` | Codebase-wide / glob-only changes |
+
+The script `read` and `get-field` APIs expose the persisted value. `write`/`update` reject the document if `scope_estimate` is missing or not in the enum above.
 
 ---
 
@@ -127,7 +141,9 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 | `file_not_found` | solution_outline.md doesn't exist |
 | `document_not_found` | Same as file_not_found (used by `update` command) |
 | `parse_error` | Failed to parse document structure |
-| `validation_failed` | Missing required sections (Summary, Overview, or Deliverables), or deliverable numbering not sequential |
+| `validation_failed` | Missing required sections (Solution Metadata, Summary, Overview, or Deliverables), missing `scope_estimate`, invalid `scope_estimate` enum value, or deliverable numbering not sequential |
+| `field_not_found` | `get-field` requested a field that is not persisted (e.g., `scope_estimate` absent) |
+| `unknown_field` | `get-field` requested an unsupported field name |
 | `deliverable_not_found` | Requested deliverable number doesn't exist (read with `--deliverable-number`) |
 | `section_not_found` | Requested section doesn't exist (read with `--section`) |
 
@@ -155,6 +171,7 @@ See also [standards/solution-outline-standard.md](standards/solution-outline-sta
 | `update` | `--plan-id` | Validate updated solution on disk; sets `action: updated`. Returns `document_not_found` if file doesn't exist — use `write` for initial creation. |
 | `validate` | `--plan-id` | Validate structure |
 | `read` | `--plan-id [--raw] [--deliverable-number N \| --section NAME]` | Read solution, specific deliverable, or a single top-level section |
+| `get-field` | `--plan-id --field NAME` | Read a single solution-level metadata field. Currently supported: `scope_estimate`. Returns `field_not_found` when absent. |
 | `list-deliverables` | `--plan-id` | Extract deliverables list |
 | `exists` | `--plan-id` | Check if solution exists |
 
@@ -177,8 +194,9 @@ file: solution_outline.md
 action: created
 validation:
   deliverable_count: 3
-  sections_found: summary,overview,deliverables
+  sections_found: solution_metadata,summary,overview,deliverables
   compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
+  scope_estimate: surgical
 ```
 
 ### update
@@ -191,7 +209,8 @@ file: solution_outline.md
 action: updated
 validation:
   deliverable_count: 3
-  sections_found: summary,overview,deliverables
+  sections_found: solution_metadata,summary,overview,deliverables
+  scope_estimate: surgical
 ```
 
 Returns error `document_not_found` if solution outline does not exist (use `write` to create first).
@@ -204,13 +223,14 @@ status: success
 plan_id: my-feature
 file: solution_outline.md
 validation:
-  sections_found: summary,overview,deliverables
+  sections_found: solution_metadata,summary,overview,deliverables
   deliverable_count: 3
   deliverables:
     - 1. Create JwtValidationService class
     - 2. Add configuration support
     - 3. Create unit tests
   compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
+  scope_estimate: surgical
 ```
 
 ### list-deliverables
@@ -238,9 +258,11 @@ plan_id: my-feature
 file: solution_outline.md
 content:
   _header: # Solution: JWT Validation...
+  solution_metadata: scope_estimate: surgical
   summary: Implement JWT validation service...
   overview: Component architecture diagram...
   deliverables: ### 1. Create JwtValidationService...
+scope_estimate: surgical
 ```
 
 With `--raw`: Returns raw markdown content.
@@ -312,6 +334,33 @@ error: section_not_found
 plan_id: my-feature
 requested_section: nonexistent
 message: "Section 'nonexistent' not found in solution_outline.md"
+```
+
+### get-field
+
+**Output** (TOON) — example for `scope_estimate`:
+```toon
+status: success
+plan_id: my-feature
+file: solution_outline.md
+field: scope_estimate
+value: surgical
+```
+
+If the field is absent from the document:
+```toon
+status: error
+error: field_not_found
+plan_id: my-feature
+field: scope_estimate
+```
+
+If the field name is not supported:
+```toon
+status: error
+error: unknown_field
+plan_id: my-feature
+field: foo
 ```
 
 ### exists

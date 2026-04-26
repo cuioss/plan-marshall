@@ -12,6 +12,11 @@ Usage:
     Generate metrics.md:
         python3 manage_metrics.py generate --plan-id <id>
 
+    Atomic phase boundary (end-phase + start-phase + generate):
+        python3 manage_metrics.py phase-boundary --plan-id <id> \
+            --prev-phase <prev> --next-phase <next> \
+            [--total-tokens N] [--duration-ms N] [--tool-uses N]
+
     Enrich from JSONL transcript:
         python3 manage_metrics.py enrich --plan-id <id> --session-id <sid>
 """
@@ -345,6 +350,107 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     return result
 
 
+def cmd_phase_boundary(args: argparse.Namespace) -> dict:
+    """Atomically end the previous phase, start the next phase, and regenerate
+    metrics.md in a single call.
+
+    Equivalent to running, in order:
+        end-phase   --phase {prev_phase} [--total-tokens N --duration-ms M --tool-uses K]
+        start-phase --phase {next_phase}
+        generate
+
+    The fused call writes the same persisted state as the three-call sequence
+    (work/metrics.toon and metrics.md). It is intended for orchestration
+    boundaries where the caller knows the exact prev→next transition and
+    wants a single script invocation instead of three.
+
+    The optional token/duration/tool-uses flags are forwarded to the
+    `end-phase` step. If the previous phase has not yet been started (no
+    matching `start-phase`), it is recorded with end metadata only — same
+    behaviour as the standalone `end-phase` command.
+    """
+    plan_id = require_valid_plan_id(args)
+    prev_phase = args.prev_phase
+    next_phase = args.next_phase
+
+    if prev_phase not in PHASE_NAMES:
+        return {
+            'status': 'error',
+            'error': 'invalid_phase',
+            'message': f'Invalid prev_phase: {prev_phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+        }
+    if next_phase not in PHASE_NAMES:
+        return {
+            'status': 'error',
+            'error': 'invalid_phase',
+            'message': f'Invalid next_phase: {next_phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+        }
+
+    # Step 1: end the previous phase (mirrors cmd_end_phase semantics).
+    data = read_metrics_raw(plan_id)
+    end_now = now_utc_iso()
+
+    if prev_phase not in data['phases']:
+        data['phases'][prev_phase] = {}
+    prev_data = data['phases'][prev_phase]
+    prev_data['end_time'] = end_now
+
+    start_str = prev_data.get('start_time')
+    if start_str:
+        try:
+            start_dt = datetime.fromisoformat(str(start_str))
+            end_dt = datetime.fromisoformat(end_now)
+            duration_s = (end_dt - start_dt).total_seconds()
+            prev_data['duration_seconds'] = round(duration_s, 1)
+        except (ValueError, TypeError):
+            pass
+
+    if args.duration_ms is not None:
+        prev_data['agent_duration_ms'] = args.duration_ms
+        prev_data['agent_duration_seconds'] = round(args.duration_ms / 1000.0, 1)
+    if args.total_tokens is not None:
+        prev_data['total_tokens'] = args.total_tokens
+    if args.tool_uses is not None:
+        prev_data['tool_uses'] = args.tool_uses
+
+    # Step 2: start the next phase (mirrors cmd_start_phase semantics).
+    start_now = now_utc_iso()
+    if next_phase not in data['phases']:
+        data['phases'][next_phase] = {}
+    data['phases'][next_phase]['start_time'] = start_now
+    data['updated'] = start_now
+
+    write_metrics(plan_id, data)
+
+    # Step 3: regenerate metrics.md from the current state.
+    generate_result = cmd_generate(args)
+
+    result = {
+        'status': 'success',
+        'plan_id': plan_id,
+        'prev_phase': prev_phase,
+        'next_phase': next_phase,
+        'end_time': end_now,
+        'start_time': start_now,
+    }
+    if 'duration_seconds' in prev_data:
+        result['prev_duration_seconds'] = prev_data['duration_seconds']
+    if args.total_tokens is not None:
+        result['prev_total_tokens'] = args.total_tokens
+    # Surface the generate side-effect outcome so callers can react if it
+    # fell through to the no_data path (would only happen on a brand-new
+    # plan where neither phase ever had a start_time recorded — should not
+    # occur in normal phase boundary use).
+    if generate_result.get('status') == 'success':
+        result['metrics_file'] = generate_result.get('file', METRICS_MD)
+        result['phases_recorded'] = generate_result.get('phases_recorded', 0)
+    else:
+        result['generate_status'] = generate_result.get('status', 'unknown')
+        result['generate_message'] = generate_result.get('message', '')
+
+    return result
+
+
 def cmd_enrich(args: argparse.Namespace) -> dict:
     plan_id = require_valid_plan_id(args)
     session_id = args.session_id
@@ -461,6 +567,34 @@ def main() -> int:
     )
     add_plan_id_arg(gp)
     gp.set_defaults(func=cmd_generate)
+
+    # phase-boundary (fused end-phase + start-phase + generate)
+    pb = subparsers.add_parser(
+        'phase-boundary',
+        help='Atomically end the previous phase, start the next, and regenerate metrics.md',
+        description=(
+            'Fused phase-transition recorder. Equivalent to running '
+            '`end-phase --phase {prev}` (with the optional --total-tokens / '
+            '--duration-ms / --tool-uses flags), then `start-phase --phase '
+            '{next}`, then `generate`. Persisted output (work/metrics.toon and '
+            'metrics.md) is identical to the three-call sequence.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(pb)
+    pb.add_argument('--prev-phase', required=True, help='Phase name being closed (e.g. 1-init)')
+    pb.add_argument('--next-phase', required=True, help='Phase name being entered (e.g. 2-refine)')
+    pb.add_argument(
+        '--total-tokens', type=int, default=None, help='Total tokens forwarded to end-phase (optional)'
+    )
+    pb.add_argument(
+        '--duration-ms', type=int, default=None, help='Agent duration (ms) forwarded to end-phase (optional)'
+    )
+    pb.add_argument(
+        '--tool-uses', type=int, default=None, help='Tool use count forwarded to end-phase (optional)'
+    )
+    pb.set_defaults(func=cmd_phase_boundary)
 
     # enrich
     enr = subparsers.add_parser(

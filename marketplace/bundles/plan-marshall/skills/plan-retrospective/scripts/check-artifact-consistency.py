@@ -35,6 +35,16 @@ from _plan_parsing import (  # type: ignore[import-not-found]
 )
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
 
+# Manifest filename — kept in sync with manage-execution-manifest.py.
+# When the manifest exists, the affected_files_exact_match check defers to
+# the new manifest-aware aspect (check-manifest-consistency.py) which compares
+# the actual end-of-execute diff against manifest assumptions. The legacy
+# exact-match warning is too strict in that world because the manifest already
+# encodes the expected diff shape, so we downgrade ``warn`` to ``info`` and
+# annotate the top-level result so the report renderer can route the reader
+# to the manifest aspect.
+_MANIFEST_FILENAME = 'execution.toon'
+
 # Required sections in solution_outline.md. Keys are lowercased by
 # ``parse_document_sections``.
 _REQUIRED_SECTIONS = ('summary', 'overview', 'deliverables')
@@ -261,13 +271,37 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     exact_status, exact_message, outline_only, references_only = check_affected_files_exact_match(
         outline_files, references_files
     )
-    checks.append({
-        'name': 'affected_files_exact_match',
-        'status': exact_status,
-        'message': exact_message,
-    })
-    if exact_status == 'warn':
-        findings.append({'severity': 'warning', 'message': exact_message})
+
+    # Manifest-aware mode: when execution.toon exists, the manifest aspect
+    # (check-manifest-consistency.py) is the authoritative cross-check for
+    # diff-vs-expectation drift. Downgrade the legacy exact_match ``warn`` to
+    # ``info`` and forward the reader to the manifest aspect rather than
+    # duplicating the warning. Pre-manifest plans keep today's ``warn``
+    # behavior so existing tests remain green.
+    manifest_present = (plan_dir / _MANIFEST_FILENAME).exists()
+    forwarded_to_manifest = False
+    if manifest_present and exact_status == 'warn':
+        forwarded_to_manifest = True
+        forwarded_message = (
+            f'{exact_message} — deferred to manifest aspect '
+            '(see check-manifest-consistency)'
+        )
+        checks.append({
+            'name': 'affected_files_exact_match',
+            'status': 'info',
+            'message': forwarded_message,
+        })
+        # Surface as info rather than warning so the report renderer routes
+        # the reader to the manifest section instead of double-counting drift.
+        findings.append({'severity': 'info', 'message': forwarded_message})
+    else:
+        checks.append({
+            'name': 'affected_files_exact_match',
+            'status': exact_status,
+            'message': exact_message,
+        })
+        if exact_status == 'warn':
+            findings.append({'severity': 'warning', 'message': exact_message})
 
     # metrics.md presence
     m_status, m_message = check_metrics_generated(plan_dir)
@@ -294,6 +328,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'status': exact_status,
             'outline_only': outline_only,
             'references_only': references_only,
+            'manifest_present': manifest_present,
+            'forwarded_to_manifest': forwarded_to_manifest,
         },
     }
 

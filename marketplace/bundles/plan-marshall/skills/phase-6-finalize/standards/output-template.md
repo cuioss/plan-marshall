@@ -48,7 +48,7 @@ Placeholder glossary:
 | `[MERGED]` | PR exists and state=merged |
 | `[OPEN]` | PR exists and state!=merged |
 | `[LOOP_BACK]` | finalize iteration > 1 |
-| `[SKIPPED]` | no `default:create-pr` in configured steps list AND no PR exists |
+| `[SKIPPED]` | no `create-pr` in `manifest.phase_6.steps` AND no PR exists |
 | `[FAILED]` | any required step outcome is failed/missing |
 
 **Precedence** (highest wins): `FAILED` > `LOOP_BACK` > terminal-state tokens (`MERGED` / `OPEN` / `SKIPPED`).
@@ -91,14 +91,14 @@ Capture the following into in-memory state (no work file is written):
 
    Capture the ordered list of deliverable titles (and per-deliverable completion state if available).
 
-3. **Configured step order** — the order steps should appear in the rendered block.
+3. **Configured step order** — the order steps should appear in the rendered block. Read from the per-plan execution manifest:
 
    ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-config:manage_config plan phase-6-finalize get \
-     --plan-id {plan_id} --field steps
+   python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest read \
+     --plan-id {plan_id}
    ```
 
-   Capture the ordered `steps` list verbatim.
+   Capture `phase_6.steps` (a list of bare step IDs) verbatim — this is the renderer's authoritative ordering. The renderer prepends `default:` only when looking up dispatch-table records; the rendered step name is the bare ID as it appears in the manifest. Do NOT read the legacy `marshal.json` `steps` field; it is no longer authoritative.
 
 4. **PR state + number** — via the CI abstraction (never direct `gh`/`glab`).
 
@@ -149,12 +149,12 @@ Invoked after `default:archive-plan` completes. Inputs: the snapshot from above 
 
 Walk the precedence chain:
 
-1. If any configured step's `outcome` is `failed`, any required step (per `required-steps.md`) is missing from `phase_steps`, or any configured step's `display_detail` is missing or empty -> `[FAILED]`. A missing/empty `display_detail` violates the interface contract defined in `SKILL.md` and surfaces as `<missing display_detail>` in the step row.
+1. If any manifest step's `outcome` is `failed` (including the dispatcher-recorded `failed` from a per-agent timeout), any required step (per `required-steps.md`) that is also in `manifest.phase_6.steps` is missing from `phase_steps`, or any manifest step's `display_detail` is missing or empty -> `[FAILED]`. A missing/empty `display_detail` violates the interface contract defined in `SKILL.md` and surfaces as `<missing display_detail>` in the step row. Required steps that are NOT in the manifest for this plan are not enforced — they cannot trigger `[FAILED]`.
 2. Else if `finalize_iteration > 1` -> `[LOOP_BACK]`.
 3. Else if PR `state == merged` -> `[MERGED]`.
 4. Else if PR exists (any other state) -> `[OPEN]`.
-5. Else if `default:create-pr` is NOT in configured `steps` list AND no PR exists -> `[SKIPPED]`.
-6. Otherwise default to `[OPEN]` (PR was configured but `ci pr view` returned `n/a` — treat as degraded).
+5. Else if `create-pr` is NOT in `manifest.phase_6.steps` AND no PR exists -> `[SKIPPED]`.
+6. Otherwise default to `[OPEN]` (PR was in the manifest but `ci pr view` returned `n/a` — treat as degraded).
 
 ### 2. Build headline
 
@@ -204,9 +204,9 @@ Deliverable numbering starts at `1.` and pads width to accommodate up to 99 deli
 
 ### 5. Build finalize steps block
 
-Header: `Finalize steps ({N_done}/{N_total} done)` where `N_total` = count of configured steps and `N_done` = count with `outcome == done`.
+Header: `Finalize steps ({N_done}/{N_total} done)` where `N_total` = count of steps in `manifest.phase_6.steps` and `N_done` = count with `outcome == done`.
 
-Iterate the configured `steps` list in order. For each step, emit:
+Iterate the manifest `phase_6.steps` list in order. For each step, emit:
 
 ```
   {icon}  {step_name_padded}  {display_detail}

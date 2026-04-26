@@ -92,6 +92,48 @@ total_tokens: 86754
 
 Returns `status: error, error: no_data` if no metrics have been collected yet (no start-phase/end-phase calls made).
 
+### phase-boundary
+
+Atomically end the previous phase, start the next phase, and regenerate
+`metrics.md` in a single call. Equivalent to running `end-phase {prev}` (with
+optional `--total-tokens` / `--duration-ms` / `--tool-uses` forwarded from the
+caller), then `start-phase {next}`, then `generate`. Persisted output
+(`work/metrics.toon` and `metrics.md`) is identical to the three-call sequence
+— see [data-format.md](standards/data-format.md) for the boundary record
+shape.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
+  --plan-id {plan_id} \
+  --prev-phase {prev} --next-phase {next} \
+  [--total-tokens N] [--duration-ms N] [--tool-uses N]
+```
+
+**Parameters:**
+- `--prev-phase` — phase being closed (must be a valid phase name)
+- `--next-phase` — phase being entered (must be a valid phase name)
+- `--total-tokens`, `--duration-ms`, `--tool-uses` — optional, forwarded
+  verbatim to the `end-phase` step. Omit when the closing phase ran in main
+  context (no agent `<usage>` data to record).
+
+**Output:**
+```toon
+status: success
+plan_id: my-plan
+prev_phase: 1-init
+next_phase: 2-refine
+end_time: 2026-03-27T10:03:00+00:00
+start_time: 2026-03-27T10:03:00+00:00
+prev_duration_seconds: 180.0
+prev_total_tokens: 25514
+metrics_file: metrics.md
+phases_recorded: 2
+```
+
+The fused call is the canonical path at orchestrator phase boundaries —
+prefer it over a manual `end-phase` + `start-phase` + `generate` sequence
+whenever the caller knows the exact `prev → next` transition.
+
 ### enrich
 
 Parse JSONL session transcript to extract token usage for main-context phases (phases run in the main conversation, not delegated to agents). Searches `~/.claude/projects/` for JSONL files matching the session_id and sums input/output tokens across all messages.

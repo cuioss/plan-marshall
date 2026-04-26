@@ -6,7 +6,11 @@ order: 990
 
 # Record Metrics
 
-Close out the 6-finalize phase and produce the final plan metrics report before the plan is archived. This step performs three sequenced `manage-metrics` invocations — `end-phase`, `enrich`, `generate` — and emits the `mark-step-done` handshake. All three writes MUST land on the live plan directory; the consolidated finalize output (step outcomes, end-state verification, and plan-complete summary) is rendered by the dedicated template in `standards/output-template.md`.
+Pure executor for the `record-metrics` finalize step. Closes out the 6-finalize phase and produces the final plan metrics report before the plan is archived.
+
+This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `record-metrics` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
+
+ This step performs three sequenced `manage-metrics` invocations — `end-phase`, `enrich`, `generate` — and emits the `mark-step-done` handshake. All three writes MUST land on the live plan directory; the consolidated finalize output (step outcomes, end-state verification, and plan-complete summary) is rendered by the dedicated template in `standards/output-template.md`.
 
 **CRITICAL**: `default:record-metrics` MUST immediately precede `default:archive-plan` in the pipeline. All three metrics commands (`end-phase`, `enrich`, `generate`) write inside `.plan/plans/{plan_id}/` — `end-phase` updates `work/metrics.toon`, `enrich` supplements the same TOON with JSONL session tokens, and `generate` renders `metrics.md`. `default:archive-plan` then moves that directory to `.plan/archived-plans/{date}-{plan_id}/`. If archive runs first, the live directory no longer exists and any of the three commands would recreate it as a post-archive orphan.
 

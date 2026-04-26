@@ -189,11 +189,27 @@ For localized changes where targets are already known from module_mapping.
 |------|---------|------------|
 | **6. Validate Targets** | Verify target files/modules exist | `ls -la {target_path}` for each target |
 | **7. Create Deliverables** | Map module_mapping to deliverables | Use deliverable template, resolve verification commands via `architecture resolve` |
-| **8. Simple Q-Gate** | Lightweight verification | Check target existence + request alignment |
+| **8. Simple Q-Gate** | Lightweight verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise check target existence + request alignment |
 
-After Step 8, proceed to Step 12.
+**Step 6 may also refine `scope_estimate`**: After deliverables crystalize and the concrete Affected files lists are known, phase-3-outline MAY downgrade `scope_estimate` (e.g., `single_module` → `surgical`) when the final deliverable composition narrows the actual scope. Persist any change via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 8 so the bypass rule sees the refined value.
 
-For detailed procedures (validation commands, deliverable template, verification resolution, Q-Gate checks), see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#simple-track-procedures-steps-6-8).
+**Step 8 — Q-Gate surgical bypass rule** (evaluated BEFORE dispatching the lightweight Q-Gate checks):
+
+Bypass Q-Gate when ALL of the following are true:
+- `scope_estimate == surgical`, AND
+- `change_type ∈ {bug_fix, tech_debt, verification}`, AND
+- `deliverable_count == 1` (exactly one deliverable was created in Step 7)
+
+When bypass fires, log the decision and skip directly to Step 12:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate-bypass) Q-Gate skipped — scope_estimate=surgical, change_type={change_type}, 1 deliverable"
+```
+
+Otherwise, run the Simple Q-Gate checks documented in the detail standards. After Step 8, proceed to Step 12.
+
+For detailed procedures (validation commands, deliverable template, verification resolution, Q-Gate checks, bypass rule examples), see [`standards/outline-workflow-detail.md`](standards/outline-workflow-detail.md#simple-track-procedures-steps-6-8).
 
 ---
 
@@ -205,7 +221,25 @@ For codebase-wide changes requiring discovery and analysis.
 |------|---------|------------|
 | **9. Resolve Domain Skill** | Route to domain-specific or generic instructions | `resolve-outline-skill --domain {domain}`, then load `change-{change_type}.md` |
 | **10. Execute Workflow** | Run discovery, analysis, write solution | Follow change-type instructions, resolve verification commands, write `solution_outline.md` |
-| **11. Q-Gate Verification** | Full quality verification | Spawn `plan-marshall:q-gate-validation-agent`, auto-loop on pending findings |
+| **11. Q-Gate Verification** | Full quality verification (with surgical bypass) | Bypass when surgical+bug_fix/tech_debt/verification+1 deliverable; otherwise spawn `plan-marshall:q-gate-validation-agent` |
+
+**Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete Affected files lists may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
+
+**Step 11 — Q-Gate surgical bypass rule** (evaluated BEFORE spawning the Q-Gate validation agent):
+
+Bypass Q-Gate when ALL of the following are true:
+- `scope_estimate == surgical`, AND
+- `change_type ∈ {bug_fix, tech_debt, verification}`, AND
+- `deliverable_count == 1` (exactly one deliverable was created in Step 10)
+
+When bypass fires, log the decision and skip directly to Step 12:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-3-outline:qgate-bypass) Q-Gate skipped — scope_estimate=surgical, change_type={change_type}, 1 deliverable"
+```
+
+Otherwise, spawn `plan-marshall:q-gate-validation-agent` and auto-loop on pending findings as documented in the detail standards.
 
 **CRITICAL**: If Complex Track skill workflow fails, do NOT fall back to grep/search. Fail clearly.
 
@@ -398,3 +432,11 @@ qgate_pending_count: {0 if no findings}
 - [solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) - Deliverable structure
 - [workflow-architecture](../../ref-workflow-architecture) - Workflow architecture overview
 - [outline-workflow-detail.md](standards/outline-workflow-detail.md) - Detailed track procedures (Q-Gate re-entry, recipe detection, change-type detection, Simple/Complex track steps)
+
+### Phase-boundary metric bookkeeping
+
+This skill does not invoke `manage-metrics` itself. The orchestrator
+(`plan-marshall:plan-marshall` workflows) records the `3-outline → 4-plan`
+boundary via the fused `manage-metrics phase-boundary` call — see
+`marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
+`phase-boundary` for the API.

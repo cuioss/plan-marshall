@@ -30,6 +30,46 @@ compatibility: {value} — {long description}
   - `deprecation` — Add deprecation markers to old code, provide migration path
   - `smart_and_ask` — Assess impact and ask user when backward compatibility is uncertain
 
+#### Solution Metadata (Required)
+
+```markdown
+## Solution Metadata
+
+- scope_estimate: {none|surgical|single_module|multi_module|broad}
+```
+
+**Purpose**: Solution-level metadata that drives downstream Q-Gate bypass and execution-manifest decisions. Distinct from per-deliverable metadata in the Deliverable Contract — these fields describe the *whole* solution, not any single deliverable.
+
+##### scope_estimate
+
+Classifies the change footprint. Required field; the validator rejects the document when the field is missing or its value is not in the enum below.
+
+| Value | Meaning |
+|-------|---------|
+| `none` | Pure analysis — no affected files (e.g., a research-only plan that produces no diff) |
+| `surgical` | ≤3 files in a single module, no public API surface affected |
+| `single_module` | ≤10 files inside one module |
+| `multi_module` | Touches more than one module |
+| `broad` | Codebase-wide changes (glob-only file lists, sweeping refactors) |
+
+**Derivation helper (rule of thumb)**: Compute `scope_estimate` from the union of `affected_files` across all deliverables.
+
+1. If the union is empty (analysis-only) → `none`.
+2. Else if all files map to a single module AND the count is ≤3 AND no file is in a public API surface → `surgical`.
+3. Else if all files map to a single module AND the count is ≤10 → `single_module`.
+4. Else if files map to >1 module → `multi_module`.
+5. Else (codebase-wide or glob-only file lists) → `broad`.
+
+`phase-2-refine` produces the initial estimate from the refined-request `module_mappings`. `phase-3-outline` MAY refine it after deliverables crystalize (e.g., a Simple Track plan whose final deliverable list is ≤3 files in one module is downgraded to `surgical`).
+
+**Example**:
+
+```markdown
+## Solution Metadata
+
+- scope_estimate: surgical
+```
+
 #### Summary (Required)
 
 ```markdown
@@ -134,11 +174,12 @@ See the [Deliverable Contract](#deliverable-contract) section for the complete d
 The `manage-solution-outline validate` command checks:
 
 1. Document exists at expected location
-2. Required sections present: Summary, Overview, Deliverables
-3. Deliverables section has numbered `### N. Title` items
-4. At least one deliverable defined
-5. Deliverable contract compliance (Metadata, Profiles, Affected files, Verification)
-6. Compatibility extraction from header metadata (if present)
+2. Required sections present: Solution Metadata, Summary, Overview, Deliverables
+3. Solution Metadata block contains `scope_estimate` with a value in the enum (`none|surgical|single_module|multi_module|broad`)
+4. Deliverables section has numbered `### N. Title` items
+5. At least one deliverable defined
+6. Deliverable contract compliance (Metadata, Profiles, Affected files, Verification)
+7. Compatibility extraction from header metadata (if present)
 
 **Validation Command**:
 ```bash
@@ -153,7 +194,7 @@ status: success
 plan_id: my-feature
 file: solution_outline.md
 validation:
-  sections_found: summary,overview,deliverables,approach,dependencies,risks_and_mitigations
+  sections_found: solution_metadata,summary,overview,deliverables,approach,dependencies,risks_and_mitigations
   deliverable_count: 4
   deliverables:
     - 1. Create JwtValidationService class
@@ -161,6 +202,7 @@ validation:
     - 3. Implement unit tests
     - 4. Add JavaDoc documentation
   compatibility: breaking — Clean-slate approach, no deprecation nor transitionary comments
+  scope_estimate: surgical
 ```
 
 **Failure Output**:
@@ -170,6 +212,9 @@ plan_id: my-feature
 error: validation_failed
 issues:
   - Missing required section: Overview
+  - Missing required section: Solution Metadata
+  - Missing scope_estimate in Solution Metadata
+  - Invalid scope_estimate 'huge' (must be one of: none, surgical, single_module, multi_module, broad)
   - No numbered deliverables found (expected ### N. Title)
 ```
 

@@ -219,6 +219,54 @@ lesson_id: {lesson_id}
 
 Do not proceed to Step 6 unless both post-conditions hold.
 
+### Step 5c: Lesson Auto-Suggest Recipe
+
+**Applicability**: This step runs **only when `source == lesson`**. Skip entirely for `description`, `issue`, or `recipe` sources. (When `source == recipe`, the user has already chosen a recipe explicitly — auto-suggest never overrides an explicit choice.)
+
+Inspect the lesson body (now at `.plan/local/plans/{plan_id}/lesson-{lesson_id}.md` after Step 5b) and decide whether to auto-suggest the `lesson_cleanup` recipe. The goal is to route doc-shaped lessons (small, prescriptive, no code refactor required) through `recipe-lesson-cleanup` so they get a slim surgical manifest instead of going through the full refine/outline/Q-Gate pipeline.
+
+**Heuristic — "doc-shaped" predicate**:
+
+A lesson body is doc-shaped when ALL of the following hold:
+
+1. **No code-touching fences**: the body contains no fenced code blocks tagged with `python`, `py`, `java`, `js`, `javascript`, `ts`, or `typescript`. Markdown/text/bash fences (or no fences at all) are fine — those describe the directive, not new code.
+2. **No primary code-action verb**: the first non-empty line of each `## Directive` (or `## Actions`) section does NOT begin (case-insensitive) with `test`, `refactor`, `implement`, `add code`, `write code`, or `migrate`. Verbs like `update`, `document`, `clarify`, `record`, `note`, `mention`, `link` are doc-shaped.
+3. **Has at least one directive**: the body contains at least one `## Directive` or `## Actions` heading. A lesson with no directives cannot be auto-suggested — fall through to the normal flow so the user sees the empty-lesson case explicitly.
+
+If ALL three conditions hold, set `plan_source=recipe` and `recipe_key=lesson_cleanup` in status metadata:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --set --plan-id {plan_id} \
+  --field plan_source \
+  --value recipe
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status metadata \
+  --set --plan-id {plan_id} \
+  --field recipe_key \
+  --value lesson_cleanup
+```
+
+Emit the `Recipe auto-suggested` decision log entry:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init) Recipe auto-suggested: lesson_cleanup (lesson body is doc-shaped)"
+```
+
+**If ANY condition fails** — the lesson is code-shaped — do NOT set the metadata fields. Log the negative decision so the audit trail reflects that auto-suggest considered the lesson and declined:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init) Auto-suggest declined: lesson body is code-shaped — proceeding with full refine/outline pipeline"
+```
+
+**No prompt** — auto-suggest is silent metadata. The user can override on a subsequent run by passing `--recipe lesson_cleanup` (explicit) or by editing status metadata. The downstream phases read `plan_source` and `recipe_key` to decide whether to load the recipe path.
+
 ### Step 6: Initialize References
 
 **IMPORTANT**: Get the branch name first, then pass it as a plain string. Do NOT use shell expansion `$(...)` in the command as it triggers permission prompts.
@@ -516,6 +564,17 @@ This skill is called by `plan-marshall:phase-agent` (with `skill=plan-marshall:p
 
 - **solution-outline** - Next phase after init completes (outline phase)
 - **Domain skills** - Loaded by thin agents via marshal.json skill_domains (resolved at runtime)
+
+### Phase-boundary metric bookkeeping
+
+This skill does not invoke `manage-metrics` itself — phase boundary metric
+recording happens in the orchestrator (`plan-marshall:plan-marshall`
+workflows). When the orchestrator transitions out of `1-init`, it MUST use
+the fused `manage-metrics phase-boundary --prev-phase 1-init --next-phase
+2-refine` call instead of the legacy `end-phase` + `start-phase` +
+`generate` sequence. See
+`marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
+`phase-boundary` for the API.
 
 ---
 

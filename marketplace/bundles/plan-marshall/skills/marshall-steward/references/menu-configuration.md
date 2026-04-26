@@ -12,6 +12,7 @@ Sub-menu for skill domains and project structure configuration.
 - [Configuration: Skill Domains](#configuration-skill-domains)
 - [Configuration: Project Structure](#configuration-project-structure)
 - [Configuration: Terminal Title](#configuration-terminal-title)
+- [Configuration: Recipes](#configuration-recipes)
 
 ---
 
@@ -42,6 +43,9 @@ AskUserQuestion:
     - label: "Terminal Title"
       description: "Dynamic terminal tab title + statusline (hook-driven)"
       value: "terminal-title"
+    - label: "Recipes"
+      description: "Browse built-in plan recipes (lesson_cleanup, refactor-to-profile-standards)"
+      value: "recipes"
     - label: "Full Reconfigure"
       description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
       value: "wizard"
@@ -58,7 +62,10 @@ AskUserQuestion:
 | structure | Execute "Configuration: Project Structure" below |
 | credentials | Execute "Configuration: Credentials & Secrets" below |
 | terminal-title | Load `Read references/menu-terminal-title.md` → Execute |
+| recipes | Load `Read references/menu-recipes.md` → Execute "Configuration: Recipes" below |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
+
+> **Note**: Recipe registration affects which menu items appear here. A recipe whose extension is not active in the project is hidden from selection lists. See `references/menu-recipes.md` for the full catalog of built-in and project-local recipes and how to add new ones.
 
 ---
 
@@ -678,3 +685,30 @@ After completion, return to Main Menu.
 ---
 
 After any configuration completes, return to Main Menu.
+
+---
+
+## Configuration: Recipes
+
+Browse and inspect the recipes available in this project. Recipes are deterministic plan templates that bypass the iterative refine → outline → Q-Gate pipeline for well-understood transformations.
+
+The full catalog and the contract for adding new recipes lives in [`references/menu-recipes.md`](menu-recipes.md). Load that reference and execute its workflow:
+
+```
+Read references/menu-recipes.md
+```
+
+For runtime enumeration of all recipes currently visible to the steward (built-in, project-local, and extension-provided), use:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-recipes
+```
+
+To inspect a single recipe's resolved declaration:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  resolve-recipe --recipe {recipe_key}
+```
+
+After completion, return to Main Menu.
