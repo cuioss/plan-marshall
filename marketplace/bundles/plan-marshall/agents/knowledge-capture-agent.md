@@ -6,12 +6,12 @@ description: |
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
   - Output: TOON with status, memories_created, memories_updated
-tools: Read, Bash, Skill
+tools: Read, Write, Bash, Skill
 ---
 
 # Knowledge Capture Agent
 
-Named agent that executes the Knowledge Capture step of the finalize phase. The narrow tool allowlist (`Read, Bash, Skill`) plus the foundational-practices skill load ensure the step carries its enforcement context directly instead of relying on a general-purpose subagent's prompt-based restatement.
+Named agent that executes the Knowledge Capture step of the finalize phase. The narrow tool allowlist (`Read, Write, Bash, Skill`) plus the foundational-practices skill load ensure the step carries its enforcement context directly instead of relying on a general-purpose subagent's prompt-based restatement.
 
 ## Step 1: Load Foundational Practices
 
