@@ -225,7 +225,7 @@ Phase 3 (outline):
   manage-architecture → manage-solution-outline write
 
 Phase 4 (plan):
-  manage-solution-outline list-deliverables → manage-tasks add (per deliverable)
+  manage-solution-outline list-deliverables → manage-tasks prepare-add → commit-add (per deliverable)
 
 Phase 5 (execute):
   manage-tasks next → [execute task] → manage-tasks finalize-step

@@ -63,17 +63,25 @@ The workflow handles CI wait, review bot buffer, comment fetching, triage, threa
 
 **On findings** (review comments requiring code changes, `loop_back_needed == true`):
 
-1. Create fix tasks:
+1. Create fix tasks (two-step prepare-add → commit-add flow):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} --title "Fix: {comment summary}" --domain {domain} --profile implementation \
-  --deliverable 0
+# Step 1: allocate a scratch path for the pending task (returns draft_id and scratch path)
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks prepare-add \
+  --plan-id {plan_id}
+```
+
+Write the task YAML to the returned scratch path (title, deliverable: 0, domain, profile: implementation, description, steps), then commit:
+
+```bash
+# Step 2: read the prepared file and create TASK-NNN.json
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-add \
+  --plan-id {plan_id}
 ```
 
 2. Loop back to phase-5-execute (iteration + 1):
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transition \
-  --plan-id {plan_id} --loop-back 5-execute
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status set-phase \
+  --plan-id {plan_id} --phase 5-execute
 ```
 
 3. Continue until clean or max iterations (3).
