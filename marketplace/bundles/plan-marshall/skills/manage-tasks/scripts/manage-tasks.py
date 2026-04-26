@@ -15,6 +15,7 @@ Subcommands:
   remove           - Remove a task
   list             - List all tasks (summary)
   get              - Get a single task by number
+  exists           - Boolean probe: does a task exist? (never errors on absence)
   next             - Get next pending task/step for execution
   tasks-by-domain  - List tasks filtered by domain
   tasks-by-profile - List tasks filtered by profile
@@ -50,7 +51,15 @@ import argparse
 from _cmd_rename import cmd_rename_path
 from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
 from _tasks_crud import cmd_batch_add, cmd_commit_add, cmd_prepare_add, cmd_remove, cmd_update
-from _tasks_query import cmd_get, cmd_list, cmd_next, cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile
+from _tasks_query import (
+    cmd_exists,
+    cmd_get,
+    cmd_list,
+    cmd_next,
+    cmd_next_tasks,
+    cmd_tasks_by_domain,
+    cmd_tasks_by_profile,
+)
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
 
@@ -159,6 +168,23 @@ def build_parser() -> argparse.ArgumentParser:
     add_plan_id_arg(p_get)
     p_get.add_argument('--task', required=True, type=int, help='Task number')
 
+    # exists
+    p_exists = subparsers.add_parser(
+        'exists',
+        help='Check whether a task exists (boolean probe — never errors on absence)',
+        description=(
+            'Defensive presence probe. Returns ``status: success`` with '
+            '``exists: true|false`` for any task number. Use this instead '
+            'of ``get`` when you need a boolean check, so a missing task '
+            'does not generate a recoverable [ERROR] row in '
+            'script-execution.log.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(p_exists)
+    p_exists.add_argument('--task', required=True, type=int, help='Task number')
+
     # next
     p_next = subparsers.add_parser('next', help='Get next pending task/step', allow_abbrev=False)
     add_plan_id_arg(p_next)
@@ -232,6 +258,7 @@ COMMANDS = {
     'remove': cmd_remove,
     'list': cmd_list,
     'get': cmd_get,
+    'exists': cmd_exists,
     'next': cmd_next,
     'tasks-by-domain': cmd_tasks_by_domain,
     'tasks-by-profile': cmd_tasks_by_profile,
