@@ -64,13 +64,13 @@ Extract: `pr_number`, `pr_url`, `state` (open/merged/closed), `head_branch`, `ba
 If no PR found (status: error) → there is nothing to clean up on the remote side. Record the no-op outcome and return via **Mark Step Complete** with:
 
 ```
---outcome done --display-detail "no PR — nothing to clean up"
+--outcome done --display-detail "no PR, nothing to clean up"
 ```
 
 Log the decision:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: no PR found for current branch — nothing to clean up"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: no PR found for current branch, nothing to clean up"
 ```
 
 #### Check for other open PRs using this branch
@@ -184,13 +184,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 **If `merge_state != behind`**: The branch is already up to date with the base branch — no update is required. Continue to the next sub-step ("Merge PR"). If this is the only branch-update outcome reached on this run (i.e. the run terminates here without performing a merge), record the no-op via **Mark Step Complete** with:
 
 ```
---outcome done --display-detail "branch not behind — already in sync"
+--outcome done --display-detail "branch not behind, already in sync"
 ```
 
 Log the decision:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: branch already in sync with base — no update required"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: branch already in sync with base, no update required"
 ```
 
 ### Merge PR (if not yet merged)
@@ -436,7 +436,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --display-detail "no PR — nothing to clean up"
+  --display-detail "no PR, nothing to clean up"
 ```
 
 **Branch E — branch already in sync** (PR mode, `merge_state != behind` was the terminal outcome — the branch is up to date with the base branch and no update was required; the run terminates here without merging):
@@ -444,5 +444,5 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --display-detail "branch not behind — already in sync"
+  --display-detail "branch not behind, already in sync"
 ```
