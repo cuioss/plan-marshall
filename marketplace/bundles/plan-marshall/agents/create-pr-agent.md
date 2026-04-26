@@ -11,7 +11,7 @@ tools: Read, Write, Bash, Skill
 
 # Create PR Agent
 
-Named agent that executes the Create PR step of the finalize phase. This agent exists so plan-marshall phase work never falls back on `Agent(subagent_type="general-purpose")` — the narrow tool allowlist (`Read, Bash, Skill`) plus the foundational-practices skill load give the step its enforcement context directly.
+Named agent that executes the Create PR step of the finalize phase. This agent exists so plan-marshall phase work never falls back on `Agent(subagent_type="general-purpose")` — the narrow tool allowlist (`Read, Write, Bash, Skill`) plus the foundational-practices skill load give the step its enforcement context directly.
 
 ## Step 1: Load Foundational Practices
 
@@ -57,7 +57,6 @@ marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/create-pr.md
 ```
 
 The standard is the source of truth for the step sequence, including:
-- Commit + push via `plan-marshall:workflow-integration-git`
 - PR creation via `plan-marshall:tools-integration-ci`
 - Outcome logging and `manage-status mark-step-done`
 

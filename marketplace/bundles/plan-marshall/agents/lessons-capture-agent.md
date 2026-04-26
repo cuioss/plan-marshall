@@ -11,7 +11,7 @@ tools: Read, Write, Bash, Skill
 
 # Lessons Capture Agent
 
-Named agent that executes the Lessons Capture step of the finalize phase. The narrow tool allowlist (`Read, Bash, Skill`) plus the foundational-practices skill load ensure the step carries its enforcement context directly instead of relying on a general-purpose subagent's prompt-based restatement.
+Named agent that executes the Lessons Capture step of the finalize phase. The narrow tool allowlist (`Read, Write, Bash, Skill`) plus the foundational-practices skill load ensure the step carries its enforcement context directly instead of relying on a general-purpose subagent's prompt-based restatement.
 
 ## Step 1: Load Foundational Practices
 
