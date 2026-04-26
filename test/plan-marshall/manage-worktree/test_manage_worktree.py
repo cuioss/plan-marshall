@@ -459,3 +459,70 @@ def test_get_worktree_root_outside_repo_raises_runtime_error(tmp_path, monkeypat
     monkeypatch.chdir(non_repo)
     with pytest.raises(RuntimeError, match='requires a git repository'):
         get_worktree_root()
+
+
+# =============================================================================
+# Pre-bootstrap pyprojectx (best-effort)
+# =============================================================================
+
+
+def _make_fake_pw(worktree: Path, exit_code: int = 0, stderr: str = '') -> Path:
+    """Plant a tiny shell script named ``pw`` in the worktree.
+
+    Bash is used directly so the wrapper does not depend on Python or
+    pyprojectx — the tests just need to observe the bootstrap subprocess
+    exit code and stderr handling.
+    """
+    pw = worktree / 'pw'
+    body = '#!/usr/bin/env bash\n'
+    if stderr:
+        body += f'echo "{stderr}" 1>&2\n'
+    body += f'exit {exit_code}\n'
+    pw.write_text(body)
+    pw.chmod(0o755)
+    return pw
+
+
+def test_bootstrap_pyprojectx_returns_skipped_when_pw_missing(tmp_path):
+    module = _load_manage_worktree_module()
+    status, detail = module._bootstrap_pyprojectx(tmp_path)
+    assert status == 'skipped'
+    assert 'no pw wrapper' in detail
+
+
+def test_bootstrap_pyprojectx_returns_ok_on_success(tmp_path):
+    module = _load_manage_worktree_module()
+    _make_fake_pw(tmp_path, exit_code=0)
+    status, detail = module._bootstrap_pyprojectx(tmp_path)
+    assert status == 'ok'
+    assert detail == ''
+
+
+def test_bootstrap_pyprojectx_returns_warning_on_failure(tmp_path):
+    module = _load_manage_worktree_module()
+    _make_fake_pw(tmp_path, exit_code=2, stderr='uv: command not found')
+    status, detail = module._bootstrap_pyprojectx(tmp_path)
+    assert status == 'warning'
+    assert 'uv: command not found' in detail
+
+
+def test_create_records_bootstrap_skipped_when_no_pw(tmp_path):
+    """cmd_create returns success with bootstrap=skipped when worktree has no pw wrapper."""
+    repo = tmp_path / 'repo'
+    _init_git_repo(repo)
+    _seed_main_shared_plan_paths(repo)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'create',
+        '--plan-id',
+        'no-pw',
+        '--branch',
+        'feature/no-pw',
+        cwd=repo,
+    )
+    assert result.success, result.stderr
+    data = parse_toon(result.stdout)
+    assert data['status'] == 'success'
+    assert data['bootstrap'] == 'skipped'
+    assert 'bootstrap_warning' not in data
