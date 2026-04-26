@@ -98,7 +98,11 @@ def cmd_module_tests(module: str | None, parallel: bool = False) -> int:
 
 
 def cmd_quality_gate(module: str | None) -> int:
-    """Run ruff check on sources."""
+    """Run mypy + ruff on production sources."""
+    exit_code = cmd_compile(module)
+    if exit_code != 0:
+        return exit_code
+
     bundle_path = get_bundle_path(module)
     test_path = get_test_path(module) if module else str(TEST_DIR)
 
@@ -131,13 +135,8 @@ def cmd_coverage(module: str | None) -> int:
 
 
 def cmd_verify(module: str | None) -> int:
-    """Run full verification: compile + quality-gate + module-tests."""
+    """Run full verification: quality-gate + module-tests."""
     print(f'=== verify: {"all" if not module else module} ===')
-
-    exit_code = cmd_compile(module)
-    if exit_code != 0:
-        print('verify: compile failed', file=sys.stderr)
-        return exit_code
 
     exit_code = cmd_quality_gate(module)
     if exit_code != 0:
@@ -195,7 +194,7 @@ Examples:
     p.add_argument('--parallel', '-p', action='store_true', help='Run tests in parallel')
 
     # quality-gate
-    p = subparsers.add_parser('quality-gate', help='ruff check on sources')
+    p = subparsers.add_parser('quality-gate', help='mypy + ruff check on sources')
     p.add_argument('module', nargs='?', help='Module name (e.g., pm-dev-frontend)')
 
     # coverage
@@ -203,7 +202,7 @@ Examples:
     p.add_argument('module', nargs='?', help='Module name (e.g., pm-dev-frontend)')
 
     # verify
-    p = subparsers.add_parser('verify', help='Full verification (compile + quality-gate + module-tests)')
+    p = subparsers.add_parser('verify', help='Full verification (quality-gate + module-tests)')
     p.add_argument('module', nargs='?', help='Module name (e.g., pm-dev-frontend)')
 
     # clean

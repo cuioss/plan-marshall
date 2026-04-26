@@ -185,6 +185,11 @@ def _clear_active_command(session_id: str | None) -> None:
         path.unlink(missing_ok=True)
     except OSError:
         return
+    if "sessions" in path.parts:
+        try:
+            path.parent.rmdir()
+        except OSError:
+            pass
 
 
 def _sanitize_plan_label(raw: str | None) -> str | None:
