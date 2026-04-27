@@ -17,12 +17,17 @@ Usage:
             --prev-phase <prev> --next-phase <next> \
             [--total-tokens N] [--duration-ms N] [--tool-uses N]
 
-    Enrich from JSONL transcript:
+    Accumulate per-phase subagent usage on disk:
+        python3 manage_metrics.py accumulate-agent-usage --plan-id <id> --phase <phase> \
+            [--total-tokens N] [--tool-uses N] [--duration-ms N]
+
+    Enrich from JSONL transcript (main-context tokens + per-phase subagent <usage>):
         python3 manage_metrics.py enrich --plan-id <id> --session-id <sid>
 """
 
 import argparse
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,6 +45,58 @@ from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ign
 METRICS_FILE = FILE_WORK_METRICS
 METRICS_MD = 'metrics.md'
 PHASE_NAMES = list(PHASES)
+ACCUMULATOR_FILE_TEMPLATE = 'work/metrics-accumulator-{phase}.toon'
+USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
+USAGE_FIELD_RE = re.compile(r'^\s*(total_tokens|tool_uses|duration_ms)\s*:\s*(\d+)', re.MULTILINE)
+
+
+def _accumulator_path(plan_id: str, phase: str) -> Path:
+    return get_plan_dir(plan_id) / ACCUMULATOR_FILE_TEMPLATE.format(phase=phase)
+
+
+def _read_accumulator(plan_id: str, phase: str) -> dict[str, int]:
+    """Read per-phase subagent-usage accumulator. Returns empty dict if absent or unparsable."""
+    path = _accumulator_path(plan_id, phase)
+    if not path.exists():
+        return {}
+    result: dict[str, int] = {}
+    for line in path.read_text(encoding='utf-8').splitlines():
+        stripped = line.strip()
+        if not stripped or ':' not in stripped:
+            continue
+        key, _, raw_val = stripped.partition(':')
+        key = key.strip()
+        if key not in {'total_tokens', 'tool_uses', 'duration_ms', 'samples'}:
+            continue
+        try:
+            result[key] = int(raw_val.strip())
+        except ValueError:
+            continue
+    return result
+
+
+def _write_accumulator(plan_id: str, phase: str, totals: dict[str, int]) -> None:
+    path = _accumulator_path(plan_id, phase)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        f'plan_id: {plan_id}',
+        f'phase: {phase}',
+        f'total_tokens: {totals["total_tokens"]}',
+        f'tool_uses: {totals["tool_uses"]}',
+        f'duration_ms: {totals["duration_ms"]}',
+        f'samples: {totals["samples"]}',
+        f'updated: {now_utc_iso()}',
+    ]
+    atomic_write_file(path, '\n'.join(lines) + '\n')
+
+
+def _resolve_token_field(arg_value: int | None, accumulator: dict[str, int], key: str) -> int | None:
+    """Explicit flag wins; fall back to accumulator value when flag is absent."""
+    if arg_value is not None:
+        return arg_value
+    if key in accumulator:
+        return accumulator[key]
+    return None
 
 
 def _coerce_numeric(value: object) -> int | float | str:
@@ -182,14 +239,18 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
         except (ValueError, TypeError):
             pass
 
-    # Override with Task agent duration if provided
-    if args.duration_ms is not None:
-        phase_data['agent_duration_ms'] = args.duration_ms
-        phase_data['agent_duration_seconds'] = round(args.duration_ms / 1000.0, 1)
+    # Read on-disk accumulator as fallback when explicit flags are absent.
+    accumulator = _read_accumulator(plan_id, phase)
+    duration_ms = _resolve_token_field(args.duration_ms, accumulator, 'duration_ms')
+    total_tokens = _resolve_token_field(args.total_tokens, accumulator, 'total_tokens')
+    tool_uses = _resolve_token_field(args.tool_uses, accumulator, 'tool_uses')
 
-    # Token data from Task agent <usage> tags
-    if args.total_tokens is not None:
-        phase_data['total_tokens'] = args.total_tokens
+    if duration_ms is not None:
+        phase_data['agent_duration_ms'] = duration_ms
+        phase_data['agent_duration_seconds'] = round(duration_ms / 1000.0, 1)
+
+    if total_tokens is not None:
+        phase_data['total_tokens'] = total_tokens
 
     if args.input_tokens is not None:
         phase_data['input_tokens'] = args.input_tokens
@@ -197,8 +258,8 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
     if args.output_tokens is not None:
         phase_data['output_tokens'] = args.output_tokens
 
-    if args.tool_uses is not None:
-        phase_data['tool_uses'] = args.tool_uses
+    if tool_uses is not None:
+        phase_data['tool_uses'] = tool_uses
 
     data['updated'] = now
     write_metrics(plan_id, data)
@@ -211,8 +272,10 @@ def cmd_end_phase(args: argparse.Namespace) -> dict:
     }
     if 'duration_seconds' in phase_data:
         result['duration_seconds'] = phase_data['duration_seconds']
-    if args.total_tokens is not None:
-        result['total_tokens'] = args.total_tokens
+    if total_tokens is not None:
+        result['total_tokens'] = total_tokens
+    if accumulator and args.total_tokens is None:
+        result['accumulator_used'] = True
 
     return result
 
@@ -405,13 +468,18 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
         except (ValueError, TypeError):
             pass
 
-    if args.duration_ms is not None:
-        prev_data['agent_duration_ms'] = args.duration_ms
-        prev_data['agent_duration_seconds'] = round(args.duration_ms / 1000.0, 1)
-    if args.total_tokens is not None:
-        prev_data['total_tokens'] = args.total_tokens
-    if args.tool_uses is not None:
-        prev_data['tool_uses'] = args.tool_uses
+    accumulator = _read_accumulator(plan_id, prev_phase)
+    duration_ms = _resolve_token_field(args.duration_ms, accumulator, 'duration_ms')
+    total_tokens = _resolve_token_field(args.total_tokens, accumulator, 'total_tokens')
+    tool_uses = _resolve_token_field(args.tool_uses, accumulator, 'tool_uses')
+
+    if duration_ms is not None:
+        prev_data['agent_duration_ms'] = duration_ms
+        prev_data['agent_duration_seconds'] = round(duration_ms / 1000.0, 1)
+    if total_tokens is not None:
+        prev_data['total_tokens'] = total_tokens
+    if tool_uses is not None:
+        prev_data['tool_uses'] = tool_uses
 
     # Step 2: start the next phase (mirrors cmd_start_phase semantics).
     start_now = now_utc_iso()
@@ -435,8 +503,10 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     }
     if 'duration_seconds' in prev_data:
         result['prev_duration_seconds'] = prev_data['duration_seconds']
-    if args.total_tokens is not None:
-        result['prev_total_tokens'] = args.total_tokens
+    if total_tokens is not None:
+        result['prev_total_tokens'] = total_tokens
+    if accumulator and args.total_tokens is None:
+        result['accumulator_used'] = True
     # Surface the generate side-effect outcome so callers can react if it
     # fell through to the no_data path (would only happen on a brand-new
     # plan where neither phase ever had a start_time recorded — should not
@@ -449,6 +519,138 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
         result['generate_message'] = generate_result.get('message', '')
 
     return result
+
+
+def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
+    """Persist running per-phase totals of subagent <usage> data.
+
+    Reads `.plan/plans/{plan_id}/work/metrics-accumulator-{phase}.toon`
+    (initialising it when absent), sums in any provided values, increments
+    the `samples` counter, and writes the file back. Idempotent across
+    successive calls — the only authoritative state is on disk.
+
+    Designed to be invoked from `phase-5-execute` and `phase-6-finalize`
+    SKILL.md immediately after every Task-agent return, in place of the
+    fragile model-context-only `agent_usage_totals` discipline.
+    """
+    plan_id = require_valid_plan_id(args)
+    phase = args.phase
+
+    if phase not in PHASE_NAMES:
+        return {
+            'status': 'error',
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {phase}. Must be one of: {", ".join(PHASE_NAMES)}',
+        }
+
+    existing = _read_accumulator(plan_id, phase)
+    totals = {
+        'total_tokens': int(existing.get('total_tokens', 0)),
+        'tool_uses': int(existing.get('tool_uses', 0)),
+        'duration_ms': int(existing.get('duration_ms', 0)),
+        'samples': int(existing.get('samples', 0)),
+    }
+    if args.total_tokens is not None:
+        totals['total_tokens'] += args.total_tokens
+    if args.tool_uses is not None:
+        totals['tool_uses'] += args.tool_uses
+    if args.duration_ms is not None:
+        totals['duration_ms'] += args.duration_ms
+    totals['samples'] += 1
+
+    _write_accumulator(plan_id, phase, totals)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'total_tokens': totals['total_tokens'],
+        'tool_uses': totals['tool_uses'],
+        'duration_ms': totals['duration_ms'],
+        'samples': totals['samples'],
+        'accumulator_file': str(_accumulator_path(plan_id, phase).relative_to(get_plan_dir(plan_id))),
+    }
+
+
+def _phase_window_lookup(plan_id: str) -> list[tuple[str, datetime, datetime]]:
+    """Return [(phase, start, end), ...] for phases with full timestamps."""
+    data = read_metrics_raw(plan_id)
+    windows: list[tuple[str, datetime, datetime]] = []
+    for phase_name in PHASE_NAMES:
+        phase_data = data.get('phases', {}).get(phase_name)
+        if not phase_data:
+            continue
+        start_str = phase_data.get('start_time')
+        end_str = phase_data.get('end_time')
+        if not start_str or not end_str:
+            continue
+        try:
+            start_dt = datetime.fromisoformat(str(start_str))
+            end_dt = datetime.fromisoformat(str(end_str))
+        except (ValueError, TypeError):
+            continue
+        windows.append((phase_name, start_dt, end_dt))
+    return windows
+
+
+def _attribute_subagent_usage(
+    timestamp_iso: str | None,
+    windows: list[tuple[str, datetime, datetime]],
+    body: str,
+    per_phase: dict[str, dict[str, int]],
+) -> bool:
+    """Parse a `<usage>` body and add its totals to the matching phase row.
+
+    Returns True when the totals were attributed, False when no phase window
+    contained the timestamp (out-of-window agent calls are ignored).
+    """
+    if not timestamp_iso:
+        return False
+    try:
+        ts = datetime.fromisoformat(timestamp_iso.replace('Z', '+00:00'))
+    except (ValueError, TypeError):
+        return False
+
+    matching_phase: str | None = None
+    # Iterate latest-first so a timestamp that lands exactly on a phase
+    # boundary (end_time of phase N == start_time of phase N+1) is attributed
+    # to the newer phase. This matches the semantic intent of phase
+    # transitions as instantaneous handoffs.
+    for phase_name, start_dt, end_dt in reversed(windows):
+        if start_dt <= ts <= end_dt:
+            matching_phase = phase_name
+            break
+    if matching_phase is None:
+        return False
+
+    fields = {
+        match.group(1): int(match.group(2))
+        for match in USAGE_FIELD_RE.finditer(body)
+    }
+    bucket = per_phase.setdefault(
+        matching_phase,
+        {'total_tokens': 0, 'tool_uses': 0, 'duration_ms': 0, 'samples': 0},
+    )
+    bucket['total_tokens'] += fields.get('total_tokens', 0)
+    bucket['tool_uses'] += fields.get('tool_uses', 0)
+    bucket['duration_ms'] += fields.get('duration_ms', 0)
+    bucket['samples'] += 1
+    return True
+
+
+def _extract_text_payload(content: object) -> str:
+    """Best-effort flattening of a tool_result content payload to a single string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get('text') or item.get('content')
+                if isinstance(text, str):
+                    chunks.append(text)
+        return '\n'.join(chunks)
+    return ''
 
 
 def cmd_enrich(args: argparse.Namespace) -> dict:
@@ -485,10 +687,13 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             'message': f'JSONL transcript not found for session {session_id}',
         }
 
-    # Parse JSONL for token usage
+    # Parse JSONL for token usage and subagent <usage> attribution
     total_input = 0
     total_output = 0
     message_count = 0
+    windows = _phase_window_lookup(plan_id)
+    per_phase_subagent: dict[str, dict[str, int]] = {}
+    subagent_calls_attributed = 0
 
     try:
         with open(transcript_path, encoding='utf-8') as f:
@@ -498,15 +703,45 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
                     continue
                 try:
                     entry = json.loads(line)
-                    msg = entry.get('message', {})
-                    usage = msg.get('usage', {})
-                    if usage:
-                        total_input += usage.get('input_tokens', 0)
-                        total_output += usage.get('output_tokens', 0)
-                        if usage.get('input_tokens') or usage.get('output_tokens'):
-                            message_count += 1
                 except (json.JSONDecodeError, AttributeError):
                     continue
+
+                msg = entry.get('message', {}) if isinstance(entry, dict) else {}
+                usage = msg.get('usage', {}) if isinstance(msg, dict) else {}
+                if isinstance(usage, dict) and usage:
+                    total_input += usage.get('input_tokens', 0) or 0
+                    total_output += usage.get('output_tokens', 0) or 0
+                    if usage.get('input_tokens') or usage.get('output_tokens'):
+                        message_count += 1
+
+                # Subagent <usage> attribution: walk tool_result blocks (and any
+                # other text content as a safety net) for <usage>...</usage>.
+                if not windows:
+                    continue
+                content = msg.get('content') if isinstance(msg, dict) else None
+                payloads: list[str] = []
+                if isinstance(content, list):
+                    for item in content:
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get('type') == 'tool_result':
+                            payloads.append(_extract_text_payload(item.get('content')))
+                        elif item.get('type') == 'text':
+                            text = item.get('text')
+                            if isinstance(text, str):
+                                payloads.append(text)
+                elif isinstance(content, str):
+                    payloads.append(content)
+
+                timestamp = entry.get('timestamp') if isinstance(entry, dict) else None
+                for payload in payloads:
+                    if not payload or '<usage>' not in payload:
+                        continue
+                    for tag_match in USAGE_TAG_RE.finditer(payload):
+                        if _attribute_subagent_usage(
+                            timestamp, windows, tag_match.group(1), per_phase_subagent
+                        ):
+                            subagent_calls_attributed += 1
     except OSError:
         return {
             'status': 'error',
@@ -514,13 +749,22 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
             'message': f'Cannot read transcript: {transcript_path}',
         }
 
-    # Update metrics with enriched data
+    # Update metrics with enriched data (main-context + per-phase subagent totals)
     data = read_metrics_raw(plan_id)
     data['session_input_tokens'] = total_input
     data['session_output_tokens'] = total_output
     data['session_total_tokens'] = total_input + total_output
     data['session_message_count'] = message_count
     data['updated'] = now_utc_iso()
+
+    if per_phase_subagent:
+        phases_state = data.setdefault('phases', {})
+        for phase_name, totals in per_phase_subagent.items():
+            phase_row = phases_state.setdefault(phase_name, {})
+            phase_row['subagent_total_tokens'] = totals['total_tokens']
+            phase_row['subagent_tool_uses'] = totals['tool_uses']
+            phase_row['subagent_duration_ms'] = totals['duration_ms']
+            phase_row['subagent_samples'] = totals['samples']
 
     write_metrics(plan_id, data)
 
@@ -532,6 +776,8 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         'output_tokens': total_output,
         'total_tokens': total_input + total_output,
         'message_count': message_count,
+        'subagent_phases_attributed': len(per_phase_subagent),
+        'subagent_calls_attributed': subagent_calls_attributed,
     }
 
 
@@ -595,6 +841,34 @@ def main() -> int:
         '--tool-uses', type=int, default=None, help='Tool use count forwarded to end-phase (optional)'
     )
     pb.set_defaults(func=cmd_phase_boundary)
+
+    # accumulate-agent-usage
+    acc = subparsers.add_parser(
+        'accumulate-agent-usage',
+        help='Persist running per-phase totals of subagent <usage> data',
+        description=(
+            'Add the supplied --total-tokens / --tool-uses / --duration-ms '
+            "values to the per-phase accumulator file at "
+            'work/metrics-accumulator-{phase}.toon, incrementing the samples '
+            'counter. Initialises the file when absent and is idempotent across '
+            'successive calls. cmd_end_phase / cmd_phase_boundary read this '
+            'file as a fallback when their corresponding flags are omitted.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(acc)
+    acc.add_argument('--phase', required=True, help='Phase name being accumulated (e.g. 5-execute)')
+    acc.add_argument(
+        '--total-tokens', type=int, default=None, help='Subagent total_tokens to add to the running total'
+    )
+    acc.add_argument(
+        '--tool-uses', type=int, default=None, help='Subagent tool_uses to add to the running total'
+    )
+    acc.add_argument(
+        '--duration-ms', type=int, default=None, help='Subagent duration_ms to add to the running total'
+    )
+    acc.set_defaults(func=cmd_accumulate_agent_usage)
 
     # enrich
     enr = subparsers.add_parser(

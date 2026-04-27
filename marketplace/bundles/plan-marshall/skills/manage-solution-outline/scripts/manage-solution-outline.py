@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from _plan_parsing import (  # type: ignore[import-not-found]
+    _slugify_section_name,
     extract_deliverables,
     parse_document_sections,
 )
@@ -383,7 +384,7 @@ def cmd_read(args) -> dict:
     # Handle --section: read specific top-level ## section
     requested_section = getattr(args, 'section', None)
     if requested_section is not None:
-        normalized = requested_section.strip().lower().replace(' ', '_')
+        normalized = _slugify_section_name(requested_section)
         sections = parse_document_sections(content)
         if normalized not in sections:
             return {

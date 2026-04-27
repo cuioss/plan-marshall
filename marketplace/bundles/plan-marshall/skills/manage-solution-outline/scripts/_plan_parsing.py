@@ -23,6 +23,35 @@ _HEADER_FIELD_PATTERN = re.compile(
     re.MULTILINE,
 )
 
+_SLUG_NON_ALNUM_PATTERN = re.compile(r'[^a-z0-9_-]+')
+
+
+def _slugify_section_name(name: str) -> str:
+    """Normalize a section heading into a stable lookup slug.
+
+    Algorithm:
+        1. Lowercase the input.
+        2. Collapse any run of characters outside ``[a-z0-9_-]`` into a single ``_``.
+        3. Strip trailing ``_`` only — leading ``_`` is preserved so sentinel
+           keys like ``_header`` (used by ``parse_document_sections`` for the
+           metadata block before any H2) round-trip through the helper.
+
+    The single regex pass means runs of whitespace, punctuation, or other
+    non-allowed characters all collapse into one ``_`` rather than producing
+    repeated separators. Trailing ``_`` (typical of headings ending in ``)``,
+    ``!``, ``.``, etc.) is stripped so anchors stay tidy. Leading ``_`` is
+    deliberately preserved — both to keep ``_header`` queryable and so inputs
+    whose first character is non-alnum don't silently merge with adjacent
+    headings.
+
+    Args:
+        name: Raw section heading (e.g., ``"Clarified Request"``).
+
+    Returns:
+        Lookup slug (e.g., ``"clarified_request"``).
+    """
+    return _SLUG_NON_ALNUM_PATTERN.sub('_', name.lower()).rstrip('_')
+
 
 def parse_document_sections(content: str) -> dict[str, str]:
     """Parse markdown document into sections by ## heading.
@@ -54,7 +83,7 @@ def parse_document_sections(content: str) -> dict[str, str]:
             if current_content:
                 sections[current_section] = '\n'.join(current_content).strip()
             # Start new section (lowercase with underscores)
-            current_section = line[3:].strip().lower().replace(' ', '_')
+            current_section = _slugify_section_name(line[3:].strip())
             current_content = []
         else:
             current_content.append(line)

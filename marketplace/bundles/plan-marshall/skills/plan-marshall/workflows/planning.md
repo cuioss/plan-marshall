@@ -95,6 +95,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phas
   --tool-uses {tool_uses from <usage>}
 ```
 
+**Phase handshake**: Capture invariants for the just-completed phase so drift is detected at the next phase entry:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase 1-init
+```
+
 **Automatic Continuation**:
 1. Check `stop-after-init` parameter
 2. If true: Stop and display plan summary
@@ -110,6 +117,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-2-refine"
 ```
 
+**Phase handshake (verify)**: Before entering 2-refine, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id {plan_id} --phase 1-init --strict
+```
+
 ```
 Skill: plan-marshall:phase-2-refine
   Arguments: --plan-id {plan_id}
@@ -122,6 +136,13 @@ in a single fused call (no token args — refine ran in main context):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
   --plan-id {plan_id} --prev-phase 2-refine --next-phase 3-outline
+```
+
+**Phase handshake**: Capture invariants for the just-completed phase:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase 2-refine
 ```
 
 The fused call already recorded the start of `3-outline`; the **Action: outline**
@@ -159,6 +180,20 @@ phase and start `3-outline`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
   --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 3-outline
+```
+
+**Phase handshake** (direct-entry variant): capture the just-closed phase:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase {prev_phase}
+```
+
+**Phase handshake (verify)**: Before entering 3-outline, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`. Use `2-refine` when entering from the refine path, otherwise the same `{prev_phase}` value used in the fused boundary call above.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id {plan_id} --phase {prev_phase} --strict
 ```
 
 ```bash
@@ -217,6 +252,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phas
   --total-tokens {sum of total_tokens from all agent <usage> tags} \
   --tool-uses {sum of tool_uses from all agent <usage> tags} \
   --duration-ms {sum of duration_ms from all agent <usage> tags}
+```
+
+**Phase handshake**: Capture invariants for the just-completed phase:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase 3-outline
 ```
 
 The fused call already recorded the start of `4-plan`; Step 4 below MUST NOT
@@ -322,6 +364,13 @@ Only execute this step AFTER user approves in Step 3.
 `3-outline → 4-plan` fused boundary call above — do NOT call
 `start-phase 4-plan` here.
 
+**Phase handshake (verify)**: Before entering 4-plan, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id {plan_id} --phase 3-outline --strict
+```
+
 ```
 Task: plan-marshall:phase-agent
   Input: skill=plan-marshall:phase-4-plan, plan_id={plan_id}
@@ -337,6 +386,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phas
   --total-tokens {total_tokens from <usage>} \
   --duration-ms {duration_ms from <usage>} \
   --tool-uses {tool_uses from <usage>}
+```
+
+**Phase handshake**: Capture invariants for the just-completed phase. The `5-execute` entry verifies this row before the task loop runs (see `workflows/execution.md`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase 4-plan
 ```
 
 Log task plan agent invocation:

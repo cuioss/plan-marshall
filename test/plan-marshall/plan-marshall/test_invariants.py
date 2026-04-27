@@ -199,24 +199,42 @@ def _make_stub_run_script():
     def _stub(args: list[str]) -> str | None:
         # args shape per _invariants._capture_task_graph_valid:
         #   [notation, subcommand, '--plan-id', plan_id, ...]
+        # Or per _capture_pending_tasks_count:
+        #   [notation, 'list', '--status', 'pending', '--plan-id', plan_id]
         if len(args) < 4:
             return None
         notation = args[0]
         if notation != 'plan-marshall:manage-tasks:manage-tasks':
             return None
         subcommand = args[1]
-        plan_id = args[3]
+        # Locate the --plan-id flag instead of assuming a fixed position so
+        # both the 4-arg list/get shape and the 6-arg list-with-status shape
+        # are handled uniformly.
+        try:
+            pid_idx = args.index('--plan-id')
+        except ValueError:
+            return None
+        if pid_idx + 1 >= len(args):
+            return None
+        plan_id = args[pid_idx + 1]
         if subcommand == 'list':
+            # Optional --status <value>
+            status_filter = 'all'
+            if '--status' in args:
+                s_idx = args.index('--status')
+                if s_idx + 1 < len(args):
+                    status_filter = args[s_idx + 1]
             ns = Namespace(
                 plan_id=plan_id,
-                status='all',
+                status=status_filter,
                 deliverable=None,
                 ready=False,
             )
             return serialize_toon(cmd_list(ns))
         if subcommand == 'read':
-            # args[4] == '--task', args[5] == str(n)
-            number = int(args[5])
+            # args[...] contains '--task', followed by the number
+            t_idx = args.index('--task')
+            number = int(args[t_idx + 1])
             ns = Namespace(plan_id=plan_id, task=number)
             return serialize_toon(cmd_read(ns))
         return None
@@ -615,3 +633,124 @@ def test_state_hash_empty_plan_returns_stable_hash(stub_run_script) -> None:
     assert hash_a == hash_b, (
         'zero-task hash must be stable across plans (deterministic empty state)'
     )
+
+
+# =============================================================================
+# pending_tasks_count — registry tuple drives the phase-5-execute guard
+# =============================================================================
+#
+# The capture function counts tasks currently in ``status: pending`` for the
+# plan. It must:
+#   - Return ``N`` (int) when N pending rows exist.
+#   - Return ``0`` (int) when the queue is empty (every task done).
+#   - Be reachable through ``capture_all`` so the registry tuple is wired in.
+# =============================================================================
+
+
+@pytest.mark.parametrize('pending_count', [0, 1, 2, 3])
+def test_pending_tasks_count_returns_pending_row_count(
+    stub_run_script, pending_count: int
+) -> None:
+    """``_capture_pending_tasks_count`` must return the count of pending tasks.
+
+    Seeds N tasks via the manage-tasks fixture flow, optionally marks some
+    done (so they leave ``pending``), then drives the capture function
+    directly and asserts the returned int matches the remaining pending
+    count.
+    """
+    plan_id = f'inv-pending-{pending_count}'
+    with PlanContext(plan_id=plan_id):
+        # Seed three tasks first, then mark (3 - pending_count) of them done
+        # so exactly ``pending_count`` remain in the pending state.
+        _add_task(plan_id, 'T1', 1)
+        _add_task(plan_id, 'T2', 2)
+        _add_task(plan_id, 'T3', 3)
+        to_mark_done = 3 - pending_count
+        for n in range(1, to_mark_done + 1):
+            _set_status(plan_id, n, 'done')
+
+        result = inv._capture_pending_tasks_count(plan_id, {}, '5-execute')
+
+    assert isinstance(result, int), (
+        f'expected int count, got {type(result).__name__}: {result!r}'
+    )
+    assert result == pending_count, (
+        f'expected {pending_count} pending, got {result}'
+    )
+
+
+def test_pending_tasks_count_drift_across_phases(stub_run_script) -> None:
+    """Drift case: count changes between phases as tasks complete.
+
+    Captured during 5-execute with 2 pending; after marking some done (e.g.
+    finalizing), a re-capture for 6-finalize must yield 0.
+    """
+    plan_id = 'inv-pending-drift'
+    with PlanContext(plan_id=plan_id):
+        _add_task(plan_id, 'T1', 1)
+        _add_task(plan_id, 'T2', 2)
+        during_execute = inv._capture_pending_tasks_count(
+            plan_id, {}, '5-execute'
+        )
+
+        # Complete every task — pending queue drains to zero.
+        _set_status(plan_id, 1, 'done')
+        _set_status(plan_id, 2, 'done')
+        after_execute = inv._capture_pending_tasks_count(
+            plan_id, {}, '6-finalize'
+        )
+
+    assert during_execute == 2, f'expected 2 pending mid-execute, got {during_execute}'
+    assert after_execute == 0, (
+        f'expected 0 pending after completion, got {after_execute}'
+    )
+    assert during_execute != after_execute, (
+        'pending_tasks_count must reflect drift between phases — '
+        'a non-changing value would mean the capture is reading stale data'
+    )
+
+
+def test_pending_tasks_count_reachable_via_capture_all(
+    stub_run_script, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``capture_all`` must surface ``pending_tasks_count`` from the registry.
+
+    Narrows ``INVARIANTS`` to just the pending entry so the other invariants
+    don't try to shell out, then exercises the registry-driven capture path
+    end-to-end.
+    """
+    narrowed = [
+        (
+            'pending_tasks_count',
+            inv._always,
+            inv._capture_pending_tasks_count,
+        ),
+    ]
+    monkeypatch.setattr(inv, 'INVARIANTS', narrowed)
+
+    with PlanContext(plan_id='inv-pending-capture-all'):
+        _add_task('inv-pending-capture-all', 'T1', 1)
+        _add_task('inv-pending-capture-all', 'T2', 2)
+        captured = inv.capture_all('inv-pending-capture-all', {}, '5-execute')
+
+    assert 'pending_tasks_count' in captured, (
+        f'capture_all must include pending_tasks_count, got keys: {list(captured)}'
+    )
+    assert captured['pending_tasks_count'] == 2
+
+
+def test_pending_tasks_count_registry_tuple_present() -> None:
+    """The registry must wire ``pending_tasks_count`` to the capture function.
+
+    Guards against accidental removal of the tuple from ``INVARIANTS`` —
+    without this entry the phase-5-execute transition guard cannot fire.
+    """
+    names = [name for name, _, _ in inv.INVARIANTS]
+    assert 'pending_tasks_count' in names, (
+        f'pending_tasks_count must be registered, got {names}'
+    )
+    entry = next(t for t in inv.INVARIANTS if t[0] == 'pending_tasks_count')
+    name, applies_fn, capture_fn = entry
+    assert capture_fn is inv._capture_pending_tasks_count
+    # Always-applicable: every phase should record the queue size.
+    assert applies_fn('any-plan', {}) is True

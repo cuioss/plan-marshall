@@ -7,7 +7,9 @@ manage-* skills.
 """
 
 import importlib.util
+import json
 from argparse import Namespace
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -237,6 +239,356 @@ def test_surgical_tech_debt_trims_heavy_review_steps():
         assert 'commit-push' in manifest['phase_6']['steps']
         for stripped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
             assert stripped not in manifest['phase_6']['steps']
+
+
+def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
+    """bundle_self_modification — agent path triggers extra sync before create-pr.
+
+    The default Phase 6 candidate list (prefixed) places sync-plugin-cache late
+    in the order. When `references.modified_files` references a bundled agent,
+    the composer must insert a SECOND `project:finalize-step-sync-plugin-cache`
+    immediately before the earliest agent-dispatched step (`default:create-pr`).
+    The existing late-stage occurrence is preserved verbatim.
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:knowledge-capture',
+        'default:lessons-capture',
+        'default:branch-cleanup',
+        'project:finalize-step-sync-plugin-cache',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-agent') as ctx:
+        # Write references.json with a bundled agent path before composing.
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"modified_files": ["marketplace/bundles/plan-marshall/agents/automated-review-agent.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-agent',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=4,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+        manifest = read_manifest('bundle-self-mod-agent')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+
+        # Two occurrences of the sync step: one early, one late (preserved).
+        assert steps.count('project:finalize-step-sync-plugin-cache') == 2
+
+        # Early occurrence sits immediately before the first agent-dispatched step.
+        first_agent_idx = next(
+            i for i, s in enumerate(steps)
+            if s in ('default:create-pr', 'default:automated-review',
+                     'default:knowledge-capture', 'default:lessons-capture')
+        )
+        assert first_agent_idx >= 1
+        assert steps[first_agent_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+        # Late occurrence preserved (after branch-cleanup, before archive-plan).
+        late_idx = steps.index('project:finalize-step-sync-plugin-cache', first_agent_idx + 1)
+        assert steps[late_idx - 1] == 'default:branch-cleanup'
+
+
+@pytest.mark.parametrize(
+    'modified_path,expected_glob_surface',
+    [
+        ('marketplace/bundles/plan-marshall/commands/marshal.md', 'commands'),
+        ('marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py', 'skills'),
+        ('marketplace/bundles/pm-dev-java/agents/some-agent.md', 'agents-other-bundle'),
+    ],
+)
+def test_bundle_self_modification_fires_for_command_and_skill_paths(modified_path, expected_glob_surface):
+    """bundle_self_modification — commands/ and skills/ paths fire the rule too.
+
+    The rule covers all three bundled surfaces (agents, commands, skills) and
+    matches across any bundle name (`marketplace/bundles/*/...`).
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:lessons-capture',
+        'default:archive-plan',
+    ]
+    plan_id = f'bundle-self-mod-{expected_glob_surface}'
+    with PlanContext(plan_id=plan_id) as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            f'{{"modified_files": ["{modified_path}"]}}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Sync step inserted before first agent step.
+        create_pr_idx = steps.index('default:create-pr')
+        assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+
+def test_bundle_self_modification_skipped_for_non_bundle_paths():
+    """bundle_self_modification — non-bundle paths leave the manifest untouched."""
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'project:finalize-step-sync-plugin-cache',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-non-bundle') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"modified_files": ['
+            '"test/plan-marshall/manage-references/test_x.py", '
+            '"doc/build-structure.adoc"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-non-bundle',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=2,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == ''
+
+        manifest = read_manifest('bundle-self-mod-non-bundle')
+        assert manifest is not None
+        # Single occurrence only — the original late one, untouched.
+        assert manifest['phase_6']['steps'].count('project:finalize-step-sync-plugin-cache') == 1
+
+
+def test_bundle_self_modification_skipped_when_modified_files_absent():
+    """bundle_self_modification — no references.json → no insertion."""
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'project:finalize-step-sync-plugin-cache',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-no-refs'):
+        # Intentionally do NOT write references.json.
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-no-refs',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=0,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == ''
+
+        manifest = read_manifest('bundle-self-mod-no-refs')
+        assert manifest is not None
+        assert manifest['phase_6']['steps'].count('project:finalize-step-sync-plugin-cache') == 1
+
+
+def test_bundle_self_modification_fires_on_affected_files_alone():
+    """bundle_self_modification — affected_files is the canonical pre-execute source.
+
+    `phase-4-plan` Step 8b composes the manifest BEFORE Phase 5 has populated
+    `modified_files`. The rule MUST fire from `affected_files` alone so the
+    manifest is correct on the first compose for normal plans (regression
+    guard for the issue gemini flagged on PR #278).
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-affected-only') as ctx:
+        assert ctx.plan_dir is not None
+        # Only affected_files populated — modified_files absent (mirrors
+        # production phase-4-plan compose-call timing).
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"affected_files": ["marketplace/bundles/plan-marshall/skills/foo/SKILL.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-affected-only',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+
+def test_bundle_self_modification_unions_affected_and_modified_files():
+    """bundle_self_modification — affected_files and modified_files entries union.
+
+    Both fields are read; the rule fires if EITHER contains a bundle path.
+    Distinct entries are de-duplicated by the read helper.
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-union') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"affected_files": ["doc/notes.md"], '
+            '"modified_files": ["marketplace/bundles/plan-marshall/agents/foo.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-union',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=2,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+
+def test_bundle_self_modification_fires_on_bare_name_candidates():
+    """bundle_self_modification — works for bare-name (no `default:` prefix) candidates.
+
+    The script's `DEFAULT_PHASE_6_STEPS` fallback emits bare names. Production
+    `marshal.json` emits prefixed names. The matcher normalizes the prefix so
+    the rule fires consistently on both call paths (regression guard for the
+    prefix-mismatch defect gemini flagged on PR #278).
+    """
+    bare = [
+        'commit-push',
+        'create-pr',
+        'automated-review',
+        'archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-bare') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"affected_files": ["marketplace/bundles/plan-marshall/skills/foo/SKILL.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-bare',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(bare),
+            )
+        )
+        assert result is not None
+        # The inserting-before name is reported with whatever prefix the
+        # candidate list used — bare here.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
+
+        manifest = read_manifest('bundle-self-mod-bare')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert steps.index('project:finalize-step-sync-plugin-cache') == steps.index('create-pr') - 1
+
+
+def test_bundle_self_modification_detects_sonar_roundtrip_as_agent_step():
+    """bundle_self_modification — sonar-roundtrip is recognized as agent-dispatched.
+
+    The Phase 6 dispatch table in `phase-6-finalize/SKILL.md` routes
+    `default:sonar-roundtrip` to `plan-marshall:sonar-roundtrip-agent`, so it
+    must appear in the agent-dispatched set alongside create-pr / automated-review
+    / knowledge-capture / lessons-capture (regression guard for the missing-step
+    defect gemini flagged on PR #278). When sonar-roundtrip is the EARLIEST
+    agent-dispatched entry in the resolved list, the early sync inserts before
+    it, not before any later step.
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:sonar-roundtrip',     # earliest agent-dispatched
+        'default:create-pr',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-sonar') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"affected_files": ["marketplace/bundles/plan-marshall/agents/foo.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-sonar',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None
+        assert result['bundle_self_modification_inserted_before'] == 'default:sonar-roundtrip'
+
+        manifest = read_manifest('bundle-self-mod-sonar')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        sonar_idx = steps.index('default:sonar-roundtrip')
+        assert steps[sonar_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+
+def test_bundle_self_modification_idempotent_on_recompose():
+    """bundle_self_modification — re-running compose doesn't double-insert."""
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'project:finalize-step-sync-plugin-cache',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-idem') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"modified_files": ["marketplace/bundles/plan-marshall/skills/foo/SKILL.md"]}',
+            encoding='utf-8',
+        )
+        ns = _compose_ns(
+            plan_id='bundle-self-mod-idem',
+            change_type='bug_fix',
+            scope_estimate='single_module',
+            affected_files_count=1,
+            phase_6_steps=','.join(prefixed),
+        )
+        # Compose twice — second invocation must remain idempotent.
+        cmd_compose(ns)
+        cmd_compose(ns)
+        manifest = read_manifest('bundle-self-mod-idem')
+        assert manifest is not None
+        # Still exactly two occurrences (one early-inserted, one late-original).
+        assert manifest['phase_6']['steps'].count('project:finalize-step-sync-plugin-cache') == 2
 
 
 def test_verification_no_files_keeps_full_phase_5_trims_phase_6():
@@ -888,3 +1240,368 @@ def test_cli_read_missing_manifest_emits_toon_error():
         data = result.toon()
         assert data['status'] == 'error'
         assert data['error'] == 'file_not_found'
+
+
+# =============================================================================
+# pre-push-quality-gate pre-filter tests
+# =============================================================================
+
+
+def _write_marshal(ctx: PlanContext, *, activation_globs: list[str] | None = None,
+                   include_pre_push_key: bool = True) -> None:
+    """Write a marshal.json with the given activation_globs configuration.
+
+    When ``include_pre_push_key`` is False, the ``pre_push_quality_gate`` key is
+    omitted entirely (simulating the "absent" branch). When ``activation_globs``
+    is None and the key is present, the inner ``activation_globs`` field is
+    omitted (also "absent").
+    """
+    assert ctx.fixture_dir is not None
+    marshal_path = ctx.fixture_dir / 'marshal.json'
+    data: dict = {'plan': {'phase-6-finalize': {}}}
+    if include_pre_push_key:
+        pre_push: dict = {}
+        if activation_globs is not None:
+            pre_push['activation_globs'] = activation_globs
+        data['plan']['phase-6-finalize']['pre_push_quality_gate'] = pre_push
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+
+def _write_references(ctx: PlanContext, modified_files: list[str]) -> None:
+    """Write a references.json containing the given ``modified_files`` list."""
+    assert ctx.plan_dir is not None
+    refs_path = ctx.plan_dir / 'references.json'
+    refs_path.write_text(json.dumps({'modified_files': modified_files}), encoding='utf-8')
+
+
+def _candidate_phase_6_with_pre_push() -> str:
+    """Return a Phase 6 candidate CSV that includes pre-push-quality-gate.
+
+    The default candidate set does NOT include pre-push-quality-gate, so tests
+    that exercise the pre-filter must opt the step in via the candidate CSV.
+    """
+    return ','.join(list(DEFAULT_PHASE_6_STEPS) + ['pre-push-quality-gate'])
+
+
+class TestPrePushQualityGatePreFilter:
+    """Activation-driven pre-filter for ``pre-push-quality-gate``.
+
+    Each test asserts BOTH the resulting ``phase_6.steps`` content AND the
+    decision-log line presence/absence. The decision-log emitter is patched on
+    ``_mem._emit_decision_log`` and entries are captured into a list per test.
+    """
+
+    _OMIT_LINE = (
+        '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
+        'activation_globs empty or no modified_files match'
+    )
+
+    @staticmethod
+    def _capture_decision_log() -> tuple[list[tuple[str, str]], Callable[[str, str], None]]:
+        """Install a capturing replacement for ``_emit_decision_log``.
+
+        Returns the capture list plus the original function so the caller can
+        restore it in a ``finally`` block.
+        """
+        captured: list[tuple[str, str]] = []
+        original = _mem._emit_decision_log
+
+        def _capture(plan_id: str, message: str) -> None:
+            captured.append((plan_id, message))
+
+        _mem._emit_decision_log = _capture
+        return captured, original
+
+    @classmethod
+    def _omit_entries(cls, captured: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        return [entry for entry in captured if entry[1] == cls._OMIT_LINE]
+
+    def test_omit_when_activation_globs_absent(self):
+        """Config key missing → step removed and omission line emitted."""
+        plan_id = 'pp-globs-absent'
+        with PlanContext(plan_id=plan_id) as ctx:
+            # marshal.json exists but lacks the pre_push_quality_gate key entirely.
+            _write_marshal(ctx, include_pre_push_key=False)
+            _write_references(ctx, ['marketplace/bundles/plan-marshall/skills/foo.py'])
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=4,
+                        phase_6_steps=_candidate_phase_6_with_pre_push(),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['status'] == 'success'
+            assert result['pre_push_quality_gate_omitted'] is True
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
+            # All other DEFAULT_PHASE_6_STEPS preserved.
+            for step in DEFAULT_PHASE_6_STEPS:
+                assert step in manifest['phase_6']['steps']
+            omit_entries = self._omit_entries(captured)
+            assert len(omit_entries) == 1
+            assert omit_entries[0][0] == plan_id
+
+    def test_omit_when_activation_globs_empty(self):
+        """activation_globs: [] → same behavior as missing config."""
+        plan_id = 'pp-globs-empty'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal(ctx, activation_globs=[])
+            _write_references(ctx, ['marketplace/bundles/plan-marshall/skills/foo.py'])
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=4,
+                        phase_6_steps=_candidate_phase_6_with_pre_push(),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['pre_push_quality_gate_omitted'] is True
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
+            for step in DEFAULT_PHASE_6_STEPS:
+                assert step in manifest['phase_6']['steps']
+            assert len(self._omit_entries(captured)) == 1
+
+    def test_omit_when_modified_files_empty(self):
+        """Globs configured but references.modified_files empty → step removed."""
+        plan_id = 'pp-mod-empty'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal(ctx, activation_globs=['marketplace/bundles/**/*.py'])
+            _write_references(ctx, [])  # empty list
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=4,
+                        phase_6_steps=_candidate_phase_6_with_pre_push(),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['pre_push_quality_gate_omitted'] is True
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
+            assert len(self._omit_entries(captured)) == 1
+
+    def test_omit_when_no_glob_matches(self):
+        """Globs configured, modified_files contains only non-matching paths → step removed."""
+        plan_id = 'pp-no-match'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal(ctx, activation_globs=['marketplace/bundles/**/*.py'])
+            # All paths fall outside marketplace/bundles/.
+            _write_references(ctx, ['doc/readme.md', 'CHANGELOG.txt'])
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=2,
+                        phase_6_steps=_candidate_phase_6_with_pre_push(),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['pre_push_quality_gate_omitted'] is True
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
+            assert len(self._omit_entries(captured)) == 1
+
+    def test_keep_when_glob_matches(self):
+        """At least one modified_file matches → step retained, no omission line."""
+        plan_id = 'pp-match'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal(ctx, activation_globs=['marketplace/bundles/**/*.py'])
+            _write_references(
+                ctx,
+                [
+                    'doc/readme.md',  # non-match
+                    'marketplace/bundles/plan-marshall/skills/foo.py',  # match
+                ],
+            )
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=2,
+                        phase_6_steps=_candidate_phase_6_with_pre_push(),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['pre_push_quality_gate_omitted'] is False
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'pre-push-quality-gate' in manifest['phase_6']['steps']
+            # No omission entry emitted.
+            assert self._omit_entries(captured) == []
+
+    def test_commit_strategy_none_strips_pre_push_too(self):
+        """commit_strategy=none strips both commit-push and pre-push-quality-gate.
+
+        The commit-strategy pre-filter runs FIRST and removes both steps, so the
+        downstream pre-push-quality-gate filter sees the step already gone and
+        is a no-op (no omission line emitted by the pre-push filter, regardless
+        of glob match).
+        """
+        plan_id = 'pp-cs-none'
+        with PlanContext(plan_id=plan_id) as ctx:
+            # Configure globs and matching modified_files — the gate WOULD be
+            # active, but commit_strategy=none must strip it anyway.
+            _write_marshal(ctx, activation_globs=['marketplace/bundles/**/*.py'])
+            _write_references(ctx, ['marketplace/bundles/plan-marshall/skills/foo.py'])
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=4,
+                        phase_6_steps=_candidate_phase_6_with_pre_push(),
+                        commit_strategy='none',
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['status'] == 'success'
+            assert result['commit_push_omitted'] is True
+            # The pre-push-quality-gate filter is a no-op once commit-push
+            # filter has already removed the step.
+            assert result['pre_push_quality_gate_omitted'] is False
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'commit-push' not in manifest['phase_6']['steps']
+            assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
+            # Pre-push-quality-gate omission line is NOT emitted (commit-push
+            # filter handled the removal).
+            assert self._omit_entries(captured) == []
+
+    def test_pre_filter_order_independent_of_seven_row_matrix(self):
+        """Pre-filter runs before Row 1/Row 2/Row 7 — observable via decision-log ordering.
+
+        The composer calls (in order):
+          1. _apply_commit_strategy_none
+          2. _apply_pre_push_quality_gate_inactive
+          3. _decide() — which selects a row (Row 1: early_terminate, Row 2:
+             recipe, Row 7: default, etc.)
+          4. _log_commit_push_omitted (if fired)
+          5. _log_pre_push_quality_gate_omitted (if fired)
+          6. _log_decision (always — rule line)
+
+        Even though log emission happens after _decide, the row matrix already
+        sees the filtered candidate list, which means the omission line MUST be
+        captured before the rule line, and the rule line MUST reflect the
+        absence of pre-push-quality-gate from phase_6.steps.
+
+        This test temporarily replaces ``_log_decision`` (which the module-level
+        setup stubs out for speed) with a capturing implementation that mirrors
+        the production message contract, so the rule-fired line is observable.
+        """
+        plan_id = 'pp-order'
+        with PlanContext(plan_id=plan_id) as ctx:
+            # Activation_globs absent → pre-filter fires.
+            _write_marshal(ctx, include_pre_push_key=False)
+            _write_references(ctx, ['marketplace/bundles/plan-marshall/skills/foo.py'])
+
+            captured: list[tuple[str, str]] = []
+            original_emit = _mem._emit_decision_log
+            original_log_decision = _mem._log_decision
+
+            def _capture(plan_id_: str, message: str) -> None:
+                captured.append((plan_id_, message))
+
+            # Capturing replacement for _log_decision that mirrors the contract
+            # in scripts/manage-execution-manifest.py::_log_decision().
+            def _log_decision_capture(plan_id_, rule, body):
+                phase_5 = body.get('phase_5', {})
+                phase_6 = body.get('phase_6', {})
+                p5_steps = phase_5.get('verification_steps', [])
+                p6_steps = phase_6.get('steps', [])
+                early = phase_5.get('early_terminate', False)
+                message = (
+                    f'(plan-marshall:manage-execution-manifest:compose) Rule {rule} fired — '
+                    f'early_terminate={early}, phase_5.verification_steps={p5_steps}, '
+                    f'phase_6.steps={p6_steps}'
+                )
+                _capture(plan_id_, message)
+
+            _mem._emit_decision_log = _capture
+            _mem._log_decision = _log_decision_capture
+            try:
+                # Use a Row 7 (default) shape — feature + multi_module + files.
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=10,
+                        phase_6_steps=_candidate_phase_6_with_pre_push(),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original_emit
+                _mem._log_decision = original_log_decision
+
+            assert result is not None and result['rule_fired'] == 'default'
+            assert result['pre_push_quality_gate_omitted'] is True
+
+            # Ordering: omission line precedes rule-fired line.
+            messages = [msg for _, msg in captured]
+            omit_idx = next(
+                (i for i, m in enumerate(messages) if m == self._OMIT_LINE),
+                None,
+            )
+            rule_idx = next(
+                (i for i, m in enumerate(messages) if 'Rule default fired' in m),
+                None,
+            )
+            assert omit_idx is not None, f'omission line missing in {messages!r}'
+            assert rule_idx is not None, f'rule line missing in {messages!r}'
+            assert omit_idx < rule_idx, (
+                f'pre-filter omission line must precede rule line; '
+                f'got omit_idx={omit_idx}, rule_idx={rule_idx}'
+            )
+
+            # Rule line reflects filtered phase_6.steps (no pre-push-quality-gate).
+            rule_msg = messages[rule_idx]
+            assert 'pre-push-quality-gate' not in rule_msg
+
+            # Manifest content also reflects the pre-filter outcome.
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']

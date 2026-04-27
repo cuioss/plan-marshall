@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Summarize phase-handshake invariant values captured in a plan's status.
+"""Summarize phase-handshake invariant values captured in a plan's handshakes.
 
-Reads ``status.metadata.phase_handshake`` (or the legacy
-``status.metadata.invariants`` key) from the plan's ``status.json``. Does NOT
-re-run capture — values are whatever phase transitions already persisted.
+Reads ``<plan_dir>/handshakes.toon`` (the canonical storage owned by
+``plan-marshall:plan-marshall:phase_handshake``). Does NOT re-run capture —
+values are whatever phase transitions already persisted.
 
 The invariant registry lives in
 ``plan-marshall:plan-marshall:_invariants.py``; this script references the
@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Invariants that apply to every plan. Additional invariants
 # (``worktree_sha``, ``worktree_dirty``) are only recorded when the plan
@@ -37,10 +38,22 @@ _CORE_INVARIANTS = (
     'task_state_hash',
     'qgate_open_count',
     'config_hash',
+    'pending_tasks_count',
     'phase_steps_complete',
 )
 
 _WORKTREE_INVARIANTS = ('worktree_sha', 'worktree_dirty')
+
+# Columns in handshakes.toon that are row-level metadata, not invariant values.
+_NON_INVARIANT_COLUMNS = frozenset({
+    'phase',
+    'captured_at',
+    'worktree_applicable',
+    'override',
+    'override_reason',
+})
+
+HANDSHAKE_FILE = 'handshakes.toon'
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -55,45 +68,71 @@ def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
     raise ValueError(f"Unknown mode: {mode!r}")
 
 
-def load_status(plan_dir: Path) -> dict[str, Any]:
-    """Load ``status.json`` (or return an empty dict on error).
+def load_status_metadata(plan_dir: Path) -> dict[str, Any]:
+    """Load ``metadata`` from ``status.json`` (or return an empty dict on error).
 
-    ``status.toon`` is the legacy TOON-serialized variant; status.json is the
-    canonical JSON form and is always written by ``manage-status`` post
-    PR #171. Callers tolerate either.
+    Used solely to detect ``worktree_path`` so worktree-only invariants are
+    expected for worktree plans.
     """
     json_path = plan_dir / 'status.json'
     if json_path.exists():
         try:
             data = json.loads(json_path.read_text(encoding='utf-8'))
             if isinstance(data, dict):
-                return data
+                metadata = data.get('metadata')
+                if isinstance(metadata, dict):
+                    return metadata
         except (OSError, json.JSONDecodeError):
             pass
     return {}
 
 
-def extract_phase_map(status: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Extract per-phase invariant rows from ``metadata``.
+def load_handshake_rows(plan_dir: Path) -> list[dict[str, Any]] | None:
+    """Read and parse ``<plan_dir>/handshakes.toon``.
 
-    Supports two storage shapes:
-    - ``metadata.phase_handshake`` — post-handshake layout, a dict keyed by
-      phase name whose value is a dict of ``invariant_name -> value``.
-    - ``metadata.invariants`` — legacy layout with the same shape.
-
-    Returns ``{}`` when neither key is present.
+    Returns ``None`` when the file is absent — callers translate that into the
+    canonical ``No handshakes.toon found`` warning. Returns an empty list when
+    the file exists but contains zero rows (e.g. capture ran but every row was
+    cleared); callers also surface that as the missing-data warning since the
+    retrospective has no per-phase data to summarize either way.
     """
-    metadata = status.get('metadata') or {}
-    if not isinstance(metadata, dict):
-        return {}
-    for key in ('phase_handshake', 'invariants'):
-        raw = metadata.get(key)
-        if isinstance(raw, dict) and raw:
-            return {
-                phase: (values if isinstance(values, dict) else {})
-                for phase, values in raw.items()
-            }
-    return {}
+    path = plan_dir / HANDSHAKE_FILE
+    if not path.exists():
+        return None
+    try:
+        parsed = parse_toon(path.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+    rows = parsed.get('handshakes') or []
+    if not isinstance(rows, list):
+        return []
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def project_rows_to_phase_map(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Project handshake rows into the legacy ``phase → {name: value}`` shape.
+
+    Strips row-level metadata columns (``captured_at``, ``override`` etc.) and
+    drops empty-string values so ``invariants_present`` only lists invariants
+    that actually captured a value (matching the previous behaviour where
+    ``invariants_missing`` flagged unset invariants).
+    """
+    phase_map: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        phase = row.get('phase')
+        if not isinstance(phase, str) or not phase:
+            continue
+        values: dict[str, Any] = {}
+        for key, value in row.items():
+            if key in _NON_INVARIANT_COLUMNS:
+                continue
+            if value is None or value == '':
+                continue
+            values[key] = value
+        phase_map[phase] = values
+    return phase_map
 
 
 def expected_invariants(metadata: dict[str, Any]) -> tuple[str, ...]:
@@ -112,10 +151,11 @@ def detect_drift(phase_map: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
 
     Emits a drift entry whenever a named invariant's value changes between
     consecutive phases in declaration order. ``main_dirty`` /
-    ``worktree_dirty`` are excluded — they naturally vary as work progresses.
+    ``worktree_dirty`` / ``qgate_open_count`` / ``pending_tasks_count`` are
+    excluded — they naturally vary as work progresses.
     """
-    excluded = {'main_dirty', 'worktree_dirty', 'qgate_open_count'}
-    # Preserve insertion order — it matches phase_handshake insertion order.
+    excluded = {'main_dirty', 'worktree_dirty', 'qgate_open_count', 'pending_tasks_count'}
+    # Preserve insertion order — it matches handshakes.toon row order.
     phases = list(phase_map.keys())
     if len(phases) < 2:
         return []
@@ -144,21 +184,22 @@ def detect_drift(phase_map: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
-    status = load_status(plan_dir)
-    raw_metadata = status.get('metadata')
-    metadata: dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
-    phase_map = extract_phase_map(status)
+    metadata = load_status_metadata(plan_dir)
+    rows = load_handshake_rows(plan_dir)
     expected = expected_invariants(metadata)
 
     phases_out: list[dict[str, Any]] = []
     findings: list[dict[str, str]] = []
 
-    if not phase_map:
+    if rows is None or not rows:
         findings.append({
             'severity': 'warning',
             'invariant': 'phase_handshake',
-            'message': 'No phase_handshake data in status.metadata',
+            'message': 'No handshakes.toon found',
         })
+        phase_map: dict[str, dict[str, Any]] = {}
+    else:
+        phase_map = project_rows_to_phase_map(rows)
 
     for phase, values in phase_map.items():
         present = sorted(k for k, v in values.items() if v not in (None, ''))
