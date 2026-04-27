@@ -21,6 +21,7 @@ Provides git commit workflow following conventional commits specification. Inclu
 - Commit messages must follow conventional commits format: `<type>(<scope>): <subject>` — see `standards/git-commit-standards.md` for types, rules, and examples
 - Push only when explicitly requested via parameters
 - All git invocations MUST use `git -C {worktree_path} <subcommand>`. No `cd` chaining, no implicit cwd. `{worktree_path}` is resolved from `status.metadata.worktree_path` in Step 0 of the Commit Changes workflow.
+- Temp files MUST be written under `.plan/temp/` per project policy — never `/tmp/`.
 
 ## Parameters
 
@@ -47,8 +48,8 @@ workflow-integration-git (git commit workflow)
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow format-commit \
   --type feat --scope auth --subject "add login flow"
 
-# Analyze a diff for commit suggestions
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff --file changes.diff
+# Analyze a worktree diff for commit suggestions
+python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff --worktree-path {worktree_path}
 
 # Detect artifacts before committing
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow detect-artifacts
@@ -102,11 +103,11 @@ If custom message provided:
 - Use provided message
 
 If no message:
-- Generate diff: `git -C {worktree_path} diff --cached > /tmp/changes.diff` (or `git -C {worktree_path} diff` for unstaged)
-- Analyze diff using script to get type/scope hints:
+- Capture and analyze the diff in a single call (the script runs `git -C {worktree_path} diff [--cached]` internally — no temp file required):
 
   ```bash
-  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff --file <diff-file>
+  python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff \
+    --worktree-path {worktree_path} [--cached]
   ```
 - The script suggests `type` and `scope` but NOT the subject line — compose the subject yourself based on the diff content and the detected type
 - If multiple change types are present, use the highest priority: fix > feat > perf > refactor > docs > style > test > chore > ci
@@ -150,7 +151,7 @@ pushed: true
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `format-commit` | `--type --subject [--scope] [--body] [--breaking] [--footer]` | Format commit message (Co-Authored-By NOT appended — caller adds it at `git commit` time per project convention) |
-| `analyze-diff` | `--file` | Analyze diff for commit suggestions |
+| `analyze-diff` | `--worktree-path [--cached]` | Capture and analyze the worktree diff for commit suggestions |
 | `detect-artifacts` | `[--root]` | Scan for committable artifacts |
 
 ### format-commit
@@ -189,12 +190,16 @@ status: success
 
 ### analyze-diff
 
-Analyze diff file to suggest commit message parameters.
+Capture the worktree diff via `git -C {worktree_path} diff [--cached]` and analyze it to suggest commit message parameters. The script captures the diff in-process; callers no longer need to materialize a temp file.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git_workflow analyze-diff \
-  --file changes.diff
+  --worktree-path /path/to/worktree [--cached]
 ```
+
+**Parameters**:
+- `--worktree-path` (required): Worktree path to capture the diff from. The script runs `git -C {worktree_path} diff` against this directory.
+- `--cached`: Use the staged diff (`git diff --cached`) instead of the unstaged working-tree diff.
 
 **Output** (TOON):
 ```toon
@@ -241,7 +246,7 @@ status: success
 |---------|--------|
 | No changes to commit | Report "No changes to commit" and return success (not an error). |
 | format-commit validation failure | Report warnings to caller. Do not commit with invalid message. |
-| analyze-diff on missing file | Return failure with path. Caller should generate diff first. |
+| analyze-diff on missing/invalid worktree | Return failure with the path. Caller should pass an existing worktree. |
 | Artifact cleanup uncertain | Ask user via `AskUserQuestion` before deleting. Never auto-delete uncertain files. |
 | git commit failure (hook rejection, conflict) | Report error with full output. Do not retry automatically. |
 | git push failure | Report error. Never force-push as fallback. |

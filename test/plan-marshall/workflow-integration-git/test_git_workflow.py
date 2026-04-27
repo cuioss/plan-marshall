@@ -349,6 +349,101 @@ class TestAnalyzeDiff(unittest.TestCase):
         self.assertIsNone(suggestions['scope'])
 
 
+class TestAnalyzeDiffCli(unittest.TestCase):
+    """CLI-level tests for analyze-diff --worktree-path / --cached.
+
+    These exercise ``cmd_analyze_diff`` end-to-end: a real git worktree is
+    initialised, changes are introduced (unstaged or staged), and the script
+    is invoked as a subprocess so the CLI plumbing (argparse flags, in-process
+    ``git diff`` capture, TOON output) is covered.
+    """
+
+    def setUp(self):
+        """Create a temporary directory and seed it as a git worktree."""
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        """Clean up temporary directory."""
+        import shutil
+
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _git(self, *args: str) -> None:
+        """Run a git command in the fixture worktree."""
+        import subprocess as sp
+
+        sp.run(['git', '-C', self.tmpdir, *args], capture_output=True, check=True)
+
+    def _seed_worktree(self) -> None:
+        """Initialise the fixture worktree with a single committed file."""
+        self._git('init')
+        self._git('config', 'user.email', 'test@test.com')
+        self._git('config', 'user.name', 'Test')
+        seed = Path(self.tmpdir) / 'src' / 'mypackage' / 'utils.py'
+        seed.parent.mkdir(parents=True, exist_ok=True)
+        seed.write_text('def existing():\n    return 1\n')
+        self._git('add', 'src/mypackage/utils.py')
+        self._git('commit', '-m', 'initial')
+
+    def test_unstaged_diff_captured_and_analyzed(self):
+        """--worktree-path captures the unstaged diff and emits suggestions."""
+        self._seed_worktree()
+        # Introduce an unstaged feat-style change (many additions, few deletions).
+        target = Path(self.tmpdir) / 'src' / 'mypackage' / 'utils.py'
+        new_lines = ['def existing():', '    return 1', '']
+        for i in range(20):
+            new_lines.append(f'def helper_{i}():')
+            new_lines.append(f'    return {i}')
+            new_lines.append('')
+        target.write_text('\n'.join(new_lines))
+
+        stdout, stderr, code = run_git_script(['analyze-diff', '--worktree-path', self.tmpdir])
+        self.assertEqual(code, 0, f'stderr={stderr}')
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        self.assertEqual(result['mode'], 'analysis')
+        suggestions = result['suggestions']
+        self.assertIn('type', suggestions)
+        self.assertIn('scope', suggestions)
+        # Scope is detected from the Python file layout (src/<package>/...).
+        self.assertEqual(suggestions['scope'], 'mypackage')
+
+    def test_cached_flag_captures_staged_changes(self):
+        """--cached selects the staged diff so unstaged-only changes are ignored."""
+        self._seed_worktree()
+        # Stage a docs change.
+        readme = Path(self.tmpdir) / 'README.md'
+        readme.write_text('## Installation\nRun the thing.\n')
+        self._git('add', 'README.md')
+        # Add an unstaged-only change in another file that --cached must NOT see.
+        unstaged = Path(self.tmpdir) / 'src' / 'mypackage' / 'utils.py'
+        unstaged.write_text('def existing():\n    return 999\n')
+
+        stdout, stderr, code = run_git_script(['analyze-diff', '--worktree-path', self.tmpdir, '--cached'])
+        self.assertEqual(code, 0, f'stderr={stderr}')
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'success')
+        suggestions = result['suggestions']
+        # Staged content was a docs-only change, so analyzer should classify it as docs.
+        self.assertEqual(suggestions['type'], 'docs')
+
+    def test_invalid_worktree_path_returns_error(self):
+        """A non-existent worktree path produces a structured error result.
+
+        Per the script's TOON output contract (see ``script-shared`` helpers),
+        expected errors are surfaced via ``status: error`` in the TOON payload
+        and the process still exits 0 — non-zero exits are reserved for
+        uncaught exceptions.
+        """
+        bogus = str(Path(self.tmpdir) / 'does-not-exist')
+        stdout, stderr, code = run_git_script(['analyze-diff', '--worktree-path', bogus])
+        self.assertEqual(code, 0, f'stderr={stderr}')
+        result = parse_toon(stdout)
+        self.assertEqual(result['status'], 'error')
+        # Error message should reference the missing worktree path.
+        self.assertIn('not found', result.get('error', '').lower())
+
+
 class TestDetectArtifacts(unittest.TestCase):
     """Test git_workflow.py detect-artifacts via direct import."""
 
