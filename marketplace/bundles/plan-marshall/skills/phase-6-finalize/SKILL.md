@@ -332,13 +332,7 @@ For each step reference:
 **Inline-only built-in steps** (require user interaction or sequential dependency):
 - `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate — classification sub-calls dispatch to `plan-marshall:classify-knowledge-agent`, see `standards/review-knowledge.md` §3f), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
-Before entering the loop, initialise a running token tally in model context:
-
-```
-agent_usage_totals = {total_tokens: 0, tool_uses: 0, duration_ms: 0}
-```
-
-`default:record-metrics` reads this accumulator at `end-phase` time.
+Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
 ```
 FOR each step_id in manifest.phase_6.steps:
@@ -392,7 +386,13 @@ FOR each step_id in manifest.phase_6.steps:
          Arguments: --plan-id {plan_id} --iteration {iteration}
 
   5b. Accumulate agent usage (only when the dispatched step ran as a Task agent and did NOT time out):
-      Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag and add them to agent_usage_totals. Inline steps and timed-out steps contribute nothing — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`.
+      Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag, then persist them on disk via:
+
+         python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+           --plan-id {plan_id} --phase 6-finalize \
+           --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+
+      The script reads `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` (initialising it on first call), sums in the supplied values, increments the `samples` counter, and writes the file back. Inline steps and timed-out steps skip this call — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`. Step 5b runs at most once per dispatched agent return; do NOT also append the totals to a model-context variable.
 
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 5 (Render Final Output Template).

@@ -74,6 +74,20 @@ Task:
     Execute Task {N}: {name}, Goal: {goal}, Criteria: {list}
 ```
 
+### Post-dispatch: Persist subagent usage to accumulator
+
+**Applies to**: every Task / `execute-task` Skill dispatch above that returns a `<usage>` tag (i.e., every concrete task agent dispatched from the phase-5-execute task loop). Inline-only tasks skip this call.
+
+After parsing the agent's returned `<usage>...</usage>` block, persist the totals to the on-disk per-phase accumulator so the orchestrator's end-of-phase `manage-metrics phase-boundary` call can read them even when the model context has been compacted between dispatches:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+  --plan-id {plan_id} --phase 5-execute \
+  --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+```
+
+This call is documented as **Step 8b** in `phase-5-execute/SKILL.md`. The accumulator file lives at `.plan/plans/{plan_id}/work/metrics-accumulator-5-execute.toon` — see `manage-metrics/standards/data-format.md` § "Per-Phase Subagent Accumulator" for the schema.
+
 ## Git Operations
 
 ### Commit

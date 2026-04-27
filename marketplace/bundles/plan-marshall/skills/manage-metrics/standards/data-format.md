@@ -7,9 +7,10 @@ Storage format specifications for plan metrics collection and reporting.
 | File | Format | Purpose |
 |------|--------|---------|
 | `work/metrics.toon` | TOON key-value | Intermediate timing and token data per phase |
+| `work/metrics-accumulator-{phase}.toon` | TOON key-value | Per-phase running totals of subagent `<usage>` data, written by `accumulate-agent-usage` and read as fallback by `end-phase` / `phase-boundary` |
 | `metrics.md` | Markdown | Human-readable report with tables |
 
-Both files live in `.plan/plans/{plan_id}/`.
+All files live in `.plan/plans/{plan_id}/`. Accumulator files are created lazily — only phases that dispatch agents (and call `accumulate-agent-usage`) produce one.
 
 ## Intermediate Storage (metrics.toon)
 
@@ -43,9 +44,15 @@ enriched.message_count: 127
 |-------|------|--------|
 | `start` | ISO 8601 timestamp | `start-phase` command |
 | `end` | ISO 8601 timestamp | `end-phase` command |
-| `total_tokens` | int | Task agent `<usage>` tag |
+| `total_tokens` | int | Task agent `<usage>` tag (forwarded explicitly OR read from accumulator file) |
 | `duration_ms` | int | Task agent `<usage>` tag (agent-reported, distinct from wall-clock) |
 | `tool_uses` | int | Task agent `<usage>` tag |
+| `subagent_total_tokens` | int | `enrich` post-hoc transcript walk (sum of `<usage>` totals for Task calls inside this phase's window) |
+| `subagent_tool_uses` | int | `enrich` post-hoc transcript walk |
+| `subagent_duration_ms` | int | `enrich` post-hoc transcript walk |
+| `subagent_samples` | int | `enrich` post-hoc transcript walk — count of attributed Task-agent calls |
+
+`subagent_*` fields exist independently of the closed-phase `total_tokens` row. The closed-phase row is filled at `end-phase` time from explicit flags (preferred) or the accumulator file (fallback). The `subagent_*` fields are written by `enrich` as a post-hoc safety net so that even when the orchestrator never called `accumulate-agent-usage`, the transcript walk surfaces the missed totals.
 
 ### Enrichment Fields
 
@@ -148,5 +155,42 @@ generate status in `generate_status` / `generate_message` instead of
 
 | Source | When Used | Granularity |
 |--------|-----------|-------------|
-| Task agent `<usage>` tags | Agent-delegated phases | Per-phase |
-| JSONL session transcript | Main-context phases (via `enrich`) | Per-plan (spans phases) |
+| Task agent `<usage>` tags (forwarded to `end-phase` flags) | Agent-delegated phases — single agent per phase | Per-phase |
+| `accumulate-agent-usage` per-phase accumulator file | Phases that dispatch multiple agents (`5-execute`, `6-finalize`) | Per-phase, summed across agent returns |
+| JSONL session transcript (`enrich` main-context) | Main-context phases | Per-plan (spans phases) |
+| JSONL session transcript (`enrich` subagent attribution) | Any phase whose timestamp window contains Task tool calls | Per-phase (`subagent_*` fields) |
+
+## Per-Phase Subagent Accumulator (`work/metrics-accumulator-{phase}.toon`)
+
+Written by `accumulate-agent-usage`, read as fallback by `end-phase` and `phase-boundary` when explicit token flags are omitted. One file per phase that dispatches agents (e.g., `work/metrics-accumulator-5-execute.toon`, `work/metrics-accumulator-6-finalize.toon`). Other phases never produce one.
+
+### Format
+
+```toon
+plan_id: my-plan
+phase: 6-finalize
+total_tokens: 84211
+tool_uses: 38
+duration_ms: 412390
+samples: 4
+updated: 2026-03-27T10:25:00+00:00
+```
+
+### Fields
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `plan_id` | string | Echoed for sanity-checking against the parent plan directory |
+| `phase` | string | Must be one of the canonical phase names |
+| `total_tokens` | int | Running sum across every `accumulate-agent-usage` call for this phase |
+| `tool_uses` | int | Running sum |
+| `duration_ms` | int | Running sum |
+| `samples` | int | Number of `accumulate-agent-usage` calls — reflects how many Task-agent returns were rolled in |
+| `updated` | ISO 8601 timestamp | Updated atomically on every write |
+
+### Idempotency & Lifecycle
+
+- The file is the only authoritative state for the running totals — model-context numbers are not preserved across context compactions.
+- `accumulate-agent-usage` always reads-then-writes: missing flags do not zero a field, they leave it unchanged. Each call increments `samples` by 1 regardless of which flags were provided.
+- The file is left in `work/` after `end-phase` consumes it — the audit trail (per-call `samples` count, last `updated` timestamp) is useful when investigating drift between accumulator totals and the closed-phase row.
+- `archive-plan` moves `work/` along with the rest of the plan directory; archived accumulator files therefore remain available for retrospective analysis.
