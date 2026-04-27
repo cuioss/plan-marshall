@@ -145,10 +145,28 @@ Project and skill steps receive these parameters:
 
 ```
 Skill: {step_reference}
-  Arguments: --plan-id {plan_id} --iteration {iteration}
+  Arguments: --plan-id {plan_id} --iteration {iteration} [--session-id {session_id}]
 ```
 
 The step skill can access the plan's context via manage-* scripts (references, status, config).
+
+#### Session-id forwarding
+
+`--session-id {session_id}` is forwarded ONLY to external steps on the per-step opt-in whitelist below. The forwarding is opt-in (rather than universal) because some external steps may reject unknown flags; opting in keeps the contract additive for new dependencies without breaking existing steps.
+
+| Whitelisted external step | Why it needs `--session-id` |
+|---------------------------|------------------------------|
+| `plan-marshall:plan-retrospective` | Aspect 12 (chat-history-analysis) is conditional on `--session-id`. Without it, the aspect is silently skipped and the retrospective report omits the chat-history section. See `plan-retrospective/SKILL.md` → "Input Contract" for the consumer-side declaration. |
+
+`default:record-metrics` is intentionally NOT on this whitelist: it is a built-in step, dispatched via `standards/record-metrics.md`, which already consumes `--session-id` inline. The whitelist scope is project- and skill-type external steps only.
+
+**How to apply** — when defining a new external step that consumes session-scoped state:
+
+1. Declare `--session-id` as an input in the step's authoritative document (project step `SKILL.md` or fully-qualified skill `SKILL.md`/standards).
+2. Add the fully-qualified step name to the whitelist table above.
+3. Verify by running a finalize end-to-end and confirming the step does not hit a "session_id missing" code path.
+
+The orchestrator is responsible for resolving `session_id` (see "How to obtain session_id" earlier in this file). This skill receives the resolved value via its Input Parameters and forwards it verbatim to whitelisted steps; it does not re-resolve.
 
 **Required termination:** Every external step (project and fully-qualified skill) MUST terminate with a `manage-status mark-step-done` call that carries `--display-detail "{one-line summary}"`. This is REQUIRED, not optional — a missing or empty `display_detail` causes renderer failure in Step 5 (the literal placeholder `<missing display_detail>` will surface to the user and contribute to a `[FAILED]` headline). The detail string is authored by the step itself; the renderer NEVER invents content on the step's behalf.
 
@@ -305,6 +323,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest's authoritative ordering — neither this skill nor any standards document re-orders, filters, or skip-conditional any step.
 
+#### Plugin self-modification
+
+Cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When a plan's diff modifies bundled agents, commands, or skills (paths matching `marketplace/bundles/*/{agents,commands,skills}/**`), the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs. The default Phase 6 manifest places that step late (post `branch-cleanup`) — correct in the steady state ("publish after commit"), but wrong when the in-flight finalize itself dispatches `default:create-pr`, `default:automated-review`, `default:knowledge-capture`, or `default:lessons-capture` against the *pre-fix* cached agents.
+
+The manifest composer closes this window automatically: `manage-execution-manifest`'s `bundle_self_modification` stacked rule (see [manage-execution-manifest/standards/decision-rules.md](../manage-execution-manifest/standards/decision-rules.md) § "Stacked Rule — `bundle_self_modification`") inserts an extra `project:finalize-step-sync-plugin-cache` entry into `phase_6.steps` immediately before the earliest agent-dispatched step. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight finalize; late sync publishes the post-commit state).
+
+This skill does not implement the rule itself; it consumes the manifest as written. When you see two `project:finalize-step-sync-plugin-cache` entries in `phase_6.steps`, that is the rule firing as designed. The decision-log line `(plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — inserted project:finalize-step-sync-plugin-cache before {first_agent_step}` records the insertion. Cross-reference: lesson `2026-04-26-23-003`.
+
 **Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
 
 **Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where Claude Code already manages call timeouts. Budgets:
@@ -383,7 +409,15 @@ FOR each step_id in manifest.phase_6.steps:
 
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
-         Arguments: --plan-id {plan_id} --iteration {iteration}
+         Arguments: --plan-id {plan_id} --iteration {iteration} [--session-id {session_id}]
+
+       Append `--session-id {session_id}` ONLY when `step_ref` is on the
+       Session-id forwarding whitelist documented under "Interface Contract
+       for External Steps" above (the table at that section is the single
+       source of truth — do not re-list its entries here). Off-whitelist
+       external steps receive `--plan-id` and `--iteration` only —
+       appending `--session-id` to a step that does not declare it risks a
+       "rejected unknown flag" failure.
 
   5b. Accumulate agent usage (only when the dispatched step ran as a Task agent and did NOT time out):
       Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag, then persist them on disk via:
