@@ -369,3 +369,123 @@ def test_ci_logs_without_default_cwd_passes_none(monkeypatch):
         ci_base.set_default_cwd(saved_cwd)
 
     assert captured['cwd'] is None
+
+
+# =============================================================================
+# format_checks_toon (jobs) — Go zero-value timestamp regression
+# =============================================================================
+#
+# Regression for the lesson-2026-04-19-14-007 bug: a SKIPPED job with
+# `0001-01-01T00:00:00Z` timestamps used to leak ~63.9-billion-second
+# `elapsed_sec` values into the TOON aggregate. Contract after the fix:
+#
+#   (a) aggregate elapsed_sec is bounded by a 24h ceiling
+#   (b) skipped row (with Go zero-value timestamps) has NO `elapsed_sec` key
+#   (c) other (real-timestamped) rows have non-negative integer `elapsed_sec`
+
+
+_GO_ZERO_GL = '0001-01-01T00:00:00Z'
+
+
+def test_format_jobs_toon_skips_go_zero_timestamps():
+    """Three jobs: success+real, skipped+zero-time, success+real.
+
+    The skipped job must contribute neither a row-level `elapsed_sec`
+    nor any positive value to the aggregate. Aggregate must stay ≤ 24h.
+    """
+    # `glab` job shape: name, status, started_at, created_at, finished_at, web_url, stage
+    jobs = [
+        {
+            'name': 'unit-tests',
+            'status': 'success',
+            'started_at': '2025-01-15T11:55:00+00:00',
+            'finished_at': '2025-01-15T11:58:00+00:00',  # 180s
+            'web_url': 'https://gitlab.test/1',
+            'stage': 'test',
+        },
+        {
+            'name': 'integration-tests-skipped',
+            'status': 'skipped',
+            # Go zero-value emitted by glab for never-started jobs.
+            'started_at': _GO_ZERO_GL,
+            'created_at': _GO_ZERO_GL,
+            'finished_at': _GO_ZERO_GL,
+            'web_url': '',
+            'stage': 'test',
+        },
+        {
+            'name': 'lint',
+            'status': 'success',
+            'started_at': '2025-01-15T11:50:00+00:00',
+            'finished_at': '2025-01-15T11:55:00+00:00',  # 300s
+            'web_url': 'https://gitlab.test/2',
+            'stage': 'lint',
+        },
+    ]
+
+    rows, total_elapsed = gitlab_ops.format_checks_toon(jobs)
+
+    # (a) Aggregate is bounded by 24h ceiling (not ~63.9 billion seconds).
+    assert isinstance(total_elapsed, int)
+    assert 0 <= total_elapsed <= 24 * 3600, (
+        f'Aggregate elapsed_sec={total_elapsed} out of [0, 86400] — '
+        'Go zero-value timestamp likely poisoned the aggregate'
+    )
+
+    # Three rows preserved, in input order.
+    assert len(rows) == 3
+    skipped_row = next(r for r in rows if r['result'] == 'skipped')
+    real_rows = [r for r in rows if r['result'] == 'success']
+
+    # (b) Skipped row has NO elapsed_sec key — TOON treats absent as null.
+    assert 'elapsed_sec' not in skipped_row, (
+        f"Skipped row must omit elapsed_sec; got {skipped_row!r}"
+    )
+
+    # (c) Real-timestamped rows expose non-negative integer elapsed_sec.
+    assert len(real_rows) == 2
+    for r in real_rows:
+        assert 'elapsed_sec' in r, f'Real row missing elapsed_sec: {r!r}'
+        assert isinstance(r['elapsed_sec'], int)
+        assert r['elapsed_sec'] >= 0, (
+            f"Real row elapsed_sec must be non-negative; got {r!r}"
+        )
+
+
+def test_format_jobs_toon_clamps_runaway_aggregate(monkeypatch, capsys):
+    """Defense-in-depth: if compute_total_elapsed somehow returns a runaway
+    value, format_checks_toon clamps to the caller-supplied ceiling and warns.
+
+    We patch compute_total_elapsed to simulate the exact pre-fix bug
+    (63.9 billion seconds) and verify the clamp engages.
+    """
+    monkeypatch.setattr(
+        gitlab_ops, 'compute_total_elapsed', lambda values, now: 63_870_000_000
+    )
+
+    jobs = [
+        {
+            'name': 'unit-tests',
+            'status': 'success',
+            'started_at': '2025-01-15T11:55:00+00:00',
+            'finished_at': '2025-01-15T11:58:00+00:00',
+            'web_url': 'https://gitlab.test/1',
+            'stage': 'test',
+        },
+    ]
+
+    # ci_status path: duration_ceiling=0 → clamp substitutes 0.
+    rows, total_elapsed = gitlab_ops.format_checks_toon(jobs, duration_ceiling=0)
+    assert total_elapsed == 0, (
+        f'Expected runaway aggregate to clamp to 0, got {total_elapsed}'
+    )
+    captured = capsys.readouterr()
+    assert 'out of range' in captured.err, (
+        'Expected stderr warning when clamp engages'
+    )
+
+    # ci_wait path: duration_ceiling=42 → clamp substitutes 42.
+    _, total_elapsed_wait = gitlab_ops.format_checks_toon(
+        jobs, duration_ceiling=42
+    )
+    assert total_elapsed_wait == 42
