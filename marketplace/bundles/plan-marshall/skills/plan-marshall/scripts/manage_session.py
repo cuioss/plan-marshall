@@ -21,9 +21,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+_SESSION_ID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -100,12 +105,16 @@ def _cwd_to_slug(cwd: str) -> str:
 
 
 def cmd_transcript_path(args: argparse.Namespace) -> int:
+    session_id = args.session_id
+    if not _SESSION_ID_RE.match(session_id):
+        output_toon_error("invalid_session_id", "session_id must be a UUID (8-4-4-4-12 hex)")
+        return 0
+
     projects = _projects_root()
     if projects is None:
         output_toon_error("transcript_not_found", "Home directory not resolvable")
         return 0
 
-    session_id = args.session_id
     cwd = _resolve_cwd()
     cwd_slug = _cwd_to_slug(cwd)
 

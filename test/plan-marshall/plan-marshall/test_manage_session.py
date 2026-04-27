@@ -143,15 +143,16 @@ class TestCmdTranscriptPath:
 
     def test_slug_hit_returns_transcript_path(self, tmp_path, monkeypatch, capsys):
         """Happy path — JSONL at slug-derived dir is returned verbatim."""
+        session_id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         repo_root = str(tmp_path / 'repo')
         (tmp_path / 'repo').mkdir()
-        expected = self._seed_transcript(tmp_path, repo_root, 'session-xyz-1')
+        expected = self._seed_transcript(tmp_path, repo_root, session_id)
 
         monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: repo_root)
         monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
 
         rc = manage_session.cmd_transcript_path(
-            mock.Mock(session_id='session-xyz-1'),
+            mock.Mock(session_id=session_id),
         )
         out = capsys.readouterr().out
 
@@ -161,6 +162,7 @@ class TestCmdTranscriptPath:
 
     def test_no_match_returns_transcript_not_found(self, tmp_path, monkeypatch, capsys):
         """Total miss — no JSONL anywhere under ~/.claude/projects/."""
+        session_id = '11111111-2222-3333-4444-555555555555'
         repo_root = str(tmp_path / 'repo')
         (tmp_path / 'repo').mkdir()
 
@@ -168,7 +170,7 @@ class TestCmdTranscriptPath:
         monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
 
         rc = manage_session.cmd_transcript_path(
-            mock.Mock(session_id='session-missing'),
+            mock.Mock(session_id=session_id),
         )
         out = capsys.readouterr().out
 
@@ -178,22 +180,38 @@ class TestCmdTranscriptPath:
 
     def test_cross_cwd_recovery_via_parent_dir_glob(self, tmp_path, monkeypatch, capsys):
         """JSONL under a sibling slug dir is found via Path.glob fallback."""
+        session_id = '99999999-8888-7777-6666-555555555555'
         repo_root = str(tmp_path / 'current-repo')
         (tmp_path / 'current-repo').mkdir()
         sibling_cwd = str(tmp_path / 'other-repo')
-        expected = self._seed_transcript(tmp_path, sibling_cwd, 'session-cross-cwd')
+        expected = self._seed_transcript(tmp_path, sibling_cwd, session_id)
 
         monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: repo_root)
         monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
 
         rc = manage_session.cmd_transcript_path(
-            mock.Mock(session_id='session-cross-cwd'),
+            mock.Mock(session_id=session_id),
         )
         out = capsys.readouterr().out
 
         assert rc == 0
         assert 'status: success' in out
         assert f'transcript_path: {expected}' in out
+
+    def test_invalid_session_id_format_rejected(self, tmp_path, monkeypatch, capsys):
+        """Non-UUID session_id (e.g., contains glob metachars or path separators) is rejected before any filesystem access."""
+        repo_root = str(tmp_path / 'repo')
+        (tmp_path / 'repo').mkdir()
+
+        monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: repo_root)
+        monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
+
+        for bad in ('../escape', 'wild*card', 'has/slash', 'short-id', ''):
+            rc = manage_session.cmd_transcript_path(mock.Mock(session_id=bad))
+            out = capsys.readouterr().out
+            assert rc == 0
+            assert 'status: error' in out
+            assert 'invalid_session_id' in out
 
 
 class TestResolveCwd:
