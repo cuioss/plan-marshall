@@ -40,9 +40,9 @@ _crud = _load_module('_tasks_cmd_crud_batch', '_tasks_crud.py')
 cmd_batch_add = _crud.cmd_batch_add
 
 
-def _ns(plan_id, tasks_json=None):
+def _ns(plan_id, tasks_json=None, tasks_file=None):
     """Build a Namespace for cmd_batch_add."""
-    return Namespace(plan_id=plan_id, tasks_json=tasks_json)
+    return Namespace(plan_id=plan_id, tasks_json=tasks_json, tasks_file=tasks_file)
 
 
 def _entry(
@@ -287,3 +287,87 @@ def test_batch_add_verification_profile_skips_filepath_check():
         task = json.loads(task_path.read_text())
         assert task['profile'] == 'verification'
         assert task['steps'][0]['target'] == './pw verify plan-marshall'
+
+
+# =============================================================================
+# --tasks-file PATH input (parity with --tasks-json)
+# =============================================================================
+
+
+def test_batch_add_reads_tasks_from_file(tmp_path):
+    """--tasks-file PATH reads a JSON array from disk and creates tasks (parity with --tasks-json)."""
+    with PlanContext(plan_id='batch-file-happy') as ctx:
+        entries = [
+            _entry(title='From File 1', steps=['src/A.java']),
+            _entry(title='From File 2', steps=['src/B.java']),
+        ]
+        tasks_path = tmp_path / 'tasks.json'
+        tasks_path.write_text(json.dumps(entries), encoding='utf-8')
+
+        result = cmd_batch_add(
+            _ns('batch-file-happy', tasks_file=str(tasks_path))
+        )
+
+        assert result['status'] == 'success'
+        assert result['tasks_created'] == 2
+        assert [t['number'] for t in result['tasks']] == [1, 2]
+        assert [t['title'] for t in result['tasks']] == ['From File 1', 'From File 2']
+
+        # On-disk parity with --tasks-json path
+        task_dir = ctx.plan_dir / 'tasks'
+        files = sorted(task_dir.glob('TASK-*.json'))
+        assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']
+        first = json.loads(files[0].read_text())
+        assert first['title'] == 'From File 1'
+        assert first['steps'] == [
+            {'number': 1, 'target': 'src/A.java', 'status': 'pending'}
+        ]
+
+
+def test_batch_add_tasks_file_and_tasks_json_are_mutually_exclusive(tmp_path):
+    """Passing both --tasks-file and --tasks-json yields an invalid_input error.
+
+    The CLI argparse layer enforces mutual exclusion, but cmd_batch_add keeps a
+    defensive check for callers (e.g. tests, library users) that build a
+    Namespace directly. This test exercises that defensive path.
+    """
+    with PlanContext(plan_id='batch-file-and-json') as ctx:
+        tasks_path = tmp_path / 'tasks.json'
+        tasks_path.write_text(json.dumps([_entry(title='File')]), encoding='utf-8')
+        json_payload = json.dumps([_entry(title='JSON')])
+
+        result = cmd_batch_add(
+            _ns(
+                'batch-file-and-json',
+                tasks_json=json_payload,
+                tasks_file=str(tasks_path),
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_input'
+        assert '--tasks-json' in result['message']
+        assert '--tasks-file' in result['message']
+        assert 'mutually exclusive' in result['message']
+
+        # No tasks should have been written
+        task_dir = ctx.plan_dir / 'tasks'
+        assert not task_dir.exists() or list(task_dir.glob('TASK-*.json')) == []
+
+
+def test_batch_add_tasks_file_missing_returns_file_not_found():
+    """--tasks-file pointing at a non-existent path returns a file_not_found error."""
+    with PlanContext(plan_id='batch-file-missing') as ctx:
+        missing_path = '/nonexistent/path/to/tasks.json'
+
+        result = cmd_batch_add(
+            _ns('batch-file-missing', tasks_file=missing_path)
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert missing_path in result['message']
+
+        # No tasks should have been written
+        task_dir = ctx.plan_dir / 'tasks'
+        assert not task_dir.exists() or list(task_dir.glob('TASK-*.json')) == []
