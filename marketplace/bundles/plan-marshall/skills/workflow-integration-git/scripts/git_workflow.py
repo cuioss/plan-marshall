@@ -4,21 +4,21 @@ Git workflow operations - format commits and analyze diffs.
 
 Usage:
     git_workflow.py format-commit --type <type> --subject <subject> [options]
-    git_workflow.py analyze-diff --file <diff-file>
+    git_workflow.py analyze-diff --worktree-path <worktree-path> [--cached]
     git_workflow.py detect-artifacts [--root <dir>]
     git_workflow.py --help
 
 Subcommands:
     format-commit      Format commit message following conventional commits
-    analyze-diff       Analyze diff file to suggest commit message
+    analyze-diff       Capture and analyze the worktree diff to suggest a commit message
     detect-artifacts   Scan for committable artifacts (build outputs, temp files)
 
 Examples:
     # Format a commit message
     git_workflow.py format-commit --type feat --scope auth --subject "add login flow"
 
-    # Analyze a diff for commit suggestions
-    git_workflow.py analyze-diff --file changes.diff
+    # Analyze a worktree diff for commit suggestions
+    git_workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
 
     # Detect artifacts before committing
     git_workflow.py detect-artifacts --root /path/to/repo
@@ -383,13 +383,33 @@ def analyze_diff(diff_content: str) -> dict:
 
 
 def cmd_analyze_diff(args):
-    """Handle analyze-diff subcommand."""
-    path = Path(args.file)
-    if not path.exists():
-        return make_error(f'File not found: {args.file}', code=ErrorCode.NOT_FOUND)
+    """Handle analyze-diff subcommand.
 
-    diff_content = path.read_text()
-    suggestions = analyze_diff(diff_content)
+    Captures the worktree diff in-process via ``git -C {worktree_path} diff
+    [--cached]`` and feeds the captured stdout to ``analyze_diff()``. The
+    caller no longer needs to materialize a temp file.
+    """
+    worktree_path = Path(args.worktree_path)
+    if not worktree_path.is_dir():
+        return make_error(f'Worktree path not found: {args.worktree_path}', code=ErrorCode.NOT_FOUND)
+
+    cmd = ['git', '-C', str(worktree_path), 'diff']
+    if args.cached:
+        cmd.append('--cached')
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+    except subprocess.CalledProcessError as exc:
+        return make_error(
+            f'git diff failed (exit {exc.returncode}): {exc.stderr.strip()}',
+            code=ErrorCode.UNKNOWN,
+        )
+    except subprocess.TimeoutExpired:
+        return make_error('git diff timed out after 30 seconds', code=ErrorCode.UNKNOWN)
+    except FileNotFoundError:
+        return make_error('git executable not found on PATH', code=ErrorCode.UNKNOWN)
+
+    suggestions = analyze_diff(result.stdout)
 
     return {'mode': 'analysis', 'suggestions': suggestions, 'status': 'success'}
 
@@ -561,7 +581,7 @@ def main():
         epilog="""
 Examples:
   git_workflow.py format-commit --type feat --scope auth --subject "add login"
-  git_workflow.py analyze-diff --file changes.diff
+  git_workflow.py analyze-diff --worktree-path /path/to/worktree [--cached]
   git_workflow.py detect-artifacts --root /path/to/repo
 """,
         subcommands=[
@@ -586,9 +606,20 @@ Examples:
             },
             {
                 'name': 'analyze-diff',
-                'help': 'Analyze diff file to suggest commit message',
+                'help': 'Capture and analyze the worktree diff to suggest a commit message',
                 'handler': cmd_analyze_diff,
-                'args': [{'flags': ['--file'], 'required': True, 'help': 'Diff file to analyze'}],
+                'args': [
+                    {
+                        'flags': ['--worktree-path'],
+                        'required': True,
+                        'help': 'Worktree path to capture diff from',
+                    },
+                    {
+                        'flags': ['--cached'],
+                        'action': 'store_true',
+                        'help': 'Use staged diff (git diff --cached) instead of unstaged',
+                    },
+                ],
             },
             {
                 'name': 'detect-artifacts',
