@@ -67,6 +67,7 @@ from ci_base import (  # type: ignore[import-not-found]
     BODY_KIND_PR_EDIT,
     BODY_KIND_PR_REPLY,
     BODY_KIND_PR_THREAD_REPLY,
+    MAX_ELAPSED_SECONDS,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
@@ -1069,10 +1070,23 @@ def cmd_pr_edit(args: argparse.Namespace) -> dict:
     return result
 
 
-def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
+def format_checks_toon(
+    checks: list[dict],
+    *,
+    duration_ceiling: int | None = None,
+) -> tuple[list[dict], int]:
     """Format checks into dicts and compute overall elapsed.
 
-    Returns (check_dicts, elapsed_sec_total).
+    Per-check rows omit the ``elapsed_sec`` key entirely when
+    :func:`compute_elapsed` returns ``None`` (Go zero-value timestamp or
+    parse failure) — TOON callers treat absent keys as null-equivalent.
+
+    The aggregate ``elapsed_sec`` is clamped via warn-and-substitute when it
+    falls outside ``0 ≤ x ≤ 24*3600``: a stderr warning is emitted and the
+    return value is replaced with ``duration_ceiling`` (caller-supplied for
+    ``ci_wait``) or ``0`` (default for ``ci_status``).
+
+    Returns ``(check_dicts, elapsed_sec_total)``.
     """
     from datetime import UTC, datetime
 
@@ -1084,18 +1098,30 @@ def format_checks_toon(checks: list[dict]) -> tuple[list[dict], int]:
         started_at = check.get('startedAt')
         started_at_values.append(started_at)
 
-        check_dicts.append(
-            {
-                'name': check.get('name', 'unknown'),
-                'status': check.get('state', 'unknown'),
-                'result': check.get('bucket') or '-',
-                'elapsed_sec': compute_elapsed(started_at, check.get('completedAt'), now),
-                'url': check.get('link') or '-',
-                'workflow': check.get('workflow') or '-',
-            }
-        )
+        elapsed = compute_elapsed(started_at, check.get('completedAt'), now)
+        row: dict = {
+            'name': check.get('name', 'unknown'),
+            'status': check.get('state', 'unknown'),
+            'result': check.get('bucket') or '-',
+            'url': check.get('link') or '-',
+            'workflow': check.get('workflow') or '-',
+        }
+        if elapsed is not None:
+            row['elapsed_sec'] = elapsed
+        check_dicts.append(row)
 
     total_elapsed = compute_total_elapsed(started_at_values, now)
+
+    # Defense-in-depth: clamp aggregate to a sane window. The per-check filter
+    # above should already prevent zero-time leakage, but a runaway value here
+    # would mask a regression — substitute the caller's ceiling and warn.
+    if total_elapsed < 0 or total_elapsed > MAX_ELAPSED_SECONDS:
+        print(
+            'format_checks_toon: aggregate elapsed_sec out of range, clamping',
+            file=sys.stderr,
+        )
+        total_elapsed = duration_ceiling if duration_ceiling is not None else 0
+
     return check_dicts, total_elapsed
 
 
@@ -1136,8 +1162,9 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     else:
         overall = 'pending'
 
-    # Format checks table
-    check_dicts, total_elapsed = format_checks_toon(checks)
+    # Format checks table — ci_status has no caller-supplied duration ceiling,
+    # so out-of-range aggregates are substituted with 0.
+    check_dicts, total_elapsed = format_checks_toon(checks, duration_ceiling=0)
 
     return {
         'status': 'success',
@@ -1178,7 +1205,11 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
         return make_error('ci_wait', result['error'], result['last_data'].get('context', ''))
 
     checks = result['last_data'].get('checks', [])
-    check_dicts, total_elapsed = format_checks_toon(checks)
+    # ci_wait already tracks its own poll duration — use it as the clamp ceiling
+    # so an out-of-range aggregate is substituted with the actual poll time.
+    check_dicts, total_elapsed = format_checks_toon(
+        checks, duration_ceiling=result['duration_sec']
+    )
 
     if result['timed_out']:
         error_data: dict[str, Any] = {
