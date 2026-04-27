@@ -65,6 +65,46 @@ def _run_git(args: list[str]) -> tuple[int, str, str]:
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
+_BOOTSTRAP_TIMEOUT_SECONDS = 120
+
+
+def _detect_pw_wrapper(worktree: Path) -> Path | None:
+    """Locate a pyprojectx wrapper in the worktree, preferring Unix `pw`."""
+    for name in ('pw', 'pw.bat', 'pwx'):
+        candidate = worktree / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _bootstrap_pyprojectx(worktree: Path) -> tuple[str, str]:
+    """Best-effort pre-bootstrap of pyprojectx in a freshly-created worktree.
+
+    Runs ``./pw --version`` so pyprojectx populates ``.pyprojectx`` while ``uv``
+    is still on PATH. Returns a ``(status, detail)`` tuple where status is
+    ``ok``, ``skipped``, or ``warning``. The caller treats this strictly as
+    advisory — failures never fail ``cmd_create``.
+    """
+    wrapper = _detect_pw_wrapper(worktree)
+    if wrapper is None:
+        return 'skipped', 'no pw wrapper found in worktree'
+    try:
+        result = subprocess.run(
+            [str(wrapper), '--version'],
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            timeout=_BOOTSTRAP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 'warning', f'bootstrap invocation failed: {exc}'
+    if result.returncode != 0:
+        stderr_tail = (result.stderr or '').strip().splitlines()[-1:]
+        detail = stderr_tail[0] if stderr_tail else f'exit {result.returncode}'
+        return 'warning', detail
+    return 'ok', ''
+
+
 #: Gitignored subpaths under ``.plan/`` that must be shared across
 #: worktrees by symlinking into the main checkout. Everything else under
 #: ``.plan/`` is tracked and materialized natively by ``git worktree add``.
@@ -185,15 +225,19 @@ def cmd_create(args: argparse.Namespace) -> None:
         )
         return
 
-    output_toon(
-        {
-            'status': 'success',
-            'plan_id': args.plan_id,
-            'worktree_path': str(target),
-            'branch': args.branch,
-            'plan_symlink': str(target / PLAN_DIR_NAME),
-        }
-    )
+    bootstrap_status, bootstrap_detail = _bootstrap_pyprojectx(target)
+
+    payload = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'worktree_path': str(target),
+        'branch': args.branch,
+        'plan_symlink': str(target / PLAN_DIR_NAME),
+        'bootstrap': bootstrap_status,
+    }
+    if bootstrap_status == 'warning':
+        payload['bootstrap_warning'] = bootstrap_detail
+    output_toon(payload)
 
 
 def cmd_remove(args: argparse.Namespace) -> None:

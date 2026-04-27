@@ -471,9 +471,39 @@ class TestActiveCommandState(ScriptTestCase):
             self.assertIsNone(set_terminal_title._read_active_command('sess-big'))
 
     def test_clear_is_idempotent(self):
-        # Clearing a never-written session must not raise.
+        # Clearing a never-written session must not raise even when the per-session
+        # parent directory does not exist.
         with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
             set_terminal_title._clear_active_command('phantom-sess')
+
+    def test_clear_removes_empty_parent_directory(self):
+        with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
+            set_terminal_title._write_active_command('sess-empty', 'cmd')
+            path = set_terminal_title._command_state_path('sess-empty')
+            assert path is not None
+            self.assertTrue(path.exists())
+            self.assertTrue(path.parent.exists())
+
+            set_terminal_title._clear_active_command('sess-empty')
+
+            self.assertFalse(path.exists())
+            self.assertFalse(path.parent.exists())
+
+    def test_clear_preserves_non_empty_parent_directory(self):
+        # If something else (future state file, debug artifact) lives alongside
+        # active-command, rmdir must silently fail and leave the sibling intact.
+        with mock.patch.dict(os.environ, {'HOME': str(self.temp_dir)}, clear=False):
+            set_terminal_title._write_active_command('sess-shared', 'cmd')
+            path = set_terminal_title._command_state_path('sess-shared')
+            assert path is not None
+            sibling = path.parent / 'other-state'
+            sibling.write_text('x', encoding='utf-8')
+
+            set_terminal_title._clear_active_command('sess-shared')
+
+            self.assertFalse(path.exists())
+            self.assertTrue(path.parent.exists())
+            self.assertTrue(sibling.exists())
 
     def test_read_aliases_plan_marshall_namespaced_token_to_pm(self):
         """Captured verbose token `plan-marshall:plan-marshall` renders as `pm`."""
