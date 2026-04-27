@@ -166,6 +166,16 @@ def main() -> int:
         default=None,
         help='One-line user-facing detail string describing the step outcome (required for phase-6-finalize steps).',
     )
+    mark_step_parser.add_argument(
+        '--head-at-completion',
+        default=None,
+        help=(
+            'Optional git SHA captured at step completion. Persisted alongside outcome and '
+            'display_detail; consulted by resumable phase dispatchers (e.g., phase-6-finalize '
+            'pre-push-quality-gate) to decide whether to skip or re-fire after the worktree HEAD '
+            'has advanced.'
+        ),
+    )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
 
     # self-test

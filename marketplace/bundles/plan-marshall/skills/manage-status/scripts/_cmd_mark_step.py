@@ -4,12 +4,19 @@ mark-step-done command handler for manage-status.
 
 Persists phase step completion state into status.metadata.phase_steps so that
 phase skills can record which intra-phase steps have finished. Outcomes are
-``done`` or ``skipped``. The operation is idempotent when both outcome and
-display_detail match and returns a ``conflict`` error when a step already has a
-different outcome unless ``--force`` is supplied. An optional
-``--display-detail`` one-line string is persisted alongside the outcome so
-downstream renderers (e.g., phase-6-finalize vertical-steps block) can surface
-user-facing step summaries.
+``done`` or ``skipped``. The operation is idempotent when outcome,
+display_detail, and head_at_completion all match and returns a ``conflict``
+error when a step already has a different outcome unless ``--force`` is
+supplied. An optional ``--display-detail`` one-line string is persisted
+alongside the outcome so downstream renderers (e.g., phase-6-finalize
+vertical-steps block) can surface user-facing step summaries. An optional
+``--head-at-completion`` SHA is persisted alongside the outcome so resumable
+phase dispatchers (e.g., phase-6-finalize Step 3 for ``pre-push-quality-gate``)
+can detect when the worktree HEAD has advanced past the SHA at which the
+previous run completed and re-fire the gate accordingly. The SHA is treated as
+informational metadata: re-call with same outcome+display_detail but a
+different head_at_completion is a "changed" overwrite without requiring
+``--force``.
 """
 
 import argparse
@@ -46,6 +53,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         }
 
     display_detail = getattr(args, 'display_detail', None)
+    head_at_completion = getattr(args, 'head_at_completion', None)
 
     metadata: dict[str, Any] = status.setdefault('metadata', {})
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
@@ -69,10 +77,17 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             ),
         }
 
+    new_entry = _build_entry(outcome, display_detail, head_at_completion)
+
     if isinstance(existing, dict):
         existing_outcome = existing.get('outcome')
         existing_detail = existing.get('display_detail')
-        if existing_outcome == outcome and existing_detail == display_detail:
+        existing_head = existing.get('head_at_completion')
+        if (
+            existing_outcome == outcome
+            and existing_detail == display_detail
+            and existing_head == head_at_completion
+        ):
             return {
                 'status': 'success',
                 'plan_id': args.plan_id,
@@ -80,10 +95,13 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 'step': step,
                 'outcome': outcome,
                 'display_detail': display_detail,
+                'head_at_completion': head_at_completion,
                 'changed': False,
             }
-        if existing_outcome == outcome and existing_detail != display_detail:
-            phase_entry[step] = {'outcome': outcome, 'display_detail': display_detail}
+        if existing_outcome == outcome and (
+            existing_detail != display_detail or existing_head != head_at_completion
+        ):
+            phase_entry[step] = new_entry
             write_status(args.plan_id, status)
             return {
                 'status': 'success',
@@ -92,9 +110,11 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 'step': step,
                 'outcome': outcome,
                 'display_detail': display_detail,
+                'head_at_completion': head_at_completion,
                 'changed': True,
                 'previous_outcome': existing_outcome,
                 'previous_display_detail': existing_detail,
+                'previous_head_at_completion': existing_head,
             }
         if existing_outcome != outcome and not args.force:
             return {
@@ -113,11 +133,13 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
 
     previous_outcome = None
     previous_detail = None
+    previous_head = None
     if isinstance(existing, dict):
         previous_outcome = existing.get('outcome')
         previous_detail = existing.get('display_detail')
+        previous_head = existing.get('head_at_completion')
 
-    phase_entry[step] = {'outcome': outcome, 'display_detail': display_detail}
+    phase_entry[step] = new_entry
     write_status(args.plan_id, status)
 
     return {
@@ -127,7 +149,25 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         'step': step,
         'outcome': outcome,
         'display_detail': display_detail,
+        'head_at_completion': head_at_completion,
         'changed': True,
         'previous_outcome': previous_outcome,
         'previous_display_detail': previous_detail,
+        'previous_head_at_completion': previous_head,
     }
+
+
+def _build_entry(
+    outcome: str, display_detail: str | None, head_at_completion: str | None
+) -> dict[str, Any]:
+    """Build the phase_entry[step] dict, omitting head_at_completion when None.
+
+    Legacy compatibility: callers that omit ``--head-at-completion`` produce
+    the historical two-key shape ``{"outcome": ..., "display_detail": ...}``.
+    Only when a SHA is supplied does the third key appear in the persisted
+    record.
+    """
+    entry: dict[str, Any] = {'outcome': outcome, 'display_detail': display_detail}
+    if head_at_completion is not None:
+        entry['head_at_completion'] = head_at_completion
+    return entry
