@@ -1,17 +1,17 @@
 ---
 name: create-pr-agent
 description: |
-  Named agent that performs the finalize-phase Create PR step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/create-pr.md, using plan-marshall:workflow-integration-git for the commit + push and plan-marshall:tools-integration-ci for PR creation.
+  Named agent that performs the finalize-phase Create PR step. Loads plan-marshall:dev-general-practices into its own context, then delegates end-to-end to the authoritative standard phase-6-finalize/standards/create-pr.md, using plan-marshall:tools-integration-ci for PR creation.
 
   Examples:
   - Input: plan_id=my-plan, worktree_path=/Users/x/repo/.claude/worktrees/my-plan
   - Output: TOON with status, pr_url, pr_number, commit_sha
-tools: Read, Bash, Skill
+tools: Read, Write, Bash, Skill
 ---
 
 # Create PR Agent
 
-Named agent that executes the Create PR step of the finalize phase. This agent exists so plan-marshall phase work never falls back on `Agent(subagent_type="general-purpose")` — the narrow tool allowlist (`Read, Bash, Skill`) plus the foundational-practices skill load give the step its enforcement context directly.
+Named agent that executes the Create PR step of the finalize phase. This agent exists so plan-marshall phase work never falls back on `Agent(subagent_type="general-purpose")` — the narrow tool allowlist (`Read, Write, Bash, Skill`) plus the foundational-practices skill load give the step its enforcement context directly.
 
 ## Step 1: Load Foundational Practices
 
@@ -57,7 +57,6 @@ marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/create-pr.md
 ```
 
 The standard is the source of truth for the step sequence, including:
-- Commit + push via `plan-marshall:workflow-integration-git`
 - PR creation via `plan-marshall:tools-integration-ci`
 - Outcome logging and `manage-status mark-step-done`
 

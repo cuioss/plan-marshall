@@ -70,6 +70,7 @@ def cmd_add(ns):
         return _add_task_empty(ns.plan_id)
     return _add_task(ns.plan_id, text)
 cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
+cmd_exists = _query.cmd_exists
 cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
     _query.cmd_next_tasks,
     _query.cmd_tasks_by_domain,
@@ -180,6 +181,11 @@ def _add_task_empty(plan_id, slot=None):
 
 def _get_ns(plan_id='test-plan', number=1):
     """Build Namespace for cmd_get."""
+    return Namespace(plan_id=plan_id, task=number)
+
+
+def _exists_ns(plan_id='test-plan', number=1):
+    """Build Namespace for cmd_exists."""
     return Namespace(plan_id=plan_id, task=number)
 
 
@@ -559,6 +565,58 @@ def test_get_returns_verification_block():
 
         assert result['status'] == 'success'
         assert result['task']['verification']['criteria'] == 'Tests pass'
+
+
+# =============================================================================
+# Tests: exists
+# =============================================================================
+
+
+def test_exists_returns_true_for_present_task():
+    """exists returns status: success exists: true for a task that was added."""
+    with PlanContext(plan_id='exists-present'):
+        toon = build_task_toon(
+            title='Probe target',
+            deliverable=1,
+            domain='java',
+            description='Task to probe',
+            steps=['src/main/java/Probe.java'],
+        )
+        cmd_add(_add_ns(plan_id='exists-present', content=toon.replace('\n', '\\n')))
+
+        result = cmd_exists(_exists_ns(plan_id='exists-present', number=1))
+
+        assert result['status'] == 'success'
+        assert result['exists'] is True
+        assert result['task'] == 1
+        assert result['plan_id'] == 'exists-present'
+
+
+def test_exists_returns_false_for_absent_task():
+    """exists never errors on absence — returns status: success exists: false."""
+    with PlanContext(plan_id='exists-absent'):
+        result = cmd_exists(_exists_ns(plan_id='exists-absent', number=99))
+
+        assert result['status'] == 'success'
+        assert result['exists'] is False
+        assert result['task'] == 99
+        # The defining contract: presence probe must NOT report status: error,
+        # otherwise the executor records a recoverable [ERROR] row in
+        # script-execution.log (the entire reason exists exists).
+        assert 'message' not in result
+
+
+def test_exists_rejects_non_integer_task_argument():
+    """exists CLI rejects malformed --task input (argparse type=int).
+
+    Drives the subprocess wrapper to confirm the argparse layer rejects a
+    non-integer task value with exit code 2 (argparse error), matching how
+    get and other typed task arguments behave for malformed input.
+    """
+    result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'exists-bad-arg', '--task', 'abc')
+
+    assert result.returncode == 2
+    assert 'invalid int value' in result.stderr
 
 
 # =============================================================================

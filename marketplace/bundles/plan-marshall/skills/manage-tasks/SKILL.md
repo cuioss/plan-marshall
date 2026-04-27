@@ -66,6 +66,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `remove` | `--plan-id --task` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
 | `get` | `--plan-id --task` | Get single task details |
+| `exists` | `--plan-id --task` | Boolean presence probe — returns `status: success exists: true\|false`, never errors on absence (use instead of `get` for existence checks) |
 | `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
 | `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
@@ -238,6 +239,30 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-ad
 The batch path replaces the per-task `prepare-add` + Write + `commit-add`
 sequence in callers that produce many tasks at once. Single ad-hoc adds may
 keep using the path-allocate flow.
+
+### Probe whether a task exists (boolean — never errors on absence)
+
+Use `exists` instead of `get` whenever the call is a presence check rather
+than a data fetch. `get` returns exit code 1 (with an error TOON record)
+when the task is absent — every such call shows up as a `[ERROR]` row in
+`script-execution.log`, even when the caller intended to handle absence.
+`exists` returns `status: success exists: true|false` for any task number,
+so absence stays silent.
+
+```bash
+# Probe — always returns status: success
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks exists \
+  --plan-id my-feature \
+  --task 7
+# → status: success
+#   plan_id: my-feature
+#   task: 7
+#   exists: true|false
+```
+
+Pair `exists` with `get` when the caller needs the task body only after
+confirming presence — the two-call pattern keeps the failure logs clean
+without changing observable behavior.
 
 ### Get next task/step (respects dependencies)
 
