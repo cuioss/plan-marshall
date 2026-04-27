@@ -146,7 +146,14 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
 
 Skip the aspect entirely when the manifest file is absent (legacy plans).
 
-**Aspect 12 (chat-history, conditional)** — when `--session-id` is present, follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
+**Aspect 12 (chat-history, conditional)** — when `--session-id` is present, first resolve the absolute transcript path via the canonical resolver, then follow the LLM pattern above (Write fragment file, then `collect-fragments add`).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session \
+  transcript-path --session-id {session_id}
+```
+
+Parse `transcript_path` from the TOON output and pass it to the LLM analysis prompt as a concrete absolute file path — the LLM `Read`s by absolute path with no discovery step. On `status: error\nerror: transcript_not_found`, degrade gracefully: emit a fragment with `status: skipped` and `reason: transcript_unavailable` per `references/chat-history-analysis.md`. Never substitute Bash file discovery (`ls`, `find`, Glob) for the resolver — the resolver is the only sanctioned lookup mechanism for the session JSONL.
 
 ### Step 4: Compile Report
 

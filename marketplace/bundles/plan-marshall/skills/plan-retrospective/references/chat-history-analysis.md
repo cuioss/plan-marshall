@@ -6,7 +6,7 @@ Complements log-analysis with conversational context — user pivots, mid-plan c
 
 ## Input Resolution
 
-The session transcript location is provider-specific. Claude Code session transcripts live under `~/.claude/projects/{slug}/sessions/{session_id}.jsonl`. The LLM reads the transcript directly via the Read tool. If the transcript is unavailable or excessively large (> 2MB), the aspect degrades gracefully: emit a fragment with `status: skipped` and `reason: transcript_unavailable`.
+Claude Code session transcripts live under `~/.claude/projects/{slug}/{session_id}.jsonl`, where `{slug}` is the absolute project cwd with each `/` replaced by `-` (path-slug). The orchestrator resolves the absolute path by calling `plan-marshall:plan-marshall:manage_session transcript-path --session-id {session_id}` (see `SKILL.md` Step 3, Aspect 12 dispatch instructions); the resolver returns `transcript_path` in TOON output and falls back to a parent-directory glob when the slug-derived path misses (cross-cwd recovery). The LLM does **not** manually construct the path or perform any file discovery — it receives `transcript_path` as a concrete absolute path from the orchestrator and reads it directly via the Read tool. If the transcript is unavailable (resolver returned `status: error\nerror: transcript_not_found`) or excessively large (> 2MB), the aspect degrades gracefully: emit a fragment with `status: skipped` and `reason: transcript_unavailable`.
 
 ## TOON Fragment Shape
 
