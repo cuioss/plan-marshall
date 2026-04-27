@@ -496,3 +496,132 @@ def test_main_without_project_dir_leaves_cwd_untouched(tmp_path, monkeypatch):
     assert rc == 0
     # Unchanged sentinel — pre-parse did not clobber an existing default.
     assert ci_base.get_default_cwd() == sentinel
+
+
+# =============================================================================
+# format_checks_toon — Go zero-value timestamp regression
+# =============================================================================
+#
+# Regression for the lesson-2026-04-19-14-007 bug: a SKIPPED check with
+# `0001-01-01T00:00:00Z` timestamps used to leak ~63.9-billion-second
+# `elapsed_sec` values into the TOON aggregate. Contract after the fix:
+#
+#   (a) aggregate elapsed_sec is bounded by a 24h ceiling
+#   (b) SKIPPED row (with Go zero-value timestamps) has NO `elapsed_sec` key
+#   (c) other (real-timestamped) rows have non-negative integer `elapsed_sec`
+
+
+_GO_ZERO_GH = '0001-01-01T00:00:00Z'
+
+
+def test_format_checks_toon_skips_go_zero_timestamps():
+    """Three checks: SUCCESS+real, SKIPPED+zero-time, SUCCESS+real.
+
+    The SKIPPED check must contribute neither a row-level `elapsed_sec`
+    nor any positive value to the aggregate. Aggregate must stay ≤ 24h.
+    """
+    # `gh pr checks --json` shape: name, state, bucket, startedAt, completedAt, link, workflow
+    checks = [
+        {
+            'name': 'unit-tests',
+            'state': 'SUCCESS',
+            'bucket': 'pass',
+            'startedAt': '2025-01-15T11:55:00+00:00',
+            'completedAt': '2025-01-15T11:58:00+00:00',  # 180s
+            'link': 'https://example.test/1',
+            'workflow': 'CI',
+        },
+        {
+            'name': 'integration-tests-skipped',
+            'state': 'SKIPPED',
+            'bucket': 'skipping',
+            # Go zero-value emitted by gh for never-started checks.
+            'startedAt': _GO_ZERO_GH,
+            'completedAt': _GO_ZERO_GH,
+            'link': '',
+            'workflow': 'CI',
+        },
+        {
+            'name': 'lint',
+            'state': 'SUCCESS',
+            'bucket': 'pass',
+            'startedAt': '2025-01-15T11:50:00+00:00',
+            'completedAt': '2025-01-15T11:55:00+00:00',  # 300s
+            'link': 'https://example.test/2',
+            'workflow': 'CI',
+        },
+    ]
+
+    rows, total_elapsed = github_ops.format_checks_toon(checks)
+
+    # (a) Aggregate is bounded by 24h ceiling (not ~63.9 billion seconds).
+    assert isinstance(total_elapsed, int)
+    assert 0 <= total_elapsed <= 24 * 3600, (
+        f'Aggregate elapsed_sec={total_elapsed} out of [0, 86400] — '
+        'Go zero-value timestamp likely poisoned the aggregate'
+    )
+
+    # Three rows preserved, in the input order.
+    assert len(rows) == 3
+    skipped_row = next(r for r in rows if r['status'] == 'SKIPPED')
+    real_rows = [r for r in rows if r['status'] == 'SUCCESS']
+
+    # (b) SKIPPED row has NO elapsed_sec key — TOON treats absent as null.
+    assert 'elapsed_sec' not in skipped_row, (
+        f"SKIPPED row must omit elapsed_sec; got {skipped_row!r}"
+    )
+
+    # (c) Real-timestamped rows expose non-negative integer elapsed_sec.
+    assert len(real_rows) == 2
+    for r in real_rows:
+        assert 'elapsed_sec' in r, f'Real row missing elapsed_sec: {r!r}'
+        assert isinstance(r['elapsed_sec'], int)
+        assert r['elapsed_sec'] >= 0, (
+            f"Real row elapsed_sec must be non-negative; got {r!r}"
+        )
+
+
+def test_format_checks_toon_clamps_runaway_aggregate(monkeypatch, capsys):
+    """Defense-in-depth: if compute_total_elapsed somehow returns a runaway
+    value, format_checks_toon clamps to the caller-supplied ceiling and warns.
+
+    We patch compute_total_elapsed to simulate the exact pre-fix bug
+    (63.9 billion seconds) and verify the clamp engages.
+    """
+    import ci_base  # type: ignore[import-not-found]
+
+    # Simulate the pre-fix bug: compute_total_elapsed returns runaway value.
+    monkeypatch.setattr(
+        github_ops, 'compute_total_elapsed', lambda values, now: 63_870_000_000
+    )
+
+    checks = [
+        {
+            'name': 'unit-tests',
+            'state': 'SUCCESS',
+            'bucket': 'pass',
+            'startedAt': '2025-01-15T11:55:00+00:00',
+            'completedAt': '2025-01-15T11:58:00+00:00',
+            'link': 'https://example.test/1',
+            'workflow': 'CI',
+        },
+    ]
+
+    # ci_status path: duration_ceiling=0 → clamp substitutes 0.
+    rows, total_elapsed = github_ops.format_checks_toon(checks, duration_ceiling=0)
+    assert total_elapsed == 0, (
+        f'Expected runaway aggregate to clamp to 0, got {total_elapsed}'
+    )
+    captured = capsys.readouterr()
+    assert 'out of range' in captured.err, (
+        'Expected stderr warning when clamp engages'
+    )
+
+    # ci_wait path: duration_ceiling=42 → clamp substitutes 42.
+    _, total_elapsed_wait = github_ops.format_checks_toon(
+        checks, duration_ceiling=42
+    )
+    assert total_elapsed_wait == 42
+
+    # Ensure ci_base import survives the patching (sanity).
+    assert ci_base is not None

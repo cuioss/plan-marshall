@@ -77,17 +77,89 @@ def test_compute_elapsed_with_start_only():
 
 
 def test_compute_elapsed_with_no_start():
-    """Should return 0 when start is None."""
+    """Should return None when start is None (new contract — was 0)."""
     now = datetime.now(UTC)
     result = compute_elapsed(None, None, now)
-    assert result == 0
+    assert result is None
 
 
 def test_compute_elapsed_with_invalid_timestamp():
-    """Should return 0 on parse failure."""
+    """Should return None on parse failure (new contract — was 0)."""
     now = datetime.now(UTC)
     result = compute_elapsed('not-a-date', None, now)
-    assert result == 0
+    assert result is None
+
+
+# =============================================================================
+# compute_elapsed — Go zero-value timestamp handling (PARAMETERIZED)
+# =============================================================================
+#
+# The provider CLIs (gh, glab) emit Go's zero-value time
+# `0001-01-01T00:00:00Z` for never-started checks. Treating that as a real
+# timestamp produces ~63.9 billion-second elapsed values. The contract:
+#
+# - Real start + real completed → non-negative int (delta in seconds)
+# - Zero-time started_at → None (filtered)
+# - Zero-time completed_at + real start → falls back to (now - start)
+# - completedAt before startedAt → None (negative delta clamped)
+# - Parse-failure on either side → None
+#
+# All cases below use a fixed `now` so deltas are deterministic.
+
+
+_NOW = datetime(2025, 1, 15, 12, 0, 0, tzinfo=UTC)
+_GO_ZERO = '0001-01-01T00:00:00Z'
+
+
+@pytest.mark.parametrize(
+    'started_at,completed_at,expected',
+    [
+        # Case 1: Valid pair → delta in seconds
+        (
+            '2025-01-15T11:55:00+00:00',
+            '2025-01-15T12:00:00+00:00',
+            300,
+        ),
+        # Case 2: Zero-time started_at → None (Go sentinel poisons computation)
+        (_GO_ZERO, '2025-01-15T12:00:00+00:00', None),
+        # Case 3: Zero-time completed_at, real start → fallback to (now - start)
+        ('2025-01-15T11:59:00+00:00', _GO_ZERO, 60),
+        # Case 4: completedAt before startedAt (negative delta) → None
+        (
+            '2025-01-15T12:00:05+00:00',
+            '2025-01-15T12:00:00+00:00',
+            None,
+        ),
+        # Case 5: Parse-failure on started_at → None
+        ('garbage-not-a-date', '2025-01-15T12:00:00+00:00', None),
+        # Case 6: Parse-failure on completed_at with real start. Because
+        # `_is_zero_time(completed_at)` returns True for unparseable strings
+        # (defensive default), the function falls back to `now - start` and
+        # returns the elapsed-since-start value. This is the documented
+        # behaviour of the `else` branch in `compute_elapsed`.
+        ('2025-01-15T11:59:00+00:00', 'still-garbage', 60),
+        # Case 7: Empty string started_at → None
+        ('', '2025-01-15T12:00:00+00:00', None),
+        # Case 8: Pre-1971 sentinel year → None (handled by _is_zero_time)
+        ('1970-01-01T00:00:00+00:00', '2025-01-15T12:00:00+00:00', None),
+    ],
+    ids=[
+        'valid_pair',
+        'zero_time_started_at',
+        'zero_time_completed_at',
+        'completed_before_started',
+        'parse_failure_started',
+        'parse_failure_completed',
+        'empty_started',
+        'pre_1971_sentinel',
+    ],
+)
+def test_compute_elapsed_parameterized(started_at, completed_at, expected):
+    """Parameterized matrix of compute_elapsed contract cases."""
+    result = compute_elapsed(started_at, completed_at, _NOW)
+    assert result == expected, (
+        f'compute_elapsed({started_at!r}, {completed_at!r}, _NOW) → {result!r}, expected {expected!r}'
+    )
 
 
 # =============================================================================
@@ -117,6 +189,56 @@ def test_compute_total_elapsed_empty_list():
     now = datetime.now(UTC)
     result = compute_total_elapsed([], now)
     assert result == 0
+
+
+# =============================================================================
+# compute_total_elapsed — Go zero-value timestamp handling
+# =============================================================================
+
+
+def test_compute_total_elapsed_skips_go_zero_value_sentinels():
+    """Go zero-value timestamps must not poison the aggregate.
+
+    Without filtering, 0001-01-01 produces ~63.9 billion-second elapsed
+    values. The earliest of [zero, real-60s-ago, zero] should be the real
+    timestamp, yielding ~60s.
+    """
+    now = datetime.now(UTC)
+    real = (now - timedelta(seconds=60)).isoformat()
+    result = compute_total_elapsed([_GO_ZERO, real, _GO_ZERO], now)
+    assert 59 <= result <= 61, (
+        f'Expected ~60s aggregate (real start) but got {result}s — '
+        'Go zero-value sentinel may have poisoned the earliest pick'
+    )
+
+
+def test_compute_total_elapsed_all_go_zero_returns_zero():
+    """When every entry is a Go zero-value sentinel, no usable start exists → 0."""
+    now = datetime.now(UTC)
+    result = compute_total_elapsed([_GO_ZERO, _GO_ZERO, None], now)
+    assert result == 0
+
+
+def test_compute_total_elapsed_mixed_real_and_zero_picks_real_earliest():
+    """Mixed list: earliest real timestamp wins; zeros are skipped."""
+    now = datetime.now(UTC)
+    early = (now - timedelta(seconds=300)).isoformat()
+    late = (now - timedelta(seconds=60)).isoformat()
+    # Order intentionally shuffled with zero-time and None interspersed.
+    result = compute_total_elapsed(
+        [late, _GO_ZERO, None, early, _GO_ZERO], now
+    )
+    assert 299 <= result <= 301, (
+        f'Expected ~300s (earliest real) but got {result}s'
+    )
+
+
+def test_compute_total_elapsed_parse_failures_skipped():
+    """Unparseable timestamps must be silently skipped."""
+    now = datetime.now(UTC)
+    real = (now - timedelta(seconds=60)).isoformat()
+    result = compute_total_elapsed(['garbage', real, 'still-bad'], now)
+    assert 59 <= result <= 61
 
 
 # =============================================================================

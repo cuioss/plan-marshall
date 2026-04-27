@@ -40,6 +40,9 @@ cmd_list = _mod.cmd_list
 cmd_update = _mod.cmd_update
 cmd_convert_to_plan = _mod.cmd_convert_to_plan
 cmd_from_error = _mod.cmd_from_error
+cmd_remove = _mod.cmd_remove
+cmd_supersede = _mod.cmd_supersede
+cmd_set_body = _mod.cmd_set_body
 get_next_id = _mod.get_next_id
 
 
@@ -378,6 +381,324 @@ Body.
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
+
+
+# =============================================================================
+# Tier 2: cmd_set_body
+# =============================================================================
+
+
+class TestCmdSetBody:
+    """Test cmd_set_body direct invocation.
+
+    ``cmd_set_body`` implements the path-allocate body-write flow's overwrite
+    step: it preserves the ``key=value`` frontmatter and the H1 title verbatim
+    while replacing everything after the H1 with the supplied body. The
+    canonical input form is ``--file PATH`` (writes pass through the Write
+    tool, not the shell); ``--content STRING`` exists as a secondary form for
+    tiny payloads. Both forms share the TOON output shape
+    ``{status, id, path, body_bytes_written}`` on success.
+    """
+
+    _STUB_TEMPLATE = (
+        'id={lesson_id}\n'
+        'component=test-component\n'
+        'category=bug\n'
+        'created=2025-01-01\n'
+        '\n'
+        '# {title}\n'
+        '\n'
+    )
+
+    def _seed_stub(self, lessons_dir: Path, lesson_id: str, title: str = 'Stub Title') -> Path:
+        """Create a fresh lesson stub mirroring the shape produced by ``cmd_add``."""
+        path = lessons_dir / f'{lesson_id}.md'
+        path.write_text(
+            self._STUB_TEMPLATE.format(lesson_id=lesson_id, title=title),
+            encoding='utf-8',
+        )
+        return path
+
+    def test_set_body_with_file_input_overwrites_body(self, tmp_path):
+        """``--file`` form must read the file and replace the lesson body.
+
+        Seeds an empty stub, writes a multi-line markdown body to a sidecar
+        file, and asserts the resulting lesson has the new body, the original
+        frontmatter intact, and the success TOON shape with the byte count
+        matching the body source's UTF-8 length.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_stub(lessons_dir, '2025-01-01-02-001', 'My Lesson')
+
+        body_file = tmp_path / 'body.md'
+        body_text = '## Context\n\nMulti-line body with `code` and a list:\n\n- item one\n- item two\n'
+        body_file.write_text(body_text, encoding='utf-8')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file=str(body_file),
+                    content=None,
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['id'] == '2025-01-01-02-001'
+        assert Path(result['path']) == (lessons_dir / '2025-01-01-02-001.md').resolve()
+        assert result['body_bytes_written'] == len(body_text.encode('utf-8'))
+
+        updated = (lessons_dir / '2025-01-01-02-001.md').read_text(encoding='utf-8')
+        # Body content present
+        assert '## Context' in updated
+        assert '- item one' in updated
+        # Frontmatter and H1 still present
+        assert 'id=2025-01-01-02-001' in updated
+        assert 'component=test-component' in updated
+        assert '# My Lesson' in updated
+
+    def test_set_body_with_content_input_overwrites_body(self, tmp_path):
+        """``--content`` form must use the inline string as the new body.
+
+        This covers the secondary inline form used for tiny payloads. The
+        function must return the same TOON shape as the ``--file`` form and
+        the byte count must reflect the inline string's UTF-8 length.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_stub(lessons_dir, '2025-01-01-02-001', 'Inline Lesson')
+
+        inline_body = 'Short inline body.\n'
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file=None,
+                    content=inline_body,
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['id'] == '2025-01-01-02-001'
+        assert result['body_bytes_written'] == len(inline_body.encode('utf-8'))
+
+        updated = (lessons_dir / '2025-01-01-02-001.md').read_text(encoding='utf-8')
+        assert 'Short inline body.' in updated
+        assert '# Inline Lesson' in updated
+
+    def test_set_body_missing_lesson_returns_not_found(self, tmp_path):
+        """Calling ``cmd_set_body`` against a non-existent stub must error out.
+
+        The stub-existence check runs before any body source is read, so the
+        error code is ``not_found`` regardless of which input form was used.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_set_body(
+                Namespace(
+                    lesson_id='nonexistent-id',
+                    file=None,
+                    content='whatever',
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+        assert result['id'] == 'nonexistent-id'
+
+    def test_set_body_rejects_neither_or_both_inputs(self, tmp_path):
+        """Mutual-exclusion guard must reject both-supplied and neither-supplied calls.
+
+        The CLI layer enforces ``--file`` vs. ``--content`` exclusivity via
+        argparse's ``add_mutually_exclusive_group(required=True)``, but the
+        underlying function still guards against direct programmatic misuse —
+        both branches must return ``invalid_input``. We check the
+        neither-supplied branch (both ``None``) and the both-supplied branch
+        because the implementation uses ``(file is None) == (content is None)``,
+        which catches both shapes with one comparison.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_stub(lessons_dir, '2025-01-01-02-001')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            neither_result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file=None,
+                    content=None,
+                )
+            )
+            both_result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file='/tmp/some-file.md',
+                    content='inline body',
+                )
+            )
+
+        assert neither_result['status'] == 'error'
+        assert neither_result['error'] == 'invalid_input'
+        assert both_result['status'] == 'error'
+        assert both_result['error'] == 'invalid_input'
+
+    def test_set_body_with_directory_path_returns_file_not_found(self, tmp_path):
+        """``--file`` form must reject a path that is a directory, not a regular file.
+
+        Mirrors the ``_tasks_crud.py`` ``--tasks-file`` guard: ``Path.is_file()``
+        is stricter than ``Path.exists()`` and rejects directories, broken
+        symlinks, and special files. The error code must be ``file_not_found``
+        and the message must surface the offending path so callers can react.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_stub(lessons_dir, '2025-01-01-02-001', 'Dir Test')
+
+        # A directory exists at this path — ``Path.exists()`` would return True
+        # but ``is_file()`` returns False, which the guard must surface as
+        # ``file_not_found`` rather than crashing in ``read_text``.
+        bogus_dir = tmp_path / 'not-a-file-dir'
+        bogus_dir.mkdir()
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file=str(bogus_dir),
+                    content=None,
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert result['id'] == '2025-01-01-02-001'
+        assert str(bogus_dir) in result['message']
+
+    def test_set_body_with_unreadable_file_returns_file_read_error(self, tmp_path):
+        """``--file`` form must surface ``OSError`` from ``read_text`` as ``file_read_error``.
+
+        Simulates a transient I/O failure (permission flip, EIO, vanished mount)
+        by monkeypatching ``Path.read_text`` to raise ``PermissionError`` (an
+        ``OSError`` subclass). The guard must trap the exception, leave the
+        target lesson stub on disk untouched, and return a structured error
+        payload with ``error: file_read_error`` and the offending path
+        reflected in the message — never let the exception propagate.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        stub_path = self._seed_stub(lessons_dir, '2025-01-01-02-001', 'Read Error Test')
+        stub_content_before = stub_path.read_text(encoding='utf-8')
+
+        body_file = tmp_path / 'body.md'
+        body_file.write_text('Body that cannot be read.', encoding='utf-8')
+
+        original_read_text = Path.read_text
+
+        def _raising_read_text(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            # Only raise for the body source; allow reads on the lesson stub
+            # (the function reads the original lesson via ``target.read_text``
+            # AFTER the body source). We restrict to the exact body file path.
+            if self == body_file:
+                raise PermissionError('simulated read failure')
+            return original_read_text(self, *args, **kwargs)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), \
+                patch.object(Path, 'read_text', _raising_read_text):
+            result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file=str(body_file),
+                    content=None,
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_read_error'
+        assert result['id'] == '2025-01-01-02-001'
+        assert str(body_file) in result['message']
+        # The lesson stub on disk must be untouched — the failure happened
+        # before the rewrite stage, so no atomic write should have run.
+        assert stub_path.read_text(encoding='utf-8') == stub_content_before
+
+    def test_set_body_preserves_frontmatter_across_overwrite(self, tmp_path):
+        """Frontmatter block and H1 title must survive a body overwrite verbatim.
+
+        Seeds a stub with a richer frontmatter (including an optional
+        ``bundle`` field) and a populated body, runs ``cmd_set_body`` to
+        replace the body, and asserts:
+
+        * Every original frontmatter line is present in the rewritten file in
+          its original order.
+        * The H1 title line is unchanged.
+        * The original body content is gone — i.e. the overwrite is a true
+          replacement, not an append.
+        * The new body is present.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        original_lesson = (
+            'id=2025-01-01-02-001\n'
+            'component=preserved-component\n'
+            'category=improvement\n'
+            'bundle=pm-dev-java\n'
+            'created=2025-01-01\n'
+            '\n'
+            '# Preserved Title\n'
+            '\n'
+            'Original body that must be discarded.\n'
+            'Second line of original body.\n'
+        )
+        target = lessons_dir / '2025-01-01-02-001.md'
+        target.write_text(original_lesson, encoding='utf-8')
+
+        new_body = 'Replacement body — original lines must be gone.\n'
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file=None,
+                    content=new_body,
+                )
+            )
+
+        assert result['status'] == 'success'
+
+        rewritten = target.read_text(encoding='utf-8')
+
+        # Frontmatter lines preserved verbatim, in order.
+        rewritten_lines = rewritten.split('\n')
+        for expected in (
+            'id=2025-01-01-02-001',
+            'component=preserved-component',
+            'category=improvement',
+            'bundle=pm-dev-java',
+            'created=2025-01-01',
+        ):
+            assert expected in rewritten_lines, f'frontmatter line missing: {expected}'
+
+        # Frontmatter ordering preserved (header lines appear before the H1).
+        h1_index = rewritten_lines.index('# Preserved Title')
+        for expected in (
+            'id=2025-01-01-02-001',
+            'component=preserved-component',
+            'category=improvement',
+            'bundle=pm-dev-java',
+            'created=2025-01-01',
+        ):
+            assert rewritten_lines.index(expected) < h1_index
+
+        # Original body is gone — the overwrite is a replacement, not an append.
+        assert 'Original body that must be discarded.' not in rewritten
+        assert 'Second line of original body.' not in rewritten
+
+        # New body is present.
+        assert 'Replacement body' in rewritten
 
 
 # =============================================================================
@@ -941,6 +1262,490 @@ class TestCliPlumbingAdd(ScriptTestCase):
 
         self.assert_failure(result)
         self.assertIn('unrecognized arguments', result.stderr)
+
+
+# =============================================================================
+# Tier 2: status frontmatter on new lessons
+# =============================================================================
+
+
+class TestStatusFrontmatterOnAdd:
+    """``cmd_add`` and ``cmd_from_error`` must seed ``status=active``."""
+
+    def test_add_writes_status_active(self, tmp_path):
+        """Newly added lessons must include ``status=active`` in the metadata header."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_add(
+                Namespace(
+                    component='test-component',
+                    category='bug',
+                    title='Status Active Default',
+                    bundle=None,
+                )
+            )
+
+        assert result['status'] == 'success'
+        content = Path(result['path']).read_text(encoding='utf-8')
+        assert 'status=active' in content
+
+    def test_from_error_writes_status_active(self, tmp_path):
+        """Error-context lessons must include ``status=active`` in the metadata header."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        error_context = json.dumps({'component': 'cmpt', 'error': 'boom', 'solution': 'fix it'})
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context=error_context))
+
+        assert result['status'] == 'success'
+        # Locate the file by id in the lessons dir.
+        lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
+        assert 'status=active' in lesson_path.read_text(encoding='utf-8')
+
+
+# =============================================================================
+# Tier 2: cmd_list --status filter
+# =============================================================================
+
+
+def _seed_lesson_with_status(
+    lessons_dir: Path, lesson_id: str, status: str | None, title: str
+) -> Path:
+    """Write a minimal lesson file with optional ``status`` frontmatter."""
+    metadata_lines = [
+        f'id={lesson_id}',
+        'component=test',
+        'category=bug',
+        'created=2025-01-01',
+    ]
+    if status is not None:
+        metadata_lines.insert(3, f'status={status}')
+    content = '\n'.join(metadata_lines) + f'\n\n# {title}\n\nBody.\n'
+    path = lessons_dir / f'{lesson_id}.md'
+    path.write_text(content, encoding='utf-8')
+    return path
+
+
+class TestCmdListStatusFilter:
+    """``cmd_list --status`` filter behaviour."""
+
+    def _seed_three_statuses(self, lessons_dir: Path) -> None:
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-001', 'active', 'Active Lesson')
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-002', 'superseded', 'Superseded Lesson')
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-003', None, 'Legacy No Status')
+
+    def test_default_excludes_superseded(self, tmp_path):
+        """Default filter (``status=active``) hides superseded lessons; absent status treated as active."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(
+                Namespace(component=None, category=None, status='active', full=False)
+            )
+
+        assert result['status'] == 'success'
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert '2025-01-01-01-001' in listed_ids
+        assert '2025-01-01-01-003' in listed_ids  # absent status ⇒ active
+        assert '2025-01-01-01-002' not in listed_ids  # superseded hidden
+
+    def test_status_all_returns_every_lesson(self, tmp_path):
+        """``--status all`` returns every lesson regardless of lifecycle status."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(
+                Namespace(component=None, category=None, status='all', full=False)
+            )
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert listed_ids == {
+            '2025-01-01-01-001',
+            '2025-01-01-01-002',
+            '2025-01-01-01-003',
+        }
+
+    def test_status_superseded_returns_only_superseded(self, tmp_path):
+        """``--status superseded`` returns only lessons with frontmatter ``status=superseded``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(
+                Namespace(component=None, category=None, status='superseded', full=False)
+            )
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert listed_ids == {'2025-01-01-01-002'}
+
+    def test_legacy_namespace_without_status_attr_defaults_to_active(self, tmp_path):
+        """Backwards compatibility: a Namespace without a ``status`` attribute must default to ``active``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        # Legacy Namespace without status field — older callers must still work.
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, full=False))
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert '2025-01-01-01-002' not in listed_ids  # superseded still hidden
+        assert '2025-01-01-01-001' in listed_ids
+
+
+# =============================================================================
+# Tier 2: cmd_remove
+# =============================================================================
+
+
+class TestCmdRemove:
+    """``cmd_remove`` deletes the lesson, writes a tombstone, and logs an audit entry."""
+
+    def _seed_lesson(self, lessons_dir: Path, lesson_id: str = '2025-01-01-01-001') -> Path:
+        content = (
+            f'id={lesson_id}\n'
+            'component=test\n'
+            'category=bug\n'
+            'status=active\n'
+            'created=2025-01-01\n\n'
+            f'# {lesson_id} Title\n\nBody.\n'
+        )
+        path = lessons_dir / f'{lesson_id}.md'
+        path.write_text(content, encoding='utf-8')
+        return path
+
+    def test_remove_force_deletes_file_and_writes_tombstone(self, tmp_path):
+        """``--force`` skips the prompt; the lesson file is deleted and a tombstone is written."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        seeded = self._seed_lesson(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_remove(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    reason='duplicate of 2025-01-02-01-001',
+                    force=True,
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['id'] == '2025-01-01-01-001'
+        assert result['reason'] == 'duplicate of 2025-01-02-01-001'
+
+        # Lesson file is gone.
+        assert not seeded.exists()
+
+        # Tombstone exists with the expected payload.
+        tombstone_path = lessons_dir / '.tombstones' / '2025-01-01-01-001.json'
+        assert tombstone_path.exists()
+        payload = json.loads(tombstone_path.read_text(encoding='utf-8'))
+        assert payload['lesson_id'] == '2025-01-01-01-001'
+        assert payload['reason'] == 'duplicate of 2025-01-02-01-001'
+        assert payload['status'] == 'removed'
+        assert 'removed_at' in payload
+        assert 'superseded_by' not in payload
+
+    def test_remove_unknown_lesson_returns_not_found(self, tmp_path):
+        """Removing a lesson that does not exist returns ``error: not_found``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_remove(
+                Namespace(lesson_id='nope', reason='gone', force=True)
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+    def test_remove_declined_via_input_keeps_file(self, tmp_path, monkeypatch):
+        """Without ``--force``, an answer other than ``y/yes`` cancels removal."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        seeded = self._seed_lesson(lessons_dir)
+
+        # Stub builtins.input on the manage-lessons module to simulate "no".
+        # The remove subcommand writes the prompt to stderr separately, then
+        # calls input() with no arguments — so the stub takes none.
+        monkeypatch.setattr(_mod, 'input', lambda: 'n', raising=False)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_remove(
+                Namespace(lesson_id='2025-01-01-01-001', reason='maybe', force=False)
+            )
+
+        assert result['status'] == 'cancelled'
+        # File preserved.
+        assert seeded.exists()
+        # No tombstone written.
+        tombstone_path = lessons_dir / '.tombstones' / '2025-01-01-01-001.json'
+        assert not tombstone_path.exists()
+
+    def test_remove_logs_audit_entry(self, tmp_path):
+        """``cmd_remove --force`` emits an INFO audit entry to script-execution.log."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_lesson(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            cmd_remove(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    reason='dedup',
+                    force=True,
+                )
+            )
+
+            log_files = list((tmp_path / 'logs').glob('script-execution-*.log'))
+
+        assert log_files, 'expected at least one script-execution log file'
+        log_text = '\n'.join(p.read_text(encoding='utf-8') for p in log_files)
+        assert '[INFO]' in log_text
+        assert '(plan-marshall:manage-lessons) Removed lesson 2025-01-01-01-001' in log_text
+        assert 'dedup' in log_text
+
+
+# =============================================================================
+# Tier 2: cmd_supersede
+# =============================================================================
+
+
+class TestCmdSupersede:
+    """``cmd_supersede`` redirects a lesson to a canonical and updates both files."""
+
+    def _seed_pair(self, lessons_dir: Path, with_consolidated_section: bool = False) -> tuple[Path, Path]:
+        source = lessons_dir / '2025-01-01-01-001.md'
+        source.write_text(
+            'id=2025-01-01-01-001\n'
+            'component=test\n'
+            'category=bug\n'
+            'status=active\n'
+            'created=2025-01-01\n\n'
+            '# Source Lesson\n\nSource body content.\n',
+            encoding='utf-8',
+        )
+        canonical_body = '# Canonical Lesson\n\nCanonical body content.\n'
+        if with_consolidated_section:
+            canonical_body = (
+                '# Canonical Lesson\n\nCanonical body content.\n\n'
+                '## Consolidated from\n\n- 2024-12-31-23-099\n'
+            )
+        canonical = lessons_dir / '2025-01-02-01-001.md'
+        canonical.write_text(
+            'id=2025-01-02-01-001\n'
+            'component=test\n'
+            'category=bug\n'
+            'status=active\n'
+            'created=2025-01-02\n\n' + canonical_body,
+            encoding='utf-8',
+        )
+        return source, canonical
+
+    def test_supersede_writes_redirect_and_tombstone(self, tmp_path):
+        """Source body is replaced with a redirect stub; tombstone records ``superseded_by``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        source, canonical = self._seed_pair(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-02-01-001',
+                    reason='merged into canonical',
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['superseded_by'] == '2025-01-02-01-001'
+
+        # Source lesson body replaced with redirect stub and frontmatter updated.
+        source_content = source.read_text(encoding='utf-8')
+        assert '[SUPERSEDED]' in source_content
+        assert '`2025-01-02-01-001`' in source_content
+        assert 'merged into canonical' in source_content
+        assert 'status=superseded' in source_content
+        assert 'Source body content.' not in source_content
+
+        # Canonical received a "Consolidated from" entry.
+        canonical_content = canonical.read_text(encoding='utf-8')
+        assert '## Consolidated from' in canonical_content
+        assert '- 2025-01-01-01-001' in canonical_content
+
+        # Tombstone has superseded_by populated.
+        tombstone_path = lessons_dir / '.tombstones' / '2025-01-01-01-001.json'
+        assert tombstone_path.exists()
+        payload = json.loads(tombstone_path.read_text(encoding='utf-8'))
+        assert payload['lesson_id'] == '2025-01-01-01-001'
+        assert payload['status'] == 'superseded'
+        assert payload['superseded_by'] == '2025-01-02-01-001'
+        assert payload['reason'] == 'merged into canonical'
+
+    def test_supersede_appends_to_existing_consolidated_section(self, tmp_path):
+        """When the canonical already has a ``Consolidated from`` section, the new id is appended."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        _, canonical = self._seed_pair(lessons_dir, with_consolidated_section=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-02-01-001',
+                    reason='dedup',
+                )
+            )
+
+        canonical_content = canonical.read_text(encoding='utf-8')
+        # Both the original entry and the new one are present.
+        assert '- 2024-12-31-23-099' in canonical_content
+        assert '- 2025-01-01-01-001' in canonical_content
+        # Only one "Consolidated from" header — the section is reused, not duplicated.
+        assert canonical_content.count('## Consolidated from') == 1
+
+    def test_supersede_unknown_source_returns_not_found(self, tmp_path):
+        """Superseding a non-existent source lesson returns ``error: not_found``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_pair(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='no-such-lesson',
+                    by='2025-01-02-01-001',
+                    reason='whatever',
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+    def test_supersede_unknown_canonical_returns_canonical_not_found(self, tmp_path):
+        """Superseding by a non-existent canonical lesson returns ``error: canonical_not_found``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        source, _ = self._seed_pair(lessons_dir)
+        original_source_content = source.read_text(encoding='utf-8')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='no-such-canonical',
+                    reason='whatever',
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'canonical_not_found'
+        # Source must remain untouched on canonical-missing error.
+        assert source.read_text(encoding='utf-8') == original_source_content
+
+    def test_supersede_self_is_rejected(self, tmp_path):
+        """A lesson cannot supersede itself."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_pair(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-01-01-001',
+                    reason='self',
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'self_supersede'
+
+
+# =============================================================================
+# Tier 3: CLI plumbing for remove and supersede
+# =============================================================================
+
+
+class TestCliPlumbingRemoveSupersede(ScriptTestCase):
+    """Subprocess test for ``remove`` and ``supersede`` subcommand wiring."""
+
+    bundle = 'plan-marshall'
+    skill = 'manage-lessons'
+    script = 'manage-lessons.py'
+
+    def _seed_lesson(self, lesson_id: str, title: str, status: str = 'active') -> None:
+        lessons_dir = self.temp_dir / 'lessons-learned'
+        lessons_dir.mkdir(parents=True, exist_ok=True)
+        (lessons_dir / f'{lesson_id}.md').write_text(
+            f'id={lesson_id}\ncomponent=test\ncategory=bug\nstatus={status}\n'
+            f'created=2025-01-01\n\n# {title}\n\nBody.\n',
+            encoding='utf-8',
+        )
+
+    def test_cli_remove_force(self):
+        """``manage-lessons remove --force`` deletes the lesson via the CLI."""
+        self._seed_lesson('2025-01-01-01-001', 'Removable')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(
+                SCRIPT_PATH,
+                'remove',
+                '--lesson-id',
+                '2025-01-01-01-001',
+                '--reason',
+                'duplicate',
+                '--force',
+            )
+
+        self.assert_success(result)
+        self.assertIn('status: success', result.stdout)
+        self.assertIn('id: 2025-01-01-01-001', result.stdout)
+        self.assertFalse((self.temp_dir / 'lessons-learned' / '2025-01-01-01-001.md').exists())
+
+    def test_cli_remove_requires_reason(self):
+        """``remove`` without ``--reason`` is rejected at argparse."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(
+                SCRIPT_PATH,
+                'remove',
+                '--lesson-id',
+                '2025-01-01-01-001',
+                '--force',
+            )
+
+        self.assert_failure(result)
+        self.assertIn('--reason', result.stderr)
+
+    def test_cli_supersede(self):
+        """``manage-lessons supersede`` wires the redirect via the CLI."""
+        self._seed_lesson('2025-01-01-01-001', 'Source')
+        self._seed_lesson('2025-01-02-01-001', 'Canonical')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(
+                SCRIPT_PATH,
+                'supersede',
+                '--lesson-id',
+                '2025-01-01-01-001',
+                '--by',
+                '2025-01-02-01-001',
+                '--reason',
+                'merged',
+            )
+
+        self.assert_success(result)
+        self.assertIn('status: success', result.stdout)
+        self.assertIn('superseded_by: 2025-01-02-01-001', result.stdout)
 
 
 if __name__ == '__main__':

@@ -27,6 +27,16 @@ Skill: plan-marshall:dev-general-practices
 - Never skip the phase transition — use `manage-status transition`
 - Never improvise script subcommands — use only those documented below
 
+**Anti-pattern: shell-substitution shortcuts for batch task payloads**
+
+When persisting the multi-task batch (Step 6 → 6a/6b), the following shell shortcuts are explicitly forbidden because they bypass the `--tasks-file` path-allocate flow and trip Claude Code's bash safety rules (one command per call, no shell constructs, no heredocs with `#` lines):
+
+- `$(cat …)` command substitution (e.g. `manage-tasks batch-add --tasks-json "$(cat /tmp/tasks.json)"`) — violates the no-`$()` rule and silently quotes the JSON through the shell argument boundary.
+- Heredocs with `#` lines (e.g. `cat <<EOF | jq …` payloads that include `#`-prefixed comments) — heredocs containing `#` lines trigger the bash safety prompt and break execution.
+- `python -c "open('…').write('…')"` one-liners that inline-write the batch JSON from a shell argument — this re-introduces the same shell-quoting fragility the path-allocate flow exists to eliminate.
+
+**Rule-compliant alternative**: Use the `--tasks-file` path-allocate flow documented in Step 6a/6b. Stage the batch JSON via `manage-files write --file work/tasks-batch.json` (so the payload is written through a structured tool, not a shell argument), then call `manage-tasks batch-add --tasks-file .plan/local/plans/{plan_id}/work/tasks-batch.json`. This is the only sanctioned path for multi-task creation in this phase.
+
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
 
@@ -284,29 +294,42 @@ To prevent compound-word mis-interpretation (e.g. `review-knowledge` being descr
 
 **CRITICAL — Shell Metacharacter Sanitization**: Before writing values into the TOON task file, strip all markdown backticks (`` ` ``) from title, description, criteria, and step values. Backticks are shell metacharacters (command substitution) that trigger permission prompts if they later reach a shell. They are markdown formatting artifacts not needed in TOON task data. Replace `` `foo` `` with `foo` (plain text).
 
-```bash
-# Compose every task record for this phase invocation into one JSON array,
-# then persist them atomically. Each entry mirrors the TOON task schema:
-#   {
-#     "title": "{task title}",
-#     "deliverable": {deliverable_number},
-#     "domain": "{domain}",
-#     "profile": "{profile}",
-#     "description": "{description}",
-#     "steps": ["{file1}", "{file2}"],
-#     "depends_on": [],            # or ["TASK-1", ...]
-#     "skills": ["{bundle:skill}", ...],
-#     "verification": {
-#       "commands": ["{cmd1}"],
-#       "criteria": "{criteria}"
-#     }
-#   }
-#
-# Sequential numbering is assigned in array order at call time. On any
-# validation failure no TASK-NNN.json is written.
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
-  batch-add --plan-id {plan_id} --tasks-json '{json_array}'
+Compose every task record for this phase invocation into one JSON array, then persist them atomically via the path-allocate flow. Each entry mirrors the TOON task schema:
+
 ```
+{
+  "title": "{task title}",
+  "deliverable": {deliverable_number},
+  "domain": "{domain}",
+  "profile": "{profile}",
+  "description": "{description}",
+  "steps": ["{file1}", "{file2}"],
+  "depends_on": [],            // or ["TASK-1", ...]
+  "skills": ["{bundle:skill}", ...],
+  "verification": {
+    "commands": ["{cmd1}"],
+    "criteria": "{criteria}"
+  }
+}
+```
+
+Sequential numbering is assigned in array order at call time. On any validation failure no `TASK-NNN.json` is written.
+
+**Step 6a — Stage the JSON array under the plan's `work/` tree** via `manage-files write`. This avoids marshalling a large JSON payload through the shell argument boundary and keeps the batch input auditable as a plan artifact:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files \
+  write --plan-id {plan_id} --file work/tasks-batch.json --content "{json_array}"
+```
+
+**Step 6b — Persist the batch atomically** by passing the staged file path to `batch-add --tasks-file`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
+  batch-add --plan-id {plan_id} --tasks-file .plan/local/plans/{plan_id}/work/tasks-batch.json
+```
+
+The `--tasks-file PATH` form is the canonical entrypoint for phase-4-plan (and any other caller that produces more than one task at a time). The legacy inline `--tasks-json` form is mutually exclusive with `--tasks-file` and remains supported as a secondary option for trivial payloads only — it is NOT used by this phase.
 
 > **TOON quoting rule for `verification.commands` (ENFORCED)**
 >
@@ -646,7 +669,8 @@ If deliverable metadata incomplete:
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
 - `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
-- `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add` (preferred for multi-task creation in this phase). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`).
+- `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add --tasks-file PATH` (preferred for multi-task creation in this phase, where `PATH` is staged via `manage-files write` to `.plan/local/plans/{plan_id}/work/tasks-batch.json`). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`).
+- `plan-marshall:manage-files:manage-files` - Stage the batch JSON array (via `write --file work/tasks-batch.json`) so the payload never crosses the shell argument boundary.
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)
 - `plan-marshall:manage-execution-manifest:manage-execution-manifest` - Compose / validate the per-plan execution manifest in Step 8b (compose, validate)

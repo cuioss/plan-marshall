@@ -61,7 +61,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 |---------|------------|-------------|
 | `prepare-add` | `--plan-id [--slot]` | Allocate a scratch path under `<plan>/work/pending-tasks/` (Step 1 of add flow) |
 | `commit-add` | `--plan-id [--slot]` | Read the prepared TOON file, validate, create TASK-NNN.json, delete scratch (Step 3 of add flow) |
-| `batch-add` | `--plan-id [--tasks-json]` | Atomically create N tasks from a JSON array (via `--tasks-json` or stdin). All-or-nothing semantics: if any entry fails validation, no TASK-NNN.json is written. |
+| `batch-add` | `--plan-id (--tasks-file PATH \| --tasks-json JSON \| stdin)` | Atomically create N tasks from a JSON array. Preferred form is `--tasks-file PATH` pointing at a staged plan-relative file (e.g. `work/tasks-batch.json`); `--tasks-json` and stdin remain available for trivial payloads. The two flags are mutually exclusive. All-or-nothing semantics: if any entry fails validation, no `TASK-NNN.json` is written. |
 | `update` | `--plan-id --task [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
 | `remove` | `--plan-id --task` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
@@ -229,11 +229,33 @@ Semantics:
 - The JSON array shape is documented in
   `standards/task-contract.md` § "Atomic Batch Insertion (`batch-add`)".
 
+**Canonical form — `--tasks-file PATH` (path-allocate flow)**: stage the JSON
+array under the plan's `work/` tree via `manage-files write`, then point
+`batch-add` at the staged file. This keeps large batches off the shell
+argument boundary, makes the input auditable as a plan artifact, and is the
+form used by `phase-4-plan`:
+
 ```bash
-# Provide the array via --tasks-json (single-line JSON safe for shell args)
+# Step 1: stage the JSON array as a plan-relative file under work/
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files \
+  write --plan-id my-feature --file work/tasks-batch.json \
+  --content '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":["src/main/java/A.java"]},{"title":"Task B","deliverable":1,"domain":"java","profile":"module_testing","skills":[],"steps":["src/test/java/ATest.java"],"depends_on":["TASK-1"]}]'
+
+# Step 2: persist the batch atomically by pointing batch-add at the staged file
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-add \
   --plan-id my-feature \
-  --tasks-json '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":["src/main/java/A.java"]},{"title":"Task B","deliverable":1,"domain":"java","profile":"module_testing","skills":[],"steps":["src/test/java/ATest.java"],"depends_on":["TASK-1"]}]'
+  --tasks-file .plan/local/plans/my-feature/work/tasks-batch.json
+```
+
+**Secondary form — inline `--tasks-json` (trivial payloads only)**: provide
+the array directly on the command line. This form is mutually exclusive with
+`--tasks-file` and is intended for small, hand-written payloads where the
+shell escaping cost is negligible. Phase-4-plan does NOT use this form.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks batch-add \
+  --plan-id my-feature \
+  --tasks-json '[{"title":"Task A","deliverable":1,"domain":"java","profile":"implementation","skills":[],"steps":["src/main/java/A.java"]}]'
 ```
 
 The batch path replaces the per-task `prepare-add` + Write + `commit-add`
