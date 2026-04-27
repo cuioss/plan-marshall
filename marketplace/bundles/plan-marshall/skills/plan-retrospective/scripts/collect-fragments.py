@@ -11,10 +11,21 @@ Subcommands:
     finalize  Report the bundle path and its registered aspects.
 
 Bundle location:
-    live      ``<plan_dir>/work/retro-fragments.toon`` (inside the plan dir).
-    archived  ``<OS tmpdir>/plan-retrospective/retro-fragments-<plan_id>.toon``
-              (kept outside the archived plan dir so audits never mutate the
-              archive).
+    live      ``<plan_dir>/work/retro-fragments.toon`` where ``plan_dir`` is
+              ``base_path('plans', plan_id)`` (honours ``PLAN_BASE_DIR``).
+    archived  ``<archived_plan_path>/work/retro-fragments.toon`` when the
+              caller passes ``--archived-plan-path``; otherwise a synthetic
+              per-plan dir under the OS tmpdir
+              (``<tmp>/plan-retrospective/plan-<plan_id>/work/retro-fragments.toon``)
+              so audits without an explicit archive path never mutate any
+              real archived plan directory.
+
+Path resolution rules:
+    --fragment-file accepts both relative and absolute paths. Absolute paths
+    are used verbatim. Relative paths are resolved against the same
+    ``plan_dir`` that ``resolve_bundle_path`` uses for the active mode, so
+    SKILL.md examples like ``--fragment-file work/fragment-<aspect>.toon``
+    work without forcing callers to spell out the plan directory.
 
 All subcommands emit TOON output via ``serialize_toon`` and follow the
 execute-script executor contract (@safe_main, ``--help`` on every subparser,
@@ -38,21 +49,28 @@ from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-fo
 
 _ARCHIVED_TMP_SUBDIR = 'plan-retrospective'
 _META_KEY = '_meta'
+_BUNDLE_RELATIVE = ('work', 'retro-fragments.toon')
 
 
-def resolve_bundle_path(mode: str, plan_id: str, archived_plan_path: str | None = None) -> Path:
-    """Return the bundle path for the given mode.
+def _resolve_plan_dir(mode: str, plan_id: str, archived_plan_path: str | None) -> Path:
+    """Return the canonical plan directory for the given mode.
+
+    This is the single source of truth used by both ``resolve_bundle_path``
+    (to locate the bundle file) and ``_resolve_fragment_path`` (to anchor
+    relative ``--fragment-file`` arguments). Keeping the resolution in one
+    place guarantees that ``init``/``add``/``finalize`` agree on the bundle
+    root and that fragment files referenced via the documented relative
+    snippets land where the bundle expects them.
 
     Args:
         mode: Either ``'live'`` or ``'archived'``.
-        plan_id: Plan identifier. Required for both modes (archived mode uses
-            it to disambiguate bundles for concurrent retrospectives).
-        archived_plan_path: Accepted for API symmetry with ``compile-report``
-            but intentionally ignored — archived bundles live in the OS tmp
-            dir so archived plan directories stay read-only during audits.
+        plan_id: Plan identifier. Required for both modes.
+        archived_plan_path: Caller-supplied archived plan root. Honoured in
+            ``archived`` mode; ignored in ``live`` mode (live mode reads
+            ``PLAN_BASE_DIR`` via ``base_path``).
 
     Returns:
-        Absolute path to the bundle file.
+        Absolute path to the plan directory.
 
     Raises:
         ValueError: On unknown ``mode`` or missing ``plan_id``.
@@ -60,16 +78,53 @@ def resolve_bundle_path(mode: str, plan_id: str, archived_plan_path: str | None 
     if not plan_id:
         raise ValueError('--plan-id is required')
     if mode == 'live':
-        return base_path('plans', plan_id) / 'work' / 'retro-fragments.toon'
+        return base_path('plans', plan_id).resolve()
     if mode == 'archived':
-        # ``archived_plan_path`` is accepted for call-site symmetry with
-        # compile-report, but not used: archived bundles stay in the OS tmp
-        # dir so audits never touch the archived plan directory. Referencing
-        # the arg keeps linters happy and documents the intent.
-        _ = archived_plan_path
-        tmp_root = Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR
-        return tmp_root / f'retro-fragments-{plan_id}.toon'
+        if archived_plan_path:
+            return Path(archived_plan_path).resolve()
+        return (
+            Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR / f'plan-{plan_id}'
+        ).resolve()
     raise ValueError(f'Unknown mode: {mode!r}')
+
+
+def resolve_bundle_path(mode: str, plan_id: str, archived_plan_path: str | None = None) -> Path:
+    """Return the bundle path for the given mode.
+
+    Both modes resolve to ``<plan_dir>/work/retro-fragments.toon``. The
+    plan_dir comes from :func:`_resolve_plan_dir`, so ``init``, ``add``, and
+    ``finalize`` agree on the bundle root by construction.
+
+    Args:
+        mode: Either ``'live'`` or ``'archived'``.
+        plan_id: Plan identifier. Required for both modes.
+        archived_plan_path: Caller-supplied archived plan root for archived
+            mode (e.g. an archived-plan copy on tmp_path during integration
+            tests). When omitted, archived mode falls back to a synthetic
+            per-plan tmp directory so production audits without an explicit
+            archive path never write into a real archived plan.
+
+    Returns:
+        Absolute path to the bundle file.
+
+    Raises:
+        ValueError: On unknown ``mode`` or missing ``plan_id``.
+    """
+    return _resolve_plan_dir(mode, plan_id, archived_plan_path).joinpath(*_BUNDLE_RELATIVE)
+
+
+def _resolve_fragment_path(args: argparse.Namespace, mode: str) -> Path:
+    """Resolve ``--fragment-file`` against the active plan directory.
+
+    Absolute paths are returned verbatim. Relative paths are anchored to the
+    same ``plan_dir`` that holds the bundle for the active ``mode``, so the
+    SKILL.md-documented ``work/fragment-<aspect>.toon`` snippets work without
+    forcing callers to spell out the plan directory.
+    """
+    raw = Path(args.fragment_file)
+    if raw.is_absolute():
+        return raw
+    return _resolve_plan_dir(mode, args.plan_id, args.archived_plan_path) / raw
 
 
 def _read_bundle(bundle_path: Path) -> dict[str, Any]:
@@ -226,7 +281,7 @@ def cmd_add(args: argparse.Namespace) -> dict[str, Any]:
             'error': f'Aspect already registered: {aspect!r}. Pass --overwrite to replace.',
         }
 
-    fragment = _read_fragment(Path(args.fragment_file))
+    fragment = _read_fragment(_resolve_fragment_path(args, mode))
     bundle[aspect] = fragment
     _write_bundle(bundle_path, bundle)
 
@@ -276,7 +331,7 @@ def _add_init_args(parser: argparse.ArgumentParser) -> None:
         '--archived-plan-path',
         dest='archived_plan_path',
         default=None,
-        help='Accepted for symmetry with compile-report; archived bundles live in OS tmp',
+        help='Archived plan root; when set, archived-mode bundles live at <archived_plan_path>/work/retro-fragments.toon (else a synthetic OS tmp dir)',
     )
 
 
@@ -291,7 +346,7 @@ def _add_add_finalize_args(parser: argparse.ArgumentParser) -> None:
         '--archived-plan-path',
         dest='archived_plan_path',
         default=None,
-        help='Accepted for symmetry with compile-report; archived bundles live in OS tmp',
+        help='Archived plan root; when set, archived-mode bundles live at <archived_plan_path>/work/retro-fragments.toon (else a synthetic OS tmp dir)',
     )
 
 

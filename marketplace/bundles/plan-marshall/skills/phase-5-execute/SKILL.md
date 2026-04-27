@@ -371,6 +371,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Immediately after the `[OUTCOME]` line, emit one `[ARTIFACT]` work-log entry per file the task changed by diffing the task-start SHA (recorded at `in_progress` transition as `task_start_sha`) against the current HEAD. See `standards/workflow.md` § **Artifact Emission at Task Completion** for the authoritative procedure, status-code mapping, and rename-handling rule. The artifact entries use a deliberate three-segment caller prefix `(plan-marshall:phase-5-execute:{task_number})` — a documented exception to the usual two-segment `(bundle:skill)` convention in [manage-logging/standards/log-format.md](../manage-logging/standards/log-format.md). Emit nothing when the diff is empty. This step precedes `manage-tasks next` so the audit trail for each task is flushed before the orchestrator advances.
 
+### Step 8b: Persist Per-Task Subagent Usage to Accumulator
+
+**Applies when**: the task was executed by dispatching to a Task agent / `execute-task` Skill that returned a `<usage>` tag. Inline tasks (or task agents that produced no `<usage>` tag) skip this step.
+
+Persist the agent's `<usage>` totals to the on-disk per-phase accumulator so `manage-metrics phase-boundary` can read them at end-of-phase, regardless of whether the model context survives until the next orchestrator turn:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+  --plan-id {plan_id} --phase 5-execute \
+  --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+```
+
+Replace the placeholders with the integers parsed from the dispatched agent's `<usage>...</usage>` block. The script reads `.plan/plans/{plan_id}/work/metrics-accumulator-5-execute.toon` (initialising it on first call), sums in the supplied values, increments `samples`, and writes the file back. The on-disk file is the only source of truth — do NOT also keep a parallel tally in model context. See `manage-metrics/standards/data-format.md` § "Per-Phase Subagent Accumulator" for the file schema.
+
+The orchestrator's `phase-boundary` call in `workflows/execution.md` (recorded at end of execute) reads this accumulator as a fallback when its `--total-tokens` / `--tool-uses` / `--duration-ms` flags are omitted. Inline tasks contribute nothing — `manage-metrics enrich` (run by `phase-6-finalize:default:record-metrics`) sweeps the transcript for any subagent `<usage>` tags whose timestamp falls inside the `5-execute` window and adds them to the per-phase `subagent_*` columns of the metrics report as a post-hoc safety net.
+
 ### Step 9: Independent Change Verification
 
 **Applies to**: `implementation` and `module_testing` profile tasks only. Skip this step for `verification` profile tasks.
@@ -656,10 +672,17 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Phase-boundary metric bookkeeping
 
-This skill does not invoke `manage-metrics` itself. The orchestrator
-(`plan-marshall:plan-marshall` workflows) records the `5-execute → 6-finalize`
-boundary via the fused `manage-metrics phase-boundary` call — see
+The `5-execute → 6-finalize` phase boundary itself is recorded by the
+orchestrator (`plan-marshall:plan-marshall` workflows) via the fused
+`manage-metrics phase-boundary` call — see
 `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md` §
 `phase-boundary` for the API. Per-task `manage-tasks finalize-step` calls
 during the execution loop are unchanged.
+
+Per-task subagent token aggregation is handled by Step 8b
+(`accumulate-agent-usage`) which persists each dispatched agent's `<usage>`
+totals to `.plan/plans/{plan_id}/work/metrics-accumulator-5-execute.toon`.
+The orchestrator's `phase-boundary` call reads this accumulator file as a
+fallback when its explicit token flags are omitted — so the orchestrator
+does not need to maintain a parallel running sum in model context.
 

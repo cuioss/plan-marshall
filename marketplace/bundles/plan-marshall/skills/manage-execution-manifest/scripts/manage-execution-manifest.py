@@ -17,16 +17,21 @@ Usage:
 """
 
 import argparse
+import fnmatch
+import json
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from constants import FILE_REFERENCES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
+    get_marshal_path,
     get_plan_dir,
     output_toon,
     output_toon_error,
+    read_json,
     safe_main,
 )
 from input_validation import (  # type: ignore[import-not-found]
@@ -76,6 +81,42 @@ DEFAULT_PHASE_6_STEPS = (
     'branch-cleanup',
     'archive-plan',
 )
+
+# Bundle source globs evaluated by `bundle_self_modification`. A modified-file
+# entry matching ANY of these triggers an early `sync-plugin-cache` insertion
+# in `phase_6.steps`. Cached plugin definitions are the runtime source of truth
+# for Task agent dispatch, so when the plan's diff edits these surfaces the
+# in-flight finalize must publish the worktree to the cache before the first
+# agent-dispatched step. See lesson 2026-04-26-23-003.
+_BUNDLE_SOURCE_GLOBS = (
+    'marketplace/bundles/*/agents/*',
+    'marketplace/bundles/*/agents/**',
+    'marketplace/bundles/*/commands/*',
+    'marketplace/bundles/*/commands/**',
+    'marketplace/bundles/*/skills/*',
+    'marketplace/bundles/*/skills/**',
+)
+
+# Phase 6 steps that dispatch Task subagents loaded from the plugin cache. The
+# bundle_self_modification rule inserts `sync-plugin-cache` immediately before
+# the earliest occurrence of ANY entry in this set. Stored as bare names; the
+# matcher normalizes the candidate-list step (which may arrive prefixed with
+# `default:` from `marshal.json` or bare from the `DEFAULT_PHASE_6_STEPS`
+# fallback) before checking membership, so both call paths fire correctly.
+_AGENT_DISPATCHED_STEPS = frozenset({
+    'create-pr',
+    'automated-review',
+    'sonar-roundtrip',
+    'knowledge-capture',
+    'lessons-capture',
+})
+
+
+def _strip_default_prefix(step: str) -> str:
+    """Return the bare step name regardless of the optional ``default:`` prefix."""
+    return step[len('default:'):] if step.startswith('default:') else step
+
+_EARLY_SYNC_STEP = 'project:finalize-step-sync-plugin-cache'
 
 
 # =============================================================================
@@ -242,6 +283,117 @@ def _decide(
     return body, 'default'
 
 
+def _bundle_self_modification(modified_files: list[str]) -> bool:
+    """Return True when any modified file matches a bundle source glob.
+
+    Globs are evaluated with ``fnmatch.fnmatchcase`` (POSIX semantics, no regex).
+    The triggering surfaces are bundled agents, commands, and skills — the
+    runtime source of truth for Task dispatch. See lesson 2026-04-26-23-003.
+    """
+    return any(
+        fnmatch.fnmatchcase(path, glob)
+        for path in modified_files
+        for glob in _BUNDLE_SOURCE_GLOBS
+    )
+
+
+def _read_bundle_change_paths(plan_id: str) -> list[str]:
+    """Read the union of ``affected_files`` and ``modified_files`` from references.json.
+
+    The composer runs from `phase-4-plan` Step 8b — at outline/plan time, BEFORE
+    Phase 5 has committed any changes. ``modified_files`` is populated by
+    ``manage-status transition`` on Phase 5 completion, so it is empty at compose
+    time for normal plans (a re-compose after Phase 5 would see it populated).
+    ``affected_files`` is populated at outline time from the solution outline
+    deliverables and is the canonical pre-execute source.
+
+    Reading both fields and unioning their entries closes that timing gap: the
+    rule fires on the first compose (via ``affected_files``) AND on any later
+    re-compose that includes execute-time additions (via ``modified_files``).
+    Returns an empty list when the file is missing or malformed — the rule
+    simply does not fire in that case.
+    """
+    references_path = get_plan_dir(plan_id) / 'references.json'
+    if not references_path.exists():
+        return []
+    try:
+        payload = json.loads(references_path.read_text(encoding='utf-8'))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    seen: set[str] = set()
+    union: list[str] = []
+    for field in ('affected_files', 'modified_files'):
+        entries = payload.get(field)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, str) and entry not in seen:
+                seen.add(entry)
+                union.append(entry)
+    return union
+
+
+def _apply_bundle_self_modification(
+    plan_id: str, body: dict[str, Any], modified_files: list[str]
+) -> str | None:
+    """Insert an early ``sync-plugin-cache`` step when the rule fires.
+
+    Mutates ``body['phase_6']['steps']`` in place and returns the inserting
+    step name (the agent-dispatched step that the new entry was placed before)
+    when the rule fires. Returns ``None`` when the rule does not fire — either
+    because no bundle source matched or no agent-dispatched step is present in
+    the resolved phase_6 list.
+
+    Idempotent: if ``project:finalize-step-sync-plugin-cache`` already sits
+    immediately before the first agent-dispatched step, no insertion occurs.
+    The existing late-stage occurrence (if any) is preserved verbatim — the
+    rule stacks an additional early occurrence rather than relocating.
+    """
+    if not _bundle_self_modification(modified_files):
+        return None
+
+    phase_6 = body.get('phase_6')
+    if not isinstance(phase_6, dict):
+        return None
+    steps = phase_6.get('steps')
+    if not isinstance(steps, list) or not steps:
+        return None
+
+    early_index: int | None = None
+    for i, step in enumerate(steps):
+        if not isinstance(step, str):
+            continue
+        # Normalize the candidate-list entry (may arrive prefixed with
+        # `default:` from `marshal.json` or bare from `DEFAULT_PHASE_6_STEPS`)
+        # before matching against the bare-name set.
+        if _strip_default_prefix(step) in _AGENT_DISPATCHED_STEPS:
+            early_index = i
+            break
+    if early_index is None:
+        return None
+
+    # Idempotency guard: already inserted immediately before the first agent step.
+    if early_index > 0 and steps[early_index - 1] == _EARLY_SYNC_STEP:
+        return None
+
+    inserting_before = steps[early_index]
+    if not isinstance(inserting_before, str):
+        return None
+    steps.insert(early_index, _EARLY_SYNC_STEP)
+    phase_6['steps'] = steps
+    return inserting_before
+
+
+def _log_bundle_self_modification(plan_id: str, inserting_before: str) -> None:
+    """Emit the decision-log entry for the ``bundle_self_modification`` rule."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — '
+        f'inserted {_EARLY_SYNC_STEP} before {inserting_before}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 def _looks_docs_only(phase_5_candidates: list[str]) -> bool:
     """Heuristic: docs-only plans don't request module-tests or coverage.
 
@@ -331,6 +483,133 @@ def _log_commit_push_omitted(plan_id: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
+def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
+    """Emit the decision-log entry for the ``pre_push_quality_gate_inactive`` pre-filter."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
+        'activation_globs empty or no modified_files match'
+    )
+    _emit_decision_log(plan_id, message)
+
+
+# =============================================================================
+# Pre-Filter Helpers
+# =============================================================================
+
+
+def _read_activation_globs() -> list[str]:
+    """Read ``plan.phase-6-finalize.pre_push_quality_gate.activation_globs`` from marshal.json.
+
+    Returns an empty list when the file is missing, the keys are absent, or the
+    value is not a list. The pre-filter treats any of these conditions as
+    "inactive" and removes ``default:pre-push-quality-gate``.
+    """
+    marshal_path = get_marshal_path()
+    if not marshal_path.exists():
+        return []
+    data = read_json(marshal_path, default={})
+    if not isinstance(data, dict):
+        return []
+    plan = data.get('plan')
+    if not isinstance(plan, dict):
+        return []
+    phase_6 = plan.get('phase-6-finalize')
+    if not isinstance(phase_6, dict):
+        return []
+    pre_push = phase_6.get('pre_push_quality_gate')
+    if not isinstance(pre_push, dict):
+        return []
+    globs = pre_push.get('activation_globs')
+    if not isinstance(globs, list):
+        return []
+    return [g for g in globs if isinstance(g, str) and g]
+
+
+def _read_modified_files(plan_id: str) -> list[str]:
+    """Read ``references.json::modified_files`` for ``plan_id``.
+
+    Returns an empty list when the file is missing or the field is absent / not
+    a list. The pre-filter treats absence as "no matches" and removes the step.
+    """
+    refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
+    if not refs_path.exists():
+        return []
+    data = read_json(refs_path, default={})
+    if not isinstance(data, dict):
+        return []
+    files = data.get('modified_files')
+    if not isinstance(files, list):
+        return []
+    return [f for f in files if isinstance(f, str) and f]
+
+
+def _any_glob_matches(paths: list[str], globs: list[str]) -> bool:
+    """Return ``True`` iff at least one ``path`` matches at least one ``glob``."""
+    for path in paths:
+        for glob in globs:
+            if fnmatch.fnmatch(path, glob):
+                return True
+    return False
+
+
+def _apply_commit_strategy_none(
+    phase_6_candidates: list[str], commit_strategy: str
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``commit-push`` when ``commit_strategy == none``.
+
+    Also drops ``pre-push-quality-gate`` because the gate is only meaningful
+    when a downstream push exists. Returns the filtered list plus a flag
+    indicating whether the pre-filter fired.
+    """
+    if commit_strategy != 'none':
+        return phase_6_candidates, False
+    fired = False
+    filtered: list[str] = []
+    for step in phase_6_candidates:
+        if step in {'commit-push', 'pre-push-quality-gate'}:
+            fired = True
+            continue
+        filtered.append(step)
+    return filtered, fired
+
+
+def _apply_pre_push_quality_gate_inactive(
+    phase_6_candidates: list[str], plan_id: str
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``pre-push-quality-gate`` when activation conditions fail.
+
+    Activation requires BOTH:
+
+    1. ``plan.phase-6-finalize.pre_push_quality_gate.activation_globs`` in
+       ``marshal.json`` is non-empty.
+    2. At least one entry in ``references.json::modified_files`` matches one of
+       the configured globs (using ``fnmatch.fnmatch``).
+
+    When either condition fails, ``pre-push-quality-gate`` is removed from
+    ``phase_6_candidates``. The pre-filter is a no-op when ``pre-push-quality-gate``
+    is already absent (e.g., already filtered by ``_apply_commit_strategy_none``).
+    Returns the filtered list plus a flag indicating whether the pre-filter
+    fired (i.e., the step was active in the input but inactive after the
+    check).
+    """
+    if 'pre-push-quality-gate' not in phase_6_candidates:
+        return phase_6_candidates, False
+
+    globs = _read_activation_globs()
+    if not globs:
+        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
+
+    modified_files = _read_modified_files(plan_id)
+    if not modified_files:
+        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
+
+    if not _any_glob_matches(modified_files, globs):
+        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
+
+    # All activation conditions satisfied — keep the step.
+    return phase_6_candidates, False
+
+
 # =============================================================================
 # Command Handlers
 # =============================================================================
@@ -374,15 +653,23 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     phase_5_candidates = _split_csv(args.phase_5_steps, DEFAULT_PHASE_5_STEPS)
     phase_6_candidates = _split_csv(args.phase_6_steps, DEFAULT_PHASE_6_STEPS)
 
-    # Pre-filter: when commit_strategy == none, drop commit-push from the
-    # Phase 6 candidate list before the seven-row matrix evaluates. This keeps
-    # the row matrix orthogonal to commit_strategy — every row that emits a
-    # Phase 6 list operates on the already-filtered candidate set, so the
-    # resulting phase_6.steps will never contain commit-push.
-    commit_push_omitted = False
-    if commit_strategy == 'none' and 'commit-push' in phase_6_candidates:
-        phase_6_candidates = [s for s in phase_6_candidates if s != 'commit-push']
-        commit_push_omitted = True
+    # Pre-filters run before the seven-row matrix. They are orthogonal to the
+    # row matrix's change-type / scope / recipe inputs and operate on the
+    # candidate list. The order is fixed and documented in
+    # standards/decision-rules.md:
+    #   1. commit_strategy_none — drop commit-push (and pre-push-quality-gate)
+    #      when no push will occur.
+    #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
+    #      activation_globs is empty or no modified_files match.
+    # Each pre-filter returns (filtered_candidates, fired_flag); we log a
+    # dedicated decision-log line per fired pre-filter in addition to the row
+    # log line emitted by _log_decision below.
+    phase_6_candidates, commit_push_omitted = _apply_commit_strategy_none(
+        phase_6_candidates, commit_strategy
+    )
+    phase_6_candidates, pre_push_quality_gate_omitted = _apply_pre_push_quality_gate_inactive(
+        phase_6_candidates, plan_id
+    )
 
     affected_files_count = max(0, int(args.affected_files_count or 0))
     recipe_key = args.recipe_key or None
@@ -397,6 +684,14 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates=phase_6_candidates,
     )
 
+    # Bundle self-modification rule (stacks on top of the seven-row matrix):
+    # when the plan's diff edits cached agent/command/skill sources, prepend
+    # an early `sync-plugin-cache` step before the first agent-dispatched
+    # finalize step so Phase 6 agent dispatches see the worktree's definition,
+    # not the stale cache. See lesson 2026-04-26-23-003.
+    bundle_change_paths = _read_bundle_change_paths(plan_id)
+    bundle_rule_inserted_before = _apply_bundle_self_modification(plan_id, body, bundle_change_paths)
+
     manifest = {
         'manifest_version': MANIFEST_VERSION,
         'plan_id': plan_id,
@@ -405,7 +700,11 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     write_manifest(plan_id, manifest)
     if commit_push_omitted:
         _log_commit_push_omitted(plan_id)
+    if pre_push_quality_gate_omitted:
+        _log_pre_push_quality_gate_omitted(plan_id)
     _log_decision(plan_id, rule, body)
+    if bundle_rule_inserted_before is not None:
+        _log_bundle_self_modification(plan_id, bundle_rule_inserted_before)
 
     return {
         'status': 'success',
@@ -423,6 +722,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'rule_fired': rule,
         'commit_strategy': commit_strategy,
         'commit_push_omitted': commit_push_omitted,
+        'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
+        'bundle_self_modification_inserted_before': bundle_rule_inserted_before or '',
     }
 
 
