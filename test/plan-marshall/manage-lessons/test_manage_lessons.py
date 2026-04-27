@@ -40,6 +40,8 @@ cmd_list = _mod.cmd_list
 cmd_update = _mod.cmd_update
 cmd_convert_to_plan = _mod.cmd_convert_to_plan
 cmd_from_error = _mod.cmd_from_error
+cmd_remove = _mod.cmd_remove
+cmd_supersede = _mod.cmd_supersede
 get_next_id = _mod.get_next_id
 
 
@@ -941,6 +943,582 @@ class TestCliPlumbingAdd(ScriptTestCase):
 
         self.assert_failure(result)
         self.assertIn('unrecognized arguments', result.stderr)
+
+
+# =============================================================================
+# Tier 2: status frontmatter on new lessons
+# =============================================================================
+
+
+class TestStatusFrontmatterOnAdd:
+    """``cmd_add`` and ``cmd_from_error`` must seed ``status=active``."""
+
+    def test_add_writes_status_active(self, tmp_path):
+        """Newly added lessons must include ``status=active`` in the metadata header."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_add(
+                Namespace(
+                    component='test-component',
+                    category='bug',
+                    title='Status Active Default',
+                    bundle=None,
+                )
+            )
+
+        assert result['status'] == 'success'
+        content = Path(result['path']).read_text(encoding='utf-8')
+        assert 'status=active' in content
+
+    def test_from_error_writes_status_active(self, tmp_path):
+        """Error-context lessons must include ``status=active`` in the metadata header."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        error_context = json.dumps({'component': 'cmpt', 'error': 'boom', 'solution': 'fix it'})
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_from_error(Namespace(context=error_context))
+
+        assert result['status'] == 'success'
+        # Locate the file by id in the lessons dir.
+        lesson_path = next(lessons_dir.glob(f'{result["id"]}.md'))
+        assert 'status=active' in lesson_path.read_text(encoding='utf-8')
+
+
+# =============================================================================
+# Tier 2: cmd_list --status filter
+# =============================================================================
+
+
+def _seed_lesson_with_status(
+    lessons_dir: Path, lesson_id: str, status: str | None, title: str
+) -> Path:
+    """Write a minimal lesson file with optional ``status`` frontmatter."""
+    metadata_lines = [
+        f'id={lesson_id}',
+        'component=test',
+        'category=bug',
+        'created=2025-01-01',
+    ]
+    if status is not None:
+        metadata_lines.insert(3, f'status={status}')
+    content = '\n'.join(metadata_lines) + f'\n\n# {title}\n\nBody.\n'
+    path = lessons_dir / f'{lesson_id}.md'
+    path.write_text(content, encoding='utf-8')
+    return path
+
+
+class TestCmdListStatusFilter:
+    """``cmd_list --status`` filter behaviour."""
+
+    def _seed_three_statuses(self, lessons_dir: Path) -> None:
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-001', 'active', 'Active Lesson')
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-002', 'superseded', 'Superseded Lesson')
+        _seed_lesson_with_status(lessons_dir, '2025-01-01-01-003', None, 'Legacy No Status')
+
+    def test_default_excludes_superseded(self, tmp_path):
+        """Default filter (``status=active``) hides superseded lessons; absent status treated as active."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(
+                Namespace(component=None, category=None, status='active', full=False)
+            )
+
+        assert result['status'] == 'success'
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert '2025-01-01-01-001' in listed_ids
+        assert '2025-01-01-01-003' in listed_ids  # absent status ⇒ active
+        assert '2025-01-01-01-002' not in listed_ids  # superseded hidden
+
+    def test_status_all_returns_every_lesson(self, tmp_path):
+        """``--status all`` returns every lesson regardless of lifecycle status."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(
+                Namespace(component=None, category=None, status='all', full=False)
+            )
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert listed_ids == {
+            '2025-01-01-01-001',
+            '2025-01-01-01-002',
+            '2025-01-01-01-003',
+        }
+
+    def test_status_superseded_returns_only_superseded(self, tmp_path):
+        """``--status superseded`` returns only lessons with frontmatter ``status=superseded``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(
+                Namespace(component=None, category=None, status='superseded', full=False)
+            )
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert listed_ids == {'2025-01-01-01-002'}
+
+    def test_legacy_namespace_without_status_attr_defaults_to_active(self, tmp_path):
+        """Backwards compatibility: a Namespace without a ``status`` attribute must default to ``active``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_three_statuses(lessons_dir)
+
+        # Legacy Namespace without status field — older callers must still work.
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list(Namespace(component=None, category=None, full=False))
+
+        listed_ids = {entry['id'] for entry in result['lessons']}
+        assert '2025-01-01-01-002' not in listed_ids  # superseded still hidden
+        assert '2025-01-01-01-001' in listed_ids
+
+
+# =============================================================================
+# Tier 2: cmd_update --body PATH
+# =============================================================================
+
+
+class TestCmdUpdateBody:
+    """``cmd_update --body PATH`` replaces the lesson body, preserving frontmatter and title."""
+
+    def _seed_lesson(self, lessons_dir: Path, lesson_id: str = '2025-01-01-01-001') -> Path:
+        content = (
+            f'id={lesson_id}\n'
+            'component=test\n'
+            'category=bug\n'
+            'status=active\n'
+            'created=2025-01-01\n\n'
+            '# Original Title\n\nOriginal body content.\n'
+        )
+        path = lessons_dir / f'{lesson_id}.md'
+        path.write_text(content, encoding='utf-8')
+        return path
+
+    def test_body_replaced_from_path(self, tmp_path):
+        """``--body PATH`` replaces the body section while preserving frontmatter and title."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_lesson(lessons_dir)
+
+        body_file = tmp_path / 'new_body.md'
+        body_file.write_text('Brand new body contents.\nWith multiple lines.\n', encoding='utf-8')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_update(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    component=None,
+                    category=None,
+                    body=str(body_file),
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['field'] == 'body'
+
+        updated = (lessons_dir / '2025-01-01-01-001.md').read_text(encoding='utf-8')
+        assert 'component=test' in updated
+        assert 'category=bug' in updated
+        assert 'status=active' in updated
+        assert '# Original Title' in updated  # title preserved
+        assert 'Brand new body contents.' in updated
+        assert 'With multiple lines.' in updated
+        assert 'Original body content.' not in updated
+
+    def test_body_unknown_path_rejected(self, tmp_path):
+        """``--body /no/such/file`` returns ``error: body_path_not_found`` and does not modify the lesson."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        seeded = self._seed_lesson(lessons_dir)
+        original_content = seeded.read_text(encoding='utf-8')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_update(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    component=None,
+                    category=None,
+                    body=str(tmp_path / 'no-such-file.md'),
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'body_path_not_found'
+        assert seeded.read_text(encoding='utf-8') == original_content
+
+    def test_body_on_unknown_lesson_rejected(self, tmp_path):
+        """``--body`` against a non-existent lesson returns ``not_found``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        body_file = tmp_path / 'body.md'
+        body_file.write_text('content', encoding='utf-8')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_update(
+                Namespace(
+                    lesson_id='no-such-lesson',
+                    component=None,
+                    category=None,
+                    body=str(body_file),
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+
+# =============================================================================
+# Tier 2: cmd_remove
+# =============================================================================
+
+
+class TestCmdRemove:
+    """``cmd_remove`` deletes the lesson, writes a tombstone, and logs an audit entry."""
+
+    def _seed_lesson(self, lessons_dir: Path, lesson_id: str = '2025-01-01-01-001') -> Path:
+        content = (
+            f'id={lesson_id}\n'
+            'component=test\n'
+            'category=bug\n'
+            'status=active\n'
+            'created=2025-01-01\n\n'
+            f'# {lesson_id} Title\n\nBody.\n'
+        )
+        path = lessons_dir / f'{lesson_id}.md'
+        path.write_text(content, encoding='utf-8')
+        return path
+
+    def test_remove_force_deletes_file_and_writes_tombstone(self, tmp_path):
+        """``--force`` skips the prompt; the lesson file is deleted and a tombstone is written."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        seeded = self._seed_lesson(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_remove(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    reason='duplicate of 2025-01-02-01-001',
+                    force=True,
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['id'] == '2025-01-01-01-001'
+        assert result['reason'] == 'duplicate of 2025-01-02-01-001'
+
+        # Lesson file is gone.
+        assert not seeded.exists()
+
+        # Tombstone exists with the expected payload.
+        tombstone_path = lessons_dir / '.tombstones' / '2025-01-01-01-001.json'
+        assert tombstone_path.exists()
+        payload = json.loads(tombstone_path.read_text(encoding='utf-8'))
+        assert payload['lesson_id'] == '2025-01-01-01-001'
+        assert payload['reason'] == 'duplicate of 2025-01-02-01-001'
+        assert payload['status'] == 'removed'
+        assert 'removed_at' in payload
+        assert 'superseded_by' not in payload
+
+    def test_remove_unknown_lesson_returns_not_found(self, tmp_path):
+        """Removing a lesson that does not exist returns ``error: not_found``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_remove(
+                Namespace(lesson_id='nope', reason='gone', force=True)
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+    def test_remove_declined_via_input_keeps_file(self, tmp_path, monkeypatch):
+        """Without ``--force``, an answer other than ``y/yes`` cancels removal."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        seeded = self._seed_lesson(lessons_dir)
+
+        # Stub builtins.input on the manage-lessons module to simulate "no".
+        monkeypatch.setattr(_mod, 'input', lambda _prompt: 'n', raising=False)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_remove(
+                Namespace(lesson_id='2025-01-01-01-001', reason='maybe', force=False)
+            )
+
+        assert result['status'] == 'cancelled'
+        # File preserved.
+        assert seeded.exists()
+        # No tombstone written.
+        tombstone_path = lessons_dir / '.tombstones' / '2025-01-01-01-001.json'
+        assert not tombstone_path.exists()
+
+    def test_remove_logs_audit_entry(self, tmp_path):
+        """``cmd_remove --force`` emits an INFO audit entry to script-execution.log."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_lesson(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            cmd_remove(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    reason='dedup',
+                    force=True,
+                )
+            )
+
+            log_files = list((tmp_path / 'logs').glob('script-execution-*.log'))
+
+        assert log_files, 'expected at least one script-execution log file'
+        log_text = '\n'.join(p.read_text(encoding='utf-8') for p in log_files)
+        assert '[INFO]' in log_text
+        assert '(plan-marshall:manage-lessons) Removed lesson 2025-01-01-01-001' in log_text
+        assert 'dedup' in log_text
+
+
+# =============================================================================
+# Tier 2: cmd_supersede
+# =============================================================================
+
+
+class TestCmdSupersede:
+    """``cmd_supersede`` redirects a lesson to a canonical and updates both files."""
+
+    def _seed_pair(self, lessons_dir: Path, with_consolidated_section: bool = False) -> tuple[Path, Path]:
+        source = lessons_dir / '2025-01-01-01-001.md'
+        source.write_text(
+            'id=2025-01-01-01-001\n'
+            'component=test\n'
+            'category=bug\n'
+            'status=active\n'
+            'created=2025-01-01\n\n'
+            '# Source Lesson\n\nSource body content.\n',
+            encoding='utf-8',
+        )
+        canonical_body = '# Canonical Lesson\n\nCanonical body content.\n'
+        if with_consolidated_section:
+            canonical_body = (
+                '# Canonical Lesson\n\nCanonical body content.\n\n'
+                '## Consolidated from\n\n- 2024-12-31-23-099\n'
+            )
+        canonical = lessons_dir / '2025-01-02-01-001.md'
+        canonical.write_text(
+            'id=2025-01-02-01-001\n'
+            'component=test\n'
+            'category=bug\n'
+            'status=active\n'
+            'created=2025-01-02\n\n' + canonical_body,
+            encoding='utf-8',
+        )
+        return source, canonical
+
+    def test_supersede_writes_redirect_and_tombstone(self, tmp_path):
+        """Source body is replaced with a redirect stub; tombstone records ``superseded_by``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        source, canonical = self._seed_pair(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-02-01-001',
+                    reason='merged into canonical',
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['superseded_by'] == '2025-01-02-01-001'
+
+        # Source lesson body replaced with redirect stub and frontmatter updated.
+        source_content = source.read_text(encoding='utf-8')
+        assert '[SUPERSEDED]' in source_content
+        assert '`2025-01-02-01-001`' in source_content
+        assert 'merged into canonical' in source_content
+        assert 'status=superseded' in source_content
+        assert 'Source body content.' not in source_content
+
+        # Canonical received a "Consolidated from" entry.
+        canonical_content = canonical.read_text(encoding='utf-8')
+        assert '## Consolidated from' in canonical_content
+        assert '- 2025-01-01-01-001' in canonical_content
+
+        # Tombstone has superseded_by populated.
+        tombstone_path = lessons_dir / '.tombstones' / '2025-01-01-01-001.json'
+        assert tombstone_path.exists()
+        payload = json.loads(tombstone_path.read_text(encoding='utf-8'))
+        assert payload['lesson_id'] == '2025-01-01-01-001'
+        assert payload['status'] == 'superseded'
+        assert payload['superseded_by'] == '2025-01-02-01-001'
+        assert payload['reason'] == 'merged into canonical'
+
+    def test_supersede_appends_to_existing_consolidated_section(self, tmp_path):
+        """When the canonical already has a ``Consolidated from`` section, the new id is appended."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        _, canonical = self._seed_pair(lessons_dir, with_consolidated_section=True)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-02-01-001',
+                    reason='dedup',
+                )
+            )
+
+        canonical_content = canonical.read_text(encoding='utf-8')
+        # Both the original entry and the new one are present.
+        assert '- 2024-12-31-23-099' in canonical_content
+        assert '- 2025-01-01-01-001' in canonical_content
+        # Only one "Consolidated from" header — the section is reused, not duplicated.
+        assert canonical_content.count('## Consolidated from') == 1
+
+    def test_supersede_unknown_source_returns_not_found(self, tmp_path):
+        """Superseding a non-existent source lesson returns ``error: not_found``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_pair(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='no-such-lesson',
+                    by='2025-01-02-01-001',
+                    reason='whatever',
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+    def test_supersede_unknown_canonical_returns_canonical_not_found(self, tmp_path):
+        """Superseding by a non-existent canonical lesson returns ``error: canonical_not_found``."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        source, _ = self._seed_pair(lessons_dir)
+        original_source_content = source.read_text(encoding='utf-8')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='no-such-canonical',
+                    reason='whatever',
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'canonical_not_found'
+        # Source must remain untouched on canonical-missing error.
+        assert source.read_text(encoding='utf-8') == original_source_content
+
+    def test_supersede_self_is_rejected(self, tmp_path):
+        """A lesson cannot supersede itself."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_pair(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-01-01-001',
+                    reason='self',
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'self_supersede'
+
+
+# =============================================================================
+# Tier 3: CLI plumbing for remove and supersede
+# =============================================================================
+
+
+class TestCliPlumbingRemoveSupersede(ScriptTestCase):
+    """Subprocess test for ``remove`` and ``supersede`` subcommand wiring."""
+
+    bundle = 'plan-marshall'
+    skill = 'manage-lessons'
+    script = 'manage-lessons.py'
+
+    def _seed_lesson(self, lesson_id: str, title: str, status: str = 'active') -> None:
+        lessons_dir = self.temp_dir / 'lessons-learned'
+        lessons_dir.mkdir(parents=True, exist_ok=True)
+        (lessons_dir / f'{lesson_id}.md').write_text(
+            f'id={lesson_id}\ncomponent=test\ncategory=bug\nstatus={status}\n'
+            f'created=2025-01-01\n\n# {title}\n\nBody.\n',
+            encoding='utf-8',
+        )
+
+    def test_cli_remove_force(self):
+        """``manage-lessons remove --force`` deletes the lesson via the CLI."""
+        self._seed_lesson('2025-01-01-01-001', 'Removable')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(
+                SCRIPT_PATH,
+                'remove',
+                '--lesson-id',
+                '2025-01-01-01-001',
+                '--reason',
+                'duplicate',
+                '--force',
+            )
+
+        self.assert_success(result)
+        self.assertIn('status: success', result.stdout)
+        self.assertIn('id: 2025-01-01-01-001', result.stdout)
+        self.assertFalse((self.temp_dir / 'lessons-learned' / '2025-01-01-01-001.md').exists())
+
+    def test_cli_remove_requires_reason(self):
+        """``remove`` without ``--reason`` is rejected at argparse."""
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(
+                SCRIPT_PATH,
+                'remove',
+                '--lesson-id',
+                '2025-01-01-01-001',
+                '--force',
+            )
+
+        self.assert_failure(result)
+        self.assertIn('--reason', result.stderr)
+
+    def test_cli_supersede(self):
+        """``manage-lessons supersede`` wires the redirect via the CLI."""
+        self._seed_lesson('2025-01-01-01-001', 'Source')
+        self._seed_lesson('2025-01-02-01-001', 'Canonical')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(self.temp_dir)}):
+            result = run_script(
+                SCRIPT_PATH,
+                'supersede',
+                '--lesson-id',
+                '2025-01-01-01-001',
+                '--by',
+                '2025-01-02-01-001',
+                '--reason',
+                'merged',
+            )
+
+        self.assert_success(result)
+        self.assertIn('status: success', result.stdout)
+        self.assertIn('superseded_by: 2025-01-02-01-001', result.stdout)
 
 
 if __name__ == '__main__':
