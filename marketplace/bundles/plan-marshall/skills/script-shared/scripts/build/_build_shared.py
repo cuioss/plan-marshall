@@ -355,7 +355,7 @@ def cmd_run_common(
 
     except Exception as parse_err:
         # If parsing fails, still return the build failure but log the parse error
-        print(f'[WARN] Log parsing failed: {parse_err}', file=sys.stderr)
+        print(f'[WARNING] Log parsing failed: {parse_err}', file=sys.stderr)
         output = error_result(
             error=ERROR_BUILD_FAILED,
             exit_code=result['exit_code'],

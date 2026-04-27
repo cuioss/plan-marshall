@@ -158,7 +158,7 @@ def discover_project_modules(project_root: Path, discover_extensions_fn) -> dict
 
         except Exception as e:
             log_entry(
-                'script', 'global', 'WARN', f'[MODULE-AGGREGATION] discover_modules() failed for {bundle_name}: {e}'
+                'script', 'global', 'WARNING', f'[MODULE-AGGREGATION] discover_modules() failed for {bundle_name}: {e}'
             )
 
     # Sort paths so "." (root module) comes first, then alphabetically

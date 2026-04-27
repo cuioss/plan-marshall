@@ -116,9 +116,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[REFINE:3c] (plan-marshall:phase-2-refine) Proposed-fix verification: {N} fixes probed, {M} valid, {K} insufficient"
 ```
 
-When probes reveal insufficient fixes, also log to decision.log at WARN:
+When probes reveal insufficient fixes, also log to decision.log at WARNING:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-2-refine) Insufficient proposed fix: {fix_summary} — gap: {gap_summary}"
+  decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-2-refine) Insufficient proposed fix: {fix_summary} — gap: {gap_summary}"
 ```

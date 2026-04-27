@@ -161,7 +161,7 @@ For each deliverable, create one task per profile in its `profiles` list:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-4-plan) Deliverable {N} is verification-only but had profiles [{original_profiles}] — overriding to [verification]"
+  decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-4-plan) Deliverable {N} is verification-only but had profiles [{original_profiles}] — overriding to [verification]"
 ```
 
 ```
@@ -179,7 +179,7 @@ For each deliverable D:
     ELSE:
       2. Extract skills: module.skills_by_profile.{P}
          IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
-           - Log WARN: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
+           - Log WARNING: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
            - Set task.skills = [] (continue with empty skills rather than erroring)
            - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title "Missing skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate the missing profile."` so phase-5-execute and phase-6-finalize can surface the gap.
          ELSE:
@@ -360,7 +360,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 After creating per-deliverable tasks, create plan-level verification tasks that depend on ALL previously created tasks.
 
-**Module resolution for holistic tasks**: Holistic tasks are plan-level, not deliverable-level. Omit `--name` from `architecture resolve` to use the root module, which runs commands across all modules. Do NOT try to list or enumerate modules — the root module default handles cross-module verification.
+**Module resolution for holistic tasks**: Holistic tasks are plan-level, not deliverable-level. Omit `--module` from `architecture resolve` to use the root module, which runs commands across all modules. Do NOT try to list or enumerate modules — the root module default handles cross-module verification.
 
 **Read verification steps** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
 ```bash
@@ -371,8 +371,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 Iterate over the `steps` list. For each step, create a holistic verification task based on the step type:
 
 **Built-in steps** (no colon in name):
-- `quality_check` → Resolve via `architecture resolve --command quality-gate` (no `--name` — uses root module for cross-module check)
-- `build_verify` → Resolve via `architecture resolve --command module-tests` (no `--name` — uses root module for cross-module check)
+- `quality_check` → Resolve via `architecture resolve --command quality-gate` (no `--module` — uses root module for cross-module check)
+- `build_verify` → Resolve via `architecture resolve --command module-tests` (no `--module` — uses root module for cross-module check)
 
 **Extension steps** (contain colon, e.g., `my-bundle:my-verify-step`):
 - Use the step name directly as the step target (do NOT resolve via architecture)
@@ -608,7 +608,7 @@ Skills are resolved from architecture based on `module` + `profile`:
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
 | `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
-| Profile not in module | Log WARN, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
+| Profile not in module | Log WARNING, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
 
 ## Error Handling
 
@@ -628,7 +628,7 @@ If `deliverable.module` is not found in architecture:
 
 If a profile from `deliverable.profiles` is not in `module.skills_by_profile`, this is NOT plan-blocking. Follow Step 5's canonical procedure:
 
-- Log WARN: `(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate.`
+- Log WARNING: `(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate.`
 - Set `task.skills = []` and continue creating the task.
 - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
 
@@ -645,7 +645,7 @@ If deliverable metadata incomplete:
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
-- `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --name {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
+- `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
 - `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add` (preferred for multi-task creation in this phase). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`).
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)
 - `plan-marshall:manage-lessons:manage-lessons` - Record lessons on issues (add)

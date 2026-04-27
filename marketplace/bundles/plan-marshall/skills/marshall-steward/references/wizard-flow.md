@@ -313,7 +313,7 @@ Modules discovered: 10
 **Resolve available commands** for the default module across all canonical commands (`compile`, `quality-gate`, `module-tests`, `verify`, `integration-tests`, `e2e`, `coverage`, `benchmark`):
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --name default
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --module default
 ```
 
 Collect the `executable` value from each successful resolution. Track which canonical command names resolved on the default module (the "default commands set").
@@ -321,7 +321,7 @@ Collect the `executable` value from each successful resolution. Track which cano
 **Collect child-module-only commands**: For each non-default module, resolve the same canonical commands and keep any that resolved on the child module but NOT on default. These become child-module-only entries (e.g., `benchmark` or `e2e` exclusive to specific modules).
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --name {module_name}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --module {module_name}
 ```
 
 **Add to CLAUDE.md** under the heading `### Build Commands` (in a "Development Notes" section) with bullets: a "Never hard-code" preamble, one bullet per resolved canonical command (`Compile`, `Quality gate`, `Tests`, `Full verify`, plus `Integration tests`, `E2E`, `Coverage`, `Benchmark` only when resolved on default), one bullet per child-module-only command in the form `{Canonical} ({module_name}): {executable} — only on {module_name}`, a reminder to use a 10-minute Bash timeout (600000ms), and a reminder to analyze each build's TOON result (`status`, `errors[N]{file,line,message,category}`, `log_file`).

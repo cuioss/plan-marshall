@@ -318,7 +318,7 @@ Without the gloss, a downstream agent could read `review-knowledge` as "subject 
 **Resolve verification command** for each deliverable before writing:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command compile --name {module} \
+  resolve --command compile --module {module} \
   --trace-plan-id {plan_id}
 ```
 Use the returned `executable` value as the Verification Command. Both Command and Criteria are mandatory — do NOT omit. If architecture has no `compile` command, use the most specific available command (e.g., `verify`, `quality-gate`) or flag for user decision.
@@ -463,12 +463,12 @@ For each deliverable, resolve verification commands from architecture:
 ```bash
 # Build/compile verification
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command compile --name {module} \
+  resolve --command compile --module {module} \
   --trace-plan-id {plan_id}
 
 # Test verification (for deliverables with module_testing profile)
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command module-tests --name {module} \
+  resolve --command module-tests --module {module} \
   --trace-plan-id {plan_id}
 ```
 

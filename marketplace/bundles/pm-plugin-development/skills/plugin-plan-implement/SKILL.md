@@ -46,7 +46,7 @@ Contains: How to execute each step type (modify, create, etc.)
 ### Step 2: Load Task Details
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
   --plan-id {plan_id} \
   --task {task_number}
 ```

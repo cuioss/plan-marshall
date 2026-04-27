@@ -65,8 +65,8 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `update` | `--plan-id --task [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
 | `remove` | `--plan-id --task` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
-| `get` | `--plan-id --task` | Get single task details |
-| `exists` | `--plan-id --task` | Boolean presence probe — returns `status: success exists: true\|false`, never errors on absence (use instead of `get` for existence checks) |
+| `read` | `--plan-id --task` | Read single task details |
+| `exists` | `--plan-id --task` | Boolean presence probe — returns `status: success exists: true\|false`, never errors on absence (use instead of `read` for existence checks) |
 | `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
 | `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
@@ -242,8 +242,8 @@ keep using the path-allocate flow.
 
 ### Probe whether a task exists (boolean — never errors on absence)
 
-Use `exists` instead of `get` whenever the call is a presence check rather
-than a data fetch. `get` returns exit code 1 (with an error TOON record)
+Use `exists` instead of `read` whenever the call is a presence check rather
+than a data fetch. `read` returns exit code 1 (with an error TOON record)
 when the task is absent — every such call shows up as a `[ERROR]` row in
 `script-execution.log`, even when the caller intended to handle absence.
 `exists` returns `status: success exists: true|false` for any task number,
@@ -260,7 +260,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks exists \
 #   exists: true|false
 ```
 
-Pair `exists` with `get` when the caller needs the task body only after
+Pair `exists` with `read` when the caller needs the task body only after
 confirming presence — the two-call pattern keeps the failure logs clean
 without changing observable behavior.
 
@@ -322,9 +322,9 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 | Client | Operation | Purpose |
 |--------|-----------|---------|
-| `phase-5-execute` | `next`, `next-tasks`, `get` | Retrieve tasks for execution |
+| `phase-5-execute` | `next`, `next-tasks`, `read` | Retrieve tasks for execution |
 | `phase-6-finalize` | `list` | Query task completion for PR summary |
-| Task executors | `get`, `finalize-step` | Read task details and mark steps done |
+| Task executors | `read`, `finalize-step` | Read task details and mark steps done |
 
 ### With phase-agent (phase-4-plan)
 
@@ -364,7 +364,7 @@ LOOP:
 
 Implement agents execute steps:
 ```
-1. manage-tasks get --plan-id {plan_id} --task {N}
+1. manage-tasks read --plan-id {plan_id} --task {N}
 2. FOR EACH step: execute → finalize-step --outcome done|failed
 3. RUN verification
 ```

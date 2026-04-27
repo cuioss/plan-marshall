@@ -89,7 +89,7 @@ def format_log_entry(level: str, message: str, **fields) -> str:
     Format a standard log entry with auto-generated hash.
 
     Args:
-        level: Log level (INFO, WARN, ERROR)
+        level: Log level (INFO, WARNING, ERROR)
         message: Primary message
         **fields: Additional fields to include as indented lines
 
@@ -178,7 +178,7 @@ def log_entry(log_type: str, plan_id: str, level: str, message: str) -> None:
     Args:
         log_type: 'script' or 'work'
         plan_id: Plan identifier
-        level: INFO, WARN, ERROR
+        level: INFO, WARNING, ERROR
         message: Log message
     """
     if not LOG_ENABLED:

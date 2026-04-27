@@ -514,17 +514,17 @@ def cmd_commands(args) -> dict:
 def cmd_resolve(args) -> dict:
     """CLI handler for resolve command."""
     try:
-        result = resolve_command(args.resolve_command, args.name, args.project_dir)
+        result = resolve_command(args.resolve_command, args.module, args.project_dir)
         return {'status': 'success', **result}
     except DataNotFoundError:
         return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
-        return error_result_module_not_found(args.name, modules)
+        return error_result_module_not_found(args.module, modules)
     except ValueError:
         # Command not found
         derived = load_derived_data(args.project_dir)
-        resolved_module: str = args.name or get_root_module(derived) or ''
+        resolved_module: str = args.module or get_root_module(derived) or ''
         module = get_module(derived, resolved_module)
         commands = list(module.get('commands', {}).keys())
         return error_result_command_not_found(resolved_module, args.resolve_command, commands)

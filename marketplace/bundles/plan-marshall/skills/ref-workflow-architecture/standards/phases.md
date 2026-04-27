@@ -268,7 +268,7 @@ The plan-marshall bundle implements a 6-phase execution model for structured tas
 │     │                                                              │       │
 │     │  For each task (in dependency order):                        │       │
 │     │                                                              │       │
-│     │    1. Load task context (manage-tasks get)                   │       │
+│     │    1. Load task context (manage-tasks read)                  │       │
 │     │    2. Load domain skills (from task.skills)                  │       │
 │     │    3. Resolve workflow skill (by profile)                    │       │
 │     │    4. For each step (file path):                             │       │

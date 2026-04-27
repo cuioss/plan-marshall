@@ -63,7 +63,7 @@ def cmd_add(ns):
     return _add_task_pathalloc(ns.plan_id, text)
 
 
-cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
+cmd_read, cmd_list, cmd_next = _query.cmd_read, _query.cmd_list, _query.cmd_next
 cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
     _query.cmd_next_tasks,
     _query.cmd_tasks_by_domain,
@@ -121,8 +121,8 @@ def _add_ns(plan_id='test-plan', content=''):
     return Namespace(plan_id=plan_id, content=content)
 
 
-def _get_ns(plan_id='test-plan', number=1):
-    """Build Namespace for cmd_get."""
+def _read_ns(plan_id='test-plan', number=1):
+    """Build Namespace for cmd_read."""
     return Namespace(plan_id=plan_id, task=number)
 
 
@@ -349,37 +349,37 @@ steps:
 
 
 # =============================================================================
-# Tests: get returns new fields
+# Tests: read returns new fields
 # =============================================================================
 
 
 def test_get_returns_domain():
-    """Get returns domain field."""
+    """Read returns domain field."""
     with PlanContext(plan_id='nf-get-dom'):
         add_task_with_fields(plan_id='nf-get-dom', title='Test', domain='javascript', profile='implementation')
-        result = cmd_get(_get_ns(plan_id='nf-get-dom', number=1))
+        result = cmd_read(_read_ns(plan_id='nf-get-dom', number=1))
 
         assert result['status'] == 'success'
         assert result['task']['domain'] == 'javascript'
 
 
 def test_get_returns_profile():
-    """Get returns profile field."""
+    """Read returns profile field."""
     with PlanContext(plan_id='nf-get-prof'):
         add_task_with_fields(plan_id='nf-get-prof', title='Test', profile='testing')
-        result = cmd_get(_get_ns(plan_id='nf-get-prof', number=1))
+        result = cmd_read(_read_ns(plan_id='nf-get-prof', number=1))
 
         assert result['status'] == 'success'
         assert result['task']['profile'] == 'testing'
 
 
 def test_get_returns_skills():
-    """Get returns skills array."""
+    """Read returns skills array."""
     with PlanContext(plan_id='nf-get-skills'):
         add_task_with_fields(
             plan_id='nf-get-skills', title='Test', skills=['pm-dev-java:java-core', 'pm-dev-java:java-cdi']
         )
-        result = cmd_get(_get_ns(plan_id='nf-get-skills', number=1))
+        result = cmd_read(_read_ns(plan_id='nf-get-skills', number=1))
 
         assert result['status'] == 'success'
         assert len(result['task']['skills']) == 2
@@ -388,10 +388,10 @@ def test_get_returns_skills():
 
 
 def test_get_returns_origin():
-    """Get returns origin field."""
+    """Read returns origin field."""
     with PlanContext(plan_id='nf-get-origin'):
         add_task_with_fields(plan_id='nf-get-origin', title='Test', origin='plan')
-        result = cmd_get(_get_ns(plan_id='nf-get-origin', number=1))
+        result = cmd_read(_read_ns(plan_id='nf-get-origin', number=1))
 
         assert result['status'] == 'success'
         assert result['task']['origin'] == 'plan'
@@ -445,7 +445,7 @@ def test_update_domain():
         assert result['task']['domain'] == 'javascript'
 
         # Verify with get
-        get_result = cmd_get(_get_ns(plan_id='nf-upd-dom', number=1))
+        get_result = cmd_read(_read_ns(plan_id='nf-upd-dom', number=1))
         assert get_result['task']['domain'] == 'javascript'
 
 
@@ -459,7 +459,7 @@ def test_update_profile():
         assert result['task']['profile'] == 'testing'
 
         # Verify with get
-        get_result = cmd_get(_get_ns(plan_id='nf-upd-prof', number=1))
+        get_result = cmd_read(_read_ns(plan_id='nf-upd-prof', number=1))
         assert get_result['task']['profile'] == 'testing'
 
 
@@ -478,7 +478,7 @@ def test_update_skills():
         assert result['status'] == 'success'
 
         # Verify with get
-        get_result = cmd_get(_get_ns(plan_id='nf-upd-skills', number=1))
+        get_result = cmd_read(_read_ns(plan_id='nf-upd-skills', number=1))
         assert 'pm-dev-java:java-cdi' in get_result['task']['skills']
         assert 'pm-dev-java:java-lombok' in get_result['task']['skills']
 
@@ -492,7 +492,7 @@ def test_update_deliverable():
         assert result['status'] == 'success'
 
         # Verify with get
-        get_result = cmd_get(_get_ns(plan_id='nf-upd-del', number=1))
+        get_result = cmd_read(_read_ns(plan_id='nf-upd-del', number=1))
         assert get_result['task']['deliverable'] == 2
 
 
@@ -507,7 +507,7 @@ def test_update_with_arbitrary_profile():
         assert result['task']['profile'] == 'architecture'
 
         # Verify persisted
-        get_result = cmd_get(_get_ns(plan_id='nf-upd-arb-prof', number=1))
+        get_result = cmd_read(_read_ns(plan_id='nf-upd-arb-prof', number=1))
         assert get_result['task']['profile'] == 'architecture'
 
 

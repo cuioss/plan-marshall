@@ -310,7 +310,7 @@ This is the lesson body.
         (lessons_dir / '2025-01-01-001.md').write_text(lesson_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_get(Namespace(id='2025-01-01-001'))
+            result = cmd_get(Namespace(lesson_id='2025-01-01-001'))
 
         assert result['status'] == 'success'
         assert result['component'] == 'test-component'
@@ -323,7 +323,7 @@ This is the lesson body.
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_get(Namespace(id='nonexistent-id'))
+            result = cmd_get(Namespace(lesson_id='nonexistent-id'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
@@ -355,7 +355,7 @@ Body.
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_update(
-                Namespace(id='2025-01-01-001', component='new-component', category=None)
+                Namespace(lesson_id='2025-01-01-001', component='new-component', category=None)
             )
 
         assert result['status'] == 'success'
@@ -373,7 +373,7 @@ Body.
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_update(
-                Namespace(id='nonexistent', component='x', category=None)
+                Namespace(lesson_id='nonexistent', component='x', category=None)
             )
 
         assert result['status'] == 'error'
@@ -407,7 +407,7 @@ Body content here.
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_convert_to_plan(
-                Namespace(id='2025-01-01-001', plan_id='my-plan')
+                Namespace(lesson_id='2025-01-01-001', plan_id='my-plan')
             )
 
         assert result['status'] == 'success'
@@ -429,7 +429,7 @@ Body content here.
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_convert_to_plan(
-                Namespace(id='nonexistent-id', plan_id='my-plan')
+                Namespace(lesson_id='nonexistent-id', plan_id='my-plan')
             )
 
         assert result['status'] == 'error'
@@ -456,7 +456,7 @@ Body.
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_convert_to_plan(
-                Namespace(id='2025-01-01-001', plan_id='fresh-plan')
+                Namespace(lesson_id='2025-01-01-001', plan_id='fresh-plan')
             )
 
         assert result['status'] == 'success'
@@ -468,14 +468,14 @@ Body.
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             for bad_id in ('../escape', 'sub/dir', 'back\\slash'):
                 result = cmd_convert_to_plan(
-                    Namespace(id=bad_id, plan_id='p')
+                    Namespace(lesson_id=bad_id, plan_id='p')
                 )
                 assert result['status'] == 'error'
                 assert result['error'] == 'invalid_id'
 
             for bad_plan in ('../escape', 'sub/dir', 'back\\slash'):
                 result = cmd_convert_to_plan(
-                    Namespace(id='good-id', plan_id=bad_plan)
+                    Namespace(lesson_id='good-id', plan_id=bad_plan)
                 )
                 assert result['status'] == 'error'
                 assert result['error'] == 'invalid_id'
@@ -613,7 +613,7 @@ class TestLegacyFormatCompatibility:
         Seeds the lessons dir with a legacy ``2025-01-01-001.md`` fixture (the
         pre-hour-aware filename layout) and asserts:
 
-        * ``cmd_get(id='2025-01-01-001')`` returns ``status: success`` and
+        * ``cmd_get(lesson_id='2025-01-01-001')`` returns ``status: success`` and
           surfaces the metadata fields intact.
         * ``cmd_list`` enumerates the legacy entry alongside any hour-aware
           entries and does not drop it.
@@ -633,7 +633,7 @@ Legacy body content.
         (lessons_dir / '2025-01-01-001.md').write_text(legacy_content)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            get_result = cmd_get(Namespace(id='2025-01-01-001'))
+            get_result = cmd_get(Namespace(lesson_id='2025-01-01-001'))
             list_result = cmd_list(Namespace(component=None, category=None, full=False))
 
         # cmd_get surfaces the legacy entry with full metadata.
@@ -686,7 +686,7 @@ class TestCollisionSafeAllocation:
     existing lesson file when ``get_next_id`` returned a colliding id (e.g.
     after a stale-cache filesystem read or a concurrent caller). The
     collision-safe helper uses ``open(path, "x")`` (kernel-enforced exclusive
-    create) with a bounded retry of 99 attempts, logs a WARN per collision to
+    create) with a bounded retry of 99 attempts, logs a WARNING per collision to
     ``script-execution.log``, and returns ``error: id_exhausted`` on
     exhaustion. These tests pin that contract.
     """
@@ -748,10 +748,10 @@ class TestCollisionSafeAllocation:
         assert '# Fresh Lesson' in fresh_path.read_text(encoding='utf-8')
 
     def test_add_logs_warning_on_collision(self, tmp_path, monkeypatch):
-        """A ``[WARN] id_collision`` line must be appended to ``script-execution.log``.
+        """A ``[WARNING] id_collision`` line must be appended to ``script-execution.log``.
 
         The exact format documented in the helper docstring is
-        ``[WARN] (plan-marshall:manage-lessons) id_collision at {path} —
+        ``[WARNING] (plan-marshall:manage-lessons) id_collision at {path} —
         retrying with seq+1`` — this test pins the message substring rather
         than the full line so the timestamp/hash prefix from
         ``format_log_entry`` does not couple the assertion.
@@ -784,7 +784,7 @@ class TestCollisionSafeAllocation:
 
         assert log_files, 'expected at least one script-execution log file'
         log_text = '\n'.join(p.read_text(encoding='utf-8') for p in log_files)
-        assert '[WARN]' in log_text
+        assert '[WARNING]' in log_text
         assert '(plan-marshall:manage-lessons) id_collision' in log_text
         assert '2025-01-01-02-001.md' in log_text
         assert 'retrying with seq+1' in log_text

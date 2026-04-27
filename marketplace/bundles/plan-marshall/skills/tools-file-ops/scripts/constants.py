@@ -129,9 +129,9 @@ LESSON_CATEGORIES = ('bug', 'improvement', 'anti-pattern')
 # Log levels
 # ---------------------------------------------------------------------------
 LOG_LEVEL_INFO = 'INFO'
-LOG_LEVEL_WARN = 'WARN'
+LOG_LEVEL_WARNING = 'WARNING'
 LOG_LEVEL_ERROR = 'ERROR'
-VALID_LOG_LEVELS = (LOG_LEVEL_INFO, LOG_LEVEL_WARN, LOG_LEVEL_ERROR)
+VALID_LOG_LEVELS = (LOG_LEVEL_INFO, LOG_LEVEL_WARNING, LOG_LEVEL_ERROR)
 
 # ---------------------------------------------------------------------------
 # Log types

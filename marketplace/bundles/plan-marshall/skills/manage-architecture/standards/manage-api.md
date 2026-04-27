@@ -473,7 +473,7 @@ For each unique path in discovered modules:
 ### Command Resolution
 
 ```
-architecture.py resolve --command verify --name my-module
+architecture.py resolve --command verify --module my-module
                             │
                             ▼
   1. Load derived-data.json
@@ -504,7 +504,7 @@ TASK PLAN (phase-4)
   Uses: topological layers for task ordering
 
 TASK EXECUTE (phase-5)
-  task executor calls: architecture.py resolve --command X --name Y
+  task executor calls: architecture.py resolve --command X --module Y
   Executes: returned command string
 ```
 

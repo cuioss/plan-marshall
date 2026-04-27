@@ -61,7 +61,7 @@ def main() -> int:
         'resolve', help='Resolve command to executable form', allow_abbrev=False
     )
     resolve_parser.add_argument('--command', required=True, dest='resolve_command', help='Command name to resolve')
-    resolve_parser.add_argument('--name', help='Module name (default: root module)')
+    resolve_parser.add_argument('--module', help='Module name (default: root module)')
 
     # siblings - Find sibling virtual modules
     siblings_parser = subparsers.add_parser(

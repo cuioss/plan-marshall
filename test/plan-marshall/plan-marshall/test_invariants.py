@@ -87,7 +87,7 @@ cmd_prepare_add = _crud.cmd_prepare_add
 cmd_commit_add = _crud.cmd_commit_add
 cmd_update = _crud.cmd_update
 cmd_list = _query.cmd_list
-cmd_get = _query.cmd_get
+cmd_read = _query.cmd_read
 cmd_finalize_step = _step.cmd_finalize_step
 
 
@@ -214,11 +214,11 @@ def _make_stub_run_script():
                 ready=False,
             )
             return serialize_toon(cmd_list(ns))
-        if subcommand == 'get':
+        if subcommand == 'read':
             # args[4] == '--task', args[5] == str(n)
             number = int(args[5])
             ns = Namespace(plan_id=plan_id, task=number)
-            return serialize_toon(cmd_get(ns))
+            return serialize_toon(cmd_read(ns))
         return None
 
     return _stub

@@ -7,8 +7,8 @@ Stores lessons as markdown files with key=value metadata headers.
 Usage:
     python3 manage-lesson.py add --component maven-build --category bug --title "Title"
     python3 manage-lesson.py list --component maven-build
-    python3 manage-lesson.py get --id 2025-12-02-001
-    python3 manage-lesson.py convert-to-plan --id 2025-12-02-001 --plan-id my-plan
+    python3 manage-lesson.py get --lesson-id 2025-12-02-001
+    python3 manage-lesson.py convert-to-plan --lesson-id 2025-12-02-001 --plan-id my-plan
 
 The `add` subcommand allocates a fresh lesson file (metadata header + title, empty
 body) and returns its absolute path. Callers write the body directly to that path
@@ -198,13 +198,13 @@ def _allocate_and_write_scaffold(
                 f.write(content)
         except FileExistsError:
             # ``manage-lessons`` is a global script with no plan context, so the
-            # WARN line lands in the date-suffixed global script-execution log.
+            # WARNING line lands in the date-suffixed global script-execution log.
             # The ``'global'`` sentinel matches the convention used by other
             # global callers (build-python/build-npm/manage-architecture).
             log_entry(
                 'script',
                 'global',
-                'WARN',
+                'WARNING',
                 f'(plan-marshall:manage-lessons) id_collision at {path} — retrying with seq+1',
             )
             lesson_id = _next_sequential_id(lesson_id)
@@ -270,10 +270,10 @@ def cmd_add(args: argparse.Namespace) -> dict:
 
 def cmd_update(args: argparse.Namespace) -> dict:
     """Update lesson metadata."""
-    metadata, title, body = read_lesson(args.id)
+    metadata, title, body = read_lesson(args.lesson_id)
 
     if not metadata:
-        return {'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'}
+        return {'status': 'error', 'id': args.lesson_id, 'error': 'not_found', 'message': f'Lesson {args.lesson_id} not found'}
 
     # Determine which field to update
     field = None
@@ -301,21 +301,21 @@ def cmd_update(args: argparse.Namespace) -> dict:
     if not field:
         return {'status': 'error', 'error': 'no_update', 'message': 'No field to update specified'}
 
-    write_lesson(args.id, metadata, title, body)
+    write_lesson(args.lesson_id, metadata, title, body)
 
-    return {'status': 'success', 'id': args.id, 'field': field, 'value': value, 'previous': previous}
+    return {'status': 'success', 'id': args.lesson_id, 'field': field, 'value': value, 'previous': previous}
 
 
 def cmd_get(args: argparse.Namespace) -> dict:
     """Get a single lesson."""
-    metadata, title, body = read_lesson(args.id)
+    metadata, title, body = read_lesson(args.lesson_id)
 
     if not metadata:
-        return {'status': 'error', 'id': args.id, 'error': 'not_found', 'message': f'Lesson {args.id} not found'}
+        return {'status': 'error', 'id': args.lesson_id, 'error': 'not_found', 'message': f'Lesson {args.lesson_id} not found'}
 
     result = {
         'status': 'success',
-        'id': metadata.get('id', args.id),
+        'id': metadata.get('id', args.lesson_id),
         'component': metadata.get('component', ''),
         'category': metadata.get('category', ''),
         'created': metadata.get('created', ''),
@@ -382,7 +382,7 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     The lesson is renamed to lesson-{id}.md inside .plan/local/plans/{plan_id}/.
     Errors if the source lesson does not exist.
     """
-    if any(sep in args.id for sep in ('/', '\\', '..')) or any(
+    if any(sep in args.lesson_id for sep in ('/', '\\', '..')) or any(
         sep in args.plan_id for sep in ('/', '\\', '..')
     ):
         return {
@@ -392,7 +392,7 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
         }
 
     lessons_dir = get_lessons_dir().resolve()
-    source = (lessons_dir / f'{args.id}.md').resolve()
+    source = (lessons_dir / f'{args.lesson_id}.md').resolve()
     plan_parent = base_path('plans').resolve()
     plan_dir = (plan_parent / args.plan_id).resolve()
 
@@ -406,19 +406,19 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     if not source.exists():
         return {
             'status': 'error',
-            'id': args.id,
+            'id': args.lesson_id,
             'error': 'not_found',
-            'message': f'Lesson {args.id} not found',
+            'message': f'Lesson {args.lesson_id} not found',
         }
 
     plan_dir.mkdir(parents=True, exist_ok=True)
-    destination = plan_dir / f'lesson-{args.id}.md'
+    destination = plan_dir / f'lesson-{args.lesson_id}.md'
 
     shutil.move(source, destination)
 
     return {
         'status': 'success',
-        'lesson_id': args.id,
+        'lesson_id': args.lesson_id,
         'plan_id': args.plan_id,
         'source': str(source),
         'destination': str(destination),
@@ -474,14 +474,14 @@ def main() -> int:
 
     # update
     update_parser = subparsers.add_parser('update', help='Update lesson', allow_abbrev=False)
-    update_parser.add_argument('--id', required=True, help='Lesson ID')
+    update_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
     update_parser.add_argument('--component', help='Update component')
     update_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Update category')
     update_parser.set_defaults(func=cmd_update)
 
     # get
     get_parser = subparsers.add_parser('get', help='Get single lesson', allow_abbrev=False)
-    get_parser.add_argument('--id', required=True, help='Lesson ID')
+    get_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
     get_parser.set_defaults(func=cmd_get)
 
     # list
@@ -497,7 +497,7 @@ def main() -> int:
         help='Move a lesson file into a plan directory as lesson-{id}.md',
         allow_abbrev=False,
     )
-    convert_parser.add_argument('--id', required=True, help='Lesson ID')
+    convert_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
     convert_parser.add_argument('--plan-id', required=True, help='Target plan ID')
     convert_parser.set_defaults(func=cmd_convert_to_plan)
 

@@ -18,7 +18,7 @@ Usage:
 
 Arguments (write):
     --plan-id  - Plan identifier (required)
-    --level    - Log level: INFO, WARN, ERROR (required)
+    --level    - Log level: INFO, WARNING, ERROR (required)
     --message  - Log message (required)
 
 Arguments (read):

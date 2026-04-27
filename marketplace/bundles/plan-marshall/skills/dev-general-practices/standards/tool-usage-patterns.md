@@ -106,7 +106,7 @@ If a needed operation is missing from the CI abstraction, extend the scripts —
 **Build commands** (MUST resolve via architecture API first):
 ```
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command compile --name {module} --trace-plan-id {plan_id}
+  resolve --command compile --module {module} --trace-plan-id {plan_id}
 # Then execute the returned 'executable' value
 ```
 

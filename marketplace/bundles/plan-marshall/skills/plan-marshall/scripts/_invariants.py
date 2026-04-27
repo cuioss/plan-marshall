@@ -241,10 +241,10 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
     fields are only ``number, title, domain, profile, deliverable, status,
     progress`` — ``depends_on`` and ``sub_steps``/``steps`` are NOT on that
     table. To access the rich fields this hash depends on, we iterate the
-    task numbers from the table and call ``manage-tasks get --task N`` per
+    task numbers from the table and call ``manage-tasks read --task N`` per
     task (same pattern as :func:`_capture_task_graph_valid`).
 
-    Returns ``None`` when ``list`` or any ``get`` cannot be parsed, matching
+    Returns ``None`` when ``list`` or any ``read`` cannot be parsed, matching
     the other capture functions' "not applicable" semantics. An empty plan
     yields the stable zero-task hash.
     """
@@ -279,7 +279,7 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
         task_stdout = _run_script(
             [
                 'plan-marshall:manage-tasks:manage-tasks',
-                'get',
+                'read',
                 '--plan-id',
                 plan_id,
                 '--task',
@@ -340,7 +340,7 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
     """Validate the plan's task dependency graph.
 
     Loads every task via ``manage-tasks list`` (for the full number set)
-    and then ``manage-tasks get`` (for each task's ``depends_on``), builds
+    and then ``manage-tasks read`` (for each task's ``depends_on``), builds
     the adjacency graph, and checks two properties:
 
     - **No cycles** — DFS with WHITE/GRAY/BLACK coloring; a GRAY-hit edge
@@ -387,14 +387,14 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
         if n is not None:
             numbers.append(n)
 
-    # Pull depends_on per task via ``get`` — ``list`` does not surface it.
+    # Pull depends_on per task via ``read`` — ``list`` does not surface it.
     adjacency: dict[int, list[int | None]] = {n: [] for n in numbers}
     dangling: list[dict[str, str]] = []
     for n in numbers:
         task_stdout = _run_script(
             [
                 'plan-marshall:manage-tasks:manage-tasks',
-                'get',
+                'read',
                 '--plan-id',
                 plan_id,
                 '--task',

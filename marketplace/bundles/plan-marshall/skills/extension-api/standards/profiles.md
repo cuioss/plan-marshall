@@ -148,7 +148,7 @@ The `task.skills` array is populated during the task-plan phase. Execute phase l
 
 The workflow skill autonomously:
 
-1. **Reads task**: Via manage-tasks get
+1. **Reads task**: Via manage-tasks read
 2. **Loads domain skills**: From task.skills array (Tier 2)
 3. **Iterates through steps**: Processing each file
 4. **Tracks progress**: Via finalize-step

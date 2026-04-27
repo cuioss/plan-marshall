@@ -115,7 +115,7 @@ def build_happy_plan_dir(plan_dir: Path) -> Path:
         '(plan-marshall:phase-1-init) Starting\n'
         '[2026-04-17T10:01:00Z] [INFO] [bbbbbb] [ARTIFACT] '
         '(plan-marshall:phase-3-outline) created\n'
-        '[2026-04-17T10:02:00Z] [WARN] [cccccc] [STATUS] '
+        '[2026-04-17T10:02:00Z] [WARNING] [cccccc] [STATUS] '
         '(plan-marshall:phase-5-execute) slow\n',
         encoding='utf-8',
     )

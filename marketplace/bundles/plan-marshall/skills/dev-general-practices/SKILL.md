@@ -31,6 +31,15 @@ Read: standards/tool-usage-patterns.md
 
 Covers tool selection guide, file operations (discovery, existence checks, validation), content search patterns (Grep modes, filtering), Bash safety rules (one command per call, no shell constructs, no heredocs), and build command resolution via architecture API.
 
+### Step 3: Load Script Argument Naming Conventions (As Needed)
+
+**Script argument naming** (load when authoring or invoking `plan-marshall` `manage-*` scripts):
+```
+Read: standards/argument-naming.md
+```
+
+Covers typed-ID flags (`--lesson-id`, `--plan-id`, `--task-number`, `--module`, `--component`), read-verb canonicalization (`read` vs `get` vs `exists`), `--module` vs `--name`, and Python-stdlib log-level naming. Includes the canonical-forms table for in-scope `manage-*` scripts.
+
 ## Hard Rules (never override)
 
 ### Bash: One command per call
@@ -67,3 +76,4 @@ When a plan runs in an isolated worktree, the canonical `{path}` is the worktree
 |----------|---------|
 | general-development-rules.md | Boy Scout Rule, ask users, research, tool usage, dependencies |
 | tool-usage-patterns.md | Tool selection, file operations, content search, Bash safety, build resolution |
+| argument-naming.md | Typed-ID flags, read-verb canonicalization, `--module` over `--name`, stdlib log-level names for `manage-*` scripts |

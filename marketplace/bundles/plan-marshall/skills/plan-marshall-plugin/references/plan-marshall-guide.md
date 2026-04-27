@@ -22,7 +22,7 @@ FOR each ```bash block:
 
 **Valid**:
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
   --plan-id {plan_id} \
   --task {task_number}
 ```
@@ -30,7 +30,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
 **Invalid**:
 ```bash
 # See manage-tasks API for parameters
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get ...
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read ...
 ```
 
 **Fix**: Replace generic references with explicit parameter lists.

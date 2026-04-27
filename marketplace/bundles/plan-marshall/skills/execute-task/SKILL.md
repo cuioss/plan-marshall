@@ -81,7 +81,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ### Step: Load Task Context
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
   --plan-id {plan_id} --task {task_number}
 ```
 
@@ -119,14 +119,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The helper whitelists the eight Bucket B notations from `plan-marshall:tools-script-executor/standards/cwd-policy.md`; Bucket A `manage-*` notations and unknown notations pass through unchanged. See `scripts/inject_project_dir.py` for the authoritative whitelist.
 
-**Safety net** (should not trigger in normal operation): If verification commands are missing, log a WARN and resolve from architecture:
+**Safety net** (should not trigger in normal operation): If verification commands are missing, log a WARNING and resolve from architecture:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:execute-task) TASK-{N} missing verification — falling back to architecture resolve"
+  work --plan-id {plan_id} --level WARNING --message "[VERIFY] (plan-marshall:execute-task) TASK-{N} missing verification — falling back to architecture resolve"
 
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command {resolve_command} --name {module} \
+  resolve --command {resolve_command} --module {module} \
   --trace-plan-id {plan_id}
 ```
 
@@ -260,7 +260,7 @@ The auto-injection sub-step under Common Workflow → Step: Run Verification han
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level WARN \
+     work --plan-id {plan_id} --level WARNING \
      --message "[VERIFY] (plan-marshall:execute-task) Diff assertion failed: {missing_count} written test identifiers absent from module-test log — {missing}"
    ```
 

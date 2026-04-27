@@ -179,7 +179,7 @@ class TestRegression:
         work_log.write_text(
             '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [STATUS] '
             '(plan-marshall:phase-1-init) Starting\n'
-            '[2026-04-17T10:02:00Z] [WARN] [bbbbbb] [STATUS] '
+            '[2026-04-17T10:02:00Z] [WARNING] [bbbbbb] [STATUS] '
             '(plan-marshall:phase-5-execute) slow\n',
             encoding='utf-8',
         )
@@ -241,13 +241,13 @@ class TestRegression:
             '(plan-marshall:phase-5-execute:3) Wrote foo.py',
             '[2026-04-18T12:00:05Z] [INFO] [def456] [STATUS] '
             '(plan-marshall:phase-5-execute) task 3 complete',
-            '[2026-04-18T12:00:10Z] [WARN] [789aaa] [ARTIFACT] '
+            '[2026-04-18T12:00:10Z] [WARNING] [789aaa] [ARTIFACT] '
             '(plan-marshall:phase-5-execute:4) Deleted bar.py',
         ]
         tags = _analyze_logs.extract_tags(lines)
         assert 'ARTIFACT' in tags, (
             f'extract_tags must surface [ARTIFACT] even when [INFO] or '
-            f'[WARN] precedes it in the same line; got tags: {tags}'
+            f'[WARNING] precedes it in the same line; got tags: {tags}'
         )
         assert tags.count('ARTIFACT') == 2, (
             f'extract_tags must count every [ARTIFACT] occurrence, not '
@@ -256,24 +256,24 @@ class TestRegression:
         assert tags.count('STATUS') == 1
         # Level tokens must NOT leak into the category stream.
         assert 'INFO' not in tags
-        assert 'WARN' not in tags
+        assert 'WARNING' not in tags
         assert 'ERROR' not in tags
 
     def test_count_levels_matches_bracketed_production_shape(self):
-        """``count_levels`` must recognize ``[INFO]``/``[WARN]``/``[ERROR]``
+        """``count_levels`` must recognize ``[INFO]``/``[WARNING]``/``[ERROR]``
         bracketed tokens as emitted by ``manage-logging``. The earlier
         space-delimited match failed to see levels in the production
         shape, leaving ``counts.*`` stuck at zero for real plans.
         """
         lines = [
             '[2026-04-18T12:00:00Z] [INFO] [abc] [STATUS] msg one',
-            '[2026-04-18T12:00:01Z] [WARN] [def] [STATUS] msg two',
+            '[2026-04-18T12:00:01Z] [WARNING] [def] [STATUS] msg two',
             '[2026-04-18T12:00:02Z] [ERROR] [ghi] [STATUS] msg three',
             '[2026-04-18T12:00:03Z] [INFO] [jkl] [STATUS] msg four',
         ]
         counts = _analyze_logs.count_levels(lines)
         assert counts['INFO'] == 2
-        assert counts['WARN'] == 1
+        assert counts['WARNING'] == 1
         assert counts['ERROR'] == 1
 
     def test_read_log_missing_path_emits_stderr_warn(self, tmp_path, capsys):
