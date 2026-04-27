@@ -24,7 +24,10 @@ from _documents_core import (  # type: ignore[import-not-found]
     validate_doc_type_and_plan,
     validate_fields,
 )
-from _plan_parsing import parse_document_sections  # type: ignore[import-not-found]
+from _plan_parsing import (  # type: ignore[import-not-found]
+    _slugify_section_name,
+    parse_document_sections,
+)
 from file_ops import atomic_write_file  # type: ignore[import-not-found]
 
 # Placeholder paragraph emitted by templates/request.md when no body is provided.
@@ -150,7 +153,7 @@ def cmd_read(doc_type: str, args) -> dict:
         return {'status': 'success', 'plan_id': args.plan_id, 'document': doc_type, 'raw': True}
     elif getattr(args, 'section', None):
         # Extract specific section
-        section_name = args.section.lower().replace(' ', '_')
+        section_name = _slugify_section_name(args.section)
         sections = parse_document_sections(content)
         section_content = sections.get(section_name, '')
 
