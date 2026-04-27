@@ -124,6 +124,26 @@ def cmd_get(args) -> dict:
     }
 
 
+def cmd_exists(args) -> dict:
+    """Handle 'exists' subcommand.
+
+    Boolean presence probe: returns ``status: success`` with
+    ``exists: true|false`` for any task number, never erroring on absence.
+    Reuses the same task-file resolver as ``cmd_get`` (``find_task_file``)
+    but maps the ``None`` outcome to ``exists: false`` instead of an
+    error so callers can probe without polluting ``script-execution.log``
+    with recoverable not-found rows.
+    """
+    task_dir = get_tasks_dir(args.plan_id)
+    filepath = find_task_file(task_dir, args.task)
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'task': args.task,
+        'exists': filepath is not None,
+    }
+
+
 def cmd_next(args) -> dict:
     """Handle 'next' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
