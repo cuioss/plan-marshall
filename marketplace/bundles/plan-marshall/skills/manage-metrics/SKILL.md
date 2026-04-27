@@ -48,6 +48,8 @@ Record phase end timestamp with optional token data from Task agent notification
 
 **Idempotency**: Calling `end-phase` multiple times for the same phase replaces the previous end data (does not accumulate).
 
+**Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, or `--duration-ms` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
   --plan-id {plan_id} --phase {phase} \
@@ -59,7 +61,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-
 - `--duration-ms` — Agent-reported duration in milliseconds from Task agent `<usage>` tag. This is the agent's self-reported time, separate from wall-clock duration computed from start/end timestamps. (optional)
 - `--tool-uses` — Tool use count from Task agent `<usage>` tag (optional)
 
-**Token data sources**: Task agents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion. These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. For main-context phases (not delegated to agents), use the `enrich` command instead.
+**Token data sources**: Task agents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion. These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. The orchestrator may forward each return's totals via the optional flags above, or rely on `accumulate-agent-usage` to persist them on disk between agent dispatches (recommended for `phase-5-execute` and `phase-6-finalize` — see below). For main-context phases (no agent dispatch), use `enrich` to capture session tokens.
 
 **Output:**
 ```toon
@@ -134,11 +136,62 @@ The fused call is the canonical path at orchestrator phase boundaries —
 prefer it over a manual `end-phase` + `start-phase` + `generate` sequence
 whenever the caller knows the exact `prev → next` transition.
 
+`phase-boundary` shares the same accumulator-fallback semantics as
+`end-phase`: when `--total-tokens` / `--tool-uses` / `--duration-ms` are
+omitted, the closing phase row is filled from `work/metrics-accumulator-{prev_phase}.toon`
+if the file exists. Explicit flags always override accumulator values.
+
+### accumulate-agent-usage
+
+Persist running per-phase totals of subagent `<usage>` data to disk. Designed
+to be called from `phase-5-execute` and `phase-6-finalize` SKILL.md
+immediately after every Task-agent return — the on-disk file replaces the
+fragile model-context-only `agent_usage_totals` discipline that lost data
+across context compactions and inline-only step runs.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+  --plan-id {plan_id} --phase {phase} \
+  [--total-tokens N] [--tool-uses N] [--duration-ms N]
+```
+
+**Parameters:**
+- `--phase` — Phase being accumulated (must be a valid phase name).
+- `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` values to add to the running totals (each optional). Pass the values parsed from the agent's returned `<usage>...</usage>` block.
+
+**Behaviour:**
+- Reads `.plan/plans/{plan_id}/work/metrics-accumulator-{phase}.toon`, initialising it when absent.
+- Sums any provided flags into the existing totals and increments the `samples` counter.
+- Writes the file back atomically. The on-disk file is the only source of truth — the call is idempotent across context compactions.
+- `cmd_end_phase` and `cmd_phase_boundary` read the same file when their corresponding flags are omitted.
+
+**Output:**
+```toon
+status: success
+plan_id: my-plan
+phase: 6-finalize
+total_tokens: 84211
+tool_uses: 38
+duration_ms: 412390
+samples: 4
+accumulator_file: work/metrics-accumulator-6-finalize.toon
+```
+
+See [data-format.md](standards/data-format.md) for the on-disk schema.
+
 ### enrich
 
-Parse JSONL session transcript to extract token usage for main-context phases (phases run in the main conversation, not delegated to agents). Searches `~/.claude/projects/` for JSONL files matching the session_id and sums input/output tokens across all messages.
+Parse JSONL session transcript to extract token usage for main-context
+phases AND attribute subagent `<usage>` totals to the phase whose timestamp
+window contains each `Task` tool call. Searches `~/.claude/projects/` for
+JSONL files matching the `session_id`, sums main-context input/output
+tokens across all messages, and walks `tool_result` content for embedded
+`<usage>...</usage>` blocks.
 
-Token data from enrich is attributed to the plan as a whole (not per-phase), since session transcripts span multiple phases.
+Main-context tokens are attributed to the plan as a whole; subagent totals
+are attributed per-phase via the `start_time` / `end_time` recorded in
+`work/metrics.toon`. Subagent calls outside any recorded phase window are
+ignored.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics enrich \
@@ -154,14 +207,25 @@ input_tokens: 450000
 output_tokens: 35000
 total_tokens: 485000
 message_count: 127
+subagent_phases_attributed: 3
+subagent_calls_attributed: 8
 ```
+
+The per-phase rows in `work/metrics.toon` gain `subagent_total_tokens`,
+`subagent_tool_uses`, `subagent_duration_ms`, and `subagent_samples` fields
+— see [data-format.md](standards/data-format.md). When the orchestrator
+called `accumulate-agent-usage` for the same agent dispatches the on-disk
+totals are independent of `enrich`'s per-phase subagent fields, so
+double-counting does not occur in the closed-phase row (`total_tokens`),
+which is filled from the accumulator at `end-phase` time.
 
 ## Storage
 
 ```
 .plan/plans/{plan_id}/
-  work/metrics.toon    # Intermediate timing/token data per phase
-  metrics.md           # Human-readable metrics report
+  work/metrics.toon                        # Intermediate timing/token data per phase
+  work/metrics-accumulator-{phase}.toon    # Per-phase subagent <usage> running totals (one per phase that dispatches agents)
+  metrics.md                               # Human-readable metrics report
 ```
 
 ### metrics.toon Format
@@ -207,7 +271,7 @@ The `generate` command produces a markdown report with:
 | Error Code | Cause |
 |------------|-------|
 | `invalid_plan_id` | plan_id format invalid |
-| `invalid_phase` | Phase name not in valid set |
+| `invalid_phase` | Phase name not in valid set (start-phase, end-phase, phase-boundary, accumulate-agent-usage) |
 | `no_data` | No metrics collected yet (generate) |
 | `write_failed` | File system permission denied |
 | `session_not_found` | JSONL file not found for session_id (enrich) |
@@ -218,8 +282,10 @@ The `generate` command produces a markdown report with:
 
 | Client | Operation | Purpose |
 |--------|-----------|---------|
-| `plan-marshall:plan-marshall` orchestrator | start-phase, end-phase | Record phase timing at boundaries |
-| Phase agents (via Task tool) | end-phase (with token args) | Pass `<usage>` tag data after agent completion |
+| `plan-marshall:plan-marshall` orchestrator | start-phase, end-phase, phase-boundary | Record phase timing at boundaries |
+| `plan-marshall:phase-5-execute` SKILL.md | accumulate-agent-usage | Persist per-task agent `<usage>` totals after each `execute-task` return |
+| `plan-marshall:phase-6-finalize` SKILL.md | accumulate-agent-usage | Persist per-step agent `<usage>` totals after each Task-agent return |
+| Phase agents (via Task tool) | end-phase (with token args) | Pass `<usage>` tag data after agent completion (alternative to accumulator path) |
 
 ### Consumers
 
