@@ -67,6 +67,7 @@ from ci_base import (  # type: ignore[import-not-found]
     BODY_KIND_PR_EDIT,
     BODY_KIND_PR_REPLY,
     BODY_KIND_PR_THREAD_REPLY,
+    MAX_ELAPSED_SECONDS,
     add_pr_create_args,
     build_parser,
     check_auth_cli,
@@ -1114,7 +1115,7 @@ def format_checks_toon(
     # Defense-in-depth: clamp aggregate to a sane window. The per-check filter
     # above should already prevent zero-time leakage, but a runaway value here
     # would mask a regression — substitute the caller's ceiling and warn.
-    if total_elapsed < 0 or total_elapsed > 24 * 3600:
+    if total_elapsed < 0 or total_elapsed > MAX_ELAPSED_SECONDS:
         print(
             'format_checks_toon: aggregate elapsed_sec out of range, clamping',
             file=sys.stderr,

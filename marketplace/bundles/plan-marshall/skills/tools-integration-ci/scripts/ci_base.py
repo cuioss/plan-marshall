@@ -847,6 +847,8 @@ def make_pr_number_handler(
 # CI check formatting (shared between GitHub and GitLab)
 # ---------------------------------------------------------------------------
 
+MAX_ELAPSED_SECONDS = 24 * 3600
+
 
 def _is_zero_time(iso: str | None) -> bool:
     """Return True when ``iso`` is a Go zero-value timestamp or otherwise unusable.
