@@ -106,19 +106,33 @@ def build_parser() -> argparse.ArgumentParser:
         help='Atomically add multiple tasks from a JSON array (one transaction)',
         description=(
             'Atomically append every task record in a JSON array to the plan. '
-            'Pass the array via --tasks-json or stdin. Validation is performed '
-            'before any file is written; on any validation failure no '
-            'TASK-NNN.json file is created. On success, sequential TASK numbers '
-            'are assigned and a single result describes the created tasks.'
+            'Pass the array via --tasks-json, --tasks-file PATH, or stdin '
+            '(--tasks-json and --tasks-file are mutually exclusive; stdin is used '
+            'when neither flag is given). Validation is performed before any file '
+            'is written; on any validation failure no TASK-NNN.json file is created. '
+            'On success, sequential TASK numbers are assigned and a single result '
+            'describes the created tasks.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
     add_plan_id_arg(p_batch)
-    p_batch.add_argument(
+    # --tasks-json and --tasks-file are mutually exclusive. Stdin remains a
+    # third independent input that is selected when neither flag is given.
+    p_batch_input = p_batch.add_mutually_exclusive_group()
+    p_batch_input.add_argument(
         '--tasks-json',
         default=None,
-        help='Raw JSON array of task records. If omitted, the array is read from stdin.',
+        help='Raw JSON array of task records. Mutually exclusive with --tasks-file.',
+    )
+    p_batch_input.add_argument(
+        '--tasks-file',
+        default=None,
+        help=(
+            'Path to a file containing the JSON array of task records. '
+            'Mutually exclusive with --tasks-json. If neither flag is given, '
+            'the array is read from stdin.'
+        ),
     )
 
     # update

@@ -80,7 +80,7 @@ Script: `plan-marshall:manage-lessons:manage-lessons`
 
 ### add
 
-Allocate a new lesson file with metadata header and title (empty body). The call returns the absolute path of the created file; the caller then writes the body directly to that path via the Write tool. There is **no** inline-body API form — this is the single, canonical flow.
+Allocate a new lesson file with metadata header and title (empty body). The call returns the absolute path of the created file; the caller then populates the body via `set-body` (canonical form, see below) — typically by writing a body file under `{plan_dir}/work/lesson-body-{id}.md` and passing it via `--file`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
@@ -105,15 +105,58 @@ component: maven-build
 category: bug
 ```
 
-**Write the body**:
+### set-body
 
-After the call returns, use the Write tool with the returned `path` value to populate the lesson body. The file already contains the metadata header and the `# {title}` heading; append body content below the title.
+Populate (or replace) the body of an existing lesson. This is the **canonical** form for writing lesson bodies. Two mutually exclusive input modes are supported: `--file PATH` (preferred, shell-safe for arbitrary markdown) and `--content STRING` (secondary form, suitable only for tiny single-line payloads).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons set-body \
+  --lesson-id 2025-12-02-001 \
+  --file /abs/path/to/.plan/local/plans/{plan_id}/work/lesson-body-2025-12-02-001.md
+```
+
+**Parameters**:
+- `--lesson-id` (required): Lesson ID whose body to set
+- `--file` (preferred): Absolute path to a markdown file containing the body. Use this for any non-trivial content — sections with `##` headings, code fences, multi-paragraph prose — because the body never passes through a shell argument.
+- `--content` (secondary, tiny payloads only): Inline string body. Use only for single-line or very short content; any payload containing newlines, backticks, quotes, or shell metacharacters MUST use `--file` instead.
+
+`--file` and `--content` are mutually exclusive — exactly one must be provided.
+
+**Output** (TOON):
+```toon
+status: success
+id: 2025-12-02-001
+path: /abs/path/to/.plan/local/lessons-learned/2025-12-02-001.md
+body_bytes_written: 1234
+```
+
+**Path-allocate flow (canonical)**:
+
+The standard sequence for creating a lesson with a non-trivial body is:
+
+1. `add` — allocate the lesson file and capture the returned `id`.
+2. `Write {plan_dir}/work/lesson-body-{id}.md` — write the body markdown directly to a plan-scoped staging file using the Write tool. This bypasses shell quoting entirely and supports arbitrary markdown content.
+3. `set-body --lesson-id {id} --file {path}` — apply the staged body to the lesson file. The script reads the file from disk and replaces the body section while preserving the metadata header and title.
+
+Worked example:
 
 ```
-Write(path, body_markdown)
+# Step 1: allocate
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
+  --component maven-build --category bug \
+  --title "Build fails with missing dependency"
+# → returns id=2025-12-02-001
+
+# Step 2: stage body via Write tool (no shell quoting concerns)
+Write("/abs/path/to/.plan/local/plans/my-plan/work/lesson-body-2025-12-02-001.md", body_markdown)
+
+# Step 3: apply
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons set-body \
+  --lesson-id 2025-12-02-001 \
+  --file /abs/path/to/.plan/local/plans/my-plan/work/lesson-body-2025-12-02-001.md
 ```
 
-Body content may include arbitrary markdown, including sections with `##` headings, code fences, and multiple paragraphs — all written directly through the Write tool, bypassing shell argument quoting entirely.
+The inline `--content STRING` form is the secondary path — reserve it for tiny single-line payloads (e.g., a one-sentence note) where staging a file would be overhead. For anything multi-line, code-bearing, or containing shell-significant characters, always use the path-allocate flow above.
 
 ### update
 
@@ -245,7 +288,8 @@ created_from: error_context
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `add` | `--component --category --title [--bundle]` | Allocate a new lesson file and return its absolute `path`. Caller writes body via Write tool. |
+| `add` | `--component --category --title [--bundle]` | Allocate a new lesson file and return its absolute `path`. Caller populates body via `set-body`. |
+| `set-body` | `--lesson-id (--file PATH \| --content STRING)` | Populate or replace lesson body. `--file` is the canonical form (shell-safe for arbitrary markdown); `--content` is the secondary form for tiny single-line payloads only. |
 | `update` | `--lesson-id [--component] [--category]` | Update lesson metadata |
 | `get` | `--lesson-id` | Get single lesson |
 | `list` | `[--component] [--category] [--full]` | List with filtering. `--full` includes lesson body content. |
@@ -270,9 +314,12 @@ created_from: error_context
 
 | Error Code | Cause |
 |------------|-------|
-| `not_found` | Lesson ID doesn't exist (get, update, convert-to-plan) |
+| `not_found` | Lesson ID doesn't exist (get, update, set-body, convert-to-plan) |
 | `invalid_category` | Category not in: bug, improvement, anti-pattern |
 | `invalid_context` | JSON context parsing failed (from-error) |
+| `invalid_input` | `set-body` invoked without exactly one of `--file` / `--content`, or both supplied |
+| `file_not_found` | `set-body --file PATH` points at a non-existent path |
+| `malformed_lesson` | `set-body` target lesson file is missing its metadata header / title structure |
 | `missing_required` | Required parameter missing |
 
 ---

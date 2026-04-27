@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
+from _lessons_crud import set_body  # type: ignore[import-not-found]
 from constants import DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
@@ -425,6 +426,22 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_set_body(args: argparse.Namespace) -> dict:
+    """Overwrite the body of an existing lesson stub.
+
+    Reads the body content from ``--file PATH`` (preferred) or ``--content
+    STRING`` (secondary), preserves the ``key=value`` frontmatter and the H1
+    title verbatim, and replaces everything after the H1 with the supplied
+    body. Returns TOON ``{status, id, path, body_bytes_written}``.
+    """
+    return set_body(
+        get_lessons_dir(),
+        args.lesson_id,
+        file_path=args.file,
+        content=args.content,
+    )
+
+
 def cmd_from_error(args: argparse.Namespace) -> dict:
     """Create lesson from error context."""
     try:
@@ -500,6 +517,18 @@ def main() -> int:
     convert_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
     convert_parser.add_argument('--plan-id', required=True, help='Target plan ID')
     convert_parser.set_defaults(func=cmd_convert_to_plan)
+
+    # set-body
+    set_body_parser = subparsers.add_parser(
+        'set-body',
+        help='Overwrite the body of an existing lesson stub (preserves frontmatter and H1 title)',
+        allow_abbrev=False,
+    )
+    set_body_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
+    set_body_input = set_body_parser.add_mutually_exclusive_group(required=True)
+    set_body_input.add_argument('--file', help='Path to a file containing the body content')
+    set_body_input.add_argument('--content', help='Inline body content (secondary form for tiny payloads)')
+    set_body_parser.set_defaults(func=cmd_set_body)
 
     # from-error
     from_error_parser = subparsers.add_parser(

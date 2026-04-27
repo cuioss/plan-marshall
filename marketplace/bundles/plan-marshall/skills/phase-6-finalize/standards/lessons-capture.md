@@ -27,9 +27,9 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 Skill: plan-marshall:manage-lessons
 ```
 
-Lessons are added in **two steps**. This is the single canonical flow — there is no inline `--detail` form and no alternative API variant.
+Lessons are added in **three steps** via the path-allocate flow. This is the single canonical sequence — there is no inline `--detail` form and no alternative API variant. The body is staged to a plan-scoped file with the Write tool, then applied to the lesson via `set-body`, so arbitrary markdown (sections with `##` headings, fenced code blocks, multi-paragraph prose) never passes through a shell argument.
 
-### Step A — Allocate the lesson file
+### Step 1 — Allocate the lesson file
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add \
@@ -38,13 +38,37 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons add 
   --title "{concise summary}"
 ```
 
-Required flags: `--component`, `--category`, `--title`. The call creates a file with the metadata header and the `# {title}` heading already in place (body is empty) and returns an absolute `path` in the TOON output.
+Required flags: `--component`, `--category`, `--title`. The call creates a file with the metadata header and the `# {title}` heading already in place (body is empty) and returns both the lesson `id` and absolute `path` in the TOON output.
 
-### Step B — Write the body directly to the returned path
+### Step 2 — Stage the body via the Write tool
 
-Parse `path` from the TOON output of Step A and use the Write tool to append the lesson body to that file. The body may contain arbitrary markdown: `##` section headings, fenced code blocks, lists, multiple paragraphs. Because the body is delivered through the Write tool rather than a shell argument, Claude Code's path-validation heuristic for `#`-lines inside quoted arguments is not triggered and rich markdown bodies pass through safely.
+Parse `id` from Step 1's TOON output. Use the Write tool to write the lesson body markdown to a plan-scoped staging file:
 
-Do not attempt to smuggle the body into the Step A call (no `--detail`, no `--detail-file`, no second subcommand). Any such variant is intentionally absent — the single path-allocate + Write-tool flow is the supported API.
+```
+Write {plan_dir}/work/lesson-body-{id}.md
+```
+
+Where `{plan_dir}` is the absolute path to the active plan directory and `{id}` is the lesson identifier from Step 1 (e.g., `lesson-body-2026-04-27-10-005.md`). The body may contain arbitrary markdown — `##` section headings, fenced code blocks, lists, multiple paragraphs — because the Write tool delivers the content directly without shell quoting.
+
+### Step 3 — Apply the staged body via `set-body`
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons set-body \
+  --lesson-id {id} \
+  --file {plan_dir}/work/lesson-body-{id}.md
+```
+
+The script reads the staged file from disk and replaces the body section of the lesson, preserving the metadata header and `# {title}` heading written in Step 1. On success the call returns the lesson `path` and `body_bytes_written`.
+
+### Anti-patterns — prohibited shortcuts
+
+Do **not** attempt to compress the three steps into a single shell-mediated write. The following shortcuts are explicitly prohibited because they either trip Claude Code's path-validation heuristic on `#`-bearing markdown, mangle whitespace and code fences, or otherwise corrupt the lesson body:
+
+- `python -c "open(...).write(...)"` — inline Python that smuggles body content through the shell argument vector. Forbidden.
+- `$(printf ...)` — command substitution to assemble multi-line markdown. Forbidden.
+- Heredocs containing lines that begin with `#` — markdown headings inside `<<EOF` blocks trip the bare-comment heuristic and trigger security prompts. Forbidden.
+
+Use the three-step path-allocate flow above (Step 1 `add` → Step 2 Write tool → Step 3 `set-body --file`) for every lesson body. There is no `--detail`, no `--detail-file`, no inline-body variant on `add` — the path-allocate flow is the single supported API for non-trivial bodies.
 
 ## Mark Step Complete
 
