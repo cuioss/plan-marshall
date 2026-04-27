@@ -122,6 +122,7 @@ DEFAULT_PLAN_EXECUTE = {
 # Built-in finalize step names (dispatch table in phase-6-finalize SKILL.md)
 # Prefixed with 'default:' to distinguish from project: and fully-qualified skill steps
 BUILT_IN_FINALIZE_STEPS = [
+    'default:pre-push-quality-gate',
     'default:commit-push',
     'default:create-pr',
     'default:automated-review',
@@ -143,6 +144,7 @@ OPTIONAL_BUNDLE_FINALIZE_STEPS = [
 
 # Human-readable descriptions for built-in finalize steps
 BUILT_IN_FINALIZE_STEP_DESCRIPTIONS = {
+    'default:pre-push-quality-gate': 'Run quality-gate per affected bundle as the last gate before push',
     'default:commit-push': 'Commit and push changes',
     'default:create-pr': 'Create pull request',
     'default:automated-review': 'CI automated review',

@@ -19,6 +19,7 @@ import argparse
 import json
 import re
 import shutil
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -31,8 +32,13 @@ from file_ops import (  # type: ignore[import-not-found]
     parse_markdown_metadata,
     safe_main,
 )
+from plan_logging import log_entry  # type: ignore[import-not-found]
 
 VALID_CATEGORIES = LESSON_CATEGORIES
+
+# Maximum retry attempts when allocating a fresh lesson id; bounded so that a
+# pathological caller cannot wedge the script in an unbounded loop.
+MAX_ID_ALLOCATION_RETRIES = 99
 
 
 def get_lessons_dir() -> Path:
@@ -117,6 +123,111 @@ def write_lesson_to(path: Path, metadata: dict, title: str, body: str) -> None:
     atomic_write_file(path, '\n'.join(lines))
 
 
+def _build_lesson_content(metadata: dict, title: str, body: str) -> str:
+    """Render a lesson file's content to a string.
+
+    Mirrors the on-disk shape produced by ``write_lesson_to`` /
+    ``atomic_write_file`` (metadata header, blank line, ``# title``, blank line,
+    body, terminating newline) so callers using exclusive create can write the
+    same bytes without going through the atomic temp-file path.
+    """
+    lines = [f'{key}={value}' for key, value in metadata.items()]
+    lines.append('')
+    lines.append(f'# {title}')
+    lines.append('')
+    lines.append(body)
+    rendered = '\n'.join(lines)
+    if not rendered.endswith('\n'):
+        rendered += '\n'
+    return rendered
+
+
+def _next_sequential_id(current_id: str) -> str:
+    """Return the next id by incrementing the trailing 3-digit sequence.
+
+    The lesson id format is ``YYYY-MM-DD-HH-NNN`` (see ``get_next_id``). The
+    helper bumps ``NNN`` by one and re-zero-pads, leaving the rest of the id
+    untouched. Used by ``_allocate_and_write_scaffold`` to walk past collisions
+    deterministically rather than rolling the clock forward.
+    """
+    match = re.match(r'^(\d{4}-\d{2}-\d{2}-\d{2})-(\d+)$', current_id)
+    if not match:
+        # Fall back to ``get_next_id`` semantics: same prefix, seq=001.
+        return f'{current_id}-001'
+    prefix, seq = match.group(1), int(match.group(2))
+    return f'{prefix}-{seq + 1:03d}'
+
+
+def _allocate_and_write_scaffold(
+    metadata_factory: Callable[[str], dict], title: str, body: str = ''
+) -> dict:
+    """Allocate a fresh lesson id and exclusively create its file.
+
+    Uses ``open(path, 'x')`` (kernel-enforced O_CREAT|O_EXCL) so a concurrent
+    or stale-cache caller can never silently overwrite an existing lesson.
+    On ``FileExistsError`` the helper logs a WARN to ``script-execution.log``
+    and retries with the next sequential id, up to
+    ``MAX_ID_ALLOCATION_RETRIES`` (99) attempts. Exhaustion returns an error
+    dict ``{'status': 'error', 'error': 'id_exhausted', ...}``.
+
+    Args:
+        metadata_factory: Callable that takes the candidate ``lesson_id`` and
+            returns the metadata dict to embed in the file header. Called
+            fresh on every retry so the embedded ``id`` field stays in sync
+            with the path.
+        title: Markdown ``# title`` line for the scaffold.
+        body: Initial body content (may be empty for ``cmd_add``).
+
+    Returns:
+        On success: ``{'status': 'success', 'id': lesson_id, 'path': Path,
+        'metadata': metadata}``.
+        On exhaustion: ``{'status': 'error', 'error': 'id_exhausted', ...}``.
+    """
+    lessons_dir = get_lessons_dir()
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+
+    lesson_id = get_next_id()
+
+    for _ in range(MAX_ID_ALLOCATION_RETRIES):
+        metadata = metadata_factory(lesson_id)
+        content = _build_lesson_content(metadata, title, body)
+        path = lessons_dir / f'{lesson_id}.md'
+
+        try:
+            with open(path, 'x', encoding='utf-8') as f:
+                f.write(content)
+        except FileExistsError:
+            # ``manage-lessons`` is a global script with no plan context, so the
+            # WARN line lands in the date-suffixed global script-execution log.
+            # The ``'global'`` sentinel matches the convention used by other
+            # global callers (build-python/build-npm/manage-architecture).
+            log_entry(
+                'script',
+                'global',
+                'WARN',
+                f'(plan-marshall:manage-lessons) id_collision at {path} — retrying with seq+1',
+            )
+            lesson_id = _next_sequential_id(lesson_id)
+            continue
+
+        return {
+            'status': 'success',
+            'id': lesson_id,
+            'path': path,
+            'metadata': metadata,
+        }
+
+    return {
+        'status': 'error',
+        'error': 'id_exhausted',
+        'message': (
+            f'Could not allocate a unique lesson id after {MAX_ID_ALLOCATION_RETRIES} '
+            'attempts; the lessons directory likely contains a colliding file or a '
+            'corrupted id sequence.'
+        ),
+    }
+
+
 def cmd_add(args: argparse.Namespace) -> dict:
     """Allocate a new lesson file with metadata header and title (empty body).
 
@@ -131,27 +242,27 @@ def cmd_add(args: argparse.Namespace) -> dict:
             'valid_categories': VALID_CATEGORIES,
         }
 
-    lesson_id = get_next_id()
     today = datetime.now(UTC).strftime('%Y-%m-%d')
 
-    metadata = {
-        'id': lesson_id,
-        'component': args.component,
-        'category': args.category,
-        'created': today,
-    }
+    def _metadata(lesson_id: str) -> dict:
+        metadata = {
+            'id': lesson_id,
+            'component': args.component,
+            'category': args.category,
+            'created': today,
+        }
+        if args.bundle:
+            metadata['bundle'] = args.bundle
+        return metadata
 
-    if args.bundle:
-        metadata['bundle'] = args.bundle
-
-    write_lesson(lesson_id, metadata, args.title, '')
-
-    path = (get_lessons_dir() / f'{lesson_id}.md').resolve()
+    allocation = _allocate_and_write_scaffold(_metadata, args.title, '')
+    if allocation['status'] != 'success':
+        return allocation
 
     return {
         'status': 'success',
-        'id': lesson_id,
-        'path': str(path),
+        'id': allocation['id'],
+        'path': str(allocation['path'].resolve()),
         'component': args.component,
         'category': args.category,
     }
@@ -325,19 +436,21 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
     error = context.get('error', 'Unknown error')
     solution = context.get('solution', '')
 
-    lesson_id = get_next_id()
     today = datetime.now(UTC).strftime('%Y-%m-%d')
 
-    metadata = {'id': lesson_id, 'component': component, 'category': 'bug', 'created': today}
+    def _metadata(lesson_id: str) -> dict:
+        return {'id': lesson_id, 'component': component, 'category': 'bug', 'created': today}
 
     title = f'Error: {error[:50]}'
     body = f'## Error\n\n{error}\n\n'
     if solution:
         body += f'## Solution\n\n{solution}\n'
 
-    write_lesson(lesson_id, metadata, title, body)
+    allocation = _allocate_and_write_scaffold(_metadata, title, body)
+    if allocation['status'] != 'success':
+        return allocation
 
-    return {'status': 'success', 'id': lesson_id, 'created_from': 'error_context'}
+    return {'status': 'success', 'id': allocation['id'], 'created_from': 'error_context'}
 
 
 @safe_main
