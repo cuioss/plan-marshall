@@ -318,7 +318,8 @@ created_from: error_context
 | `invalid_category` | Category not in: bug, improvement, anti-pattern |
 | `invalid_context` | JSON context parsing failed (from-error) |
 | `invalid_input` | `set-body` invoked without exactly one of `--file` / `--content`, or both supplied |
-| `file_not_found` | `set-body --file PATH` points at a non-existent path |
+| `file_not_found` | `set-body --file PATH` points at a non-existent path or a non-regular file (directory, broken symlink, special file) |
+| `file_read_error` | `set-body --file PATH` failed with an `OSError` while reading (permission denied, I/O error, etc.) |
 | `malformed_lesson` | `set-body` target lesson file is missing its metadata header / title structure |
 | `missing_required` | Required parameter missing |
 

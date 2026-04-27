@@ -544,6 +544,84 @@ class TestCmdSetBody:
         assert both_result['status'] == 'error'
         assert both_result['error'] == 'invalid_input'
 
+    def test_set_body_with_directory_path_returns_file_not_found(self, tmp_path):
+        """``--file`` form must reject a path that is a directory, not a regular file.
+
+        Mirrors the ``_tasks_crud.py`` ``--tasks-file`` guard: ``Path.is_file()``
+        is stricter than ``Path.exists()`` and rejects directories, broken
+        symlinks, and special files. The error code must be ``file_not_found``
+        and the message must surface the offending path so callers can react.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_stub(lessons_dir, '2025-01-01-02-001', 'Dir Test')
+
+        # A directory exists at this path — ``Path.exists()`` would return True
+        # but ``is_file()`` returns False, which the guard must surface as
+        # ``file_not_found`` rather than crashing in ``read_text``.
+        bogus_dir = tmp_path / 'not-a-file-dir'
+        bogus_dir.mkdir()
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file=str(bogus_dir),
+                    content=None,
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+        assert result['id'] == '2025-01-01-02-001'
+        assert str(bogus_dir) in result['message']
+
+    def test_set_body_with_unreadable_file_returns_file_read_error(self, tmp_path):
+        """``--file`` form must surface ``OSError`` from ``read_text`` as ``file_read_error``.
+
+        Simulates a transient I/O failure (permission flip, EIO, vanished mount)
+        by monkeypatching ``Path.read_text`` to raise ``PermissionError`` (an
+        ``OSError`` subclass). The guard must trap the exception, leave the
+        target lesson stub on disk untouched, and return a structured error
+        payload with ``error: file_read_error`` and the offending path
+        reflected in the message — never let the exception propagate.
+        """
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        stub_path = self._seed_stub(lessons_dir, '2025-01-01-02-001', 'Read Error Test')
+        stub_content_before = stub_path.read_text(encoding='utf-8')
+
+        body_file = tmp_path / 'body.md'
+        body_file.write_text('Body that cannot be read.', encoding='utf-8')
+
+        original_read_text = Path.read_text
+
+        def _raising_read_text(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            # Only raise for the body source; allow reads on the lesson stub
+            # (the function reads the original lesson via ``target.read_text``
+            # AFTER the body source). We restrict to the exact body file path.
+            if self == body_file:
+                raise PermissionError('simulated read failure')
+            return original_read_text(self, *args, **kwargs)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), \
+                patch.object(Path, 'read_text', _raising_read_text):
+            result = cmd_set_body(
+                Namespace(
+                    lesson_id='2025-01-01-02-001',
+                    file=str(body_file),
+                    content=None,
+                )
+            )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_read_error'
+        assert result['id'] == '2025-01-01-02-001'
+        assert str(body_file) in result['message']
+        # The lesson stub on disk must be untouched — the failure happened
+        # before the rewrite stage, so no atomic write should have run.
+        assert stub_path.read_text(encoding='utf-8') == stub_content_before
+
     def test_set_body_preserves_frontmatter_across_overwrite(self, tmp_path):
         """Frontmatter block and H1 title must survive a body overwrite verbatim.
 

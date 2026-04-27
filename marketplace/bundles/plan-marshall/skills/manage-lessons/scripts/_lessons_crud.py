@@ -109,14 +109,24 @@ def set_body(
 
     if file_path is not None:
         source = Path(file_path)
-        if not source.exists():
+        if not source.is_file():
             return {
                 'status': 'error',
                 'id': lesson_id,
                 'error': 'file_not_found',
-                'message': f'Body source file not found: {file_path}',
+                'message': (
+                    f'Body source path does not exist or is not a regular file: {file_path}'
+                ),
             }
-        body = source.read_text(encoding='utf-8')
+        try:
+            body = source.read_text(encoding='utf-8')
+        except OSError as e:
+            return {
+                'status': 'error',
+                'id': lesson_id,
+                'error': 'file_read_error',
+                'message': f'Cannot read body source file {file_path}: {e}',
+            }
     else:
         body = content or ''
 
