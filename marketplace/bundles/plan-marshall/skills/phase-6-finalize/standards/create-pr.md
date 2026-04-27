@@ -48,7 +48,29 @@ Use the path-allocate pattern: the script allocates the scratch path, the main
 context writes the body with the Write tool, and `pr create` consumes the file.
 No multi-line markdown crosses the shell boundary.
 
-#### Step 1: Allocate the scratch body path
+#### Step 1: Resolve the changed-file set
+
+Before drafting any body content, ground the body against the actual diff so
+file references cannot be fabricated. The diff is a local operation and is
+resolved with `git` directly (the `tools-integration-ci` abstraction covers
+provider-side operations such as PR creation, reviews, and threads — local
+working-tree diffs are out of its scope):
+
+```bash
+git -C {worktree_path} fetch origin {base_branch}
+```
+
+```bash
+git -C {worktree_path} diff --name-only origin/{base_branch}...HEAD
+```
+
+Read the returned file list as `{changed_files}`. This is the authoritative
+diff scope for the body. Use `origin/{base_branch}...HEAD` (three dots) so
+the comparison runs against the merge base — the same file set GitHub /
+GitLab will show on the PR — rather than including unrelated changes that
+have landed on `{base_branch}` since the feature branch diverged.
+
+#### Step 2: Allocate the scratch body path
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr prepare-body \
@@ -58,7 +80,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 Read the `path` field from the returned TOON — it is the canonical scratch
 location bound to this plan. Do not invent a path of your own.
 
-#### Step 2: Write the PR body
+#### Step 3: Write the PR body
 
 ```
 Write({path from prepare-body}) with PR body markdown content
@@ -67,7 +89,14 @@ Write({path from prepare-body}) with PR body markdown content
 Use `templates/pr-template.md` as the format. Include issue link from references
 (`Closes #{issue}` if `issue_url` was set).
 
-#### Step 3: Create PR via CI abstraction
+**File-reference constraint**: Every file path mentioned in the PR body MUST
+belong to `{changed_files}` from Step 1. Fabricating file references that are
+not in the resolved diff scope is a workflow violation — it undermines the
+reviewer trust model that the rest of the finalize pipeline is built on. If a
+template section calls for a file that is not in `{changed_files}`, omit the
+section rather than invent a reference.
+
+#### Step 4: Create PR via CI abstraction
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} pr create \
