@@ -182,7 +182,7 @@ def _decide(
             },
             'phase_6': {
                 'steps': [
-                    s for s in phase_6_candidates if s in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+                    s for s in phase_6_candidates if _strip_default_prefix(s) in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
                 ],
             },
         }
@@ -195,7 +195,7 @@ def _decide(
     if recipe_key:
         phase_6_steps = [
             s for s in phase_6_candidates
-            if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
+            if _strip_default_prefix(s) not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
         ]
         body = {
             'phase_5': {
@@ -217,7 +217,7 @@ def _decide(
             'phase_6': {
                 'steps': [
                     s for s in phase_6_candidates
-                    if s not in {'sonar-roundtrip', 'automated-review'}
+                    if _strip_default_prefix(s) not in {'sonar-roundtrip', 'automated-review'}
                 ],
             },
         }
@@ -242,7 +242,7 @@ def _decide(
     if scope_estimate == 'surgical' and change_type in ('bug_fix', 'tech_debt'):
         phase_6_steps = [
             s for s in phase_6_candidates
-            if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
+            if _strip_default_prefix(s) not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
         ]
         body = {
             'phase_5': {
@@ -264,7 +264,7 @@ def _decide(
             },
             'phase_6': {
                 'steps': [
-                    s for s in phase_6_candidates if s in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+                    s for s in phase_6_candidates if _strip_default_prefix(s) in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
                 ],
             },
         }
