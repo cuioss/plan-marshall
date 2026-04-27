@@ -79,6 +79,17 @@ Parse `session_id` from the TOON output. Resolution order: `~/.cache/plan-marsha
 
 As a last resort (fresh checkout, stripped `.claude` config, hook has not fired yet), use `AskUserQuestion` to ask the user for the id — but prefer the resolver in every other case, since users typically do not know where to find the id in the Claude Code UI.
 
+### How to obtain transcript_path
+
+When a step needs the absolute path of the session transcript JSONL on disk (e.g., for `default:record-metrics` `manage-metrics enrich`, or for any aspect that reads the transcript directly), call the canonical resolver — the same script that exposes `current` also exposes `transcript-path`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:manage_session \
+  transcript-path --session-id {session_id}
+```
+
+Parse `transcript_path` from the TOON output. Resolution order: `~/.claude/projects/{cwd-slug}/{session_id}.jsonl` (where `{cwd-slug}` is the absolute project cwd with each `/` replaced by `-`) → in-process `pathlib.Path.glob` parent-directory scan for cross-cwd recovery → `status: error\nerror: transcript_not_found`. On error, the caller decides whether to abort finalize or degrade (e.g., skip `enrich`); the resolver does not shell out beyond the single `git rev-parse` already in `_resolve_cwd()`. Never substitute Bash file discovery (`ls`, `find`, Glob) for this resolver — the dev-general-practices ban on Bash file discovery already covers it, and the resolver is the only sanctioned alternative.
+
 ## Configuration Sources
 
 The phase-6-finalize step list lives in the **per-plan execution manifest**, not in `marshal.json`. The manifest is composed at outline time by `plan-marshall:manage-execution-manifest:compose` and is the single source of truth for which steps fire on this plan.
