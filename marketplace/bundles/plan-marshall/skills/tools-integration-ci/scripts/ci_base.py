@@ -847,32 +847,78 @@ def make_pr_number_handler(
 # CI check formatting (shared between GitHub and GitLab)
 # ---------------------------------------------------------------------------
 
+MAX_ELAPSED_SECONDS = 24 * 3600
 
-def compute_elapsed(started_at: str | None, completed_at: str | None, now: datetime) -> int:
+
+def _is_zero_time(iso: str | None) -> bool:
+    """Return True when ``iso`` is a Go zero-value timestamp or otherwise unusable.
+
+    The provider CLIs (``gh``, ``glab``) emit Go's zero-value time
+    ``0001-01-01T00:00:00Z`` for never-started checks. Treating that string as
+    a real timestamp produces ~63.9 billion-second elapsed values. A timestamp
+    is considered "zero" when it is:
+
+    - falsy (``None`` or empty string)
+    - prefixed with ``0001-01-01`` (Go zero-value sentinel)
+    - parses to a ``datetime`` with year ≤ 1971 (pre-Unix-epoch sentinels)
+
+    Strings that fail to parse are treated as zero-time to be safe.
+    """
+    if not iso:
+        return True
+    if iso.startswith('0001-01-01'):
+        return True
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (ValueError, TypeError):
+        return True
+    return dt.year <= 1971
+
+
+def compute_elapsed(started_at: str | None, completed_at: str | None, now: datetime) -> int | None:
     """Compute elapsed seconds from ISO timestamps.
 
-    Returns 0 on parse failure.
+    Returns ``None`` when:
+
+    - ``started_at`` is a Go zero-value or otherwise unusable timestamp
+      (see :func:`_is_zero_time`)
+    - parsing fails for any provided timestamp
+    - the computed elapsed value is negative (clamped to ``None`` rather than
+      leaking a small negative integer when ``completed_at < started_at`` due
+      to a sub-second precision artifact)
+
+    Returns a non-negative ``int`` on success.
     """
-    if not started_at:
-        return 0
+    if _is_zero_time(started_at):
+        return None
     try:
-        start_dt = datetime.fromisoformat(started_at)
-        if completed_at:
+        start_dt = datetime.fromisoformat(started_at)  # type: ignore[arg-type]
+        if completed_at and not _is_zero_time(completed_at):
             end_dt = datetime.fromisoformat(completed_at)
-            return int((end_dt - start_dt).total_seconds())
-        return int((now - start_dt).total_seconds())
+            elapsed = int((end_dt - start_dt).total_seconds())
+        else:
+            elapsed = int((now - start_dt).total_seconds())
     except (ValueError, TypeError):
-        return 0
+        return None
+    if elapsed < 0:
+        return None
+    return elapsed
 
 
 def compute_total_elapsed(started_at_values: list[str | None], now: datetime) -> int:
-    """Compute total elapsed from earliest start to now."""
+    """Compute total elapsed from earliest non-zero-time start to now.
+
+    Skips entries for which :func:`_is_zero_time` returns ``True`` so that
+    Go zero-value sentinels (e.g. ``0001-01-01T00:00:00Z`` from never-started
+    checks) do not poison the aggregate. Returns ``0`` when no usable
+    timestamp is present.
+    """
     earliest = None
     for val in started_at_values:
-        if not val:
+        if _is_zero_time(val):
             continue
         try:
-            dt = datetime.fromisoformat(val)
+            dt = datetime.fromisoformat(val)  # type: ignore[arg-type]
             if earliest is None or dt < earliest:
                 earliest = dt
         except (ValueError, TypeError):

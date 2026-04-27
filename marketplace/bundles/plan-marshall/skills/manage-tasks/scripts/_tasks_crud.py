@@ -10,19 +10,23 @@ Add flow (path-allocate pattern):
     3. `commit-add` → script reads the file, validates it, and creates TASK-NNN.json
 
 Batch add (atomic many-task insertion):
-    `batch-add` accepts a JSON array of task records (via --tasks-json arg or
-    stdin) and atomically appends every task in a single transaction. Either
-    every task is created or none is — on any validation failure the entire
-    batch is rejected and no TASK-NNN.json files are written.
+    `batch-add` accepts a JSON array of task records via three mutually
+    exclusive inputs: `--tasks-json` (raw JSON string), `--tasks-file PATH`
+    (read JSON from a file on disk), or stdin (when neither flag is given).
+    It atomically appends every task in a single transaction. Either every
+    task is created or none is — on any validation failure the entire batch
+    is rejected and no TASK-NNN.json files are written.
 
 No multi-line content is marshalled through the shell boundary for the
 single-task add flow. The batch flow accepts JSON to keep the multi-task
-array structured and parsable in one call.
+array structured and parsable in one call. `--tasks-file PATH` exists for
+callers that want to avoid quoting large JSON arrays through the shell.
 """
 
 import json
 import re
 import sys
+from pathlib import Path
 
 from _tasks_core import (
     find_task_file,
@@ -328,25 +332,55 @@ def _validate_batch_entry(entry: dict, index: int) -> dict:
 def cmd_batch_add(args) -> dict:
     """Atomically add multiple tasks from a JSON array.
 
-    Accepts the array via `--tasks-json` argument (raw JSON string) or stdin.
+    Accepts the array via three mutually exclusive inputs:
+
+    - ``--tasks-json`` argument (raw JSON string)
+    - ``--tasks-file PATH`` (read JSON from a file on disk)
+    - stdin (when neither flag is given)
+
+    Mutual exclusion between ``--tasks-json`` and ``--tasks-file`` is enforced
+    at the CLI layer (argparse mutually-exclusive group). This handler keeps
+    a defensive check for callers that bypass the CLI parser.
+
     Validates EVERY entry before writing ANY file. On any validation failure,
     no TASK-NNN.json files are created — the whole batch is rejected with a
     descriptive error. On success, every task is written and a single result
     summarizes the created tasks.
     """
-    # Pull the JSON payload from --tasks-json or stdin.
+    # Pull the JSON payload from --tasks-json, --tasks-file, or stdin.
     tasks_json_arg = getattr(args, 'tasks_json', None)
-    if tasks_json_arg:
+    tasks_file_arg = getattr(args, 'tasks_file', None)
+
+    # Defensive: argparse already enforces mutual exclusion, but guard against
+    # callers constructing args namespaces directly.
+    if tasks_json_arg and tasks_file_arg:
+        return output_error(
+            '--tasks-json and --tasks-file are mutually exclusive; pass exactly one',
+            error_code='invalid_input',
+        )
+
+    if tasks_file_arg:
+        path = Path(tasks_file_arg)
+        if not path.is_file():
+            return output_error(
+                f'--tasks-file path does not exist or is not a regular file: {tasks_file_arg}',
+                error_code='file_not_found',
+            )
+        try:
+            payload = path.read_text(encoding='utf-8')
+        except OSError as e:
+            return output_error(f'Cannot read --tasks-file {tasks_file_arg}: {e}')
+    elif tasks_json_arg:
         payload = tasks_json_arg
     else:
         try:
             payload = sys.stdin.read()
         except OSError as e:
-            return output_error(f'Cannot read --tasks-json from stdin: {e}')
+            return output_error(f'Cannot read tasks array from stdin: {e}')
 
     if not payload or not payload.strip():
         return output_error(
-            'batch-add requires a JSON array via --tasks-json or stdin '
+            'batch-add requires a JSON array via --tasks-json, --tasks-file, or stdin '
             '(use --tasks-json "[]" to explicitly request a no-op)'
         )
 

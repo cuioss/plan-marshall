@@ -8,7 +8,7 @@ Usage:
     python3 manage-lesson.py add --component maven-build --category bug --title "Title"
     python3 manage-lesson.py list --component maven-build
     python3 manage-lesson.py get --lesson-id 2025-12-02-001
-    python3 manage-lesson.py update --lesson-id 2025-12-02-001 --body new-body.md
+    python3 manage-lesson.py set-body --lesson-id 2025-12-02-001 --file body.md
     python3 manage-lesson.py remove --lesson-id 2025-12-02-001 --reason "duplicate"
     python3 manage-lesson.py supersede --lesson-id 2025-12-02-001 \\
         --by 2025-12-03-001 --reason "merged into canonical"
@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 # Direct imports - PYTHONPATH set by executor
+from _lessons_crud import set_body  # type: ignore[import-not-found]
 from constants import DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
@@ -343,7 +344,7 @@ def cmd_add(args: argparse.Namespace) -> dict:
 
 
 def cmd_update(args: argparse.Namespace) -> dict:
-    """Update lesson metadata or body."""
+    """Update lesson metadata (component, category). For body updates, use ``set-body``."""
     metadata, title, body = read_lesson(args.lesson_id)
 
     if not metadata:
@@ -352,7 +353,6 @@ def cmd_update(args: argparse.Namespace) -> dict:
     field = None
     value = None
     previous = None
-    new_body = body
 
     if args.component:
         field = 'component'
@@ -371,27 +371,11 @@ def cmd_update(args: argparse.Namespace) -> dict:
         previous = metadata.get('category')
         value = args.category
         metadata['category'] = value
-    elif getattr(args, 'body', None):
-        body_path = Path(args.body)
-        if not body_path.exists():
-            return {
-                'status': 'error',
-                'error': 'body_path_not_found',
-                'message': f'Body file not found: {args.body}',
-            }
-        loaded = body_path.read_text(encoding='utf-8')
-        # Strip a leading shebang-equivalent of leading/trailing whitespace so
-        # the rendered file mirrors the canonical layout produced by other
-        # writers (no leading blank, single trailing newline managed downstream).
-        new_body = loaded.strip()
-        field = 'body'
-        previous = len(body)
-        value = len(new_body)
 
     if not field:
         return {'status': 'error', 'error': 'no_update', 'message': 'No field to update specified'}
 
-    write_lesson(args.lesson_id, metadata, title, new_body)
+    write_lesson(args.lesson_id, metadata, title, body)
 
     return {'status': 'success', 'id': args.lesson_id, 'field': field, 'value': value, 'previous': previous}
 
@@ -522,6 +506,22 @@ def cmd_convert_to_plan(args: argparse.Namespace) -> dict:
         'source': str(source),
         'destination': str(destination),
     }
+
+
+def cmd_set_body(args: argparse.Namespace) -> dict:
+    """Overwrite the body of an existing lesson stub.
+
+    Reads the body content from ``--file PATH`` (preferred) or ``--content
+    STRING`` (secondary), preserves the ``key=value`` frontmatter and the H1
+    title verbatim, and replaces everything after the H1 with the supplied
+    body. Returns TOON ``{status, id, path, body_bytes_written}``.
+    """
+    return set_body(
+        get_lessons_dir(),
+        args.lesson_id,
+        file_path=args.file,
+        content=args.content,
+    )
 
 
 def cmd_from_error(args: argparse.Namespace) -> dict:
@@ -708,15 +708,10 @@ def main() -> int:
     add_parser.set_defaults(func=cmd_add)
 
     # update
-    update_parser = subparsers.add_parser('update', help='Update lesson', allow_abbrev=False)
+    update_parser = subparsers.add_parser('update', help='Update lesson metadata', allow_abbrev=False)
     update_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
     update_parser.add_argument('--component', help='Update component')
     update_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Update category')
-    update_parser.add_argument(
-        '--body',
-        help='Replace the lesson body with the contents of the file at this path '
-        '(frontmatter and title preserved)',
-    )
     update_parser.set_defaults(func=cmd_update)
 
     # get
@@ -746,6 +741,18 @@ def main() -> int:
     convert_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
     convert_parser.add_argument('--plan-id', required=True, help='Target plan ID')
     convert_parser.set_defaults(func=cmd_convert_to_plan)
+
+    # set-body
+    set_body_parser = subparsers.add_parser(
+        'set-body',
+        help='Overwrite the body of an existing lesson stub (preserves frontmatter and H1 title)',
+        allow_abbrev=False,
+    )
+    set_body_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
+    set_body_input = set_body_parser.add_mutually_exclusive_group(required=True)
+    set_body_input.add_argument('--file', help='Path to a file containing the body content')
+    set_body_input.add_argument('--content', help='Inline body content (secondary form for tiny payloads)')
+    set_body_parser.set_defaults(func=cmd_set_body)
 
     # from-error
     from_error_parser = subparsers.add_parser(
