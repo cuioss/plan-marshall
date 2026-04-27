@@ -58,6 +58,7 @@ def stubbed_invariants(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         'task_state_hash': 'hash-tasks',
         'qgate_open_count': 0,
         'config_hash': 'hash-cfg',
+        'pending_tasks_count': 2,
     }
 
     def always(_pid: str, _md: dict) -> bool:
@@ -82,6 +83,7 @@ def stubbed_invariants(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
         ('task_state_hash', always, make_capture('task_state_hash')),
         ('qgate_open_count', always, make_capture('qgate_open_count')),
         ('config_hash', always, make_capture('config_hash')),
+        ('pending_tasks_count', always, make_capture('pending_tasks_count')),
     ]
     monkeypatch.setattr(inv, 'INVARIANTS', stubbed)
     monkeypatch.setattr(cmds, 'INVARIANTS', stubbed)
@@ -281,6 +283,54 @@ def test_verify_drift_config_hash(stubbed_invariants, stub_metadata) -> None:
         assert result['status'] == 'drift'
         diff_names = {d['invariant'] for d in result['diffs']}
         assert 'config_hash' in diff_names
+
+
+def test_capture_persists_pending_tasks_count_to_handshakes_toon(
+    stubbed_invariants, stub_metadata
+) -> None:
+    """``pending_tasks_count`` must round-trip through handshakes.toon.
+
+    The HANDSHAKE_FIELDS column list now includes ``pending_tasks_count`` —
+    capturing must persist the value, and re-loading via ``store.get_row``
+    must surface it. This guards against a regression where the column was
+    dropped from the schema or the registry tuple was unwired.
+    """
+    stubbed_invariants['pending_tasks_count'] = 4
+    with PlanContext(plan_id='cap-pending-persist'):
+        result = cmds.cmd_capture(_ns(plan_id='cap-pending-persist', phase='5-execute'))
+        assert result['status'] == 'success'
+        # Captured-invariants payload echoes the column.
+        assert result['invariants'].get('pending_tasks_count') in (4, '4')
+
+        # Persisted row has the column populated, not blanked out.
+        row = store.get_row('cap-pending-persist', '5-execute')
+        assert row is not None
+        assert 'pending_tasks_count' in row, (
+            f'pending_tasks_count must be a HANDSHAKE_FIELDS column, got {list(row)}'
+        )
+        assert row['pending_tasks_count'] in (4, '4'), row
+
+
+def test_verify_drift_pending_tasks_count(stubbed_invariants, stub_metadata) -> None:
+    """A change in pending_tasks_count between capture and verify is drift."""
+    stubbed_invariants['pending_tasks_count'] = 3
+    with PlanContext(plan_id='ver-pending'):
+        cmds.cmd_capture(_ns(plan_id='ver-pending', phase='5-execute'))
+        # Mid-phase the queue drains: every task completed.
+        stubbed_invariants['pending_tasks_count'] = 0
+        result = cmds.cmd_verify(_ns(plan_id='ver-pending', phase='5-execute'))
+        assert result['status'] == 'drift'
+        diff_names = {d['invariant'] for d in result['diffs']}
+        assert 'pending_tasks_count' in diff_names
+
+
+def test_handshake_fields_includes_pending_tasks_count() -> None:
+    """The TOON column schema must include ``pending_tasks_count``.
+
+    Without this column the row writer would silently drop the value at
+    persistence time, defeating the phase-5-execute transition guard.
+    """
+    assert 'pending_tasks_count' in store.HANDSHAKE_FIELDS
 
 
 def test_verify_skipped_no_capture(stubbed_invariants, stub_metadata) -> None:

@@ -74,9 +74,9 @@ File: `<base>/plans/{plan_id}/handshakes.toon` (owned exclusively by `phase_hand
 
 ```toon
 plan_id: recipe-plugin-compliance
-handshakes[2]{phase,captured_at,worktree_applicable,override,override_reason,main_sha,main_dirty,worktree_sha,worktree_dirty,task_state_hash,qgate_open_count,config_hash}:
-  5-execute,2026-04-14T17:42:57Z,false,false,"",3823a0dd…,0,"","",a1b2c3…,0,d4e5f6…
-  6-finalize,2026-04-14T18:01:12Z,false,false,"",15efe821…,0,"","",a1b2c3…,0,d4e5f6…
+handshakes[2]{phase,captured_at,worktree_applicable,override,override_reason,main_sha,main_dirty,worktree_sha,worktree_dirty,task_state_hash,qgate_open_count,config_hash,pending_tasks_count,phase_steps_complete}:
+  5-execute,2026-04-14T17:42:57Z,false,false,"",3823a0dd…,0,"","",a1b2c3…,0,d4e5f6…,0,""
+  6-finalize,2026-04-14T18:01:12Z,false,false,"",15efe821…,0,"","",a1b2c3…,0,d4e5f6…,0,e7f8a9…
 ```
 
 Rationale for flat TOON over nested: simpler parsing, one row per phase, direct diff-ability. Adding a new invariant adds a new column; captures missing a column are treated as "not captured, skip comparison" during verify, so new invariants can roll out without invalidating history.
@@ -94,6 +94,7 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples.
 | `task_state_hash` | always | SHA256 of sorted `(number, status, step_outcomes, depends_on)` from `manage-tasks list` | tasks silently mutated |
 | `qgate_open_count` | always | `filtered_count` from `manage-findings qgate query --resolution pending --phase P` | Q-Gate bypass |
 | `config_hash` | always | SHA256 of stable-key JSON of `manage-config plan phase-P get` output | config swapped mid-run |
+| `pending_tasks_count` | always | row count from `manage-tasks list --status pending` | premature transition with fix tasks still pending |
 | `phase_steps_complete` | always (no-op when phase has no declaration) | See [resolution rule](#phase_steps_complete-resolution) | silently skipped intra-phase steps |
 
 ### `phase_steps_complete` resolution
@@ -161,7 +162,9 @@ No changes are required in `_handshake_commands.py`, `phase_handshake.py`, or an
 
 ## Integration with phase lifecycle
 
-See [`../../ref-workflow-architecture/standards/phase-lifecycle.md`](../../ref-workflow-architecture/standards/phase-lifecycle.md). The Phase Completion Protocol calls `capture` as its final step; the Phase Entry Protocol calls `verify --strict` immediately after the Q-Gate check. Because every phase skill references `phase-lifecycle.md` via the shared `> Shared lifecycle patterns:` pointer, the single edit cascades to all 6 phases without touching any phase skill individually.
+The actual call sites for `capture` and `verify` are the orchestrator workflow files [`plan-marshall:plan-marshall:workflows/planning.md`](../workflows/planning.md) (phases 1-init through 4-plan boundaries) and [`plan-marshall:plan-marshall:workflows/execution.md`](../workflows/execution.md) (4-plan→5-execute fallback and 5-execute→6-finalize boundaries). Each `manage-metrics phase-boundary` invocation in those workflows is followed by a `phase_handshake capture --phase {prev_phase}` call, and each next-phase entry runs `phase_handshake verify --phase {prev_phase} --strict` before any phase-specific work begins.
+
+The abstract contract is documented in [`../../ref-workflow-architecture/standards/phase-lifecycle.md`](../../ref-workflow-architecture/standards/phase-lifecycle.md): the Phase Completion Protocol calls `capture` as its final step; the Phase Entry Protocol calls `verify --strict` immediately after the Q-Gate check. The orchestrator workflows are the canonical implementation of that contract — they wire capture/verify alongside the existing `manage-metrics phase-boundary` calls so a single workflow edit covers all six phases without touching any phase skill individually.
 
 On `drift`: stop the phase, surface `diffs[]` verbatim, do not rationalize. Valid responses are an authorized override (`capture --override --reason X` followed by re-entry) or manual investigation. On `skipped`: log a warning and continue — first-time rollout and manual transitions produce this status; it is not an error.
 

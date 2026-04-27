@@ -58,6 +58,20 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phas
   --plan-id {plan_id} --prev-phase 4-plan --next-phase 5-execute
 ```
 
+**Phase handshake** (direct-entry variant): capture the just-closed `4-plan` phase before continuing. When entering after the planning workflow already captured `4-plan`, this is idempotent — `capture` upserts the row.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase 4-plan
+```
+
+**Phase handshake (verify)**: Before iterating tasks, verify the captured invariants for `4-plan` still match the live state. Stop on `status: drift`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id {plan_id} --phase 4-plan --strict
+```
+
 The execute phase iterates through tasks using a simple loop:
 
 ```bash
@@ -88,6 +102,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phas
   --total-tokens {sum of total_tokens from all task agent <usage> tags} \
   --tool-uses {sum of tool_uses from all task agent <usage> tags} \
   --duration-ms {sum of duration_ms from all task agent <usage> tags}
+```
+
+**Phase handshake**: Capture invariants for the just-completed `5-execute` phase. Verification of this row happens at the `6-finalize` entry below.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase 5-execute
 ```
 
 The fused call already recorded the start of `6-finalize`; the
@@ -129,6 +150,20 @@ use a fused boundary call to close the previously active phase and start
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics phase-boundary \
   --plan-id {plan_id} --prev-phase {prev_phase} --next-phase 6-finalize
+```
+
+**Phase handshake** (direct-entry variant): capture the just-closed `{prev_phase}` phase. When entering after the execute workflow already captured `5-execute`, this is idempotent — `capture` upserts the row.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake capture \
+  --plan-id {plan_id} --phase {prev_phase}
+```
+
+**Phase handshake (verify)**: Before dispatching `phase-6-finalize`, verify the captured invariants for the previous phase still match the live state. Stop on `status: drift`. Use `5-execute` when entering after the execute workflow, otherwise the same `{prev_phase}` value used in the fused boundary call above.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake verify \
+  --plan-id {plan_id} --phase {prev_phase} --strict
 ```
 
 ```bash
