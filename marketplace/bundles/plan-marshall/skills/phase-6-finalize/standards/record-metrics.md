@@ -16,17 +16,14 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Record Phase End for 6-Finalize
 
-Close out the 6-finalize phase timing/token ledger using the running totals aggregated by the SKILL.md Step 3 FOR loop for every agent-dispatched step (`create-pr`, `automated-review`, `sonar-roundtrip`, `knowledge-capture`, `lessons-capture`). The loop maintains `{total_tokens, tool_uses, duration_ms}` running sums in model context; pass those accumulated values here.
+Close out the 6-finalize phase timing/token ledger. The agent-dispatched steps (`create-pr`, `automated-review`, `sonar-roundtrip`, `knowledge-capture`, `lessons-capture`) persist their `<usage>` totals to `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` via `manage-metrics accumulate-agent-usage` from SKILL.md Step 3 step 5b. `end-phase` reads that accumulator file as a fallback when no explicit token flags are passed:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics end-phase \
-  --plan-id {plan_id} --phase 6-finalize \
-  --total-tokens {agent_usage_totals.total_tokens} \
-  --tool-uses {agent_usage_totals.tool_uses} \
-  --duration-ms {agent_usage_totals.duration_ms}
+  --plan-id {plan_id} --phase 6-finalize
 ```
 
-If no agent-dispatched steps ran (all configured steps were inline-only), omit the three token/duration flags — `end-phase` records the phase boundary from its own timestamps.
+The script reads `work/metrics-accumulator-6-finalize.toon` and incorporates its `total_tokens` / `tool_uses` / `duration_ms` into the closed phase row. The accumulator file is left in `work/` for audit (see `manage-metrics/standards/data-format.md` § "Per-Phase Subagent Accumulator"). If no agent-dispatched steps ran (all configured steps were inline-only), the accumulator file is absent and `end-phase` records the phase boundary from its own timestamps only — no special handling required.
 
 ## Enrich Session Tokens
 

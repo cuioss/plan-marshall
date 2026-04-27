@@ -111,14 +111,21 @@ class TestInitLiveMode:
 
 
 class TestInitArchivedMode:
-    def test_creates_bundle_with_meta_mode_in_os_tmpdir(self, tmp_path):
+    """Archived-mode init now honours ``--archived-plan-path``.
+
+    When the caller passes ``--archived-plan-path``, the bundle is created at
+    ``<archived_plan_path>/work/retro-fragments.toon`` so that
+    ``init``/``add``/``finalize`` from the same caller all converge on the
+    same bundle root. When the flag is omitted, archived mode falls back to a
+    synthetic per-plan tmp directory so production audits without an explicit
+    archive path never write into a real archived plan dir.
+    """
+
+    def test_honours_archived_plan_path_when_provided(self, tmp_path):
         # Arrange
-        plan_id = 'archived-plan-abc'
-        archived_plan_path = tmp_path / '2026-04-17-archived-plan-abc'
+        plan_id = 'archived-honored'
+        archived_plan_path = tmp_path / '2026-04-27-archived-honored'
         archived_plan_path.mkdir(parents=True, exist_ok=True)
-        # Snapshot the archived directory listing so we can assert it is
-        # untouched after the run.
-        archived_contents_before = sorted(p.name for p in archived_plan_path.iterdir())
 
         # Act
         result = run_script(
@@ -135,21 +142,65 @@ class TestInitArchivedMode:
         # Assert
         assert result.success, result.stderr
         data = result.toon()
-        assert data['status'] == 'success'
-        bundle_path = Path(data['bundle_path'])
-        # Bundle lives under the OS tmpdir, NOT under the archived plan dir.
-        assert bundle_path.parent == Path(tempfile.gettempdir()) / 'plan-retrospective'
-        assert bundle_path.name == f'retro-fragments-{plan_id}.toon'
+        bundle_path = Path(data['bundle_path']).resolve()
+        # Bundle now lives under the caller-supplied archive root.
+        # Resolve both sides because resolve_bundle_path canonicalizes paths
+        # (macOS /var → /private/var symlink) and pytest's tmp_path on Linux
+        # may share /tmp with tempfile.gettempdir().
+        assert bundle_path == (
+            archived_plan_path / 'work' / 'retro-fragments.toon'
+        ).resolve()
         assert bundle_path.exists()
-        # Bundle persists the archived mode via _meta.
-        from toon_parser import parse_toon
-        parsed = parse_toon(bundle_path.read_text(encoding='utf-8'))
-        assert parsed['_meta']['mode'] == 'archived'
-        # Archived plan directory must remain untouched.
-        assert sorted(p.name for p in archived_plan_path.iterdir()) == archived_contents_before
+        # OS-tmp synthetic fallback is NOT used when --archived-plan-path is
+        # provided. Check the synthetic path specifically rather than
+        # tempfile.gettempdir() — on Linux, pytest's tmp_path lives under
+        # /tmp, so a generic "tempdir not an ancestor" assertion fails there.
+        synthetic_root = (
+            (Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}')
+            .resolve()
+        )
+        assert synthetic_root not in bundle_path.parents
 
-        # Cleanup the OS-tmp bundle so subsequent runs start clean.
-        bundle_path.unlink()
+    def test_falls_back_to_synthetic_tmp_when_archived_plan_path_missing(self):
+        # Arrange — resolve the synthetic root because resolve_bundle_path now
+        # returns canonical absolute paths; on macOS tempfile.gettempdir()
+        # is /var/folders/... while .resolve() canonicalizes to
+        # /private/var/folders/...
+        plan_id = 'archived-fallback'
+        synthetic_root = (
+            (Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}')
+            .resolve()
+        )
+        # Pre-clean any leftover from a prior run so the assertions are
+        # deterministic.
+        if synthetic_root.exists():
+            import shutil
+
+            shutil.rmtree(synthetic_root)
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'init',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'archived',
+        )
+
+        # Assert
+        try:
+            assert result.success, result.stderr
+            data = result.toon()
+            bundle_path = Path(data['bundle_path'])
+            assert bundle_path == synthetic_root / 'work' / 'retro-fragments.toon'
+            assert bundle_path.exists()
+        finally:
+            # Cleanup the synthetic dir so subsequent runs start clean.
+            if synthetic_root.exists():
+                import shutil
+
+                shutil.rmtree(synthetic_root)
 
 
 # =============================================================================
@@ -307,6 +358,162 @@ class TestAddOverwrite:
 
 
 # =============================================================================
+# add — --fragment-file path resolution
+# =============================================================================
+
+
+class TestAddFragmentPathResolution:
+    """``add`` resolves relative ``--fragment-file`` paths against the plan dir.
+
+    Absolute paths still work unchanged. Relative paths are anchored to the
+    plan directory used by the active mode, matching the SKILL.md-documented
+    snippets like ``--fragment-file work/fragment-<aspect>.toon``.
+    """
+
+    def test_relative_fragment_file_resolves_against_live_plan_dir(
+        self, tmp_path, monkeypatch
+    ):
+        # Arrange — write the fragment under <plan_dir>/work/ (the path
+        # SKILL.md Step 3 documents) and pass only the relative path.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        work_dir = plan_dir / 'work'
+        work_dir.mkdir(parents=True, exist_ok=True)
+        (work_dir / 'fragment-alpha.toon').write_text(
+            _valid_fragment_body('request_result_alignment'), encoding='utf-8'
+        )
+
+        # Act — relative path; cwd is the test runner root, NOT the plan dir.
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            'request_result_alignment',
+            '--fragment-file',
+            'work/fragment-alpha.toon',
+        )
+
+        # Assert — the script must resolve the relative path against plan_dir
+        # rather than cwd, so the fragment is found and merged.
+        assert result.success, result.stderr
+        bundle_content = (plan_dir / 'work' / 'retro-fragments.toon').read_text(
+            encoding='utf-8'
+        )
+        assert 'request_result_alignment:' in bundle_content
+        assert 'status: success' in bundle_content
+
+    def test_absolute_fragment_file_still_resolves_unchanged(
+        self, tmp_path, monkeypatch
+    ):
+        # Arrange — fragment outside the plan dir; pass its absolute path.
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
+        _init_bundle(plan_id)
+        external = _write_fragment(
+            tmp_path, 'external.toon', _valid_fragment_body('plan_efficiency')
+        )
+
+        # Act
+        result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--aspect',
+            'plan_efficiency',
+            '--fragment-file',
+            str(external),
+        )
+
+        # Assert — absolute paths are passed through unchanged, so a fragment
+        # outside the plan dir still resolves correctly.
+        assert result.success, result.stderr
+        bundle_content = (plan_dir / 'work' / 'retro-fragments.toon').read_text(
+            encoding='utf-8'
+        )
+        assert 'plan_efficiency:' in bundle_content
+
+
+# =============================================================================
+# add → finalize integration: --archived-plan-path agreement
+# =============================================================================
+
+
+class TestArchivedPathSubcommandAgreement:
+    """All three subcommands must agree on the bundle root.
+
+    When ``--archived-plan-path`` is forwarded to ``init``, ``add``, and
+    ``finalize``, the bundle is read/written at
+    ``<archived_plan_path>/work/retro-fragments.toon`` from all three; the OS
+    tmpdir fallback is NOT used.
+    """
+
+    def test_all_three_subcommands_use_archived_plan_path(self, tmp_path):
+        # Arrange — resolve both sides for cross-platform stability:
+        # macOS /var → /private/var symlink, Linux pytest tmp_path under /tmp.
+        plan_id = 'archived-agreement'
+        archived_plan_path = (tmp_path / 'archive-copy').resolve()
+        archived_plan_path.mkdir(parents=True, exist_ok=True)
+        fragment_path = _write_fragment(
+            tmp_path, 'aspect.toon', _valid_fragment_body('request_result_alignment')
+        )
+        expected_bundle = (
+            archived_plan_path / 'work' / 'retro-fragments.toon'
+        )
+
+        # Act 1: init in archived mode under the caller-supplied root.
+        init_result = run_script(
+            SCRIPT_PATH,
+            'init',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'archived',
+            '--archived-plan-path',
+            str(archived_plan_path),
+        )
+        assert init_result.success, init_result.stderr
+        assert Path(init_result.toon()['bundle_path']).resolve() == expected_bundle
+
+        # Act 2: add — must read the same bundle init wrote.
+        add_result = run_script(
+            SCRIPT_PATH,
+            'add',
+            '--plan-id',
+            plan_id,
+            '--archived-plan-path',
+            str(archived_plan_path),
+            '--aspect',
+            'request_result_alignment',
+            '--fragment-file',
+            str(fragment_path),
+        )
+        assert add_result.success, add_result.stderr
+        assert Path(add_result.toon()['bundle_path']).resolve() == expected_bundle
+
+        # Act 3: finalize — must agree on the same bundle root.
+        finalize_result = run_script(
+            SCRIPT_PATH,
+            'finalize',
+            '--plan-id',
+            plan_id,
+            '--archived-plan-path',
+            str(archived_plan_path),
+        )
+        assert finalize_result.success, finalize_result.stderr
+        finalize_data = finalize_result.toon()
+        assert Path(finalize_data['bundle_path']).resolve() == expected_bundle
+        assert int(finalize_data['aspect_count']) == 1
+
+        # Negative assertion: nothing was written under the OS tmp fallback.
+        os_tmp_root = (
+            Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}'
+        )
+        assert not os_tmp_root.exists()
+
+
+# =============================================================================
 # finalize
 # =============================================================================
 
@@ -451,22 +658,42 @@ class TestResolveBundlePath:
         # Assert
         assert path == plan_dir / 'work' / 'retro-fragments.toon'
 
-    def test_archived_mode_uses_os_tmpdir_regardless_of_archived_path(
-        self, tmp_path
-    ):
-        # Arrange
+    def test_archived_mode_uses_archived_plan_path_when_provided(self, tmp_path):
+        # Arrange — resolve archived_plan_path to match resolve_bundle_path's
+        # canonical-absolute return contract (macOS /var → /private/var).
         module = _load_module()
-        archived_plan_path = tmp_path / '2026-04-17-plan'
+        archived_plan_path = (tmp_path / '2026-04-27-plan').resolve()
 
         # Act
         path = module.resolve_bundle_path(
             'archived', 'some-plan', str(archived_plan_path)
         )
 
-        # Assert — archived_plan_path is accepted but ignored.
-        assert path == (
-            Path(tempfile.gettempdir()) / 'plan-retrospective' / 'retro-fragments-some-plan.toon'
+        # Assert — bundle now lives under the caller-supplied archive root.
+        assert path == archived_plan_path / 'work' / 'retro-fragments.toon'
+
+    def test_archived_mode_falls_back_to_synthetic_tmp_when_no_archived_path(self):
+        # Arrange
+        module = _load_module()
+
+        # Act
+        path = module.resolve_bundle_path('archived', 'some-plan')
+
+        # Assert — synthetic per-plan dir under the OS tmpdir, with a
+        # ``plan-<plan_id>`` segment to avoid collisions. Resolved because
+        # resolve_bundle_path now returns canonical absolute paths (macOS
+        # /var → /private/var symlink resolution).
+        expected = (
+            (
+                Path(tempfile.gettempdir())
+                / 'plan-retrospective'
+                / 'plan-some-plan'
+            )
+            .resolve()
+            / 'work'
+            / 'retro-fragments.toon'
         )
+        assert path == expected
 
 
 class TestReadBundle:

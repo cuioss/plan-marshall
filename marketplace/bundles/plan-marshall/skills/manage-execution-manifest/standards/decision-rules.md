@@ -16,6 +16,8 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `modified_files` | `references.json::modified_files` | list[string] (default: empty) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
+| `affected_files` | `references.json::affected_files` | list[string] (read directly by the composer) |
+| `modified_files` | `references.json::modified_files` | list[string] (read directly by the composer; see "Bundle source detection" below for the union semantics with `affected_files`) |
 
 ## Outputs
 
@@ -154,6 +156,49 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 - `phase_6.steps = phase_6_candidates` (full)
 
 **Why**: This is the safe baseline for code-shaped features and broader changes. The full canonical Phase 5 verification fires; Phase 6 dispatches every step `marshal.json` lists.
+
+## Stacked Rule — `bundle_self_modification`
+
+After the seven-row matrix has selected a base manifest, the composer applies one stacked rule that mutates `phase_6.steps` independently of the row that fired. This rule does NOT replace any row — it stacks an extra step on top of whatever the matrix produced.
+
+**Condition**: any entry in the **union** of `references.json::affected_files` and `references.json::modified_files` (see "Bundle source detection" below) matches one of the bundle source globs:
+
+- `marketplace/bundles/*/agents/*` (or `**`)
+- `marketplace/bundles/*/commands/*` (or `**`)
+- `marketplace/bundles/*/skills/*` (or `**`)
+
+Globs are matched with `fnmatch.fnmatchcase` (POSIX semantics, no regex).
+
+**Effect**: `project:finalize-step-sync-plugin-cache` is inserted into `phase_6.steps` immediately before the **earliest** entry in the resolved list whose **bare name** belongs to the agent-dispatched set:
+
+- `create-pr`
+- `automated-review`
+- `sonar-roundtrip`
+- `knowledge-capture`
+- `lessons-capture`
+
+The matcher strips an optional `default:` prefix before checking membership, so the rule fires regardless of whether the resolved candidate list arrived prefixed (production marshal.json passes `default:create-pr`, etc.) or bare (the script's `DEFAULT_PHASE_6_STEPS` fallback emits `create-pr`, etc.).
+
+If the resolved `phase_6.steps` contains no agent-dispatched step, the rule does not fire (no insertion, no log line). If `project:finalize-step-sync-plugin-cache` already sits immediately before the first agent-dispatched step, the rule is idempotent and skips reinsertion.
+
+**Why this stacks instead of replacing a row**: cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When the plan's diff edits bundled agents, commands, or skills, the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs — which by default sits late in the manifest (post `branch-cleanup`). That ordering is correct in the steady state ("publish after commit"), but when the in-flight finalize itself dispatches agents loaded from that cache (`create-pr`, `automated-review`, `knowledge-capture`, `lessons-capture`), it sees the *pre-fix* definitions for the duration of the run. The stacked rule closes the staleness window by inserting an early sync immediately before the first agent dispatch. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight run; late sync publishes the post-commit state).
+
+**Why a stacked rule, not an eighth row**: the seven-row matrix is keyed off change-type / scope / recipe semantics — orthogonal to which bundle surfaces the diff touches. Adding a `bundle_self_modification` row would force every other row to negotiate with it; modeling it as a post-matrix mutation keeps the matrix focused and lets multiple base rows benefit from the early-sync insertion.
+
+**Decision log line** (in addition to the row's own log line):
+
+```
+(plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — inserted project:finalize-step-sync-plugin-cache before {first_agent_step}
+```
+
+**Bundle source detection**: the composer reads BOTH `references.json::affected_files` and `references.json::modified_files`, unions their entries (de-duplicated, order-preserving), and matches the union against the bundle source globs. The two fields have distinct lifecycles:
+
+- `affected_files` is populated at outline time (`phase-3-outline`) from the solution outline deliverables. It is the canonical source at composer-call time, since `phase-4-plan` Step 8b runs **before** Phase 5.
+- `modified_files` is populated by `manage-status transition` on Phase 5 completion. It is empty at the first `compose` invocation but becomes non-empty for any later re-compose (e.g., a finalize-loop fix task that re-enters Phase 4).
+
+Reading both fields and unioning their entries closes the timing gap so the rule fires on the first compose AND on any later re-compose. Reading only `modified_files` would silently no-op for normal plans because the data source is empty at composer-call time.
+
+**Cross-references**: lesson `2026-04-26-23-003` (the recurrence that drove this rule), lesson `2026-04-24-17-002` (parent — agents falling back to `python -c open(...)` due to missing tools, which this rule prevents from re-occurring under stale-cache dispatch).
 
 ## Decision Log Format
 

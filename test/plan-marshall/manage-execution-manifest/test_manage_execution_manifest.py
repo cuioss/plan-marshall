@@ -241,6 +241,356 @@ def test_surgical_tech_debt_trims_heavy_review_steps():
             assert stripped not in manifest['phase_6']['steps']
 
 
+def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
+    """bundle_self_modification — agent path triggers extra sync before create-pr.
+
+    The default Phase 6 candidate list (prefixed) places sync-plugin-cache late
+    in the order. When `references.modified_files` references a bundled agent,
+    the composer must insert a SECOND `project:finalize-step-sync-plugin-cache`
+    immediately before the earliest agent-dispatched step (`default:create-pr`).
+    The existing late-stage occurrence is preserved verbatim.
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:knowledge-capture',
+        'default:lessons-capture',
+        'default:branch-cleanup',
+        'project:finalize-step-sync-plugin-cache',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-agent') as ctx:
+        # Write references.json with a bundled agent path before composing.
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"modified_files": ["marketplace/bundles/plan-marshall/agents/automated-review-agent.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-agent',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=4,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+        manifest = read_manifest('bundle-self-mod-agent')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+
+        # Two occurrences of the sync step: one early, one late (preserved).
+        assert steps.count('project:finalize-step-sync-plugin-cache') == 2
+
+        # Early occurrence sits immediately before the first agent-dispatched step.
+        first_agent_idx = next(
+            i for i, s in enumerate(steps)
+            if s in ('default:create-pr', 'default:automated-review',
+                     'default:knowledge-capture', 'default:lessons-capture')
+        )
+        assert first_agent_idx >= 1
+        assert steps[first_agent_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+        # Late occurrence preserved (after branch-cleanup, before archive-plan).
+        late_idx = steps.index('project:finalize-step-sync-plugin-cache', first_agent_idx + 1)
+        assert steps[late_idx - 1] == 'default:branch-cleanup'
+
+
+@pytest.mark.parametrize(
+    'modified_path,expected_glob_surface',
+    [
+        ('marketplace/bundles/plan-marshall/commands/marshal.md', 'commands'),
+        ('marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py', 'skills'),
+        ('marketplace/bundles/pm-dev-java/agents/some-agent.md', 'agents-other-bundle'),
+    ],
+)
+def test_bundle_self_modification_fires_for_command_and_skill_paths(modified_path, expected_glob_surface):
+    """bundle_self_modification — commands/ and skills/ paths fire the rule too.
+
+    The rule covers all three bundled surfaces (agents, commands, skills) and
+    matches across any bundle name (`marketplace/bundles/*/...`).
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:lessons-capture',
+        'default:archive-plan',
+    ]
+    plan_id = f'bundle-self-mod-{expected_glob_surface}'
+    with PlanContext(plan_id=plan_id) as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            f'{{"modified_files": ["{modified_path}"]}}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+        manifest = read_manifest(plan_id)
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Sync step inserted before first agent step.
+        create_pr_idx = steps.index('default:create-pr')
+        assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+
+def test_bundle_self_modification_skipped_for_non_bundle_paths():
+    """bundle_self_modification — non-bundle paths leave the manifest untouched."""
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'project:finalize-step-sync-plugin-cache',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-non-bundle') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"modified_files": ['
+            '"test/plan-marshall/manage-references/test_x.py", '
+            '"doc/build-structure.adoc"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-non-bundle',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=2,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == ''
+
+        manifest = read_manifest('bundle-self-mod-non-bundle')
+        assert manifest is not None
+        # Single occurrence only — the original late one, untouched.
+        assert manifest['phase_6']['steps'].count('project:finalize-step-sync-plugin-cache') == 1
+
+
+def test_bundle_self_modification_skipped_when_modified_files_absent():
+    """bundle_self_modification — no references.json → no insertion."""
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'project:finalize-step-sync-plugin-cache',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-no-refs'):
+        # Intentionally do NOT write references.json.
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-no-refs',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=0,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == ''
+
+        manifest = read_manifest('bundle-self-mod-no-refs')
+        assert manifest is not None
+        assert manifest['phase_6']['steps'].count('project:finalize-step-sync-plugin-cache') == 1
+
+
+def test_bundle_self_modification_fires_on_affected_files_alone():
+    """bundle_self_modification — affected_files is the canonical pre-execute source.
+
+    `phase-4-plan` Step 8b composes the manifest BEFORE Phase 5 has populated
+    `modified_files`. The rule MUST fire from `affected_files` alone so the
+    manifest is correct on the first compose for normal plans (regression
+    guard for the issue gemini flagged on PR #278).
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-affected-only') as ctx:
+        assert ctx.plan_dir is not None
+        # Only affected_files populated — modified_files absent (mirrors
+        # production phase-4-plan compose-call timing).
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"affected_files": ["marketplace/bundles/plan-marshall/skills/foo/SKILL.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-affected-only',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+
+def test_bundle_self_modification_unions_affected_and_modified_files():
+    """bundle_self_modification — affected_files and modified_files entries union.
+
+    Both fields are read; the rule fires if EITHER contains a bundle path.
+    Distinct entries are de-duplicated by the read helper.
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-union') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"affected_files": ["doc/notes.md"], '
+            '"modified_files": ["marketplace/bundles/plan-marshall/agents/foo.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-union',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=2,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+
+def test_bundle_self_modification_fires_on_bare_name_candidates():
+    """bundle_self_modification — works for bare-name (no `default:` prefix) candidates.
+
+    The script's `DEFAULT_PHASE_6_STEPS` fallback emits bare names. Production
+    `marshal.json` emits prefixed names. The matcher normalizes the prefix so
+    the rule fires consistently on both call paths (regression guard for the
+    prefix-mismatch defect gemini flagged on PR #278).
+    """
+    bare = [
+        'commit-push',
+        'create-pr',
+        'automated-review',
+        'archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-bare') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"affected_files": ["marketplace/bundles/plan-marshall/skills/foo/SKILL.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-bare',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(bare),
+            )
+        )
+        assert result is not None
+        # The inserting-before name is reported with whatever prefix the
+        # candidate list used — bare here.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
+
+        manifest = read_manifest('bundle-self-mod-bare')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        assert steps.index('project:finalize-step-sync-plugin-cache') == steps.index('create-pr') - 1
+
+
+def test_bundle_self_modification_detects_sonar_roundtrip_as_agent_step():
+    """bundle_self_modification — sonar-roundtrip is recognized as agent-dispatched.
+
+    The Phase 6 dispatch table in `phase-6-finalize/SKILL.md` routes
+    `default:sonar-roundtrip` to `plan-marshall:sonar-roundtrip-agent`, so it
+    must appear in the agent-dispatched set alongside create-pr / automated-review
+    / knowledge-capture / lessons-capture (regression guard for the missing-step
+    defect gemini flagged on PR #278). When sonar-roundtrip is the EARLIEST
+    agent-dispatched entry in the resolved list, the early sync inserts before
+    it, not before any later step.
+    """
+    prefixed = [
+        'default:commit-push',
+        'default:sonar-roundtrip',     # earliest agent-dispatched
+        'default:create-pr',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-sonar') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"affected_files": ["marketplace/bundles/plan-marshall/agents/foo.md"]}',
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bundle-self-mod-sonar',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None
+        assert result['bundle_self_modification_inserted_before'] == 'default:sonar-roundtrip'
+
+        manifest = read_manifest('bundle-self-mod-sonar')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        sonar_idx = steps.index('default:sonar-roundtrip')
+        assert steps[sonar_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+
+def test_bundle_self_modification_idempotent_on_recompose():
+    """bundle_self_modification — re-running compose doesn't double-insert."""
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'project:finalize-step-sync-plugin-cache',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='bundle-self-mod-idem') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            '{"modified_files": ["marketplace/bundles/plan-marshall/skills/foo/SKILL.md"]}',
+            encoding='utf-8',
+        )
+        ns = _compose_ns(
+            plan_id='bundle-self-mod-idem',
+            change_type='bug_fix',
+            scope_estimate='single_module',
+            affected_files_count=1,
+            phase_6_steps=','.join(prefixed),
+        )
+        # Compose twice — second invocation must remain idempotent.
+        cmd_compose(ns)
+        cmd_compose(ns)
+        manifest = read_manifest('bundle-self-mod-idem')
+        assert manifest is not None
+        # Still exactly two occurrences (one early-inserted, one late-original).
+        assert manifest['phase_6']['steps'].count('project:finalize-step-sync-plugin-cache') == 2
+
+
 def test_verification_no_files_keeps_full_phase_5_trims_phase_6():
     """Row 6 — verification w/o files: full Phase 5, Phase 6 trimmed to records+archive."""
     with PlanContext(plan_id='matrix-vnofiles'):

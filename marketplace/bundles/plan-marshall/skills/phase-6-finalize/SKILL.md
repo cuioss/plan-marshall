@@ -323,6 +323,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 Iterate over `manifest.phase_6.steps` (read in Step 2). The list is the manifest's authoritative ordering — neither this skill nor any standards document re-orders, filters, or skip-conditional any step.
 
+#### Plugin self-modification
+
+Cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When a plan's diff modifies bundled agents, commands, or skills (paths matching `marketplace/bundles/*/{agents,commands,skills}/**`), the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs. The default Phase 6 manifest places that step late (post `branch-cleanup`) — correct in the steady state ("publish after commit"), but wrong when the in-flight finalize itself dispatches `default:create-pr`, `default:automated-review`, `default:knowledge-capture`, or `default:lessons-capture` against the *pre-fix* cached agents.
+
+The manifest composer closes this window automatically: `manage-execution-manifest`'s `bundle_self_modification` stacked rule (see [manage-execution-manifest/standards/decision-rules.md](../manage-execution-manifest/standards/decision-rules.md) § "Stacked Rule — `bundle_self_modification`") inserts an extra `project:finalize-step-sync-plugin-cache` entry into `phase_6.steps` immediately before the earliest agent-dispatched step. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight finalize; late sync publishes the post-commit state).
+
+This skill does not implement the rule itself; it consumes the manifest as written. When you see two `project:finalize-step-sync-plugin-cache` entries in `phase_6.steps`, that is the rule firing as designed. The decision-log line `(plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — inserted project:finalize-step-sync-plugin-cache before {first_agent_step}` records the insertion. Cross-reference: lesson `2026-04-26-23-003`.
+
 **Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
 
 **Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where Claude Code already manages call timeouts. Budgets:
@@ -350,13 +358,7 @@ For each step reference:
 **Inline-only built-in steps** (require user interaction or sequential dependency):
 - `commit-push` (git working directory state), `branch-cleanup` (AskUserQuestion), `review-knowledge` (AskUserQuestion batch gate — classification sub-calls dispatch to `plan-marshall:classify-knowledge-agent`, see `standards/review-knowledge.md` §3f), `record-metrics` (must run immediately before `archive-plan` on the still-live plan directory), `archive-plan` (must be last, moves plan files)
 
-Before entering the loop, initialise a running token tally in model context:
-
-```
-agent_usage_totals = {total_tokens: 0, tool_uses: 0, duration_ms: 0}
-```
-
-`default:record-metrics` reads this accumulator at `end-phase` time.
+Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
 ```
 FOR each step_id in manifest.phase_6.steps:
@@ -418,7 +420,13 @@ FOR each step_id in manifest.phase_6.steps:
        "rejected unknown flag" failure.
 
   5b. Accumulate agent usage (only when the dispatched step ran as a Task agent and did NOT time out):
-      Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag and add them to agent_usage_totals. Inline steps and timed-out steps contribute nothing — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`.
+      Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag, then persist them on disk via:
+
+         python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics accumulate-agent-usage \
+           --plan-id {plan_id} --phase 6-finalize \
+           --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+
+      The script reads `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` (initialising it on first call), sums in the supplied values, increments the `samples` counter, and writes the file back. Inline steps and timed-out steps skip this call — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`. Step 5b runs at most once per dispatched agent return; do NOT also append the totals to a model-context variable.
 
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 5 (Render Final Output Template).
