@@ -10,7 +10,97 @@ never uses sub-conftests.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+# The summarize-invariants script now reads ``<plan_dir>/handshakes.toon``
+# (canonical phase_handshake storage) instead of ``status.metadata.phase_handshake``.
+# Fixtures must materialize that file with the same TOON serialization the
+# production code path uses (file_ops.serialize_toon).
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_TOON_DIR = (
+    _PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-files'
+    / 'scripts'
+)
+if str(_TOON_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOON_DIR))
+
+from toon_parser import serialize_toon  # type: ignore[import-not-found]  # noqa: E402
+
+# Mirrors HANDSHAKE_FIELDS in
+# marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py.
+# Kept in lock-step on purpose: if the column list drifts, fixtures stop
+# matching production rows and the retrospective tests would falsely pass.
+_HANDSHAKE_FIELDS = [
+    'phase',
+    'captured_at',
+    'worktree_applicable',
+    'override',
+    'override_reason',
+    'main_sha',
+    'main_dirty',
+    'worktree_sha',
+    'worktree_dirty',
+    'task_state_hash',
+    'qgate_open_count',
+    'config_hash',
+    'pending_tasks_count',
+    'phase_steps_complete',
+]
+
+
+def write_handshakes(plan_dir: Path, plan_id: str, rows: list[dict]) -> Path:
+    """Serialize ``rows`` to ``<plan_dir>/handshakes.toon`` in canonical shape.
+
+    Each row is normalized to the full HANDSHAKE_FIELDS schema (missing
+    columns become empty strings), matching how
+    ``_handshake_store.save_rows`` writes the file in production.
+    """
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    normalized = [
+        {field: row.get(field, '') for field in _HANDSHAKE_FIELDS} for row in rows
+    ]
+    payload = {'plan_id': plan_id, 'handshakes': normalized}
+    path = plan_dir / 'handshakes.toon'
+    path.write_text(serialize_toon(payload) + '\n', encoding='utf-8')
+    return path
+
+
+_HAPPY_HANDSHAKE_ROWS = [
+    {
+        'phase': '1-init',
+        'captured_at': '2026-04-17T10:00:00Z',
+        'worktree_applicable': False,
+        'override': False,
+        'override_reason': '',
+        'main_sha': 'abc123',
+        'main_dirty': '0',
+        'task_state_hash': 'hash1',
+        'qgate_open_count': '0',
+        'config_hash': 'cfg1',
+        'pending_tasks_count': '0',
+        'phase_steps_complete': 'sha-init',
+    },
+    {
+        'phase': '6-finalize',
+        'captured_at': '2026-04-17T11:00:00Z',
+        'worktree_applicable': False,
+        'override': False,
+        'override_reason': '',
+        'main_sha': 'abc123',
+        'main_dirty': '0',
+        'task_state_hash': 'hash1',
+        'qgate_open_count': '0',
+        'config_hash': 'cfg1',
+        'pending_tasks_count': '0',
+        'phase_steps_complete': 'sha-final',
+    },
+]
 
 _HAPPY_OUTLINE = """# Solution: Demo
 plan_id: demo
@@ -57,26 +147,10 @@ _HAPPY_STATUS = {
         {'name': '5-execute', 'status': 'done'},
         {'name': '6-finalize', 'status': 'done'},
     ],
-    'metadata': {
-        'phase_handshake': {
-            '1-init': {
-                'main_sha': 'abc123',
-                'main_dirty': '0',
-                'task_state_hash': 'hash1',
-                'qgate_open_count': '0',
-                'config_hash': 'cfg1',
-                'phase_steps_complete': 'sha-init',
-            },
-            '6-finalize': {
-                'main_sha': 'abc123',
-                'main_dirty': '0',
-                'task_state_hash': 'hash1',
-                'qgate_open_count': '0',
-                'config_hash': 'cfg1',
-                'phase_steps_complete': 'sha-final',
-            },
-        },
-    },
+    # Phase-handshake values now live in ``handshakes.toon`` (canonical
+    # storage); ``status.metadata`` only retains row-level context such as
+    # ``worktree_path`` for ``expected_invariants`` resolution.
+    'metadata': {},
 }
 
 
@@ -89,6 +163,14 @@ def build_happy_plan_dir(plan_dir: Path) -> Path:
     )
     (plan_dir / 'status.json').write_text(
         json.dumps(_HAPPY_STATUS), encoding='utf-8'
+    )
+    # Phase-handshake captures now live in handshakes.toon (canonical storage
+    # owned by plan-marshall:plan-marshall:phase_handshake). Mirrors the rows
+    # the real cmd_capture would have written.
+    write_handshakes(
+        plan_dir,
+        plan_id=plan_dir.name,
+        rows=[dict(row) for row in _HAPPY_HANDSHAKE_ROWS],
     )
     (plan_dir / 'metrics.md').write_text('# Metrics\n\ntotal: 100s\n', encoding='utf-8')
     (plan_dir / 'request.md').write_text('Original request\n', encoding='utf-8')

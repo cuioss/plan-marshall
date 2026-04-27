@@ -481,6 +481,36 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
     return _hash_dict([list(edge) for edge in edges])
 
 
+def _capture_pending_tasks_count(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
+    """Count of tasks currently in ``status: pending`` for this plan.
+
+    Drives the phase-5-execute transition guard: if tasks remain pending when
+    the orchestrator tries to transition to ``6-finalize``, the guard refuses.
+    Captured every phase so retrospective analysis sees the queue size at each
+    boundary; non-zero values at later phases indicate orphaned fix tasks.
+    """
+    stdout = _run_script(
+        [
+            'plan-marshall:manage-tasks:manage-tasks',
+            'list',
+            '--status',
+            'pending',
+            '--plan-id',
+            plan_id,
+        ]
+    )
+    if stdout is None:
+        return None
+    try:
+        parsed = parse_toon(stdout)
+    except Exception:
+        return None
+    rows = parsed.get('tasks_table') or parsed.get('tasks') or []
+    if not isinstance(rows, list):
+        return None
+    return len(rows)
+
+
 def _capture_qgate_open_count(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
     stdout = _run_script(
         [
@@ -602,6 +632,7 @@ INVARIANTS: list[tuple[str, AppliesFn, CaptureFn]] = [
     ('task_state_hash', _always, _capture_task_state_hash),
     ('qgate_open_count', _always, _capture_qgate_open_count),
     ('config_hash', _always, _capture_config_hash),
+    ('pending_tasks_count', _always, _capture_pending_tasks_count),
     ('phase_steps_complete', _always, _capture_phase_steps_complete),
     ('task_graph_valid', _always, _capture_task_graph_valid),
 ]

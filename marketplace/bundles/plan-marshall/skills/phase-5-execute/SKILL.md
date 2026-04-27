@@ -517,8 +517,41 @@ This step is the single source of "did the phase end clean?" — it appends the 
 ### Step 12: Next Task or Phase
 
 - If more tasks in phase → Continue to next task
-- If phase complete → Log phase outcome and auto-transition to next phase
+- If phase complete → run **Step 12a (Pending-tasks transition guard)** below, then log phase outcome and auto-transition to next phase
 - If all phases complete → Mark plan complete
+
+#### Step 12a: Pending-tasks transition guard
+
+Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain. `manage-tasks next` only surfaces the head of the queue — a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending`. Fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them.
+
+1. Query the pending-task list:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
+     --plan-id {plan_id} --status pending
+   ```
+
+2. Parse the row count from the returned `tasks_table`. **If the count is zero**, proceed to Phase Transition.
+
+3. **If the count is non-zero**, the phase is NOT complete. Log a `[BLOCKED]` line and abort the transition:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level ERROR \
+     --message "[BLOCKED] (plan-marshall:phase-5-execute) Pending tasks: {ids} — refusing to transition 5-execute → 6-finalize. Re-enter the execute loop to complete pending tasks, or invoke with --force to override."
+   ```
+
+   `{ids}` is a comma-separated list of `TASK-{number}` identifiers parsed from the `tasks_table`. Do NOT call `manage-status transition` and do NOT auto-continue to finalize.
+
+4. **`--force` escape** (mirrors the verification-cap escape in `Step 11b`): when the orchestrator is invoked with `--force`, log the override decision, then proceed to Phase Transition with the pending tasks intact:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level WARN \
+     --message "(plan-marshall:phase-5-execute) Pending-tasks guard overridden via --force — transitioning with {count} pending task(s): {ids}"
+   ```
+
+   The `--force` escape is a deliberate safety valve for triage-driven aborts (the user has already decided the pending tasks are out-of-scope) — never invoke it programmatically from inside the loop.
 
 ### Step 13: Log Phase Completion (When phase completes)
 
