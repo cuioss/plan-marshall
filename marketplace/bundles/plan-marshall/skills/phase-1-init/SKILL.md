@@ -145,6 +145,92 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 Parse TOON output to extract: recipe_name, recipe_skill, default_change_type, scope, domain.
 Use recipe_name as title, recipe description as body.
 
+### Step 4b: Pre-flight Reference Verification
+
+**Applicability**: This step runs **only when `source == lesson`** (i.e., the input contained `lesson_id`). Skip entirely for `description`, `issue`, or `recipe` sources.
+
+**Rationale**: Lessons can sit in the queue for arbitrary periods while unrelated work moves the underlying code. Without a pre-flight check the planner would seed outline + plan against a phantom code surface and the rot would only surface mid-execute. The check verifies that every concrete code reference cited in the lesson body still exists in the current tree before scope is locked.
+
+See [`standards/lesson-source-premise-check.md`](standards/lesson-source-premise-check.md) for the authoritative extraction heuristics, verification helpers, the `AskUserQuestion` shape, and the per-branch persistence contract. The bullets below summarize the workflow — defer to the standard for any ambiguity.
+
+**Sub-step 4b.1 — Extract concrete references**:
+
+Apply the heuristics from `lesson-source-premise-check.md` to the lesson body resolved in Step 4 ("From Lesson"). Collect:
+
+- File paths (relative or absolute paths matching the path regex)
+- Function / method / subcommand names rendered in backticks
+- CLI invocation shapes (e.g., `python3 .plan/execute-script.py {notation} {subcommand} ...`)
+- Anti-pattern signatures (substrings the lesson explicitly calls out as wrong)
+
+If extraction yields zero references, log a single `[ARTIFACT]` work-log entry noting "no extractable references — skipping pre-flight check" and continue to Step 5.
+
+**Sub-step 4b.2 — Verify each reference**:
+
+For each extracted reference:
+
+- **File paths**: use `Read` against the current tree; missing or empty files mark the reference stale.
+- **Function / pattern names**: use `Grep` (literal, then regex if literal misses) across the tree; zero matches mark the reference stale.
+- **CLI shapes**: invoke the cited script with `--help` and confirm the named subcommand / flag still appears in the output; absence marks the reference stale.
+
+Record each `(reference, status, evidence)` triple in an in-memory obsolescence report.
+
+**Sub-step 4b.3 — Surface obsolescence to the user**:
+
+If ANY reference is stale, present the obsolescence report to the user via `AskUserQuestion` using the 3-option menu defined in `lesson-source-premise-check.md`:
+
+1. **Refine** — adapt the lesson scope to the current code surface and continue with a clarifying note attached.
+2. **Close as resolved** — the lesson describes a problem that no longer exists; delete the lesson and abort plan creation.
+3. **Residual scope** — keep only the references that are still valid; drop the stale ones and continue.
+
+If ALL references verify cleanly, log the success and continue to Step 5 — no prompt is shown.
+
+**Sub-step 4b.4 — Persist the decision**:
+
+For every branch (including the all-clean branch), emit a decision-log entry with the `(plan-marshall:phase-1-init:source-premise)` prefix:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-1-init:source-premise) {decision_summary}"
+```
+
+Where `{decision_summary}` is one of:
+
+- `All N references verified — no obsolescence detected.`
+- `User chose refine — attaching obsolescence report (N stale of M total) as clarifying note.`
+- `User chose close-as-resolved — lesson {lesson_id} deleted, aborting plan creation.`
+- `User chose residual-scope — dropping N stale references, continuing with M-N valid references.`
+
+**Sub-step 4b.5 — Branch-specific actions**:
+
+- **Refine branch**: Append the obsolescence report (a short bulleted markdown section listing each stale reference plus its evidence) to the body content that Step 5.2 will write into request.md. The report MUST appear under a `## Pre-flight Reference Verification` heading so downstream phases see it as part of the request scope. Continue to Step 5.
+- **Close-as-resolved branch**: Delete the lesson and abort plan creation:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons delete \
+    --lesson-id {lesson_id}
+  ```
+
+  Then return the close-out TOON without proceeding to Step 5:
+
+  ```toon
+  status: aborted
+  reason: lesson_already_resolved
+  plan_id: {plan_id}
+  lesson_id: {lesson_id}
+  message: "Lesson deleted; plan creation aborted because every cited reference is obsolete."
+  ```
+
+- **Residual-scope branch**: Record each dropped reference via a separate work-log entry so downstream phases can audit which scope items were removed:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level INFO \
+    --message "[ARTIFACT] (plan-marshall:phase-1-init:source-premise) Dropped stale reference: {reference} ({evidence})"
+  ```
+
+  Then continue to Step 5 with the reduced reference set.
+
 ### Step 5: Write request.md
 
 Create the request document via a two-step path-allocate flow. The script allocates a metadata-only stub and returns the absolute path; the body content is then written directly to that path with the `Write` tool. This pattern keeps the verbatim lesson/issue/description body out of shell arguments, which is essential because multi-line markdown (headings, code fences, blank lines) marshalled through `--body "..."` triggers security prompts and corrupts content.

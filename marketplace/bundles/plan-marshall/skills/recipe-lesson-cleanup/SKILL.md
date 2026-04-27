@@ -74,6 +74,43 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:recipe-lesson-cleanup) Forced confidence=100 (recipe path: lesson body is the contract)"
 ```
 
+### Step 1b: Premise Verification
+
+Runs after the lesson body has been read and BEFORE Step 2 maps the lesson kind to a `change_type`. Without this gate, the recipe will faithfully translate stale directives into a deliverable, then phase-4-plan will faithfully translate them into tasks, and the executor will fight the live tree to apply prescriptions that no longer match it. The gate exists to catch the staleness once, at the cheapest possible point, before scope is locked.
+
+**Authoritative heuristics**: This sub-step deliberately does NOT redefine the extraction or verification heuristics. They live in `marketplace/bundles/plan-marshall/skills/phase-1-init/standards/lesson-source-premise-check.md`, which is the canonical source for file-path / function-name / CLI-shape / anti-pattern matching, the verification-helper table, and the per-kind "stale when" rules. Read that document and apply its passes verbatim to the lesson body resolved in Step 1. Re-implementing the heuristics here would create a second source of truth that drifts out of sync with phase-1-init.
+
+**Sub-step a — Enumerate concrete factual assertions.** Apply the extraction passes from the standard to the lesson body, producing a working set of `(reference, kind)` tuples covering every concrete factual assertion: file paths, function/method/subcommand names, CLI invocation shapes (`python3 .plan/execute-script.py {notation} {subcommand}`), and anti-pattern signatures. Each tuple is tied to one or more directives in the lesson — record the back-link so dropping the assertion can also drop the corresponding directive. Prose claims that do not resolve to a checkable reference are out of scope for the gate; they remain in the directive set unchanged.
+
+**Sub-step b — Quick-check each assertion against the live tree.** Apply the verification-helper table from `marketplace/bundles/plan-marshall/skills/phase-1-init/standards/lesson-source-premise-check.md` (the canonical source) — do not restate it here.
+
+Record each verification as `(reference, kind, status, evidence)` where `status` is `valid` or `stale`. Do not abort on the first stale match — the gate needs the full picture to decide whether to drop selectively or abort wholesale.
+
+**Sub-step c — Drop stale directives from scope before Step 3.** For every assertion marked `stale`, follow the recorded back-link and drop the directive(s) it underpinned from the working set. The dropped directives MUST NOT appear as deliverables in Step 3; the residual (valid) directive set is the input phase-3-outline composes from. A directive that depends on multiple assertions is dropped if ANY of its assertions is stale — the recipe never tries to "rescue" a directive by ignoring the broken half.
+
+**Sub-step d — Record each dropped scope item via the decision log.** For every dropped directive, emit one decision-log entry with the prefix `(plan-marshall:recipe-lesson-cleanup:premise-check)` so reviewers can audit the scope reduction:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:recipe-lesson-cleanup:premise-check) Dropped directive '{directive_title}' — stale assertion: {reference} ({evidence})"
+```
+
+When a directive is underpinned by multiple stale assertions, list them comma-separated in the `{evidence}` segment. Kept directives are NOT logged individually — only drops, since drops shrink scope and require audit visibility.
+
+**Abort condition — lesson fully obsolete.** When ALL directives in the lesson have been dropped (the residual set is empty), the recipe MUST abort with an explicit error rather than silently emit an empty outline. Return:
+
+```toon
+status: error
+error: lesson_fully_obsolete
+plan_id: {plan_id}
+lesson_id: {lesson_id}
+message: "Every directive in lesson '{lesson_id}' was dropped during premise verification — the lesson no longer matches the live tree."
+recovery: "Close the lesson via 'python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons delete --lesson-id {lesson_id}', or refine it manually before re-running the recipe."
+```
+
+Do not call `manage-solution-outline write`, do not transition phase, do not emit a no-op outline. The recipe is the gate — an empty residual scope means the gate fired.
+
 ---
 
 ## Step 2: Map Lesson Kind to change_type
