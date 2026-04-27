@@ -142,12 +142,24 @@ class TestInitArchivedMode:
         # Assert
         assert result.success, result.stderr
         data = result.toon()
-        bundle_path = Path(data['bundle_path'])
+        bundle_path = Path(data['bundle_path']).resolve()
         # Bundle now lives under the caller-supplied archive root.
-        assert bundle_path == archived_plan_path / 'work' / 'retro-fragments.toon'
+        # Resolve both sides because resolve_bundle_path canonicalizes paths
+        # (macOS /var → /private/var symlink) and pytest's tmp_path on Linux
+        # may share /tmp with tempfile.gettempdir().
+        assert bundle_path == (
+            archived_plan_path / 'work' / 'retro-fragments.toon'
+        ).resolve()
         assert bundle_path.exists()
-        # OS tmpdir is NOT used when --archived-plan-path is provided.
-        assert Path(tempfile.gettempdir()) not in bundle_path.parents
+        # OS-tmp synthetic fallback is NOT used when --archived-plan-path is
+        # provided. Check the synthetic path specifically rather than
+        # tempfile.gettempdir() — on Linux, pytest's tmp_path lives under
+        # /tmp, so a generic "tempdir not an ancestor" assertion fails there.
+        synthetic_root = (
+            (Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}')
+            .resolve()
+        )
+        assert synthetic_root not in bundle_path.parents
 
     def test_falls_back_to_synthetic_tmp_when_archived_plan_path_missing(self):
         # Arrange — resolve the synthetic root because resolve_bundle_path now
@@ -438,14 +450,17 @@ class TestArchivedPathSubcommandAgreement:
     """
 
     def test_all_three_subcommands_use_archived_plan_path(self, tmp_path):
-        # Arrange
+        # Arrange — resolve both sides for cross-platform stability:
+        # macOS /var → /private/var symlink, Linux pytest tmp_path under /tmp.
         plan_id = 'archived-agreement'
-        archived_plan_path = tmp_path / 'archive-copy'
+        archived_plan_path = (tmp_path / 'archive-copy').resolve()
         archived_plan_path.mkdir(parents=True, exist_ok=True)
         fragment_path = _write_fragment(
             tmp_path, 'aspect.toon', _valid_fragment_body('request_result_alignment')
         )
-        expected_bundle = archived_plan_path / 'work' / 'retro-fragments.toon'
+        expected_bundle = (
+            archived_plan_path / 'work' / 'retro-fragments.toon'
+        )
 
         # Act 1: init in archived mode under the caller-supplied root.
         init_result = run_script(
@@ -459,7 +474,7 @@ class TestArchivedPathSubcommandAgreement:
             str(archived_plan_path),
         )
         assert init_result.success, init_result.stderr
-        assert Path(init_result.toon()['bundle_path']) == expected_bundle
+        assert Path(init_result.toon()['bundle_path']).resolve() == expected_bundle
 
         # Act 2: add — must read the same bundle init wrote.
         add_result = run_script(
@@ -475,7 +490,7 @@ class TestArchivedPathSubcommandAgreement:
             str(fragment_path),
         )
         assert add_result.success, add_result.stderr
-        assert Path(add_result.toon()['bundle_path']) == expected_bundle
+        assert Path(add_result.toon()['bundle_path']).resolve() == expected_bundle
 
         # Act 3: finalize — must agree on the same bundle root.
         finalize_result = run_script(
@@ -488,7 +503,7 @@ class TestArchivedPathSubcommandAgreement:
         )
         assert finalize_result.success, finalize_result.stderr
         finalize_data = finalize_result.toon()
-        assert Path(finalize_data['bundle_path']) == expected_bundle
+        assert Path(finalize_data['bundle_path']).resolve() == expected_bundle
         assert int(finalize_data['aspect_count']) == 1
 
         # Negative assertion: nothing was written under the OS tmp fallback.
@@ -644,9 +659,10 @@ class TestResolveBundlePath:
         assert path == plan_dir / 'work' / 'retro-fragments.toon'
 
     def test_archived_mode_uses_archived_plan_path_when_provided(self, tmp_path):
-        # Arrange
+        # Arrange — resolve archived_plan_path to match resolve_bundle_path's
+        # canonical-absolute return contract (macOS /var → /private/var).
         module = _load_module()
-        archived_plan_path = tmp_path / '2026-04-27-plan'
+        archived_plan_path = (tmp_path / '2026-04-27-plan').resolve()
 
         # Act
         path = module.resolve_bundle_path(
