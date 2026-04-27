@@ -15,7 +15,7 @@ This document defines the standard log entry format used by the unified logging 
 | Component | Description | Example |
 |-----------|-------------|---------|
 | `timestamp` | ISO 8601 UTC timestamp | `2025-12-11T12:14:26Z` |
-| `level` | Log severity level | `INFO`, `WARN`, `ERROR` |
+| `level` | Log severity level | `INFO`, `WARNING`, `ERROR` |
 | `hash` | 6-character hash computed from message content | `a3f2c1` |
 | `message` | Primary log message | `plan-marshall:manage-files add (0.15s)` |
 | `field: value` | Additional data (indented) | `phase: 1-init` |

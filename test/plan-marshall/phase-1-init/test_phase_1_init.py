@@ -38,7 +38,7 @@ class TestPhase1InitLessonMoveContract:
     """Pin the move contract that phase-1-init Step 5b depends on."""
 
     def test_lesson_source_branch_moves_file(self, tmp_path):
-        """Invoking convert-to-plan with --id and --plan-id must:
+        """Invoking convert-to-plan with --lesson-id and --plan-id must:
 
         1. Remove the source file from ``lessons-learned/``.
         2. Create ``plans/{plan_id}/lesson-{id}.md`` with identical content.
@@ -68,7 +68,7 @@ class TestPhase1InitLessonMoveContract:
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_convert_to_plan(
-                Namespace(id=lesson_id, plan_id=plan_id)
+                Namespace(lesson_id=lesson_id, plan_id=plan_id)
             )
 
         # Contract assertion 1: success status with echoed identifiers

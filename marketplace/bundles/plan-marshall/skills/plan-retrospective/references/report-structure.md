@@ -37,7 +37,7 @@ The first lines of the document, directly below the title, must be a list contai
 ## Body Conventions
 
 - Tables use pipe syntax (GitHub-flavored Markdown).
-- Item lists use bullet entries prefixed with severity icons: `[ERROR]`, `[WARN]`, `[INFO]`.
+- Item lists use bullet entries prefixed with severity icons: `[ERROR]`, `[WARNING]`, `[INFO]`.
 - When `metrics.md` exists, the compiler embeds a link to it at the top of the Plan Efficiency section.
 
 ## Compiler Boundaries

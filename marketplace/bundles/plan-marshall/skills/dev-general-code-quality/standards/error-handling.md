@@ -159,7 +159,7 @@ function processOrder(order) {
 
 * Log errors at the point where they are handled (not where they pass through)
 * Include relevant context (user, operation, identifiers)
-* Use appropriate log levels (ERROR for failures, WARN for degraded operation)
+* Use appropriate log levels (ERROR for failures, WARNING for degraded operation)
 
 ### What NOT to Log
 

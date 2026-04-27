@@ -526,7 +526,7 @@ if result['status'] == 'error':
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  1. COMMAND RESOLUTION                                                       │
-│     architecture.py resolve --command verify --name my-module                │
+│     architecture.py resolve --command verify --module my-module              │
 │     → Complete command string with all routing embedded                      │
 │                              │                                               │
 │                              ▼                                               │

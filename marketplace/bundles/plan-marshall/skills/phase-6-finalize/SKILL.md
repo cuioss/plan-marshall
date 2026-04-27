@@ -538,11 +538,11 @@ Emit a one-shot `✓ pm:done:{short_description}` OSC escape to the terminal so 
 python3 ~/.claude/plugins/cache/plan-marshall/marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/set_terminal_title.py done --plan-label "{short_description}"
 ```
 
-**Advisory**: this step is best-effort. On any error (script missing, non-zero exit, `/dev/tty` unavailable), log a WARN and continue. A missing terminal emission is cosmetic and MUST NOT block finalize from returning success — the plan has already archived, all state transitions are committed, and the user can still read the Step 5 output template in their scrollback:
+**Advisory**: this step is best-effort. On any error (script missing, non-zero exit, `/dev/tty` unavailable), log a WARNING and continue. A missing terminal emission is cosmetic and MUST NOT block finalize from returning success — the plan has already archived, all state transitions are committed, and the user can still read the Step 5 output template in their scrollback:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Terminal done-title emission failed: {error}"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Terminal done-title emission failed: {error}"
 ```
 
 ---

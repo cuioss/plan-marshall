@@ -4,7 +4,7 @@
 Write API: manage-log {type} --plan-id {plan_id} --level {level} --message "{message}"
 - type: script, work, or decision subcommand
 - --plan-id: plan identifier (required)
-- --level: INFO, WARN, ERROR (required)
+- --level: INFO, WARNING, ERROR (required)
 - --message: log message (required)
 
 No stdout output, exit code only.
@@ -103,16 +103,16 @@ def test_work_info():
 
 
 def test_work_warn():
-    """Test work type logs WARN entry."""
+    """Test work type logs WARNING entry."""
     with PlanContext(plan_id='log-work-warn') as ctx:
         result = handle_write(
-            Namespace(log_type='work', plan_id='log-work-warn', level='WARN',
+            Namespace(log_type='work', plan_id='log-work-warn', level='WARNING',
                       message='Skipped validation step')
         )
         assert result is None, 'handle_write returns None on success'
 
         log_content = read_log_file(ctx.plan_dir, 'work')
-        assert '[WARN]' in log_content
+        assert '[WARNING]' in log_content
 
 
 # =============================================================================
@@ -125,7 +125,7 @@ def test_multiple_entries():
     with PlanContext(plan_id='log-multiple') as ctx:
         handle_write(Namespace(log_type='work', plan_id='log-multiple', level='INFO', message='First entry'))
         handle_write(Namespace(log_type='work', plan_id='log-multiple', level='INFO', message='Second entry'))
-        handle_write(Namespace(log_type='work', plan_id='log-multiple', level='WARN', message='Third entry'))
+        handle_write(Namespace(log_type='work', plan_id='log-multiple', level='WARNING', message='Third entry'))
 
         log_content = read_log_file(ctx.plan_dir, 'work')
         assert 'First entry' in log_content

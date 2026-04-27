@@ -75,7 +75,7 @@ Drift is a *signal*, not a *nuisance*. `--strict` makes the script exit non-zero
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[HANDSHAKE] (plan-marshall:{phase_skill}) Verify skipped — no capture for {previous_phase_key}"
+  work --plan-id {plan_id} --level WARNING --message "[HANDSHAKE] (plan-marshall:{phase_skill}) Verify skipped — no capture for {previous_phase_key}"
 ```
 
 ### Log Phase Start

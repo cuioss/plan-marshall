@@ -13,7 +13,7 @@ the run, ``summarize-invariants`` is asserted to return zero
 Implementation notes
 --------------------
 The handshake capture functions shell out to ``manage-tasks list``,
-``manage-tasks get``, ``manage-findings qgate query`` and
+``manage-tasks read``, ``manage-findings qgate query`` and
 ``manage-config plan ... get`` via ``.plan/execute-script.py``. To keep
 this test deterministic and independent of an installed executor, the
 ``_invariants._run_script`` hook is replaced with an in-process stub
@@ -111,14 +111,14 @@ def _load_mt_module(name: str, filename: str) -> types.ModuleType:
 _query = _load_mt_module('_e2e_handshake_tasks_query', '_tasks_query.py')
 
 cmd_list = _query.cmd_list
-cmd_get = _query.cmd_get
+cmd_read = _query.cmd_read
 
 
 def _make_stub_run_script():
     """Return a stub for ``inv._run_script`` covering the four notations the
     capture functions invoke.
 
-    - ``manage-tasks list`` and ``manage-tasks get`` resolve in-process via
+    - ``manage-tasks list`` and ``manage-tasks read`` resolve in-process via
       the manage-tasks command handlers (same pattern as test_invariants.py).
     - ``manage-findings qgate query`` returns a fixed zero-count payload —
       this test fixture has no Q-Gate findings.
@@ -155,10 +155,10 @@ def _make_stub_run_script():
                     ready=False,
                 )
                 return serialize_toon(cmd_list(ns))
-            if subcommand == 'get':
+            if subcommand == 'read':
                 t_idx = args.index('--task')
                 ns = Namespace(plan_id=plan_id, task=int(args[t_idx + 1]))
-                return serialize_toon(cmd_get(ns))
+                return serialize_toon(cmd_read(ns))
             return None
 
         if notation == 'plan-marshall:manage-findings:manage-findings':

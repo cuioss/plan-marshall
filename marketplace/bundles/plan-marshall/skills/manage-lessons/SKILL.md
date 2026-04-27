@@ -121,13 +121,13 @@ Update lesson metadata.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons update \
-  --id 2025-12-02-001 \
+  --lesson-id 2025-12-02-001 \
   [--component new-component] \
   [--category bug|improvement|anti-pattern]
 ```
 
 **Parameters**:
-- `--id` (required): Lesson ID to update
+- `--lesson-id` (required): Lesson ID to update
 - `--component`: Update component name
 - `--category`: Update category
 
@@ -146,7 +146,7 @@ Get a single lesson.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get \
-  --id 2025-12-02-001
+  --lesson-id 2025-12-02-001
 ```
 
 **Output** (TOON):
@@ -198,12 +198,12 @@ Move a lesson out of the global lessons-learned directory and into a plan direct
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons convert-to-plan \
-  --id 2025-12-02-001 \
+  --lesson-id 2025-12-02-001 \
   --plan-id my-plan
 ```
 
 **Parameters**:
-- `--id` (required): Lesson ID to move
+- `--lesson-id` (required): Lesson ID to move
 - `--plan-id` (required): Target plan directory under `.plan/local/plans/`
 
 **Output** (TOON):
@@ -246,11 +246,11 @@ created_from: error_context
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `add` | `--component --category --title [--bundle]` | Allocate a new lesson file and return its absolute `path`. Caller writes body via Write tool. |
-| `update` | `--id [--component] [--category]` | Update lesson metadata |
-| `get` | `--id` | Get single lesson |
+| `update` | `--lesson-id [--component] [--category]` | Update lesson metadata |
+| `get` | `--lesson-id` | Get single lesson |
 | `list` | `[--component] [--category] [--full]` | List with filtering. `--full` includes lesson body content. |
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
-| `convert-to-plan` | `--id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
+| `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
 
 ---
 

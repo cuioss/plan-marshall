@@ -26,6 +26,7 @@ _cmd_client = _load_module('_cmd_client', '_cmd_client.py')
 
 save_derived_data = _architecture_core.save_derived_data
 cmd_modules = _cmd_client.cmd_modules
+cmd_resolve = _cmd_client.cmd_resolve
 get_module_graph = _cmd_client.get_module_graph
 get_modules_list = _cmd_client.get_modules_list
 get_modules_with_command = _cmd_client.get_modules_with_command
@@ -492,6 +493,141 @@ def test_get_module_graph_no_filtered_when_no_aggregators():
 
 
 # =============================================================================
+# Helper Functions for Resolve Tests
+# =============================================================================
+
+
+def create_test_derived_data_with_root(tmpdir: str) -> dict:
+    """Create test derived-data.json with a root module and child modules.
+
+    Used by cmd_resolve tests to exercise both the direct-module path and the
+    cascading fallback to the root module.
+    """
+    test_data = {
+        'project': {'name': 'test-project'},
+        'modules': {
+            'root': {
+                'name': 'root',
+                'build_systems': ['maven'],
+                'paths': {'module': '.'},  # '.' marks the root module
+                'commands': {
+                    'verify': 'python3 .plan/execute-script.py root verify',
+                    'compile': 'python3 .plan/execute-script.py root compile',
+                },
+            },
+            'module-a': {
+                'name': 'module-a',
+                'build_systems': ['maven'],
+                'paths': {'module': 'module-a'},
+                'commands': {
+                    'module-tests': 'python3 .plan/execute-script.py module-a tests',
+                },
+            },
+        },
+    }
+    save_derived_data(test_data, tmpdir)
+    return test_data
+
+
+# =============================================================================
+# Tests for cmd_resolve CLI handler (--module argument)
+# =============================================================================
+
+
+def test_cmd_resolve_with_module_returns_executable():
+    """cmd_resolve resolves a command at the specified --module."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_derived_data_with_root(tmpdir)
+
+        # Simulate args from 'architecture resolve --command module-tests --module module-a'
+        args = Namespace(
+            project_dir=tmpdir,
+            resolve_command='module-tests',
+            module='module-a',
+        )
+
+        result = cmd_resolve(args)
+
+        assert result['status'] == 'success', f'Expected success, got {result}'
+        assert result['module'] == 'module-a'
+        assert result['command'] == 'module-tests'
+        assert result['executable'] == 'python3 .plan/execute-script.py module-a tests'
+        assert result['resolution_level'] == 'module'
+
+
+def test_cmd_resolve_without_module_uses_root():
+    """cmd_resolve defaults to root module when --module is None."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_derived_data_with_root(tmpdir)
+
+        # Simulate args from 'architecture resolve --command verify' (no --module)
+        args = Namespace(
+            project_dir=tmpdir,
+            resolve_command='verify',
+            module=None,
+        )
+
+        result = cmd_resolve(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'root'
+        assert result['command'] == 'verify'
+        assert result['resolution_level'] == 'module'
+
+
+def test_cmd_resolve_cascades_to_root_when_missing_at_module():
+    """cmd_resolve falls back to root when command absent at requested --module."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_derived_data_with_root(tmpdir)
+
+        # 'verify' lives on root, not on module-a — should cascade up
+        args = Namespace(
+            project_dir=tmpdir,
+            resolve_command='verify',
+            module='module-a',
+        )
+
+        result = cmd_resolve(args)
+
+        assert result['status'] == 'success'
+        assert result['module'] == 'root'
+        assert result['command'] == 'verify'
+        assert result['resolution_level'] == 'root'
+
+
+def test_cmd_resolve_unknown_module_returns_error():
+    """cmd_resolve returns error_result when --module does not exist."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_derived_data_with_root(tmpdir)
+
+        args = Namespace(
+            project_dir=tmpdir,
+            resolve_command='verify',
+            module='nonexistent-module',
+        )
+
+        result = cmd_resolve(args)
+
+        assert result['status'] == 'error'
+
+
+def test_cmd_resolve_unknown_command_returns_error():
+    """cmd_resolve returns error_result when --command cannot be resolved."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_derived_data_with_root(tmpdir)
+
+        args = Namespace(
+            project_dir=tmpdir,
+            resolve_command='nonexistent-command',
+            module='module-a',
+        )
+
+        result = cmd_resolve(args)
+
+        assert result['status'] == 'error'
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -510,6 +646,12 @@ if __name__ == '__main__':
         test_cmd_modules_without_filter_lists_all_modules,
         test_cmd_modules_with_filter_filters_by_command,
         test_cmd_modules_with_filter_quality_gate,
+        # cmd_resolve tests (--module argument)
+        test_cmd_resolve_with_module_returns_executable,
+        test_cmd_resolve_without_module_uses_root,
+        test_cmd_resolve_cascades_to_root_when_missing_at_module,
+        test_cmd_resolve_unknown_module_returns_error,
+        test_cmd_resolve_unknown_command_returns_error,
         test_get_module_graph_basic_structure,
         test_get_module_graph_node_count,
         test_get_module_graph_edge_count,

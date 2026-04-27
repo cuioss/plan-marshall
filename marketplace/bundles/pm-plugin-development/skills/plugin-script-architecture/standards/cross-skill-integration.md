@@ -106,7 +106,7 @@ log_entry('script', 'global', 'ERROR', '[MY-COMPONENT] Failed to process')
 |-----------|------|--------|-------------|
 | `log_type` | str | `'script'`, `'work'` | Determines output file |
 | `plan_id` | str | kebab-case or `'global'` | Plan identifier |
-| `level` | str | `'INFO'`, `'WARN'`, `'ERROR'` | Log level |
+| `level` | str | `'INFO'`, `'WARNING'`, `'ERROR'` | Log level |
 | `message` | str | any | Log message (prefix with `[COMPONENT]`) |
 
 **Message Convention**: Prefix messages with `[COMPONENT-NAME]` for easy filtering:

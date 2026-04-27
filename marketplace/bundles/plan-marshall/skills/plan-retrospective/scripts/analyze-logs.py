@@ -33,7 +33,15 @@ from typing import Any
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
 
 # Recognized log level tokens in the work/decision logs.
-_LEVELS = ('INFO', 'WARN', 'ERROR')
+#
+# This list is STRICT and intentionally aligned with the Python stdlib
+# ``logging`` module's level names ("WARNING", not "WARN"). Historical log
+# files written before the WARN→WARNING rename will contain bracketed
+# ``[WARN]`` tokens and will therefore NOT be counted in ``warnings_*``
+# fields. This is a deliberate breaking change: a green retrospective on a
+# stale archive should reflect the current vocabulary, not silently sum
+# values across two incompatible level tokens.
+_LEVELS = ('INFO', 'WARNING', 'ERROR')
 
 # Level tokens also appear as bracketed [LEVEL] tokens inside the production
 # log shape; ``extract_tags`` filters them out so only category tags like
@@ -91,7 +99,7 @@ def read_modified_files(plan_dir: Path) -> list[str]:
         refs = json.loads(references_path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError) as exc:
         print(
-            f'WARN: analyze-logs failed to read references.json: {exc}',
+            f'WARNING: analyze-logs failed to read references.json: {exc}',
             file=sys.stderr,
         )
         return []
@@ -104,7 +112,7 @@ def read_modified_files(plan_dir: Path) -> list[str]:
 def read_log(path: Path) -> list[str]:
     """Return the non-empty lines of ``path``.
 
-    A missing target file is surfaced as a stderr WARN line so callers (and
+    A missing target file is surfaced as a stderr WARNING line so callers (and
     plan retrospectives) notice silent log-source drift, rather than treating
     an absent log as "no entries". OSError on read is treated the same way:
     the operator needs to know the input was unreadable, not get a green
@@ -112,7 +120,7 @@ def read_log(path: Path) -> list[str]:
     """
     if not path.exists():
         print(
-            f'WARN: analyze-logs missing log file: {path}',
+            f'WARNING: analyze-logs missing log file: {path}',
             file=sys.stderr,
         )
         return []
@@ -120,7 +128,7 @@ def read_log(path: Path) -> list[str]:
         content = path.read_text(encoding='utf-8')
     except OSError as exc:
         print(
-            f'WARN: analyze-logs failed to read log file {path}: {exc}',
+            f'WARNING: analyze-logs failed to read log file {path}: {exc}',
             file=sys.stderr,
         )
         return []
@@ -128,7 +136,7 @@ def read_log(path: Path) -> list[str]:
 
 
 def count_levels(lines: list[str]) -> dict[str, int]:
-    """Count ``INFO``/``WARN``/``ERROR`` occurrences across lines.
+    """Count ``INFO``/``WARNING``/``ERROR`` occurrences across lines.
 
     Matches the bracketed production shape ``[LEVEL]`` emitted by
     ``manage-logging``. At most one level contributes per line.
@@ -252,8 +260,8 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'script_entries': len(script),
             'errors_work': work_levels['ERROR'],
             'errors_script': script_levels['ERROR'],
-            'warnings_work': work_levels['WARN'],
-            'warnings_script': script_levels['WARN'],
+            'warnings_work': work_levels['WARNING'],
+            'warnings_script': script_levels['WARNING'],
             'artifact_entries': artifact_entries,
         },
         'phases_seen': extract_phases(work + decision),

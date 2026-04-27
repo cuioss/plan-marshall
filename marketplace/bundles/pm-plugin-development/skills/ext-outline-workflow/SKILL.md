@@ -246,8 +246,8 @@ Plugin development deliverables have different verification depending on content
 | Deliverable Content | Profiles | Implementation Verification | Module_testing Verification |
 |---------------------|----------|---------------------------|----------------------------|
 | Markdown components (skills/agents/commands) | `implementation` only | plugin-doctor | N/A |
-| Scripts without test files | `implementation` only | `plan-marshall:manage-architecture:architecture resolve --command compile --name {module} --trace-plan-id {plan_id}` | N/A |
-| Scripts with test files | `implementation`, `module_testing` | `plan-marshall:manage-architecture:architecture resolve --command compile --name {module} --trace-plan-id {plan_id}` | `plan-marshall:manage-architecture:architecture resolve --command module-tests --name {module} --trace-plan-id {plan_id}` |
+| Scripts without test files | `implementation` only | `plan-marshall:manage-architecture:architecture resolve --command compile --module {module} --trace-plan-id {plan_id}` | N/A |
+| Scripts with test files | `implementation`, `module_testing` | `plan-marshall:manage-architecture:architecture resolve --command compile --module {module} --trace-plan-id {plan_id}` | `plan-marshall:manage-architecture:architecture resolve --command module-tests --module {module} --trace-plan-id {plan_id}` |
 
 Resolve commands from architecture (`plan-marshall:manage-architecture:architecture`) — do NOT hardcode build tool invocations. Always pass `--trace-plan-id {plan_id}` for execution logging.
 

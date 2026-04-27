@@ -14,7 +14,7 @@ Subcommands:
   update           - Update an existing task
   remove           - Remove a task
   list             - List all tasks (summary)
-  get              - Get a single task by number
+  read             - Read a single task by number
   exists           - Boolean probe: does a task exist? (never errors on absence)
   next             - Get next pending task/step for execution
   tasks-by-domain  - List tasks filtered by domain
@@ -53,10 +53,10 @@ from _cmd_step import cmd_add_step, cmd_finalize_step, cmd_remove_step
 from _tasks_crud import cmd_batch_add, cmd_commit_add, cmd_prepare_add, cmd_remove, cmd_update
 from _tasks_query import (
     cmd_exists,
-    cmd_get,
     cmd_list,
     cmd_next,
     cmd_next_tasks,
+    cmd_read,
     cmd_tasks_by_domain,
     cmd_tasks_by_profile,
 )
@@ -151,7 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
             '  progress. Rich fields (``depends_on``, ``sub_steps``/``steps``,\n'
             '  ``description``, ``verification``, ``skills``) are NOT reachable\n'
             '  from ``list``. Callers that need them must iterate ``tasks_table``\n'
-            '  for task numbers and then call ``get --task N`` per task.\n'
+            '  for task numbers and then call ``read --task N`` per task.\n'
             '  Invariants such as ``_capture_task_state_hash`` rely on this\n'
             '  contract.'
         ),
@@ -164,9 +164,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_list.add_argument('--deliverable', type=int, help='Filter by deliverable number')
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
-    p_get = subparsers.add_parser('get', help='Get a single task', allow_abbrev=False)
-    add_plan_id_arg(p_get)
-    p_get.add_argument('--task', required=True, type=int, help='Task number')
+    p_read = subparsers.add_parser('read', help='Read a single task', allow_abbrev=False)
+    add_plan_id_arg(p_read)
+    p_read.add_argument('--task', required=True, type=int, help='Task number')
 
     # exists
     p_exists = subparsers.add_parser(
@@ -175,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             'Defensive presence probe. Returns ``status: success`` with '
             '``exists: true|false`` for any task number. Use this instead '
-            'of ``get`` when you need a boolean check, so a missing task '
+            'of ``read`` when you need a boolean check, so a missing task '
             'does not generate a recoverable [ERROR] row in '
             'script-execution.log.'
         ),
@@ -257,7 +257,7 @@ COMMANDS = {
     'update': cmd_update,
     'remove': cmd_remove,
     'list': cmd_list,
-    'get': cmd_get,
+    'read': cmd_read,
     'exists': cmd_exists,
     'next': cmd_next,
     'tasks-by-domain': cmd_tasks_by_domain,

@@ -44,8 +44,8 @@ Skill: plan-marshall:extension-api
 |-----------------|--------------------|---------|
 | 1-init | references.json required fields (domains) | `manage-references:manage-references read --plan-id {plan_id}` |
 | 3-outline | solution-outline-standard.md | `manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}` |
-| 4-plan | task-contract.md | `manage-tasks:manage-tasks list --plan-id {plan_id}` plus `manage-tasks:manage-tasks get --plan-id {plan_id} --task {N}` for each task |
-| 5-execute | task verification criteria | Execute each task's `verification.commands` after calling `manage-tasks get` |
+| 4-plan | task-contract.md | `manage-tasks:manage-tasks list --plan-id {plan_id}` plus `manage-tasks:manage-tasks read --plan-id {plan_id} --task {N}` for each task |
+| 5-execute | task verification criteria | Execute each task's `verification.commands` after calling `manage-tasks read` |
 
 All commands must be invoked via `python3 .plan/execute-script.py plan-marshall:...`. For phase 4-plan, also verify the work-log contains `[ARTIFACT]` entries for every task created. STOP and remediate any violations before proceeding.
 
@@ -94,7 +94,7 @@ Plan data must use the manage-* API. Prohibited operations and their correct alt
 | Read | `.plan/plans/{id}/references.json` | `manage-references:manage-references read --plan-id {id}` |
 | Read | `.plan/plans/{id}/work.log` | `manage-logging:manage-logging read --plan-id {id} --type work` |
 | Read | `.plan/plans/{id}/solution_outline.md` | `manage-solution-outline:manage-solution-outline read --plan-id {id}` |
-| Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `manage-tasks:manage-tasks get --plan-id {id} --task {N}` |
+| Read | `.plan/plans/{id}/tasks/TASK-*.toon` | `manage-tasks:manage-tasks read --plan-id {id} --task {N}` |
 | Write / Edit | any file under `.plan/plans/{id}/` | corresponding manage-* create/update subcommand |
 | Glob / find / ls | anything under `.plan/plans/` | corresponding manage-* list subcommand |
 
@@ -184,7 +184,7 @@ User must explicitly approve the solution outline before task creation. Verify v
 
 ### Phase 4 — Tasks Created
 
-Contract: `plan-marshall:manage-tasks/standards/task-contract.md`. Verify via `manage-tasks list` and `manage-tasks get --task {N}`. Required task fields: `deliverables` (non-empty), `depends_on` (`none` or `TASK-N`), `delegation.{skill,workflow,domain}`, `delegation.context_skills` (may be empty list), `steps` in TOON tabular format with file paths in the target column, `verification.commands`, and `verification.criteria`.
+Contract: `plan-marshall:manage-tasks/standards/task-contract.md`. Verify via `manage-tasks list` and `manage-tasks read --task {N}`. Required task fields: `deliverables` (non-empty), `depends_on` (`none` or `TASK-N`), `delegation.{skill,workflow,domain}`, `delegation.context_skills` (may be empty list), `steps` in TOON tabular format with file paths in the target column, `verification.commands`, and `verification.criteria`.
 
 **Steps field contract (CRITICAL)**: steps MUST be file paths from the deliverable's `Affected files`, NEVER action descriptions. Format: `steps[N]{number,target,status}:` with file paths as targets.
 

@@ -72,7 +72,7 @@ def load_extension_module(extension_path: Path, bundle_name: str):
     try:
         spec = importlib.util.spec_from_file_location(f'extension_{bundle_name}', extension_path)
         if spec is None or spec.loader is None:
-            log_entry('script', 'global', 'WARN', f'[EXTENSION] Failed to create spec for {bundle_name}')
+            log_entry('script', 'global', 'WARNING', f'[EXTENSION] Failed to create spec for {bundle_name}')
             return None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -81,10 +81,10 @@ def load_extension_module(extension_path: Path, bundle_name: str):
         if hasattr(module, 'Extension'):
             return module.Extension()
 
-        log_entry('script', 'global', 'WARN', f'[EXTENSION] No Extension class found in {bundle_name}')
+        log_entry('script', 'global', 'WARNING', f'[EXTENSION] No Extension class found in {bundle_name}')
         return None
     except Exception as e:
-        log_entry('script', 'global', 'WARN', f'[EXTENSION] Failed to load extension from {bundle_name}: {e}')
+        log_entry('script', 'global', 'WARNING', f'[EXTENSION] Failed to load extension from {bundle_name}: {e}')
         return None
 
 
@@ -178,7 +178,7 @@ def discover_applicable_extensions(project_root: Path) -> list[dict[str, Any]]:
                 log_entry(
                     'script',
                     'global',
-                    'WARN',
+                    'WARNING',
                     f'[EXTENSION] discover_modules() failed for {ext.get("bundle", "unknown")}: {e}',
                 )
 
@@ -213,7 +213,7 @@ def get_skill_domains_from_extensions(extensions: list[dict[str, Any]]) -> list[
                     entry['bundle'] = ext['bundle']
                     domains.append(entry)
         except Exception as e:
-            log_entry('script', 'global', 'WARN', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}')
+            log_entry('script', 'global', 'WARNING', f'[EXTENSION] get_skill_domains() failed for {ext["bundle"]}: {e}')
 
     return domains
 

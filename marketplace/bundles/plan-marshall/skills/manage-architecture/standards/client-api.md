@@ -269,14 +269,14 @@ install,Install to local repository
 Resolve a command to its executable form.
 
 ```bash
-architecture.py resolve --command COMMAND [--name NAME]
+architecture.py resolve --command COMMAND [--module MODULE]
 ```
 
 **Options**:
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
 | `--command` | Yes | - | Command name to resolve |
-| `--name` | No | (root module) | Module name |
+| `--module` | No | (root module) | Module name |
 
 **Output** (TOON):
 ```toon

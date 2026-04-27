@@ -17,7 +17,7 @@ Unified logging infrastructure providing script execution logging, semantic work
 
 **Skill-specific constraints:**
 - Log entries are fire-and-forget (no output parsing needed)
-- Only valid log levels: `INFO`, `WARN`, `ERROR`
+- Only valid log levels: `INFO`, `WARNING`, `ERROR`
 - Log type determines the output file (script, work, decision)
 - Work log messages must include `[CATEGORY] (caller)` prefix format
 
@@ -67,7 +67,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 |----------|--------|-------------|
 | `type` | `script`, `work`, `decision` | Log type (determines output file) |
 | `--plan-id` | kebab-case | Plan identifier |
-| `--level` | `INFO`, `WARN`, `ERROR` | Log level |
+| `--level` | `INFO`, `WARNING`, `ERROR` | Log level |
 | `--message` | string | Log message |
 
 **Output**: None (exit code only)
@@ -140,7 +140,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id my-plan --level INFO --message "[ARTIFACT] (plan-marshall:phase-1-init) Created deliverable: auth module"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id my-plan --level WARN --message "[STATUS] (plan-marshall:phase-5-execute) Skipped validation step"
+  work --plan-id my-plan --level WARNING --message "[STATUS] (plan-marshall:phase-5-execute) Skipped validation step"
 
 # Write: Decision logging (NO [DECISION] prefix - file is the category)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -209,7 +209,7 @@ Note: Decision entries do NOT include a `[DECISION]` prefix - the file itself in
 | Level | Description |
 |-------|-------------|
 | `INFO` | Progress, informational, or successful completion message |
-| `WARN` | Warning (non-fatal issue) |
+| `WARNING` | Warning (non-fatal issue) |
 | `ERROR` | Error with details |
 
 ---
@@ -225,7 +225,7 @@ from plan_logging import log_entry
 # log_entry(log_type: str, plan_id: str, level: str, message: str) -> None
 #   log_type: 'script', 'work', or 'decision'
 #   plan_id:  plan identifier, or 'global' for global logs
-#   level:    'INFO', 'WARN', or 'ERROR'
+#   level:    'INFO', 'WARNING', or 'ERROR'
 #   message:  log message text
 
 # Log to global script log
@@ -286,7 +286,7 @@ log_entry('work', 'my-plan', 'INFO', '[ARTIFACT] Created deliverable')
 |------------|-------|
 | `invalid_plan_id` | plan_id format invalid |
 | `invalid_log_type` | Log type not in: script, work, decision |
-| `invalid_level` | Level not in: INFO, WARN, ERROR |
+| `invalid_level` | Level not in: INFO, WARNING, ERROR |
 | `write_failed` | File system permission denied or directory missing |
 
 **Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures.

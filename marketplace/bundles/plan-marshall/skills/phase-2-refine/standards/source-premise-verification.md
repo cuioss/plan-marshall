@@ -93,5 +93,5 @@ When claims are invalid, also log to decision.log:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-2-refine) Invalid premise: {claim_summary} — actual: {evidence_summary}"
+  decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-2-refine) Invalid premise: {claim_summary} — actual: {evidence_summary}"
 ```

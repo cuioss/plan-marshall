@@ -42,11 +42,11 @@ Query the architecture for the module's canonical commands **before** writing de
 ```bash
 # For implementation profile verification:
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command compile --name {module} --trace-plan-id {plan_id}
+  resolve --command compile --module {module} --trace-plan-id {plan_id}
 
 # For module_testing profile verification:
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command module-tests --name {module} --trace-plan-id {plan_id}
+  resolve --command module-tests --module {module} --trace-plan-id {plan_id}
 ```
 
 Use the returned `executable` value as the Verification Command. Both Command and Criteria are MANDATORY — do NOT omit.

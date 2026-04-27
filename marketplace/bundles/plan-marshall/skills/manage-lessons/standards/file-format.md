@@ -90,4 +90,4 @@ The metadata header uses simple `key=value` format (one per line, no quoting). T
 
 ## Lesson Lifecycle
 
-Unapplied lesson files live at `.plan/local/lessons-learned/{id}.md`. A lesson becomes "applied" by being moved into a plan directory as `.plan/local/plans/{plan_id}/lesson-{id}.md` via `manage-lessons convert-to-plan --id {id} --plan-id {plan_id}`. The on-disk location is the source of truth for lifecycle state — there is no `applied` metadata field.
+Unapplied lesson files live at `.plan/local/lessons-learned/{id}.md`. A lesson becomes "applied" by being moved into a plan directory as `.plan/local/plans/{plan_id}/lesson-{id}.md` via `manage-lessons convert-to-plan --lesson-id {id} --plan-id {plan_id}`. The on-disk location is the source of truth for lifecycle state — there is no `applied` metadata field.

@@ -404,7 +404,7 @@ If the diff output is empty (no files changed) for an `implementation` or `modul
 - Log:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-5-execute) No file-system changes detected for {task_id} — marking blocked"
+    work --plan-id {plan_id} --level WARNING --message "[VERIFY] (plan-marshall:phase-5-execute) No file-system changes detected for {task_id} — marking blocked"
   ```
 - Skip Steps 9b and 9c, proceed to Step 11 (Triage)
 
@@ -416,7 +416,7 @@ If any obfuscation pattern is found:
 - Log each hit:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-5-execute) Obfuscation pattern detected in {file}: {pattern} — manual review recommended"
+    work --plan-id {plan_id} --level WARNING --message "[VERIFY] (plan-marshall:phase-5-execute) Obfuscation pattern detected in {file}: {pattern} — manual review recommended"
   ```
 - Do NOT auto-block (false positives are possible) — flag for human review only
 
@@ -432,7 +432,7 @@ If the agent reported `verification.passed: true` but the independent run return
 - Log:
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    work --plan-id {plan_id} --level WARN --message "[VERIFY] (plan-marshall:phase-5-execute) Verification mismatch for {task_id}: agent reported pass but independent run failed — marking blocked"
+    work --plan-id {plan_id} --level WARNING --message "[VERIFY] (plan-marshall:phase-5-execute) Verification mismatch for {task_id}: agent reported pass but independent run failed — marking blocked"
   ```
 - Proceed to Step 11 (Triage)
 

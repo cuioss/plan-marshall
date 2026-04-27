@@ -2,7 +2,7 @@
 """
 Query command handlers for manage-tasks.py.
 
-Contains: list, get, next, tasks-by-domain, tasks-by-profile, next-tasks subcommands.
+Contains: list, read, next, tasks-by-domain, tasks-by-profile, next-tasks subcommands.
 """
 
 from _tasks_core import (
@@ -91,8 +91,8 @@ def cmd_list(args) -> dict:
     }
 
 
-def cmd_get(args) -> dict:
-    """Handle 'get' subcommand."""
+def cmd_read(args) -> dict:
+    """Handle 'read' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
     filepath = find_task_file(task_dir, args.task)
@@ -129,7 +129,7 @@ def cmd_exists(args) -> dict:
 
     Boolean presence probe: returns ``status: success`` with
     ``exists: true|false`` for any task number, never erroring on absence.
-    Reuses the same task-file resolver as ``cmd_get`` (``find_task_file``)
+    Reuses the same task-file resolver as ``cmd_read`` (``find_task_file``)
     but maps the ``None`` outcome to ``exists: false`` instead of an
     error so callers can probe without polluting ``script-execution.log``
     with recoverable not-found rows.

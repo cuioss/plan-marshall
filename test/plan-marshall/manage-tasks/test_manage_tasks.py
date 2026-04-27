@@ -69,7 +69,7 @@ def cmd_add(ns):
     if not text.strip():
         return _add_task_empty(ns.plan_id)
     return _add_task(ns.plan_id, text)
-cmd_get, cmd_list, cmd_next = _query.cmd_get, _query.cmd_list, _query.cmd_next
+cmd_read, cmd_list, cmd_next = _query.cmd_read, _query.cmd_list, _query.cmd_next
 cmd_exists = _query.cmd_exists
 cmd_next_tasks, cmd_tasks_by_domain, cmd_tasks_by_profile = (
     _query.cmd_next_tasks,
@@ -179,8 +179,8 @@ def _add_task_empty(plan_id, slot=None):
     return cmd_commit_add(_commit_add_ns(plan_id=plan_id, slot=slot))
 
 
-def _get_ns(plan_id='test-plan', number=1):
-    """Build Namespace for cmd_get."""
+def _read_ns(plan_id='test-plan', number=1):
+    """Build Namespace for cmd_read."""
     return Namespace(plan_id=plan_id, task=number)
 
 
@@ -511,12 +511,12 @@ def test_add_with_shell_metacharacters_in_verification():
 
 
 # =============================================================================
-# Tests: get
+# Tests: read
 # =============================================================================
 
 
 def test_get_existing_task():
-    """Get returns full task details."""
+    """Read returns full task details."""
     with PlanContext(plan_id='get-exist'):
         toon = build_task_toon(
             title='Test task',
@@ -527,7 +527,7 @@ def test_get_existing_task():
         )
         cmd_add(_add_ns(plan_id='get-exist', content=toon.replace('\n', '\\n')))
 
-        result = cmd_get(_get_ns(plan_id='get-exist', number=1))
+        result = cmd_read(_read_ns(plan_id='get-exist', number=1))
 
         assert result['status'] == 'success'
         assert result['task']['number'] == 1
@@ -539,16 +539,16 @@ def test_get_existing_task():
 
 
 def test_get_nonexistent_returns_error():
-    """Get nonexistent task returns error."""
+    """Read nonexistent task returns error."""
     with PlanContext(plan_id='get-noexist'):
-        result = cmd_get(_get_ns(plan_id='get-noexist', number=99))
+        result = cmd_read(_read_ns(plan_id='get-noexist', number=99))
 
         assert result['status'] == 'error'
         assert 'TASK-99' in result.get('message', '')
 
 
 def test_get_returns_verification_block():
-    """Get returns verification block details."""
+    """Read returns verification block details."""
     with PlanContext(plan_id='get-verif'):
         toon = build_task_toon(
             title='Verified task',
@@ -561,7 +561,7 @@ def test_get_returns_verification_block():
         )
         cmd_add(_add_ns(plan_id='get-verif', content=toon.replace('\n', '\\n')))
 
-        result = cmd_get(_get_ns(plan_id='get-verif', number=1))
+        result = cmd_read(_read_ns(plan_id='get-verif', number=1))
 
         assert result['status'] == 'success'
         assert result['task']['verification']['criteria'] == 'Tests pass'
@@ -611,7 +611,7 @@ def test_exists_rejects_non_integer_task_argument():
 
     Drives the subprocess wrapper to confirm the argparse layer rejects a
     non-integer task value with exit code 2 (argparse error), matching how
-    get and other typed task arguments behave for malformed input.
+    read and other typed task arguments behave for malformed input.
     """
     result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'exists-bad-arg', '--task', 'abc')
 
@@ -1081,7 +1081,7 @@ def test_add_step_appends():
         assert result['step'] == 3
 
         # Verify step count
-        get_result = cmd_get(_get_ns(plan_id='addstep-app', number=1))
+        get_result = cmd_read(_read_ns(plan_id='addstep-app', number=1))
         assert len(get_result['task']['steps']) == 3
 
 
@@ -1108,7 +1108,7 @@ def test_add_step_after():
         assert result['step'] == 2
 
         # Verify order
-        get_result = cmd_get(_get_ns(plan_id='addstep-aft', number=1))
+        get_result = cmd_read(_read_ns(plan_id='addstep-aft', number=1))
         steps = get_result['task']['steps']
         assert steps[0]['target'] == 'src/main/java/FileA.java'
         assert steps[1]['target'] == 'src/main/java/FileB.java'
@@ -1136,7 +1136,7 @@ def test_remove_step():
         assert 'Step 2 removed' in result.get('message', '')
 
         # Verify renumbering
-        get_result = cmd_get(_get_ns(plan_id='rmstep', number=1))
+        get_result = cmd_read(_read_ns(plan_id='rmstep', number=1))
         steps = get_result['task']['steps']
         assert len(steps) == 2
         assert steps[0]['target'] == 'src/main/java/FileA.java'
@@ -1187,7 +1187,7 @@ def test_update_depends_on():
         assert result['status'] == 'success'
 
         # Verify
-        get_result = cmd_get(_get_ns(plan_id='upd-deps', number=1))
+        get_result = cmd_read(_read_ns(plan_id='upd-deps', number=1))
         assert 'TASK-5' in get_result['task']['depends_on']
         assert 'TASK-6' in get_result['task']['depends_on']
 
@@ -1210,7 +1210,7 @@ def test_update_clear_depends_on():
         assert result['status'] == 'success'
 
         # Verify
-        get_result = cmd_get(_get_ns(plan_id='upd-clear-deps', number=1))
+        get_result = cmd_read(_read_ns(plan_id='upd-clear-deps', number=1))
         assert get_result['task']['depends_on'] == []
 
 

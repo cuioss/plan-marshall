@@ -18,7 +18,7 @@ Resolve the command via:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command verify --name {module} --trace-plan-id {plan_id}
+  resolve --command verify --module {module} --trace-plan-id {plan_id}
 ```
 
 Run the returned `executable` as the verification command for the task.

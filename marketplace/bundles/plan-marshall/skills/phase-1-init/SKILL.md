@@ -121,7 +121,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons get \
-  --id {lesson_id}
+  --lesson-id {lesson_id}
 ```
 
 Extract: title, category, component, detail, related
@@ -201,7 +201,7 @@ Convert the lesson into a plan-scoped artifact so the lesson file is moved out o
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons convert-to-plan \
-  --id {lesson_id} --plan-id {plan_id}
+  --lesson-id {lesson_id} --plan-id {plan_id}
 ```
 
 **Post-condition (MANDATORY)**: After the script returns, assert both of the following:
@@ -365,7 +365,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
    d. Log the failure to decision.log:
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     decision --plan-id {plan_id} --level WARN --message "(plan-marshall:phase-1-init) Worktree creation failed: {original_error}. Plan running on feature/{plan_id} in main checkout without isolation."
+     decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-1-init) Worktree creation failed: {original_error}. Plan running on feature/{plan_id} in main checkout without isolation."
    ```
 
 **IF `branch_strategy == "feature"` AND `use_worktree == false`** (opt-out):

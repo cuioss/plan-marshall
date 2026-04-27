@@ -127,7 +127,7 @@ If other open PRs were found using this branch as head:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup aborted: {count} other open PR(s) use branch {head_branch}"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup aborted: {count} other open PR(s) use branch {head_branch}"
 ```
 
 → Abort cleanup. The user was already informed about these PRs in the confirmation dialog but confirmed anyway — however, deleting a branch with dependent PRs is too destructive. Log and skip.
@@ -172,7 +172,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 If CI fails after the branch update → log warning but continue to the merge attempt (the merge itself may still succeed if branch protection allows it):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: CI failed after branch update — continuing with merge attempt"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI failed after branch update — continuing with merge attempt"
 ```
 
 Log the update:
@@ -235,7 +235,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
 If CI fails → log warning but continue (PR is already merged):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: post-merge CI failed — continuing with branch cleanup"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: post-merge CI failed — continuing with branch cleanup"
 ```
 
 ### Remove Worktree (if any)
@@ -292,7 +292,7 @@ Notes on the two entry paths:
 If `git branch -d` fails → log warning (branch may not exist locally, e.g. another process already deleted it):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist)"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist)"
 ```
 
 **Error handling**:
@@ -381,7 +381,7 @@ git -C {main_checkout} branch -d {head_branch}
 If `git branch -d` fails → log warning (branch may not exist locally or has unmerged changes):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[WARN] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist or has unmerged changes)"
+  work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: local branch delete failed - {error} (may not exist or has unmerged changes)"
 ```
 
 **Error handling**:

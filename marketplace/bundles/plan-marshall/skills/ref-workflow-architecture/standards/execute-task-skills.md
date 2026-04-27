@@ -199,7 +199,7 @@ The unified `plan-marshall:execute-task` skill handles all profiles. Common work
 Read the task file to understand what needs to be done:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks get \
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
   --plan-id {plan_id} \
   --task {task_number}
 ```
@@ -237,14 +237,14 @@ After all steps complete, run task verification.
 
 Execute the verification commands from `task.verification.commands`. Every task SHOULD have commands populated by the plan phase (copied from the deliverable).
 
-**Safety net** (should not trigger in normal operation): If verification commands are missing, log a WARN and resolve from architecture:
+**Safety net** (should not trigger in normal operation): If verification commands are missing, log a WARNING and resolve from architecture:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level WARN --message "[VERIFY] ({skill_name}) TASK-{N} missing verification — falling back to architecture resolve"
+  work --plan-id {plan_id} --level WARNING --message "[VERIFY] ({skill_name}) TASK-{N} missing verification — falling back to architecture resolve"
 
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command {resolve_command} --name {module} \
+  resolve --command {resolve_command} --module {module} \
   --trace-plan-id {plan_id}
 ```
 
@@ -350,7 +350,7 @@ All execute-task skills use these notations (use EXACTLY as shown):
 
 | Notation | Purpose |
 |----------|---------|
-| `plan-marshall:manage-tasks:manage-tasks` | Task operations (get, update, finalize-step) |
+| `plan-marshall:manage-tasks:manage-tasks` | Task operations (read, update, finalize-step) |
 | `plan-marshall:manage-lessons:manage-lessons` | Record lessons (add) |
 | `plan-marshall:manage-logging:manage-logging` | Logging (work) |
 | `plan-marshall:manage-config:manage-config` | Read project configuration |
