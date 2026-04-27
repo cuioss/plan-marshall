@@ -26,13 +26,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-_SESSION_ID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
-
 sys.path.insert(0, str(Path(__file__).parent))
 
 from file_ops import output_toon, output_toon_error, safe_main  # type: ignore[import-not-found]
+
+_SESSION_ID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 
 def _cache_base() -> Path | None:
