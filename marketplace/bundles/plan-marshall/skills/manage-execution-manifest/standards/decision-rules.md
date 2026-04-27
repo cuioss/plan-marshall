@@ -14,6 +14,7 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `commit_strategy` | `manage-config plan phase-5-execute get --field commit_strategy` | enum: `per_plan|per_deliverable|none` (default: `per_plan`) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
+| `modified_files` | `references.json::modified_files` | list[string] (read directly by the composer) |
 
 ## Outputs
 
@@ -121,6 +122,39 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 - `phase_6.steps = phase_6_candidates` (full)
 
 **Why**: This is the safe baseline for code-shaped features and broader changes. The full canonical Phase 5 verification fires; Phase 6 dispatches every step `marshal.json` lists.
+
+## Stacked Rule — `bundle_self_modification`
+
+After the seven-row matrix has selected a base manifest, the composer applies one stacked rule that mutates `phase_6.steps` independently of the row that fired. This rule does NOT replace any row — it stacks an extra step on top of whatever the matrix produced.
+
+**Condition**: any entry in `references.json::modified_files` matches one of the bundle source globs:
+
+- `marketplace/bundles/*/agents/*` (or `**`)
+- `marketplace/bundles/*/commands/*` (or `**`)
+- `marketplace/bundles/*/skills/*` (or `**`)
+
+Globs are matched with `fnmatch.fnmatchcase` (POSIX semantics, no regex).
+
+**Effect**: `project:finalize-step-sync-plugin-cache` is inserted into `phase_6.steps` immediately before the **earliest** entry in the resolved list that belongs to the agent-dispatched set:
+
+- `default:create-pr`
+- `default:automated-review`
+- `default:knowledge-capture`
+- `default:lessons-capture`
+
+If the resolved `phase_6.steps` contains no agent-dispatched step, the rule does not fire (no insertion, no log line). If `project:finalize-step-sync-plugin-cache` already sits immediately before the first agent-dispatched step, the rule is idempotent and skips reinsertion.
+
+**Why this stacks instead of replacing a row**: cached plugin definitions under `~/.claude/plugins/cache/` are the runtime source of truth for Task agent dispatch. When the plan's diff edits bundled agents, commands, or skills, the worktree-side fix never reaches the cache until `project:finalize-step-sync-plugin-cache` runs — which by default sits late in the manifest (post `branch-cleanup`). That ordering is correct in the steady state ("publish after commit"), but when the in-flight finalize itself dispatches agents loaded from that cache (`create-pr`, `automated-review`, `knowledge-capture`, `lessons-capture`), it sees the *pre-fix* definitions for the duration of the run. The stacked rule closes the staleness window by inserting an early sync immediately before the first agent dispatch. The existing late-stage occurrence is preserved verbatim — duplicate occurrences are intentional (early sync feeds the in-flight run; late sync publishes the post-commit state).
+
+**Why a stacked rule, not an eighth row**: the seven-row matrix is keyed off change-type / scope / recipe semantics — orthogonal to which bundle surfaces the diff touches. Adding a `bundle_self_modification` row would force every other row to negotiate with it; modeling it as a post-matrix mutation keeps the matrix focused and lets multiple base rows benefit from the early-sync insertion.
+
+**Decision log line** (in addition to the row's own log line):
+
+```
+(plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — inserted project:finalize-step-sync-plugin-cache before {first_agent_step}
+```
+
+**Cross-references**: lesson `2026-04-26-23-003` (the recurrence that drove this rule), lesson `2026-04-24-17-002` (parent — agents falling back to `python -c open(...)` due to missing tools, which this rule prevents from re-occurring under stale-cache dispatch).
 
 ## Decision Log Format
 

@@ -17,6 +17,8 @@ Usage:
 """
 
 import argparse
+import fnmatch
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +78,33 @@ DEFAULT_PHASE_6_STEPS = (
     'branch-cleanup',
     'archive-plan',
 )
+
+# Bundle source globs evaluated by `bundle_self_modification`. A modified-file
+# entry matching ANY of these triggers an early `sync-plugin-cache` insertion
+# in `phase_6.steps`. Cached plugin definitions are the runtime source of truth
+# for Task agent dispatch, so when the plan's diff edits these surfaces the
+# in-flight finalize must publish the worktree to the cache before the first
+# agent-dispatched step. See lesson 2026-04-26-23-003.
+_BUNDLE_SOURCE_GLOBS = (
+    'marketplace/bundles/*/agents/*',
+    'marketplace/bundles/*/agents/**',
+    'marketplace/bundles/*/commands/*',
+    'marketplace/bundles/*/commands/**',
+    'marketplace/bundles/*/skills/*',
+    'marketplace/bundles/*/skills/**',
+)
+
+# Phase 6 steps that dispatch Task subagents loaded from the plugin cache. The
+# bundle_self_modification rule inserts `sync-plugin-cache` immediately before
+# the earliest occurrence of ANY entry in this set.
+_AGENT_DISPATCHED_STEPS = frozenset({
+    'default:create-pr',
+    'default:automated-review',
+    'default:knowledge-capture',
+    'default:lessons-capture',
+})
+
+_EARLY_SYNC_STEP = 'project:finalize-step-sync-plugin-cache'
 
 
 # =============================================================================
@@ -242,6 +271,95 @@ def _decide(
     return body, 'default'
 
 
+def _bundle_self_modification(modified_files: list[str]) -> bool:
+    """Return True when any modified file matches a bundle source glob.
+
+    Globs are evaluated with ``fnmatch.fnmatchcase`` (POSIX semantics, no regex).
+    The triggering surfaces are bundled agents, commands, and skills — the
+    runtime source of truth for Task dispatch. See lesson 2026-04-26-23-003.
+    """
+    return any(
+        fnmatch.fnmatchcase(path, glob)
+        for path in modified_files
+        for glob in _BUNDLE_SOURCE_GLOBS
+    )
+
+
+def _read_modified_files(plan_id: str) -> list[str]:
+    """Read ``modified_files`` from the plan's references.json.
+
+    Returns an empty list when the file is missing, malformed, or lacks the
+    field — bundle_self_modification only fires on positive matches, so a
+    missing references.json is safely treated as "no bundle changes".
+    """
+    references_path = get_plan_dir(plan_id) / 'references.json'
+    if not references_path.exists():
+        return []
+    try:
+        payload = json.loads(references_path.read_text(encoding='utf-8'))
+    except (json.JSONDecodeError, OSError):
+        return []
+    files = payload.get('modified_files')
+    if not isinstance(files, list):
+        return []
+    return [f for f in files if isinstance(f, str)]
+
+
+def _apply_bundle_self_modification(
+    plan_id: str, body: dict[str, Any], modified_files: list[str]
+) -> str | None:
+    """Insert an early ``sync-plugin-cache`` step when the rule fires.
+
+    Mutates ``body['phase_6']['steps']`` in place and returns the inserting
+    step name (the agent-dispatched step that the new entry was placed before)
+    when the rule fires. Returns ``None`` when the rule does not fire — either
+    because no bundle source matched or no agent-dispatched step is present in
+    the resolved phase_6 list.
+
+    Idempotent: if ``project:finalize-step-sync-plugin-cache`` already sits
+    immediately before the first agent-dispatched step, no insertion occurs.
+    The existing late-stage occurrence (if any) is preserved verbatim — the
+    rule stacks an additional early occurrence rather than relocating.
+    """
+    if not _bundle_self_modification(modified_files):
+        return None
+
+    phase_6 = body.get('phase_6')
+    if not isinstance(phase_6, dict):
+        return None
+    steps = phase_6.get('steps')
+    if not isinstance(steps, list) or not steps:
+        return None
+
+    early_index: int | None = None
+    for i, step in enumerate(steps):
+        if step in _AGENT_DISPATCHED_STEPS:
+            early_index = i
+            break
+    if early_index is None:
+        return None
+
+    # Idempotency guard: already inserted immediately before the first agent step.
+    if early_index > 0 and steps[early_index - 1] == _EARLY_SYNC_STEP:
+        return None
+
+    inserting_before = steps[early_index]
+    if not isinstance(inserting_before, str):
+        return None
+    steps.insert(early_index, _EARLY_SYNC_STEP)
+    phase_6['steps'] = steps
+    return inserting_before
+
+
+def _log_bundle_self_modification(plan_id: str, inserting_before: str) -> None:
+    """Emit the decision-log entry for the ``bundle_self_modification`` rule."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — '
+        f'inserted {_EARLY_SYNC_STEP} before {inserting_before}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 def _looks_docs_only(phase_5_candidates: list[str]) -> bool:
     """Heuristic: docs-only plans don't request module-tests or coverage.
 
@@ -397,6 +515,14 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates=phase_6_candidates,
     )
 
+    # Bundle self-modification rule (stacks on top of the seven-row matrix):
+    # when the plan's diff edits cached agent/command/skill sources, prepend
+    # an early `sync-plugin-cache` step before the first agent-dispatched
+    # finalize step so Phase 6 agent dispatches see the worktree's definition,
+    # not the stale cache. See lesson 2026-04-26-23-003.
+    modified_files = _read_modified_files(plan_id)
+    bundle_rule_inserted_before = _apply_bundle_self_modification(plan_id, body, modified_files)
+
     manifest = {
         'manifest_version': MANIFEST_VERSION,
         'plan_id': plan_id,
@@ -406,6 +532,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     if commit_push_omitted:
         _log_commit_push_omitted(plan_id)
     _log_decision(plan_id, rule, body)
+    if bundle_rule_inserted_before is not None:
+        _log_bundle_self_modification(plan_id, bundle_rule_inserted_before)
 
     return {
         'status': 'success',
@@ -423,6 +551,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'rule_fired': rule,
         'commit_strategy': commit_strategy,
         'commit_push_omitted': commit_push_omitted,
+        'bundle_self_modification_inserted_before': bundle_rule_inserted_before or '',
     }
 
 
