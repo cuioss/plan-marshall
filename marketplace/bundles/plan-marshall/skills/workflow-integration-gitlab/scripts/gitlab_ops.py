@@ -607,10 +607,23 @@ def cmd_pr_comments(args: argparse.Namespace) -> dict:
     return fetch_pr_comments_data(args.pr_number, args.unresolved_only)
 
 
-def format_checks_toon(jobs: list[dict]) -> tuple[list[dict], int]:
+def format_checks_toon(
+    jobs: list[dict],
+    *,
+    duration_ceiling: int | None = None,
+) -> tuple[list[dict], int]:
     """Format GitLab pipeline jobs into TOON-compatible dicts and compute overall elapsed.
 
-    Returns (list_of_job_dicts, elapsed_sec_total).
+    Per-job rows omit the ``elapsed_sec`` key entirely when
+    :func:`compute_elapsed` returns ``None`` (Go zero-value timestamp or
+    parse failure) — TOON callers treat absent keys as null-equivalent.
+
+    The aggregate ``elapsed_sec`` is clamped via warn-and-substitute when it
+    falls outside ``0 ≤ x ≤ 24*3600``: a stderr warning is emitted and the
+    return value is replaced with ``duration_ceiling`` (caller-supplied for
+    ``ci_wait``) or ``0`` (default for ``ci_status``).
+
+    Returns ``(list_of_job_dicts, elapsed_sec_total)``.
     """
     from datetime import UTC, datetime
 
@@ -639,18 +652,30 @@ def format_checks_toon(jobs: list[dict]) -> tuple[list[dict], int]:
         started_at = job.get('started_at') or job.get('created_at')
         started_at_values.append(started_at)
 
-        rows.append(
-            {
-                'name': job.get('name', 'unknown'),
-                'status': state,
-                'result': result,
-                'elapsed_sec': compute_elapsed(started_at, job.get('finished_at'), now),
-                'url': job.get('web_url') or '-',
-                'stage': job.get('stage') or '-',
-            }
-        )
+        elapsed = compute_elapsed(started_at, job.get('finished_at'), now)
+        row: dict = {
+            'name': job.get('name', 'unknown'),
+            'status': state,
+            'result': result,
+            'url': job.get('web_url') or '-',
+            'stage': job.get('stage') or '-',
+        }
+        if elapsed is not None:
+            row['elapsed_sec'] = elapsed
+        rows.append(row)
 
     total_elapsed = compute_total_elapsed(started_at_values, now)
+
+    # Defense-in-depth: clamp aggregate to a sane window. The per-job filter
+    # above should already prevent zero-time leakage, but a runaway value here
+    # would mask a regression — substitute the caller's ceiling and warn.
+    if total_elapsed < 0 or total_elapsed > 24 * 3600:
+        print(
+            'format_jobs_toon: aggregate elapsed_sec out of range, clamping',
+            file=sys.stderr,
+        )
+        total_elapsed = duration_ceiling if duration_ceiling is not None else 0
+
     return rows, total_elapsed
 
 
@@ -703,8 +728,9 @@ def cmd_ci_status(args: argparse.Namespace) -> dict:
     }
     overall = status_map.get(pipeline_status, 'unknown')
 
-    # Format checks table
-    checks, total_elapsed = format_checks_toon(jobs)
+    # Format checks table — ci_status has no caller-supplied duration ceiling,
+    # so out-of-range aggregates are substituted with 0.
+    checks, total_elapsed = format_checks_toon(jobs, duration_ceiling=0)
 
     # Output TOON
     return {
@@ -761,7 +787,11 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
 
     last_data = result['last_data']
     jobs = last_data.get('jobs', [])
-    check_dicts, total_elapsed = format_checks_toon(jobs)
+    # ci_wait already tracks its own poll duration — use it as the clamp ceiling
+    # so an out-of-range aggregate is substituted with the actual poll time.
+    check_dicts, total_elapsed = format_checks_toon(
+        jobs, duration_ceiling=result['duration_sec']
+    )
 
     if result['timed_out']:
         error_data: dict[str, Any] = {
