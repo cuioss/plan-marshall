@@ -1250,7 +1250,9 @@ class TestCmdRemove:
         seeded = self._seed_lesson(lessons_dir)
 
         # Stub builtins.input on the manage-lessons module to simulate "no".
-        monkeypatch.setattr(_mod, 'input', lambda _prompt: 'n', raising=False)
+        # The remove subcommand writes the prompt to stderr separately, then
+        # calls input() with no arguments — so the stub takes none.
+        monkeypatch.setattr(_mod, 'input', lambda: 'n', raising=False)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
             result = cmd_remove(

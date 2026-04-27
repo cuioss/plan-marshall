@@ -586,8 +586,12 @@ def cmd_remove(args: argparse.Namespace) -> dict:
             sep='\n',
             file=sys.stderr,
         )
+        # Write the prompt to stderr — input()'s prompt argument writes to
+        # stdout by default, which would corrupt the script's machine-readable
+        # TOON output emitted by output_toon().
+        print(f'Remove lesson {args.lesson_id}? [y/N]: ', end='', flush=True, file=sys.stderr)
         try:
-            answer = input(f'Remove lesson {args.lesson_id}? [y/N]: ').strip().lower()
+            answer = input().strip().lower()
         except EOFError:
             answer = ''
         if answer not in ('y', 'yes'):
