@@ -116,15 +116,26 @@ If no message:
 **Step 5: Stage and Commit**
 
 Stage specific files relevant to the logical change (use `git -C {worktree_path} status --porcelain` to review):
-```bash
-git -C {worktree_path} add <specific-files>
-git -C {worktree_path} commit -m "$(cat <<'EOF'
-{commit_message}
 
-Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
+```bash
+# ONE Bash call — stage files
+git -C {worktree_path} add <specific-files>
 ```
+
+Author the commit message via the `Write` tool to a `.plan/temp/` file (the path is permission-pre-approved via `Write(.plan/**)` and lives inside the workspace — never `/tmp/`). The message MUST end with the Co-Authored-By trailer:
+
+```
+Write(file_path=".plan/temp/{plan_id}-commit-msg.txt", content="{commit_message}\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n")
+```
+
+Then commit using `-F` to read the message from the file — this is one Bash call with no `&&`, no heredoc, no `$(...)` substitution:
+
+```bash
+# ONE Bash call — commit reading message from .plan/temp/ file
+git -C {worktree_path} commit -F .plan/temp/{plan_id}-commit-msg.txt
+```
+
+The `git commit -m "$(cat <<'EOF' … EOF)"` form is forbidden — it combines `$(…)` substitution with a heredoc, both of which trip the Bash safety harness. See `dev-general-practices/standards/tool-usage-patterns.md` for the chain-shape and Bash-write rules.
 
 **Step 6: Push (Optional)**
 

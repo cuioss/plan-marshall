@@ -10,7 +10,7 @@ When the plan runs in an isolated worktree, every `Task:` dispatch (and every ot
 
 ```
 WORKTREE: {worktree_path}
-All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+All Edit/Write/Read tool calls MUST target paths under this worktree. Raw tool invocations (git, mvn, npm, uv, pytest, ruff, …) MUST use the tool's native cwd flag against this path — `git -C`, `mvn -f`, `npm --prefix`, `uv --directory`, `pytest --rootdir`, `ruff <path>` (positional). The compound `cd <path> && <tool>` form is forbidden for every tool, not just git — it violates Bash one-command-per-call. File contents MUST be written via the Write/Edit tools, never via Bash redirects (`echo >>`, `cat <<EOF >`, `python3 -c "open(...).write(...)"`, `printf >`). See `dev-general-practices/standards/tool-usage-patterns.md` for the full rule and the native-cwd-flag table. NEVER edit the main checkout.
 ```
 
 Omit the header only when no worktree is active (plan runs against the main checkout). The templates below show the header inline for every dispatch example.
@@ -25,7 +25,7 @@ Task:
   subagent_type: pm-dev-builder:maven-builder
   prompt: |
     WORKTREE: {worktree_path}
-    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw tool invocations (git, mvn, npm, uv, pytest, ruff, …) MUST use the tool's native cwd flag against this path. The `cd <path> && <tool>` form is forbidden. File contents MUST be written via Write/Edit, never via Bash redirects. See dev-general-practices/standards/tool-usage-patterns.md. NEVER edit the main checkout.
 
     Execute mvn clean verify, report results and coverage
 ```
@@ -38,7 +38,7 @@ Task:
   subagent_type: pm-dev-builder:npm-builder
   prompt: |
     WORKTREE: {worktree_path}
-    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw tool invocations (git, mvn, npm, uv, pytest, ruff, …) MUST use the tool's native cwd flag against this path. The `cd <path> && <tool>` form is forbidden. File contents MUST be written via Write/Edit, never via Bash redirects. See dev-general-practices/standards/tool-usage-patterns.md. NEVER edit the main checkout.
 
     Execute npm build and test, report results and coverage
 ```
@@ -69,7 +69,7 @@ Task:
   subagent_type: pm-dev-builder:npm-builder
   prompt: |
     WORKTREE: {worktree_path}
-    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw git/mvn/npm commands MUST operate against this path. NEVER edit the main checkout.
+    All Edit/Write/Read tool calls MUST target paths under this worktree. Raw tool invocations (git, mvn, npm, uv, pytest, ruff, …) MUST use the tool's native cwd flag against this path. The `cd <path> && <tool>` form is forbidden. File contents MUST be written via Write/Edit, never via Bash redirects. See dev-general-practices/standards/tool-usage-patterns.md. NEVER edit the main checkout.
 
     Execute Task {N}: {name}, Goal: {goal}, Criteria: {list}
 ```
