@@ -39,6 +39,7 @@ Mirrors the Workflow Discipline hard rules from `plan-marshall:dev-general-pract
 - Never use `gh` or `glab` directly. All CI/Git-provider operations MUST go through `plan-marshall:tools-integration-ci`.
 - Never hard-code build commands (`./pw`, `mvn`, `npm`, `gradle`). Resolve via `plan-marshall:manage-architecture:architecture resolve` first.
 - Never edit the main checkout when `worktree_path` is provided.
+- Never marshal multi-line content (PR body, lesson body, memory entry, task YAML, request narrative) through the shell. Multi-line content MUST be written via the Write tool against the absolute path returned by the relevant `manage-*` script's path-allocate subcommand (`prepare-add`, `add`, `path`). Banned constructs: shell heredocs (`cat > file <<EOF`), `python3 -c "..."`, `python -c "..."`, and `printf > file`.
 
 **Bash constraints:**
 - One command per Bash call. No `&&`, `;`, `&`, or newline chaining.
