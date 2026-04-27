@@ -12,6 +12,8 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `recipe_key` | `status.json` `plan_source` metadata when sourced via a recipe | string or absent |
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
 | `commit_strategy` | `manage-config plan phase-5-execute get --field commit_strategy` | enum: `per_plan|per_deliverable|none` (default: `per_plan`) |
+| `activation_globs` | `marshal.json::plan.phase-6-finalize.pre_push_quality_gate.activation_globs` | list[string] (default: empty) |
+| `modified_files` | `references.json::modified_files` | list[string] (default: empty) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
 | `affected_files` | `references.json::affected_files` | list[string] (read directly by the composer) |
@@ -25,13 +27,22 @@ For each rule the composer emits:
 - `phase_5.verification_steps` — ordered list[string] subset of `phase_5_candidates`.
 - `phase_6.steps` — ordered list[string] subset of `phase_6_candidates`.
 
-## Pre-Filter: `commit_strategy_none`
+## Pre-Filters
 
-Before evaluating the seven-row matrix below, the composer applies a pre-filter to the `phase_6_candidates` list:
+Before evaluating the seven-row matrix below, the composer applies a fixed sequence of pre-filters to the `phase_6_candidates` list. Each pre-filter is independent of the row matrix's change-type / scope / recipe inputs, so modeling them as pre-filters keeps the seven-row matrix orthogonal and lets the composer emit one dedicated `decision.log` entry per fired pre-filter.
+
+The pre-filters run in this order:
+
+1. **`commit_strategy_none`** — drops `commit-push` (and `pre-push-quality-gate`) when no push will occur.
+2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
+
+Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by an earlier pre-filter.
+
+### Pre-Filter: `commit_strategy_none`
 
 **Condition**: `commit_strategy == none`.
 
-**Effect**: `commit-push` is removed from `phase_6_candidates` before the rows are evaluated. Every row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered list, so the resulting `phase_6.steps` will never contain `commit-push` when this pre-filter fires.
+**Effect**: Both `commit-push` AND `pre-push-quality-gate` are removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes both because `pre-push-quality-gate` is meaningless without a downstream push — it exists solely to gate code that will be sent to remote CI.
 
 **Why a pre-filter (not an eighth row)**: `commit_strategy` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the seven rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
 
@@ -42,6 +53,28 @@ Before evaluating the seven-row matrix below, the composer applies a pre-filter 
 ```
 
 When `commit_strategy ∈ {per_plan, per_deliverable}` (or absent — the default is `per_plan`), the pre-filter is a no-op and emits no log entry.
+
+### Pre-Filter: `pre_push_quality_gate_inactive`
+
+**Condition**: At least one of:
+
+- `marshal.json::plan.phase-6-finalize.pre_push_quality_gate.activation_globs` is missing or empty, OR
+- `references.json::modified_files` is empty, OR
+- No entry in `modified_files` matches any glob in `activation_globs` (using `fnmatch.fnmatch`).
+
+**Effect**: `pre-push-quality-gate` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-push-quality-gate` was already removed by `commit_strategy_none`, this pre-filter is a no-op and emits no log entry.
+
+**Why a pre-filter (not an eighth row)**: Activation is project configuration paired with a glob match against `modified_files`, both orthogonal to the change-type / scope / recipe inputs that the seven-row matrix consumes. A row would either have to short-circuit and re-implement Phase 5 logic, or duplicate the filter into every row. Keeping it as a pre-filter preserves the seven-row matrix verbatim and adds exactly one independent decision-log line.
+
+**Decision log line** (in addition to the row's own log line and any other pre-filter log line):
+
+```
+(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — activation_globs empty or no modified_files match
+```
+
+When all three activation conditions are satisfied (non-empty globs, non-empty modified_files, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
+
+**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `commit_strategy_none` and *before* every row of the seven-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
 
 ## The Seven-Row Matrix
 

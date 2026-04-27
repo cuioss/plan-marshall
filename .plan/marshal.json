@@ -29,6 +29,7 @@
       "review_bot_buffer_seconds": 300,
       "pr_merge_strategy": "squash",
       "steps": [
+        "default:pre-push-quality-gate",
         "default:commit-push",
         "default:create-pr",
         "default:automated-review",
@@ -41,7 +42,16 @@
         "default:record-metrics",
         "plan-marshall:plan-retrospective",
         "default:archive-plan"
-      ]
+      ],
+      "pre_push_quality_gate": {
+        "activation_globs": [
+          "marketplace/bundles/*/skills/*/scripts/**/*.py",
+          "test/**/*.py"
+        ]
+      },
+      "step_order_overrides": {
+        "default:pre-push-quality-gate": 5
+      }
     }
   },
   "providers": [
