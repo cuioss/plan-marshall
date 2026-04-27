@@ -8,17 +8,26 @@ Usage:
     python3 manage-lesson.py add --component maven-build --category bug --title "Title"
     python3 manage-lesson.py list --component maven-build
     python3 manage-lesson.py get --lesson-id 2025-12-02-001
+    python3 manage-lesson.py set-body --lesson-id 2025-12-02-001 --file body.md
+    python3 manage-lesson.py remove --lesson-id 2025-12-02-001 --reason "duplicate"
+    python3 manage-lesson.py supersede --lesson-id 2025-12-02-001 \\
+        --by 2025-12-03-001 --reason "merged into canonical"
     python3 manage-lesson.py convert-to-plan --lesson-id 2025-12-02-001 --plan-id my-plan
 
 The `add` subcommand allocates a fresh lesson file (metadata header + title, empty
 body) and returns its absolute path. Callers write the body directly to that path
 via the Write tool — there is no alternative API form for inline body content.
+
+The `remove` and `supersede` subcommands delete or redirect a lesson and write a
+tombstone JSON file at ``.plan/local/lessons-learned/.tombstones/{lesson-id}.json``
+so historical references resolve by id even after the source file is gone.
 """
 
 import argparse
 import json
 import re
 import shutil
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +45,8 @@ from file_ops import (  # type: ignore[import-not-found]
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 VALID_CATEGORIES = LESSON_CATEGORIES
+VALID_STATUSES = ('active', 'superseded', 'removed')
+LIST_STATUS_CHOICES = ('active', 'superseded', 'removed', 'all')
 
 # Maximum retry attempts when allocating a fresh lesson id; bounded so that a
 # pathological caller cannot wedge the script in an unbounded loop.
@@ -45,6 +56,11 @@ MAX_ID_ALLOCATION_RETRIES = 99
 def get_lessons_dir() -> Path:
     """Get the lessons-learned directory."""
     return base_path(DIR_LESSONS)
+
+
+def get_tombstones_dir() -> Path:
+    """Get the tombstones directory under lessons-learned."""
+    return get_lessons_dir() / '.tombstones'
 
 
 def get_next_id() -> str:
@@ -229,6 +245,63 @@ def _allocate_and_write_scaffold(
     }
 
 
+def _write_tombstone(lesson_id: str, reason: str, status: str, superseded_by: str | None = None) -> Path:
+    """Write a tombstone JSON file recording lesson removal/supersede.
+
+    Tombstones live at ``{lessons-learned}/.tombstones/{lesson-id}.json`` and
+    survive deletion of the source lesson so callers can still resolve a
+    removed id back to its closure context.
+    """
+    tombstones_dir = get_tombstones_dir()
+    tombstones_dir.mkdir(parents=True, exist_ok=True)
+    tombstone_path = tombstones_dir / f'{lesson_id}.json'
+
+    payload = {
+        'lesson_id': lesson_id,
+        'removed_at': datetime.now(UTC).isoformat(),
+        'reason': reason,
+        'status': status,
+    }
+    if superseded_by is not None:
+        payload['superseded_by'] = superseded_by
+
+    atomic_write_file(tombstone_path, json.dumps(payload, indent=2) + '\n')
+    return tombstone_path
+
+
+def _append_consolidated_from(canonical_id: str, source_id: str) -> None:
+    """Append ``source_id`` to the canonical lesson's ``## Consolidated from`` section.
+
+    Creates the section at the end of the body when absent. Idempotent: if
+    ``source_id`` is already listed, the canonical is left untouched.
+    """
+    metadata, title, body = read_lesson(canonical_id)
+    if not metadata:
+        # Caller is responsible for verifying canonical existence before calling.
+        return
+
+    bullet = f'- {source_id}'
+    section_marker = '## Consolidated from'
+
+    if section_marker in body:
+        # Section exists — append the bullet if not already present.
+        if re.search(rf'(?m)^- {re.escape(source_id)}\s*$', body):
+            return
+        # Append after the last bullet line of the section.
+        pattern = r'(## Consolidated from\n+(?:- .*\n)*)'
+        match = re.search(pattern, body)
+        if match:
+            new_body = body[: match.end()].rstrip() + f'\n{bullet}\n' + body[match.end():]
+        else:
+            # Section header without bullets — append a bullet block after it.
+            new_body = body.replace(section_marker, f'{section_marker}\n\n{bullet}\n', 1)
+    else:
+        trailer = '\n\n' if body.strip() else ''
+        new_body = body.rstrip() + f'{trailer}{section_marker}\n\n{bullet}\n'
+
+    write_lesson(canonical_id, metadata, title, new_body)
+
+
 def cmd_add(args: argparse.Namespace) -> dict:
     """Allocate a new lesson file with metadata header and title (empty body).
 
@@ -250,6 +323,7 @@ def cmd_add(args: argparse.Namespace) -> dict:
             'id': lesson_id,
             'component': args.component,
             'category': args.category,
+            'status': 'active',
             'created': today,
         }
         if args.bundle:
@@ -270,13 +344,12 @@ def cmd_add(args: argparse.Namespace) -> dict:
 
 
 def cmd_update(args: argparse.Namespace) -> dict:
-    """Update lesson metadata."""
+    """Update lesson metadata (component, category). For body updates, use ``set-body``."""
     metadata, title, body = read_lesson(args.lesson_id)
 
     if not metadata:
         return {'status': 'error', 'id': args.lesson_id, 'error': 'not_found', 'message': f'Lesson {args.lesson_id} not found'}
 
-    # Determine which field to update
     field = None
     value = None
     previous = None
@@ -319,6 +392,7 @@ def cmd_get(args: argparse.Namespace) -> dict:
         'id': metadata.get('id', args.lesson_id),
         'component': metadata.get('component', ''),
         'category': metadata.get('category', ''),
+        'lifecycle_status': metadata.get('status', 'active'),
         'created': metadata.get('created', ''),
         'title': title,
     }
@@ -336,6 +410,8 @@ def cmd_list(args: argparse.Namespace) -> dict:
     if not lessons_dir.exists():
         return {'status': 'success', 'total': 0, 'filtered': 0, 'lessons': []}
 
+    status_filter = getattr(args, 'status', None) or 'active'
+
     lessons = []
     total = 0
 
@@ -344,7 +420,12 @@ def cmd_list(args: argparse.Namespace) -> dict:
         content = path.read_text(encoding='utf-8')
         metadata = parse_markdown_metadata(content)
 
-        # Apply filters
+        # Status filter — absence of frontmatter ``status`` field defaults to ``active``.
+        lesson_status = metadata.get('status', 'active')
+        if status_filter != 'all' and lesson_status != status_filter:
+            continue
+
+        # Apply legacy filters
         if args.component and metadata.get('component') != args.component:
             continue
         if args.category and metadata.get('category') != args.category:
@@ -361,6 +442,7 @@ def cmd_list(args: argparse.Namespace) -> dict:
             'id': metadata.get('id', path.stem),
             'component': metadata.get('component', ''),
             'category': metadata.get('category', ''),
+            'status': lesson_status,
             'title': title,
         }
 
@@ -456,7 +538,13 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
     today = datetime.now(UTC).strftime('%Y-%m-%d')
 
     def _metadata(lesson_id: str) -> dict:
-        return {'id': lesson_id, 'component': component, 'category': 'bug', 'created': today}
+        return {
+            'id': lesson_id,
+            'component': component,
+            'category': 'bug',
+            'status': 'active',
+            'created': today,
+        }
 
     title = f'Error: {error[:50]}'
     body = f'## Error\n\n{error}\n\n'
@@ -468,6 +556,136 @@ def cmd_from_error(args: argparse.Namespace) -> dict:
         return allocation
 
     return {'status': 'success', 'id': allocation['id'], 'created_from': 'error_context'}
+
+
+def cmd_remove(args: argparse.Namespace) -> dict:
+    """Remove a lesson file and write a tombstone.
+
+    Refuses without ``--reason``. Without ``--force``, prints the lesson
+    metadata + body length to stderr and reads a yes/no confirmation from
+    stdin. On confirm, writes the tombstone JSON, deletes the lesson file,
+    and emits an INFO line to script-execution.log.
+    """
+    metadata, title, body = read_lesson(args.lesson_id)
+    if not metadata:
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'not_found',
+            'message': f'Lesson {args.lesson_id} not found',
+        }
+
+    if not args.force:
+        print(
+            f'Lesson {args.lesson_id}: {title}',
+            f'  component: {metadata.get("component", "")}',
+            f'  category:  {metadata.get("category", "")}',
+            f'  status:    {metadata.get("status", "active")}',
+            f'  body:      {len(body)} chars',
+            f'  reason:    {args.reason}',
+            sep='\n',
+            file=sys.stderr,
+        )
+        # Write the prompt to stderr — input()'s prompt argument writes to
+        # stdout by default, which would corrupt the script's machine-readable
+        # TOON output emitted by output_toon().
+        print(f'Remove lesson {args.lesson_id}? [y/N]: ', end='', flush=True, file=sys.stderr)
+        try:
+            answer = input().strip().lower()
+        except EOFError:
+            answer = ''
+        if answer not in ('y', 'yes'):
+            return {
+                'status': 'cancelled',
+                'id': args.lesson_id,
+                'message': 'User declined removal',
+            }
+
+    tombstone_path = _write_tombstone(args.lesson_id, args.reason, status='removed')
+
+    lesson_path = get_lessons_dir() / f'{args.lesson_id}.md'
+    lesson_path.unlink()
+
+    log_entry(
+        'script',
+        'global',
+        'INFO',
+        f'(plan-marshall:manage-lessons) Removed lesson {args.lesson_id} — {args.reason}',
+    )
+
+    return {
+        'status': 'success',
+        'id': args.lesson_id,
+        'reason': args.reason,
+        'tombstone': str(tombstone_path.resolve()),
+    }
+
+
+def cmd_supersede(args: argparse.Namespace) -> dict:
+    """Mark a lesson as superseded by a canonical lesson.
+
+    Replaces the source lesson body with a redirect stub, sets frontmatter
+    ``status: superseded``, appends the source id to the canonical's
+    ``## Consolidated from`` section (creating it when absent), and writes a
+    tombstone JSON with ``superseded_by``. The source lesson file remains on
+    disk so the redirect resolves; ``list`` hides it by default.
+    """
+    if args.lesson_id == args.by:
+        return {
+            'status': 'error',
+            'error': 'self_supersede',
+            'message': 'A lesson cannot supersede itself',
+        }
+
+    metadata, title, body = read_lesson(args.lesson_id)
+    if not metadata:
+        return {
+            'status': 'error',
+            'id': args.lesson_id,
+            'error': 'not_found',
+            'message': f'Lesson {args.lesson_id} not found',
+        }
+
+    canonical_metadata, _canonical_title, _canonical_body = read_lesson(args.by)
+    if not canonical_metadata:
+        return {
+            'status': 'error',
+            'id': args.by,
+            'error': 'canonical_not_found',
+            'message': f'Canonical lesson {args.by} not found',
+        }
+
+    tombstone_path = _write_tombstone(
+        args.lesson_id, args.reason, status='superseded', superseded_by=args.by
+    )
+
+    new_metadata = dict(metadata)
+    new_metadata['status'] = 'superseded'
+
+    redirect_body = (
+        '[SUPERSEDED]\n\n'
+        f'This lesson was superseded by `{args.by}`.\n\n'
+        f'Reason: {args.reason}\n\n'
+        f'See [{args.by}.md](./{args.by}.md) for the canonical record.'
+    )
+    write_lesson(args.lesson_id, new_metadata, title, redirect_body)
+
+    _append_consolidated_from(args.by, args.lesson_id)
+
+    log_entry(
+        'script',
+        'global',
+        'INFO',
+        f'(plan-marshall:manage-lessons) Superseded lesson {args.lesson_id} by {args.by} — {args.reason}',
+    )
+
+    return {
+        'status': 'success',
+        'id': args.lesson_id,
+        'superseded_by': args.by,
+        'reason': args.reason,
+        'tombstone': str(tombstone_path.resolve()),
+    }
 
 
 @safe_main
@@ -490,7 +708,7 @@ def main() -> int:
     add_parser.set_defaults(func=cmd_add)
 
     # update
-    update_parser = subparsers.add_parser('update', help='Update lesson', allow_abbrev=False)
+    update_parser = subparsers.add_parser('update', help='Update lesson metadata', allow_abbrev=False)
     update_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
     update_parser.add_argument('--component', help='Update component')
     update_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Update category')
@@ -505,6 +723,12 @@ def main() -> int:
     list_parser = subparsers.add_parser('list', help='List lessons', allow_abbrev=False)
     list_parser.add_argument('--component', help='Filter by component')
     list_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Filter by category')
+    list_parser.add_argument(
+        '--status',
+        choices=list(LIST_STATUS_CHOICES),
+        default='active',
+        help='Filter by lifecycle status (default: active; use "all" to include superseded/removed)',
+    )
     list_parser.add_argument('--full', action='store_true', help='Include full lesson body content')
     list_parser.set_defaults(func=cmd_list)
 
@@ -536,6 +760,30 @@ def main() -> int:
     )
     from_error_parser.add_argument('--context', required=True, help='JSON error context')
     from_error_parser.set_defaults(func=cmd_from_error)
+
+    # remove
+    remove_parser = subparsers.add_parser(
+        'remove',
+        help='Delete a lesson file and write a tombstone (interactive confirm by default)',
+        allow_abbrev=False,
+    )
+    remove_parser.add_argument('--lesson-id', required=True, help='Lesson ID to remove')
+    remove_parser.add_argument('--reason', required=True, help='Removal reason (recorded in tombstone and audit log)')
+    remove_parser.add_argument(
+        '--force', action='store_true', help='Skip the interactive confirmation prompt'
+    )
+    remove_parser.set_defaults(func=cmd_remove)
+
+    # supersede
+    supersede_parser = subparsers.add_parser(
+        'supersede',
+        help='Mark a lesson as superseded by a canonical lesson, write redirect stub and tombstone',
+        allow_abbrev=False,
+    )
+    supersede_parser.add_argument('--lesson-id', required=True, help='Source lesson ID being superseded')
+    supersede_parser.add_argument('--by', required=True, help='Canonical lesson ID that absorbs the source')
+    supersede_parser.add_argument('--reason', required=True, help='Supersede reason (recorded in tombstone and audit log)')
+    supersede_parser.set_defaults(func=cmd_supersede)
 
     args = parser.parse_args()
     result = args.func(args)
