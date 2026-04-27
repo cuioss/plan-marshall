@@ -17,16 +17,20 @@ Usage:
 """
 
 import argparse
+import fnmatch
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from constants import FILE_REFERENCES  # type: ignore[import-not-found]
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
+    get_marshal_path,
     get_plan_dir,
     output_toon,
     output_toon_error,
+    read_json,
     safe_main,
 )
 from input_validation import (  # type: ignore[import-not-found]
@@ -331,6 +335,133 @@ def _log_commit_push_omitted(plan_id: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
+def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
+    """Emit the decision-log entry for the ``pre_push_quality_gate_inactive`` pre-filter."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) pre-push-quality-gate omitted — '
+        'activation_globs empty or no modified_files match'
+    )
+    _emit_decision_log(plan_id, message)
+
+
+# =============================================================================
+# Pre-Filter Helpers
+# =============================================================================
+
+
+def _read_activation_globs() -> list[str]:
+    """Read ``plan.phase-6-finalize.pre_push_quality_gate.activation_globs`` from marshal.json.
+
+    Returns an empty list when the file is missing, the keys are absent, or the
+    value is not a list. The pre-filter treats any of these conditions as
+    "inactive" and removes ``default:pre-push-quality-gate``.
+    """
+    marshal_path = get_marshal_path()
+    if not marshal_path.exists():
+        return []
+    data = read_json(marshal_path, default={})
+    if not isinstance(data, dict):
+        return []
+    plan = data.get('plan')
+    if not isinstance(plan, dict):
+        return []
+    phase_6 = plan.get('phase-6-finalize')
+    if not isinstance(phase_6, dict):
+        return []
+    pre_push = phase_6.get('pre_push_quality_gate')
+    if not isinstance(pre_push, dict):
+        return []
+    globs = pre_push.get('activation_globs')
+    if not isinstance(globs, list):
+        return []
+    return [g for g in globs if isinstance(g, str) and g]
+
+
+def _read_modified_files(plan_id: str) -> list[str]:
+    """Read ``references.json::modified_files`` for ``plan_id``.
+
+    Returns an empty list when the file is missing or the field is absent / not
+    a list. The pre-filter treats absence as "no matches" and removes the step.
+    """
+    refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
+    if not refs_path.exists():
+        return []
+    data = read_json(refs_path, default={})
+    if not isinstance(data, dict):
+        return []
+    files = data.get('modified_files')
+    if not isinstance(files, list):
+        return []
+    return [f for f in files if isinstance(f, str) and f]
+
+
+def _any_glob_matches(paths: list[str], globs: list[str]) -> bool:
+    """Return ``True`` iff at least one ``path`` matches at least one ``glob``."""
+    for path in paths:
+        for glob in globs:
+            if fnmatch.fnmatch(path, glob):
+                return True
+    return False
+
+
+def _apply_commit_strategy_none(
+    phase_6_candidates: list[str], commit_strategy: str
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``commit-push`` when ``commit_strategy == none``.
+
+    Also drops ``pre-push-quality-gate`` because the gate is only meaningful
+    when a downstream push exists. Returns the filtered list plus a flag
+    indicating whether the pre-filter fired.
+    """
+    if commit_strategy != 'none':
+        return phase_6_candidates, False
+    fired = False
+    filtered: list[str] = []
+    for step in phase_6_candidates:
+        if step in {'commit-push', 'pre-push-quality-gate'}:
+            fired = True
+            continue
+        filtered.append(step)
+    return filtered, fired
+
+
+def _apply_pre_push_quality_gate_inactive(
+    phase_6_candidates: list[str], plan_id: str
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``pre-push-quality-gate`` when activation conditions fail.
+
+    Activation requires BOTH:
+
+    1. ``plan.phase-6-finalize.pre_push_quality_gate.activation_globs`` in
+       ``marshal.json`` is non-empty.
+    2. At least one entry in ``references.json::modified_files`` matches one of
+       the configured globs (using ``fnmatch.fnmatch``).
+
+    When either condition fails, ``pre-push-quality-gate`` is removed from
+    ``phase_6_candidates``. The pre-filter is a no-op when ``pre-push-quality-gate``
+    is already absent (e.g., already filtered by ``_apply_commit_strategy_none``).
+    Returns the filtered list plus a flag indicating whether the pre-filter
+    fired (i.e., the step was active in the input but inactive after the
+    check).
+    """
+    if 'pre-push-quality-gate' not in phase_6_candidates:
+        return phase_6_candidates, False
+
+    globs = _read_activation_globs()
+    if not globs:
+        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
+
+    modified_files = _read_modified_files(plan_id)
+    if not modified_files:
+        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
+
+    if not _any_glob_matches(modified_files, globs):
+        return [s for s in phase_6_candidates if s != 'pre-push-quality-gate'], True
+
+    # All activation conditions satisfied — keep the step.
+    return phase_6_candidates, False
+
+
 # =============================================================================
 # Command Handlers
 # =============================================================================
@@ -374,15 +505,23 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     phase_5_candidates = _split_csv(args.phase_5_steps, DEFAULT_PHASE_5_STEPS)
     phase_6_candidates = _split_csv(args.phase_6_steps, DEFAULT_PHASE_6_STEPS)
 
-    # Pre-filter: when commit_strategy == none, drop commit-push from the
-    # Phase 6 candidate list before the seven-row matrix evaluates. This keeps
-    # the row matrix orthogonal to commit_strategy — every row that emits a
-    # Phase 6 list operates on the already-filtered candidate set, so the
-    # resulting phase_6.steps will never contain commit-push.
-    commit_push_omitted = False
-    if commit_strategy == 'none' and 'commit-push' in phase_6_candidates:
-        phase_6_candidates = [s for s in phase_6_candidates if s != 'commit-push']
-        commit_push_omitted = True
+    # Pre-filters run before the seven-row matrix. They are orthogonal to the
+    # row matrix's change-type / scope / recipe inputs and operate on the
+    # candidate list. The order is fixed and documented in
+    # standards/decision-rules.md:
+    #   1. commit_strategy_none — drop commit-push (and pre-push-quality-gate)
+    #      when no push will occur.
+    #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
+    #      activation_globs is empty or no modified_files match.
+    # Each pre-filter returns (filtered_candidates, fired_flag); we log a
+    # dedicated decision-log line per fired pre-filter in addition to the row
+    # log line emitted by _log_decision below.
+    phase_6_candidates, commit_push_omitted = _apply_commit_strategy_none(
+        phase_6_candidates, commit_strategy
+    )
+    phase_6_candidates, pre_push_quality_gate_omitted = _apply_pre_push_quality_gate_inactive(
+        phase_6_candidates, plan_id
+    )
 
     affected_files_count = max(0, int(args.affected_files_count or 0))
     recipe_key = args.recipe_key or None
@@ -405,6 +544,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     write_manifest(plan_id, manifest)
     if commit_push_omitted:
         _log_commit_push_omitted(plan_id)
+    if pre_push_quality_gate_omitted:
+        _log_pre_push_quality_gate_omitted(plan_id)
     _log_decision(plan_id, rule, body)
 
     return {
@@ -423,6 +564,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'rule_fired': rule,
         'commit_strategy': commit_strategy,
         'commit_push_omitted': commit_push_omitted,
+        'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
     }
 
 
