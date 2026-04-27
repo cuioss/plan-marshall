@@ -78,11 +78,13 @@ def _resolve_plan_dir(mode: str, plan_id: str, archived_plan_path: str | None) -
     if not plan_id:
         raise ValueError('--plan-id is required')
     if mode == 'live':
-        return base_path('plans', plan_id)
+        return base_path('plans', plan_id).resolve()
     if mode == 'archived':
         if archived_plan_path:
-            return Path(archived_plan_path)
-        return Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR / f'plan-{plan_id}'
+            return Path(archived_plan_path).resolve()
+        return (
+            Path(tempfile.gettempdir()) / _ARCHIVED_TMP_SUBDIR / f'plan-{plan_id}'
+        ).resolve()
     raise ValueError(f'Unknown mode: {mode!r}')
 
 

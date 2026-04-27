@@ -150,10 +150,14 @@ class TestInitArchivedMode:
         assert Path(tempfile.gettempdir()) not in bundle_path.parents
 
     def test_falls_back_to_synthetic_tmp_when_archived_plan_path_missing(self):
-        # Arrange
+        # Arrange — resolve the synthetic root because resolve_bundle_path now
+        # returns canonical absolute paths; on macOS tempfile.gettempdir()
+        # is /var/folders/... while .resolve() canonicalizes to
+        # /private/var/folders/...
         plan_id = 'archived-fallback'
         synthetic_root = (
-            Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}'
+            (Path(tempfile.gettempdir()) / 'plan-retrospective' / f'plan-{plan_id}')
+            .resolve()
         )
         # Pre-clean any leftover from a prior run so the assertions are
         # deterministic.
@@ -660,11 +664,16 @@ class TestResolveBundlePath:
         path = module.resolve_bundle_path('archived', 'some-plan')
 
         # Assert — synthetic per-plan dir under the OS tmpdir, with a
-        # ``plan-<plan_id>`` segment to avoid collisions.
+        # ``plan-<plan_id>`` segment to avoid collisions. Resolved because
+        # resolve_bundle_path now returns canonical absolute paths (macOS
+        # /var → /private/var symlink resolution).
         expected = (
-            Path(tempfile.gettempdir())
-            / 'plan-retrospective'
-            / 'plan-some-plan'
+            (
+                Path(tempfile.gettempdir())
+                / 'plan-retrospective'
+                / 'plan-some-plan'
+            )
+            .resolve()
             / 'work'
             / 'retro-fragments.toon'
         )
