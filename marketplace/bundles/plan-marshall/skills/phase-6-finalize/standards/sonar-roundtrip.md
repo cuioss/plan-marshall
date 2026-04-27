@@ -12,7 +12,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Timeout Contract
 
-This step runs as a Task agent (`plan-marshall:sonar-roundtrip-agent`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full roundtrip: gate fetch, issue triage, optional fix-task creation, and (on loop-back) the `manage-status transition --loop-back 5-execute` handoff.
+This step runs as a Task agent (`plan-marshall:sonar-roundtrip-agent`) under a **15-minute (900 s) per-agent timeout budget** enforced by the SKILL.md Step 3 dispatch loop. The budget covers the full roundtrip: gate fetch, issue triage, optional fix-task creation, and (on loop-back) the `manage-status set-phase --phase 5-execute` handoff.
 
 **Graceful degradation**: When the wrapper expires:
 
@@ -42,7 +42,7 @@ Skill: plan-marshall:workflow-integration-sonar
 Handles Sonar quality gate and issue resolution. On findings, follows the same loop-back pattern as automated review:
 
 1. Create fix tasks for Sonar issues
-2. Loop back to phase-5-execute via `manage-status transition --loop-back 5-execute`
+2. Loop back to phase-5-execute via `manage-status set-phase --phase 5-execute`
 3. Continue until clean or max iterations (3)
 
 ## Mark Step Complete

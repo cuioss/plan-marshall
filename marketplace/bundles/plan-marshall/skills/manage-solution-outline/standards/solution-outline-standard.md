@@ -490,11 +490,17 @@ See: `plan-marshall:manage-solution-outline:manage-solution-outline`
 
 ### Task Integration
 
-When creating tasks that implement deliverables, use heredoc:
+When creating tasks that implement deliverables, use the two-step `prepare-add` → `commit-add` flow:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} <<'EOF'
+# Step 1: allocate a scratch path for the pending task definition
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks prepare-add \
+  --plan-id {plan_id}
+```
+
+Write the task YAML to the returned scratch path:
+
+```yaml
 title: Implement JWT validation service
 deliverable: 1
 domain: java
@@ -502,7 +508,12 @@ steps:
   - Create interface
   - Implement validation
   - Add tests
-EOF
+```
+
+```bash
+# Step 2: read the prepared file and create TASK-NNN.json
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-add \
+  --plan-id {plan_id}
 ```
 
 **Note**: `deliverable` accepts a single integer (1:1 constraint — one deliverable per task).

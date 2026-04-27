@@ -487,11 +487,17 @@ in callers that need to log per-task creation events after a successful batch.
 
 ## Task Creation API
 
-Uses stdin-based API with heredoc to avoid shell metacharacter issues:
+Uses a two-step `prepare-add` → `commit-add` flow to avoid shell metacharacter issues. `prepare-add` allocates a scratch path; the caller writes the YAML body to that path; `commit-add` reads the prepared file and creates `TASK-NNN.json`.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks add \
-  --plan-id {plan_id} <<'EOF'
+# Step 1: allocate a scratch path for the pending task definition
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks prepare-add \
+  --plan-id {plan_id}
+```
+
+The command returns the scratch `path` (and `draft_id`/slot identifier). Write the task YAML to that path with the `Write` tool:
+
+```yaml
 title: {task title}
 deliverable: {deliverable_number}
 domain: {domain}
@@ -514,7 +520,12 @@ verification:
     - {cmd1}
     - {cmd2}
   criteria: {criteria}
-EOF
+```
+
+```bash
+# Step 2: read the prepared file and create TASK-NNN.json
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks commit-add \
+  --plan-id {plan_id}
 ```
 
 ## Task-Plan Output
