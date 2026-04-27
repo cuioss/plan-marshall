@@ -411,11 +411,11 @@ FOR each step_id in manifest.phase_6.steps:
 
        Append `--session-id {session_id}` ONLY when `step_ref` is on the
        Session-id forwarding whitelist documented under "Interface Contract
-       for External Steps" above (currently:
-       `plan-marshall:plan-retrospective`). Off-whitelist external steps
-       receive `--plan-id` and `--iteration` only — appending `--session-id`
-       to a step that does not declare it risks a "rejected unknown flag"
-       failure.
+       for External Steps" above (the table at that section is the single
+       source of truth — do not re-list its entries here). Off-whitelist
+       external steps receive `--plan-id` and `--iteration` only —
+       appending `--session-id` to a step that does not declare it risks a
+       "rejected unknown flag" failure.
 
   5b. Accumulate agent usage (only when the dispatched step ran as a Task agent and did NOT time out):
       Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag and add them to agent_usage_totals. Inline steps and timed-out steps contribute nothing — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`.
