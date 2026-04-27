@@ -145,10 +145,28 @@ Project and skill steps receive these parameters:
 
 ```
 Skill: {step_reference}
-  Arguments: --plan-id {plan_id} --iteration {iteration}
+  Arguments: --plan-id {plan_id} --iteration {iteration} [--session-id {session_id}]
 ```
 
 The step skill can access the plan's context via manage-* scripts (references, status, config).
+
+#### Session-id forwarding
+
+`--session-id {session_id}` is forwarded ONLY to external steps on the per-step opt-in whitelist below. The forwarding is opt-in (rather than universal) because some external steps may reject unknown flags; opting in keeps the contract additive for new dependencies without breaking existing steps.
+
+| Whitelisted external step | Why it needs `--session-id` |
+|---------------------------|------------------------------|
+| `plan-marshall:plan-retrospective` | Aspect 12 (chat-history-analysis) is conditional on `--session-id`. Without it, the aspect is silently skipped and the retrospective report omits the chat-history section. See `plan-retrospective/SKILL.md` → "Input Contract" for the consumer-side declaration. |
+
+`default:record-metrics` is intentionally NOT on this whitelist: it is a built-in step, dispatched via `standards/record-metrics.md`, which already consumes `--session-id` inline. The whitelist scope is project- and skill-type external steps only.
+
+**How to apply** — when defining a new external step that consumes session-scoped state:
+
+1. Declare `--session-id` as an input in the step's authoritative document (project step `SKILL.md` or fully-qualified skill `SKILL.md`/standards).
+2. Add the fully-qualified step name to the whitelist table above.
+3. Verify by running a finalize end-to-end and confirming the step does not hit a "session_id missing" code path.
+
+The orchestrator is responsible for resolving `session_id` (see "How to obtain session_id" earlier in this file). This skill receives the resolved value via its Input Parameters and forwards it verbatim to whitelisted steps; it does not re-resolve.
 
 **Required termination:** Every external step (project and fully-qualified skill) MUST terminate with a `manage-status mark-step-done` call that carries `--display-detail "{one-line summary}"`. This is REQUIRED, not optional — a missing or empty `display_detail` causes renderer failure in Step 5 (the literal placeholder `<missing display_detail>` will surface to the user and contribute to a `[FAILED]` headline). The detail string is authored by the step itself; the renderer NEVER invents content on the step's behalf.
 
@@ -389,7 +407,15 @@ FOR each step_id in manifest.phase_6.steps:
 
      - PROJECT/SKILL: Load the skill with interface contract:
        Skill: {step_ref}
-         Arguments: --plan-id {plan_id} --iteration {iteration}
+         Arguments: --plan-id {plan_id} --iteration {iteration} [--session-id {session_id}]
+
+       Append `--session-id {session_id}` ONLY when `step_ref` is on the
+       Session-id forwarding whitelist documented under "Interface Contract
+       for External Steps" above (currently:
+       `plan-marshall:plan-retrospective`). Off-whitelist external steps
+       receive `--plan-id` and `--iteration` only — appending `--session-id`
+       to a step that does not declare it risks a "rejected unknown flag"
+       failure.
 
   5b. Accumulate agent usage (only when the dispatched step ran as a Task agent and did NOT time out):
       Extract total_tokens, tool_uses, duration_ms from the agent's <usage> tag and add them to agent_usage_totals. Inline steps and timed-out steps contribute nothing — the timeout path's cost is captured by the `manage-metrics enrich` transcript sweep inside `default:record-metrics`.
