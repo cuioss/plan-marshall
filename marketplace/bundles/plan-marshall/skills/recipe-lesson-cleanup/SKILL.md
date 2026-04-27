@@ -82,14 +82,7 @@ Runs after the lesson body has been read and BEFORE Step 2 maps the lesson kind 
 
 **Sub-step a — Enumerate concrete factual assertions.** Apply the extraction passes from the standard to the lesson body, producing a working set of `(reference, kind)` tuples covering every concrete factual assertion: file paths, function/method/subcommand names, CLI invocation shapes (`python3 .plan/execute-script.py {notation} {subcommand}`), and anti-pattern signatures. Each tuple is tied to one or more directives in the lesson — record the back-link so dropping the assertion can also drop the corresponding directive. Prose claims that do not resolve to a checkable reference are out of scope for the gate; they remain in the directive set unchanged.
 
-**Sub-step b — Quick-check each assertion against the live tree.** Run the verification-helper table from the standard:
-
-| Kind | Tool | Stale when |
-|------|------|------------|
-| File path | `Read` | Path missing OR file is empty |
-| Function / pattern name | `Grep` (literal first, regex fallback) | Zero matches in repo |
-| CLI shape (notation + subcommand) | Invoke `python3 .plan/execute-script.py {notation} --help` | Subcommand absent from help output |
-| Anti-pattern signature | `Grep` (literal) | Zero matches (the lesson's claim that it still exists is itself stale) |
+**Sub-step b — Quick-check each assertion against the live tree.** Apply the verification-helper table from `marketplace/bundles/plan-marshall/skills/phase-1-init/standards/lesson-source-premise-check.md` (the canonical source) — do not restate it here.
 
 Record each verification as `(reference, kind, status, evidence)` where `status` is `valid` or `stale`. Do not abort on the first stale match — the gate needs the full picture to decide whether to drop selectively or abort wholesale.
 

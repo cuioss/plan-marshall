@@ -15,8 +15,10 @@ Apply the following passes to the lesson body in order. Each pass yields zero or
 Match relative or absolute paths anywhere in the body:
 
 ```
-(?:(?<=\s)|(?<=`)|^)((?:[a-zA-Z0-9_.-]+/)+[a-zA-Z0-9_.-]+\.(?:py|md|json|toon|java|js|ts|sh|adoc))\b
+(?:(?<=\s)|(?<=`)|^)((?:[a-zA-Z0-9_.-]+/)*[a-zA-Z0-9_.-]+\.(?:py|md|json|toon|java|js|ts|sh|adoc))\b
 ```
+
+The directory-segment group uses `*` (zero-or-more) so root-level files match alongside nested paths. Examples that the regex captures: `README.md`, `pom.xml`, `opencode.json`, `package.json` (root-level) as well as `marketplace/bundles/plan-marshall/skills/phase-1-init/SKILL.md` (nested).
 
 Both backtick-fenced (`` `marketplace/bundles/.../SKILL.md` ``) and bare paths qualify. Strip surrounding backticks before recording.
 
@@ -32,7 +34,7 @@ Filter out matches that look like prose (length < 3, contain spaces). Common sha
 
 ### CLI invocation shapes
 
-Match `python3 .plan/execute-script.py {notation} {subcommand}` lines (with or without surrounding backticks or fenced blocks). Capture the `notation` (3-segment colon form) and the immediate `subcommand`. Both segments are independently verified in the next phase.
+Match `python3 .plan/execute-script.py {notation} {subcommand}` lines (with or without surrounding backticks or fenced blocks). Capture the `notation` (3-segment colon form) and the immediate `subcommand`. Both segments are independently verified by the [Verification Helpers](#verification-helpers) table below (specifically the "CLI shape (notation + subcommand)" row).
 
 ### Anti-pattern signatures
 
