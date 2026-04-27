@@ -96,13 +96,22 @@ _BUNDLE_SOURCE_GLOBS = (
 
 # Phase 6 steps that dispatch Task subagents loaded from the plugin cache. The
 # bundle_self_modification rule inserts `sync-plugin-cache` immediately before
-# the earliest occurrence of ANY entry in this set.
+# the earliest occurrence of ANY entry in this set. Stored as bare names; the
+# matcher normalizes the candidate-list step (which may arrive prefixed with
+# `default:` from `marshal.json` or bare from the `DEFAULT_PHASE_6_STEPS`
+# fallback) before checking membership, so both call paths fire correctly.
 _AGENT_DISPATCHED_STEPS = frozenset({
-    'default:create-pr',
-    'default:automated-review',
-    'default:knowledge-capture',
-    'default:lessons-capture',
+    'create-pr',
+    'automated-review',
+    'sonar-roundtrip',
+    'knowledge-capture',
+    'lessons-capture',
 })
+
+
+def _strip_default_prefix(step: str) -> str:
+    """Return the bare step name regardless of the optional ``default:`` prefix."""
+    return step[len('default:'):] if step.startswith('default:') else step
 
 _EARLY_SYNC_STEP = 'project:finalize-step-sync-plugin-cache'
 
@@ -285,12 +294,21 @@ def _bundle_self_modification(modified_files: list[str]) -> bool:
     )
 
 
-def _read_modified_files(plan_id: str) -> list[str]:
-    """Read ``modified_files`` from the plan's references.json.
+def _read_bundle_change_paths(plan_id: str) -> list[str]:
+    """Read the union of ``affected_files`` and ``modified_files`` from references.json.
 
-    Returns an empty list when the file is missing, malformed, or lacks the
-    field — bundle_self_modification only fires on positive matches, so a
-    missing references.json is safely treated as "no bundle changes".
+    The composer runs from `phase-4-plan` Step 8b — at outline/plan time, BEFORE
+    Phase 5 has committed any changes. ``modified_files`` is populated by
+    ``manage-status transition`` on Phase 5 completion, so it is empty at compose
+    time for normal plans (a re-compose after Phase 5 would see it populated).
+    ``affected_files`` is populated at outline time from the solution outline
+    deliverables and is the canonical pre-execute source.
+
+    Reading both fields and unioning their entries closes that timing gap: the
+    rule fires on the first compose (via ``affected_files``) AND on any later
+    re-compose that includes execute-time additions (via ``modified_files``).
+    Returns an empty list when the file is missing or malformed — the rule
+    simply does not fire in that case.
     """
     references_path = get_plan_dir(plan_id) / 'references.json'
     if not references_path.exists():
@@ -299,10 +317,18 @@ def _read_modified_files(plan_id: str) -> list[str]:
         payload = json.loads(references_path.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, OSError):
         return []
-    files = payload.get('modified_files')
-    if not isinstance(files, list):
-        return []
-    return [f for f in files if isinstance(f, str)]
+
+    seen: set[str] = set()
+    union: list[str] = []
+    for field in ('affected_files', 'modified_files'):
+        entries = payload.get(field)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, str) and entry not in seen:
+                seen.add(entry)
+                union.append(entry)
+    return union
 
 
 def _apply_bundle_self_modification(
@@ -333,7 +359,12 @@ def _apply_bundle_self_modification(
 
     early_index: int | None = None
     for i, step in enumerate(steps):
-        if step in _AGENT_DISPATCHED_STEPS:
+        if not isinstance(step, str):
+            continue
+        # Normalize the candidate-list entry (may arrive prefixed with
+        # `default:` from `marshal.json` or bare from `DEFAULT_PHASE_6_STEPS`)
+        # before matching against the bare-name set.
+        if _strip_default_prefix(step) in _AGENT_DISPATCHED_STEPS:
             early_index = i
             break
     if early_index is None:
@@ -520,8 +551,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # an early `sync-plugin-cache` step before the first agent-dispatched
     # finalize step so Phase 6 agent dispatches see the worktree's definition,
     # not the stale cache. See lesson 2026-04-26-23-003.
-    modified_files = _read_modified_files(plan_id)
-    bundle_rule_inserted_before = _apply_bundle_self_modification(plan_id, body, modified_files)
+    bundle_change_paths = _read_bundle_change_paths(plan_id)
+    bundle_rule_inserted_before = _apply_bundle_self_modification(plan_id, body, bundle_change_paths)
 
     manifest = {
         'manifest_version': MANIFEST_VERSION,

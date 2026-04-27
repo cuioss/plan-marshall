@@ -14,7 +14,8 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `commit_strategy` | `manage-config plan phase-5-execute get --field commit_strategy` | enum: `per_plan|per_deliverable|none` (default: `per_plan`) |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.steps` | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
-| `modified_files` | `references.json::modified_files` | list[string] (read directly by the composer) |
+| `affected_files` | `references.json::affected_files` | list[string] (read directly by the composer) |
+| `modified_files` | `references.json::modified_files` | list[string] (read directly by the composer; see "Bundle source detection" below for the union semantics with `affected_files`) |
 
 ## Outputs
 
@@ -127,7 +128,7 @@ The seven rows below are evaluated top-down; the first match wins. They operate 
 
 After the seven-row matrix has selected a base manifest, the composer applies one stacked rule that mutates `phase_6.steps` independently of the row that fired. This rule does NOT replace any row — it stacks an extra step on top of whatever the matrix produced.
 
-**Condition**: any entry in `references.json::modified_files` matches one of the bundle source globs:
+**Condition**: any entry in the **union** of `references.json::affected_files` and `references.json::modified_files` (see "Bundle source detection" below) matches one of the bundle source globs:
 
 - `marketplace/bundles/*/agents/*` (or `**`)
 - `marketplace/bundles/*/commands/*` (or `**`)
@@ -135,12 +136,15 @@ After the seven-row matrix has selected a base manifest, the composer applies on
 
 Globs are matched with `fnmatch.fnmatchcase` (POSIX semantics, no regex).
 
-**Effect**: `project:finalize-step-sync-plugin-cache` is inserted into `phase_6.steps` immediately before the **earliest** entry in the resolved list that belongs to the agent-dispatched set:
+**Effect**: `project:finalize-step-sync-plugin-cache` is inserted into `phase_6.steps` immediately before the **earliest** entry in the resolved list whose **bare name** belongs to the agent-dispatched set:
 
-- `default:create-pr`
-- `default:automated-review`
-- `default:knowledge-capture`
-- `default:lessons-capture`
+- `create-pr`
+- `automated-review`
+- `sonar-roundtrip`
+- `knowledge-capture`
+- `lessons-capture`
+
+The matcher strips an optional `default:` prefix before checking membership, so the rule fires regardless of whether the resolved candidate list arrived prefixed (production marshal.json passes `default:create-pr`, etc.) or bare (the script's `DEFAULT_PHASE_6_STEPS` fallback emits `create-pr`, etc.).
 
 If the resolved `phase_6.steps` contains no agent-dispatched step, the rule does not fire (no insertion, no log line). If `project:finalize-step-sync-plugin-cache` already sits immediately before the first agent-dispatched step, the rule is idempotent and skips reinsertion.
 
@@ -153,6 +157,13 @@ If the resolved `phase_6.steps` contains no agent-dispatched step, the rule does
 ```
 (plan-marshall:manage-execution-manifest:compose) Rule bundle_self_modification fired — inserted project:finalize-step-sync-plugin-cache before {first_agent_step}
 ```
+
+**Bundle source detection**: the composer reads BOTH `references.json::affected_files` and `references.json::modified_files`, unions their entries (de-duplicated, order-preserving), and matches the union against the bundle source globs. The two fields have distinct lifecycles:
+
+- `affected_files` is populated at outline time (`phase-3-outline`) from the solution outline deliverables. It is the canonical source at composer-call time, since `phase-4-plan` Step 8b runs **before** Phase 5.
+- `modified_files` is populated by `manage-status transition` on Phase 5 completion. It is empty at the first `compose` invocation but becomes non-empty for any later re-compose (e.g., a finalize-loop fix task that re-enters Phase 4).
+
+Reading both fields and unioning their entries closes the timing gap so the rule fires on the first compose AND on any later re-compose. Reading only `modified_files` would silently no-op for normal plans because the data source is empty at composer-call time.
 
 **Cross-references**: lesson `2026-04-26-23-003` (the recurrence that drove this rule), lesson `2026-04-24-17-002` (parent — agents falling back to `python -c open(...)` due to missing tools, which this rule prevents from re-occurring under stale-cache dispatch).
 
