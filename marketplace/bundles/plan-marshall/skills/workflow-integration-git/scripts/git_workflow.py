@@ -398,12 +398,14 @@ def cmd_analyze_diff(args):
         cmd.append('--cached')
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
     except subprocess.CalledProcessError as exc:
         return make_error(
             f'git diff failed (exit {exc.returncode}): {exc.stderr.strip()}',
             code=ErrorCode.UNKNOWN,
         )
+    except subprocess.TimeoutExpired:
+        return make_error('git diff timed out after 30 seconds', code=ErrorCode.UNKNOWN)
     except FileNotFoundError:
         return make_error('git executable not found on PATH', code=ErrorCode.UNKNOWN)
 
