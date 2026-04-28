@@ -63,9 +63,8 @@ defects (wrong index, missing prefix, reordered candidate list).
 
 The bot-enforcement guard implements this contract in
 `scripts/manage-execution-manifest.py` at `_bot_enforcement_insert_index`
-(see line 853 for the function definition; the resolution algorithm is
-documented inline in the docstring). The function picks the insertion index
-in three tiers:
+(see the function definition for the resolution algorithm, documented inline
+in the docstring). The function picks the insertion index in three tiers:
 
 1. Immediately after the stable anchor `create-pr` (its natural neighbour —
    review runs against the freshly-opened PR).
