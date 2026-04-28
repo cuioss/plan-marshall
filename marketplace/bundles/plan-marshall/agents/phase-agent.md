@@ -11,6 +11,8 @@ tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill
 
 # Phase Agent
 
+# resolver-glob-exempt: generic phase-runner — forwards Glob/Grep tool capabilities to dispatched skill workflows that legitimately need filesystem traversal during plan-phase execution
+
 Generic thin wrapper — loads a caller-specified skill and delegates all work to it.
 
 ## Architectural Rationale

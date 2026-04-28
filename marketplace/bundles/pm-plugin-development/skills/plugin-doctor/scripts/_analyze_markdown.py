@@ -370,6 +370,71 @@ def check_prose_parameter_consistency(content: str) -> list:
     return violations
 
 
+def check_resolver_gap(content: str, file_path: str) -> list:
+    """Check skill-resolver-gap: LLM-Glob discovery prose without an adjacent resolver call.
+
+    Scans markdown line-by-line for trigger phrases that direct an LLM to perform
+    discovery via Glob. For each match, looks at the next ≤5 lines for a
+    ``python3 .plan/execute-script.py`` invocation. If absent, emits a finding.
+
+    Detection scope is enforced by the caller (only SKILL.md and standards/*.md
+    files); this function inspects content unconditionally so it can be unit
+    tested in isolation.
+
+    Honors the ``<!-- doctor-ignore: resolver-gap -->`` exemption marker when
+    placed on the line directly preceding the prose match.
+
+    Returns a list of finding dicts: ``{line, message}``. The caller wraps these
+    into the standard issue schema.
+    """
+    findings: list = []
+
+    # Trigger phrases — case-insensitive. These mirror the prose forms most
+    # commonly used to direct an LLM to hand-roll discovery via Glob.
+    trigger_patterns = [
+        re.compile(r'\bUse\s+Glob\s*:', re.IGNORECASE),
+        re.compile(r'\bGlob\s+pattern\s*:', re.IGNORECASE),
+        re.compile(r'\bDiscover\b.*\busing\s+Glob\b', re.IGNORECASE),
+        re.compile(r'\bfind\b.*\busing\s+Glob\s+patterns?\b', re.IGNORECASE),
+    ]
+
+    exemption_marker = '<!-- doctor-ignore: resolver-gap -->'
+
+    lines = content.split('\n')
+    for idx, line in enumerate(lines):
+        # Skip if any trigger fires
+        matched_pattern = None
+        for pattern in trigger_patterns:
+            if pattern.search(line):
+                matched_pattern = pattern.pattern
+                break
+        if matched_pattern is None:
+            continue
+
+        # Exemption: previous line contains the marker
+        if idx > 0 and exemption_marker in lines[idx - 1]:
+            continue
+
+        # Look ahead up to 5 lines (inclusive of current line) for a resolver call
+        lookahead_end = min(len(lines), idx + 6)
+        window = '\n'.join(lines[idx:lookahead_end])
+        if 'python3 .plan/execute-script.py' in window:
+            continue
+
+        findings.append(
+            {
+                'line': idx + 1,  # 1-indexed
+                'message': (
+                    'LLM-Glob discovery prose without adjacent `python3 .plan/execute-script.py` '
+                    'call within 5 lines (skill-resolver-gap)'
+                ),
+                'pattern': matched_pattern,
+            }
+        )
+
+    return findings
+
+
 def check_mark_step_done_violations(content: str) -> list:
     """Check mark-step-done invocations inside bash code fences for argument defects.
 
@@ -491,6 +556,17 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     # mark-step-done argument validation (phase-6 finalize step termination)
     mark_step_done_violations = check_mark_step_done_violations(content)
 
+    # skill-resolver-gap: LLM-Glob prose without resolver call (skills only)
+    # Scope: SKILL.md and standards/*.md inside skill directories. Agents and
+    # commands don't drive discovery via Glob from prose — restricting prevents
+    # false positives in agent docs that legitimately list Glob as an allowed tool.
+    resolver_gap_violations: list = []
+    if (
+        component_type in ('skill', 'subdoc')
+        and (file_path.endswith('SKILL.md') or '/standards/' in file_path)
+    ):
+        resolver_gap_violations = check_resolver_gap(content, file_path)
+
     return {
         'agent_task_tool_prohibited': agent_task_tool_prohibited,
         'agent_maven_restricted': agent_maven_restricted,
@@ -500,6 +576,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
         'agent_skill_tool_visibility': agent_skill_tool_visibility,
         'workflow_prose_param_violations': workflow_prose_param_violations,
         'mark_step_done_violations': mark_step_done_violations,
+        'resolver_gap_violations': resolver_gap_violations,
     }
 
 

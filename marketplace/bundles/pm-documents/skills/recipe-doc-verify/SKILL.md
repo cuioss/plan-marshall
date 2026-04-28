@@ -41,12 +41,19 @@ Query the project architecture for documentation modules:
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture modules
 ```
 
-Also discover documentation files directly:
-- Use Glob: `doc/**/*.adoc`, `docs/**/*.adoc`
-- Check for `README.adoc` at project root
-- Check for `CLAUDE.md` at project root (for drift checking)
+Also discover documentation files directly. Run the canonical `manage-files discover` resolver against the project root for both standard documentation roots (`doc/` and `docs/`). Capture the returned `paths` array as the documentation file list — pass each subdirectory as a separate `--glob` flag so the resolver deduplicates and sorts results in one call.
 
-Present discovered documentation scope to user for confirmation. Skip if no documentation files found.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {project_root} \
+  --glob "doc/**/*.adoc" \
+  --glob "docs/**/*.adoc" \
+  --include-files
+```
+
+Then check for `README.adoc` and `CLAUDE.md` at project root (drift checking) using the Read tool — these are well-known top-level paths that do not need a discovery resolver.
+
+Present discovered documentation scope to user for confirmation. Skip if `paths` is empty.
 
 ---
 
@@ -109,7 +116,7 @@ One deliverable for project-wide drift detection:
 - **Profiles**: `verification`
 - **Affected files**: `README.adoc`, `CLAUDE.md` (or equivalent project docs)
 - **Change per file**: Read-only drift analysis — no files modified
-- **Verification**: Compare documented bundles/modules against actual directory structure using Glob
+- **Verification**: Compare documented bundles/modules against the actual directory structure surfaced by `manage-files discover` (see Drift Detection workflow below)
 - **Success Criteria**:
   - All bundles/modules on disk are listed in README and CLAUDE.md
   - No documentation references non-existent bundles/modules
@@ -185,7 +192,16 @@ For each reported broken link:
 ### Drift Detection
 
 Compare documentation against actual project structure:
-1. Discover actual bundles/modules using Glob on `marketplace/bundles/*/` or equivalent
+
+1. Discover actual bundles/modules by running the canonical `manage-files discover` resolver with `--include-dirs`. Capture the returned `paths` array as the bundle directory list:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+     --root marketplace/bundles \
+     --glob "*/" \
+     --include-dirs
+   ```
+
 2. Read README.adoc and extract documented bundle names
 3. Read CLAUDE.md and extract documented bundle names
 4. Report any discrepancies as findings with `severity: warning`

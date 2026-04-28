@@ -39,7 +39,7 @@ This skill provides four specialized workflows:
 | **review-content** | Review content quality and tone | `pm-documents:ref-documentation:docs review` |
 | **comprehensive-review** | Orchestrate all review workflows | All scripts (format → links → content) |
 | **sync-with-code** | Sync documentation with code changes | Analysis + Edit |
-| **cleanup-stale** | Remove stale/duplicate documentation | Glob + Read + analysis |
+| **cleanup-stale** | Remove stale/duplicate documentation | `manage-files discover` + Read + analysis |
 
 ## Workflow: review-content
 
@@ -70,8 +70,14 @@ Read references/documentation-core.md
 If target is a file:
 - Verify file exists and has `.adoc` extension
 
-If target is a directory:
-- Use Glob: `{directory}/*.adoc` (non-recursive)
+If target is a directory, run the canonical `manage-files discover` resolver and capture the returned `paths` array as the discovered file list.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {directory} \
+  --glob "*.adoc" \
+  --include-files
+```
 
 **Step 3: Run Content Analysis**
 
@@ -189,9 +195,14 @@ Read workflows/content-review.md for the tone analysis decision framework.
 If target is a file:
 - Verify file exists and has `.adoc` extension
 
-If target is a directory:
-- Use Glob: `{directory}/*.adoc` (non-recursive)
-- Filter out `target/` directories
+If target is a directory, run the canonical `manage-files discover` resolver and capture the returned `paths` array as the discovered file list. Filter out any path under a `target/` build directory afterwards.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {directory} \
+  --glob "*.adoc" \
+  --include-files
+```
 
 **Step 3: Phase 1 - Format Validation**
 
@@ -256,17 +267,21 @@ Analyze code changes and update documentation to stay in sync.
 
 **Step 1: Analyze Code Structure**
 
-```
-Use Glob to find code files:
-  {code_path}/**/*.java
-  {code_path}/**/*.js
-  {code_path}/**/*.ts
+Run the canonical `manage-files discover` resolver to enumerate code files under `{code_path}`. Pass each language extension as a separate `--glob` flag — results are deduplicated and sorted by the resolver. Capture the returned `paths` array as the code file list.
 
-Extract:
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {code_path} \
+  --glob "**/*.java" \
+  --glob "**/*.js" \
+  --glob "**/*.ts" \
+  --include-files
+```
+
+Then extract from each file:
 - Public classes/interfaces
 - Public methods
 - Configuration patterns
-```
 
 **Step 2: Analyze Documentation**
 
@@ -332,9 +347,13 @@ Identify and remove stale or duplicate documentation.
 
 **Step 1: Discover Documentation**
 
-```
-Use Glob: {target}/**/*.adoc
-Exclude: target/, node_modules/
+Run the canonical `manage-files discover` resolver and capture the returned `paths` array as the discovered file list. Filter out any path under `target/` or `node_modules/` afterwards.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {target} \
+  --glob "**/*.adoc" \
+  --include-files
 ```
 
 **Step 2: Analyze Content**

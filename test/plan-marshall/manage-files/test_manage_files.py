@@ -347,3 +347,212 @@ def test_cli_subcommand_help():
     with PlanContext():
         result = run_script(SCRIPT_PATH, 'write', '--help')
         assert result.success
+
+
+# =============================================================================
+# Test: Discover (subprocess + TOON output contract)
+# =============================================================================
+
+
+def _make_discover_tree(root: Path) -> None:
+    """Build a fixture filesystem under ``root`` for discover tests.
+
+    Layout:
+        root/
+            a.py
+            b.py
+            sub/
+                c.py
+                notes.adoc
+                deeper/
+                    d.adoc
+            other/
+                e.txt
+    """
+    (root / 'a.py').write_text('a')
+    (root / 'b.py').write_text('b')
+    sub = root / 'sub'
+    sub.mkdir()
+    (sub / 'c.py').write_text('c')
+    (sub / 'notes.adoc').write_text('notes')
+    deeper = sub / 'deeper'
+    deeper.mkdir()
+    (deeper / 'd.adoc').write_text('deeper')
+    other = root / 'other'
+    other.mkdir()
+    (other / 'e.txt').write_text('e')
+
+
+def test_discover_single_pattern_returns_sorted_absolute_paths(tmp_path):
+    """Single-pattern match returns sorted absolute paths."""
+    _make_discover_tree(tmp_path)
+
+    result = run_script(SCRIPT_PATH, 'discover', '--root', str(tmp_path), '--glob', '*.py')
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['root'] == str(tmp_path.resolve())
+    paths = data['paths']
+    # Top-level *.py must match exactly a.py and b.py — sorted, absolute.
+    expected = sorted(
+        str(p.resolve()) for p in [tmp_path / 'a.py', tmp_path / 'b.py']
+    )
+    assert paths == expected
+    for path in paths:
+        assert Path(path).is_absolute()
+
+
+def test_discover_multiple_glob_patterns_deduplicated(tmp_path):
+    """Multiple --glob patterns deduplicate overlapping matches."""
+    _make_discover_tree(tmp_path)
+
+    # `*.py` and `a*` both match a.py — must appear only once.
+    result = run_script(
+        SCRIPT_PATH,
+        'discover',
+        '--root',
+        str(tmp_path),
+        '--glob',
+        '*.py',
+        '--glob',
+        'a*',
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    paths = data['paths']
+    a_path = str((tmp_path / 'a.py').resolve())
+    # Deduplication: a.py appears exactly once across the merged result.
+    assert paths.count(a_path) == 1
+    # Ensure b.py from the *.py pattern is present.
+    assert str((tmp_path / 'b.py').resolve()) in paths
+
+
+def test_discover_include_files_filters_out_directories(tmp_path):
+    """--include-files filters out directories from matches."""
+    _make_discover_tree(tmp_path)
+
+    # `*` at the root matches both files (a.py, b.py) and dirs (sub, other).
+    # With --include-files, only files should remain.
+    result = run_script(
+        SCRIPT_PATH,
+        'discover',
+        '--root',
+        str(tmp_path),
+        '--glob',
+        '*',
+        '--include-files',
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    paths = data['paths']
+    # All returned paths must be files; no directories.
+    for path in paths:
+        p = Path(path)
+        assert p.is_file()
+        assert not p.is_dir()
+    # Directory entries must not be present.
+    assert str((tmp_path / 'sub').resolve()) not in paths
+    assert str((tmp_path / 'other').resolve()) not in paths
+
+
+def test_discover_include_dirs_keeps_only_directories(tmp_path):
+    """--include-dirs keeps only directories in matches."""
+    _make_discover_tree(tmp_path)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'discover',
+        '--root',
+        str(tmp_path),
+        '--glob',
+        '*',
+        '--include-dirs',
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    paths = data['paths']
+    # Every result must be a directory.
+    for path in paths:
+        assert Path(path).is_dir()
+    # Both top-level dirs present, no files.
+    assert str((tmp_path / 'sub').resolve()) in paths
+    assert str((tmp_path / 'other').resolve()) in paths
+    assert str((tmp_path / 'a.py').resolve()) not in paths
+
+
+def test_discover_invalid_root_returns_error(tmp_path):
+    """Invalid root returns status: error / error: invalid_root."""
+    missing = tmp_path / 'does-not-exist'
+
+    result = run_script(SCRIPT_PATH, 'discover', '--root', str(missing), '--glob', '*.py')
+
+    # Script exits 0 (returns dict via output_toon) — error surfaces in TOON.
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert data['error'] == 'invalid_root'
+
+
+def test_discover_zero_patterns_returns_error(tmp_path):
+    """Zero --glob patterns returns status: error / error: no_patterns."""
+    _make_discover_tree(tmp_path)
+
+    result = run_script(SCRIPT_PATH, 'discover', '--root', str(tmp_path))
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'error'
+    assert data['error'] == 'no_patterns'
+
+
+def test_discover_zero_matches_returns_success_with_empty_paths(tmp_path):
+    """Zero matches returns success with empty paths array."""
+    _make_discover_tree(tmp_path)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'discover',
+        '--root',
+        str(tmp_path),
+        '--glob',
+        '*.nonexistent',
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['paths'] == []
+
+
+def test_discover_recursive_glob_across_subdirs(tmp_path):
+    """Recursive **/*.adoc glob discovers .adoc files across nested dirs."""
+    _make_discover_tree(tmp_path)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'discover',
+        '--root',
+        str(tmp_path),
+        '--glob',
+        '**/*.adoc',
+    )
+
+    assert result.success, result.stderr
+    data = result.toon()
+    assert data['status'] == 'success'
+    paths = data['paths']
+    expected = sorted(
+        str(p.resolve())
+        for p in [
+            tmp_path / 'sub' / 'notes.adoc',
+            tmp_path / 'sub' / 'deeper' / 'd.adoc',
+        ]
+    )
+    assert paths == expected

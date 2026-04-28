@@ -163,6 +163,52 @@ path: /path/to/.plan/plans/my-feature/requirements
 
 The `action` field is `created` if the directory was newly created, or `exists` if it already existed.
 
+### discover
+
+Discover filesystem paths matching one or more glob patterns under an absolute root directory. Pure `pathlib` implementation — never spawns a subprocess and never invokes the shell.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root /abs/path/to/search \
+  --glob "**/*.py" \
+  --glob "**/*.md" \
+  --include-files
+```
+
+**Parameters**:
+- `--root` (required): Absolute root directory to search under. Must exist.
+- `--glob` (required, repeatable): Glob pattern relative to the root. Pass `--glob` multiple times to combine patterns; results are deduplicated and sorted.
+- `--include-files`: Include files in results. Default behaviour when neither `--include-files` nor `--include-dirs` is given is files-only.
+- `--include-dirs`: Include directories in results. Combine with `--include-files` to include both.
+
+**Output** (TOON format):
+
+```toon
+status: success
+root: /abs/path/to/search
+paths[N]:
+  - /abs/path/to/search/foo.py
+  - /abs/path/to/search/bar/baz.py
+```
+
+**Error responses**:
+
+```toon
+status: error
+error: invalid_root
+message: Root does not exist or is not a directory: {root}
+```
+
+```toon
+status: error
+error: no_patterns
+message: At least one --glob pattern is required
+```
+
+#### Resolver Pattern
+
+Driven by lesson `2026-04-27-18-005`: consumer skills should call `manage-files discover` rather than instructing the LLM to use the `Glob` tool. Routing discovery through this subcommand makes path resolution **deterministic** (the script always returns the same set for a given root + patterns), **auditable** (the call is logged via the executor), and **decoupled** from a particular harness's tool surface. The `Glob` tool is appropriate for ad-hoc exploration during a conversation; `discover` is appropriate for skill workflows that depend on a stable, reproducible set of paths.
+
 ### create-or-reference
 
 Create a plan directory if it doesn't exist, or reference an existing one. This is an atomic operation that replaces the two-step pattern of listing plans and checking for conflicts.
