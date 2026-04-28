@@ -38,6 +38,7 @@ from constants import DIR_LESSONS, LESSON_CATEGORIES  # type: ignore[import-not-
 from file_ops import (  # type: ignore[import-not-found]
     atomic_write_file,
     base_path,
+    get_marshal_path,
     output_toon,
     parse_markdown_metadata,
     safe_main,
@@ -51,6 +52,11 @@ LIST_STATUS_CHOICES = ('active', 'superseded', 'removed', 'all')
 # Maximum retry attempts when allocating a fresh lesson id; bounded so that a
 # pathological caller cannot wedge the script in an unbounded loop.
 MAX_ID_ALLOCATION_RETRIES = 99
+
+# Hard fallback for ``cleanup-superseded --retention-days`` when neither the
+# CLI flag nor ``system.retention.lessons_superseded_days`` in marshal.json
+# yields an integer. Matches the default seeded into ``DEFAULT_SYSTEM_RETENTION``.
+DEFAULT_LESSONS_SUPERSEDED_DAYS = 7
 
 
 def get_lessons_dir() -> Path:
@@ -688,6 +694,140 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
     }
 
 
+def _resolve_retention_days(cli_value: int | None) -> int:
+    """Resolve effective ``retention_days`` for ``cleanup-superseded``.
+
+    Precedence:
+        1. ``cli_value`` (from ``--retention-days``) when not None.
+        2. ``system.retention.lessons_superseded_days`` from marshal.json.
+        3. :data:`DEFAULT_LESSONS_SUPERSEDED_DAYS` (hard fallback).
+
+    A missing or unreadable marshal.json silently falls through to the hard
+    fallback — this command must remain usable on pre-init checkouts where
+    marshal.json has not yet been written.
+    """
+    if cli_value is not None:
+        return cli_value
+
+    marshal_path = get_marshal_path()
+    if not marshal_path.exists():
+        return DEFAULT_LESSONS_SUPERSEDED_DAYS
+
+    try:
+        config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except (json.JSONDecodeError, OSError):
+        return DEFAULT_LESSONS_SUPERSEDED_DAYS
+
+    retention = config.get('system', {}).get('retention', {})
+    value = retention.get('lessons_superseded_days')
+    if isinstance(value, int) and value >= 0:
+        return value
+    return DEFAULT_LESSONS_SUPERSEDED_DAYS
+
+
+def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
+    """Prune the markdown stubs of superseded lessons while preserving tombstones.
+
+    Two modes (mutually exclusive at the parser level):
+
+    * **Explicit ids** — ``--lesson-id ID`` (repeatable). Each id is evaluated
+      independently regardless of file age. Use this to drop a known set of
+      stubs immediately.
+    * **Age-filtered** — ``--retention-days N``. Walks every superseded lesson
+      file whose mtime is older than ``now - N days``. When N is omitted the
+      effective value resolves from ``system.retention.lessons_superseded_days``
+      in marshal.json, with a hard fallback of
+      :data:`DEFAULT_LESSONS_SUPERSEDED_DAYS`.
+
+    Per-id rules (applied to both modes):
+
+    * Lesson must exist with metadata.status == ``superseded``.
+    * The matching tombstone ``.tombstones/{id}.json`` must exist —
+      otherwise the id is reported under ``skipped_no_tombstone`` and left
+      untouched. This guarantees we never destroy the only remaining record
+      of a removal.
+    * If the ``.md`` is already gone but the tombstone is present, the id
+      is reported under ``already_removed`` (idempotent re-runs are a no-op).
+    * Tombstone files are NEVER deleted by this command.
+
+    On ``--dry-run`` the script reports what it would do without unlinking
+    anything; the ``dry_run`` flag in the output mirrors the input.
+    """
+    retention_days_effective = _resolve_retention_days(args.retention_days)
+    explicit_ids: list[str] = list(args.lesson_id) if args.lesson_id else []
+    use_age_filter = not explicit_ids
+
+    lessons_dir = get_lessons_dir()
+    tombstones_dir = get_tombstones_dir()
+
+    removed: list[dict] = []
+    already_removed: list[dict] = []
+    skipped_no_tombstone: list[dict] = []
+
+    if use_age_filter:
+        if not lessons_dir.exists():
+            candidates: list[str] = []
+        else:
+            cutoff = datetime.now(UTC).timestamp() - (retention_days_effective * 86400)
+            candidate_paths: list[Path] = []
+            for path in sorted(lessons_dir.glob('*.md')):
+                try:
+                    if path.stat().st_mtime >= cutoff:
+                        continue
+                    content = path.read_text(encoding='utf-8')
+                except OSError:
+                    continue
+                metadata = parse_markdown_metadata(content)
+                if metadata.get('status') != 'superseded':
+                    continue
+                candidate_paths.append(path)
+            candidates = [p.stem for p in candidate_paths]
+    else:
+        candidates = explicit_ids
+
+    for lesson_id in candidates:
+        lesson_path = lessons_dir / f'{lesson_id}.md'
+        tombstone_path = tombstones_dir / f'{lesson_id}.json'
+
+        if not tombstone_path.exists():
+            skipped_no_tombstone.append({'lesson_id': lesson_id})
+            continue
+
+        if not lesson_path.exists():
+            already_removed.append({'lesson_id': lesson_id})
+            continue
+
+        # Verify status (only enforced for explicit ids; age-filter walk has
+        # already filtered on metadata.status == 'superseded').
+        if not use_age_filter:
+            metadata, _title, _body = read_lesson(lesson_id)
+            if metadata.get('status') != 'superseded':
+                skipped_no_tombstone.append({'lesson_id': lesson_id})
+                continue
+
+        if args.dry_run:
+            removed.append({'lesson_id': lesson_id})
+            continue
+
+        lesson_path.unlink()
+        log_entry(
+            'script',
+            'global',
+            'INFO',
+            f'(plan-marshall:manage-lessons) Pruned superseded stub {lesson_id}',
+        )
+        removed.append({'lesson_id': lesson_id})
+
+    return {
+        'status': 'success',
+        'dry_run': bool(args.dry_run),
+        'retention_days_effective': retention_days_effective,
+        'removed': removed,
+        'already_removed': already_removed,
+        'skipped_no_tombstone': skipped_no_tombstone,
+    }
+
+
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(description='Manage lessons learned', allow_abbrev=False)
@@ -784,6 +924,41 @@ def main() -> int:
     supersede_parser.add_argument('--by', required=True, help='Canonical lesson ID that absorbs the source')
     supersede_parser.add_argument('--reason', required=True, help='Supersede reason (recorded in tombstone and audit log)')
     supersede_parser.set_defaults(func=cmd_supersede)
+
+    # cleanup-superseded
+    cleanup_parser = subparsers.add_parser(
+        'cleanup-superseded',
+        help=(
+            'Prune the .md stubs of superseded lessons (tombstones are preserved). '
+            'Either pass --lesson-id ID (repeatable) for explicit ids or '
+            '--retention-days N for age-filtered pruning.'
+        ),
+        allow_abbrev=False,
+    )
+    cleanup_mode = cleanup_parser.add_mutually_exclusive_group(required=False)
+    cleanup_mode.add_argument(
+        '--lesson-id',
+        action='append',
+        help=(
+            'Lesson ID to prune (repeatable). When supplied, --retention-days '
+            'is ignored and ids are evaluated regardless of file age.'
+        ),
+    )
+    cleanup_mode.add_argument(
+        '--retention-days',
+        type=int,
+        help=(
+            'Age threshold in days. Falls back to '
+            'system.retention.lessons_superseded_days from marshal.json '
+            f'(hard fallback {DEFAULT_LESSONS_SUPERSEDED_DAYS}) when omitted.'
+        ),
+    )
+    cleanup_parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Report what would be removed without unlinking anything.',
+    )
+    cleanup_parser.set_defaults(func=cmd_cleanup_superseded)
 
     args = parser.parse_args()
     result = args.func(args)

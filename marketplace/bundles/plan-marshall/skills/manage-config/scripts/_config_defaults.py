@@ -55,7 +55,13 @@ def validate_domain_invariants(domain: dict) -> None:
         )
 
 # System retention defaults
-DEFAULT_SYSTEM_RETENTION = {'logs_days': 1, 'archived_plans_days': 5, 'memory_days': 5, 'temp_on_maintenance': True}
+DEFAULT_SYSTEM_RETENTION = {
+    'logs_days': 1,
+    'archived_plans_days': 5,
+    'memory_days': 5,
+    'lessons_superseded_days': 7,
+    'temp_on_maintenance': True,
+}
 
 # Phase-specific plan defaults
 DEFAULT_PLAN_INIT = {

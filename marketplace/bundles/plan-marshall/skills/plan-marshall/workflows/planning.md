@@ -427,7 +427,109 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 ## Action: cleanup
 
-Remove completed plans. Shows completed plans for selective or batch deletion with confirmation.
+Two-pass user-facing maintenance: remove completed plans, then prune redundant superseded-lesson stubs. Both passes confirm with the user before deleting.
+
+---
+
+### Step 1: Plan archive cleanup
+
+List completed plans (filter `complete`). For each entry, present a numbered selection via `AskUserQuestion` and call `manage-status archive` for confirmed entries.
+
+**1a — List completed plans:**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status list --filter complete
+```
+
+Parse the result. If the list is empty, log and continue to Step 2:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) No completed plans to archive — skipping plan archive pass"
+```
+
+**1b — Confirm and archive:** When the list is non-empty, present the entries via `AskUserQuestion` (multiSelect: true) and for each selected plan_id call:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage_status archive \
+  --plan-id {plan_id}
+```
+
+Log each archive:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) Archived plan {plan_id}"
+```
+
+---
+
+### Step 2: Superseded-lesson stub cleanup
+
+Prune redirect stubs (`.md` files with `status: superseded` frontmatter and a matching tombstone) that have aged out. Tombstones at `.tombstones/{id}.json` are preserved so id resolution survives.
+
+**2a — Read retention threshold from system config:**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  system retention get --field lessons_superseded_days
+```
+
+Record the returned `value` as `{retention_days}`. The default seeded by `marshall-steward` is `7`.
+
+**2b — Dry-run to enumerate candidates:**
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons \
+  cleanup-superseded --retention-days {retention_days} --dry-run
+```
+
+Parse `removed[]` from the TOON output. If the list is empty, log and finish:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) No superseded stubs to prune at retention={retention_days}d — skipping stub cleanup pass"
+```
+
+**2c — Confirm and prune:** When `removed[]` is non-empty, display the count and the list of candidate ids, then ask:
+
+```
+AskUserQuestion:
+  question: "Prune {count} superseded lesson stub(s) older than {retention_days} days? (Tombstones will be preserved.)"
+  header: "Cleanup"
+  options:
+    - label: "Yes, prune"
+      description: "Delete the .md redirect stubs; tombstones at .tombstones/{id}.json remain"
+    - label: "No, keep"
+      description: "Leave the stubs in place"
+  multiSelect: false
+```
+
+**On "Yes, prune"**, run the actual deletion (no `--dry-run`):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons \
+  cleanup-superseded --retention-days {retention_days}
+```
+
+Log the outcome via `manage-logging decision`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) Pruned {removed_count} superseded stub(s) at retention={retention_days}d; tombstones preserved"
+```
+
+**On "No, keep"**, log the decline:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level INFO \
+  --message "(plan-marshall:plan-marshall:cleanup) Stub cleanup declined by user — {count} candidates left in place"
+```
 
 ---
 
