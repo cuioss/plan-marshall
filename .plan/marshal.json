@@ -30,6 +30,7 @@
       "pr_merge_strategy": "squash",
       "steps": [
         "default:pre-push-quality-gate",
+        "default:pre-submission-self-review",
         "default:commit-push",
         "default:create-pr",
         "default:automated-review",
@@ -50,7 +51,8 @@
         ]
       },
       "step_order_overrides": {
-        "default:pre-push-quality-gate": 5
+        "default:pre-push-quality-gate": 5,
+        "default:pre-submission-self-review": 7
       }
     }
   },
