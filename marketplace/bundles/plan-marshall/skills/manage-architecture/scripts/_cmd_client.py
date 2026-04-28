@@ -485,14 +485,14 @@ def cmd_module(args) -> dict:
     """CLI handler for module command."""
     try:
         derived = load_derived_data(args.project_dir)
-        module_name = args.name or get_root_module(derived)
+        module_name = args.module or get_root_module(derived)
         module = get_module_info(module_name, args.full, args.project_dir)
         return {'status': 'success', 'module': module}
     except DataNotFoundError:
         return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
-        return error_result_module_not_found(args.name, modules)
+        return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -500,13 +500,13 @@ def cmd_module(args) -> dict:
 def cmd_commands(args) -> dict:
     """CLI handler for commands command."""
     try:
-        result = get_module_commands(args.name, args.project_dir)
+        result = get_module_commands(args.module, args.project_dir)
         return {'status': 'success', **result}
     except DataNotFoundError:
         return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
-        return error_result_module_not_found(args.name, modules)
+        return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
 
@@ -587,11 +587,11 @@ def cmd_siblings(args) -> dict:
     Find sibling virtual modules for a given module.
     """
     try:
-        siblings = get_sibling_modules(args.name, args.project_dir)
+        siblings = get_sibling_modules(args.module, args.project_dir)
 
         result: dict[str, Any] = {
             'status': 'success',
-            'module': args.name,
+            'module': args.module,
             'siblings': siblings,
         }
 
@@ -603,6 +603,6 @@ def cmd_siblings(args) -> dict:
         return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_modules_list(args.project_dir)
-        return error_result_module_not_found(args.name, modules)
+        return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}

@@ -82,7 +82,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
-  --plan-id {plan_id} --task {task_number}
+  --plan-id {plan_id} --task-number {task_number}
 ```
 
 Extract key fields: `domain`, `profile`, `skills`, `description`, `steps`, `verification`, `depends_on`. Verify `profile` matches the expected profile for this execution.
@@ -93,7 +93,7 @@ After completing each step:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
-  --plan-id {plan_id} --task {task_number} --step {N} --outcome done
+  --plan-id {plan_id} --task-number {task_number} --step {N} --outcome done
 ```
 
 ### Step: Run Verification

@@ -33,9 +33,9 @@ def cmd_finalize_step(args) -> dict:
     """
     task_dir = get_tasks_dir(args.plan_id)
 
-    filepath = find_task_file(task_dir, args.task)
+    filepath = find_task_file(task_dir, args.task_number)
     if not filepath:
-        return output_error(f'Task TASK-{args.task} not found')
+        return output_error(f'Task TASK-{args.task_number} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)
@@ -48,7 +48,7 @@ def cmd_finalize_step(args) -> dict:
             break
 
     if not step_found:
-        return output_error(f'Step {args.step} not found in TASK-{args.task}')
+        return output_error(f'Step {args.step} not found in TASK-{args.task_number}')
 
     # Mark step with outcome
     step_found['status'] = args.outcome
@@ -78,11 +78,11 @@ def cmd_finalize_step(args) -> dict:
 
     # Logging
     if all_terminal and has_failed:
-        log_entry('work', args.plan_id, 'WARNING', f'[MANAGE-TASKS] TASK-{args.task:03d} failed (has failed steps)')
+        log_entry('work', args.plan_id, 'WARNING', f'[MANAGE-TASKS] TASK-{args.task_number:03d} failed (has failed steps)')
     elif all_terminal:
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Completed TASK-{args.task:03d}')
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] Completed TASK-{args.task_number:03d}')
     else:
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] TASK-{args.task:03d} step {args.step} {args.outcome}')
+        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-TASKS] TASK-{args.task_number:03d} step {args.step} {args.outcome}')
 
     # Calculate progress
     completed, total = calculate_progress(task)
@@ -112,9 +112,9 @@ def cmd_add_step(args) -> dict:
     """Handle 'add-step' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
-    filepath = find_task_file(task_dir, args.task)
+    filepath = find_task_file(task_dir, args.task_number)
     if not filepath:
-        return output_error(f'Task TASK-{args.task} not found')
+        return output_error(f'Task TASK-{args.task_number} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)
@@ -142,7 +142,7 @@ def cmd_add_step(args) -> dict:
     return {
         'status': 'success',
         'plan_id': args.plan_id,
-        'task_number': args.task,
+        'task_number': args.task_number,
         'step': new_step['number'],
         'step_target': new_step['target'],
         'message': f'Step added at position {new_step["number"]}',
@@ -153,9 +153,9 @@ def cmd_remove_step(args) -> dict:
     """Handle 'remove-step' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
-    filepath = find_task_file(task_dir, args.task)
+    filepath = find_task_file(task_dir, args.task_number)
     if not filepath:
-        return output_error(f'Task TASK-{args.task} not found')
+        return output_error(f'Task TASK-{args.task_number} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)
@@ -171,7 +171,7 @@ def cmd_remove_step(args) -> dict:
             break
 
     if step_index is None:
-        return output_error(f'Step {args.step} not found in TASK-{args.task}')
+        return output_error(f'Step {args.step} not found in TASK-{args.task_number}')
 
     if len(steps) <= 1:
         return output_error('Cannot remove the last step - task must have at least one step')
@@ -193,7 +193,7 @@ def cmd_remove_step(args) -> dict:
     return {
         'status': 'success',
         'plan_id': args.plan_id,
-        'task_number': args.task,
+        'task_number': args.task_number,
         'step': args.step,
         'step_target': removed_step['target'],
         'message': f'Step {args.step} removed',

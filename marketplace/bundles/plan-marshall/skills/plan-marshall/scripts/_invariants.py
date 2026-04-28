@@ -241,7 +241,7 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
     fields are only ``number, title, domain, profile, deliverable, status,
     progress`` — ``depends_on`` and ``sub_steps``/``steps`` are NOT on that
     table. To access the rich fields this hash depends on, we iterate the
-    task numbers from the table and call ``manage-tasks read --task N`` per
+    task numbers from the table and call ``manage-tasks read --task-number N`` per
     task (same pattern as :func:`_capture_task_graph_valid`).
 
     Returns ``None`` when ``list`` or any ``read`` cannot be parsed, matching
@@ -282,7 +282,7 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
                 'read',
                 '--plan-id',
                 plan_id,
-                '--task',
+                '--task-number',
                 str(n),
             ]
         )
@@ -397,7 +397,7 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
                 'read',
                 '--plan-id',
                 plan_id,
-                '--task',
+                '--task-number',
                 str(n),
             ]
         )

@@ -41,7 +41,7 @@ def main() -> int:
     derived_module_parser = subparsers.add_parser(
         'derived-module', help='Read raw discovered data for a single module', allow_abbrev=False
     )
-    derived_module_parser.add_argument('--name', required=True, help='Module name')
+    derived_module_parser.add_argument('--module', required=True, help='Module name')
 
     # =========================================================================
     # Client Commands (Consumer Queries)
@@ -66,7 +66,7 @@ def main() -> int:
 
     # module - Get module information
     module_parser = subparsers.add_parser('module', help='Get module information', allow_abbrev=False)
-    module_parser.add_argument('--name', help='Module name (default: root module)')
+    module_parser.add_argument('--module', help='Module name (default: root module)')
     module_parser.add_argument(
         '--full', action='store_true', help='Include all fields (packages, dependencies, reasoning)'
     )
@@ -75,7 +75,7 @@ def main() -> int:
     commands_parser = subparsers.add_parser(
         'commands', help='List available commands for a module', allow_abbrev=False
     )
-    commands_parser.add_argument('--name', help='Module name (default: root module)')
+    commands_parser.add_argument('--module', help='Module name (default: root module)')
 
     # resolve - Resolve command to executable
     resolve_parser = subparsers.add_parser('resolve', help='Resolve command to executable form', allow_abbrev=False)
@@ -86,7 +86,7 @@ def main() -> int:
     siblings_parser = subparsers.add_parser(
         'siblings', help='Find sibling virtual modules for a given module', allow_abbrev=False
     )
-    siblings_parser.add_argument('--name', required=True, help='Module name')
+    siblings_parser.add_argument('--module', required=True, help='Module name')
 
     # suggest-domains - Suggest applicable skill domains for a module
     suggest_parser = subparsers.add_parser(

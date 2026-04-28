@@ -30,8 +30,17 @@ _SCRIPTS_DIR = (
 
 
 def _load_module(name, filename):
+    import sys as _sys
+
     spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
     mod = importlib.util.module_from_spec(spec)
+    # Register before exec so dataclass introspection (which looks up
+    # cls.__module__ in sys.modules during type resolution under Python 3.14)
+    # can find the module. Without this, modules using @dataclass(frozen=True)
+    # fail with ``AttributeError: 'NoneType' object has no attribute '__dict__'``
+    # when the dataclass references types like ``str | None`` that trigger
+    # _is_type during class processing.
+    _sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
@@ -40,12 +49,14 @@ _analyze_crossfile_mod = _load_module('_analyze_crossfile', '_analyze_crossfile.
 _analyze_markdown_mod = _load_module('_analyze_markdown', '_analyze_markdown.py')
 _analyze_structure_mod = _load_module('_analyze_structure', '_analyze_structure.py')
 _doctor_analysis_mod = _load_module('_doctor_analysis', '_doctor_analysis.py')
+_analyze_argument_naming_mod = _load_module('_analyze_argument_naming', '_analyze_argument_naming.py')
 
 cmd_crossfile_analyze = _analyze_crossfile_mod.cmd_cross_file
 cmd_markdown = _analyze_markdown_mod.cmd_markdown
 cmd_structure = _analyze_structure_mod.cmd_structure
 analyze_subdocuments = _doctor_analysis_mod.analyze_subdocuments
 extract_issues_from_subdoc_analysis = _doctor_analysis_mod.extract_issues_from_subdoc_analysis
+analyze_argument_naming = _analyze_argument_naming_mod.analyze_argument_naming
 
 # =============================================================================
 # CLI plumbing tests (Tier 3 - subprocess)
@@ -1139,6 +1150,473 @@ def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
         assert issue['severity'] == 'error'
         assert issue['fixable'] is False
         assert issue['line'] is not None
+
+
+# =============================================================================
+# Argument-Naming Rule Cluster Tests (Tier 2 - direct import)
+# =============================================================================
+#
+# These tests exercise the four ARGUMENT_NAMING_* sub-checks implemented in
+# ``_analyze_argument_naming.py``:
+#
+#   1. ARGUMENT_NAMING_NOTATION_INVALID
+#   2. ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN
+#   3. ARGUMENT_NAMING_FLAG_UNKNOWN
+#   4. ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT
+#
+# Each test uses a synthetic, self-contained marketplace fixture under
+# ``tmp_path`` so the assertions remain independent of the live codebase
+# state during the rename rollout (Tasks 3-8 of the plan that introduced
+# this rule cluster). The fixture layout mirrors the real marketplace so
+# that ``analyze_argument_naming`` can resolve scripts and find markdown
+# targets the same way it does in production:
+#
+#     <root>/
+#       .plan/execute-script.py        (fake executor with a SCRIPTS dict)
+#       marketplace/
+#         bundles/<bundle>/skills/<skill>/scripts/<script>.py  (fake argparse)
+#         bundles/<bundle>/skills/<skill>/SKILL.md             (prose to scan)
+#         bundles/plan-marshall/skills/dev-general-practices/standards/argument-naming.md
+#
+# The cluster is gated by ``PM_ARGUMENT_NAMING_ENABLED``; every test below
+# turns the gate ON via ``monkeypatch.setenv`` to bypass the default-off
+# behaviour.
+
+
+def _write_fake_executor(plan_dir: Path, notations: list[str]) -> Path:
+    """Write a minimal ``execute-script.py`` stub containing a SCRIPTS dict.
+
+    The dict literal mirrors the shape parsed by ``load_registered_notations``:
+    one quoted notation per line followed by ``: <anything>,``. Path values
+    are intentionally placeholder strings — the analyzer reads keys only.
+    """
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    executor = plan_dir / 'execute-script.py'
+    lines = ['#!/usr/bin/env python3', 'SCRIPTS = {']
+    for notation in notations:
+        lines.append(f'    "{notation}": "fake/path",')
+    lines.append('}')
+    executor.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return executor
+
+
+def _write_fake_script(
+    marketplace_root: Path,
+    notation: str,
+    *,
+    subcommands: dict[str, list[str]] | None = None,
+    root_flags: list[str] | None = None,
+) -> Path:
+    """Write a synthetic argparse script at the canonical marketplace path.
+
+    ``subcommands`` maps each subcommand name to its declared long flag list
+    (without the ``--`` prefix). ``root_flags`` lists flags declared on the
+    root parser. The emitted script is valid Python (parseable by AST) and
+    declares its argparse tree using the same idioms the analyzer expects
+    (``ArgumentParser()`` + ``add_subparsers()`` + ``add_parser()`` +
+    ``add_argument()`` calls keyed off the parser variable).
+    """
+    bundle, skill, script_name = notation.split(':', 2)
+    scripts_dir = marketplace_root / 'bundles' / bundle / 'skills' / skill / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script_path = scripts_dir / f'{script_name}.py'
+
+    parts: list[str] = [
+        '#!/usr/bin/env python3',
+        '"""Synthetic fixture script for argument-naming tests."""',
+        'import argparse',
+        '',
+        'parser = argparse.ArgumentParser()',
+    ]
+    for flag in root_flags or []:
+        parts.append(f'parser.add_argument("--{flag}")')
+    if subcommands:
+        parts.append('subparsers = parser.add_subparsers(dest="command")')
+        for sub, flags in subcommands.items():
+            handle_var = f'p_{sub.replace("-", "_")}'
+            parts.append(f'{handle_var} = subparsers.add_parser("{sub}")')
+            for flag in flags:
+                parts.append(f'{handle_var}.add_argument("--{flag}")')
+    parts.append('')
+    parts.append('if __name__ == "__main__":')
+    parts.append('    parser.parse_args()')
+    script_path.write_text('\n'.join(parts) + '\n', encoding='utf-8')
+    return script_path
+
+
+def _write_skill_md(marketplace_root: Path, bundle: str, skill: str, body: str) -> Path:
+    """Write a SKILL.md fixture under the canonical marketplace path."""
+    skill_dir = marketplace_root / 'bundles' / bundle / 'skills' / skill
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    skill_md = skill_dir / 'SKILL.md'
+    skill_md.write_text(body, encoding='utf-8')
+    return skill_md
+
+
+def _write_canonical_forms_md(marketplace_root: Path, table_rows: list[str]) -> Path:
+    """Write a fake argument-naming.md with a Canonical Forms table.
+
+    ``table_rows`` is a list of row contents to place between the header
+    separator and the next ``##`` section. Each row is wrapped in pipes by
+    the caller (kept verbatim so callers control the exact format).
+    """
+    target_dir = (
+        marketplace_root
+        / 'bundles'
+        / 'plan-marshall'
+        / 'skills'
+        / 'dev-general-practices'
+        / 'standards'
+    )
+    target_dir.mkdir(parents=True, exist_ok=True)
+    md_path = target_dir / 'argument-naming.md'
+    body_lines = [
+        '# Argument naming',
+        '',
+        'Synthetic fixture used by argument-naming tests.',
+        '',
+        '## Canonical Forms',
+        '',
+        '| Script | Operation | Canonical form |',
+        '| --- | --- | --- |',
+    ]
+    body_lines.extend(table_rows)
+    body_lines.append('')
+    body_lines.append('## Other Section')
+    body_lines.append('')
+    body_lines.append('Trailing section ends the table scope.')
+    md_path.write_text('\n'.join(body_lines) + '\n', encoding='utf-8')
+    return md_path
+
+
+def _build_fixture_root(tmp_path: Path) -> Path:
+    """Return the marketplace root for a fixture tree rooted at ``tmp_path``.
+
+    The analyzer's executor lookup uses ``marketplace_root.parent / '.plan'``,
+    so we always nest ``marketplace/`` one level below ``tmp_path`` and place
+    the executor at ``tmp_path/.plan/execute-script.py``.
+    """
+    return tmp_path / 'marketplace'
+
+
+def _findings_by_rule(findings: list[dict], rule_id: str) -> list[dict]:
+    """Filter findings by ``rule_id`` for assertion ergonomics."""
+    return [f for f in findings if f.get('rule_id') == rule_id]
+
+
+# -----------------------------------------------------------------------------
+# Rule 1: ARGUMENT_NAMING_NOTATION_INVALID
+# -----------------------------------------------------------------------------
+
+
+def test_argument_naming_notation_invalid_snake_case_bundle(tmp_path, monkeypatch):
+    """Snake-case bundle in notation (``plan_marshall:...``) emits NOTATION_INVALID.
+
+    The registered notation uses kebab-case (``plan-marshall``); prose with
+    underscore segments must not be silently treated as the same script.
+    """
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    # Register a kebab-case notation where the third segment differs from
+    # the second so the snake_case-form prose does not also satisfy the
+    # ``third_segment_repeats_second`` reason check (which has priority).
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:tasks'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-tasks:tasks',
+        subcommands={'read': ['plan-id', 'task']},
+    )
+    skill_md = _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        '# Manage tasks\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan_marshall:manage-tasks:tasks read --plan-id foo --task 1\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    notation_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_NOTATION_INVALID')
+    assert len(notation_findings) == 1, f'Expected one NOTATION_INVALID finding, got {findings!r}'
+    finding = notation_findings[0]
+    assert finding['file'] == str(skill_md)
+    # Body: line 1 heading, line 2 blank, line 3 ```bash fence, line 4 python3 invocation.
+    assert finding['line'] == 4
+    assert finding['severity'] == 'error'
+    assert finding['fixable'] is False
+    assert finding['details']['notation'] == 'plan_marshall:manage-tasks:tasks'
+    assert finding['details']['reason'] == 'snake_case_not_registered'
+
+
+def test_argument_naming_notation_invalid_self_referential_repetition(tmp_path, monkeypatch):
+    """``foo:foo:foo``-shape notation triggers NOTATION_INVALID with repetition reason."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-providers:providers'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-providers:providers',
+        subcommands={'list': ['plan-id']},
+    )
+    skill_md = _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-providers',
+        '# Manage providers\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py manage-providers:manage-providers:manage-providers list --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    notation_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_NOTATION_INVALID')
+    assert len(notation_findings) == 1, f'Expected one NOTATION_INVALID finding, got {findings!r}'
+    finding = notation_findings[0]
+    assert finding['file'] == str(skill_md)
+    assert finding['details']['notation'] == 'manage-providers:manage-providers:manage-providers'
+    assert finding['details']['reason'] == 'third_segment_repeats_second'
+
+
+def test_argument_naming_notation_invalid_unregistered_notation(tmp_path, monkeypatch):
+    """Notation not present in executor SCRIPTS dict triggers NOTATION_INVALID."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    # Register one notation; reference a different one in prose.
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-tasks:manage-tasks',
+        subcommands={'read': ['plan-id']},
+    )
+    skill_md = _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        '# Manage tasks\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-tasks:phantom-script read --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    notation_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_NOTATION_INVALID')
+    assert len(notation_findings) == 1, f'Expected one NOTATION_INVALID finding, got {findings!r}'
+    finding = notation_findings[0]
+    assert finding['file'] == str(skill_md)
+    assert finding['details']['notation'] == 'plan-marshall:manage-tasks:phantom-script'
+    # Bundle/skill/script segments are all distinct kebab-case → reason
+    # must be ``not_registered`` (the catch-all when neither snake_case
+    # nor third-segment-repetition applies).
+    assert finding['details']['reason'] == 'not_registered'
+
+
+def test_argument_naming_notation_canonical_form_no_finding(tmp_path, monkeypatch):
+    """Properly registered kebab-case notation produces no NOTATION_INVALID finding."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-tasks:manage-tasks',
+        subcommands={'read': ['plan-id', 'task']},
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        '# Manage tasks\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --plan-id foo --task 1\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    notation_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_NOTATION_INVALID')
+    assert notation_findings == [], f'Canonical notation should yield no findings, got {notation_findings!r}'
+
+
+# -----------------------------------------------------------------------------
+# Rule 2: ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN
+# -----------------------------------------------------------------------------
+
+
+def test_argument_naming_subcommand_unknown_emits_finding(tmp_path, monkeypatch):
+    """Prose using an undeclared subcommand on a registered script triggers SUBCOMMAND_UNKNOWN."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-references:manage-references'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-references:manage-references',
+        subcommands={'read': ['plan-id'], 'add': ['plan-id', 'file']},
+    )
+    skill_md = _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-references',
+        '# Manage references\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-references:manage-references list --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    subcmd_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
+    assert len(subcmd_findings) == 1, f'Expected one SUBCOMMAND_UNKNOWN finding, got {findings!r}'
+    finding = subcmd_findings[0]
+    assert finding['file'] == str(skill_md)
+    # Body: line 1 heading, line 2 blank, line 3 ```bash fence, line 4 python3 invocation.
+    assert finding['line'] == 4
+    assert finding['severity'] == 'error'
+    assert finding['fixable'] is False
+    assert finding['details']['notation'] == 'plan-marshall:manage-references:manage-references'
+    assert finding['details']['subcommand'] == 'list'
+    assert sorted(finding['details']['known_subcommands']) == ['add', 'read']
+
+
+def test_argument_naming_subcommand_known_no_finding(tmp_path, monkeypatch):
+    """Declared subcommand emits no SUBCOMMAND_UNKNOWN finding."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-references:manage-references'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-references:manage-references',
+        subcommands={'read': ['plan-id']},
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-references',
+        '# Manage references\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-references:manage-references read --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    subcmd_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
+    assert subcmd_findings == [], f'Known subcommand should yield no findings, got {subcmd_findings!r}'
+
+
+# -----------------------------------------------------------------------------
+# Rule 3: ARGUMENT_NAMING_FLAG_UNKNOWN
+# -----------------------------------------------------------------------------
+
+
+def test_argument_naming_flag_unknown_emits_finding(tmp_path, monkeypatch):
+    """Undeclared flag on a known subcommand triggers FLAG_UNKNOWN."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-files:manage-files'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-files:manage-files',
+        subcommands={'write': ['plan-id', 'file', 'content']},
+    )
+    skill_md = _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-files',
+        '# Manage files\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --content-stdin "data"\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    flag_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
+    assert len(flag_findings) == 1, f'Expected one FLAG_UNKNOWN finding, got {findings!r}'
+    finding = flag_findings[0]
+    assert finding['file'] == str(skill_md)
+    # Body: line 1 heading, line 2 blank, line 3 ```bash fence, line 4 python3 invocation.
+    assert finding['line'] == 4
+    assert finding['severity'] == 'error'
+    assert finding['fixable'] is False
+    assert finding['details']['notation'] == 'plan-marshall:manage-files:manage-files'
+    assert finding['details']['subcommand'] == 'write'
+    assert finding['details']['flag'] == 'content-stdin'
+    assert 'content' in finding['details']['known_flags']
+
+
+def test_argument_naming_flag_known_no_finding(tmp_path, monkeypatch):
+    """Declared flag yields no FLAG_UNKNOWN finding."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-files:manage-files'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-files:manage-files',
+        subcommands={'write': ['plan-id', 'file', 'content']},
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-files',
+        '# Manage files\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write --content "data"\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    flag_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
+    assert flag_findings == [], f'Known flag should yield no findings, got {flag_findings!r}'
+
+
+# -----------------------------------------------------------------------------
+# Rule 4: ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT
+# -----------------------------------------------------------------------------
+
+
+def test_argument_naming_canonical_forms_drift_flag_mismatch(tmp_path, monkeypatch):
+    """Canonical Forms row prescribing a flag that argparse does not declare emits drift finding."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
+    # Real argparse declares ``--task`` (post-rename: would be ``--task-number``);
+    # the fixture row prescribes ``--foo`` which is undeclared → drift.
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-tasks:manage-tasks',
+        subcommands={'read': ['plan-id', 'task']},
+    )
+    md_path = _write_canonical_forms_md(
+        marketplace_root,
+        ['| `manage-tasks` | read | `manage-tasks read --plan-id {id} --foo {n}` |'],
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    drift_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT')
+    assert len(drift_findings) == 1, f'Expected one CANONICAL_FORMS_DRIFT finding, got {findings!r}'
+    finding = drift_findings[0]
+    assert finding['file'] == str(md_path)
+    assert finding['severity'] == 'error'
+    assert finding['fixable'] is False
+    assert finding['details']['flag'] == 'foo'
+    assert finding['details']['reason'] == 'flag_drift'
+    assert 'task' in finding['details']['known_flags']
+
+
+def test_argument_naming_canonical_forms_match_no_finding(tmp_path, monkeypatch):
+    """Canonical Forms row matching argparse declaration produces no drift finding."""
+    monkeypatch.setenv('PM_ARGUMENT_NAMING_ENABLED', '1')
+    marketplace_root = _build_fixture_root(tmp_path)
+    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
+    _write_fake_script(
+        marketplace_root,
+        'plan-marshall:manage-tasks:manage-tasks',
+        subcommands={'read': ['plan-id', 'task']},
+    )
+    _write_canonical_forms_md(
+        marketplace_root,
+        ['| `manage-tasks` | read | `manage-tasks read --plan-id {id} --task {n}` |'],
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    drift_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT')
+    assert drift_findings == [], f'Aligned canonical row should yield no findings, got {drift_findings!r}'
 
 
 # =============================================================================

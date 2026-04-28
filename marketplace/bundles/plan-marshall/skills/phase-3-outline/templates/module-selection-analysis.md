@@ -31,8 +31,8 @@ Include this analysis in the solution outline when module selection requires jus
 |-------|--------|-------------|
 | `task description` | Request document | The task being analyzed |
 | `module` | `architecture info` | Module names from project |
-| `responsibility` | `architecture module --name X` | From module data |
-| `purpose` | `architecture module --name X` | library, application, extension, test |
+| `responsibility` | `architecture module --module X` | From module data |
+| `purpose` | `architecture module --module X` | library, application, extension, test |
 | `Relevance` | LLM analysis | HIGH if responsibility/purpose match task |
 | `Reasoning` | LLM analysis | Justification for selection |
 

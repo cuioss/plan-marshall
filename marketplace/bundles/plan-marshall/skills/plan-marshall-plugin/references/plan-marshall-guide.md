@@ -24,7 +24,7 @@ FOR each ```bash block:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
   --plan-id {plan_id} \
-  --task {task_number}
+  --task-number {task_number}
 ```
 
 **Invalid**:

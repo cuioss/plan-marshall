@@ -468,13 +468,13 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture m
 **Step 2: Get module details**
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --name "{module}"
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --module "{module}"
 ```
 
 For full details including reasoning:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --name "{module}" --full
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --module "{module}" --full
 ```
 
 ### Operation: Enrich Module

@@ -138,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     # update
     p_update = subparsers.add_parser('update', help='Update an existing task', allow_abbrev=False)
     add_plan_id_arg(p_update)
-    p_update.add_argument('--task', required=True, type=int, help='Task number')
+    p_update.add_argument('--task-number', required=True, type=int, help='Task number')
     p_update.add_argument('--title', help='New title')
     p_update.add_argument('--description', help='New description')
     p_update.add_argument('--depends-on', nargs='*', help='Update dependencies (TASK-N references or "none" to clear)')
@@ -151,7 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
     # remove
     p_remove = subparsers.add_parser('remove', help='Remove a task', allow_abbrev=False)
     add_plan_id_arg(p_remove)
-    p_remove.add_argument('--task', required=True, type=int, help='Task number')
+    p_remove.add_argument('--task-number', required=True, type=int, help='Task number')
 
     # list
     p_list = subparsers.add_parser(
@@ -165,7 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
             '  progress. Rich fields (``depends_on``, ``sub_steps``/``steps``,\n'
             '  ``description``, ``verification``, ``skills``) are NOT reachable\n'
             '  from ``list``. Callers that need them must iterate ``tasks_table``\n'
-            '  for task numbers and then call ``read --task N`` per task.\n'
+            '  for task numbers and then call ``read --task-number N`` per task.\n'
             '  Invariants such as ``_capture_task_state_hash`` rely on this\n'
             '  contract.'
         ),
@@ -180,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument('--ready', action='store_true', help='Only show tasks with no unmet dependencies')
     p_read = subparsers.add_parser('read', help='Read a single task', allow_abbrev=False)
     add_plan_id_arg(p_read)
-    p_read.add_argument('--task', required=True, type=int, help='Task number')
+    p_read.add_argument('--task-number', required=True, type=int, help='Task number')
 
     # exists
     p_exists = subparsers.add_parser(
@@ -197,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     add_plan_id_arg(p_exists)
-    p_exists.add_argument('--task', required=True, type=int, help='Task number')
+    p_exists.add_argument('--task-number', required=True, type=int, help='Task number')
 
     # next
     p_next = subparsers.add_parser('next', help='Get next pending task/step', allow_abbrev=False)
@@ -232,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
         'finalize-step', help='Complete a step with outcome (done/skipped/failed)', allow_abbrev=False
     )
     add_plan_id_arg(p_finalize)
-    p_finalize.add_argument('--task', required=True, type=int, help='Task number')
+    p_finalize.add_argument('--task-number', required=True, type=int, help='Task number')
     p_finalize.add_argument('--step', required=True, type=int, help='Step number')
     p_finalize.add_argument('--outcome', required=True, choices=['done', 'skipped', 'failed'], help='Step outcome')
     p_finalize.add_argument('--reason', help='Reason for skipping or failure (optional)')
@@ -240,7 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     # add-step
     p_add_step = subparsers.add_parser('add-step', help='Add a new step to a task', allow_abbrev=False)
     add_plan_id_arg(p_add_step)
-    p_add_step.add_argument('--task', required=True, type=int, help='Task number')
+    p_add_step.add_argument('--task-number', required=True, type=int, help='Task number')
     p_add_step.add_argument('--target', required=True, help='Step target (file path or verification command)')
     p_add_step.add_argument('--after', type=int, help='Insert after this step number')
 
@@ -249,7 +249,7 @@ def build_parser() -> argparse.ArgumentParser:
         'remove-step', help='Remove a step from a task', allow_abbrev=False
     )
     add_plan_id_arg(p_remove_step)
-    p_remove_step.add_argument('--task', required=True, type=int, help='Task number')
+    p_remove_step.add_argument('--task-number', required=True, type=int, help='Task number')
     p_remove_step.add_argument('--step', required=True, type=int, help='Step number')
 
     # rename-path

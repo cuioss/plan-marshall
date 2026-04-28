@@ -65,18 +65,80 @@ Do not abbreviate (`WARN`), do not invent new level names, and do not rename exi
 
 ## Canonical Forms
 
-The table below records the canonical argument form for each in-scope `manage-*` script after this convention lands. Future scripts in scope MUST follow these conventions; existing scripts that diverge are renamed to match.
+The table below records the canonical argument form for each in-scope script after this convention lands. Future scripts in scope MUST follow these conventions; existing scripts that diverge are renamed to match.
+
+The cross-cutting `--plan-id` and `--trace-plan-id` flags are accepted by virtually every `manage-*` script and are not enumerated row-by-row.
+
+### `manage-*` scripts
 
 | Script | Operation | Canonical form |
 |---|---|---|
 | `manage-lessons` | Read a lesson by id | `manage-lessons get --lesson-id {id}` |
-| `manage-tasks` | Read a task body | `manage-tasks read --plan-id {id} --task {n}` |
+| `manage-tasks` | Read a task body | `manage-tasks read --plan-id {id} --task-number {n}` |
+| `manage-tasks` | Update a task | `manage-tasks update --plan-id {id} --task-number {n}` |
+| `manage-tasks` | Finalize a step | `manage-tasks finalize-step --plan-id {id} --task-number {n} --step {s} --outcome {done|failed|skipped}` |
 | `manage-architecture` | Resolve a build command for a module | `architecture resolve --command {cmd} --module {name}` |
+| `manage-architecture` | Read a module entry | `architecture module --module {name}` |
+| `manage-architecture` | Read a derived module entry | `architecture derived-module --module {name}` |
+| `manage-architecture` | List commands for a module | `architecture commands --module {name}` |
+| `manage-architecture` | List sibling modules | `architecture siblings --module {name}` |
 | `manage-logging` | Emit a warning-level log entry | `manage-logging work --plan-id {id} --level WARNING --message "{msg}"` |
 
-When adding a new `manage-*` subcommand or argument, choose the spelling consistent with the rules above before authoring the argparse declaration. When in doubt, search this standard's table for an analogous operation and reuse the spelling.
+### `tools-integration-ci:ci` (provider-agnostic CI router)
+
+The `pr`, `ci`, `issue`, and `branch` subcommand surfaces are common across providers; provider-specific extensions (e.g., `pr submit-review` on GitHub) follow the same flag conventions. The router consumes `--project-dir {path}` before delegating to the provider script.
+
+| Operation | Canonical form |
+|---|---|
+| Create a pull request | `ci pr create --title "{title}" --plan-id {id}` |
+| View the PR for the current branch | `ci pr view` |
+| List pull requests | `ci pr list [--head {branch}] [--state open|closed|all]` |
+| Reply to a PR | `ci pr reply --pr-number {n} --body-file {path}` |
+| Resolve a review thread | `ci pr resolve-thread --thread-id {id}` |
+| Reply within a thread | `ci pr thread-reply --pr-number {n} --thread-id {id} --body-file {path}` |
+| Get PR reviews | `ci pr reviews --pr-number {n}` |
+| Get PR inline comments | `ci pr comments --pr-number {n} [--unresolved-only]` |
+| Wait for new bot comments | `ci pr wait-for-comments --pr-number {n} [--timeout {s}] [--interval {s}]` |
+| Merge a pull request | `ci pr merge {--pr-number {n} \| --head {branch}} [--strategy merge\|squash\|rebase] [--delete-branch]` |
+| Edit PR title or body | `ci pr edit --pr-number {n} [--title "{title}"] [--body-file {path}]` |
+| Check CI status | `ci ci status {--pr-number {n} \| --head {branch}}` |
+| Wait for CI to complete | `ci ci wait --pr-number {n} [--timeout {s}] [--interval {s}]` |
+| Wait for CI status flip | `ci ci wait-for-status-flip --pr-number {n} [--timeout {s}] [--interval {s}] [--expected success\|failure\|any]` |
+| Rerun a workflow | `ci ci rerun --run-id {id}` |
+| Get failed run logs | `ci ci logs --run-id {id}` |
+| Create an issue | `ci issue create --title "{title}" [--labels {csv}] --body-file {path}` |
+| View an issue | `ci issue view --issue {id}` |
+| Close an issue | `ci issue close --issue {id}` |
+| Wait for issue close | `ci issue wait-for-close --issue-number {n} [--timeout {s}] [--interval {s}]` |
+| Wait for issue label | `ci issue wait-for-label --issue-number {n} --label {name} [--mode present\|absent]` |
+| Delete remote branch | `ci branch delete --remote-only --branch {name}` |
+
+### `pm-plugin-development:plugin-doctor:doctor-marketplace`
+
+| Operation | Canonical form |
+|---|---|
+| Scan all bundles | `doctor-marketplace scan [--bundles {csv}]` |
+| Scan explicit component paths | `doctor-marketplace scan --paths {path} [{path} ...]` |
+| Analyze components | `doctor-marketplace analyze [--bundles {csv}] [--type {csv}] [--name {csv}]` |
+| Apply safe fixes | `doctor-marketplace fix [--bundles {csv}] [--type {csv}] [--name {csv}] [--dry-run]` |
+| Generate report | `doctor-marketplace report [--bundles {csv}] [--output {dir}]` |
+| Validate extension contracts | `doctor-marketplace validate-contracts [--extension-type {kind}] [--skill {bundle:skill}]` |
+
+When adding a new subcommand or argument, choose the spelling consistent with the rules above before authoring the argparse declaration. When in doubt, search this standard's table for an analogous operation and reuse the spelling.
+
+## Enforcement
+
+The canonical forms above are enforced automatically by the `ARGUMENT_NAMING_*` rule cluster in `pm-plugin-development:plugin-doctor:doctor-marketplace` (see [`plugin-doctor/references/rule-catalog.md`](../../../../pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md) → "Argument Naming Rules"). The cluster scans `SKILL.md`, agent prose, recipes, and standards under `marketplace/bundles/*/` for `python3 .plan/execute-script.py {notation} ...` invocations and validates each token against the executor's `SCRIPTS` mapping and the target script's argparse declarations:
+
+- `ARGUMENT_NAMING_NOTATION_INVALID` — flags 3-part notations that do not resolve in the executor mapping (snake_case bundles, self-referential repetition, unregistered skills).
+- `ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN` — flags subcommands not declared in the resolved script's `subparsers.choices`.
+- `ARGUMENT_NAMING_FLAG_UNKNOWN` — flags `--{flag}` tokens not declared via `add_argument` on the matched subparser.
+- `ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT` — cross-checks every row above against the live argparse declarations and fails on drift.
+
+Together, these rules close the loop between this standard and the implementation: a row added here is enforceable on the next `verify`; a flag renamed in argparse fails this standard's row until both sides agree.
 
 ## Related
 
 - `general-development-rules.md` — Boy Scout rule and overall development discipline.
 - `tool-usage-patterns.md` — Tool selection and Bash safety rules that govern how these scripts are invoked.
+- `pm-plugin-development:plugin-doctor` rule catalog — automated enforcement of this standard's canonical forms.

@@ -137,7 +137,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture m
 Get raw discovered data for the module:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture derived-module --name {module-name}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture derived-module --module {module-name}
 ```
 
 Read the referenced documentation:
@@ -304,7 +304,7 @@ Files created:
 
 Next steps:
   - Solution outline will use this data for placement decisions
-  - Run 'architecture.py module --name X' to query module details
+  - Run 'architecture.py module --module X' to query module details
 ```
 
 ---

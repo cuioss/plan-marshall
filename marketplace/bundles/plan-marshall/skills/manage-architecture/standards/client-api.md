@@ -129,13 +129,13 @@ Tree interpretation:
 Get module information including description, paths, and commands.
 
 ```bash
-architecture.py module [--name NAME] [--full]
+architecture.py module [--module MODULE] [--full]
 ```
 
 **Options**:
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--name` | No | (root module) | Module name. Root module = module at project root (path "." or ""), or first module if no root exists. |
+| `--module` | No | (root module) | Module name. Root module = module at project root (path "." or ""), or first module if no root exists. |
 | `--full` | No | false | Include all fields (packages, dependencies, reasoning) |
 
 **Output** (TOON, default):
@@ -242,13 +242,13 @@ commands[3]:
 Get available commands for a module.
 
 ```bash
-architecture.py commands [--name NAME]
+architecture.py commands [--module MODULE]
 ```
 
 **Options**:
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--name` | No | (root module) | Module name |
+| `--module` | No | (root module) | Module name |
 
 **Output** (TOON):
 ```toon

@@ -117,13 +117,13 @@ nifi-ui,nifi-ui,maven+npm,nifi-ui/README.md,NiFi frontend components
 Read raw discovered data for a single module.
 
 ```bash
-architecture.py derived-module --name NAME
+architecture.py derived-module --module MODULE
 ```
 
 **Options**:
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `--name` | Yes | - | Module name |
+| `--module` | Yes | - | Module name |
 
 **Output (TOON)**:
 ```toon
@@ -496,7 +496,7 @@ REFINE (phase-2)
   (no architecture calls)
 
 SOLUTION OUTLINE (phase-3)
-  outline agent calls: architecture.py module --name X
+  outline agent calls: architecture.py module --module X
   Uses: module structure, dependencies for placement decisions
 
 TASK PLAN (phase-4)

@@ -62,18 +62,18 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `prepare-add` | `--plan-id [--slot]` | Allocate a scratch path under `<plan>/work/pending-tasks/` (Step 1 of add flow) |
 | `commit-add` | `--plan-id [--slot]` | Read the prepared TOON file, validate, create TASK-NNN.json, delete scratch (Step 3 of add flow) |
 | `batch-add` | `--plan-id (--tasks-file PATH \| --tasks-json JSON \| stdin)` | Atomically create N tasks from a JSON array. Preferred form is `--tasks-file PATH` pointing at a staged plan-relative file (e.g. `work/tasks-batch.json`); `--tasks-json` and stdin remain available for trivial payloads. The two flags are mutually exclusive. All-or-nothing semantics: if any entry fails validation, no `TASK-NNN.json` is written. |
-| `update` | `--plan-id --task [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
-| `remove` | `--plan-id --task` | Remove a task |
+| `update` | `--plan-id --task-number [--title] [--description] [--depends-on] [--status] [--domain] [--profile] [--skills] [--deliverable]` | Update task metadata |
+| `remove` | `--plan-id --task-number` | Remove a task |
 | `list` | `--plan-id [--status] [--deliverable] [--ready]` | List all tasks |
-| `read` | `--plan-id --task` | Read single task details |
-| `exists` | `--plan-id --task` | Boolean presence probe — returns `status: success exists: true\|false`, never errors on absence (use instead of `read` for existence checks) |
+| `read` | `--plan-id --task-number` | Read single task details |
+| `exists` | `--plan-id --task-number` | Boolean presence probe — returns `status: success exists: true\|false`, never errors on absence (use instead of `read` for existence checks) |
 | `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
 | `tasks-by-domain` | `--plan-id --domain` | List tasks filtered by domain |
 | `tasks-by-profile` | `--plan-id --profile` | List tasks filtered by profile |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
-| `finalize-step` | `--plan-id --task --step --outcome [--reason]` | Complete step with outcome (done/skipped/failed) |
-| `add-step` | `--plan-id --task --target [--after]` | Add step to task |
-| `remove-step` | `--plan-id --task --step` | Remove step from task |
+| `finalize-step` | `--plan-id --task-number --step --outcome [--reason]` | Complete step with outcome (done/skipped/failed) |
+| `add-step` | `--plan-id --task-number --target [--after]` | Add step to task |
+| `remove-step` | `--plan-id --task-number --step` | Remove step from task |
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 
 ### Add Flow — Three-Step Path-Allocate Pattern
@@ -275,7 +275,7 @@ so absence stays silent.
 # Probe — always returns status: success
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks exists \
   --plan-id my-feature \
-  --task 7
+  --task-number 7
 # → status: success
 #   plan_id: my-feature
 #   task: 7
@@ -307,14 +307,14 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
 # Mark step as done
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
   --plan-id my-feature \
-  --task 2 \
+  --task-number 2 \
   --step 3 \
   --outcome done
 
 # Skip step with reason
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
   --plan-id my-feature \
-  --task 2 \
+  --task-number 2 \
   --step 3 \
   --outcome skipped \
   --reason "File already exists"
@@ -322,7 +322,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 # Mark step as failed with reason
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
   --plan-id my-feature \
-  --task 2 \
+  --task-number 2 \
   --step 3 \
   --outcome failed \
   --reason "Verification failed: test suite has 3 failures"
@@ -386,7 +386,7 @@ LOOP:
 
 Implement agents execute steps:
 ```
-1. manage-tasks read --plan-id {plan_id} --task {N}
+1. manage-tasks read --plan-id {plan_id} --task-number {N}
 2. FOR EACH step: execute → finalize-step --outcome done|failed
 3. RUN verification
 ```

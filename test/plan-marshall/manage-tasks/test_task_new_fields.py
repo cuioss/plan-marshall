@@ -123,7 +123,7 @@ def _add_ns(plan_id='test-plan', content=''):
 
 def _read_ns(plan_id='test-plan', number=1):
     """Build Namespace for cmd_read."""
-    return Namespace(plan_id=plan_id, task=number)
+    return Namespace(plan_id=plan_id, task_number=number)
 
 
 def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False):
@@ -151,7 +151,7 @@ def _update_ns(
     """Build Namespace for cmd_update."""
     return Namespace(
         plan_id=plan_id,
-        task=number,
+        task_number=number,
         title=title,
         description=description,
         depends_on=depends_on,
@@ -165,7 +165,7 @@ def _update_ns(
 
 def _finalize_step_ns(plan_id='test-plan', task=1, step=1, outcome='done', reason=None):
     """Build Namespace for cmd_finalize_step."""
-    return Namespace(plan_id=plan_id, task=task, step=step, outcome=outcome, reason=reason)
+    return Namespace(plan_id=plan_id, task_number=task, step=step, outcome=outcome, reason=reason)
 
 
 def _tasks_by_domain_ns(plan_id='test-plan', domain='java'):

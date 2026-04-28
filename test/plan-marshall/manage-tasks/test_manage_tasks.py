@@ -181,12 +181,12 @@ def _add_task_empty(plan_id, slot=None):
 
 def _read_ns(plan_id='test-plan', number=1):
     """Build Namespace for cmd_read."""
-    return Namespace(plan_id=plan_id, task=number)
+    return Namespace(plan_id=plan_id, task_number=number)
 
 
 def _exists_ns(plan_id='test-plan', number=1):
     """Build Namespace for cmd_exists."""
-    return Namespace(plan_id=plan_id, task=number)
+    return Namespace(plan_id=plan_id, task_number=number)
 
 
 def _list_ns(plan_id='test-plan', status='all', deliverable=None, ready=False):
@@ -214,7 +214,7 @@ def _update_ns(
     """Build Namespace for cmd_update."""
     return Namespace(
         plan_id=plan_id,
-        task=number,
+        task_number=number,
         title=title,
         description=description,
         depends_on=depends_on,
@@ -228,22 +228,22 @@ def _update_ns(
 
 def _remove_ns(plan_id='test-plan', number=1):
     """Build Namespace for cmd_remove."""
-    return Namespace(plan_id=plan_id, task=number)
+    return Namespace(plan_id=plan_id, task_number=number)
 
 
 def _finalize_step_ns(plan_id='test-plan', task=1, step=1, outcome='done', reason=None):
     """Build Namespace for cmd_finalize_step."""
-    return Namespace(plan_id=plan_id, task=task, step=step, outcome=outcome, reason=reason)
+    return Namespace(plan_id=plan_id, task_number=task, step=step, outcome=outcome, reason=reason)
 
 
 def _add_step_ns(plan_id='test-plan', task=1, target='New Step', after=None):
     """Build Namespace for cmd_add_step."""
-    return Namespace(plan_id=plan_id, task=task, target=target, after=after)
+    return Namespace(plan_id=plan_id, task_number=task, target=target, after=after)
 
 
 def _remove_step_ns(plan_id='test-plan', task=1, step=1):
     """Build Namespace for cmd_remove_step."""
-    return Namespace(plan_id=plan_id, task=task, step=step)
+    return Namespace(plan_id=plan_id, task_number=task, step=step)
 
 
 def _tasks_by_domain_ns(plan_id='test-plan', domain='java'):
@@ -607,13 +607,13 @@ def test_exists_returns_false_for_absent_task():
 
 
 def test_exists_rejects_non_integer_task_argument():
-    """exists CLI rejects malformed --task input (argparse type=int).
+    """exists CLI rejects malformed --task-number input (argparse type=int).
 
     Drives the subprocess wrapper to confirm the argparse layer rejects a
     non-integer task value with exit code 2 (argparse error), matching how
     read and other typed task arguments behave for malformed input.
     """
-    result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'exists-bad-arg', '--task', 'abc')
+    result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'exists-bad-arg', '--task-number', 'abc')
 
     assert result.returncode == 2
     assert 'invalid int value' in result.stderr

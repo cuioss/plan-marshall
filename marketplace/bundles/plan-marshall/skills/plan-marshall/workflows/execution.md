@@ -79,7 +79,7 @@ The execute phase iterates through tasks using a simple loop:
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks next --plan-id {plan_id}
 
 # After each step completion, finalize step
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step --plan-id {plan_id} --task {task_number} --step {step_number} --outcome done
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step --plan-id {plan_id} --task-number {task_number} --step {step_number} --outcome done
 ```
 
 For each task:

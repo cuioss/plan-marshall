@@ -58,7 +58,7 @@ After each step completion:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
   --plan-id {plan_id} \
-  --task {task_number} \
+  --task-number {task_number} \
   --step {step_number} \
   --outcome done
 ```
