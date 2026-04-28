@@ -61,13 +61,32 @@ def cmd_write(args: argparse.Namespace) -> dict:
     plan_dir = get_plan_dir(args.plan_id)
     file_path = plan_dir / args.file
 
-    # Get content from stdin or --content
-    if args.stdin:
-        content = sys.stdin.read()
+    # Mutual exclusion: --content and --content-file cannot be combined.
+    content_file_raw = getattr(args, 'content_file', None)
+    if args.content and content_file_raw:
+        return {
+            'status': 'error',
+            'error': 'mutually_exclusive',
+            'message': 'Cannot use both --content and --content-file',
+        }
+
+    # Get content from --content-file (highest precedence), --content, or --stdin.
+    if content_file_raw:
+        content_file_path = Path(content_file_raw).expanduser().resolve()
+        if not content_file_path.exists() or not content_file_path.is_file():
+            return {
+                'status': 'error',
+                'error': 'content_file_not_found',
+                'content_file': str(content_file_path),
+                'message': f'content_file does not exist or is not a regular file: {content_file_path}',
+            }
+        content = content_file_path.read_text(encoding='utf-8')
     elif args.content:
         content = args.content
+    elif args.stdin:
+        content = sys.stdin.read()
     else:
-        return {'status': 'error', 'error': 'missing_content', 'message': 'Must provide --content or --stdin'}
+        return {'status': 'error', 'error': 'missing_content', 'message': 'Must provide --content, --content-file, or --stdin'}
 
     if not content:
         return {'status': 'error', 'error': 'empty_content', 'message': 'Content cannot be empty'}
@@ -280,6 +299,10 @@ def main() -> int:
     add_plan_id_arg(write_parser)
     write_parser.add_argument('--file', required=True, help='Relative file path')
     write_parser.add_argument('--content', help='Content to write')
+    write_parser.add_argument(
+        '--content-file',
+        help='Path to a UTF-8 file whose contents fill the write payload. Mutually exclusive with --content.',
+    )
     write_parser.add_argument('--stdin', action='store_true', help='Read content from stdin')
     write_parser.set_defaults(func=cmd_write)
 

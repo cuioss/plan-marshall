@@ -191,7 +191,7 @@ def cmd_scan(args) -> dict:
     if hasattr(args, 'paths') and args.paths:
         return _scan_paths(args.paths)
 
-    marketplace_root = find_marketplace_root()
+    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
         return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
@@ -231,7 +231,7 @@ def cmd_scan(args) -> dict:
 
 def cmd_analyze(args) -> dict:
     """Analyze all components for issues."""
-    marketplace_root = find_marketplace_root()
+    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
         return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
@@ -278,7 +278,7 @@ def cmd_analyze(args) -> dict:
 
 def cmd_fix(args) -> dict:
     """Apply safe fixes across marketplace."""
-    marketplace_root = find_marketplace_root()
+    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
         return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
@@ -325,7 +325,7 @@ def cmd_fix(args) -> dict:
 
 def cmd_report(args) -> dict:
     """Generate comprehensive report for LLM review."""
-    marketplace_root = find_marketplace_root()
+    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
         return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
@@ -405,7 +405,7 @@ def cmd_report(args) -> dict:
 @safe_main
 def cmd_validate_contracts(args) -> dict:
     """Validate extension point contract compliance."""
-    marketplace_root = find_marketplace_root()
+    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
     if not marketplace_root:
         return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
@@ -457,11 +457,19 @@ Examples:
 
     subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
 
+    marketplace_root_help = (
+        'Override the marketplace root directory (parent of bundles/). '
+        'Use the worktree path (e.g., /abs/.claude/worktrees/{plan_id}/marketplace) '
+        'when verifying edits inside an isolated plan worktree before merge-back. '
+        'NOT bundles/ itself.'
+    )
+
     # scan subcommand
     p_scan = subparsers.add_parser('scan', help='Scan marketplace components', allow_abbrev=False)
     scan_source = p_scan.add_mutually_exclusive_group()
     scan_source.add_argument('--bundles', help='Comma-separated list of bundle names to scan')
     scan_source.add_argument('--paths', nargs='+', help='Explicit component paths to scan (mutually exclusive with --bundles)')
+    p_scan.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_scan.set_defaults(func=cmd_scan)
 
     # analyze subcommand
@@ -469,6 +477,7 @@ Examples:
     p_analyze.add_argument('--bundles', help='Comma-separated list of bundle names')
     p_analyze.add_argument('--type', help='Component types to analyze (agents,commands,skills)')
     p_analyze.add_argument('--name', help='Comma-separated component names to filter (e.g., phase-4-plan)')
+    p_analyze.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_analyze.set_defaults(func=cmd_analyze)
 
     # fix subcommand
@@ -477,18 +486,21 @@ Examples:
     p_fix.add_argument('--type', help='Component types to fix (agents,commands,skills)')
     p_fix.add_argument('--name', help='Comma-separated component names to filter (e.g., phase-4-plan)')
     p_fix.add_argument('--dry-run', action='store_true', help='Preview fixes without applying')
+    p_fix.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_fix.set_defaults(func=cmd_fix)
 
     # report subcommand
     p_report = subparsers.add_parser('report', help='Generate comprehensive report', allow_abbrev=False)
     p_report.add_argument('--bundles', help='Comma-separated list of bundle names')
     p_report.add_argument('--output', '-o', help='Output directory for report')
+    p_report.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_report.set_defaults(func=cmd_report)
 
     # validate-contracts subcommand
     p_contracts = subparsers.add_parser('validate-contracts', help='Validate extension point contract compliance', allow_abbrev=False)
     p_contracts.add_argument('--extension-type', help='Filter by extension type (triage,outline,recipe,build,credential)')
     p_contracts.add_argument('--skill', help='Filter by specific skill (bundle:skill or skill-name)')
+    p_contracts.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_contracts.set_defaults(func=cmd_validate_contracts)
 
     args = parser.parse_args()

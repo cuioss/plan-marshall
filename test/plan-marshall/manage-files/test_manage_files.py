@@ -323,6 +323,76 @@ def test_write_invalid_path():
 
 
 # =============================================================================
+# Test: Write with --content-file
+# =============================================================================
+
+
+def test_write_with_content_file_path_succeeds(tmp_path):
+    """Test write reads payload from --content-file and writes verbatim."""
+    payload = '# Heading\n\nMultiline\npayload\n'
+    payload_path = tmp_path / 'payload.md'
+    payload_path.write_text(payload, encoding='utf-8')
+
+    with PlanContext(plan_id='file-write-content-file') as ctx:
+        result = cmd_write(
+            Namespace(
+                plan_id='file-write-content-file',
+                file='task.md',
+                content=None,
+                content_file=str(payload_path),
+                stdin=False,
+            )
+        )
+        assert result['status'] == 'success'
+        assert result['action'] == 'created'
+        assert result['file'] == 'task.md'
+        # Verify file contents match the staged payload verbatim.
+        target = ctx.plan_dir / 'task.md'
+        assert target.exists()
+        assert target.read_text(encoding='utf-8') == payload
+
+
+def test_write_with_content_file_missing_returns_error(tmp_path):
+    """Test write returns content_file_not_found when --content-file path is absent."""
+    missing_path = tmp_path / 'does-not-exist.md'
+
+    with PlanContext(plan_id='file-write-cf-missing'):
+        result = cmd_write(
+            Namespace(
+                plan_id='file-write-cf-missing',
+                file='task.md',
+                content=None,
+                content_file=str(missing_path),
+                stdin=False,
+            )
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'content_file_not_found'
+        # The script resolves the path before reporting; assert the resolved
+        # form appears in the message so the user can locate the missing file.
+        assert str(missing_path.resolve()) in result['message']
+
+
+def test_write_content_and_content_file_mutually_exclusive(tmp_path):
+    """Test write rejects --content and --content-file used together."""
+    payload_path = tmp_path / 'payload.md'
+    payload_path.write_text('payload', encoding='utf-8')
+
+    with PlanContext(plan_id='file-write-cf-mutex'):
+        result = cmd_write(
+            Namespace(
+                plan_id='file-write-cf-mutex',
+                file='task.md',
+                content='inline content',
+                content_file=str(payload_path),
+                stdin=False,
+            )
+        )
+        assert result['status'] == 'error'
+        assert result['error'] == 'mutually_exclusive'
+
+
+# =============================================================================
 # CLI Plumbing Tests (Tier 3 - subprocess)
 # =============================================================================
 

@@ -152,6 +152,22 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 If ANY section is missing, add it before proceeding.
 
+## Audit Checklist for Structural-Rule Audits
+
+When a deliverable audits a structural rule (e.g., chain-shape compliance sweep, write-to-tmp anti-pattern sweep, hard-coded build command sweep), the deliverable's "Change per file" or "Verification" block MUST enumerate ALL THREE shell-marshalling families — not only the one literally named in the source request or lesson:
+
+1. **Chain-shape family** — `&&`, `;`, `&`, newline-joined commands, `VAR=val cmd` inline env-var assignment.
+2. **Bash-write-impersonation family** — `echo >>`, `cat <<EOF > file`, `printf > file`, `python3 -c "open(p).write(...)"` one-liners.
+3. **Argument-marshalling family** — `$(...)` substitution combined with heredocs, embedded markdown inside `-m`/`--content`/`--message` args, multi-line shell-quoted content in tool args.
+
+A one-line note in the deliverable's "Change per file" or "Verification" block is sufficient. Example:
+
+```markdown
+**Change per file:** Sweep all three shell-marshalling families (chain-shape, bash-write-impersonation, argument-marshalling) and replace with the documented safe alternative.
+```
+
+This rule prevents the recurring failure mode where structural-rule sweeps catch only the family named in the source lesson and miss adjacent families that trip the same harness shapes.
+
 ## Verification Commands
 
 ### Component Verification (Plugin-Doctor)
