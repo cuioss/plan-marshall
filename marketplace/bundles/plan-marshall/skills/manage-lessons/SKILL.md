@@ -258,6 +258,69 @@ source: .plan/local/lessons-learned/2025-12-02-001.md
 destination: .plan/local/plans/my-plan/lesson-2025-12-02-001.md
 ```
 
+### cleanup-superseded
+
+Prune the markdown stubs of superseded lessons. Tombstones at
+`.tombstones/{id}.json` are NEVER touched — they remain as the audit trail
+for the supersede event so historical references resolve by id even after
+the redirect stub is gone.
+
+Two mutually exclusive modes:
+
+- **Explicit ids** — `--lesson-id ID` (repeatable). Each id is evaluated
+  regardless of file age. Required `metadata.status == 'superseded'` and
+  the matching tombstone must exist.
+- **Age-filtered** — `--retention-days N`. Walks every `.md` whose
+  `metadata.status == 'superseded'` and whose mtime is older than
+  `now - N days`. When `--retention-days` is omitted, the value falls back
+  to `system.retention.lessons_superseded_days` from `marshal.json`,
+  with a hard fallback of `7` if marshal.json is absent or unreadable.
+
+Per-id outcomes:
+
+| Bucket | Condition |
+|--------|-----------|
+| `removed[]` | Lesson `.md` was unlinked (or, on `--dry-run`, would have been) |
+| `already_removed[]` | `.md` already absent and tombstone present (idempotent re-run) |
+| `skipped_no_tombstone[]` | Tombstone missing — refused to act because the audit trail would be lost |
+
+```bash
+# Age-filtered (uses marshal.json retention or hard fallback 7 days)
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons cleanup-superseded
+
+# Age-filtered with explicit threshold
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons cleanup-superseded \
+  --retention-days 30
+
+# Explicit ids
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons cleanup-superseded \
+  --lesson-id 2025-12-02-001 \
+  --lesson-id 2025-12-02-002
+
+# Dry-run (report only)
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons cleanup-superseded \
+  --retention-days 7 --dry-run
+```
+
+**Parameters**:
+- `--lesson-id`: Repeatable lesson ID; mutually exclusive with `--retention-days`
+- `--retention-days`: Age threshold in days; mutually exclusive with `--lesson-id`
+- `--dry-run`: Report what would be removed without unlinking anything
+
+**Output** (TOON):
+```toon
+status: success
+dry_run: false
+retention_days_effective: 7
+removed[1]{lesson_id}:
+  2025-12-02-001
+already_removed[0]{lesson_id}:
+skipped_no_tombstone[0]{lesson_id}:
+```
+
+Each successful unlink emits an INFO line to `script-execution.log`:
+`(plan-marshall:manage-lessons) Pruned superseded stub {id}`.
+
 ### from-error
 
 Create lesson from error context (JSON).
@@ -295,6 +358,7 @@ created_from: error_context
 | `list` | `[--component] [--category] [--full]` | List with filtering. `--full` includes lesson body content. |
 | `from-error` | `--context` | Create from JSON error context (programmatic; body synthesized from context) |
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
+| `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
 
 ---
 
