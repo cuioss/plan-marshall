@@ -4,6 +4,7 @@
 Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 """
 
+import subprocess
 from argparse import Namespace
 from pathlib import Path
 
@@ -36,6 +37,7 @@ def _load_module(name, filename):
 _crud = _load_module('_refs_cmd_crud', '_references_crud.py')
 _list = _load_module('_refs_cmd_list', '_cmd_list.py')
 _ctx = _load_module('_refs_cmd_context', '_cmd_context.py')
+_diff = _load_module('_refs_cmd_diff_files', '_cmd_diff_files.py')
 
 cmd_create, cmd_get, cmd_read, cmd_set = _crud.cmd_create, _crud.cmd_get, _crud.cmd_read, _crud.cmd_set
 cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list = (
@@ -45,6 +47,7 @@ cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list = (
     _list.cmd_set_list,
 )
 cmd_get_context = _ctx.cmd_get_context
+cmd_diff_files = _diff.cmd_diff_files
 
 
 # =============================================================================
@@ -448,3 +451,190 @@ def test_cli_get_context_not_found_exits_zero(tmp_path, monkeypatch):
     assert result.success, f'Should exit 0, got: {result.stderr}'
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
+
+
+# =============================================================================
+# Test: diff-files Command
+# =============================================================================
+
+
+def _diff_ns(plan_id='test-plan', worktree_path='/tmp/missing', base_ref=None):
+    """Build Namespace for cmd_diff_files."""
+    return Namespace(plan_id=plan_id, worktree_path=str(worktree_path), base_ref=base_ref)
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    """Helper to run git inside ``repo`` and assert success."""
+    proc = subprocess.run(
+        ['git', '-C', str(repo), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, f'git {args} failed: {proc.stderr}'
+    return proc
+
+
+def _make_git_repo(repo: Path) -> None:
+    """Initialize a git repo at ``repo`` with one committed file on ``main``.
+
+    The seed file (``seed.txt``) is committed so subsequent edits show up in
+    ``git diff main...HEAD`` only when intentionally changed. Local
+    ``user.email``/``user.name`` are set so commits succeed without relying on
+    the host's git config.
+    """
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, 'init', '--initial-branch=main', '--quiet')
+    _git(repo, 'config', 'user.email', 'test@example.com')
+    _git(repo, 'config', 'user.name', 'Test User')
+    (repo / 'seed.txt').write_text('seed\n')
+    _git(repo, 'add', 'seed.txt')
+    _git(repo, 'commit', '-m', 'seed', '--quiet')
+
+
+class TestDiffFiles:
+    """Contract tests for the read-only ``diff-files`` query.
+
+    The query intersects the append-only ``references.json:modified_files``
+    intent ledger with the live git working-tree state and reports drift via
+    ``dropped[]`` (ledger entries no longer live) and ``phantom[]`` (live
+    entries never recorded in the ledger).
+    """
+
+    def test_happy_path_returns_ledger_order(self, tmp_path):
+        """Ledger and worktree agree → query returns ledger order verbatim."""
+        repo = tmp_path / 'worktree'
+        _make_git_repo(repo)
+        # Create three modified files in the worktree.
+        ledger_paths = ['src/a.txt', 'src/b.txt', 'src/c.txt']
+        for path in ledger_paths:
+            target = repo / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('content\n')
+
+        with PlanContext():
+            cmd_create(_create_ns())
+            for path in ledger_paths:
+                cmd_add_file(_add_file_ns(file=path))
+
+            # Capture mtime + content of references.json before invoking
+            # diff-files so the read-only contract can be asserted.
+            import _config_core  # type: ignore[import-not-found]
+            references_json = (
+                _config_core.PLAN_BASE_DIR / 'plans' / 'test-plan' / 'references.json'
+            )
+            assert references_json.exists(), 'references.json should exist after add-file'
+            mtime_before = references_json.stat().st_mtime_ns
+            content_before = references_json.read_bytes()
+
+            result = cmd_diff_files(_diff_ns(worktree_path=repo))
+
+            assert result['status'] == 'success'
+            assert result['files'] == ledger_paths
+            assert result['references_count'] == 3
+            assert result['dropped'] == []
+            assert result['phantom'] == []
+            # Read-only contract — references.json must not change.
+            assert references_json.stat().st_mtime_ns == mtime_before
+            assert references_json.read_bytes() == content_before
+
+    def test_divergence_reports_dropped(self, tmp_path):
+        """Three ledger paths, two live → files[]==2 live paths, dropped[]==stale third."""
+        repo = tmp_path / 'worktree'
+        _make_git_repo(repo)
+        # Only modify two of the three ledger paths in the worktree.
+        live_paths = ['src/a.txt', 'src/b.txt']
+        stale_path = 'src/c.txt'
+        ledger_paths = ['src/a.txt', 'src/b.txt', stale_path]
+        for path in live_paths:
+            target = repo / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('content\n')
+
+        with PlanContext():
+            cmd_create(_create_ns())
+            for path in ledger_paths:
+                cmd_add_file(_add_file_ns(file=path))
+
+            result = cmd_diff_files(_diff_ns(worktree_path=repo))
+
+            assert result['status'] == 'success'
+            assert result['files'] == live_paths  # ledger order, live only
+            assert result['references_count'] == 3
+            dropped_paths = [entry['path'] for entry in result['dropped']]
+            assert dropped_paths == [stale_path]
+            assert result['dropped'][0]['reason'] == 'not_in_working_tree'
+            assert result['phantom'] == []
+
+    def test_empty_ledger_returns_empty_files(self, tmp_path):
+        """Empty ledger → files[] empty without raising."""
+        repo = tmp_path / 'worktree'
+        _make_git_repo(repo)
+
+        with PlanContext():
+            cmd_create(_create_ns())
+            # Do not add any files.
+            result = cmd_diff_files(_diff_ns(worktree_path=repo))
+
+            assert result['status'] == 'success'
+            assert result['files'] == []
+            assert result['references_count'] == 0
+            assert result['dropped'] == []
+            # phantom[] may contain seed-related stray paths in theory, but a
+            # clean repo with no untracked files should produce an empty list.
+            assert result['phantom'] == []
+
+    def test_missing_worktree_emits_error(self, tmp_path):
+        """Non-existent --worktree-path → error: worktree_not_found."""
+        missing = tmp_path / 'does-not-exist'
+        # Ensure the path really is absent.
+        assert not missing.exists()
+
+        with PlanContext():
+            cmd_create(_create_ns())
+            result = cmd_diff_files(_diff_ns(worktree_path=missing))
+
+            assert result['status'] == 'error'
+            assert result['error'] == 'worktree_not_found'
+            assert str(missing) in result['message']
+
+    def test_non_git_path_emits_error(self, tmp_path):
+        """Existing non-git directory → error: not_a_git_worktree."""
+        non_git = tmp_path / 'plain-dir'
+        non_git.mkdir()
+        # No git init — must be detected as a non-git worktree.
+
+        with PlanContext():
+            cmd_create(_create_ns())
+            result = cmd_diff_files(_diff_ns(worktree_path=non_git))
+
+            assert result['status'] == 'error'
+            assert result['error'] == 'not_a_git_worktree'
+            assert str(non_git) in result['message']
+
+    def test_phantom_files_surface_only_in_phantom(self, tmp_path):
+        """Worktree-modified path never added to ledger → phantom[], not files[]."""
+        repo = tmp_path / 'worktree'
+        _make_git_repo(repo)
+        # One ledger path that is also live.
+        ledger_path = 'src/known.txt'
+        ledger_target = repo / ledger_path
+        ledger_target.parent.mkdir(parents=True, exist_ok=True)
+        ledger_target.write_text('content\n')
+        # One phantom path: live in the worktree but never added to references.
+        phantom_path = 'src/phantom.txt'
+        phantom_target = repo / phantom_path
+        phantom_target.parent.mkdir(parents=True, exist_ok=True)
+        phantom_target.write_text('phantom\n')
+
+        with PlanContext():
+            cmd_create(_create_ns())
+            cmd_add_file(_add_file_ns(file=ledger_path))
+
+            result = cmd_diff_files(_diff_ns(worktree_path=repo))
+
+            assert result['status'] == 'success'
+            assert result['files'] == [ledger_path]
+            assert phantom_path not in result['files']
+            assert phantom_path in result['phantom']
+            assert result['dropped'] == []
