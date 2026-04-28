@@ -55,6 +55,7 @@ def _args(
     outcome: str,
     force: bool = False,
     display_detail: str | None = None,
+    head_at_completion: str | None = None,
 ) -> Namespace:
     return Namespace(
         plan_id=plan_id,
@@ -63,6 +64,7 @@ def _args(
         outcome=outcome,
         force=force,
         display_detail=display_detail,
+        head_at_completion=head_at_completion,
     )
 
 
@@ -379,3 +381,151 @@ def test_mark_step_invalid_plan_id():
     with PlanContext():
         with pytest.raises(SystemExit):
             cmd_mark_step_done(_args('Invalid_Plan', '1-init', 'step-a', 'done'))
+
+
+# =============================================================================
+# head_at_completion field
+# =============================================================================
+
+
+def test_mark_step_persists_head_at_completion_on_first_call():
+    """--head-at-completion is persisted as a third key alongside outcome+display_detail."""
+    plan_id = 'mark-step-head-first'
+    sha = 'abc1234567890abcdef1234567890abcdef1234'
+    with PlanContext(plan_id=plan_id):
+        _make_plan(plan_id)
+        result = cmd_mark_step_done(
+            _args(
+                plan_id,
+                '6-finalize',
+                'pre-push-quality-gate',
+                'done',
+                head_at_completion=sha,
+            )
+        )
+
+        assert result['status'] == 'success'
+        assert result['changed'] is True
+        assert result['head_at_completion'] == sha
+        assert result['outcome'] == 'done'
+        assert result['display_detail'] is None
+
+        persisted = read_status(plan_id)
+        assert persisted['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
+            'outcome': 'done',
+            'display_detail': None,
+            'head_at_completion': sha,
+        }
+
+
+def test_mark_step_idempotent_when_head_at_completion_matches():
+    """Re-call with same outcome+display_detail+head_at_completion is a no-op."""
+    plan_id = 'mark-step-head-idempotent'
+    sha = 'deadbeefcafebabe0123456789abcdef01234567'
+    with PlanContext(plan_id=plan_id):
+        _make_plan(plan_id)
+        cmd_mark_step_done(
+            _args(
+                plan_id,
+                '6-finalize',
+                'pre-push-quality-gate',
+                'done',
+                display_detail='gate green',
+                head_at_completion=sha,
+            )
+        )
+
+        persisted_before = read_status(plan_id)
+        updated_before = persisted_before['updated']
+
+        second = cmd_mark_step_done(
+            _args(
+                plan_id,
+                '6-finalize',
+                'pre-push-quality-gate',
+                'done',
+                display_detail='gate green',
+                head_at_completion=sha,
+            )
+        )
+
+        assert second['status'] == 'success'
+        assert second['changed'] is False
+        assert second['head_at_completion'] == sha
+        assert 'previous_outcome' not in second
+
+        persisted_after = read_status(plan_id)
+        # No file rewrite: updated timestamp unchanged.
+        assert persisted_after['updated'] == updated_before
+        assert persisted_after['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
+            'outcome': 'done',
+            'display_detail': 'gate green',
+            'head_at_completion': sha,
+        }
+
+
+def test_mark_step_head_at_completion_change_overwrites_without_force():
+    """Re-call with same outcome+display_detail but different SHA is a 'changed' overwrite, no --force."""
+    plan_id = 'mark-step-head-overwrite'
+    sha_old = '1111111111111111111111111111111111111111'
+    sha_new = '2222222222222222222222222222222222222222'
+    with PlanContext(plan_id=plan_id):
+        _make_plan(plan_id)
+        cmd_mark_step_done(
+            _args(
+                plan_id,
+                '6-finalize',
+                'pre-push-quality-gate',
+                'done',
+                display_detail='gate green',
+                head_at_completion=sha_old,
+            )
+        )
+
+        # Same outcome and display_detail, different SHA, no --force.
+        second = cmd_mark_step_done(
+            _args(
+                plan_id,
+                '6-finalize',
+                'pre-push-quality-gate',
+                'done',
+                display_detail='gate green',
+                head_at_completion=sha_new,
+            )
+        )
+
+        assert second['status'] == 'success'
+        assert second['changed'] is True
+        assert second['outcome'] == 'done'
+        assert second['display_detail'] == 'gate green'
+        assert second['head_at_completion'] == sha_new
+        assert second['previous_outcome'] == 'done'
+        assert second['previous_display_detail'] == 'gate green'
+        assert second['previous_head_at_completion'] == sha_old
+
+        persisted = read_status(plan_id)
+        assert persisted['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
+            'outcome': 'done',
+            'display_detail': 'gate green',
+            'head_at_completion': sha_new,
+        }
+
+
+def test_mark_step_omits_head_at_completion_key_when_flag_absent():
+    """Caller omitting --head-at-completion produces the legacy two-key dict shape."""
+    plan_id = 'mark-step-head-omitted'
+    with PlanContext(plan_id=plan_id):
+        _make_plan(plan_id)
+        result = cmd_mark_step_done(
+            _args(plan_id, '1-init', 'step-a', 'done', display_detail='legacy')
+        )
+
+        assert result['status'] == 'success'
+        assert result['changed'] is True
+        # Result echoes the field as None, but persistence omits the key entirely.
+        assert result['head_at_completion'] is None
+
+        persisted = read_status(plan_id)
+        entry = persisted['metadata']['phase_steps']['1-init']['step-a']
+        assert entry == {'outcome': 'done', 'display_detail': 'legacy'}
+        assert 'head_at_completion' not in entry

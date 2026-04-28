@@ -37,13 +37,16 @@ Store all resolved skill names. Deliverables use profile `implementation` since 
 
 ### 2a. Locate PlantUML Files
 
-Use Glob to find all `.puml` files in the PlantUML directory (default: `doc/plantuml`):
+Run the canonical `manage-files discover` resolver to enumerate all `.puml` files under the PlantUML directory (default: `doc/plantuml`). Capture the returned `paths` array as the diagram file list.
 
-```
-Glob: {plantuml_dir}/**/*.puml
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {plantuml_dir} \
+  --glob "**/*.puml" \
+  --include-files
 ```
 
-If no `.puml` files found, report empty scope and return.
+If `paths` is empty, report empty scope and return.
 
 ### 2b. Check References for Each Diagram
 
@@ -104,7 +107,7 @@ One deliverable for all approved orphan removals:
 - **Profiles**: `implementation`
 - **Affected files**: All `.puml` and `.png` files approved for removal (explicit paths)
 - **Change per file**: Delete orphaned diagram files
-- **Verification**: Glob confirms files no longer exist
+- **Verification**: Re-run `manage-files discover` over the orphan paths and confirm the returned `paths` array is empty
 - **Success Criteria**:
   - Approved orphaned files removed
   - No documentation references broken by removal

@@ -65,9 +65,14 @@ Read references/asciidoc-formatting.md
 If target is a file:
 - Verify file exists and has `.adoc` extension
 
-If target is a directory:
-- Use Glob: `{directory}/*.adoc` (non-recursive)
-- Filter out `target/` directories
+If target is a directory, run the canonical `manage-files discover` resolver and capture the returned `paths` array as the discovered file list. Filter out any path under a `target/` build directory afterwards.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {directory} \
+  --glob "*.adoc" \
+  --include-files
+```
 
 **Step 3: Run Auto-Formatter**
 
@@ -134,8 +139,14 @@ Read references/asciidoc-formatting.md
 If target is a file:
 - Verify file exists and has `.adoc` extension
 
-If target is a directory:
-- Use Glob: `{directory}/*.adoc` (non-recursive)
+If target is a directory, run the canonical `manage-files discover` resolver and capture the returned `paths` array as the discovered file list.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {directory} \
+  --glob "*.adoc" \
+  --include-files
+```
 
 **Step 3: Run Format Validation**
 
@@ -217,8 +228,14 @@ Read references/asciidoc-formatting.md
 If target is a file:
 - Verify file exists and has `.adoc` extension
 
-If target is a directory:
-- Use Glob: `{directory}/*.adoc` (non-recursive)
+If target is a directory, run the canonical `manage-files discover` resolver and capture the returned `paths` array as the discovered file list.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {directory} \
+  --glob "*.adoc" \
+  --include-files
+```
 
 **Step 3: Setup Report Directory**
 
@@ -377,11 +394,15 @@ Update metadata, fix cross-references, and refresh table of contents.
 
 **Step 1: Discover Files**
 
-```
-If target is file:
-  files = [target]
-If target is directory:
-  Use Glob: {target}/**/*.adoc
+If target is a file: `files = [target]`.
+
+If target is a directory, run the canonical `manage-files discover` resolver and capture the returned `paths` array as the discovered file list (recursive `**` pattern).
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {target} \
+  --glob "**/*.adoc" \
+  --include-files
 ```
 
 **Step 2: Analyze Metadata**

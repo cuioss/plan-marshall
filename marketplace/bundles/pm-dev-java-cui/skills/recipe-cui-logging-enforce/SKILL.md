@@ -63,13 +63,37 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   module --name {module_name} --full
 ```
 
-**3b. Discover logging-related files** using Glob patterns within the module path:
-- `{module_path}/src/main/java/**/*LogMessages.java` — LogMessages classes
-- `{module_path}/src/main/java/**/*.java` — All production Java files (for logger migration scan)
-- `{module_path}/src/test/java/**/*Test.java` — Test files (for LogAssert coverage)
-- `{module_path}/doc/LogMessages.adoc` — LogMessages documentation
+**3b. Discover logging-related files** using the canonical `manage-files discover` subcommand. Logging enforcement requires four distinct file categories — each is collected in a separate call so step 3c can consume the lists independently. Run all four calls per module:
 
-Skip modules with no Java source files.
+LogMessages classes (production):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {module_path} --glob "**/*LogMessages.java" --include-files
+```
+
+All production Java files (for logger migration scan):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {module_path} --glob "**/*.java" --include-files
+```
+
+Test files (for LogAssert coverage):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {module_path} --glob "**/*Test.java" --include-files
+```
+
+LogMessages documentation:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {module_path} --glob "doc/LogMessages.adoc" --include-files
+```
+
+Each call returns the matching file list under its own `files[]` array. Step 3c consumes the four discovered lists separately when assembling the deliverable's `Affected files` set. Skip modules with no Java source files (i.e., the production-Java call returns an empty list).
 
 **3c. Collect one deliverable per module** (in-memory, for Step 4):
 - **Title**: `Enforce logging standards: {module}`

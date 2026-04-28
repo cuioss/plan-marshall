@@ -59,21 +59,6 @@ Parse the lesson frontmatter to extract:
 - `title`
 - `directives[]` — the actionable items declared in the lesson body (one per `## Directive` heading, or one per bullet under `## Actions`, depending on lesson layout)
 
-Persist the forced confidence to the plan refine config:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine set --field confidence --value 100 --trace-plan-id {plan_id}
-```
-
-Log the recipe-driven confidence override:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:recipe-lesson-cleanup) Forced confidence=100 (recipe path: lesson body is the contract)"
-```
-
 ### Step 1b: Premise Verification
 
 Runs after the lesson body has been read and BEFORE Step 2 maps the lesson kind to a `change_type`. Without this gate, the recipe will faithfully translate stale directives into a deliverable, then phase-4-plan will faithfully translate them into tasks, and the executor will fight the live tree to apply prescriptions that no longer match it. The gate exists to catch the staleness once, at the cheapest possible point, before scope is locked.

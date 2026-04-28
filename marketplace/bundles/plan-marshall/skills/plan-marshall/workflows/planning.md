@@ -280,10 +280,11 @@ Read `TERM_PROGRAM` using the globally allow-listed pattern installed by the mar
 echo "TERM_PROGRAM=$TERM_PROGRAM"
 ```
 
-Parse the output. If the value is `vscode`, use the `code` command. Otherwise, use the platform-specific opener:
-- If `TERM_PROGRAM=vscode`: `code {resolved_path}`
-- On macOS: `open {resolved_path}`
-- On Linux: `xdg-open {resolved_path}`
+Parse the output. Pick the opener by `TERM_PROGRAM` value and host platform:
+- If `TERM_PROGRAM=vscode` on macOS: `open -a "Visual Studio Code" {resolved_path}` — uses macOS Launch Services so the call does not depend on the `code` CLI being on `PATH` (VS Code's shell integration is often not installed in Claude Code's non-login bash environment, in which case `code` exits 127 and the agent silently falls back to `open`, opening the file in whatever app owns the `.md` association rather than in VS Code).
+- If `TERM_PROGRAM=vscode` on Linux: `code {resolved_path}` (the `code` CLI is on `PATH` on standard Linux installs).
+- Otherwise on macOS: `open {resolved_path}`
+- Otherwise on Linux: `xdg-open {resolved_path}`
 
 Do NOT use `printenv`, `env | grep`, or command substitution such as `$(printenv TERM_PROGRAM)` — `echo "TERM_PROGRAM=$TERM_PROGRAM"` is the only pattern installed by the marshall-steward wizard and guaranteed not to trigger a permission prompt.
 
