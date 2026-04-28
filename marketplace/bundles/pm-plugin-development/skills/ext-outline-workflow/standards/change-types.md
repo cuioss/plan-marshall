@@ -103,6 +103,8 @@ Follow ext-outline-workflow **Uncertainty Resolution** for any UNCERTAIN assessm
 
 For each CERTAIN_INCLUDE component, create deliverable. Add test update and bundle verification deliverables as needed. Validate all deliverables (ext-outline-workflow **Deliverable Validation**). Use verification commands from ext-outline-workflow **Verification Commands**.
 
+**Audit checklists**: For deliverables that audit a structural rule, see [SKILL.md → Audit Checklist for Structural-Rule Audits](../SKILL.md#audit-checklist-for-structural-rule-audits).
+
 ### Constraints
 
 **MUST NOT**: Create new files (enhancement = modify existing). Skip analysis step (must assess each component).
@@ -254,6 +256,8 @@ For each batch, create deliverable with extra section:
 ```
 
 Add test update and bundle verification deliverables as needed. Validate all deliverables (ext-outline-workflow **Deliverable Validation**). Use verification commands from ext-outline-workflow **Verification Commands**.
+
+**Audit checklists**: When the deliverable audits a structural rule (e.g., chain-shape compliance sweep), the deliverable's 'Change per file' or 'Verification' block MUST enumerate all three shell-marshalling families. See [SKILL.md → Audit Checklist for Structural-Rule Audits](../SKILL.md#audit-checklist-for-structural-rule-audits).
 
 ### Constraints
 

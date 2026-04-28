@@ -44,7 +44,17 @@ Covers typed-ID flags (`--lesson-id`, `--plan-id`, `--task-number`, `--module`, 
 
 ### Bash: One command per call
 
-Each Bash tool call must contain exactly ONE command. Never combine with newlines, `&`, `&&`, or `;`.
+Each Bash tool call must contain exactly ONE command. Never combine with newlines, `&`, `&&`, `;`, or inline env-var assignment of the form `VAR=val cmd`.
+
+The `VAR=val cmd` shape (e.g., `PM_MARKETPLACE_ROOT=/abs/path python3 .plan/execute-script.py ...`) is forbidden for two reasons: it combines the assignment and the command into a single shell argument, which trips the Claude Code permission UI and produces a security prompt; and it obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
+
+**Anti-pattern**: `PM_MARKETPLACE_ROOT=/abs/path python3 .plan/execute-script.py ...`
+
+**Safe alternative (option A)** — Pass the value as a flag arg:
+
+`python3 .plan/execute-script.py ... --marketplace-root /abs/path`
+
+**Safe alternative (option B)** — Set the env var in the executor invocation header (e.g., a separate `env PM_MARKETPLACE_ROOT=…` line, NOT inline) before launching the bash command, or define the value as a Python module-level constant lookup inside the script itself.
 
 ### Bash: No file operations
 

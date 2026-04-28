@@ -50,6 +50,20 @@ This applies to every dispatch in the execution loop, including (but not limited
 
 See `standards/operations.md` for the complete set of dispatch pattern templates updated with this header.
 
+### Common anti-patterns to avoid (mirrored from dev-general-practices)
+
+Each Bash tool call dispatched during execute must contain exactly ONE command. Never combine with newlines, `&`, `&&`, `;`, or inline env-var assignment of the form `VAR=val cmd`. The `VAR=val cmd` shape combines the assignment and the command into one shell argument, which trips the Claude Code permission UI and obscures the env-var contract by hiding the variable inside the command line rather than declaring it explicitly.
+
+**Anti-pattern**: `PM_MARKETPLACE_ROOT=/abs/path python3 .plan/execute-script.py ...`
+
+**Safe alternative (option A)** — Pass the value as a flag arg:
+
+`python3 .plan/execute-script.py ... --marketplace-root /abs/path`
+
+**Safe alternative (option B)** — Set the env var in the executor invocation header (e.g., a separate `env PM_MARKETPLACE_ROOT=…` line, NOT inline) before launching the bash command, or define the value as a Python module-level constant lookup inside the script itself.
+
+See [`dev-general-practices` Hard Rules](../dev-general-practices/SKILL.md#bash-one-command-per-call) for the authoritative source.
+
 ## cwd for `.plan/execute-script.py` calls
 
 > `manage-*` scripts (Bucket A) resolve `.plan/` via `git rev-parse --git-common-dir` and work from any cwd — do **NOT** pin cwd, do **NOT** pass `--project-dir`, and never use `env -C`. Build / CI / Sonar scripts (Bucket B) take `--project-dir {worktree_path}` explicitly when a worktree is active. `{worktree_path}` is the `[STATUS] Active worktree` line surfaced at Step 4 entry. See `plan-marshall:tools-script-executor/standards/cwd-policy.md`.
