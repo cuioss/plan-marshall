@@ -772,13 +772,13 @@ def cmd_cleanup_superseded(args: argparse.Namespace) -> dict:
             candidate_paths: list[Path] = []
             for path in sorted(lessons_dir.glob('*.md')):
                 try:
+                    if path.stat().st_mtime >= cutoff:
+                        continue
                     content = path.read_text(encoding='utf-8')
                 except OSError:
                     continue
                 metadata = parse_markdown_metadata(content)
                 if metadata.get('status') != 'superseded':
-                    continue
-                if path.stat().st_mtime >= cutoff:
                     continue
                 candidate_paths.append(path)
             candidates = [p.stem for p in candidate_paths]
