@@ -26,6 +26,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from _analyze_argument_naming import analyze_argument_naming
 from _cmd_apply import apply_single_fix, load_templates
 from _cmd_extension import validate_extension_contracts
 from _doctor_analysis import analyze_component, scan_argparse_safety
@@ -259,6 +260,14 @@ def cmd_analyze(args) -> dict:
     argparse_issues = scan_argparse_safety(marketplace_root)
     all_issues.extend(argparse_issues)
     total_issues += len(argparse_issues)
+
+    # Marketplace-wide argument-naming rule cluster (notation/subcommand/
+    # flag/Canonical-Forms cross-check). GATED OFF by default — only runs
+    # when PM_ARGUMENT_NAMING_ENABLED is set to a truthy value. See
+    # _analyze_argument_naming.py for the full gating contract.
+    argument_naming_issues = analyze_argument_naming(marketplace_root)
+    all_issues.extend(argument_naming_issues)
+    total_issues += len(argument_naming_issues)
 
     categorized = categorize_all_issues(all_issues)
 

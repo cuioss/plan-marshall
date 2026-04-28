@@ -48,7 +48,7 @@ Contains: How to execute each step type (modify, create, etc.)
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
   --plan-id {plan_id} \
-  --task {task_number}
+  --task-number {task_number}
 ```
 
 Extract from response:
@@ -126,7 +126,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize-step \
   --plan-id {plan_id} \
-  --task {task_number} \
+  --task-number {task_number} \
   --step {step_number} \
   --outcome done
 ```

@@ -199,12 +199,12 @@ def cmd_derived(args) -> dict:
 def cmd_derived_module(args) -> dict:
     """CLI handler for derived-module command."""
     try:
-        module = api_get_derived_module(args.name, args.project_dir)
-        return {'status': 'success', 'module_name': args.name, 'module': module}
+        module = api_get_derived_module(args.module, args.project_dir)
+        return {'status': 'success', 'module_name': args.module, 'module': module}
     except DataNotFoundError:
         return require_derived_data_result(args.project_dir)
     except ModuleNotFoundInProjectError:
         modules = get_module_names(load_derived_data(args.project_dir))
-        return error_result_module_not_found(args.name, modules)
+        return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}

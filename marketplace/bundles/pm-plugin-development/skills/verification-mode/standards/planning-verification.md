@@ -65,7 +65,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id}
 
 # Get each task by number (replace {N} with 1, 2, 3, etc.)
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --plan-id {plan_id} --task {N}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --plan-id {plan_id} --task-number {N}
 
 # Verify work-log has entry for each task creation
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read --plan-id {plan_id} --type work
@@ -75,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging read
 **Execute Phase** - Run task verification commands:
 ```bash
 # Get task to retrieve verification.commands
-python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --plan-id {plan_id} --task {N}
+python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --plan-id {plan_id} --task-number {N}
 
 # Then execute each command from the task's verification.commands array
 ```

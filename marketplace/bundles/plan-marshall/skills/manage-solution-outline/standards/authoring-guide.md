@@ -14,7 +14,7 @@ Then query module information:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info
-python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --name {module-name}
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module --module {module-name}
 ```
 
 Use the returned structure for:

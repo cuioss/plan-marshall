@@ -185,7 +185,7 @@ recipe-refactor-to-profile-standards
      │
      ├─ Step 3: Per module — load packages and create deliverables
      │    │
-     │    │  architecture module --name {name} --full
+     │    │  architecture module --module {name} --full
      │    │  → iterate {recipe_package_source} field
      │    │
      │    │  For each package:

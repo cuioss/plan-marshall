@@ -95,9 +95,9 @@ def cmd_read(args) -> dict:
     """Handle 'read' subcommand."""
     task_dir = get_tasks_dir(args.plan_id)
 
-    filepath = find_task_file(task_dir, args.task)
+    filepath = find_task_file(task_dir, args.task_number)
     if not filepath:
-        return output_error(f'Task TASK-{args.task} not found')
+        return output_error(f'Task TASK-{args.task_number} not found')
 
     content = filepath.read_text(encoding='utf-8')
     task = parse_task_file(content)
@@ -135,11 +135,11 @@ def cmd_exists(args) -> dict:
     with recoverable not-found rows.
     """
     task_dir = get_tasks_dir(args.plan_id)
-    filepath = find_task_file(task_dir, args.task)
+    filepath = find_task_file(task_dir, args.task_number)
     return {
         'status': 'success',
         'plan_id': args.plan_id,
-        'task': args.task,
+        'task': args.task_number,
         'exists': filepath is not None,
     }
 

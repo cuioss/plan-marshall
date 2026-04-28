@@ -23,8 +23,8 @@ From `key_packages`:
 
 | Field | Source | Description |
 |-------|--------|-------------|
-| `package` | `architecture module --name X --full` | Package name from key_packages |
-| `description` | `architecture module --name X --full` | Package description from architecture |
+| `package` | `architecture module --module X --full` | Package name from key_packages |
+| `description` | `architecture module --module X --full` | Package description from architecture |
 | `Reasoning` | LLM analysis | Justification for selection |
 
 ## Decision Matrix

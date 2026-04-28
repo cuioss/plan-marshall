@@ -143,7 +143,7 @@ def _set_depends_on(plan_id: str, number: int, depends_on: list[str]) -> None:
     result = cmd_update(
         Namespace(
             plan_id=plan_id,
-            task=number,
+            task_number=number,
             title=None,
             description=None,
             depends_on=depends_on,
@@ -162,7 +162,7 @@ def _set_status(plan_id: str, number: int, status: str) -> None:
     result = cmd_update(
         Namespace(
             plan_id=plan_id,
-            task=number,
+            task_number=number,
             title=None,
             description=None,
             depends_on=None,
@@ -179,7 +179,7 @@ def _set_status(plan_id: str, number: int, status: str) -> None:
 def _finalize_step(plan_id: str, task: int, step: int, outcome: str) -> None:
     """Mark a step with outcome (done/skipped/failed)."""
     result = cmd_finalize_step(
-        Namespace(plan_id=plan_id, task=task, step=step, outcome=outcome)
+        Namespace(plan_id=plan_id, task_number=task, step=step, outcome=outcome)
     )
     assert result.get('status') == 'success', f'finalize-step failed: {result}'
 
@@ -232,10 +232,10 @@ def _make_stub_run_script():
             )
             return serialize_toon(cmd_list(ns))
         if subcommand == 'read':
-            # args[...] contains '--task', followed by the number
-            t_idx = args.index('--task')
+            # args[...] contains '--task-number', followed by the number
+            t_idx = args.index('--task-number')
             number = int(args[t_idx + 1])
-            ns = Namespace(plan_id=plan_id, task=number)
+            ns = Namespace(plan_id=plan_id, task_number=number)
             return serialize_toon(cmd_read(ns))
         return None
 
