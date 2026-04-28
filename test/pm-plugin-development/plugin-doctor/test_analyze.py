@@ -39,10 +39,13 @@ def _load_module(name, filename):
 _analyze_crossfile_mod = _load_module('_analyze_crossfile', '_analyze_crossfile.py')
 _analyze_markdown_mod = _load_module('_analyze_markdown', '_analyze_markdown.py')
 _analyze_structure_mod = _load_module('_analyze_structure', '_analyze_structure.py')
+_doctor_analysis_mod = _load_module('_doctor_analysis', '_doctor_analysis.py')
 
 cmd_crossfile_analyze = _analyze_crossfile_mod.cmd_cross_file
 cmd_markdown = _analyze_markdown_mod.cmd_markdown
 cmd_structure = _analyze_structure_mod.cmd_structure
+analyze_subdocuments = _doctor_analysis_mod.analyze_subdocuments
+extract_issues_from_subdoc_analysis = _doctor_analysis_mod.extract_issues_from_subdoc_analysis
 
 # =============================================================================
 # CLI plumbing tests (Tier 3 - subprocess)
@@ -924,6 +927,218 @@ def test_mark_step_done_phase_prefix_does_not_spoof_missing_phase():
         assert 'MARK_STEP_DONE_MISSING_OUTCOME' not in codes
     finally:
         temp_file.unlink()
+
+
+# =============================================================================
+# Markdown Subcommand Tests - --display-detail ASCII contract
+# =============================================================================
+
+
+def _display_detail_block(detail_value: str) -> str:
+    """Build a canonical mark-step-done bash fence with a caller-supplied detail value.
+
+    The value is inlined verbatim between double quotes, mirroring the
+    canonical phase-6-finalize step termination shape. Callers pass the body
+    of the ``--display-detail`` argument (without the surrounding quotes).
+    """
+
+    return (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
+        f'--step my-step --display-detail "{detail_value}"\n'
+        '```\n'
+    )
+
+
+def _display_detail_codes(violations: list) -> list:
+    """Extract the ``code`` field from each display_detail violation entry."""
+
+    return [v.get('code') for v in violations]
+
+
+def test_display_detail_em_dash_triggers_non_ascii():
+    """Em-dash (U+2014) in --display-detail triggers DISPLAY_DETAIL_NON_ASCII."""
+    content = _display_detail_block('no PR — nothing to clean up')
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('display_detail_violations', [])
+        codes = _display_detail_codes(violations)
+        assert codes.count('DISPLAY_DETAIL_NON_ASCII') == 1, (
+            f'Expected exactly one NON_ASCII finding for em-dash value, got codes={codes}'
+        )
+        non_ascii = next(v for v in violations if v['code'] == 'DISPLAY_DETAIL_NON_ASCII')
+        assert '—' in non_ascii['value'], 'Reported value should preserve the offending unicode glyph'
+    finally:
+        temp_file.unlink()
+
+
+def test_display_detail_too_long_triggers_too_long():
+    """An 81-character --display-detail value triggers DISPLAY_DETAIL_TOO_LONG."""
+    content = _display_detail_block('a' * 81)
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('display_detail_violations', [])
+        codes = _display_detail_codes(violations)
+        assert codes.count('DISPLAY_DETAIL_TOO_LONG') == 1, (
+            f'Expected exactly one TOO_LONG finding for 81-char value, got codes={codes}'
+        )
+        assert 'DISPLAY_DETAIL_NON_ASCII' not in codes
+        assert 'DISPLAY_DETAIL_MULTILINE' not in codes
+        assert 'DISPLAY_DETAIL_TRAILING_PERIOD' not in codes
+    finally:
+        temp_file.unlink()
+
+
+def test_display_detail_multiline_quoted_value_triggers_multiline():
+    """Multi-line quoted --display-detail value triggers DISPLAY_DETAIL_MULTILINE.
+
+    A bash double-quoted string can span multiple lines without backslash
+    continuation. The rule must assemble the full quoted value across line
+    boundaries and flag the embedded newline.
+    """
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Step: Mark Done\n\n'
+        '```bash\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
+        '--step my-step --display-detail "first line\n'
+        'second line"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('display_detail_violations', [])
+        codes = _display_detail_codes(violations)
+        assert codes.count('DISPLAY_DETAIL_MULTILINE') == 1, (
+            f'Expected exactly one MULTILINE finding for multi-line value, got codes={codes}'
+        )
+    finally:
+        temp_file.unlink()
+
+
+def test_display_detail_trailing_period_triggers_trailing_period():
+    """A --display-detail value ending in `.` triggers DISPLAY_DETAIL_TRAILING_PERIOD."""
+    content = _display_detail_block('archived plan.')
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('display_detail_violations', [])
+        codes = _display_detail_codes(violations)
+        assert codes.count('DISPLAY_DETAIL_TRAILING_PERIOD') == 1, (
+            f'Expected exactly one TRAILING_PERIOD finding for "archived plan.", got codes={codes}'
+        )
+        assert 'DISPLAY_DETAIL_NON_ASCII' not in codes
+        assert 'DISPLAY_DETAIL_TOO_LONG' not in codes
+        assert 'DISPLAY_DETAIL_MULTILINE' not in codes
+    finally:
+        temp_file.unlink()
+
+
+def test_display_detail_canonical_value_no_findings():
+    """Plain ASCII, single-line, ≤80 chars, no trailing period yields zero findings."""
+    content = _display_detail_block('no PR, nothing to clean up')
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('display_detail_violations', [])
+        assert violations == [], f'Canonical value should yield no findings, got {violations!r}'
+    finally:
+        temp_file.unlink()
+
+
+def test_display_detail_multiple_defects_all_reported():
+    """A value that violates multiple constraints emits one finding per defect kind."""
+    # >80 chars, ends with `.`, contains em-dash → expect NON_ASCII + TOO_LONG + TRAILING_PERIOD.
+    long_bad_value = 'no PR — ' + ('x' * 80) + '.'
+    assert len(long_bad_value) > 80, 'fixture must exceed 80 chars to trigger TOO_LONG'
+    content = _display_detail_block(long_bad_value)
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('display_detail_violations', [])
+        codes = _display_detail_codes(violations)
+        assert 'DISPLAY_DETAIL_NON_ASCII' in codes
+        assert 'DISPLAY_DETAIL_TOO_LONG' in codes
+        assert 'DISPLAY_DETAIL_TRAILING_PERIOD' in codes
+        assert 'DISPLAY_DETAIL_MULTILINE' not in codes
+    finally:
+        temp_file.unlink()
+
+
+def test_display_detail_non_bash_fence_no_false_positive():
+    """`mark-step-done` with em-dash inside a non-bash fence is ignored."""
+    content = (
+        '---\nname: test-skill\ndescription: Test\n---\n\n'
+        '# Test Skill\n\n'
+        '## Background\n\n'
+        '```text\n'
+        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+        'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
+        '--step s --display-detail "no PR — nothing to clean up"\n'
+        '```\n'
+    )
+    temp_file = create_temp_file(content)
+    try:
+        args = Namespace(file=str(temp_file), type='skill')
+        data = cmd_markdown(args)
+        violations = data.get('rules', {}).get('display_detail_violations', [])
+        assert violations == [], f'Non-bash fence should not trigger display_detail rule, got {violations!r}'
+    finally:
+        temp_file.unlink()
+
+
+def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
+    """Em-dash in a standards/*.md mark-step-done invocation surfaces as a subdoc issue.
+
+    Pins the wiring through ``analyze_subdocuments`` →
+    ``extract_issues_from_subdoc_analysis`` so violations in
+    ``phase-6-finalize/standards/*.md`` (the original failure surface that
+    motivated this rule) fail ``verify`` locally rather than only at PR review.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp_root:
+        skill_dir = Path(tmp_root) / 'plugin-doctor-fixture'
+        standards_dir = skill_dir / 'standards'
+        standards_dir.mkdir(parents=True)
+        bad_doc = standards_dir / 'branch-cleanup.md'
+        bad_doc.write_text(
+            '# Branch Cleanup\n\n'
+            '```bash\n'
+            'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status '
+            'mark-step-done --plan-id foo --phase 6-finalize --outcome done '
+            '--step s --display-detail "no PR — nothing to clean up"\n'
+            '```\n',
+            encoding='utf-8',
+        )
+
+        subdoc_results = analyze_subdocuments(skill_dir)
+        issues = extract_issues_from_subdoc_analysis(subdoc_results, str(skill_dir))
+
+        non_ascii_issues = [i for i in issues if i.get('type') == 'DISPLAY_DETAIL_NON_ASCII']
+        assert len(non_ascii_issues) == 1, (
+            f'Expected exactly one DISPLAY_DETAIL_NON_ASCII subdoc issue, got {issues!r}'
+        )
+        issue = non_ascii_issues[0]
+        assert issue['file'] == str(bad_doc)
+        assert issue['severity'] == 'error'
+        assert issue['fixable'] is False
+        assert issue['line'] is not None
 
 
 # =============================================================================

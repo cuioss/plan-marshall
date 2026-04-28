@@ -13,7 +13,12 @@ from _analyze import (
     analyze_tool_coverage,
     analyze_verb_chains,
 )
-from _analyze_markdown import check_checklist_patterns, check_forbidden_metadata, get_bloat_classification
+from _analyze_markdown import (
+    check_checklist_patterns,
+    check_display_detail_violations,
+    check_forbidden_metadata,
+    get_bloat_classification,
+)
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
@@ -291,6 +296,29 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
+    # --display-detail ASCII contract validation (phase-6 finalize renderer)
+    _display_detail_descriptions = {
+        'DISPLAY_DETAIL_NON_ASCII': '--display-detail value contains non-ASCII characters (chars > 0x7F)',
+        'DISPLAY_DETAIL_TOO_LONG': '--display-detail value exceeds 80 characters',
+        'DISPLAY_DETAIL_MULTILINE': '--display-detail value contains a newline (must be single-line)',
+        'DISPLAY_DETAIL_TRAILING_PERIOD': '--display-detail value ends with a trailing period',
+    }
+    for violation in rules.get('display_detail_violations', []):
+        code = violation.get('code', '')
+        value = violation.get('value', '')
+        base_desc = _display_detail_descriptions.get(code, f'--display-detail defect: {code}')
+        issues.append(
+            {
+                'type': code,
+                'file': file_path,
+                'line': violation.get('line'),
+                'severity': 'error',
+                'fixable': False,
+                'description': f'{base_desc}: "{value}"',
+                'details': violation,
+            }
+        )
+
     # Check CI rule
     ci = analysis.get('continuous_improvement_rule', {})
     if ci.get('format', {}).get('agent_lessons_via_skill'):
@@ -464,6 +492,17 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
                     }
                 )
 
+            # --display-detail ASCII contract validation (phase-6 finalize renderer)
+            for violation in check_display_detail_violations(content):
+                issues.append(
+                    {
+                        'type': 'subdoc-display-detail-violation',
+                        'code': violation.get('code'),
+                        'line': violation.get('line'),
+                        'value': violation.get('value', ''),
+                    }
+                )
+
             if issues:
                 entry['issues'] = issues
 
@@ -522,6 +561,19 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
                         'description': f'Checkbox patterns in sub-document ({issue["count"]} items)',
                         'count': issue['count'],
                         'sections': issue.get('sections', []),
+                    }
+                )
+            elif issue['type'] == 'subdoc-display-detail-violation':
+                code = issue.get('code', '')
+                value = issue.get('value', '')
+                issues.append(
+                    {
+                        'type': code,
+                        'file': file_path,
+                        'line': issue.get('line'),
+                        'severity': 'error',
+                        'fixable': False,
+                        'description': f'display_detail violation ({code}) at line {issue.get("line")}: "{value}"',
                     }
                 )
 
