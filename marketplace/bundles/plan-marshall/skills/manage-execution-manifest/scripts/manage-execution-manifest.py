@@ -18,7 +18,6 @@ Usage:
 
 import argparse
 import fnmatch
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -328,21 +327,22 @@ def _read_bundle_change_paths(plan_id: str) -> list[str]:
     seen: set[str] = set()
     union: list[str] = []
 
-    references_path = get_plan_dir(plan_id) / 'references.json'
+    references_path = get_plan_dir(plan_id) / FILE_REFERENCES
     if references_path.exists():
-        try:
-            payload = json.loads(references_path.read_text(encoding='utf-8'))
-        except (json.JSONDecodeError, OSError):
-            payload = None
+        payload = read_json(references_path, default={})
         if isinstance(payload, dict):
             for field in ('affected_files', 'modified_files'):
                 entries = payload.get(field)
                 if not isinstance(entries, list):
                     continue
                 for entry in entries:
-                    if isinstance(entry, str) and entry not in seen:
-                        seen.add(entry)
-                        union.append(entry)
+                    if not isinstance(entry, str):
+                        continue
+                    normalized = entry.strip()
+                    if not normalized or normalized in seen:
+                        continue
+                    seen.add(normalized)
+                    union.append(normalized)
 
     # Fallback: harvest deliverable-level Affected files from the solution
     # outline. Cross-skill import via PYTHONPATH (set by the executor and the
