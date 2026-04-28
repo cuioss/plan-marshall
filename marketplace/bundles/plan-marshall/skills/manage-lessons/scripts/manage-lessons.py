@@ -308,6 +308,61 @@ def _append_consolidated_from(canonical_id: str, source_id: str) -> None:
     write_lesson(canonical_id, metadata, title, new_body)
 
 
+def _merge_consolidated_lesson_body(
+    canonical_id: str,
+    source_id: str,
+    source_title: str,
+    source_metadata: dict,
+    source_body: str,
+) -> int:
+    """Merge a source lesson's body into the canonical under ``## Consolidated lessons``.
+
+    Appends a ``### {source_id} — {source_title}`` subsection containing the
+    source body to the canonical's ``## Consolidated lessons`` section, creating
+    the H2 when absent. Returns the number of bytes added to the canonical body.
+
+    Idempotency: if the canonical already has a ``### {source_id}`` subsection,
+    the canonical is left untouched and ``0`` is returned.
+
+    The canonical is written via :func:`write_lesson`, which goes through
+    :func:`atomic_write_file` — a partial failure during the write leaves the
+    canonical's previous body intact on disk.
+    """
+    metadata, title, body = read_lesson(canonical_id)
+    if not metadata:
+        # Caller is responsible for verifying canonical existence before calling.
+        return 0
+
+    if re.search(rf'(?m)^### {re.escape(source_id)}(?:\s|$)', body):
+        return 0
+
+    component = source_metadata.get('component', '')
+    category = source_metadata.get('category', '')
+
+    subsection = (
+        f'### {source_id} — {source_title}\n\n'
+        f'**Component**: `{component}` · **Category**: {category}\n\n'
+        f'{source_body.rstrip()}\n'
+    )
+
+    h2_marker = '## Consolidated lessons'
+
+    if h2_marker in body:
+        # H2 already exists — append a fresh subsection at the end of the body
+        # so multiple supersedes against the same canonical accumulate without
+        # duplicating the H2 header.
+        new_body = body.rstrip() + '\n\n' + subsection
+    else:
+        # First merge against this canonical — emit the H2 plus the first
+        # subsection at the end of the body.
+        trailer = '\n\n' if body.strip() else ''
+        new_body = body.rstrip() + f'{trailer}{h2_marker}\n\n{subsection}'
+
+    appended_bytes = len(new_body) - len(body)
+    write_lesson(canonical_id, metadata, title, new_body)
+    return appended_bytes
+
+
 def cmd_add(args: argparse.Namespace) -> dict:
     """Allocate a new lesson file with metadata header and title (empty body).
 
@@ -630,11 +685,18 @@ def cmd_remove(args: argparse.Namespace) -> dict:
 def cmd_supersede(args: argparse.Namespace) -> dict:
     """Mark a lesson as superseded by a canonical lesson.
 
-    Replaces the source lesson body with a redirect stub, sets frontmatter
-    ``status: superseded``, appends the source id to the canonical's
-    ``## Consolidated from`` section (creating it when absent), and writes a
-    tombstone JSON with ``superseded_by``. The source lesson file remains on
-    disk so the redirect resolves; ``list`` hides it by default.
+    Merges the source body into the canonical under ``## Consolidated lessons``,
+    appends the source id to the canonical's ``## Consolidated from`` section,
+    writes a tombstone JSON with ``superseded_by``, and replaces the source
+    body with a ``[SUPERSEDED]`` redirect stub (frontmatter ``status:
+    superseded``).
+
+    The canonical is mutated before the source body is destroyed: if either
+    canonical write fails, the source remains untouched on disk so callers can
+    retry safely. Subsequent supersedes against the same canonical append new
+    ``### {source-id}`` subsections under the existing ``## Consolidated
+    lessons`` H2 without duplicating it; a re-run against an already-merged
+    source is idempotent.
     """
     if args.lesson_id == args.by:
         return {
@@ -665,6 +727,15 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
         args.lesson_id, args.reason, status='superseded', superseded_by=args.by
     )
 
+    # Mutate canonical first so the source body is preserved in the canonical
+    # before its on-disk form is destroyed. If either canonical write raises,
+    # the source remains intact and callers can retry; both helpers are
+    # idempotent so the retry will not double-append.
+    _append_consolidated_from(args.by, args.lesson_id)
+    merged_bytes = _merge_consolidated_lesson_body(
+        args.by, args.lesson_id, title, metadata, body
+    )
+
     new_metadata = dict(metadata)
     new_metadata['status'] = 'superseded'
 
@@ -676,13 +747,11 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
     )
     write_lesson(args.lesson_id, new_metadata, title, redirect_body)
 
-    _append_consolidated_from(args.by, args.lesson_id)
-
     log_entry(
         'script',
         'global',
         'INFO',
-        f'(plan-marshall:manage-lessons) Superseded lesson {args.lesson_id} by {args.by} — {args.reason}',
+        f'(plan-marshall:manage-lessons) Superseded lesson {args.lesson_id} by {args.by} — {args.reason} — merged_bytes={merged_bytes}',
     )
 
     return {
@@ -691,6 +760,7 @@ def cmd_supersede(args: argparse.Namespace) -> dict:
         'superseded_by': args.by,
         'reason': args.reason,
         'tombstone': str(tombstone_path.resolve()),
+        'merged_bytes': merged_bytes,
     }
 
 

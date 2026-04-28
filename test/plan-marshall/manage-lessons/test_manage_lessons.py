@@ -1671,6 +1671,185 @@ class TestCmdSupersede:
         assert result['status'] == 'error'
         assert result['error'] == 'self_supersede'
 
+    def test_supersede_first_merge_creates_consolidated_lessons_h2(self, tmp_path):
+        """First supersede creates ``## Consolidated lessons`` H2 plus a ``### {id} — {title}`` subsection."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        _, canonical = self._seed_pair(lessons_dir)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-02-01-001',
+                    reason='first merge',
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['merged_bytes'] > 0
+
+        canonical_content = canonical.read_text(encoding='utf-8')
+        assert canonical_content.count('## Consolidated lessons') == 1
+        assert '### 2025-01-01-01-001 — Source Lesson' in canonical_content
+        assert '**Component**: `test` · **Category**: bug' in canonical_content
+        # Source body is preserved in the canonical.
+        assert 'Source body content.' in canonical_content
+
+    def test_supersede_second_merge_appends_under_existing_h2(self, tmp_path):
+        """A second supersede against the same canonical adds another ``### {id}`` without duplicating the H2."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        _, canonical = self._seed_pair(lessons_dir)
+
+        # Seed a second source lesson with distinct metadata so we can assert
+        # the per-source `Component`/`Category` line is rendered correctly.
+        second_source = lessons_dir / '2025-01-03-01-001.md'
+        second_source.write_text(
+            'id=2025-01-03-01-001\n'
+            'component=other\n'
+            'category=improvement\n'
+            'status=active\n'
+            'created=2025-01-03\n\n'
+            '# Second Source\n\nSecond source body.\n',
+            encoding='utf-8',
+        )
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-02-01-001',
+                    reason='first',
+                )
+            )
+            cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-03-01-001',
+                    by='2025-01-02-01-001',
+                    reason='second',
+                )
+            )
+
+        canonical_content = canonical.read_text(encoding='utf-8')
+        # Both subsections present, single H2.
+        assert canonical_content.count('## Consolidated lessons') == 1
+        assert '### 2025-01-01-01-001 — Source Lesson' in canonical_content
+        assert '### 2025-01-03-01-001 — Second Source' in canonical_content
+        # Per-source metadata line uses the second source's component/category.
+        assert '**Component**: `other` · **Category**: improvement' in canonical_content
+        assert 'Second source body.' in canonical_content
+
+    def test_supersede_idempotent_when_subsection_present(self, tmp_path):
+        """Re-running supersede whose ``### {id}`` already exists on the canonical is a body no-op (merged_bytes=0)."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        _, canonical = self._seed_pair(lessons_dir)
+
+        # Pre-populate the canonical with a subsection for the source id so the
+        # idempotency check fires before any append happens.
+        canonical.write_text(
+            'id=2025-01-02-01-001\n'
+            'component=test\n'
+            'category=bug\n'
+            'status=active\n'
+            'created=2025-01-02\n\n'
+            '# Canonical Lesson\n\nCanonical body content.\n\n'
+            '## Consolidated lessons\n\n'
+            '### 2025-01-01-01-001 — Pre-existing Title\n\n'
+            '**Component**: `test` · **Category**: bug\n\n'
+            'pre-existing merged body\n',
+            encoding='utf-8',
+        )
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-02-01-001',
+                    reason='retry',
+                )
+            )
+
+        assert result['status'] == 'success'
+        assert result['merged_bytes'] == 0
+
+        canonical_after = canonical.read_text(encoding='utf-8')
+        # H2 stays single, the pre-existing subsection is preserved, and no
+        # second `### 2025-01-01-01-001` was added.
+        assert canonical_after.count('## Consolidated lessons') == 1
+        assert canonical_after.count('### 2025-01-01-01-001') == 1
+        assert 'pre-existing merged body' in canonical_after
+        # The pre-existing title is preserved verbatim — supersede did not
+        # rewrite it with the source's current title.
+        assert 'Pre-existing Title' in canonical_after
+
+    def test_supersede_atomic_canonical_write_failure_leaves_source_intact(
+        self, tmp_path, monkeypatch
+    ):
+        """A failure during the canonical write leaves the source body and frontmatter unchanged."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        source, canonical = self._seed_pair(lessons_dir)
+        source_before = source.read_text(encoding='utf-8')
+
+        canonical_path_str = str(canonical)
+        original_atomic_write = _mod.atomic_write_file
+
+        def failing_atomic_write(path, content):
+            # Raise only when the canonical is the target so the tombstone
+            # write (which precedes the canonical write) still succeeds.
+            if str(path) == canonical_path_str:
+                raise OSError('simulated canonical write failure')
+            return original_atomic_write(path, content)
+
+        monkeypatch.setattr(_mod, 'atomic_write_file', failing_atomic_write)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            with pytest.raises(OSError, match='simulated canonical write failure'):
+                cmd_supersede(
+                    Namespace(
+                        lesson_id='2025-01-01-01-001',
+                        by='2025-01-02-01-001',
+                        reason='atomic',
+                    )
+                )
+
+        # Source body and frontmatter survive the failed canonical write.
+        assert source.read_text(encoding='utf-8') == source_before
+
+    def test_supersede_log_entry_records_merged_bytes(self, tmp_path, monkeypatch):
+        """The script-execution log entry includes the appended byte count."""
+        lessons_dir = tmp_path / 'lessons-learned'
+        lessons_dir.mkdir(parents=True)
+        self._seed_pair(lessons_dir)
+
+        captured: list[tuple] = []
+
+        def fake_log_entry(*args, **kwargs):
+            captured.append(args)
+
+        monkeypatch.setattr(_mod, 'log_entry', fake_log_entry)
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_supersede(
+                Namespace(
+                    lesson_id='2025-01-01-01-001',
+                    by='2025-01-02-01-001',
+                    reason='log-test',
+                )
+            )
+
+        assert result['status'] == 'success'
+        merged_bytes = result['merged_bytes']
+        assert merged_bytes > 0
+
+        # cmd_supersede emits exactly one INFO log entry per success path.
+        supersede_calls = [args for args in captured if 'Superseded lesson' in args[3]]
+        assert len(supersede_calls) == 1
+        log_message = supersede_calls[0][3]
+        assert f'merged_bytes={merged_bytes}' in log_message
+
 
 # =============================================================================
 # Tier 2: cmd_cleanup_superseded
