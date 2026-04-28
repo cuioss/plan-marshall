@@ -492,6 +492,28 @@ def _log_pre_push_quality_gate_omitted(plan_id: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
+def _log_pre_submission_self_review_omitted(plan_id: str) -> None:
+    """Emit the decision-log entry for the ``pre_submission_self_review_inactive`` pre-filter."""
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — '
+        'empty modified_files'
+    )
+    _emit_decision_log(plan_id, message)
+
+
+def _log_bot_enforcement_guard_fired(plan_id: str, provider: str) -> None:
+    """Emit the decision-log entry for the ``bot_enforcement_guard`` violation.
+
+    Logged before the composition error is raised so the violation is recorded
+    even though the manifest was not persisted.
+    """
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard fired — '
+        f'ci_provider={provider}, automated-review missing from phase_6.steps'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 # =============================================================================
 # Pre-Filter Helpers
 # =============================================================================
@@ -557,16 +579,17 @@ def _apply_commit_strategy_none(
 ) -> tuple[list[str], bool]:
     """Pre-filter: drop ``commit-push`` when ``commit_strategy == none``.
 
-    Also drops ``pre-push-quality-gate`` because the gate is only meaningful
-    when a downstream push exists. Returns the filtered list plus a flag
-    indicating whether the pre-filter fired.
+    Also drops ``pre-push-quality-gate`` and ``pre-submission-self-review``
+    because both gates are only meaningful when a downstream push exists.
+    Returns the filtered list plus a flag indicating whether the pre-filter
+    fired.
     """
     if commit_strategy != 'none':
         return phase_6_candidates, False
     fired = False
     filtered: list[str] = []
     for step in phase_6_candidates:
-        if step in {'commit-push', 'pre-push-quality-gate'}:
+        if step in {'commit-push', 'pre-push-quality-gate', 'pre-submission-self-review'}:
             fired = True
             continue
         filtered.append(step)
@@ -608,6 +631,99 @@ def _apply_pre_push_quality_gate_inactive(
 
     # All activation conditions satisfied — keep the step.
     return phase_6_candidates, False
+
+
+def _apply_pre_submission_self_review_inactive(
+    phase_6_candidates: list[str], plan_id: str
+) -> tuple[list[str], bool]:
+    """Pre-filter: drop ``pre-submission-self-review`` when activation conditions fail.
+
+    Activation requires ``references.json::modified_files`` to be non-empty.
+    There is no ``activation_globs`` knob — the four cognitive checks the step
+    targets (symmetric pairs, regex over-fit, wording, duplication) apply to
+    any code or doc change.
+
+    The pre-filter is a no-op when ``pre-submission-self-review`` is already
+    absent (e.g., already filtered by ``_apply_commit_strategy_none``).
+    Returns the filtered list plus a flag indicating whether the pre-filter
+    fired.
+    """
+    if 'pre-submission-self-review' not in phase_6_candidates:
+        return phase_6_candidates, False
+
+    modified_files = _read_modified_files(plan_id)
+    if not modified_files:
+        return [s for s in phase_6_candidates if s != 'pre-submission-self-review'], True
+
+    return phase_6_candidates, False
+
+
+def _read_ci_provider() -> str | None:
+    """Return the CI provider identifier (``github``, ``gitlab``) from marshal.json.
+
+    Resolution order (first match wins):
+
+    1. ``ci.provider`` — short identifier set explicitly by the project.
+    2. ``providers[]`` entry where ``category == 'ci'``, mapping skill name to
+       a short identifier:
+
+       * ``plan-marshall:workflow-integration-github`` -> ``github``
+       * ``plan-marshall:workflow-integration-gitlab`` -> ``gitlab``
+
+    Returns ``None`` when the marshal file is missing, no CI provider is
+    declared, or the resolved value is neither ``github`` nor ``gitlab``.
+    """
+    marshal_path = get_marshal_path()
+    if marshal_path is None or not marshal_path.is_file():
+        return None
+    try:
+        data = read_json(marshal_path)
+    except (OSError, json.JSONDecodeError):
+        return None
+    ci_block = data.get('ci')
+    if isinstance(ci_block, dict):
+        provider = ci_block.get('provider')
+        if isinstance(provider, str) and provider in {'github', 'gitlab'}:
+            return provider
+    providers = data.get('providers')
+    if not isinstance(providers, list):
+        return None
+    for entry in providers:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('category') != 'ci':
+            continue
+        skill_name = entry.get('skill_name', '')
+        if not isinstance(skill_name, str):
+            continue
+        if skill_name == 'plan-marshall:workflow-integration-github':
+            return 'github'
+        if skill_name == 'plan-marshall:workflow-integration-gitlab':
+            return 'gitlab'
+    return None
+
+
+def _apply_bot_enforcement_guard(
+    phase_6_steps: list[str], plan_id: str
+) -> str | None:
+    """Composition-time guard: ``automated-review`` must remain on GitHub/GitLab plans.
+
+    Lesson ``2026-04-27-18-003`` requires PR-review bots to be effectively
+    mandatory whenever the plan finalizes through GitHub or GitLab. If the
+    seven-row matrix or any pre-filter has dropped ``automated-review`` AND
+    the project's CI provider is GitHub or GitLab, raise the violation.
+
+    Returns ``None`` when the guard is a no-op (non-GitHub/GitLab CI, or
+    ``automated-review`` is present), otherwise returns the offending CI
+    provider identifier (``github`` or ``gitlab``) so the caller can include
+    it in the error TOON and decision-log line.
+    """
+    provider = _read_ci_provider()
+    if provider not in {'github', 'gitlab'}:
+        return None
+    if 'automated-review' in phase_6_steps:
+        return None
+    return provider
 
 
 # =============================================================================
@@ -657,10 +773,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # row matrix's change-type / scope / recipe inputs and operate on the
     # candidate list. The order is fixed and documented in
     # standards/decision-rules.md:
-    #   1. commit_strategy_none — drop commit-push (and pre-push-quality-gate)
-    #      when no push will occur.
+    #   1. commit_strategy_none — drop commit-push (and pre-push-quality-gate
+    #      and pre-submission-self-review) when no push will occur.
     #   2. pre_push_quality_gate_inactive — drop pre-push-quality-gate when
     #      activation_globs is empty or no modified_files match.
+    #   3. pre_submission_self_review_inactive — drop pre-submission-self-review
+    #      when modified_files is empty.
     # Each pre-filter returns (filtered_candidates, fired_flag); we log a
     # dedicated decision-log line per fired pre-filter in addition to the row
     # log line emitted by _log_decision below.
@@ -669,6 +787,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     )
     phase_6_candidates, pre_push_quality_gate_omitted = _apply_pre_push_quality_gate_inactive(
         phase_6_candidates, plan_id
+    )
+    phase_6_candidates, pre_submission_self_review_omitted = (
+        _apply_pre_submission_self_review_inactive(phase_6_candidates, plan_id)
     )
 
     affected_files_count = max(0, int(args.affected_files_count or 0))
@@ -692,6 +813,25 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     bundle_change_paths = _read_bundle_change_paths(plan_id)
     bundle_rule_inserted_before = _apply_bundle_self_modification(plan_id, body, bundle_change_paths)
 
+    # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
+    # persistence. When the project's CI provider is GitHub or GitLab and the
+    # final phase_6.steps does not contain `automated-review`, the guard logs the
+    # violation and returns an error TOON without writing the manifest.
+    final_phase_6_steps = body['phase_6']['steps']
+    bot_guard_fired_provider = _apply_bot_enforcement_guard(final_phase_6_steps, plan_id)
+    if bot_guard_fired_provider is not None:
+        _log_bot_enforcement_guard_fired(plan_id, bot_guard_fired_provider)
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'bot_enforcement_violation',
+            'message': (
+                'automated-review must remain in the manifest for GitHub/GitLab plans — '
+                'review which pre-filter dropped it'
+            ),
+            'ci_provider': bot_guard_fired_provider,
+        }
+
     manifest = {
         'manifest_version': MANIFEST_VERSION,
         'plan_id': plan_id,
@@ -702,6 +842,8 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         _log_commit_push_omitted(plan_id)
     if pre_push_quality_gate_omitted:
         _log_pre_push_quality_gate_omitted(plan_id)
+    if pre_submission_self_review_omitted:
+        _log_pre_submission_self_review_omitted(plan_id)
     _log_decision(plan_id, rule, body)
     if bundle_rule_inserted_before is not None:
         _log_bundle_self_modification(plan_id, bundle_rule_inserted_before)
@@ -723,6 +865,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'commit_strategy': commit_strategy,
         'commit_push_omitted': commit_push_omitted,
         'pre_push_quality_gate_omitted': pre_push_quality_gate_omitted,
+        'pre_submission_self_review_omitted': pre_submission_self_review_omitted,
         'bundle_self_modification_inserted_before': bundle_rule_inserted_before or '',
     }
 
