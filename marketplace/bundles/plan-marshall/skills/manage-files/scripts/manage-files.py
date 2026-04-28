@@ -15,10 +15,12 @@ Usage:
     python3 manage-files.py exists --plan-id my-plan --file config.toon
     python3 manage-files.py remove --plan-id my-plan --file old-file.md
     python3 manage-files.py mkdir --plan-id my-plan --dir goals
+    python3 manage-files.py discover --root /abs/path --glob "**/*.py" --include-files
 """
 
 import argparse
 import sys
+from pathlib import Path
 
 from file_ops import atomic_write_file, get_plan_dir, output_toon, safe_main  # type: ignore[import-not-found]
 from input_validation import (  # type: ignore[import-not-found]
@@ -215,6 +217,51 @@ def cmd_create_or_reference(args) -> dict:
         return {'status': 'success', 'plan_id': args.plan_id, 'action': 'created', 'path': str(plan_dir)}
 
 
+def cmd_discover(args: argparse.Namespace) -> dict:
+    """Discover filesystem paths matching one or more glob patterns under a root.
+
+    Pure pathlib implementation — never spawns subprocess or invokes shell. Consumer
+    skills should call this rather than instructing the LLM to use the Glob tool, so
+    discovery becomes deterministic and auditable. See lesson 2026-04-27-18-005.
+    """
+    root_path = Path(args.root)
+
+    if not root_path.exists() or not root_path.is_dir():
+        return {
+            'status': 'error',
+            'error': 'invalid_root',
+            'message': f'Root does not exist or is not a directory: {args.root}',
+        }
+
+    if not args.glob:
+        return {
+            'status': 'error',
+            'error': 'no_patterns',
+            'message': 'At least one --glob pattern is required',
+        }
+
+    # Default behavior: include files only when neither flag is set.
+    include_files = args.include_files or not args.include_dirs
+    include_dirs = args.include_dirs
+
+    seen: set[Path] = set()
+    for pattern in args.glob:
+        for match in root_path.glob(pattern):
+            if match.is_file() and not include_files:
+                continue
+            if match.is_dir() and not include_dirs:
+                continue
+            seen.add(match.resolve())
+
+    paths = sorted(str(p) for p in seen)
+
+    return {
+        'status': 'success',
+        'root': str(root_path.resolve()),
+        'paths': paths,
+    }
+
+
 @safe_main
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -268,6 +315,31 @@ def main() -> int:
     )
     add_plan_id_arg(create_ref_parser)
     create_ref_parser.set_defaults(func=cmd_create_or_reference)
+
+    # discover
+    discover_parser = subparsers.add_parser(
+        'discover',
+        help='Discover filesystem paths matching glob patterns under a root (pathlib only)',
+        allow_abbrev=False,
+    )
+    discover_parser.add_argument('--root', required=True, help='Absolute root directory')
+    discover_parser.add_argument(
+        '--glob',
+        action='append',
+        default=[],
+        help='Glob pattern relative to root (repeatable)',
+    )
+    discover_parser.add_argument(
+        '--include-files',
+        action='store_true',
+        help='Include files in results (default when neither flag set)',
+    )
+    discover_parser.add_argument(
+        '--include-dirs',
+        action='store_true',
+        help='Include directories in results',
+    )
+    discover_parser.set_defaults(func=cmd_discover)
 
     args = parser.parse_args()
     result = args.func(args)

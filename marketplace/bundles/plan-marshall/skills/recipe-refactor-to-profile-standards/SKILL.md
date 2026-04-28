@@ -71,7 +71,17 @@ Use the `{recipe_package_source}` field from the output:
 
 Skip modules where the selected table is empty.
 
-**If a package has `file_count: 0`**: The architecture module did not resolve files for this package. Discover files by scanning the package path using Glob patterns (e.g., `{module_path}/{package_path}/**/*.md`, `{module_path}/{package_path}/**/*.py`). Skip packages that have no files on disk.
+**If a package has `file_count: 0`**: The architecture module did not resolve files for this package. Discover files via the canonical `manage-files discover` subcommand:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-files:manage-files discover \
+  --root {module_path}/{package_path} \
+  --glob "**/*.md" \
+  --glob "**/*.py" \
+  --include-files
+```
+
+Capture the returned `paths` array as the discovered file list. Skip packages that have no files on disk.
 
 Collect one deliverable per package (in-memory, for use in Step 4):
 - **Title**: `Refactor: {module}/{package_name}` (when `recipe_package_source` is `packages`) or `Refactor tests: {module}/{package_name}` (when `recipe_package_source` is `test_packages`)
@@ -83,7 +93,7 @@ Collect one deliverable per package (in-memory, for use in Step 4):
   - `module`: `{module_name}`
   - `profile`: `{recipe_profile}`
 - **Skills**: All skills resolved in Step 1 (comma-separated)
-- **Affected files**: All files in the package (from architecture data `files` field, or discovered via Glob)
+- **Affected files**: All files in the package (from architecture data `files` field, or via `manage-files discover` when the architecture record reports `file_count: 0`)
 
 ---
 

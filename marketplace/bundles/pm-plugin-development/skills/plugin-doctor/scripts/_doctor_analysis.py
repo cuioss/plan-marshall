@@ -17,8 +17,10 @@ from _analyze_markdown import (
     check_checklist_patterns,
     check_display_detail_violations,
     check_forbidden_metadata,
+    check_resolver_gap,
     get_bloat_classification,
 )
+from _analyze_shared import check_agent_glob_resolver_workaround
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflows', 'templates']
@@ -53,6 +55,32 @@ def analyze_component(component: dict) -> dict:
                 if 'error' not in coverage:
                     analysis['coverage'] = coverage
                     issues.extend(extract_issues_from_coverage_analysis(coverage, str(path), component_type))
+
+                # agent-glob-resolver-workaround: agents that declare Glob in
+                # tools without an explicit `# resolver-glob-exempt:` marker.
+                # Driving lesson 2026-04-27-18-005.
+                if component_type == 'agent':
+                    try:
+                        agent_content = file_path.read_text(encoding='utf-8', errors='replace')
+                    except OSError:
+                        agent_content = ''
+                    for finding in check_agent_glob_resolver_workaround(str(path), agent_content):
+                        issues.append(
+                            {
+                                'type': 'agent-glob-resolver-workaround',
+                                'rule_id': 'agent-glob-resolver-workaround',
+                                'file': str(path),
+                                'line': finding.get('line'),
+                                'severity': 'error',
+                                'fixable': False,
+                                'description': finding.get(
+                                    'message',
+                                    'Agent declares Glob without resolver exemption marker '
+                                    '(agent-glob-resolver-workaround)',
+                                ),
+                                'details': finding,
+                            }
+                        )
 
     elif component_type == 'skill':
         if path is None:
@@ -296,6 +324,26 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
             }
         )
 
+    # skill-resolver-gap (warning) — LLM-Glob discovery prose without an
+    # adjacent resolver call. Driven by the analyzer in _analyze_markdown.py,
+    # surfaced here as standard issue dicts.
+    for violation in rules.get('resolver_gap_violations', []):
+        issues.append(
+            {
+                'type': 'skill-resolver-gap',
+                'rule_id': 'skill-resolver-gap',
+                'file': file_path,
+                'line': violation.get('line'),
+                'severity': 'warning',
+                'fixable': False,
+                'description': violation.get(
+                    'message',
+                    'LLM-Glob discovery prose without adjacent resolver call (skill-resolver-gap)',
+                ),
+                'details': violation,
+            }
+        )
+
     # --display-detail ASCII contract validation (phase-6 finalize renderer)
     _display_detail_descriptions = {
         'DISPLAY_DETAIL_NON_ASCII': '--display-detail value contains non-ASCII characters (chars > 0x7F)',
@@ -492,6 +540,20 @@ def analyze_subdocuments(skill_dir: Path) -> list[dict]:
                     }
                 )
 
+            # skill-resolver-gap: LLM-Glob discovery prose without adjacent
+            # resolver call. Restricted to standards/*.md per rule scope.
+            if subdir_name == 'standards':
+                resolver_gap_findings = check_resolver_gap(content, str(md_file))
+                for finding in resolver_gap_findings:
+                    issues.append(
+                        {
+                            'type': 'skill-resolver-gap',
+                            'line': finding.get('line'),
+                            'message': finding.get('message'),
+                            'pattern': finding.get('pattern'),
+                        }
+                    )
+
             # --display-detail ASCII contract validation (phase-6 finalize renderer)
             for violation in check_display_detail_violations(content):
                 issues.append(
@@ -561,6 +623,22 @@ def extract_issues_from_subdoc_analysis(subdoc_results: list[dict], skill_path: 
                         'description': f'Checkbox patterns in sub-document ({issue["count"]} items)',
                         'count': issue['count'],
                         'sections': issue.get('sections', []),
+                    }
+                )
+            elif issue['type'] == 'skill-resolver-gap':
+                issues.append(
+                    {
+                        'type': 'skill-resolver-gap',
+                        'rule_id': 'skill-resolver-gap',
+                        'file': file_path,
+                        'line': issue.get('line'),
+                        'severity': 'warning',
+                        'fixable': False,
+                        'description': issue.get(
+                            'message',
+                            'LLM-Glob discovery prose without adjacent resolver call (skill-resolver-gap)',
+                        ),
+                        'details': issue,
                     }
                 )
             elif issue['type'] == 'subdoc-display-detail-violation':
