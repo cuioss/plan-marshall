@@ -514,6 +514,138 @@ def check_mark_step_done_violations(content: str) -> list:
     return violations
 
 
+def _extract_display_detail_value(invocation_text: str) -> str | None:
+    """Extract the value passed to --display-detail in a (possibly multi-line) command string.
+
+    Handles three forms:
+    - Double-quoted: ``--display-detail "value with spaces"`` (supports ``\\\"`` escape)
+    - Single-quoted: ``--display-detail 'value with spaces'``
+    - Unquoted: ``--display-detail value`` (terminates at whitespace)
+
+    Returns the raw value string (without enclosing quotes) or ``None`` when the
+    flag is not present in ``invocation_text``. Multi-line quoted values keep
+    their embedded newlines so the multi-line defect check can detect them.
+    """
+    flag_pattern = re.compile(r'(?<![A-Za-z0-9_-])--display-detail(?![A-Za-z0-9_-])\s+')
+    match = flag_pattern.search(invocation_text)
+    if not match:
+        return None
+
+    after = invocation_text[match.end():]
+    if not after:
+        return None
+
+    first_char = after[0]
+    if first_char == '"':
+        end_match = re.search(r'(?<!\\)"', after[1:])
+        if not end_match:
+            return None
+        return after[1 : 1 + end_match.start()]
+    if first_char == "'":
+        end_match = re.search(r"'", after[1:])
+        if not end_match:
+            return None
+        return after[1 : 1 + end_match.start()]
+    end_match = re.search(r'\s', after)
+    end = end_match.start() if end_match else len(after)
+    return after[:end]
+
+
+def check_display_detail_violations(content: str) -> list:
+    """Check ``--display-detail`` values in ``mark-step-done`` invocations against the ASCII contract.
+
+    Scans each fenced ``bash``/``sh`` block for ``mark-step-done`` invocations
+    (single line or backslash-continued multi-line), extracts the
+    ``--display-detail`` argument value, and emits one finding per defect kind:
+
+    - ``DISPLAY_DETAIL_NON_ASCII``: value contains any character > 0x7F (e.g.,
+      em dash U+2014, en dash U+2013, smart quotes).
+    - ``DISPLAY_DETAIL_TOO_LONG``: value length exceeds 80 characters.
+    - ``DISPLAY_DETAIL_MULTILINE``: value contains a newline (``\\n``).
+    - ``DISPLAY_DETAIL_TRAILING_PERIOD``: value ends with ``.``.
+
+    The contract is documented in ``phase-6-finalize/SKILL.md`` and
+    ``phase-6-finalize/standards/output-template.md`` ("Plain ASCII - no
+    unicode glyphs"). Without this rule, violations only surface in PR review
+    after gemini-code-assist or other bots flag them.
+
+    Each finding is returned as a dict with ``line`` (1-indexed line of the
+    first ``mark-step-done`` line of the invocation), ``code`` (defect code),
+    and ``value`` (offending substring, truncated to 80 chars for reporting).
+    """
+    violations = []
+    fence_pattern = re.compile(r'```(?:bash|sh)\s*\n(.*?)```', re.DOTALL)
+
+    for fence_match in fence_pattern.finditer(content):
+        block = fence_match.group(1)
+        block_start_line = content[: fence_match.start()].count('\n') + 2
+
+        block_lines = block.split('\n')
+
+        # Group lines into logical shell commands. A line continues into the
+        # next when it ends with a trailing backslash OR an unclosed double-/
+        # single-quoted string. The quote tracker treats ``\\X`` as an escape
+        # sequence so embedded ``\\\"`` does not flip the in_double_quote flag.
+        logical_commands: list[list[tuple[int, str]]] = []
+        current_cmd: list[tuple[int, str]] = []
+        in_double_quote = False
+        in_single_quote = False
+        for idx, cmd_line in enumerate(block_lines):
+            current_cmd.append((idx, cmd_line))
+            j = 0
+            while j < len(cmd_line):
+                ch = cmd_line[j]
+                if ch == '\\' and j + 1 < len(cmd_line):
+                    j += 2
+                    continue
+                if ch == '"' and not in_single_quote:
+                    in_double_quote = not in_double_quote
+                elif ch == "'" and not in_double_quote:
+                    in_single_quote = not in_single_quote
+                j += 1
+            line_continues = (
+                cmd_line.rstrip().endswith('\\') or in_double_quote or in_single_quote
+            )
+            if not line_continues:
+                logical_commands.append(current_cmd)
+                current_cmd = []
+        if current_cmd:
+            logical_commands.append(current_cmd)
+
+        for cmd in logical_commands:
+            mark_done_indices = [idx for idx, cmd_line in cmd if 'mark-step-done' in cmd_line]
+            if not mark_done_indices:
+                continue
+
+            invocation_line = block_start_line + mark_done_indices[0]
+            invocation_text = '\n'.join(cmd_line for _idx, cmd_line in cmd)
+
+            value = _extract_display_detail_value(invocation_text)
+            if value is None:
+                continue
+
+            report_value = value if len(value) <= 80 else value[:77] + '...'
+
+            if any(ord(ch) > 0x7F for ch in value):
+                violations.append(
+                    {'line': invocation_line, 'code': 'DISPLAY_DETAIL_NON_ASCII', 'value': report_value}
+                )
+            if len(value) > 80:
+                violations.append(
+                    {'line': invocation_line, 'code': 'DISPLAY_DETAIL_TOO_LONG', 'value': report_value}
+                )
+            if '\n' in value:
+                violations.append(
+                    {'line': invocation_line, 'code': 'DISPLAY_DETAIL_MULTILINE', 'value': report_value}
+                )
+            if value.endswith('.'):
+                violations.append(
+                    {'line': invocation_line, 'code': 'DISPLAY_DETAIL_TRAILING_PERIOD', 'value': report_value}
+                )
+
+    return violations
+
+
 def check_rule_violations(content: str, frontmatter: str, component_type: str, has_tools: bool, file_path: str) -> dict:
     """Check for rule violations."""
     agent_task_tool_prohibited = False
@@ -567,6 +699,9 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
     ):
         resolver_gap_violations = check_resolver_gap(content, file_path)
 
+    # --display-detail ASCII contract validation (phase-6 finalize renderer)
+    display_detail_violations = check_display_detail_violations(content)
+
     return {
         'agent_task_tool_prohibited': agent_task_tool_prohibited,
         'agent_maven_restricted': agent_maven_restricted,
@@ -577,6 +712,7 @@ def check_rule_violations(content: str, frontmatter: str, component_type: str, h
         'workflow_prose_param_violations': workflow_prose_param_violations,
         'mark_step_done_violations': mark_step_done_violations,
         'resolver_gap_violations': resolver_gap_violations,
+        'display_detail_violations': display_detail_violations,
     }
 
 

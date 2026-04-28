@@ -86,7 +86,7 @@ Bash(command="git -C /path/to/worktree status")
 Bash(command="git -C /path/to/worktree log --oneline -10")
 ```
 
-When a plan runs in an isolated worktree, `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. See [Git: use git -C, not cd+git](#git-use-git--c-not-cdgit) below for the rule and rationale.
+When a plan runs in an isolated worktree, `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. See [`cd <path> && <anything>` is forbidden for every tool, not just git](#cd-path--anything-is-forbidden-for-every-tool-not-just-git) below for the rule and rationale (the same `cd && X` prohibition applies to every tool, not just git).
 
 **CI/Git provider operations (PRs, issues, CI status, reviews):**
 
@@ -114,27 +114,94 @@ Never hard-code build commands (`./pw`, `./mvnw`, `mvn`, `npm`, `gradle`). The a
 
 ## Bash Safety Rules
 
+The foundational "Bash: One command per call" rule lives in [`dev-general-practices` SKILL.md → Hard Rules](../SKILL.md#bash-one-command-per-call). The subsections below extend that anchor with the structural patterns most often violated in practice — chain shape vs chain content, `cd && X` for any tool, and Bash file-authoring impersonation. This document references the foundational rule rather than duplicating it.
+
 ### One command per call
 
 Each Bash call must contain exactly ONE command. Never combine with newlines, `&`, `&&`, or `;`. If independent, make parallel Bash calls. If sequential, make separate calls.
+
+### Chain shape, not chain content
+
+The rule applies to chain shape, not chain content. `git diff > /tmp/x.diff && wc -l /tmp/x.diff` is two commands chained with `&&` and is forbidden — even though the redirect target is `/tmp` and neither side contains markdown, heredocs, or `$(...)` substitution. The trivial appearance is the trap: short commands plus a benign redirect target still constitute a compound chain.
+
+The structural rule covers every form of chaining (`&&`, `;`, `&`, newline) regardless of what flows through it. Split into two separate Bash calls, or replace the entire pattern with a single non-Bash tool call (Read/Grep/Glob).
+
+```
+# BAD — two commands joined by && in one Bash call
+Bash(command="git diff > /tmp/foo.diff && head -200 /tmp/foo.diff")
+Bash(command="some-script --emit-json > /tmp/out.json && jq .field /tmp/out.json")
+Bash(command="ls -1 src/ > /tmp/files.txt && wc -l /tmp/files.txt")
+
+# GOOD — split into separate Bash calls
+Bash(command="git -C /path diff > .plan/temp/foo.diff")
+Bash(command="wc -l .plan/temp/foo.diff")
+
+# BETTER — replace with a single non-Bash tool call where possible
+Read(file_path="/path/to/file")               # instead of cat / head / tail piped to file
+Grep(pattern="...", path="...")               # instead of grep > file && other
+Glob(pattern="src/*", path="...")             # instead of ls > files.txt && wc -l files.txt
+```
+
+Use `.plan/temp/` for transient artifacts when a Bash redirect is genuinely necessary — `.plan/temp/` is covered by the `Write(.plan/**)` permission and lives inside the workspace, while `/tmp/` is not pre-approved by the harness.
 
 ### No shell constructs
 
 `$()` substitution, `for` loops, `while` loops, and subshells all trigger Claude Code's security prompt. Make individual Bash calls per iteration instead.
 
-### Git: use `git -C`, not `cd`+`git`
+### `cd <path> && <anything>` is forbidden for every tool, not just git
 
-Every repo-targeted git command MUST use `git -C {path} <subcommand>`. The compound form `cd {path} && git <subcommand>` is forbidden because it (a) trips Claude Code's bare-repository security heuristic and pops a permission prompt that disrupts the user, and (b) is two commands joined by `&&`, violating the [One command per call](#one-command-per-call) rule above.
+`cd <path> && <anything>` is forbidden for every tool, not just git. The compound `cd && X` form has no legitimate use in a one-command-per-call regime — it (a) is two commands joined by `&&`, violating the [One command per call](#one-command-per-call) rule above, and (b) for `git` specifically trips Claude Code's bare-repository security heuristic and pops a permission prompt that disrupts the user.
+
+Use the tool's native cwd flag instead:
+
+| Tool | Native cwd flag |
+|------|-----------------|
+| git | `git -C <path>` |
+| uv | `uv --directory <path>` |
+| mvn | `mvn -f <path>` |
+| npm | `npm --prefix <path>` |
+| pytest | `pytest --rootdir <path>` |
+| ruff | `ruff check <path>` (positional) |
 
 ```
-# BAD — security prompt + violates one-command-per-call
+# BAD — every one of these violates one-command-per-call (cd && X shape)
 Bash(command="cd /path/to/worktree && git log --oneline -5")
+Bash(command="cd /path/to/worktree && uv run ruff check src/")
+Bash(command="cd /path/to/worktree && pytest test/")
+Bash(command="cd /path/to/repo && mvn verify")
+Bash(command="cd /path/to/project && npm test")
 
-# GOOD — single command, no prompt
+# GOOD — single command using native cwd flag, no prompt
 Bash(command="git -C /path/to/worktree log --oneline -5")
+Bash(command="uv --directory /path/to/worktree run ruff check src/")
+Bash(command="pytest --rootdir /path/to/worktree test/")
+Bash(command="mvn -f /path/to/repo verify")
+Bash(command="npm --prefix /path/to/project test")
 ```
 
-When a plan runs in an isolated worktree, `{path}` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use `git -C .` — never `cd && git`. The same rule applies inside `Skill: plan-marshall:workflow-integration-git` and any agent that delegates git to Bash.
+When a plan runs in an isolated worktree, `<path>` is the worktree absolute path surfaced by `plan-marshall:phase-5-execute` in its `[STATUS] Active worktree: ...` work-log line. When operating against the main checkout, use the tool's cwd flag against `.` — never `cd && X`. The same rule applies inside `Skill: plan-marshall:workflow-integration-git` and any agent that delegates tool invocations to Bash.
+
+### Authoring file contents via Bash is forbidden in every shape
+
+Authoring file contents via Bash is forbidden in every shape — `python3 -c "open(p,'a').write(...)"`, `echo "..." >> file`, `cat <<EOF > file ... EOF`, `printf '...' > file` — even when the file path was just allocated by a path-allocate script (e.g. `manage-lessons add`, `manage-tasks add`). The shell-content-marshalling sandbox catches some of these (heredocs, multi-line content), but the structural rule is broader: Bash is not a file-authoring tool.
+
+Use the dedicated tools:
+- `Write(file_path, content)` for creating new files or completely rewriting existing ones.
+- `Edit(file_path, old_string, new_string)` for surgical modifications.
+
+```
+# BAD — every shape of Bash file authoring is forbidden
+Bash(command='python3 -c "import sys; open(sys.argv[1], \"a\").write(sys.argv[2])" /path/to/file.md "## body..."')
+Bash(command='echo "## body..." >> /path/to/file.md')
+Bash(command="cat <<'EOF' > /path/to/file.md\nbody\nEOF")
+Bash(command="printf '...' > /path/to/file.md")
+
+# GOOD — use Write for new content, Edit for modifications
+Write(file_path="/path/to/file.md", content="## body...\n")
+Edit(file_path="/path/to/file.md", old_string="old", new_string="new")
+```
+
+**Path-allocate contract**: Scripts that allocate paths (`manage-lessons add`, `manage-tasks add`, `manage-solution-outline resolve-path`, `pr prepare-body`) deliberately leave the body empty for the caller. The contract is: the script returns a path, the caller writes the body via the `Write` tool. Do NOT chain a Bash redirect to fill the body — even when the path was just returned by the script. The same constraint applies to Edit-time modifications: never use `sed -i`, `awk -i`, or `python3 -c "open(...).write(...)"` to mutate an existing file.
 
 ### No heredocs with # lines
 

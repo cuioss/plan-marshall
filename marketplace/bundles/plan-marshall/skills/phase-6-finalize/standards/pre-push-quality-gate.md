@@ -67,11 +67,22 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 
 **Branch A — all bundles green**:
 
+Immediately before invoking `mark-step-done`, resolve the worktree HEAD SHA so the dispatcher can detect a stale completion record after a downstream loop-back commit advances HEAD:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (Resolve Worktree and Main Checkout Paths). Do NOT re-resolve it from any other cwd or shell context — the canonical resolution lives in Step 0 and propagates into every standards document loaded by the finalize pipeline. Capture the stdout as `{sha}` (a 40-character hex SHA) and forward it via `--head-at-completion`:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step pre-push-quality-gate --outcome done \
-  --display-detail "quality-gate green for {N} bundle(s)"
+  --display-detail "quality-gate green for {N} bundle(s)" \
+  --head-at-completion {sha}
 ```
+
+The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD instead of skipping it.
 
 **Branch B — at least one bundle failed**:
 
@@ -81,4 +92,4 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status mark-s
   --display-detail "quality-gate failed for {bundle}"
 ```
 
-The dispatcher's existing failure handling halts the phase on `outcome=failed` and surfaces the offending file/line through the finalize TOON, matching the contract used by the other gating steps.
+The failure branch does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here. The dispatcher's existing failure handling halts the phase on `outcome=failed` and surfaces the offending file/line through the finalize TOON, matching the contract used by the other gating steps.
