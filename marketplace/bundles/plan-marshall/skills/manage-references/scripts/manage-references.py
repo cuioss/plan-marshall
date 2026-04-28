@@ -87,10 +87,28 @@ def main() -> int:
     add_plan_id_arg(get_context_parser)
     get_context_parser.add_argument('--include-files', action='store_true', help='Include full file lists in output')
 
+    # diff-files
+    diff_files_parser = subparsers.add_parser(
+        'diff-files',
+        help='Intersect modified_files ledger with live git working-tree state (read-only)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(diff_files_parser)
+    diff_files_parser.add_argument(
+        '--worktree-path',
+        required=True,
+        help='Absolute path to the active git worktree',
+    )
+    diff_files_parser.add_argument(
+        '--base-ref',
+        help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
+    )
+
     args = parser.parse_args()
 
     # Import command handlers
     from _cmd_context import cmd_get_context
+    from _cmd_diff_files import cmd_diff_files
     from _cmd_list import cmd_add_file, cmd_add_list, cmd_remove_file, cmd_set_list
     from _references_crud import cmd_create, cmd_get, cmd_read, cmd_set
 
@@ -105,6 +123,7 @@ def main() -> int:
         'add-list': cmd_add_list,
         'set-list': cmd_set_list,
         'get-context': cmd_get_context,
+        'diff-files': cmd_diff_files,
     }
 
     handler = handlers.get(args.command)
