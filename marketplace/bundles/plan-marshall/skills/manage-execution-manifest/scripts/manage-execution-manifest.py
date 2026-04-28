@@ -99,10 +99,10 @@ _BUNDLE_SOURCE_GLOBS = (
 
 # Phase 6 steps that dispatch Task subagents loaded from the plugin cache. The
 # bundle_self_modification rule inserts `sync-plugin-cache` immediately before
-# the earliest occurrence of ANY entry in this set. Stored as bare names; the
-# matcher normalizes the candidate-list step (which may arrive prefixed with
-# `default:` from `marshal.json` or bare from the `DEFAULT_PHASE_6_STEPS`
-# fallback) before checking membership, so both call paths fire correctly.
+# the earliest occurrence of ANY entry in this set. Stored as bare names — the
+# candidate list reaching the matcher has been boundary-normalized in
+# ``cmd_compose`` (any leading ``default:`` is stripped once at intake), so the
+# matcher compares plain strings without re-stripping per call site.
 _AGENT_DISPATCHED_STEPS = frozenset({
     'create-pr',
     'automated-review',
@@ -182,7 +182,7 @@ def _decide(
             },
             'phase_6': {
                 'steps': [
-                    s for s in phase_6_candidates if _strip_default_prefix(s) in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+                    s for s in phase_6_candidates if s in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
                 ],
             },
         }
@@ -195,7 +195,7 @@ def _decide(
     if recipe_key:
         phase_6_steps = [
             s for s in phase_6_candidates
-            if _strip_default_prefix(s) not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
+            if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
         ]
         body = {
             'phase_5': {
@@ -217,7 +217,7 @@ def _decide(
             'phase_6': {
                 'steps': [
                     s for s in phase_6_candidates
-                    if _strip_default_prefix(s) not in {'sonar-roundtrip', 'automated-review'}
+                    if s not in {'sonar-roundtrip', 'automated-review'}
                 ],
             },
         }
@@ -242,7 +242,7 @@ def _decide(
     if scope_estimate == 'surgical' and change_type in ('bug_fix', 'tech_debt'):
         phase_6_steps = [
             s for s in phase_6_candidates
-            if _strip_default_prefix(s) not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
+            if s not in {'automated-review', 'sonar-roundtrip', 'knowledge-capture'}
         ]
         body = {
             'phase_5': {
@@ -264,7 +264,7 @@ def _decide(
             },
             'phase_6': {
                 'steps': [
-                    s for s in phase_6_candidates if _strip_default_prefix(s) in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+                    s for s in phase_6_candidates if s in {'knowledge-capture', 'lessons-capture', 'archive-plan'}
                 ],
             },
         }
@@ -433,10 +433,10 @@ def _apply_bundle_self_modification(
     for i, step in enumerate(steps):
         if not isinstance(step, str):
             continue
-        # Normalize the candidate-list entry (may arrive prefixed with
-        # `default:` from `marshal.json` or bare from `DEFAULT_PHASE_6_STEPS`)
-        # before matching against the bare-name set.
-        if _strip_default_prefix(step) in _AGENT_DISPATCHED_STEPS:
+        # ``steps`` was boundary-normalized in ``cmd_compose`` before reaching
+        # ``_decide``, so entries are bare and match ``_AGENT_DISPATCHED_STEPS``
+        # directly without per-site stripping.
+        if step in _AGENT_DISPATCHED_STEPS:
             early_index = i
             break
     if early_index is None:
@@ -821,40 +821,47 @@ def _apply_bot_enforcement_guard(
     provider = _read_ci_provider()
     if provider not in {'github', 'gitlab'}:
         return None
-    if any(_strip_default_prefix(s) == 'automated-review' for s in phase_6_steps):
+    # ``phase_6_steps`` is the matrix output. Its bare-name entries flow from
+    # the boundary-normalized candidate list in ``cmd_compose``; the only
+    # non-bare entry that may have been inserted upstream is the project-
+    # prefixed ``project:finalize-step-sync-plugin-cache``, which never matches
+    # ``automated-review``. Compare bare strings without per-site stripping.
+    if 'automated-review' in phase_6_steps:
         return None
     insert_index = _bot_enforcement_insert_index(phase_6_steps)
-    phase_6_steps.insert(insert_index, 'default:automated-review')
+    phase_6_steps.insert(insert_index, 'automated-review')
     _log_bot_enforcement_guard_remediated(plan_id, provider)
     return None
 
 
 def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
-    """Resolve the canonical insertion position for ``default:automated-review``.
+    """Resolve the canonical insertion position for ``automated-review``.
 
     The remediation must place ``automated-review`` somewhere it can run before
     plan-mutating steps (notably ``archive-plan``, which moves the plan
-    directory). Resolution order:
+    directory). ``phase_6_steps`` carries boundary-normalized bare default
+    names (plus possibly the project-prefixed early sync step), so anchor
+    lookups compare plain strings without per-site stripping. Resolution
+    order:
 
-    1. Immediately after ``default:create-pr`` (its natural neighbour in the
+    1. Immediately after ``create-pr`` (its natural neighbour in the
        candidate ordering — review runs against the freshly-opened PR).
     2. Else immediately before the first plan-mutating step
-       (``default:archive-plan``, ``default:record-metrics``,
-       ``plan-marshall:plan-retrospective``, ``default:branch-cleanup``).
+       (``archive-plan``, ``record-metrics``,
+       ``plan-marshall:plan-retrospective``, ``branch-cleanup``).
     3. Else at the end of the list (no anchors found).
     """
     for index, step in enumerate(phase_6_steps):
-        if _strip_default_prefix(step) == 'create-pr':
+        if step == 'create-pr':
             return index + 1
-    plan_mutating_bare = {
+    plan_mutating = {
         'archive-plan',
         'record-metrics',
         'branch-cleanup',
+        'plan-marshall:plan-retrospective',
     }
     for index, step in enumerate(phase_6_steps):
-        if _strip_default_prefix(step) in plan_mutating_bare:
-            return index
-        if step == 'plan-marshall:plan-retrospective':
+        if step in plan_mutating:
             return index
     return len(phase_6_steps)
 
@@ -901,6 +908,17 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     phase_5_candidates = _split_csv(args.phase_5_steps, DEFAULT_PHASE_5_STEPS)
     phase_6_candidates = _split_csv(args.phase_6_steps, DEFAULT_PHASE_6_STEPS)
+
+    # Boundary normalization: callers (notably marshal.json) may pass step IDs
+    # with the optional ``default:`` prefix; the seven-row matrix, the pre-filter
+    # helpers, the bundle-self-modification matcher, and the bot-enforcement
+    # guard all compare against bare names. Normalize once at the boundary so
+    # every downstream site can use plain `s in {...}` / `s == 'foo'` checks
+    # without per-site `_strip_default_prefix` calls. Lessons:
+    # ``2026-04-27-23-004`` (this lesson — peer-site audit closing the gap left
+    # by ``2026-04-27-18-006`` which only normalized cascade-rule sites).
+    phase_5_candidates = [_strip_default_prefix(s) for s in phase_5_candidates]
+    phase_6_candidates = [_strip_default_prefix(s) for s in phase_6_candidates]
 
     # Pre-filters run before the seven-row matrix. They are orthogonal to the
     # row matrix's change-type / scope / recipe inputs and operate on the
