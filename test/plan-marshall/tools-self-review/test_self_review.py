@@ -190,6 +190,7 @@ class TestDetectMarkdownSections:
         assert len(out) == 1
         entry = out[0]
         assert entry['file'] == 'docs/guide.md'
+        assert entry['line'] == 5
         assert entry['heading'] == 'Section B'
         # Siblings of Section B at depth 2 under "Top": Section A and Section C.
         assert 'Section A' in entry['siblings']

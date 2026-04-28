@@ -696,9 +696,9 @@ def _read_ci_provider() -> str | None:
         skill_name = entry.get('skill_name', '')
         if not isinstance(skill_name, str):
             continue
-        if skill_name.endswith(':workflow-integration-github'):
+        if skill_name == 'plan-marshall:workflow-integration-github':
             return 'github'
-        if skill_name.endswith(':workflow-integration-gitlab'):
+        if skill_name == 'plan-marshall:workflow-integration-gitlab':
             return 'gitlab'
     return None
 

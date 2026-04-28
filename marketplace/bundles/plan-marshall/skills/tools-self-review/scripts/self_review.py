@@ -358,6 +358,7 @@ def _detect_markdown_sections(
             out.append(
                 {
                     'file': md_path,
+                    'line': h['line'],
                     'heading': _truncate(h['heading'], 120),
                     'siblings': '; '.join(_truncate(s, 80) for s in siblings),
                 }
@@ -476,13 +477,15 @@ def _cmd_surface(args: argparse.Namespace) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description='Surface candidate lists for pre-submission self-review.'
+        description='Surface candidate lists for pre-submission self-review.',
+        allow_abbrev=False,
     )
     sub = parser.add_subparsers(dest='command', required=True)
 
     p_surface = sub.add_parser(
         'surface',
         help='Emit the four candidate lists from the worktree diff as TOON.',
+        allow_abbrev=False,
     )
     add_plan_id_arg(p_surface)
     p_surface.add_argument(

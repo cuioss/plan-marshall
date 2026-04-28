@@ -34,7 +34,7 @@ Parse the TOON output. The candidate lists are:
 |------|--------|---------|
 | `regexes[N]{file,line,pattern}` | Added regex literals and fnmatch globs in `.py`/`.md` hunks | Boundary check for regex over-fit |
 | `user_facing_strings[N]{file,line,context,text}` | Added strings in skill prose, error messages, CLI help (docstrings, `print(` arguments, `description=`, `help=`, markdown bullet/heading text) | Wording disambiguation |
-| `markdown_sections[N]{file,heading,siblings}` | Added/edited markdown sections per file with sibling-section list scoped to the same file | Duplication scanning |
+| `markdown_sections[N]{file,line,heading,siblings}` | Added/edited markdown sections per file with sibling-section list scoped to the same file | Duplication scanning |
 | `symmetric_pairs[N]{file,line,name,partner}` | Functions whose names match save/load, init/restore, push/pop, acquire/release, open/close, start/stop pairings | Symmetric pair test-coverage check |
 
 If the helper exits non-zero, halt and proceed to **Mark Step Complete (Failure)** below — surface the helper error in the `display_detail` payload.

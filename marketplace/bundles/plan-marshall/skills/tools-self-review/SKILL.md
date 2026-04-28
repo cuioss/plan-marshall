@@ -60,7 +60,7 @@ regexes[N1]{file,line,pattern}:
 user_facing_strings[N2]{file,line,context,text}:
   {repo-relative-path},{line},{context-tag},{string-text}
 
-markdown_sections[N3]{file,heading,siblings}:
+markdown_sections[N3]{file,line,heading,siblings}:
   {repo-relative-path},{heading},{semicolon-joined-sibling-headings}
 
 symmetric_pairs[N4]{file,line,name,partner}:
