@@ -242,19 +242,23 @@ def test_surgical_tech_debt_trims_heavy_review_steps():
 
 
 # =============================================================================
-# Prefix-Normalization Regression Tests
+# Boundary-Normalization Regression Tests
 #
 # `phase_6_candidates` may arrive prefixed (`default:foo` from marshal.json's
-# step registry) or bare (`foo` from DEFAULT_PHASE_6_STEPS). The cascade-rule
-# filters in `_decide` previously compared candidates against bare-name literal
-# sets, so prefixed candidates silently bypassed the filters and heavy steps
-# survived in surgical/recipe manifests. The fix wraps the comparison side in
-# `_strip_default_prefix` so both shapes match.
+# step registry) or bare (`foo` from DEFAULT_PHASE_6_STEPS). Lesson
+# ``2026-04-27-23-004`` closed the prefix-handling gap by normalizing both
+# ``phase_5_candidates`` and ``phase_6_candidates`` once at the
+# ``cmd_compose`` boundary — every leading ``default:`` is stripped a single
+# time at intake, so the seven-row matrix, the pre-filter helpers, the
+# bundle-self-modification matcher, and the bot-enforcement guard all see
+# bare names. Manifest output and result fields are bare strings throughout.
 #
-# These tests pass prefixed candidates and assert that each affected rule
-# (Rule 1, 2, 3, 5, 6) drops or includes the right bare-named steps. They
-# would have failed before the fix because the filters were no-ops on the
-# prefixed input.
+# These tests feed prefixed candidates and assert the resulting manifest
+# carries bare-name entries, with each cascade rule (Rule 1, 2, 3, 5, 6)
+# dropping or including the right steps. They previously asserted that the
+# prefix survived verbatim into the manifest output — that contract has been
+# retired in favor of the boundary-normalization contract pinned by
+# ``test_boundary_normalization_strips_prefix_for_all_downstream_consumers``.
 # =============================================================================
 
 
@@ -270,13 +274,8 @@ _PREFIXED_PHASE_6 = (
 )
 
 
-def _all_default_prefixed(steps):
-    """Return the bare-name suffixes of any `default:`-prefixed steps in `steps`."""
-    return {s[len('default:'):] for s in steps if s.startswith('default:')}
-
-
 def test_rule_1_early_terminate_analysis_with_prefixed_candidates():
-    """Rule 1 (early_terminate_analysis) — prefixed candidates: include only knowledge/lessons/archive."""
+    """Rule 1 (early_terminate_analysis) — prefixed candidates: include only knowledge/lessons/archive (bare)."""
     with PlanContext(plan_id='prefix-rule-1'):
         result = cmd_compose(
             _compose_ns(
@@ -291,17 +290,18 @@ def test_rule_1_early_terminate_analysis_with_prefixed_candidates():
         manifest = read_manifest('prefix-rule-1')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        # Only the include-set survives, prefix preserved verbatim.
-        bare_names = _all_default_prefixed(steps)
-        assert bare_names == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        # Boundary normalization strips `default:` at intake — output is bare.
+        assert set(steps) == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        # No `default:`-prefixed entries survive anywhere in the manifest.
+        assert not any(s.startswith('default:') for s in steps)
         # Heavy steps that would have leaked through pre-fix are absent.
         for excluded in ('commit-push', 'create-pr', 'automated-review',
                          'pre-push-quality-gate', 'branch-cleanup'):
-            assert f'default:{excluded}' not in steps
+            assert excluded not in steps
 
 
 def test_rule_2_recipe_with_prefixed_candidates():
-    """Rule 2 (recipe) — prefixed candidates: drop automated-review/sonar-roundtrip/knowledge-capture."""
+    """Rule 2 (recipe) — prefixed candidates: drop automated-review/sonar-roundtrip/knowledge-capture (bare output)."""
     prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
     with PlanContext(plan_id='prefix-rule-2'):
         result = cmd_compose(
@@ -318,17 +318,19 @@ def test_rule_2_recipe_with_prefixed_candidates():
         manifest = read_manifest('prefix-rule-2')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        # Heavy review steps are dropped (prefix and bare both filtered correctly).
+        # No `default:` prefix in output — boundary-normalized at intake.
+        assert not any(s.startswith('default:') for s in steps)
+        # Heavy review steps are dropped.
         for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
-            assert f'default:{dropped}' not in steps
-        # Non-heavy steps survive.
-        assert 'default:commit-push' in steps
-        assert 'default:create-pr' in steps
-        assert 'default:lessons-capture' in steps
+            assert dropped not in steps
+        # Non-heavy steps survive (bare).
+        assert 'commit-push' in steps
+        assert 'create-pr' in steps
+        assert 'lessons-capture' in steps
 
 
 def test_rule_3_docs_only_with_prefixed_candidates():
-    """Rule 3 (docs_only) — prefixed candidates: drop sonar-roundtrip/automated-review."""
+    """Rule 3 (docs_only) — prefixed candidates: drop sonar-roundtrip/automated-review (bare output)."""
     prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
     with PlanContext(plan_id='prefix-rule-3'):
         result = cmd_compose(
@@ -346,17 +348,18 @@ def test_rule_3_docs_only_with_prefixed_candidates():
         manifest = read_manifest('prefix-rule-3')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
+        assert not any(s.startswith('default:') for s in steps)
         # Review steps dropped.
         for dropped in ('sonar-roundtrip', 'automated-review'):
-            assert f'default:{dropped}' not in steps
-        # Non-review steps survive.
-        assert 'default:commit-push' in steps
-        assert 'default:knowledge-capture' in steps
-        assert 'default:lessons-capture' in steps
+            assert dropped not in steps
+        # Non-review steps survive (bare).
+        assert 'commit-push' in steps
+        assert 'knowledge-capture' in steps
+        assert 'lessons-capture' in steps
 
 
 def test_rule_5_surgical_bug_fix_with_prefixed_candidates():
-    """Rule 5 (surgical_bug_fix) — prefixed candidates: drop automated-review/sonar-roundtrip/knowledge-capture."""
+    """Rule 5 (surgical_bug_fix) — prefixed candidates: drop automated-review/sonar-roundtrip/knowledge-capture (bare output)."""
     prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
     with PlanContext(plan_id='prefix-rule-5-bug'):
         result = cmd_compose(
@@ -372,14 +375,15 @@ def test_rule_5_surgical_bug_fix_with_prefixed_candidates():
         manifest = read_manifest('prefix-rule-5-bug')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
+        assert not any(s.startswith('default:') for s in steps)
         for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
-            assert f'default:{dropped}' not in steps
-        assert 'default:lessons-capture' in steps
-        assert 'default:commit-push' in steps
+            assert dropped not in steps
+        assert 'lessons-capture' in steps
+        assert 'commit-push' in steps
 
 
 def test_rule_5_surgical_tech_debt_with_prefixed_candidates():
-    """Rule 5 (surgical_tech_debt) — prefixed candidates: same drop as bug_fix."""
+    """Rule 5 (surgical_tech_debt) — prefixed candidates: same drop as bug_fix (bare output)."""
     prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
     with PlanContext(plan_id='prefix-rule-5-tech'):
         result = cmd_compose(
@@ -397,13 +401,14 @@ def test_rule_5_surgical_tech_debt_with_prefixed_candidates():
         manifest = read_manifest('prefix-rule-5-tech')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
+        assert not any(s.startswith('default:') for s in steps)
         for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
-            assert f'default:{dropped}' not in steps
-        assert 'default:commit-push' in steps
+            assert dropped not in steps
+        assert 'commit-push' in steps
 
 
 def test_rule_6_verification_no_files_with_prefixed_candidates():
-    """Rule 6 (verification_no_files) — prefixed candidates: include only knowledge/lessons/archive."""
+    """Rule 6 (verification_no_files) — prefixed candidates: include only knowledge/lessons/archive (bare output)."""
     with PlanContext(plan_id='prefix-rule-6'):
         result = cmd_compose(
             _compose_ns(
@@ -418,20 +423,21 @@ def test_rule_6_verification_no_files_with_prefixed_candidates():
         manifest = read_manifest('prefix-rule-6')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        bare_names = _all_default_prefixed(steps)
-        assert bare_names == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        # Boundary normalization strips `default:` at intake — output is bare.
+        assert set(steps) == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        assert not any(s.startswith('default:') for s in steps)
         for excluded in ('commit-push', 'create-pr', 'automated-review',
                          'pre-push-quality-gate', 'branch-cleanup'):
-            assert f'default:{excluded}' not in steps
+            assert excluded not in steps
 
 
 def test_prefix_normalization_no_op_for_bare_candidates():
-    """Sanity: applying _strip_default_prefix to bare candidates is a no-op.
+    """Sanity: boundary normalization is a no-op for bare candidates.
 
-    The bare-name path (DEFAULT_PHASE_6_STEPS) must continue to work identically.
-    Rule 5 with bare candidates exercises the same filter that is now wrapped in
-    `_strip_default_prefix(s) not in {...}` — confirms the helper's no-op
-    behavior on bare names.
+    The bare-name path (DEFAULT_PHASE_6_STEPS) must continue to work identically
+    to the prefixed path. Rule 5 with bare candidates pins the bare-name shape
+    end-to-end — boundary stripping at ``cmd_compose`` intake leaves bare names
+    unchanged, so the cascade-rule layer sees and emits the same bare strings.
     """
     bare = (
         'commit-push', 'create-pr', 'automated-review', 'sonar-roundtrip',
@@ -458,14 +464,113 @@ def test_prefix_normalization_no_op_for_bare_candidates():
         assert 'lessons-capture' in steps
 
 
+def test_boundary_normalization_strips_prefix_for_all_downstream_consumers():
+    """Boundary contract — every entry the cascade-rule layer + downstream output sees is bare.
+
+    Pins the boundary-normalization invariant introduced by lesson
+    ``2026-04-27-23-004``: ``cmd_compose`` strips a single leading ``default:``
+    from each ``phase_5_candidates`` and ``phase_6_candidates`` entry once at
+    intake (via ``_strip_default_prefix``), and every downstream site — the
+    seven-row matrix, ``_apply_commit_strategy_none``,
+    ``_apply_pre_push_quality_gate_inactive``,
+    ``_apply_pre_submission_self_review_inactive``, the
+    bundle-self-modification matcher, and the bot-enforcement guard —
+    consumes those already-bare strings without any per-site
+    ``_strip_default_prefix`` call.
+
+    The test feeds a deliberately MIXED candidate list (some entries
+    prefixed, some bare, plus the project-prefixed sync step) to
+    ``cmd_compose``, then asserts that every default-domain entry in the
+    resulting ``phase_6.steps`` is bare. The only entry that retains its
+    leading prefix is ``project:finalize-step-sync-plugin-cache`` — its
+    ``project:`` prefix is the canonical typed-step notation and is NOT
+    stripped by ``_strip_default_prefix`` (which only normalizes the
+    ``default:`` namespace).
+
+    This invariant guards against regressions where a future contributor
+    re-introduces a per-site ``_strip_default_prefix`` call that masks a
+    boundary leak: with the prefix stripped at intake, a per-site strip
+    becomes dead code, and a missing intake strip becomes a visible test
+    failure here rather than a silent functional drift.
+    """
+    mixed = [
+        # Prefixed default entries.
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        # Bare default entries (no prefix to strip).
+        'knowledge-capture',
+        'lessons-capture',
+        # Typed-step entry (project: prefix is preserved verbatim).
+        'project:finalize-step-sync-plugin-cache',
+        # More prefixed defaults.
+        'default:branch-cleanup',
+        'default:archive-plan',
+    ]
+    mixed_phase_5 = [
+        'default:quality-gate',     # prefixed
+        'module-tests',             # bare
+    ]
+    with PlanContext(plan_id='boundary-mixed') as ctx:
+        # Use a Row 7 (default) shape so the cascade-rule output preserves
+        # candidates verbatim (modulo boundary normalization).
+        # Force the bot-enforcement guard's no-op path by NOT configuring CI.
+        assert ctx.plan_dir is not None  # silence unused-var warning
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='boundary-mixed',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=10,
+                phase_5_steps=','.join(mixed_phase_5),
+                phase_6_steps=','.join(mixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['rule_fired'] == 'default'
+
+        manifest = read_manifest('boundary-mixed')
+        assert manifest is not None
+        phase_5_steps = manifest['phase_5']['verification_steps']
+        phase_6_steps = manifest['phase_6']['steps']
+
+        # Every default-domain entry is bare — no `default:` prefix anywhere
+        # in either phase's output.
+        assert not any(s.startswith('default:') for s in phase_5_steps), (
+            f'phase_5 leaked `default:`-prefixed entry: {phase_5_steps!r}'
+        )
+        assert not any(s.startswith('default:') for s in phase_6_steps), (
+            f'phase_6 leaked `default:`-prefixed entry: {phase_6_steps!r}'
+        )
+
+        # Phase 5 carries the bare normalization of both inputs.
+        assert phase_5_steps == ['quality-gate', 'module-tests']
+
+        # Every Phase-6 default-domain entry from the input survives as a bare
+        # string after Row 7 (no cascade-rule subtractions on the default rule).
+        for bare_default in (
+            'commit-push', 'create-pr', 'automated-review',
+            'knowledge-capture', 'lessons-capture',
+            'branch-cleanup', 'archive-plan',
+        ):
+            assert bare_default in phase_6_steps, (
+                f'expected bare {bare_default!r} in phase_6 but got: {phase_6_steps!r}'
+            )
+
+        # The non-default-namespace `project:` prefix is preserved verbatim —
+        # boundary normalization strips ONLY the `default:` namespace.
+        assert 'project:finalize-step-sync-plugin-cache' in phase_6_steps
+
+
 def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
     """bundle_self_modification — agent path triggers extra sync before create-pr.
 
     The default Phase 6 candidate list (prefixed) places sync-plugin-cache late
     in the order. When `references.modified_files` references a bundled agent,
     the composer must insert a SECOND `project:finalize-step-sync-plugin-cache`
-    immediately before the earliest agent-dispatched step (`default:create-pr`).
-    The existing late-stage occurrence is preserved verbatim.
+    immediately before the earliest agent-dispatched step (`create-pr`, bare
+    after boundary normalization). The existing late-stage occurrence is
+    preserved verbatim.
     """
     prefixed = [
         'default:commit-push',
@@ -494,7 +599,9 @@ def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
             )
         )
         assert result is not None and result['status'] == 'success'
-        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+        # Boundary normalization strips `default:` at intake — the inserting-
+        # before step is reported as the bare name.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
 
         manifest = read_manifest('bundle-self-mod-agent')
         assert manifest is not None
@@ -503,18 +610,19 @@ def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
         # Two occurrences of the sync step: one early, one late (preserved).
         assert steps.count('project:finalize-step-sync-plugin-cache') == 2
 
-        # Early occurrence sits immediately before the first agent-dispatched step.
+        # Early occurrence sits immediately before the first agent-dispatched
+        # step. Steps are bare after normalization.
         first_agent_idx = next(
             i for i, s in enumerate(steps)
-            if s in ('default:create-pr', 'default:automated-review',
-                     'default:knowledge-capture', 'default:lessons-capture')
+            if s in ('create-pr', 'automated-review',
+                     'knowledge-capture', 'lessons-capture')
         )
         assert first_agent_idx >= 1
         assert steps[first_agent_idx - 1] == 'project:finalize-step-sync-plugin-cache'
 
         # Late occurrence preserved (after branch-cleanup, before archive-plan).
         late_idx = steps.index('project:finalize-step-sync-plugin-cache', first_agent_idx + 1)
-        assert steps[late_idx - 1] == 'default:branch-cleanup'
+        assert steps[late_idx - 1] == 'branch-cleanup'
 
 
 @pytest.mark.parametrize(
@@ -555,13 +663,15 @@ def test_bundle_self_modification_fires_for_command_and_skill_paths(modified_pat
             )
         )
         assert result is not None and result['status'] == 'success'
-        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+        # Boundary normalization strips `default:` at intake — the inserting-
+        # before step is reported as the bare name.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
 
         manifest = read_manifest(plan_id)
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        # Sync step inserted before first agent step.
-        create_pr_idx = steps.index('default:create-pr')
+        # Sync step inserted before first agent step (bare name after intake).
+        create_pr_idx = steps.index('create-pr')
         assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
 
 
@@ -660,7 +770,8 @@ def test_bundle_self_modification_fires_on_affected_files_alone():
             )
         )
         assert result is not None and result['status'] == 'success'
-        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+        # Boundary normalization strips `default:` at intake — bare name reported.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
 
 
 def test_bundle_self_modification_unions_affected_and_modified_files():
@@ -692,7 +803,8 @@ def test_bundle_self_modification_unions_affected_and_modified_files():
             )
         )
         assert result is not None
-        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+        # Boundary normalization strips `default:` at intake — bare name reported.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
 
 
 def test_bundle_self_modification_fires_on_bare_name_candidates():
@@ -768,12 +880,13 @@ def test_bundle_self_modification_detects_sonar_roundtrip_as_agent_step():
             )
         )
         assert result is not None
-        assert result['bundle_self_modification_inserted_before'] == 'default:sonar-roundtrip'
+        # Boundary normalization strips `default:` at intake — bare name reported.
+        assert result['bundle_self_modification_inserted_before'] == 'sonar-roundtrip'
 
         manifest = read_manifest('bundle-self-mod-sonar')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        sonar_idx = steps.index('default:sonar-roundtrip')
+        sonar_idx = steps.index('sonar-roundtrip')
         assert steps[sonar_idx - 1] == 'project:finalize-step-sync-plugin-cache'
 
 
@@ -903,11 +1016,12 @@ def test_bundle_self_modification_regression_references_driven_path(monkeypatch)
 
     Positive case: ``references.json::affected_files`` lists a bundle script
     path. The composer MUST emit exactly TWO ``project:finalize-step-sync-plugin-cache``
-    entries — one early (before ``default:create-pr``, the earliest of the
+    entries — one early (before ``create-pr``, the earliest of the
     agent-dispatched set ``create-pr | automated-review | sonar-roundtrip |
-    knowledge-capture | lessons-capture``) and one in the canonical late-stage
-    position (immediately after ``default:branch-cleanup``). The decision log
-    MUST contain the canonical bundle_self_modification message.
+    knowledge-capture | lessons-capture``, bare after boundary normalization)
+    and one in the canonical late-stage position (immediately after
+    ``branch-cleanup``). The decision log MUST contain the canonical
+    bundle_self_modification message (with bare step names).
     """
     captured = _capture_decision_messages(monkeypatch)
     bundle_script = (
@@ -929,7 +1043,8 @@ def test_bundle_self_modification_regression_references_driven_path(monkeypatch)
             )
         )
         assert result is not None and result['status'] == 'success'
-        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+        # Boundary normalization strips `default:` at intake — bare name reported.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
 
         manifest = read_manifest('bsm-regression-references')
         assert manifest is not None
@@ -938,18 +1053,18 @@ def test_bundle_self_modification_regression_references_driven_path(monkeypatch)
         # Exactly two sync-plugin-cache occurrences (one early, one canonical late).
         assert steps.count('project:finalize-step-sync-plugin-cache') == 2
 
-        # Early occurrence sits immediately before default:create-pr.
-        create_pr_idx = steps.index('default:create-pr')
+        # Early occurrence sits immediately before create-pr (bare).
+        create_pr_idx = steps.index('create-pr')
         assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
 
-        # Canonical late occurrence preserved (after default:branch-cleanup).
+        # Canonical late occurrence preserved (after branch-cleanup, bare).
         late_idx = steps.index('project:finalize-step-sync-plugin-cache', create_pr_idx + 1)
-        assert steps[late_idx - 1] == 'default:branch-cleanup'
+        assert steps[late_idx - 1] == 'branch-cleanup'
 
-        # Canonical decision-log message emitted.
+        # Canonical decision-log message emitted (with bare step names).
         assert any(
             'Rule bundle_self_modification fired' in m
-            and 'inserted project:finalize-step-sync-plugin-cache before default:create-pr' in m
+            and 'inserted project:finalize-step-sync-plugin-cache before create-pr' in m
             for m in captured
         ), f'Expected canonical bundle_self_modification decision log entry; got: {captured}'
 
@@ -996,7 +1111,8 @@ def test_bundle_self_modification_regression_outline_fallback_path(monkeypatch):
             )
         )
         assert result is not None and result['status'] == 'success'
-        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+        # Boundary normalization strips `default:` at intake — bare name reported.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
 
         manifest = read_manifest('bsm-regression-outline')
         assert manifest is not None
@@ -1005,17 +1121,17 @@ def test_bundle_self_modification_regression_outline_fallback_path(monkeypatch):
         # Same TWO-entry shape as the references-driven path.
         assert steps.count('project:finalize-step-sync-plugin-cache') == 2
 
-        create_pr_idx = steps.index('default:create-pr')
+        create_pr_idx = steps.index('create-pr')
         assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
 
         late_idx = steps.index('project:finalize-step-sync-plugin-cache', create_pr_idx + 1)
-        assert steps[late_idx - 1] == 'default:branch-cleanup'
+        assert steps[late_idx - 1] == 'branch-cleanup'
 
         # Same canonical decision-log message — fallback path is wired through
-        # the same `_log_bundle_self_modification` emitter.
+        # the same `_log_bundle_self_modification` emitter (with bare step names).
         assert any(
             'Rule bundle_self_modification fired' in m
-            and 'inserted project:finalize-step-sync-plugin-cache before default:create-pr' in m
+            and 'inserted project:finalize-step-sync-plugin-cache before create-pr' in m
             for m in captured
         ), f'Expected canonical bundle_self_modification decision log entry; got: {captured}'
 
@@ -1073,6 +1189,87 @@ def test_bundle_self_modification_regression_negative_control(monkeypatch):
         assert not any(
             'Rule bundle_self_modification fired' in m for m in captured
         ), f'Did not expect bundle_self_modification decision log entry; got: {captured}'
+
+
+def test_agent_dispatched_steps_matcher_with_prefixed_input(monkeypatch):
+    """Regression — _AGENT_DISPATCHED_STEPS matcher fires on prefixed input.
+
+    Pins the bundle_self_modification matcher's reliance on the boundary
+    normalization done in ``cmd_compose``. ``_AGENT_DISPATCHED_STEPS`` is a
+    ``frozenset`` of bare names (``create-pr``, ``automated-review``, ...);
+    after lesson ``2026-04-27-23-004``, the matcher compares plain ``step``
+    against the set without per-site ``_strip_default_prefix`` calls. That
+    means the matcher relies on the caller having already normalized the
+    candidate list at intake.
+
+    This test feeds a fully ``default:``-prefixed candidate list through
+    ``cmd_compose`` and asserts that the matcher still inserts
+    ``project:finalize-step-sync-plugin-cache`` immediately before the
+    earliest agent-dispatched step (``create-pr``, bare after intake). If a
+    future contributor removes the boundary strip OR re-prefixes entries
+    after intake, the matcher will silently fail to fire here and this test
+    will surface the regression.
+    """
+    captured = _capture_decision_messages(monkeypatch)
+    prefixed = [
+        'default:commit-push',
+        'default:create-pr',           # earliest agent-dispatched (bare: create-pr)
+        'default:automated-review',
+        'default:knowledge-capture',
+        'default:lessons-capture',
+        'default:branch-cleanup',
+        'project:finalize-step-sync-plugin-cache',  # canonical late occurrence
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='agent-matcher-prefixed') as ctx:
+        assert ctx.plan_dir is not None
+        # bundle_self_modification trigger — bundle source path in affected_files.
+        (ctx.plan_dir / 'references.json').write_text(
+            json.dumps({
+                'affected_files': [
+                    'marketplace/bundles/plan-marshall/skills/foo/SKILL.md',
+                ],
+            }),
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='agent-matcher-prefixed',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(prefixed),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        # Boundary normalization strips `default:` at intake — the inserting-
+        # before step is reported as the bare name.
+        assert result['bundle_self_modification_inserted_before'] == 'create-pr'
+
+        manifest = read_manifest('agent-matcher-prefixed')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+
+        # Two sync-plugin-cache occurrences — early (matcher inserted) + late
+        # (preserved verbatim from input).
+        assert steps.count('project:finalize-step-sync-plugin-cache') == 2
+
+        # Early sync sits immediately before bare `create-pr`.
+        create_pr_idx = steps.index('create-pr')
+        assert create_pr_idx >= 1
+        assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+        # Output is fully bare — no `default:` prefix leaked through.
+        assert not any(s.startswith('default:') for s in steps), (
+            f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
+        )
+
+        # Canonical decision-log message emitted with bare step names.
+        assert any(
+            'Rule bundle_self_modification fired' in m
+            and 'inserted project:finalize-step-sync-plugin-cache before create-pr' in m
+            for m in captured
+        ), f'Expected canonical bundle_self_modification decision log entry; got: {captured}'
 
 
 def test_verification_no_files_keeps_full_phase_5_trims_phase_6():
@@ -1599,6 +1796,71 @@ def test_commit_strategy_none_with_recipe_still_drops_commit_push():
         assert 'commit-push' not in manifest['phase_6']['steps']
 
 
+def test_commit_strategy_none_with_prefixed_input_drops_commit_push_and_pre_push():
+    """Regression — _apply_commit_strategy_none drops both gates with prefixed input.
+
+    Pins the latent bug fixed by lesson ``2026-04-27-23-004``: before boundary
+    normalization, ``_apply_commit_strategy_none`` compared candidate entries
+    against the bare-name set ``{commit-push, pre-push-quality-gate,
+    pre-submission-self-review}``. When ``marshal.json`` emitted prefixed
+    candidates (e.g., ``default:commit-push``), the comparison silently failed
+    and the gate steps survived in the manifest despite ``commit_strategy=none``.
+
+    Boundary normalization in ``cmd_compose`` strips the ``default:`` prefix
+    once at intake, so ``_apply_commit_strategy_none`` now sees bare strings
+    and the membership check works regardless of how the caller spelled the
+    candidate IDs. This test feeds a fully prefixed candidate list to
+    ``cmd_compose`` with ``commit_strategy=none`` and asserts both gate steps
+    are dropped and the manifest output is bare.
+    """
+    prefixed = [
+        'default:pre-push-quality-gate',
+        'default:commit-push',
+        'default:create-pr',
+        'default:automated-review',
+        'default:knowledge-capture',
+        'default:lessons-capture',
+        'default:branch-cleanup',
+        'default:archive-plan',
+    ]
+    with PlanContext(plan_id='cs-none-prefixed'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='cs-none-prefixed',
+                change_type='feature',
+                scope_estimate='multi_module',
+                affected_files_count=4,
+                phase_6_steps=','.join(prefixed),
+                commit_strategy='none',
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        # commit_push omitted flag is True — pre-filter fired on the prefixed input.
+        assert result['commit_push_omitted'] is True
+
+        manifest = read_manifest('cs-none-prefixed')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+
+        # Both gate steps are dropped (the latent bug — they would have
+        # survived as `default:commit-push` / `default:pre-push-quality-gate`
+        # before the boundary normalization landed).
+        assert 'commit-push' not in steps
+        assert 'pre-push-quality-gate' not in steps
+
+        # Output is bare — no `default:` prefix anywhere.
+        assert not any(s.startswith('default:') for s in steps), (
+            f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
+        )
+
+        # Other steps from the input survive as bare strings.
+        for kept in ('create-pr', 'automated-review', 'knowledge-capture',
+                     'lessons-capture', 'branch-cleanup', 'archive-plan'):
+            assert kept in steps, (
+                f'expected bare {kept!r} in phase_6 but got: {steps!r}'
+            )
+
+
 # =============================================================================
 # CLI plumbing (subprocess) tests — keep small, just confirm wiring
 # =============================================================================
@@ -2089,3 +2351,367 @@ class TestPrePushQualityGatePreFilter:
             manifest = read_manifest(plan_id)
             assert manifest is not None
             assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
+
+    # =========================================================================
+    # Boundary-normalization regression cases (lesson 2026-04-27-23-004)
+    #
+    # The activation-failure branches of ``_apply_pre_push_quality_gate_inactive``
+    # compare candidate entries against the bare literal
+    # ``'pre-push-quality-gate'``. Before boundary normalization landed, a
+    # ``default:pre-push-quality-gate`` candidate would silently bypass the
+    # filter — the membership check ``'pre-push-quality-gate' in candidates``
+    # returned ``False`` even with the prefixed entry in the list, so the gate
+    # survived the manifest with the prefix attached.
+    #
+    # Boundary normalization in ``cmd_compose`` strips the ``default:`` prefix
+    # at intake, so the pre-filter sees bare names regardless of how the
+    # caller spelled the candidate IDs. These regressions exercise all three
+    # activation-failure branches with a fully prefixed input list and assert
+    # the gate is dropped + the manifest output is bare.
+    # =========================================================================
+
+    def test_omit_when_activation_globs_empty_with_prefixed_input(self):
+        """Regression — activation_globs=[] drops prefixed pre-push-quality-gate."""
+        plan_id = 'pp-prefixed-globs-empty'
+        prefixed = [
+            'default:pre-push-quality-gate',
+            'default:commit-push',
+            'default:create-pr',
+            'default:archive-plan',
+        ]
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal(ctx, activation_globs=[])
+            _write_references(
+                ctx, ['marketplace/bundles/plan-marshall/skills/foo.py']
+            )
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=4,
+                        phase_6_steps=','.join(prefixed),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['status'] == 'success'
+            assert result['pre_push_quality_gate_omitted'] is True
+
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            steps = manifest['phase_6']['steps']
+
+            # Gate dropped despite prefixed input — boundary normalization
+            # made the membership check work.
+            assert 'pre-push-quality-gate' not in steps
+            assert 'default:pre-push-quality-gate' not in steps
+
+            # Output is fully bare.
+            assert not any(s.startswith('default:') for s in steps), (
+                f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
+            )
+
+            # Other steps from the input survive as bare strings.
+            for kept in ('commit-push', 'create-pr', 'archive-plan'):
+                assert kept in steps
+
+            # Omission line emitted exactly once.
+            assert len(self._omit_entries(captured)) == 1
+
+    def test_omit_when_modified_files_empty_with_prefixed_input(self):
+        """Regression — empty modified_files drops prefixed pre-push-quality-gate."""
+        plan_id = 'pp-prefixed-mod-empty'
+        prefixed = [
+            'default:pre-push-quality-gate',
+            'default:commit-push',
+            'default:create-pr',
+            'default:archive-plan',
+        ]
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal(ctx, activation_globs=['marketplace/bundles/**/*.py'])
+            _write_references(ctx, [])  # empty list
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=4,
+                        phase_6_steps=','.join(prefixed),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['pre_push_quality_gate_omitted'] is True
+
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            steps = manifest['phase_6']['steps']
+
+            assert 'pre-push-quality-gate' not in steps
+            assert 'default:pre-push-quality-gate' not in steps
+            assert not any(s.startswith('default:') for s in steps)
+
+            assert len(self._omit_entries(captured)) == 1
+
+    def test_omit_when_no_glob_matches_with_prefixed_input(self):
+        """Regression — non-matching modified_files drops prefixed pre-push-quality-gate."""
+        plan_id = 'pp-prefixed-no-match'
+        prefixed = [
+            'default:pre-push-quality-gate',
+            'default:commit-push',
+            'default:create-pr',
+            'default:archive-plan',
+        ]
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal(ctx, activation_globs=['marketplace/bundles/**/*.py'])
+            # All paths fall outside the configured glob.
+            _write_references(ctx, ['doc/readme.md', 'CHANGELOG.txt'])
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=2,
+                        phase_6_steps=','.join(prefixed),
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None and result['pre_push_quality_gate_omitted'] is True
+
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            steps = manifest['phase_6']['steps']
+
+            assert 'pre-push-quality-gate' not in steps
+            assert 'default:pre-push-quality-gate' not in steps
+            assert not any(s.startswith('default:') for s in steps)
+
+            assert len(self._omit_entries(captured)) == 1
+
+
+# =============================================================================
+# Bot-Enforcement Guard — Remediation behavior (lesson 2026-04-28-10-001)
+#
+# When ci.provider is github or gitlab AND `automated-review` is missing from
+# the assembled phase_6.steps (e.g., dropped by Row 5 surgical_bug_fix /
+# surgical_tech_debt), the guard appends `default:automated-review` back into
+# the list and emits a decision-log entry. The composition continues normally;
+# no `bot_enforcement_violation` error is raised. Row 5's other subtractions
+# (`sonar-roundtrip`, `knowledge-capture`) stay dropped — the guard remediates
+# only `automated-review`.
+#
+# Row 5 + no CI provider configured remains the baseline: the guard is a
+# no-op and `automated-review` stays dropped. The existing
+# test_surgical_bug_fix_trims_heavy_review_steps and
+# test_surgical_tech_debt_trims_heavy_review_steps cover that path.
+# =============================================================================
+
+
+def _write_marshal_with_ci(ctx: PlanContext, *, provider: str) -> None:
+    """Write a marshal.json that configures ``ci.provider`` for the guard's lookup.
+
+    The bot-enforcement guard reads ``data['ci']['provider']`` from the project's
+    ``marshal.json``. Tests for the github/gitlab branch must materialize this
+    field; the no-CI baseline simply omits it.
+    """
+    assert ctx.fixture_dir is not None
+    marshal_path = ctx.fixture_dir / 'marshal.json'
+    data: dict = {'ci': {'provider': provider}, 'plan': {'phase-6-finalize': {}}}
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+
+_REMEDIATION_LINE_TEMPLATE = (
+    '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — '
+    'ci_provider={provider}, automated-review re-added to phase_6.steps'
+)
+
+
+class TestBotEnforcementGuardRemediation:
+    """Row 5 + ci.provider in {github, gitlab}: guard remediates instead of asserting."""
+
+    @staticmethod
+    def _capture_decision_log() -> tuple[list[tuple[str, str]], Callable[[str, str], None]]:
+        captured: list[tuple[str, str]] = []
+        original = _mem._emit_decision_log
+
+        def _capture(plan_id: str, message: str) -> None:
+            captured.append((plan_id, message))
+
+        _mem._emit_decision_log = _capture
+        return captured, original
+
+    @classmethod
+    def _remediation_messages(
+        cls, captured: list[tuple[str, str]], provider: str
+    ) -> list[tuple[str, str]]:
+        line = _REMEDIATION_LINE_TEMPLATE.format(provider=provider)
+        return [entry for entry in captured if entry[1] == line]
+
+    @staticmethod
+    def _compose_row_5(
+        plan_id: str, change_type: str, *, prefixed_candidates: bool
+    ) -> dict:
+        """Compose a Row 5 manifest with default-prefixed or bare candidates.
+
+        Both shapes are exercised because phase_6_candidates can arrive prefixed
+        from marshal.json or bare from DEFAULT_PHASE_6_STEPS, and Row 5 plus the
+        guard must work consistently on both.
+        """
+        if prefixed_candidates:
+            phase_6 = ','.join(_PREFIXED_PHASE_6 + ('default:sonar-roundtrip',))
+        else:
+            phase_6 = None  # use DEFAULT_PHASE_6_STEPS via _compose_ns default
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type=change_type,
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_5_steps='quality-gate,module-tests',
+                phase_6_steps=phase_6,
+            )
+        )
+        assert result is not None
+        return result
+
+    def _assert_remediation(
+        self,
+        provider: str,
+        change_type: str,
+        rule_fired: str,
+        *,
+        prefixed_candidates: bool,
+    ) -> None:
+        # Plan IDs must be kebab-case — convert change_type's underscore to hyphen.
+        change_type_kebab = change_type.replace('_', '-')
+        plan_id = (
+            f'guard-remediate-{provider}-{change_type_kebab}-'
+            f'{"prefixed" if prefixed_candidates else "bare"}'
+        )
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal_with_ci(ctx, provider=provider)
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = self._compose_row_5(
+                    plan_id, change_type, prefixed_candidates=prefixed_candidates
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            # (a) Composition succeeds — no bot_enforcement_violation.
+            assert result['status'] == 'success'
+            assert result['rule_fired'] == rule_fired
+
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            steps = manifest['phase_6']['steps']
+
+            # (b) automated-review is back in phase_6.steps after remediation.
+            #     Guard appends `default:automated-review`; tests assert via
+            #     prefix-aware membership so both candidate shapes pass.
+            bare_step_names = {
+                s[len('default:'):] if s.startswith('default:') else s
+                for s in steps
+            }
+            assert 'automated-review' in bare_step_names
+
+            # (c) Row 5's other subtractions are still dropped — only
+            #     automated-review is remediated.
+            assert 'sonar-roundtrip' not in bare_step_names
+            assert 'knowledge-capture' not in bare_step_names
+
+            # (d) Decision-log records the remediation exactly once.
+            remediations = self._remediation_messages(captured, provider)
+            assert len(remediations) == 1, (
+                f'expected exactly one remediation log entry for {provider}, '
+                f'got {len(remediations)}: {[m for _, m in captured]!r}'
+            )
+            assert remediations[0][0] == plan_id
+
+    # --- Row 5 surgical_bug_fix variants ---
+
+    def test_github_surgical_bug_fix_remediates_with_default_candidates(self):
+        """Row 5 surgical_bug_fix + ci.provider=github (bare candidates) → remediation."""
+        self._assert_remediation(
+            'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False
+        )
+
+    def test_gitlab_surgical_bug_fix_remediates_with_default_candidates(self):
+        """Row 5 surgical_bug_fix + ci.provider=gitlab (bare candidates) → remediation."""
+        self._assert_remediation(
+            'gitlab', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False
+        )
+
+    def test_github_surgical_bug_fix_remediates_with_prefixed_candidates(self):
+        """Row 5 surgical_bug_fix + ci.provider=github (default:-prefixed candidates) → remediation."""
+        self._assert_remediation(
+            'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=True
+        )
+
+    # --- Row 5 surgical_tech_debt variants ---
+
+    def test_github_surgical_tech_debt_remediates_with_default_candidates(self):
+        """Row 5 surgical_tech_debt + ci.provider=github (bare candidates) → remediation."""
+        self._assert_remediation(
+            'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False
+        )
+
+    def test_gitlab_surgical_tech_debt_remediates_with_default_candidates(self):
+        """Row 5 surgical_tech_debt + ci.provider=gitlab (bare candidates) → remediation."""
+        self._assert_remediation(
+            'gitlab', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False
+        )
+
+    def test_github_surgical_tech_debt_remediates_with_prefixed_candidates(self):
+        """Row 5 surgical_tech_debt + ci.provider=github (default:-prefixed candidates) → remediation."""
+        self._assert_remediation(
+            'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=True
+        )
+
+    # --- Guard is a no-op when automated-review already present ---
+
+    def test_github_default_rule_no_remediation_when_automated_review_present(self):
+        """Guard is a no-op on the default rule (Row 7) — automated-review survives untouched."""
+        plan_id = 'guard-noop-github-default'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal_with_ci(ctx, provider='github')
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=10,
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None
+            assert result['status'] == 'success'
+            assert result['rule_fired'] == 'default'
+
+            # automated-review is in the default candidate set and Row 7 keeps
+            # the candidates as-is, so it's already present and the guard is
+            # a no-op (no remediation log entry).
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'automated-review' in manifest['phase_6']['steps']
+            assert self._remediation_messages(captured, 'github') == []

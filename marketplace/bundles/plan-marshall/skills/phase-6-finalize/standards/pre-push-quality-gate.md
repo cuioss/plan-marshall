@@ -12,20 +12,23 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Inputs
 
-- `references.modified_files` — list[string] of repo-relative paths recorded by Phase 5. Source for bundle derivation.
-- `phase-6-finalize.pre_push_quality_gate.activation_globs` — list[string] of fnmatch globs. The manifest composer already gated activation on this list; the executor re-reads it to scope which `modified_files` entries should contribute to bundle derivation (defense-in-depth — only entries that match a configured glob feed bundle derivation).
+- `references.modified_files` — list[string] of repo-relative paths recorded by Phase 5. This is the **append-only intent ledger**: entries accumulate as Phase 5 tasks call `manage-references add-file ...` and are never pruned when a file is `git restore`'d or touched-then-reverted. The ledger is therefore NOT a faithful view of the live working tree.
+- `git working-tree state` — the live diff (`git diff --name-only {base_ref}...HEAD`) plus uncommitted changes (`git status --porcelain`). Combined with the intent ledger via the `manage-references diff-files` query (below) to produce the canonical "what's actually modified now" view.
+- `phase-6-finalize.pre_push_quality_gate.activation_globs` — list[string] of fnmatch globs. The manifest composer already gated activation on this list; the executor re-reads it to scope which live-and-intended entries should contribute to bundle derivation (defense-in-depth — only entries that match a configured glob feed bundle derivation).
 - `{worktree_path}` has been resolved at finalize entry (see SKILL.md Step 0). All build invocations below MUST pass `--project-dir {worktree_path}` (Bucket B requirement).
 
 ## Execution
 
-### Read modified_files
+### Read live-and-intended files
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
-  list get --plan-id {plan_id}
+  diff-files --plan-id {plan_id} --worktree-path {worktree_path}
 ```
 
-Extract the `modified_files` array from the TOON output.
+Extract the `files` array from the TOON output. This is the intersection of the intent ledger with the live working tree, in ledger order. It is NEVER the raw `modified_files` ledger — that field is append-only and may contain phantom entries that were touched-then-reverted, which would otherwise force redundant `quality-gate` runs against bundles that no longer have any actual changes.
+
+The query also surfaces `dropped[]` (ledger entries no longer in the working tree) and `phantom[]` (live paths that were never recorded) for diagnostic visibility, but bundle derivation MUST consume only `files`.
 
 ### Read activation_globs
 
@@ -39,7 +42,7 @@ Extract `value` (list[string]). The manifest composer guarantees the list is non
 
 ### Derive unique bundle set
 
-For each entry `path` in `modified_files`:
+For each entry `path` in `files`:
 
 1. Skip the entry if it matches none of the `activation_globs` (using `fnmatch.fnmatch`).
 2. If the entry begins with `marketplace/bundles/`, take path segment 2 as the bundle (e.g., `marketplace/bundles/plan-marshall/skills/.../foo.py` → `plan-marshall`).
