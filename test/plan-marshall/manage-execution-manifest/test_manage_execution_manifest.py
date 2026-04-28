@@ -808,6 +808,273 @@ def test_bundle_self_modification_idempotent_on_recompose():
         assert manifest['phase_6']['steps'].count('project:finalize-step-sync-plugin-cache') == 2
 
 
+# =============================================================================
+# Regression: bundle_self_modification three-path coverage (lesson 2026-04-28-06-001)
+#
+# The lesson identified that the rule never fired at Phase-4 compose time for
+# normal plans because:
+#   - `references.json::affected_files` was not populated by upstream phases;
+#   - `references.json::modified_files` is empty pre-execute;
+# leaving the predicate's input union empty even when the deliverable's
+# `Affected files:` block clearly listed bundle source paths.
+#
+# TASK-1 extended `_read_bundle_change_paths` to fall back to deliverable-level
+# `Affected files:` blocks in `solution_outline.md` when both reference fields
+# are empty. These tests pin all three input paths (positive/positive/negative)
+# so the rule's wiring is regression-protected end-to-end.
+# =============================================================================
+
+
+# Canonical late-stage Phase 6 candidate list with sync-plugin-cache placed
+# AFTER branch-cleanup. The bundle_self_modification rule MUST insert a SECOND
+# occurrence early (before the first agent-dispatched step).
+_BSM_REGRESSION_PHASE_6 = [
+    'default:commit-push',
+    'default:create-pr',
+    'default:automated-review',
+    'default:sonar-roundtrip',
+    'default:knowledge-capture',
+    'default:lessons-capture',
+    'default:branch-cleanup',
+    'project:finalize-step-sync-plugin-cache',
+    'default:archive-plan',
+]
+
+
+def _solution_outline_with_affected_files(affected_files: list[str]) -> str:
+    r"""Build a minimal `solution_outline.md` body whose single deliverable's
+    `Affected files:` block lists the given paths.
+
+    The format matches `marketplace/bundles/plan-marshall/skills/manage-solution-outline/`
+    parsing rules — `## Deliverables` H2, `### N. Title` H3, `**Affected files:**`
+    bold tag with `- \`path\`` bullet entries.
+    """
+    bullets = '\n'.join(f'- `{p}`' for p in affected_files)
+    return (
+        '# Solution Outline\n'
+        '\n'
+        'plan_id: regression-test\n'
+        'source: lesson-2026-04-28-06-001\n'
+        '\n'
+        '## Summary\n'
+        '\n'
+        'Regression fixture for the bundle_self_modification outline-fallback path.\n'
+        '\n'
+        '## Deliverables\n'
+        '\n'
+        '### 1. Touch a bundle script\n'
+        '\n'
+        '**Metadata:**\n'
+        '- change_type: bug_fix\n'
+        '- domain: plan-marshall-plugin-dev\n'
+        '\n'
+        '**Profiles:**\n'
+        '- implementation\n'
+        '\n'
+        '**Affected files:**\n'
+        f'{bullets}\n'
+        '\n'
+        '**Verification:**\n'
+        '- Command: `python3 .plan/execute-script.py plan-marshall:build-python:python_build run --command-args "module-tests plan-marshall"`\n'
+        '- Criteria: All tests pass\n'
+    )
+
+
+def _capture_decision_messages(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Replace ``_emit_decision_log`` with an in-memory recorder.
+
+    Returns a list reference whose contents grow as the composer emits decision
+    log entries during the test body. The default test setup at module scope
+    silences only ``_log_decision``; the bundle_self_modification rule routes
+    through ``_log_bundle_self_modification`` -> ``_emit_decision_log`` so we
+    install a separate spy here.
+    """
+    captured: list[str] = []
+
+    def _recorder(plan_id: str, message: str) -> None:  # noqa: ARG001 - signature parity
+        captured.append(message)
+
+    monkeypatch.setattr(_mem, '_emit_decision_log', _recorder)
+    return captured
+
+
+def test_bundle_self_modification_regression_references_driven_path(monkeypatch):
+    """Regression (lesson 2026-04-28-06-001) — references.affected_files path.
+
+    Positive case: ``references.json::affected_files`` lists a bundle script
+    path. The composer MUST emit exactly TWO ``project:finalize-step-sync-plugin-cache``
+    entries — one early (before ``default:create-pr``, the earliest of the
+    agent-dispatched set ``create-pr | automated-review | sonar-roundtrip |
+    knowledge-capture | lessons-capture``) and one in the canonical late-stage
+    position (immediately after ``default:branch-cleanup``). The decision log
+    MUST contain the canonical bundle_self_modification message.
+    """
+    captured = _capture_decision_messages(monkeypatch)
+    bundle_script = (
+        'marketplace/bundles/plan-marshall/skills/foo/scripts/bar.py'
+    )
+    with PlanContext(plan_id='bsm-regression-references') as ctx:
+        assert ctx.plan_dir is not None
+        (ctx.plan_dir / 'references.json').write_text(
+            json.dumps({'affected_files': [bundle_script]}),
+            encoding='utf-8',
+        )
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bsm-regression-references',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(_BSM_REGRESSION_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+        manifest = read_manifest('bsm-regression-references')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+
+        # Exactly two sync-plugin-cache occurrences (one early, one canonical late).
+        assert steps.count('project:finalize-step-sync-plugin-cache') == 2
+
+        # Early occurrence sits immediately before default:create-pr.
+        create_pr_idx = steps.index('default:create-pr')
+        assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+        # Canonical late occurrence preserved (after default:branch-cleanup).
+        late_idx = steps.index('project:finalize-step-sync-plugin-cache', create_pr_idx + 1)
+        assert steps[late_idx - 1] == 'default:branch-cleanup'
+
+        # Canonical decision-log message emitted.
+        assert any(
+            'Rule bundle_self_modification fired' in m
+            and 'inserted project:finalize-step-sync-plugin-cache before default:create-pr' in m
+            for m in captured
+        ), f'Expected canonical bundle_self_modification decision log entry; got: {captured}'
+
+
+def test_bundle_self_modification_regression_outline_fallback_path(monkeypatch):
+    """Regression (lesson 2026-04-28-06-001) — solution_outline fallback path.
+
+    Positive case: BOTH ``references.json::affected_files`` and ``modified_files``
+    are empty, but ``solution_outline.md`` carries a deliverable whose
+    ``Affected files:`` block lists a bundle script path. This is the path the
+    parent lesson missed and that TASK-1 newly enables — without the outline
+    fallback, the rule would not fire at Phase-4 compose time for the typical
+    pre-execute plan shape.
+
+    The composer MUST still emit exactly TWO ``project:finalize-step-sync-plugin-cache``
+    entries (early before ``default:create-pr`` + canonical late) and the
+    canonical decision log message.
+    """
+    captured = _capture_decision_messages(monkeypatch)
+    bundle_script = (
+        'marketplace/bundles/plan-marshall/skills/foo/scripts/bar.py'
+    )
+    with PlanContext(plan_id='bsm-regression-outline') as ctx:
+        assert ctx.plan_dir is not None
+        # references.json present but with BOTH fields empty — mirrors the
+        # exact pre-execute shape the parent lesson reproduced.
+        (ctx.plan_dir / 'references.json').write_text(
+            json.dumps({'affected_files': [], 'modified_files': []}),
+            encoding='utf-8',
+        )
+        # Outline carries the deliverable-level Affected files block.
+        (ctx.plan_dir / 'solution_outline.md').write_text(
+            _solution_outline_with_affected_files([bundle_script]),
+            encoding='utf-8',
+        )
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bsm-regression-outline',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=1,
+                phase_6_steps=','.join(_BSM_REGRESSION_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == 'default:create-pr'
+
+        manifest = read_manifest('bsm-regression-outline')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+
+        # Same TWO-entry shape as the references-driven path.
+        assert steps.count('project:finalize-step-sync-plugin-cache') == 2
+
+        create_pr_idx = steps.index('default:create-pr')
+        assert steps[create_pr_idx - 1] == 'project:finalize-step-sync-plugin-cache'
+
+        late_idx = steps.index('project:finalize-step-sync-plugin-cache', create_pr_idx + 1)
+        assert steps[late_idx - 1] == 'default:branch-cleanup'
+
+        # Same canonical decision-log message — fallback path is wired through
+        # the same `_log_bundle_self_modification` emitter.
+        assert any(
+            'Rule bundle_self_modification fired' in m
+            and 'inserted project:finalize-step-sync-plugin-cache before default:create-pr' in m
+            for m in captured
+        ), f'Expected canonical bundle_self_modification decision log entry; got: {captured}'
+
+
+def test_bundle_self_modification_regression_negative_control(monkeypatch):
+    """Regression (lesson 2026-04-28-06-001) — negative control.
+
+    Negative case: ``references.affected_files`` carries only paths OUTSIDE
+    ``marketplace/bundles/*/{skills,agents,commands}/**`` AND no matching
+    outline entries exist. The rule MUST NOT fire — the manifest's
+    ``phase_6.steps`` contains exactly ONE ``project:finalize-step-sync-plugin-cache``
+    occurrence (the canonical late-stage one). No bundle_self_modification
+    decision log entry is emitted.
+    """
+    captured = _capture_decision_messages(monkeypatch)
+    with PlanContext(plan_id='bsm-regression-negative') as ctx:
+        assert ctx.plan_dir is not None
+        # Only non-bundle paths.
+        (ctx.plan_dir / 'references.json').write_text(
+            json.dumps({
+                'affected_files': [
+                    'doc/build-structure.adoc',
+                    'test/plan-marshall/manage-references/test_x.py',
+                ],
+            }),
+            encoding='utf-8',
+        )
+        # Outline also lists only non-bundle paths so the fallback cannot
+        # rescue the negative case.
+        (ctx.plan_dir / 'solution_outline.md').write_text(
+            _solution_outline_with_affected_files(['doc/build-structure.adoc']),
+            encoding='utf-8',
+        )
+
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='bsm-regression-negative',
+                change_type='bug_fix',
+                scope_estimate='single_module',
+                affected_files_count=2,
+                phase_6_steps=','.join(_BSM_REGRESSION_PHASE_6),
+            )
+        )
+        assert result is not None and result['status'] == 'success'
+        assert result['bundle_self_modification_inserted_before'] == ''
+
+        manifest = read_manifest('bsm-regression-negative')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+
+        # Exactly ONE occurrence — the canonical late-stage one untouched.
+        assert steps.count('project:finalize-step-sync-plugin-cache') == 1
+
+        # No bundle_self_modification message in the decision log.
+        assert not any(
+            'Rule bundle_self_modification fired' in m for m in captured
+        ), f'Did not expect bundle_self_modification decision log entry; got: {captured}'
+
+
 def test_verification_no_files_keeps_full_phase_5_trims_phase_6():
     """Row 6 — verification w/o files: full Phase 5, Phase 6 trimmed to records+archive."""
     with PlanContext(plan_id='matrix-vnofiles'):
