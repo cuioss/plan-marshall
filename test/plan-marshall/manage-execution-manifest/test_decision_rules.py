@@ -43,6 +43,7 @@ _mem._log_commit_push_omitted = lambda *a, **kw: None  # type: ignore[attr-defin
 _mem._log_pre_push_quality_gate_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_pre_submission_self_review_omitted = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_bot_enforcement_guard_fired = lambda *a, **kw: None  # type: ignore[attr-defined]
+_mem._log_bot_enforcement_guard_remediated = lambda *a, **kw: None  # type: ignore[attr-defined]
 _mem._log_bundle_self_modification = lambda *a, **kw: None  # type: ignore[attr-defined]
 
 
@@ -167,9 +168,18 @@ class TestPreSubmissionSelfReviewInactive:
 
 
 class TestBotEnforcementGuard:
-    """Composition-time guard fires when CI is GitHub/GitLab AND automated-review is missing."""
+    """Composition-time guard remediates `automated-review` for GitHub/GitLab when missing.
 
-    def test_fires_for_github_when_automated_review_missing(self):
+    Lesson 2026-04-28-10-001 converted the guard from assertion to remediation.
+    On GitHub/GitLab plans where `automated-review` is dropped (e.g., by a
+    pre-filter or future row), the guard appends `default:automated-review`
+    back into `phase_6.steps` and emits a `bot-enforcement guard remediated`
+    decision-log line; composition continues normally — no error TOON. The
+    `bot_enforcement_violation` error branch is retained as a safety net for
+    non-remediable violations (currently unreachable).
+    """
+
+    def test_remediates_for_github_when_automated_review_missing(self):
         with PlanContext('qg-bot-github'):
             _seed_marshal(ci_provider='github')
             _seed_references('qg-bot-github', ['some/file.py'])
@@ -180,12 +190,16 @@ class TestBotEnforcementGuard:
             result = cmd_compose(ns)
 
             assert result is not None
-            assert result['status'] == 'error'
-            assert result['error'] == 'bot_enforcement_violation'
-            assert result['ci_provider'] == 'github'
-            assert 'automated-review must remain' in result['message']
+            assert result['status'] == 'success'
+            steps = result_phase_6_steps(result)
+            # Guard appends `default:automated-review` (canonical prefixed form).
+            bare_step_names = {
+                s[len('default:'):] if s.startswith('default:') else s
+                for s in steps
+            }
+            assert 'automated-review' in bare_step_names
 
-    def test_fires_for_gitlab_when_automated_review_missing(self):
+    def test_remediates_for_gitlab_when_automated_review_missing(self):
         with PlanContext('qg-bot-gitlab'):
             _seed_marshal(ci_provider='gitlab')
             _seed_references('qg-bot-gitlab', ['some/file.py'])
@@ -195,9 +209,13 @@ class TestBotEnforcementGuard:
             result = cmd_compose(ns)
 
             assert result is not None
-            assert result['status'] == 'error'
-            assert result['error'] == 'bot_enforcement_violation'
-            assert result['ci_provider'] == 'gitlab'
+            assert result['status'] == 'success'
+            steps = result_phase_6_steps(result)
+            bare_step_names = {
+                s[len('default:'):] if s.startswith('default:') else s
+                for s in steps
+            }
+            assert 'automated-review' in bare_step_names
 
     def test_no_op_when_automated_review_present(self):
         with PlanContext('qg-bot-present'):
@@ -222,6 +240,9 @@ class TestBotEnforcementGuard:
 
             assert result is not None
             assert result['status'] == 'success'
+            # No CI provider configured → guard is a no-op; automated-review
+            # stays dropped and no error is raised.
+            assert 'automated-review' not in result_phase_6_steps(result)
 
 
 # =============================================================================
