@@ -2089,3 +2089,217 @@ class TestPrePushQualityGatePreFilter:
             manifest = read_manifest(plan_id)
             assert manifest is not None
             assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
+
+
+# =============================================================================
+# Bot-Enforcement Guard — Remediation behavior (lesson 2026-04-28-10-001)
+#
+# When ci.provider is github or gitlab AND `automated-review` is missing from
+# the assembled phase_6.steps (e.g., dropped by Row 5 surgical_bug_fix /
+# surgical_tech_debt), the guard appends `default:automated-review` back into
+# the list and emits a decision-log entry. The composition continues normally;
+# no `bot_enforcement_violation` error is raised. Row 5's other subtractions
+# (`sonar-roundtrip`, `knowledge-capture`) stay dropped — the guard remediates
+# only `automated-review`.
+#
+# Row 5 + no CI provider configured remains the baseline: the guard is a
+# no-op and `automated-review` stays dropped. The existing
+# test_surgical_bug_fix_trims_heavy_review_steps and
+# test_surgical_tech_debt_trims_heavy_review_steps cover that path.
+# =============================================================================
+
+
+def _write_marshal_with_ci(ctx: PlanContext, *, provider: str) -> None:
+    """Write a marshal.json that configures ``ci.provider`` for the guard's lookup.
+
+    The bot-enforcement guard reads ``data['ci']['provider']`` from the project's
+    ``marshal.json``. Tests for the github/gitlab branch must materialize this
+    field; the no-CI baseline simply omits it.
+    """
+    assert ctx.fixture_dir is not None
+    marshal_path = ctx.fixture_dir / 'marshal.json'
+    data: dict = {'ci': {'provider': provider}, 'plan': {'phase-6-finalize': {}}}
+    marshal_path.write_text(json.dumps(data), encoding='utf-8')
+
+
+_REMEDIATION_LINE_TEMPLATE = (
+    '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — '
+    'ci_provider={provider}, automated-review re-added to phase_6.steps'
+)
+
+
+class TestBotEnforcementGuardRemediation:
+    """Row 5 + ci.provider in {github, gitlab}: guard remediates instead of asserting."""
+
+    @staticmethod
+    def _capture_decision_log() -> tuple[list[tuple[str, str]], Callable[[str, str], None]]:
+        captured: list[tuple[str, str]] = []
+        original = _mem._emit_decision_log
+
+        def _capture(plan_id: str, message: str) -> None:
+            captured.append((plan_id, message))
+
+        _mem._emit_decision_log = _capture
+        return captured, original
+
+    @classmethod
+    def _remediation_messages(
+        cls, captured: list[tuple[str, str]], provider: str
+    ) -> list[tuple[str, str]]:
+        line = _REMEDIATION_LINE_TEMPLATE.format(provider=provider)
+        return [entry for entry in captured if entry[1] == line]
+
+    @staticmethod
+    def _compose_row_5(
+        plan_id: str, change_type: str, *, prefixed_candidates: bool
+    ) -> dict:
+        """Compose a Row 5 manifest with default-prefixed or bare candidates.
+
+        Both shapes are exercised because phase_6_candidates can arrive prefixed
+        from marshal.json or bare from DEFAULT_PHASE_6_STEPS, and Row 5 plus the
+        guard must work consistently on both.
+        """
+        if prefixed_candidates:
+            phase_6 = ','.join(_PREFIXED_PHASE_6 + ('default:sonar-roundtrip',))
+        else:
+            phase_6 = None  # use DEFAULT_PHASE_6_STEPS via _compose_ns default
+        result = cmd_compose(
+            _compose_ns(
+                plan_id=plan_id,
+                change_type=change_type,
+                scope_estimate='surgical',
+                affected_files_count=2,
+                phase_5_steps='quality-gate,module-tests',
+                phase_6_steps=phase_6,
+            )
+        )
+        assert result is not None
+        return result
+
+    def _assert_remediation(
+        self,
+        provider: str,
+        change_type: str,
+        rule_fired: str,
+        *,
+        prefixed_candidates: bool,
+    ) -> None:
+        # Plan IDs must be kebab-case — convert change_type's underscore to hyphen.
+        change_type_kebab = change_type.replace('_', '-')
+        plan_id = (
+            f'guard-remediate-{provider}-{change_type_kebab}-'
+            f'{"prefixed" if prefixed_candidates else "bare"}'
+        )
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal_with_ci(ctx, provider=provider)
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = self._compose_row_5(
+                    plan_id, change_type, prefixed_candidates=prefixed_candidates
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            # (a) Composition succeeds — no bot_enforcement_violation.
+            assert result['status'] == 'success'
+            assert result['rule_fired'] == rule_fired
+
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            steps = manifest['phase_6']['steps']
+
+            # (b) automated-review is back in phase_6.steps after remediation.
+            #     Guard appends `default:automated-review`; tests assert via
+            #     prefix-aware membership so both candidate shapes pass.
+            bare_step_names = {
+                s[len('default:'):] if s.startswith('default:') else s
+                for s in steps
+            }
+            assert 'automated-review' in bare_step_names
+
+            # (c) Row 5's other subtractions are still dropped — only
+            #     automated-review is remediated.
+            assert 'sonar-roundtrip' not in bare_step_names
+            assert 'knowledge-capture' not in bare_step_names
+
+            # (d) Decision-log records the remediation exactly once.
+            remediations = self._remediation_messages(captured, provider)
+            assert len(remediations) == 1, (
+                f'expected exactly one remediation log entry for {provider}, '
+                f'got {len(remediations)}: {[m for _, m in captured]!r}'
+            )
+            assert remediations[0][0] == plan_id
+
+    # --- Row 5 surgical_bug_fix variants ---
+
+    def test_github_surgical_bug_fix_remediates_with_default_candidates(self):
+        """Row 5 surgical_bug_fix + ci.provider=github (bare candidates) → remediation."""
+        self._assert_remediation(
+            'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False
+        )
+
+    def test_gitlab_surgical_bug_fix_remediates_with_default_candidates(self):
+        """Row 5 surgical_bug_fix + ci.provider=gitlab (bare candidates) → remediation."""
+        self._assert_remediation(
+            'gitlab', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=False
+        )
+
+    def test_github_surgical_bug_fix_remediates_with_prefixed_candidates(self):
+        """Row 5 surgical_bug_fix + ci.provider=github (default:-prefixed candidates) → remediation."""
+        self._assert_remediation(
+            'github', 'bug_fix', 'surgical_bug_fix', prefixed_candidates=True
+        )
+
+    # --- Row 5 surgical_tech_debt variants ---
+
+    def test_github_surgical_tech_debt_remediates_with_default_candidates(self):
+        """Row 5 surgical_tech_debt + ci.provider=github (bare candidates) → remediation."""
+        self._assert_remediation(
+            'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False
+        )
+
+    def test_gitlab_surgical_tech_debt_remediates_with_default_candidates(self):
+        """Row 5 surgical_tech_debt + ci.provider=gitlab (bare candidates) → remediation."""
+        self._assert_remediation(
+            'gitlab', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=False
+        )
+
+    def test_github_surgical_tech_debt_remediates_with_prefixed_candidates(self):
+        """Row 5 surgical_tech_debt + ci.provider=github (default:-prefixed candidates) → remediation."""
+        self._assert_remediation(
+            'github', 'tech_debt', 'surgical_tech_debt', prefixed_candidates=True
+        )
+
+    # --- Guard is a no-op when automated-review already present ---
+
+    def test_github_default_rule_no_remediation_when_automated_review_present(self):
+        """Guard is a no-op on the default rule (Row 7) — automated-review survives untouched."""
+        plan_id = 'guard-noop-github-default'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal_with_ci(ctx, provider='github')
+
+            captured, original = self._capture_decision_log()
+            try:
+                result = cmd_compose(
+                    _compose_ns(
+                        plan_id=plan_id,
+                        change_type='feature',
+                        scope_estimate='multi_module',
+                        affected_files_count=10,
+                    )
+                )
+            finally:
+                _mem._emit_decision_log = original
+
+            assert result is not None
+            assert result['status'] == 'success'
+            assert result['rule_fired'] == 'default'
+
+            # automated-review is in the default candidate set and Row 7 keeps
+            # the candidates as-is, so it's already present and the guard is
+            # a no-op (no remediation log entry).
+            manifest = read_manifest(plan_id)
+            assert manifest is not None
+            assert 'automated-review' in manifest['phase_6']['steps']
+            assert self._remediation_messages(captured, 'github') == []

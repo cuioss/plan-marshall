@@ -573,12 +573,28 @@ def _log_pre_submission_self_review_omitted(plan_id: str) -> None:
 def _log_bot_enforcement_guard_fired(plan_id: str, provider: str) -> None:
     """Emit the decision-log entry for the ``bot_enforcement_guard`` violation.
 
-    Logged before the composition error is raised so the violation is recorded
-    even though the manifest was not persisted.
+    Logged before the composition error is raised on the safety-net path
+    (currently unreachable; see ``_apply_bot_enforcement_guard``). Retained
+    so that any future logic which detects a non-remediable violation has a
+    canonical decision-log entry to emit.
     """
     message = (
         '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard fired — '
         f'ci_provider={provider}, automated-review missing from phase_6.steps'
+    )
+    _emit_decision_log(plan_id, message)
+
+
+def _log_bot_enforcement_guard_remediated(plan_id: str, provider: str) -> None:
+    """Emit the decision-log entry for the ``bot_enforcement_guard`` remediation.
+
+    Logged whenever the guard appends ``automated-review`` back into
+    ``phase_6.steps`` so the manifest's reconstruction-from-rules-alone
+    remains auditable. See lesson ``2026-04-28-10-001``.
+    """
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — '
+        f'ci_provider={provider}, automated-review re-added to phase_6.steps'
     )
     _emit_decision_log(plan_id, message)
 
@@ -775,24 +791,72 @@ def _read_ci_provider() -> str | None:
 def _apply_bot_enforcement_guard(
     phase_6_steps: list[str], plan_id: str
 ) -> str | None:
-    """Composition-time guard: ``automated-review`` must remain on GitHub/GitLab plans.
+    """Composition-time defense-in-depth: keep ``automated-review`` on GitHub/GitLab plans.
 
     Lesson ``2026-04-27-18-003`` requires PR-review bots to be effectively
     mandatory whenever the plan finalizes through GitHub or GitLab. If the
     seven-row matrix or any pre-filter has dropped ``automated-review`` AND
-    the project's CI provider is GitHub or GitLab, raise the violation.
+    the project's CI provider is GitHub or GitLab, this guard remediates by
+    appending ``automated-review`` back into ``phase_6_steps`` (in-place) and
+    emits a decision-log entry so the manifest's reconstruction-from-rules-
+    alone remains auditable. Lesson ``2026-04-28-10-001`` documents why the
+    guard is remediation rather than assertion: Row 5 of the seven-row matrix
+    legitimately drops ``automated-review`` for ``surgical+{bug_fix,
+    tech_debt}`` plans, and the original assertion-style guard deadlocked
+    every such plan that finalizes through GitHub or GitLab.
 
-    Returns ``None`` when the guard is a no-op (non-GitHub/GitLab CI, or
-    ``automated-review`` is present), otherwise returns the offending CI
-    provider identifier (``github`` or ``gitlab``) so the caller can include
-    it in the error TOON and decision-log line.
+    The guard is retained after the deadlock fix as defense-in-depth: any
+    future pre-filter, rule addition, or recipe interaction that drops
+    ``automated-review`` on a GitHub/GitLab plan will be caught and
+    remediated by the same code path.
+
+    Returns ``None`` for the no-op path (non-GitHub/GitLab CI) and for the
+    remediated path (``automated-review`` was missing and has been re-added).
+    Returns the offending CI provider identifier (``github`` or ``gitlab``)
+    only on a non-remediable violation — currently unreachable; retained as
+    a safety net for future logic that may detect a violation it cannot
+    auto-fix, which the caller translates into a ``bot_enforcement_violation``
+    error TOON.
     """
     provider = _read_ci_provider()
     if provider not in {'github', 'gitlab'}:
         return None
-    if 'automated-review' in phase_6_steps:
+    if any(_strip_default_prefix(s) == 'automated-review' for s in phase_6_steps):
         return None
-    return provider
+    insert_index = _bot_enforcement_insert_index(phase_6_steps)
+    phase_6_steps.insert(insert_index, 'default:automated-review')
+    _log_bot_enforcement_guard_remediated(plan_id, provider)
+    return None
+
+
+def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
+    """Resolve the canonical insertion position for ``default:automated-review``.
+
+    The remediation must place ``automated-review`` somewhere it can run before
+    plan-mutating steps (notably ``archive-plan``, which moves the plan
+    directory). Resolution order:
+
+    1. Immediately after ``default:create-pr`` (its natural neighbour in the
+       candidate ordering — review runs against the freshly-opened PR).
+    2. Else immediately before the first plan-mutating step
+       (``default:archive-plan``, ``default:record-metrics``,
+       ``plan-marshall:plan-retrospective``, ``default:branch-cleanup``).
+    3. Else at the end of the list (no anchors found).
+    """
+    for index, step in enumerate(phase_6_steps):
+        if _strip_default_prefix(step) == 'create-pr':
+            return index + 1
+    plan_mutating_bare = {
+        'archive-plan',
+        'record-metrics',
+        'branch-cleanup',
+    }
+    for index, step in enumerate(phase_6_steps):
+        if _strip_default_prefix(step) in plan_mutating_bare:
+            return index
+        if step == 'plan-marshall:plan-retrospective':
+            return index
+    return len(phase_6_steps)
 
 
 # =============================================================================
@@ -883,9 +947,12 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     bundle_rule_inserted_before = _apply_bundle_self_modification(plan_id, body, bundle_change_paths)
 
     # Bot-enforcement guard runs AFTER the seven-row matrix and BEFORE manifest
-    # persistence. When the project's CI provider is GitHub or GitLab and the
-    # final phase_6.steps does not contain `automated-review`, the guard logs the
-    # violation and returns an error TOON without writing the manifest.
+    # persistence. On GitHub/GitLab plans where `automated-review` is missing
+    # from `phase_6.steps`, the guard remediates in-place (appends the step and
+    # emits a decision-log line) and returns None. The error branch below is
+    # retained as a safety net for any future logic that detects a non-
+    # remediable violation; in current code it is unreachable. See lesson
+    # ``2026-04-28-10-001`` (deadlock fix) and ``2026-04-27-18-003`` (origin).
     final_phase_6_steps = body['phase_6']['steps']
     bot_guard_fired_provider = _apply_bot_enforcement_guard(final_phase_6_steps, plan_id)
     if bot_guard_fired_provider is not None:
@@ -896,7 +963,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'error': 'bot_enforcement_violation',
             'message': (
                 'automated-review must remain in the manifest for GitHub/GitLab plans — '
-                'review which pre-filter dropped it'
+                'guard could not auto-remediate; investigate manifest composition'
             ),
             'ci_provider': bot_guard_fired_provider,
         }
