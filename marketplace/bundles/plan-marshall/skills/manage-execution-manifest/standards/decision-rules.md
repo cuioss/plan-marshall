@@ -40,7 +40,7 @@ The pre-filters run in this order:
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by an earlier pre-filter.
 
-After the seven-row matrix runs, a single composition-time guard (`bot_enforcement_guard`) inspects the final `phase_6.steps` list and raises a `ManifestCompositionError` if `default:automated-review` was filtered out on a GitHub or GitLab plan. The guard is documented in its own subsection below the pre-filter sections.
+After the seven-row matrix runs, a single composition-time guard (`bot_enforcement_guard`) inspects the final `phase_6.steps` list. On GitHub/GitLab plans where `default:automated-review` is missing, the guard remediates in-place by appending it back to the list (defense-in-depth, not assertion). The guard is documented in its own subsection below the pre-filter sections.
 
 ### Pre-Filter: `commit_strategy_none`
 
@@ -100,21 +100,25 @@ When `modified_files` is non-empty, the pre-filter is a no-op and emits no log e
 
 ## Bot-Enforcement Guard
 
-**Type**: Composition-time invariant (NOT a pre-filter). Runs *after* the seven-row matrix has produced the final `phase_6.steps` list, *before* the manifest is persisted.
+**Type**: Composition-time defense-in-depth remediation (NOT a pre-filter, NOT an assertion). Runs *after* the seven-row matrix has produced the final `phase_6.steps` list, *before* the manifest is persisted.
 
 **Condition**: `ci_provider ∈ {github, gitlab}` AND `default:automated-review` is NOT in the assembled `phase_6.steps` list.
 
-**Effect**: Raises `ManifestCompositionError` with the remediation message `"automated-review must remain in the manifest for GitHub/GitLab plans — review which pre-filter dropped it"`. The composer aborts; the manifest is not written.
+**Effect**: Appends `default:automated-review` to the final `phase_6.steps` list in-place and emits a decision-log entry recording the remediation. The composition continues normally and the manifest is written with `automated-review` restored. The guard preserves matrix orthogonality — Row 5's subtraction logic (and any future pre-filter or row that legitimately drops `automated-review`) stays unchanged; the guard puts the step back so the final manifest is GitHub/GitLab-compliant.
 
-**Why a composition-time guard (not a pre-filter or row)**: The lesson `2026-04-27-18-003` requires `automated-review` to be effectively mandatory on plans that finalize through GitHub or GitLab — review bots catch a class of structural defects the local gates systematically miss, and silently dropping the bot-review step (e.g., via a future pre-filter or a misconfigured candidate set) would defeat the entire pre-submission-self-review story. Enforcing the rule as a final-stage assertion is belt-and-suspenders alongside `phase-6-finalize/standards/required-steps.md` — the required-steps file ensures completion semantics for the handshake invariant; this guard ensures the step is even scheduled in the first place.
+**Why remediation rather than assertion**: The original assertion-style guard deadlocked every `surgical+{bug_fix, tech_debt}` plan that finalized through GitHub or GitLab — Row 5 of the seven-row matrix legitimately drops `automated-review` for those plans, and the assertion then refused to write the manifest. Lesson `2026-04-28-10-001` documents the deadlock and the chosen remediation strategy (Option 2: keep Row 5's subtraction intact, convert the guard from assertion to remediation). The matrix's documented orthogonality (its inputs are change_type / scope / recipe only) is preserved.
 
-**Decision log line** (only emitted when the guard fires; an aborted composition still records the violation before raising):
+**Why retained after the deadlock fix (defense-in-depth)**: Lesson `2026-04-27-18-003` requires `automated-review` to be effectively mandatory on plans that finalize through GitHub or GitLab — review bots catch a class of structural defects the local gates systematically miss, and silently dropping the bot-review step (e.g., via a future pre-filter, a recipe interaction, or a row addition we haven't designed yet) would defeat the entire pre-submission-self-review story. The guard is now defense-in-depth alongside `phase-6-finalize/standards/required-steps.md` — the required-steps file ensures completion semantics for the handshake invariant; this guard ensures the step is even scheduled in the first place, and self-heals if anything upstream drops it.
+
+**Decision log line** (emitted whenever the guard remediates; one entry per remediation):
 
 ```
-(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard fired — ci_provider=github, automated-review missing from phase_6.steps
+(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard remediated — ci_provider=github, automated-review re-added to phase_6.steps
 ```
 
-When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-review` is present in `phase_6.steps`, the guard is a no-op and emits no log entry.
+When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-review` is already present in `phase_6.steps`, the guard is a no-op and emits no log entry.
+
+**Safety-net error path**: The function still has a non-`None` return contract (`str | None`) and the caller (`cmd_compose`) still translates a non-`None` return into a `bot_enforcement_violation` error TOON. In current code this branch is unreachable — the guard either no-ops (returns `None`) or remediates and returns `None`. The branch is retained as a hook for any future logic that detects a non-remediable violation (e.g., a malformed `phase_6_steps` list), so the legacy `bot-enforcement guard fired` log line and error TOON shape remain documented in the codebase even though they are not exercised by the current control flow.
 
 ## The Seven-Row Matrix
 
