@@ -298,40 +298,109 @@ def _bundle_self_modification(modified_files: list[str]) -> bool:
 
 
 def _read_bundle_change_paths(plan_id: str) -> list[str]:
-    """Read the union of ``affected_files`` and ``modified_files`` from references.json.
+    """Read the union of bundle change paths from references.json + solution outline.
 
     The composer runs from `phase-4-plan` Step 8b — at outline/plan time, BEFORE
     Phase 5 has committed any changes. ``modified_files`` is populated by
     ``manage-status transition`` on Phase 5 completion, so it is empty at compose
     time for normal plans (a re-compose after Phase 5 would see it populated).
-    ``affected_files`` is populated at outline time from the solution outline
-    deliverables and is the canonical pre-execute source.
+    ``references.json::affected_files`` is the canonical pre-execute source —
+    when populated by upstream phases.
 
-    Reading both fields and unioning their entries closes that timing gap: the
-    rule fires on the first compose (via ``affected_files``) AND on any later
-    re-compose that includes execute-time additions (via ``modified_files``).
-    Returns an empty list when the file is missing or malformed — the rule
+    For plans where ``references.json::affected_files`` is unset (the common
+    pre-execute shape produced by current phase-3-outline / phase-4-plan flows),
+    the composer falls back to the deliverable-level ``Affected files:`` blocks
+    in ``solution_outline.md``. This closes the empirical gap reproduced in
+    plan ``lesson-2026-04-28-06-001``: the deliverable listed bundle source
+    paths but ``references.json`` did not surface them, so the predicate had
+    nothing to match against.
+
+    Reading all three sources and unioning their entries means the rule fires:
+
+    - on the first compose (via ``affected_files`` in references OR the
+      solution outline fallback);
+    - on any later re-compose that includes execute-time additions (via
+      ``modified_files``).
+
+    Returns an empty list when none of the sources can be read — the rule
     simply does not fire in that case.
     """
-    references_path = get_plan_dir(plan_id) / 'references.json'
-    if not references_path.exists():
+    seen: set[str] = set()
+    union: list[str] = []
+
+    references_path = get_plan_dir(plan_id) / FILE_REFERENCES
+    if references_path.exists():
+        payload = read_json(references_path, default={})
+        if isinstance(payload, dict):
+            for field in ('affected_files', 'modified_files'):
+                entries = payload.get(field)
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    if not isinstance(entry, str):
+                        continue
+                    normalized = entry.strip()
+                    if not normalized or normalized in seen:
+                        continue
+                    seen.add(normalized)
+                    union.append(normalized)
+
+    # Fallback: harvest deliverable-level Affected files from the solution
+    # outline. Cross-skill import via PYTHONPATH (set by the executor and the
+    # test conftest). Any import or parse failure is swallowed silently — the
+    # rule simply skips the fallback in that case.
+    for entry in _read_solution_outline_affected_files(plan_id):
+        if entry not in seen:
+            seen.add(entry)
+            union.append(entry)
+
+    return union
+
+
+def _read_solution_outline_affected_files(plan_id: str) -> list[str]:
+    """Best-effort read of deliverable-level ``Affected files:`` from the outline.
+
+    Imports ``_plan_parsing`` (sibling skill ``manage-solution-outline``) to
+    parse the document and extract per-deliverable ``affected_files`` lists,
+    then flattens them into a single ordered, de-duplicated list. Returns an
+    empty list when the outline is missing, malformed, or the import is not
+    on ``sys.path``. The composer treats missing data as "rule does not fire".
+    """
+    outline_path = get_plan_dir(plan_id) / 'solution_outline.md'
+    if not outline_path.exists():
         return []
     try:
-        payload = json.loads(references_path.read_text(encoding='utf-8'))
-    except (json.JSONDecodeError, OSError):
+        # Local import: keeps cmd_compose's import surface narrow and lets
+        # the fallback degrade gracefully when _plan_parsing is unavailable.
+        from _plan_parsing import (  # type: ignore[import-not-found]
+            extract_deliverables,
+            parse_document_sections,
+        )
+    except ImportError:
+        return []
+    try:
+        content = outline_path.read_text(encoding='utf-8')
+        sections = parse_document_sections(content)
+        deliverables_section = sections.get('deliverables') if isinstance(sections, dict) else None
+        if not isinstance(deliverables_section, str):
+            return []
+        deliverables = extract_deliverables(deliverables_section)
+    except (OSError, ValueError, AttributeError):
         return []
 
     seen: set[str] = set()
-    union: list[str] = []
-    for field in ('affected_files', 'modified_files'):
-        entries = payload.get(field)
-        if not isinstance(entries, list):
+    flat: list[str] = []
+    for d in deliverables:
+        if not isinstance(d, dict):
             continue
-        for entry in entries:
-            if isinstance(entry, str) and entry not in seen:
-                seen.add(entry)
-                union.append(entry)
-    return union
+        files = d.get('affected_files')
+        if not isinstance(files, list):
+            continue
+        for f in files:
+            if isinstance(f, str) and f and f not in seen:
+                seen.add(f)
+                flat.append(f)
+    return flat
 
 
 def _apply_bundle_self_modification(
