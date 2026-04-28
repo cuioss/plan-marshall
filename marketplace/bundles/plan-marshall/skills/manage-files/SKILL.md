@@ -66,10 +66,11 @@ More content here..."
 **Parameters**:
 - `--plan-id` (required): Plan identifier
 - `--file` (required): Relative file path within plan directory
-- `--content`: Content to write (mutually exclusive with `--stdin`)
+- `--content`: Content to write (mutually exclusive with `--content-file`)
+- `--content-file PATH`: Path to a UTF-8 file whose contents fill the write payload. Mutually exclusive with `--content`. Resolution order when multiple inputs are provided: `--content-file` wins over `--content`, which wins over `--stdin`. Combining `--content` and `--content-file` returns `mutually_exclusive`. A missing or non-regular path returns `content_file_not_found`.
 - `--stdin`: Read content from stdin instead of `--content`
 
-**Note**: The `--content` parameter supports multiline content. Do NOT use `--stdin` with shell heredocs or cat commands — the executor handles content passing; stdin is only for piped input from other scripts.
+**Note**: The `--content` parameter supports multiline content. Do NOT use `--stdin` with shell heredocs or cat commands — the executor handles content passing; stdin is only for piped input from other scripts. For multi-line JSON or other large payloads, prefer `--content-file`: stage the payload via the `Write` tool to `.plan/temp/payload.json`, then run `manage-files write --plan-id {plan_id} --file work/foo.json --content-file .plan/temp/payload.json`.
 
 **Content requirement**: Content must be non-empty. Empty content produces an error (`missing_content`).
 
@@ -272,6 +273,8 @@ domain: java
 | `invalid_plan_id` | plan_id contains invalid characters (must be kebab-case) |
 | `file_not_found` | File does not exist (read, remove) |
 | `missing_content` | Write called with empty or missing content |
+| `mutually_exclusive` | Write called with both `--content` and `--content-file` |
+| `content_file_not_found` | `--content-file` path is missing or not a regular file |
 | `invalid_path` | Path contains `..` or absolute path components |
 | `permission_error` | File system permission denied |
 

@@ -139,6 +139,7 @@ Each step declares an `order: <int>` value in its authoritative source — front
 
 | Step Name | Standards Document | Description |
 |-----------|-------------------|-------------|
+| `default:pre-submission-self-review` | `standards/pre-submission-self-review.md` | Pre-submission structural self-review (symmetric pairs, regex, wording, duplication) |
 | `default:commit-push` | `standards/commit-push.md` | Commit and push changes |
 | `default:create-pr` | `standards/create-pr.md` | Create pull request |
 | `default:automated-review` | `standards/automated-review.md` | CI automated review |
@@ -708,6 +709,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 
 | Standard | Step Name | Purpose |
 |----------|-----------|---------|
+| `standards/pre-submission-self-review.md` | `default:pre-submission-self-review` | Deterministic helper + LLM cognitive review for symmetric-pair / regex-overfit / wording / duplication defects (hard-fail) |
 | `standards/commit-push.md` | `default:commit-push` | Commit strategy, git status, workflow-integration-git delegation |
 | `standards/create-pr.md` | `default:create-pr` | PR existence check, body generation, CI pr create |
 | `standards/automated-review.md` | `default:automated-review` | CI wait, review triage, loop-back on findings |

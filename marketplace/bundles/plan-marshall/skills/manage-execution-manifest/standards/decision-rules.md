@@ -34,16 +34,19 @@ Before evaluating the seven-row matrix below, the composer applies a fixed seque
 
 The pre-filters run in this order:
 
-1. **`commit_strategy_none`** — drops `commit-push` (and `pre-push-quality-gate`) when no push will occur.
+1. **`commit_strategy_none`** — drops `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` when no push will occur.
 2. **`pre_push_quality_gate_inactive`** — drops `pre-push-quality-gate` when activation conditions fail.
+3. **`pre_submission_self_review_inactive`** — drops `pre-submission-self-review` when `references.modified_files` is empty.
 
 Each row that emits a Phase 6 list (whether by intersection, subtraction, or pass-through) operates on the already-filtered candidate list, so the resulting `phase_6.steps` will never contain a step removed by an earlier pre-filter.
+
+After the seven-row matrix runs, a single composition-time guard (`bot_enforcement_guard`) inspects the final `phase_6.steps` list and raises a `ManifestCompositionError` if `default:automated-review` was filtered out on a GitHub or GitLab plan. The guard is documented in its own subsection below the pre-filter sections.
 
 ### Pre-Filter: `commit_strategy_none`
 
 **Condition**: `commit_strategy == none`.
 
-**Effect**: Both `commit-push` AND `pre-push-quality-gate` are removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes both because `pre-push-quality-gate` is meaningless without a downstream push — it exists solely to gate code that will be sent to remote CI.
+**Effect**: `commit-push`, `pre-push-quality-gate`, AND `pre-submission-self-review` are all removed from `phase_6_candidates` before the rows are evaluated. The pre-filter removes the two pre-push gating steps because they are meaningless without a downstream push — they exist solely to gate code that will be sent to remote CI.
 
 **Why a pre-filter (not an eighth row)**: `commit_strategy` is configuration known at outline time and is orthogonal to the row matrix's change-type / scope / recipe inputs. A row would have to either short-circuit (and re-implement the seven rows' Phase 5 logic) or duplicate the filter into every row. Modeling it as a pre-filter keeps the seven-row matrix unchanged and lets the composer emit one extra `decision.log` entry naming the omission.
 
@@ -76,6 +79,42 @@ When `commit_strategy ∈ {per_plan, per_deliverable}` (or absent — the defaul
 When all three activation conditions are satisfied (non-empty globs, non-empty modified_files, at least one glob match), the pre-filter is a no-op and emits no log entry; `pre-push-quality-gate` survives into the seven-row matrix.
 
 **Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `commit_strategy_none` and *before* every row of the seven-row matrix. The pre-filter is therefore observable independently — Row 7 (default), Row 5 (surgical_bug_fix / surgical_tech_debt), and Row 2 (recipe) all see a Phase 6 candidate list that already has `pre-push-quality-gate` removed if either pre-filter fired.
+
+### Pre-Filter: `pre_submission_self_review_inactive`
+
+**Condition**: `references.json::modified_files` is empty.
+
+**Effect**: `pre-submission-self-review` is removed from `phase_6_candidates` before the rows are evaluated. When `pre-submission-self-review` was already removed by `commit_strategy_none`, this pre-filter is a no-op and emits no log entry.
+
+**Why a pre-filter (not an eighth row)**: Activation depends only on `modified_files` being non-empty (the four cognitive checks have no diff to inspect when the plan touched zero files). The condition is orthogonal to the change-type / scope / recipe inputs the seven-row matrix consumes. There is no `activation_globs` config knob — the four structural-defect classes the step targets (symmetric pairs, regex over-fit, wording, duplication) apply to any code or doc change, and gating by file extension would mean missing the very wording/duplication defects the lesson cites for `.md` files.
+
+**Decision log line** (in addition to the row's own log line and any other pre-filter log line):
+
+```
+(plan-marshall:manage-execution-manifest:compose) pre-submission-self-review omitted — empty modified_files
+```
+
+When `modified_files` is non-empty, the pre-filter is a no-op and emits no log entry; `pre-submission-self-review` survives into the seven-row matrix.
+
+**Evaluation order vs. the seven-row matrix**: This pre-filter runs *after* `pre_push_quality_gate_inactive` and *before* every row of the seven-row matrix. The pre-filter is observable independently of the row matrix — every row sees a Phase 6 candidate list that has `pre-submission-self-review` removed if any of the prior pre-filters fired.
+
+## Bot-Enforcement Guard
+
+**Type**: Composition-time invariant (NOT a pre-filter). Runs *after* the seven-row matrix has produced the final `phase_6.steps` list, *before* the manifest is persisted.
+
+**Condition**: `ci_provider ∈ {github, gitlab}` AND `default:automated-review` is NOT in the assembled `phase_6.steps` list.
+
+**Effect**: Raises `ManifestCompositionError` with the remediation message `"automated-review must remain in the manifest for GitHub/GitLab plans — review which pre-filter dropped it"`. The composer aborts; the manifest is not written.
+
+**Why a composition-time guard (not a pre-filter or row)**: The lesson `2026-04-27-18-003` requires `automated-review` to be effectively mandatory on plans that finalize through GitHub or GitLab — review bots catch a class of structural defects the local gates systematically miss, and silently dropping the bot-review step (e.g., via a future pre-filter or a misconfigured candidate set) would defeat the entire pre-submission-self-review story. Enforcing the rule as a final-stage assertion is belt-and-suspenders alongside `phase-6-finalize/standards/required-steps.md` — the required-steps file ensures completion semantics for the handshake invariant; this guard ensures the step is even scheduled in the first place.
+
+**Decision log line** (only emitted when the guard fires; an aborted composition still records the violation before raising):
+
+```
+(plan-marshall:manage-execution-manifest:compose) bot-enforcement guard fired — ci_provider=github, automated-review missing from phase_6.steps
+```
+
+When `ci_provider` is neither `github` nor `gitlab`, OR `default:automated-review` is present in `phase_6.steps`, the guard is a no-op and emits no log entry.
 
 ## The Seven-Row Matrix
 

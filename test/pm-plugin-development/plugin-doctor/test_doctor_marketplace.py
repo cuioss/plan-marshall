@@ -17,11 +17,14 @@ Marketplace discovery in these tests:
   fixture deterministically instead of the real tree.
 """
 
+import importlib.util
 import json
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
+import pytest
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 from conftest import get_script_path, run_script
@@ -30,6 +33,28 @@ from conftest import get_script_path, run_script
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py')
 MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
+
+# Direct-import handle for ``_doctor_shared.find_marketplace_root`` so the
+# --marketplace-root flag tests can exercise the resolution logic without
+# the subprocess overhead of a full doctor-marketplace.py invocation.
+_DOCTOR_SHARED_PATH = (
+    PROJECT_ROOT
+    / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills'
+    / 'plugin-doctor' / 'scripts' / '_doctor_shared.py'
+)
+
+
+def _load_doctor_shared():
+    spec = importlib.util.spec_from_file_location('_doctor_shared_under_test', _DOCTOR_SHARED_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules['_doctor_shared_under_test'] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_doctor_shared = _load_doctor_shared()
+find_marketplace_root = _doctor_shared.find_marketplace_root
 
 
 def parse_output(result):
@@ -995,6 +1020,91 @@ def test_scan_without_paths_or_bundles():
     assert 'total_bundles' in data, 'Default scan should have total_bundles'
     assert 'bundles' in data, 'Default scan should have bundles list'
     assert data['total_bundles'] > 0, 'Default scan should find bundles'
+
+
+# =============================================================================
+# --marketplace-root Flag Tests (Tier 2 - direct import of _doctor_shared)
+# =============================================================================
+
+
+def test_marketplace_root_flag_overrides_default(tmp_path, monkeypatch):
+    """Test marketplace_root_override arg resolves to {override}/bundles.
+
+    Builds a fake marketplace under ``tmp_path/marketplace`` with an empty
+    ``bundles/`` subdirectory and verifies that
+    ``find_marketplace_root(marketplace_root_override=...)`` returns the
+    override's bundles path rather than falling through to script-relative
+    or cwd-based discovery.
+    """
+    # Arrange: ensure no env var leaks into the override-arg path so we
+    # exclusively exercise the function-arg branch.
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+    fake_marketplace = tmp_path / 'marketplace'
+    (fake_marketplace / 'bundles').mkdir(parents=True)
+
+    # Act
+    resolved = find_marketplace_root(marketplace_root_override=str(fake_marketplace))
+
+    # Assert
+    assert resolved == fake_marketplace / 'bundles', (
+        f'Expected {fake_marketplace / "bundles"}, got {resolved}'
+    )
+
+
+def test_marketplace_root_flag_takes_precedence_over_env_var(tmp_path, monkeypatch):
+    """Test function-arg override beats PM_MARKETPLACE_ROOT env var.
+
+    Builds two distinct fake marketplaces, sets the env var to one and
+    passes the override arg pointing at the other, then asserts the arg
+    wins (resolves to override's bundles, never the env var's).
+    """
+    # Arrange: two valid marketplace roots, each with their own bundles/.
+    env_marketplace = tmp_path / 'env-marketplace'
+    (env_marketplace / 'bundles').mkdir(parents=True)
+    arg_marketplace = tmp_path / 'arg-marketplace'
+    (arg_marketplace / 'bundles').mkdir(parents=True)
+
+    monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(env_marketplace))
+
+    # Act
+    resolved = find_marketplace_root(marketplace_root_override=str(arg_marketplace))
+
+    # Assert: function-arg path wins, env var path is ignored.
+    assert resolved == arg_marketplace / 'bundles', (
+        f'Function-arg override should win, got {resolved}'
+    )
+    assert resolved != env_marketplace / 'bundles', (
+        'Env var path must NOT win when function-arg override is provided'
+    )
+
+
+def test_marketplace_root_invalid_path_errors_clearly(tmp_path, monkeypatch):
+    """Test override pointing to a path without bundles/ raises ValueError.
+
+    Passes ``tmp_path`` (which has no ``bundles/`` subdir) as the override
+    and asserts that ``find_marketplace_root`` raises ``ValueError`` whose
+    message references the missing ``bundles/`` requirement.
+    """
+    # Arrange: ensure env var is unset so the function-arg branch is the
+    # one actually evaluated.
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+    # Sanity check: tmp_path must NOT contain a bundles/ subdir.
+    assert not (tmp_path / 'bundles').exists(), 'Test precondition: tmp_path must lack bundles/'
+
+    # Act / Assert
+    with pytest.raises(ValueError) as exc_info:
+        find_marketplace_root(marketplace_root_override=str(tmp_path))
+
+    msg = str(exc_info.value)
+    assert 'bundles' in msg, f'Error message should mention bundles/, got: {msg}'
+    assert str(tmp_path) in msg, (
+        f'Error message should reference the offending path {tmp_path}, got: {msg}'
+    )
+    # The message must clarify that the override is meant to be the parent
+    # of bundles/, not bundles/ itself — this is what callers need to fix.
+    assert 'marketplace root' in msg or 'parent of bundles' in msg, (
+        f'Error message should clarify the parent-of-bundles contract, got: {msg}'
+    )
 
 
 # =============================================================================
