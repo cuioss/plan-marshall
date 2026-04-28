@@ -241,6 +241,223 @@ def test_surgical_tech_debt_trims_heavy_review_steps():
             assert stripped not in manifest['phase_6']['steps']
 
 
+# =============================================================================
+# Prefix-Normalization Regression Tests
+#
+# `phase_6_candidates` may arrive prefixed (`default:foo` from marshal.json's
+# step registry) or bare (`foo` from DEFAULT_PHASE_6_STEPS). The cascade-rule
+# filters in `_decide` previously compared candidates against bare-name literal
+# sets, so prefixed candidates silently bypassed the filters and heavy steps
+# survived in surgical/recipe manifests. The fix wraps the comparison side in
+# `_strip_default_prefix` so both shapes match.
+#
+# These tests pass prefixed candidates and assert that each affected rule
+# (Rule 1, 2, 3, 5, 6) drops or includes the right bare-named steps. They
+# would have failed before the fix because the filters were no-ops on the
+# prefixed input.
+# =============================================================================
+
+
+_PREFIXED_PHASE_6 = (
+    'default:pre-push-quality-gate',
+    'default:commit-push',
+    'default:create-pr',
+    'default:automated-review',
+    'default:knowledge-capture',
+    'default:lessons-capture',
+    'default:branch-cleanup',
+    'default:archive-plan',
+)
+
+
+def _all_default_prefixed(steps):
+    """Return the bare-name suffixes of any `default:`-prefixed steps in `steps`."""
+    return {s[len('default:'):] for s in steps if s.startswith('default:')}
+
+
+def test_rule_1_early_terminate_analysis_with_prefixed_candidates():
+    """Rule 1 (early_terminate_analysis) — prefixed candidates: include only knowledge/lessons/archive."""
+    with PlanContext(plan_id='prefix-rule-1'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='prefix-rule-1',
+                change_type='analysis',
+                scope_estimate='none',
+                affected_files_count=0,
+                phase_6_steps=','.join(_PREFIXED_PHASE_6),
+            )
+        )
+        assert result is not None and result['rule_fired'] == 'early_terminate_analysis'
+        manifest = read_manifest('prefix-rule-1')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Only the include-set survives, prefix preserved verbatim.
+        bare_names = _all_default_prefixed(steps)
+        assert bare_names == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        # Heavy steps that would have leaked through pre-fix are absent.
+        for excluded in ('commit-push', 'create-pr', 'automated-review',
+                         'pre-push-quality-gate', 'branch-cleanup'):
+            assert f'default:{excluded}' not in steps
+
+
+def test_rule_2_recipe_with_prefixed_candidates():
+    """Rule 2 (recipe) — prefixed candidates: drop automated-review/sonar-roundtrip/knowledge-capture."""
+    prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
+    with PlanContext(plan_id='prefix-rule-2'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='prefix-rule-2',
+                change_type='tech_debt',
+                scope_estimate='surgical',
+                recipe_key='lesson_cleanup',
+                affected_files_count=2,
+                phase_6_steps=','.join(prefixed_with_sonar),
+            )
+        )
+        assert result is not None and result['rule_fired'] == 'recipe'
+        manifest = read_manifest('prefix-rule-2')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Heavy review steps are dropped (prefix and bare both filtered correctly).
+        for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+            assert f'default:{dropped}' not in steps
+        # Non-heavy steps survive.
+        assert 'default:commit-push' in steps
+        assert 'default:create-pr' in steps
+        assert 'default:lessons-capture' in steps
+
+
+def test_rule_3_docs_only_with_prefixed_candidates():
+    """Rule 3 (docs_only) — prefixed candidates: drop sonar-roundtrip/automated-review."""
+    prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
+    with PlanContext(plan_id='prefix-rule-3'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='prefix-rule-3',
+                change_type='tech_debt',
+                scope_estimate='surgical',
+                affected_files_count=3,
+                # docs-only candidate set: only quality-gate, no module-tests/coverage.
+                phase_5_steps='quality-gate',
+                phase_6_steps=','.join(prefixed_with_sonar),
+            )
+        )
+        assert result is not None and result['rule_fired'] == 'docs_only'
+        manifest = read_manifest('prefix-rule-3')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Review steps dropped.
+        for dropped in ('sonar-roundtrip', 'automated-review'):
+            assert f'default:{dropped}' not in steps
+        # Non-review steps survive.
+        assert 'default:commit-push' in steps
+        assert 'default:knowledge-capture' in steps
+        assert 'default:lessons-capture' in steps
+
+
+def test_rule_5_surgical_bug_fix_with_prefixed_candidates():
+    """Rule 5 (surgical_bug_fix) — prefixed candidates: drop automated-review/sonar-roundtrip/knowledge-capture."""
+    prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
+    with PlanContext(plan_id='prefix-rule-5-bug'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='prefix-rule-5-bug',
+                change_type='bug_fix',
+                scope_estimate='surgical',
+                affected_files_count=1,
+                phase_6_steps=','.join(prefixed_with_sonar),
+            )
+        )
+        assert result is not None and result['rule_fired'] == 'surgical_bug_fix'
+        manifest = read_manifest('prefix-rule-5-bug')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+            assert f'default:{dropped}' not in steps
+        assert 'default:lessons-capture' in steps
+        assert 'default:commit-push' in steps
+
+
+def test_rule_5_surgical_tech_debt_with_prefixed_candidates():
+    """Rule 5 (surgical_tech_debt) — prefixed candidates: same drop as bug_fix."""
+    prefixed_with_sonar = _PREFIXED_PHASE_6 + ('default:sonar-roundtrip',)
+    with PlanContext(plan_id='prefix-rule-5-tech'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='prefix-rule-5-tech',
+                change_type='tech_debt',
+                scope_estimate='surgical',
+                affected_files_count=2,
+                # Code-shaped candidate set so we don't fall into docs_only first.
+                phase_5_steps='quality-gate,module-tests',
+                phase_6_steps=','.join(prefixed_with_sonar),
+            )
+        )
+        assert result is not None and result['rule_fired'] == 'surgical_tech_debt'
+        manifest = read_manifest('prefix-rule-5-tech')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+            assert f'default:{dropped}' not in steps
+        assert 'default:commit-push' in steps
+
+
+def test_rule_6_verification_no_files_with_prefixed_candidates():
+    """Rule 6 (verification_no_files) — prefixed candidates: include only knowledge/lessons/archive."""
+    with PlanContext(plan_id='prefix-rule-6'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='prefix-rule-6',
+                change_type='verification',
+                scope_estimate='none',
+                affected_files_count=0,
+                phase_6_steps=','.join(_PREFIXED_PHASE_6),
+            )
+        )
+        assert result is not None and result['rule_fired'] == 'verification_no_files'
+        manifest = read_manifest('prefix-rule-6')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        bare_names = _all_default_prefixed(steps)
+        assert bare_names == {'knowledge-capture', 'lessons-capture', 'archive-plan'}
+        for excluded in ('commit-push', 'create-pr', 'automated-review',
+                         'pre-push-quality-gate', 'branch-cleanup'):
+            assert f'default:{excluded}' not in steps
+
+
+def test_prefix_normalization_no_op_for_bare_candidates():
+    """Sanity: applying _strip_default_prefix to bare candidates is a no-op.
+
+    The bare-name path (DEFAULT_PHASE_6_STEPS) must continue to work identically.
+    Rule 5 with bare candidates exercises the same filter that is now wrapped in
+    `_strip_default_prefix(s) not in {...}` — confirms the helper's no-op
+    behavior on bare names.
+    """
+    bare = (
+        'commit-push', 'create-pr', 'automated-review', 'sonar-roundtrip',
+        'knowledge-capture', 'lessons-capture', 'branch-cleanup', 'archive-plan',
+    )
+    with PlanContext(plan_id='prefix-noop-bare'):
+        result = cmd_compose(
+            _compose_ns(
+                plan_id='prefix-noop-bare',
+                change_type='bug_fix',
+                scope_estimate='surgical',
+                affected_files_count=1,
+                phase_6_steps=','.join(bare),
+            )
+        )
+        assert result is not None and result['rule_fired'] == 'surgical_bug_fix'
+        manifest = read_manifest('prefix-noop-bare')
+        assert manifest is not None
+        steps = manifest['phase_6']['steps']
+        # Bare names: heavy review steps still dropped; helper is a no-op.
+        for dropped in ('automated-review', 'sonar-roundtrip', 'knowledge-capture'):
+            assert dropped not in steps
+        assert 'commit-push' in steps
+        assert 'lessons-capture' in steps
+
+
 def test_bundle_self_modification_inserts_early_sync_before_first_agent_step():
     """bundle_self_modification — agent path triggers extra sync before create-pr.
 

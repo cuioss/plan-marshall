@@ -344,6 +344,24 @@ This skill does not implement the rule itself; it consumes the manifest as writt
 
 **Resumable re-entry semantics**: Before dispatching each step, read the current step record from `status.metadata.phase_steps["6-finalize"]`. If the step is already marked `done`, skip dispatch entirely (no re-run, no log noise — the previous run completed it). If the step is marked `failed`, retry it from scratch. If the step has no record (or any other outcome), dispatch it as a fresh run. This makes finalize safe to re-enter after a partial run, a crash, or an explicit retry — completed steps stay completed, failed steps get exactly one retry per invocation.
 
+**Special case — `pre-push-quality-gate`**: this step is HEAD-dependent. The general rule above is augmented for `step_id == "pre-push-quality-gate"` with a worktree-HEAD comparison so a loop-back commit (typically produced by `automated-review` or `sonar-roundtrip`) re-fires the gate against the newer code instead of skipping it on a stale `done` record:
+
+| Persisted state | Live worktree HEAD | Action |
+|-----------------|--------------------|--------|
+| `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — gate already validated this exact tree) |
+| `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD has advanced past the validated SHA) |
+| `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE (legacy record from before SHA tracking; safe default is to re-run) |
+| `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
+| no record OR any other value | n/a | DISPATCH (unchanged — same as the general rule) |
+
+Resolve the comparison HEAD inside the dispatcher block at the moment of the per-step check:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Do NOT cache the live HEAD across loop iterations — read it fresh per step so a step that advances HEAD mid-loop (e.g., a hypothetical inline commit) is observed correctly by every later step's check. All other finalize steps keep the general rule above verbatim; this special case applies only to `pre-push-quality-gate`.
+
 **Per-agent timeout wrapper**: Every Task agent dispatch in this loop runs under a per-agent timeout budget. If the dispatch does not return inside the budget, the wrapper logs an ERROR, marks the step `failed` via `manage-status mark-step-done`, and continues with the next step in the list (no abort, no re-throw). Inline-only steps are not timeout-wrapped because they execute in the main context where Claude Code already manages call timeouts. Budgets:
 
 | Step | Budget | Rationale |
@@ -377,10 +395,19 @@ FOR each step_id in manifest.phase_6.steps:
 
   1. Resumable re-entry check:
      Read status.metadata.phase_steps["6-finalize"][step_id]:
-       - IF outcome == "done": SKIP this step (continue to next iteration)
-       - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
-       - IF no record OR any other value: dispatch normally
-     Log skip/retry decisions at INFO level so the work.log reflects the re-entry path.
+       - IF step_id == "pre-push-quality-gate" (special-cased HEAD-dependent rule):
+           Resolve the live worktree HEAD via `git -C {worktree_path} rev-parse HEAD`.
+           Read this fresh per iteration; do NOT cache across the loop.
+             - IF outcome == "done" AND head_at_completion == live HEAD: SKIP this step
+             - IF outcome == "done" AND head_at_completion != live HEAD: RE-FIRE (treat as no record — dispatch as fresh run)
+             - IF outcome == "done" AND head_at_completion is absent: RE-FIRE (legacy record from before SHA tracking; dispatch as fresh run)
+             - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
+             - IF no record OR any other value: dispatch normally
+       - ELSE (every other step keeps the general rule):
+           - IF outcome == "done": SKIP this step (continue to next iteration)
+           - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
+           - IF no record OR any other value: dispatch normally
+     Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
   2. Log step start:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -654,7 +681,20 @@ The Step 3 dispatch loop is fully resumable across re-entries: each step's `stat
 | (no record) | Dispatch as a first-time run. |
 | any other value | Dispatch as a first-time run (treat as a degraded record). |
 
-This makes finalize safe to interrupt and re-enter — completed work is preserved, failed work gets a retry, never-run work runs for the first time. There is no separate "resume" mode; every Phase 6 entry is implicitly resumable.
+**Special case — `pre-push-quality-gate`**: this step's resumable check is augmented with a worktree-HEAD comparison so a loop-back commit re-fires the gate instead of skipping it on a stale `done`. The augmented rule applies ONLY when `step_id == "pre-push-quality-gate"`; every other step uses the general table above verbatim.
+
+| Outcome on re-entry | `head_at_completion` vs live HEAD | Action |
+|---------------------|-----------------------------------|--------|
+| `done` | matches live `git -C {worktree_path} rev-parse HEAD` | Skip dispatch entirely (steady-state — gate already validated this exact tree). |
+| `done` | differs from live HEAD | Re-fire (treat as no record — HEAD has advanced past the validated SHA, e.g., after a loop-back commit). |
+| `done` | `head_at_completion` field absent | Re-fire (legacy record from before SHA tracking; safe default is to re-run). |
+| `failed` | n/a | Retry from scratch (unchanged). |
+| (no record) | n/a | Dispatch as a first-time run (unchanged). |
+| any other value | n/a | Dispatch as a first-time run (unchanged). |
+
+The live HEAD MUST be resolved fresh per iteration via `git -C {worktree_path} rev-parse HEAD` — do NOT cache across the loop, so a step that advances HEAD mid-loop is observed correctly by every later check. Cross-reference: `standards/pre-push-quality-gate.md` "Mark Step Complete" Branch A, which persists `head_at_completion` on the success path.
+
+This makes finalize safe to interrupt and re-enter — completed work is preserved, failed work gets a retry, never-run work runs for the first time, and the HEAD-dependent quality gate re-fires whenever the tree it validated has been superseded. There is no separate "resume" mode; every Phase 6 entry is implicitly resumable.
 
 In-step state checks (consulted by individual standards docs after dispatch — these guard idempotent operations, not skip activation):
 
