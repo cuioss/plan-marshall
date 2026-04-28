@@ -39,6 +39,7 @@ When persisting the multi-task batch (Step 6 → 6a/6b), the following shell sho
 
 **Constraints:**
 - Strictly comply with all rules from dev-general-practices, especially tool usage and workflow step discipline
+- Batch JSON staging files MUST live under `.plan/local/plans/{plan_id}/work/`. Never use `Write` to `/tmp/`, `/var/`, or any path outside the plan's `work/` directory. (Cross-reference: see anti-pattern callout at SKILL.md:30 for the shell-substitution shortcut prohibition; both rules apply together.)
 
 ## cwd for `.plan/execute-script.py` calls
 
@@ -315,12 +316,9 @@ Compose every task record for this phase invocation into one JSON array, then pe
 
 Sequential numbering is assigned in array order at call time. On any validation failure no `TASK-NNN.json` is written.
 
-**Step 6a — Stage the JSON array under the plan's `work/` tree** via `manage-files write`. This avoids marshalling a large JSON payload through the shell argument boundary and keeps the batch input auditable as a plan artifact:
+**Step 6a — Stage the JSON array under the plan's `work/` tree via the `Write` tool.** Use the `Write` tool directly to write the batch JSON to `.plan/local/plans/{plan_id}/work/tasks-batch.json`. This path is covered by the `Write(.plan/**)` permission rule, so no permission prompt is triggered, and writing through a structured tool keeps the JSON payload off the shell argument boundary. The intermediate `manage-files write` call is **no longer required** for this canonical flow.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-files:manage-files \
-  write --plan-id {plan_id} --file work/tasks-batch.json --content "{json_array}"
-```
+If a script-mediated path is preferred (for example, when the staging file already lives outside `.plan/`), the optional `manage-files write --content-file PATH` form is documented separately in `marketplace/bundles/plan-marshall/skills/manage-files/SKILL.md` (write subcommand reference). Both forms produce the same staged file; only the canonical `Write`-tool form is exercised by this phase.
 
 **Step 6b — Persist the batch atomically** by passing the staged file path to `batch-add --tasks-file`:
 

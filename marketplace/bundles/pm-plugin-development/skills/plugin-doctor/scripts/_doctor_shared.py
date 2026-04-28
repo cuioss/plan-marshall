@@ -55,26 +55,56 @@ def ensure_report_dir(report_dir: Path) -> Path:
 # =============================================================================
 
 
-def find_marketplace_root() -> Path | None:
-    """Find the marketplace root directory deterministically.
+def find_marketplace_root(marketplace_root_override: str | None = None) -> Path | None:
+    """Find the marketplace bundles directory deterministically.
+
+    The override value (whether passed via the function argument or via the
+    ``PM_MARKETPLACE_ROOT`` environment variable) is the **marketplace root**,
+    i.e., the parent directory of ``bundles/``. NOT ``bundles/`` itself.
+    Example: ``/abs/path/to/.claude/worktrees/{plan_id}/marketplace``, where
+    the directory layout is ``marketplace/bundles/{bundle_name}/...``. The
+    function validates the override contains a ``bundles/`` subdirectory and
+    returns the resolved ``{override}/bundles`` path so downstream callers
+    continue to receive the bundles directory they expect.
 
     Discovery order (deterministic, not cwd-sensitive by default):
 
-    1. ``PM_MARKETPLACE_ROOT`` environment variable — explicit override used
+    1. ``marketplace_root_override`` function argument — explicit override
+       supplied by CLI flags (e.g., ``--marketplace-root PATH``). Highest
+       precedence so worktree-scoped invocations always win.
+    2. ``PM_MARKETPLACE_ROOT`` environment variable — explicit override used
        by callers that cannot rely on script-relative resolution (tests with
        fake marketplaces, CLI invocations against alternate trees).
-    2. Script-relative resolution — walks up from ``__file__`` to the
+    3. Script-relative resolution — walks up from ``__file__`` to the
        ancestor ``marketplace`` directory. This is the canonical path when
        the script lives inside a marketplace checkout.
-    3. cwd fallback — only reached when the script is executed from outside
+    4. cwd fallback — only reached when the script is executed from outside
        a marketplace source tree (e.g. installed plugin cache). Kept last
        so production behavior does not depend on the caller's cwd.
+
+    Args:
+        marketplace_root_override: Optional absolute path to the marketplace
+            root (parent of ``bundles/``). When provided, takes precedence
+            over the ``PM_MARKETPLACE_ROOT`` env var.
+
+    Returns:
+        Path to the ``bundles/`` directory inside the resolved marketplace
+        root, or ``None`` when no candidate is found.
+
+    Raises:
+        ValueError: When the supplied override (function arg or env var)
+            does not contain a ``bundles/`` subdirectory.
     """
-    override = os.environ.get('PM_MARKETPLACE_ROOT')
-    if override:
-        override_path = Path(override)
-        if override_path.is_dir():
-            return override_path
+    override_value = marketplace_root_override or os.environ.get('PM_MARKETPLACE_ROOT')
+    if override_value:
+        override_path = Path(override_value)
+        bundles_path = override_path / 'bundles'
+        if not bundles_path.is_dir():
+            raise ValueError(
+                f'--marketplace-root or PM_MARKETPLACE_ROOT must point to the marketplace root '
+                f'(parent of bundles/), but {override_path}/bundles does not exist'
+            )
+        return bundles_path
     # Script-relative path is the canonical source-of-truth discovery.
     if _BUNDLES_FROM_SCRIPT.is_dir():
         return _BUNDLES_FROM_SCRIPT
