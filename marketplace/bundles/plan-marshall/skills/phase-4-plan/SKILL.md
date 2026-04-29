@@ -94,6 +94,7 @@ message: {error message if status=error}
 | Document | Purpose |
 |----------|---------|
 | [Task Creation Flow](references/task-creation-flow.md) | Visual overview of the 1:N task creation flow and output structure |
+| [Breaking-Refactor Task Split](standards/breaking-refactor-task-split.md) | Task-split contract for `tech_debt` / `feature_breaking` deliverables that intentionally invalidate existing test contracts (allocates `implementation` + `module_testing` task pair with `depends_on` linkage); paired with the phase-5-execute planned-failure exception |
 
 ## Workflow
 
@@ -205,7 +206,7 @@ For each deliverable D:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   module --name {deliverable.module} \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 **Skills Resolution** (new defaults/optionals structure):
@@ -266,6 +267,8 @@ The legacy three-step path-allocate flow remains available for ad-hoc
 single-task additions (Q-Gate auto-loop, fix tasks dispatched outside this
 phase) but MUST NOT be used here when more than one task is being created in
 the same phase invocation.
+
+**Breaking-refactor task split**: When the deliverable's `compatibility=breaking` OR its `change_type` is `tech_debt` or `feature_breaking`, AND it touches code paths covered by existing module tests, allocate the implementation and `module_testing` tasks per the task-split contract in [standards/breaking-refactor-task-split.md](standards/breaking-refactor-task-split.md) — the test-contract task carries `depends_on: [TASK-{implementation_number}]` and its description enumerates both the pre-existing tests being rewritten and any new regression tests pinning the new contract. This is the planning-side half of the breaking-refactor pair; phase-5-execute applies the planned-failure exception when the implementation task's verification fails in exactly the way the test-contract task is scoped to fix.
 
 ### Description Anchoring Contract
 
@@ -386,7 +389,7 @@ After creating per-deliverable tasks, create plan-level verification tasks that 
 **Read verification steps** (NOTE: `manage-config plan` is ONLY for phase configs — for architecture queries use `manage-architecture:architecture`):
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field steps --trace-plan-id {plan_id}
+  plan phase-5-execute get --field steps --audit-plan-id {plan_id}
 ```
 
 Iterate over the `steps` list. For each step, create a holistic verification task based on the step type:
@@ -666,7 +669,7 @@ If deliverable metadata incomplete:
 
 **Script Notations** (use EXACTLY as shown):
 - `plan-marshall:manage-solution-outline:manage-solution-outline` - Read deliverables (list-deliverables, read)
-- `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--trace-plan-id`, NOT `--plan-id`.
+- `plan-marshall:manage-architecture:architecture` - Query module skills (module --name {module}) and resolve commands (resolve --command {cmd} --module {module}). Uses `--audit-plan-id`, NOT `--plan-id`.
 - `plan-marshall:manage-tasks:manage-tasks` - Create tasks atomically via `batch-add --tasks-file PATH` (preferred for multi-task creation in this phase, where `PATH` is staged via `manage-files write` to `.plan/local/plans/{plan_id}/work/tasks-batch.json`). Single ad-hoc adds may use the path-allocate flow (`prepare-add` → Write TOON → `commit-add`).
 - `plan-marshall:manage-files:manage-files` - Stage the batch JSON array (via `write --file work/tasks-batch.json`) so the payload never crosses the shell argument boundary.
 - `plan-marshall:manage-findings:manage-findings` - Q-Gate findings (qgate add/query/resolve)

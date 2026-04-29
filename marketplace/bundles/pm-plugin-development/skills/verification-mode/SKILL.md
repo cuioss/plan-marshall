@@ -264,7 +264,7 @@ Only after user provides direction:
 
 **When**: After tested workflow completes.
 
-**Purpose**: Catch errors in the **global** log that failed before reaching plan-scoped logging (typically missing `--plan-id` or `--trace-plan-id`).
+**Purpose**: Catch errors in the **global** log that failed before reaching plan-scoped logging (typically missing `--plan-id` or `--audit-plan-id`).
 
 **A. Scan Plan-Scoped Log**:
 

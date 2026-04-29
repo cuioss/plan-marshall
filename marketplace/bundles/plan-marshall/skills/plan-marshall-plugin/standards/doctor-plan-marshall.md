@@ -44,7 +44,7 @@ For each component, check against `../references/plan-marshall-guide.md`:
 ## PM-Workflow Fix Categories
 
 **Safe fixes** (auto-apply unless --no-fix):
-- PM-003: Swap `--plan-id` ↔ `--trace-plan-id`
+- PM-003: Swap `--plan-id` ↔ `--audit-plan-id`
 - PM-004: Add missing plan parameter
 
 **Risky fixes** (require confirmation):

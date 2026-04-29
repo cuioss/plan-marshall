@@ -18,7 +18,7 @@ Resolve the command via:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command quality-gate --module {module} --trace-plan-id {plan_id}
+  resolve --command quality-gate --module {module} --audit-plan-id {plan_id}
 ```
 
 Run the returned `executable` as the verification command for the task.

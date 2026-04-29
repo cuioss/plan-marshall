@@ -55,7 +55,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-solution-outline read \
   --plan-id {plan_id} \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 Parse the deliverables from the solution outline. Extract:
@@ -83,7 +83,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
   request read \
   --plan-id {plan_id} \
   --section clarified_request \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 #### 1.4 Log Start
@@ -91,7 +91,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:q-gate-validation-agent) Starting verification: {deliverable_count} deliverables, {assessment_count} assessments" \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 ---
@@ -190,7 +190,7 @@ For each deliverable:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:q-gate-validation-agent:qgate) Deliverable {N}: {pass|fail} - {reason}" \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 #### 2.8 Downstream Consumer Check
@@ -248,7 +248,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   --title "Q-Gate: Downstream consumer for deletion of {skill_dir}" \
   --detail "{pattern_letter}-{pattern_name} match at {consumer_path}:{line} references deleted skill {skill_dir} but is not listed in any deliverable's affected files. Outline must either add {consumer_path} to the deletion deliverable's affected files or include a follow-up deliverable that removes/updates it." \
   --file-path "{consumer_path}" \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 **Worked example (lesson 2026-04-18-05-002)**: Plan `plan-retrospective-opt-in-audit` Deliverable 4 listed every file under `.claude/skills/verify-workflow/` for deletion. Pattern A run against the worktree produced `test/verify-workflow/conftest.py:12` loading `scripts/verify-structure.py` via `spec_from_file_location`. `test/verify-workflow/` was not listed as an affected file of any deliverable in the outline, so the suppression rule did not apply and a Q-Gate finding would now be emitted — blocking phase-3-outline until the outline adds `test/verify-workflow/` to the deletion deliverable (or adds a follow-up deliverable that removes it). With this check in place, task 10 (holistic `module-tests`) would never have hit the `FileNotFoundError` at pytest collection time.
@@ -270,7 +270,7 @@ FOR each file IN assessed_files:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:q-gate-validation-agent:qgate) Missing coverage: {file} assessed but not in deliverables" \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 ---
@@ -310,7 +310,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id {plan_id} \
   --field affected_files \
   --values "file1.py,file2.py,file3.md" \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 **Example** (correct):
@@ -345,7 +345,7 @@ Extract `filtered_count` from the output — this becomes `qgate_pending_count` 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:q-gate-validation-agent) Summary: {passed} passed, {flagged} flagged, {missing} missing coverage" \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 ### Step 10: Log Completion

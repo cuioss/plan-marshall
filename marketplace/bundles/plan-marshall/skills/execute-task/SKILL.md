@@ -127,7 +127,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command {resolve_command} --module {module} \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 Where `{resolve_command}` depends on profile: `implementation` → `compile`, `module_testing` → `module-tests`. Verification profile uses commands from task steps directly.
@@ -195,7 +195,7 @@ Before implementing, read the compatibility approach:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
+  plan phase-2-refine get --field compatibility --audit-plan-id {plan_id}
 ```
 
 **No fallback** — if field not found, fail with error and abort task.

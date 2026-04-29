@@ -319,7 +319,7 @@ Without the gloss, a downstream agent could read `review-knowledge` as "subject 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command compile --module {module} \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 Use the returned `executable` value as the Verification Command. Both Command and Criteria are mandatory — do NOT omit. If architecture has no `compile` command, use the most specific available command (e.g., `verify`, `quality-gate`) or flag for user decision.
 
@@ -409,7 +409,7 @@ For codebase-wide changes requiring discovery and analysis.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  resolve-outline-skill --domain {domain} --trace-plan-id {plan_id}
+  resolve-outline-skill --domain {domain} --audit-plan-id {plan_id}
 ```
 
 **Output** (TOON):
@@ -464,12 +464,12 @@ For each deliverable, resolve verification commands from architecture:
 # Build/compile verification
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command compile --module {module} \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 
 # Test verification (for deliverables with module_testing profile)
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command module-tests --module {module} \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 **Available architecture commands**: `compile`, `test-compile`, `module-tests`, `quality-gate`, `verify`, `coverage`, `clean`. Do NOT use `test` (use `module-tests` instead).

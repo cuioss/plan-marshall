@@ -176,7 +176,7 @@ After completing phases 1-4, check `execute_without_asking` config:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-4-plan get --field execute_without_asking --trace-plan-id {plan_id}
+  plan phase-4-plan get --field execute_without_asking --audit-plan-id {plan_id}
 ```
 
 - If false (default): STOP and wait for execute action

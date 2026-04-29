@@ -18,7 +18,7 @@ Resolve via `architecture resolve --command coverage` to run the coverage build,
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command coverage --module {module} --trace-plan-id {plan_id}
+  resolve --command coverage --module {module} --audit-plan-id {plan_id}
 ```
 
 ```bash
