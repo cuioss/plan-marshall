@@ -45,6 +45,10 @@ from file_ops import (  # type: ignore[import-not-found]
     output_toon,
     safe_main,
 )
+from input_validation import (  # type: ignore[import-not-found]
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
 
 _ARCHIVED_TMP_SUBDIR = 'plan-retrospective'
@@ -320,7 +324,7 @@ def _add_init_args(parser: argparse.ArgumentParser) -> None:
     bundle's ``_meta`` block; ``add`` and ``finalize`` later read it back
     from the bundle rather than taking it as an argument.
     """
-    parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(parser)
     parser.add_argument(
         '--mode',
         choices=['live', 'archived'],
@@ -341,7 +345,7 @@ def _add_add_finalize_args(parser: argparse.ArgumentParser) -> None:
     Mode is deliberately omitted — both subcommands read it from the
     bundle's persisted ``_meta.mode`` entry (written by ``init``).
     """
-    parser.add_argument('--plan-id', required=True, dest='plan_id', help='Plan identifier')
+    add_plan_id_arg(parser)
     parser.add_argument(
         '--archived-plan-path',
         dest='archived_plan_path',
@@ -397,7 +401,7 @@ def main() -> int:
     _add_add_finalize_args(finalize_parser)
     finalize_parser.set_defaults(func=cmd_finalize)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     output_toon(result)
     return 0

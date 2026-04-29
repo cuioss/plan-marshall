@@ -27,7 +27,12 @@ from file_ops import (  # type: ignore[import-not-found]
     safe_main,
     write_json,
 )
-from input_validation import check_field_type, check_required_fields  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_session_id_arg,
+    check_field_type,
+    check_required_fields,
+    parse_args_with_toon_errors,
+)
 
 # Suppress deprecation warnings in output
 warnings.filterwarnings('ignore', category=DeprecationWarning)
@@ -388,7 +393,7 @@ Examples:
     p_save.add_argument('--category', required=True, choices=CATEGORIES, help='Memory category')
     p_save.add_argument('--identifier', required=True, help='File identifier/summary')
     p_save.add_argument('--content', required=True, help='JSON content to save')
-    p_save.add_argument('--session-id', dest='session_id', help='Optional session ID')
+    add_session_id_arg(p_save, required=False)
     p_save.set_defaults(func=cmd_save)
 
     # load command
@@ -425,7 +430,7 @@ Examples:
     p_validate.add_argument('--file', required=True, help='Path to memory file to validate')
     p_validate.set_defaults(func=cmd_validate)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     if not args.command:
         parser.print_help()

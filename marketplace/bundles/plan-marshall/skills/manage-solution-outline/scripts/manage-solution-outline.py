@@ -30,7 +30,11 @@ from _plan_parsing import (  # type: ignore[import-not-found]
     parse_document_sections,
 )
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+    require_valid_plan_id,
+)
 
 SOLUTION_FILE = 'solution_outline.md'
 ARCHITECTURE_DIR = 'project-architecture'
@@ -768,7 +772,7 @@ def main() -> int:
     )
     context_parser.set_defaults(func=cmd_get_module_context)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     if not args.command:
         parser.print_help()

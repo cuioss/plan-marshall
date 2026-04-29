@@ -43,6 +43,13 @@ from file_ops import (  # type: ignore[import-not-found]
     parse_markdown_metadata,
     safe_main,
 )
+from input_validation import (  # type: ignore[import-not-found]
+    add_component_arg,
+    add_lesson_id_arg,
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+    validate_lesson_id,
+)
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 VALID_CATEGORIES = LESSON_CATEGORIES
@@ -909,7 +916,7 @@ def main() -> int:
         help='Allocate a new lesson file (metadata + title, empty body) and return its absolute path',
         allow_abbrev=False,
     )
-    add_parser.add_argument('--component', required=True, help='Component name')
+    add_component_arg(add_parser)
     add_parser.add_argument(
         '--category', required=True, choices=['bug', 'improvement', 'anti-pattern'], help='Lesson category'
     )
@@ -919,19 +926,19 @@ def main() -> int:
 
     # update
     update_parser = subparsers.add_parser('update', help='Update lesson metadata', allow_abbrev=False)
-    update_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
-    update_parser.add_argument('--component', help='Update component')
+    add_lesson_id_arg(update_parser)
+    add_component_arg(update_parser, required=False)
     update_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Update category')
     update_parser.set_defaults(func=cmd_update)
 
     # get
     get_parser = subparsers.add_parser('get', help='Get single lesson', allow_abbrev=False)
-    get_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
+    add_lesson_id_arg(get_parser)
     get_parser.set_defaults(func=cmd_get)
 
     # list
     list_parser = subparsers.add_parser('list', help='List lessons', allow_abbrev=False)
-    list_parser.add_argument('--component', help='Filter by component')
+    add_component_arg(list_parser, required=False)
     list_parser.add_argument('--category', choices=['bug', 'improvement', 'anti-pattern'], help='Filter by category')
     list_parser.add_argument(
         '--status',
@@ -948,8 +955,8 @@ def main() -> int:
         help='Move a lesson file into a plan directory as lesson-{id}.md',
         allow_abbrev=False,
     )
-    convert_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
-    convert_parser.add_argument('--plan-id', required=True, help='Target plan ID')
+    add_lesson_id_arg(convert_parser)
+    add_plan_id_arg(convert_parser)
     convert_parser.set_defaults(func=cmd_convert_to_plan)
 
     # set-body
@@ -958,7 +965,7 @@ def main() -> int:
         help='Overwrite the body of an existing lesson stub (preserves frontmatter and H1 title)',
         allow_abbrev=False,
     )
-    set_body_parser.add_argument('--lesson-id', required=True, help='Lesson ID')
+    add_lesson_id_arg(set_body_parser)
     set_body_input = set_body_parser.add_mutually_exclusive_group(required=True)
     set_body_input.add_argument('--file', help='Path to a file containing the body content')
     set_body_input.add_argument('--content', help='Inline body content (secondary form for tiny payloads)')
@@ -977,7 +984,7 @@ def main() -> int:
         help='Delete a lesson file and write a tombstone (interactive confirm by default)',
         allow_abbrev=False,
     )
-    remove_parser.add_argument('--lesson-id', required=True, help='Lesson ID to remove')
+    add_lesson_id_arg(remove_parser)
     remove_parser.add_argument('--reason', required=True, help='Removal reason (recorded in tombstone and audit log)')
     remove_parser.add_argument(
         '--force', action='store_true', help='Skip the interactive confirmation prompt'
@@ -990,7 +997,7 @@ def main() -> int:
         help='Mark a lesson as superseded by a canonical lesson, write redirect stub and tombstone',
         allow_abbrev=False,
     )
-    supersede_parser.add_argument('--lesson-id', required=True, help='Source lesson ID being superseded')
+    add_lesson_id_arg(supersede_parser)
     supersede_parser.add_argument('--by', required=True, help='Canonical lesson ID that absorbs the source')
     supersede_parser.add_argument('--reason', required=True, help='Supersede reason (recorded in tombstone and audit log)')
     supersede_parser.set_defaults(func=cmd_supersede)
@@ -1009,6 +1016,7 @@ def main() -> int:
     cleanup_mode.add_argument(
         '--lesson-id',
         action='append',
+        type=validate_lesson_id,
         help=(
             'Lesson ID to prune (repeatable). When supplied, --retention-days '
             'is ignored and ids are evaluated regardless of file age.'
@@ -1030,7 +1038,7 @@ def main() -> int:
     )
     cleanup_parser.set_defaults(func=cmd_cleanup_superseded)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     output_toon(result)
     return 0

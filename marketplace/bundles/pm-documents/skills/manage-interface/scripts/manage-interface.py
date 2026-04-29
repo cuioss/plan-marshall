@@ -20,6 +20,10 @@ import re
 from pathlib import Path
 
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_field_arg,
+    parse_args_with_toon_errors,
+)
 from plan_logging import log_entry  # type: ignore[import-not-found]
 
 # Interface directory relative to project root
@@ -401,7 +405,7 @@ Examples:
     # Update command
     update_parser = subparsers.add_parser('update', help='Update interface', allow_abbrev=False)
     update_parser.add_argument('--number', type=int, required=True, help='Interface number')
-    update_parser.add_argument('--field', help='Field to update')
+    add_field_arg(update_parser, required=False)
     update_parser.add_argument('--value', help='New value')
     update_parser.set_defaults(func=cmd_update)
 
@@ -415,7 +419,7 @@ Examples:
     next_parser = subparsers.add_parser('next-number', help='Get next available number', allow_abbrev=False)
     next_parser.set_defaults(func=cmd_next_number)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     output_toon(result)
     return 0

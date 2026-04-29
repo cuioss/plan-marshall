@@ -79,6 +79,7 @@ from ci_base import (  # type: ignore[import-not-found]
     make_error,
     make_pr_number_handler,
     make_simple_handler,
+    parse_args_with_toon_errors,
     poll_until,
     prepare_body,
     read_and_consume_body,
@@ -1669,7 +1670,7 @@ def main() -> int:
     if resolve_parser:
         resolve_parser.add_argument('--pr-number', type=int, help='PR number (accepted for API uniformity)')
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     handlers = {
         ('pr', 'prepare-body'): _cmd_pr_prepare_body,

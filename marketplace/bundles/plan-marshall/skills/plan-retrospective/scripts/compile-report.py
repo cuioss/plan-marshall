@@ -27,6 +27,11 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_plan_id_arg,
+    add_session_id_arg,
+    parse_args_with_toon_errors,
+)
 from toon_parser import parse_toon  # type: ignore[import-not-found]
 
 # Section order matches ``references/report-structure.md``.
@@ -268,7 +273,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     run_parser = subparsers.add_parser('run', help='Compile document', allow_abbrev=False)
-    run_parser.add_argument('--plan-id', help='Plan identifier (live mode)')
+    add_plan_id_arg(run_parser, required=False)
     run_parser.add_argument(
         '--archived-plan-path',
         help='Absolute path to archived plan directory (archived mode)',
@@ -284,10 +289,10 @@ def main() -> int:
         required=True,
         help='Path to TOON bundle of aspect fragments',
     )
-    run_parser.add_argument('--session-id', help='Optional session identifier')
+    add_session_id_arg(run_parser, required=False)
     run_parser.set_defaults(func=cmd_run)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     output_toon(result)
     return 0

@@ -42,7 +42,10 @@ from _cmd_request import cmd_create, cmd_exists, cmd_mark_clarified, cmd_path, c
 from _cmd_types import cmd_list_types
 from _documents_core import get_available_types, load_document_type
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -138,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     """Main entry point."""
     parser = build_parser()
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     if not args.doc_type:
         parser.print_help()

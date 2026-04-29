@@ -42,6 +42,7 @@ def _ensure_sibling_skill_paths() -> None:
     sibling_dirs = [
         skills_dir / 'tools-file-ops' / 'scripts',
         skills_dir / 'ref-toon-format' / 'scripts',
+        skills_dir / 'tools-input-validation' / 'scripts',
     ]
     for d in sibling_dirs:
         d_str = str(d)
@@ -51,6 +52,10 @@ def _ensure_sibling_skill_paths() -> None:
 _ensure_sibling_skill_paths()
 
 from file_ops import get_plan_dir, output_toon, safe_main  # type: ignore[import-not-found]  # noqa: E402, F401
+from input_validation import (  # type: ignore[import-not-found]  # noqa: E402, F401
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]  # noqa: E402, F401
 
 # Exit codes
@@ -610,7 +615,7 @@ def build_parser(
         help='Allocate a scratch path for the issue description (path-allocate pattern)',
         allow_abbrev=False,
     )
-    issue_prepare.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
+    add_plan_id_arg(issue_prepare)
     issue_prepare.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
 
     # pr prepare-body — allocate scratch path for PR create description
@@ -619,7 +624,7 @@ def build_parser(
         help='Allocate a scratch path for a PR body (create/edit) (path-allocate pattern)',
         allow_abbrev=False,
     )
-    pr_prepare_body.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
+    add_plan_id_arg(pr_prepare_body)
     pr_prepare_body.add_argument(
         '--for',
         dest='prepare_for',
@@ -635,7 +640,7 @@ def build_parser(
         help='Allocate a scratch path for a PR comment (reply / thread-reply) (path-allocate pattern)',
         allow_abbrev=False,
     )
-    pr_prepare_comment.add_argument('--plan-id', required=True, help='Plan identifier binding the prepared body')
+    add_plan_id_arg(pr_prepare_comment)
     pr_prepare_comment.add_argument(
         '--for',
         dest='prepare_for',

@@ -367,7 +367,14 @@ def test_qgate_add_with_options():
 
 
 def test_qgate_add_invalid_phase():
-    """Test that invalid phase is rejected (CLI plumbing - subprocess)."""
+    """Test that invalid phase is rejected (CLI plumbing - subprocess).
+
+    The canonical ``parse_args_with_toon_errors`` contract emits
+    ``status: error / error: invalid_phase`` TOON on stdout with exit
+    code 0 (so callers can read the structured error without parsing
+    stderr). The legacy assertion checked ``not result.success``; the
+    new contract requires inspecting the parsed TOON instead.
+    """
     with PlanContext(plan_id='qgate-inv-phase'):
         result = run_script(
             SCRIPT_PATH,
@@ -386,7 +393,13 @@ def test_qgate_add_invalid_phase():
             '--detail',
             'Test detail',
         )
-        assert not result.success
+        # New contract: argparse-boundary validation emits TOON on stdout
+        # with exit code 0. Older invalid-source/invalid-type values still
+        # fall through to the command handler which exits non-zero.
+        assert result.returncode == 0
+        data = result.toon()
+        assert data.get('status') == 'error'
+        assert data.get('error') == 'invalid_phase'
 
 
 def test_qgate_add_invalid_source():

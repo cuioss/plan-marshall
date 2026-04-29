@@ -82,6 +82,7 @@ from ci_base import (  # type: ignore[import-not-found]
     make_error,
     make_pr_number_handler,
     make_simple_handler,
+    parse_args_with_toon_errors,
     poll_until,
     prepare_body,
     read_and_consume_body,
@@ -1473,7 +1474,7 @@ def main() -> int:
     # GitLab: --pr-number on resolve-thread is required
     add_pr_resolve_thread_pr_number(pr_sub)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     handlers = {
         ('pr', 'prepare-body'): _cmd_pr_prepare_body,

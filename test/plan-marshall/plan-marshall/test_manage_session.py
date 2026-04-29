@@ -199,14 +199,23 @@ class TestCmdTranscriptPath:
         assert f'transcript_path: {expected}' in out
 
     def test_invalid_session_id_format_rejected(self, tmp_path, monkeypatch, capsys):
-        """Non-UUID session_id (e.g., contains glob metachars or path separators) is rejected before any filesystem access."""
+        """Session ids that fail the canonical regex are rejected before any filesystem access.
+
+        ``SESSION_ID_RE`` (post-migration) matches ``[A-Za-z0-9_-]{1,128}`` —
+        a generous superset of Claude Code session UUIDs. Values that
+        contain glob metachars, path separators, traversal segments, or
+        the empty string still fail the regex and trigger
+        ``invalid_session_id``. Note: kebab-case strings like ``short-id``
+        are now valid under the canonical regex (covered by the happy-path
+        contract elsewhere).
+        """
         repo_root = str(tmp_path / 'repo')
         (tmp_path / 'repo').mkdir()
 
         monkeypatch.setattr(manage_session, '_resolve_cwd', lambda: repo_root)
         monkeypatch.setattr(Path, 'home', classmethod(lambda cls: tmp_path))
 
-        for bad in ('../escape', 'wild*card', 'has/slash', 'short-id', ''):
+        for bad in ('../escape', 'wild*card', 'has/slash', ''):
             rc = manage_session.cmd_transcript_path(mock.Mock(session_id=bad))
             out = capsys.readouterr().out
             assert rc == 0

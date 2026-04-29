@@ -34,6 +34,10 @@ from pathlib import Path
 from typing import Any
 
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 
 # Maximum length of ``snippet`` field per finding. Keeps the TOON fragment
 # readable; full lines are available via file+line in the source.
@@ -402,7 +406,7 @@ def main() -> int:
         help='Scan three surfaces for direct gh/glab usage',
         allow_abbrev=False,
     )
-    run_parser.add_argument('--plan-id', help='Plan identifier (live mode)')
+    add_plan_id_arg(run_parser, required=False)
     run_parser.add_argument(
         '--archived-plan-path',
         help='Absolute path to archived plan directory (archived mode)',
@@ -431,7 +435,7 @@ def main() -> int:
     )
     run_parser.set_defaults(func=cmd_run)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     output_toon(result)
     return 0

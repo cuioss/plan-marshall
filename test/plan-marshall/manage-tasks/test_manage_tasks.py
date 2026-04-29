@@ -607,16 +607,20 @@ def test_exists_returns_false_for_absent_task():
 
 
 def test_exists_rejects_non_integer_task_argument():
-    """exists CLI rejects malformed --task-number input (argparse type=int).
+    """exists CLI rejects malformed --task-number with canonical TOON error.
 
-    Drives the subprocess wrapper to confirm the argparse layer rejects a
-    non-integer task value with exit code 2 (argparse error), matching how
-    read and other typed task arguments behave for malformed input.
+    The ``parse_args_with_toon_errors`` boundary translates argparse
+    type-validator failures (here ``_validate_task_number_int`` raising
+    ``ValueError``) into ``status: error / error: invalid_task_number``
+    TOON on stdout with exit code 0. Older callers expected argparse's
+    raw exit-code-2 contract; the canonical contract is structured TOON.
     """
     result = run_script(SCRIPT_PATH, 'exists', '--plan-id', 'exists-bad-arg', '--task-number', 'abc')
 
-    assert result.returncode == 2
-    assert 'invalid int value' in result.stderr
+    assert result.returncode == 0
+    data = result.toon()
+    assert data.get('status') == 'error'
+    assert data.get('error') == 'invalid_task_number'
 
 
 # =============================================================================

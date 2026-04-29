@@ -39,7 +39,12 @@ from _status_query import (
     cmd_update_phase,
 )
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_field_arg,
+    add_phase_arg,
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 
 
 @safe_main
@@ -69,7 +74,7 @@ def main() -> int:
     # set-phase
     set_phase_parser = subparsers.add_parser('set-phase', help='Set current phase', allow_abbrev=False)
     add_plan_id_arg(set_phase_parser)
-    set_phase_parser.add_argument('--phase', required=True, help='Phase name')
+    add_phase_arg(set_phase_parser)
     set_phase_parser.set_defaults(func=cmd_set_phase)
 
     # update-phase
@@ -77,7 +82,7 @@ def main() -> int:
         'update-phase', help='Update phase status', allow_abbrev=False
     )
     add_plan_id_arg(update_phase_parser)
-    update_phase_parser.add_argument('--phase', required=True, help='Phase name')
+    add_phase_arg(update_phase_parser)
     update_phase_parser.add_argument(
         '--status', required=True, choices=['pending', 'in_progress', 'done'], help='Phase status'
     )
@@ -95,7 +100,7 @@ def main() -> int:
     add_plan_id_arg(metadata_parser)
     metadata_parser.add_argument('--get', action='store_true', help='Get metadata field')
     metadata_parser.add_argument('--set', action='store_true', help='Set metadata field')
-    metadata_parser.add_argument('--field', required=True, help='Metadata field name')
+    add_field_arg(metadata_parser)
     metadata_parser.add_argument('--value', help='Metadata field value (required for --set)')
     metadata_parser.set_defaults(func=cmd_metadata)
 
@@ -127,7 +132,7 @@ def main() -> int:
 
     # route
     route_parser = subparsers.add_parser('route', help='Get skill for phase', allow_abbrev=False)
-    route_parser.add_argument('--phase', required=True, help='Phase name')
+    add_phase_arg(route_parser)
     route_parser.set_defaults(func=cmd_route)
 
     # get-routing-context
@@ -153,7 +158,7 @@ def main() -> int:
         allow_abbrev=False,
     )
     add_plan_id_arg(mark_step_parser)
-    mark_step_parser.add_argument('--phase', required=True, help='Phase name (e.g., 5-execute)')
+    add_phase_arg(mark_step_parser)
     mark_step_parser.add_argument('--step', required=True, help='Step identifier within the phase')
     mark_step_parser.add_argument(
         '--outcome', required=True, choices=['done', 'skipped'], help='Step outcome'
@@ -184,7 +189,7 @@ def main() -> int:
     )
     self_test_parser.set_defaults(func=cmd_self_test)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     if result is not None:
         output_toon(result)

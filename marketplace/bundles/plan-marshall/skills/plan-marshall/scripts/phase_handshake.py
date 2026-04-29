@@ -26,7 +26,11 @@ from _handshake_commands import (  # type: ignore[import-not-found]
     cmd_verify,
 )
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_phase_arg,
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -35,7 +39,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     capture = subparsers.add_parser('capture', help='Capture invariants for a phase', allow_abbrev=False)
     add_plan_id_arg(capture)
-    capture.add_argument('--phase', required=True, help='Phase identifier')
+    add_phase_arg(capture)
     capture.add_argument('--override', action='store_true', help='Mark as override capture')
     capture.add_argument('--reason', help='Reason required when --override is set')
 
@@ -43,7 +47,7 @@ def _build_parser() -> argparse.ArgumentParser:
         'verify', help='Verify invariants against a capture', allow_abbrev=False
     )
     add_plan_id_arg(verify)
-    verify.add_argument('--phase', required=True, help='Phase identifier to verify')
+    add_phase_arg(verify)
     verify.add_argument('--strict', action='store_true', help='Exit 1 on drift')
 
     listcmd = subparsers.add_parser(
@@ -53,7 +57,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     clear = subparsers.add_parser('clear', help='Remove a captured phase row', allow_abbrev=False)
     add_plan_id_arg(clear)
-    clear.add_argument('--phase', required=True, help='Phase identifier to clear')
+    add_phase_arg(clear)
 
     return parser
 
@@ -61,7 +65,7 @@ def _build_parser() -> argparse.ArgumentParser:
 @safe_main
 def main() -> int:
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     if args.command == 'capture':
         result = cmd_capture(args)

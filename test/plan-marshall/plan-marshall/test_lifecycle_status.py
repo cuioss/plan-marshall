@@ -218,13 +218,20 @@ def test_route_all_phases():
 
 
 def test_route_unknown_phase():
-    """Test routing for unknown phase."""
+    """Unknown ``--phase`` is rejected at the argparse boundary.
+
+    The ``add_phase_arg`` builder wires ``choices=PHASES`` and the
+    canonical ``parse_args_with_toon_errors`` handler maps the resulting
+    argparse error (``argument --phase: invalid choice``) to
+    ``status: error / error: invalid_phase`` TOON on stdout — see
+    ``input_validation.py`` for the contract.
+    """
     with PlanContext():
         result = run_script(LIFECYCLE_SCRIPT, 'route', '--phase', 'unknown-phase')
         assert result.success, 'Expected exit 0 for expected error'
         data = parse_toon(result.stdout)
         assert data['status'] == 'error'
-        assert data['error'] == 'unknown_phase'
+        assert data['error'] == 'invalid_phase'
 
 
 # =============================================================================

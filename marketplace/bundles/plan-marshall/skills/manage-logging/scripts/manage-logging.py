@@ -45,7 +45,11 @@ import argparse
 # Direct imports from same directory (local imports)
 from constants import VALID_LOG_LEVELS, VALID_LOG_TYPES  # type: ignore[import-not-found]
 from file_ops import output_toon, safe_main
-from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_phase_arg,
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 from plan_logging import get_log_path, list_recent_work, log_entry, log_separator, read_decision_log, read_work_log
 
 VALID_TYPES = VALID_LOG_TYPES
@@ -161,9 +165,9 @@ def main() -> int:
     add_plan_id_arg(read_parser)
     read_parser.add_argument('--type', required=True, choices=VALID_TYPES, help='Log type')
     read_parser.add_argument('--limit', type=int, help='Max entries to return')
-    read_parser.add_argument('--phase', help='Filter by phase (work/decision logs only)')
+    add_phase_arg(read_parser, required=False)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     result: dict | None = None
     if args.command == 'read':

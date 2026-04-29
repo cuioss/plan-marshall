@@ -18,6 +18,10 @@ import sys
 from _providers_core import RestClientError, get_authenticated_client  # type: ignore[import-not-found]
 from ci_base import extract_project_dir, set_default_cwd  # type: ignore[import-not-found]
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_component_arg,
+    parse_args_with_toon_errors,
+)
 
 SKILL_NAME = 'workflow-integration-sonar'
 
@@ -175,10 +179,10 @@ def main() -> int:
     # metrics
     metrics_parser = subparsers.add_parser('metrics', help='Get component metrics', allow_abbrev=False)
     metrics_parser.add_argument('--project', required=True, help='SonarQube project key')
-    metrics_parser.add_argument('--component', required=True, help='Component key')
+    add_component_arg(metrics_parser)
     metrics_parser.add_argument('--metrics', help='Comma-separated metric keys')
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     if args.command == 'search':
         return cmd_search(args)

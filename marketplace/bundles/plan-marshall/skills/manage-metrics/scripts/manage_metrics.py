@@ -40,7 +40,13 @@ from file_ops import (  # type: ignore[import-not-found]
     output_toon,
     safe_main,
 )
-from input_validation import add_plan_id_arg, require_valid_plan_id  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_phase_arg,
+    add_plan_id_arg,
+    add_session_id_arg,
+    parse_args_with_toon_errors,
+    require_valid_plan_id,
+)
 
 METRICS_FILE = FILE_WORK_METRICS
 METRICS_MD = 'metrics.md'
@@ -791,7 +797,7 @@ def main() -> int:
     # start-phase
     sp = subparsers.add_parser('start-phase', help='Record phase start timestamp', allow_abbrev=False)
     add_plan_id_arg(sp)
-    sp.add_argument('--phase', required=True, help='Phase name (e.g., 1-init)')
+    add_phase_arg(sp)
     sp.set_defaults(func=cmd_start_phase)
 
     # end-phase
@@ -799,7 +805,7 @@ def main() -> int:
         'end-phase', help='Record phase end timestamp and optional token data', allow_abbrev=False
     )
     add_plan_id_arg(ep)
-    ep.add_argument('--phase', required=True, help='Phase name')
+    add_phase_arg(ep)
     ep.add_argument('--total-tokens', type=int, default=None, help='Total tokens from Task agent <usage>')
     ep.add_argument('--input-tokens', type=int, default=None, help='Input tokens from Task agent <usage>')
     ep.add_argument('--output-tokens', type=int, default=None, help='Output tokens from Task agent <usage>')
@@ -858,7 +864,7 @@ def main() -> int:
         allow_abbrev=False,
     )
     add_plan_id_arg(acc)
-    acc.add_argument('--phase', required=True, help='Phase name being accumulated (e.g. 5-execute)')
+    add_phase_arg(acc)
     acc.add_argument(
         '--total-tokens', type=int, default=None, help='Subagent total_tokens to add to the running total'
     )
@@ -875,10 +881,10 @@ def main() -> int:
         'enrich', help='Enrich metrics from JSONL transcript', allow_abbrev=False
     )
     add_plan_id_arg(enr)
-    enr.add_argument('--session-id', required=True, help='Session ID for transcript lookup')
+    add_session_id_arg(enr)
     enr.set_defaults(func=cmd_enrich)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     output_toon(result)
     return 0
