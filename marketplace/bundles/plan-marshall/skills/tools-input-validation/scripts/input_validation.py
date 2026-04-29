@@ -43,14 +43,8 @@ TASK_ID_RE = re.compile(r'^TASK-[0-9]+$')
 COMPONENT_RE = re.compile(r'^[a-z0-9-]+(:[a-z0-9-]+)*$')
 HASH_ID_RE = re.compile(r'^[a-f0-9]{4,}$')
 MEMORY_ID_RE = re.compile(r'^[a-z0-9_-]+$')
-PHASE_ID_RE = re.compile(r'^[1-6]-(init|refine|outline|plan|execute|finalize)$')
-FIELD_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*$')
-MODULE_NAME_RE = re.compile(r'^[a-z][a-z0-9_-]*$')
-PACKAGE_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$')
-DOMAIN_NAME_RE = re.compile(r'^[a-z][a-z0-9-]*$')
-RESOURCE_NAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
-
-# Phase enum (kept in sync with PHASE_ID_RE alternation)
+# Phase enum — single source of truth. PHASE_ID_RE is derived from this tuple
+# below, so adding/removing a phase only needs to change VALID_PHASES.
 VALID_PHASES = (
     '1-init',
     '2-refine',
@@ -59,6 +53,12 @@ VALID_PHASES = (
     '5-execute',
     '6-finalize',
 )
+PHASE_ID_RE = re.compile(f"^({'|'.join(re.escape(p) for p in VALID_PHASES)})$")
+FIELD_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*$')
+MODULE_NAME_RE = re.compile(r'^[a-z][a-z0-9_-]*$')
+PACKAGE_NAME_RE = re.compile(r'^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$')
+DOMAIN_NAME_RE = re.compile(r'^[a-z][a-z0-9-]*$')
+RESOURCE_NAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
 
 # --- Raising validators (for new code and argparse integration) ---
 
@@ -429,7 +429,7 @@ def add_lesson_id_arg(parser, required: bool = True) -> None:
         '--lesson-id',
         required=required,
         type=validate_lesson_id,
-        help='Lesson identifier (YYYY-MM-DD-NN[-NNN])',
+        help='Lesson identifier (YYYY-MM-DD-HH-NNN)',
     )
 
 
@@ -449,7 +449,7 @@ def add_task_number_arg(parser, required: bool = True) -> None:
         '--task-number',
         required=required,
         type=validate_task_number,
-        help='Task number (positive integer)',
+        help='Task number (non-negative integer)',
     )
 
 
