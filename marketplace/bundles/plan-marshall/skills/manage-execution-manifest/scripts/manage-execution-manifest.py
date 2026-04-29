@@ -599,6 +599,22 @@ def _log_bot_enforcement_guard_remediated(plan_id: str, provider: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
+def _log_bot_enforcement_placement_violation(plan_id: str, diagnostic: str) -> None:
+    """Emit the decision-log entry for the placement-validator rejection.
+
+    Logged whenever the compose-time placement validator detects that
+    ``automated-review`` sits at an index later than at least one
+    plan-mutating step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
+    or ``plan-marshall:plan-retrospective``). The diagnostic string carries
+    both step names and indexes for downstream auditing.
+    """
+    message = (
+        '(plan-marshall:manage-execution-manifest:compose) bot-enforcement placement '
+        f'violation — {diagnostic}'
+    )
+    _emit_decision_log(plan_id, message)
+
+
 # =============================================================================
 # Pre-Filter Helpers
 # =============================================================================
@@ -866,6 +882,65 @@ def _bot_enforcement_insert_index(phase_6_steps: list[str]) -> int:
     return len(phase_6_steps)
 
 
+def _validate_automated_review_placement(phase_6_steps: list[str]) -> str | None:
+    """Compose-time placement check for ``automated-review`` ordering.
+
+    Defense-in-depth complement to ``_apply_bot_enforcement_guard``. The
+    remediation guard ensures ``automated-review`` is *present* on
+    GitHub/GitLab plans, but a future pre-filter, recipe interaction, or
+    candidate ordering glitch could leave it *misplaced* — sitting at an
+    index later than a plan-mutating step (``archive-plan``,
+    ``record-metrics``, ``branch-cleanup``, or
+    ``plan-marshall:plan-retrospective``). Such a manifest would dispatch
+    the review bot only after the plan directory has already been moved or
+    the branch cleaned up, defeating the lesson the guard exists to enforce.
+
+    Comparison runs against bare names: by the time this validator is
+    invoked, ``cmd_compose`` has already boundary-normalized
+    ``phase_6_candidates`` and the matrix output preserves the same shape,
+    so the only non-bare entry that may appear is the project-prefixed
+    early ``project:finalize-step-sync-plugin-cache`` step (which never
+    matches any of the anchors here). Both the bare ``automated-review``
+    name and its ``default:automated-review`` form are detected so future
+    callers cannot silently slip past the check by re-prefixing.
+
+    Returns a diagnostic string naming both the offending
+    ``automated-review`` index and the first plan-mutating anchor that
+    precedes it. Returns ``None`` when the order is valid (or when
+    ``automated-review`` is absent — the remediation guard is responsible
+    for presence; this validator is concerned only with ordering).
+    """
+    plan_mutating = {
+        'archive-plan',
+        'record-metrics',
+        'branch-cleanup',
+        'plan-marshall:plan-retrospective',
+    }
+
+    review_index: int | None = None
+    for index, step in enumerate(phase_6_steps):
+        if step in {'automated-review', 'default:automated-review'}:
+            review_index = index
+            break
+    if review_index is None:
+        return None
+
+    # The violation is the inverse of the desired order: a plan-mutating
+    # anchor at an index *less* than ``review_index`` means the review bot
+    # fires AFTER the plan directory has been moved or the branch cleaned
+    # up. Return the earliest such anchor so the diagnostic names the
+    # first ordering breach.
+    for index, step in enumerate(phase_6_steps):
+        if index >= review_index:
+            break
+        if step in plan_mutating:
+            return (
+                f'automated-review at index {review_index} must precede '
+                f'{step} at index {index}'
+            )
+    return None
+
+
 # =============================================================================
 # Command Handlers
 # =============================================================================
@@ -984,6 +1059,24 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
                 'guard could not auto-remediate; investigate manifest composition'
             ),
             'ci_provider': bot_guard_fired_provider,
+        }
+
+    # Compose-time placement validator (defense-in-depth, lesson
+    # ``2026-04-28-13-002``): even when ``automated-review`` is present,
+    # reject the manifest if it sits at an index later than any plan-mutating
+    # step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
+    # ``plan-marshall:plan-retrospective``). Such a layout would dispatch the
+    # PR-review bot only after the plan directory has been moved or the
+    # branch cleaned up, defeating the bot-enforcement guard's intent. The
+    # check runs after the remediation guard so it sees the final ordering.
+    placement_diagnostic = _validate_automated_review_placement(final_phase_6_steps)
+    if placement_diagnostic is not None:
+        _log_bot_enforcement_placement_violation(plan_id, placement_diagnostic)
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'bot_enforcement_violation',
+            'message': placement_diagnostic,
         }
 
     manifest = {
