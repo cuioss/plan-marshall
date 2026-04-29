@@ -5,10 +5,12 @@ from pathlib import Path  # noqa: I001
 
 import pytest
 from self_review import (  # type: ignore[import-not-found]
+    _detect_contract_sources,
     _detect_markdown_sections,
     _detect_regexes,
     _detect_symmetric_pairs,
     _detect_user_facing_strings,
+    _find_skill_dir,
     _iter_added_lines,
     _truncate,
 )
@@ -261,3 +263,111 @@ class TestEmptyDiff:
         assert _detect_user_facing_strings([]) == []
         assert _detect_markdown_sections([], tmp_path) == []
         assert _detect_symmetric_pairs([]) == []
+
+
+# =============================================================================
+# Test: _find_skill_dir & _detect_contract_sources
+# =============================================================================
+
+
+def _build_skill_fixture(root: Path) -> Path:
+    """Build a fixture project tree with one skill containing SKILL.md, standards/,
+    and a script. Returns the project root."""
+    project = root / 'project'
+    skill = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
+    skill.mkdir(parents=True)
+    (skill / 'SKILL.md').write_text('---\nname: my-skill\n---\n# My Skill\n')
+    standards = skill / 'standards'
+    standards.mkdir()
+    (standards / 'rule-a.md').write_text('# Rule A\n')
+    (standards / 'rule-b.md').write_text('# Rule B\n```json\n{"x": 1}\n```\n')
+    scripts = skill / 'scripts'
+    scripts.mkdir()
+    (scripts / 'do_thing.py').write_text('def main(): pass\n')
+    # Outside-skill file
+    (project / 'README.md').write_text('# Project\n')
+    return project
+
+
+class TestFindSkillDir:
+    def test_finds_enclosing_skill_for_script(self, tmp_path: Path):
+        project = _build_skill_fixture(tmp_path)
+        modified = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill' / 'scripts' / 'do_thing.py'
+        skill_dir = _find_skill_dir(modified, project)
+        assert skill_dir == project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
+
+    def test_returns_none_for_file_outside_any_skill(self, tmp_path: Path):
+        project = _build_skill_fixture(tmp_path)
+        modified = project / 'README.md'
+        assert _find_skill_dir(modified, project) is None
+
+    def test_returns_none_when_path_escapes_project(self, tmp_path: Path):
+        project = _build_skill_fixture(tmp_path)
+        outside = tmp_path / 'somewhere_else.py'
+        outside.write_text('')
+        assert _find_skill_dir(outside, project) is None
+
+
+class TestDetectContractSources:
+    def test_emits_skill_md_and_standards_for_in_skill_file(self, tmp_path: Path):
+        project = _build_skill_fixture(tmp_path)
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/do_thing.py'
+        contract, schema = _detect_contract_sources([rel], project, radius=3)
+        assert len(contract) == 1
+        entry = contract[0]
+        assert entry['file'] == rel
+        sources = entry['sources']
+        assert 'marketplace/bundles/b1/skills/my-skill/SKILL.md' in sources
+        assert 'marketplace/bundles/b1/skills/my-skill/standards/rule-a.md' in sources
+        assert 'marketplace/bundles/b1/skills/my-skill/standards/rule-b.md' in sources
+
+    def test_modified_files_outside_skill_emit_no_contract_entry(self, tmp_path: Path):
+        project = _build_skill_fixture(tmp_path)
+        contract, _ = _detect_contract_sources(['README.md'], project, radius=3)
+        assert contract == []
+
+    def test_schema_bearing_files_detect_fenced_json(self, tmp_path: Path):
+        project = _build_skill_fixture(tmp_path)
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/do_thing.py'
+        _, schema = _detect_contract_sources([rel], project, radius=3)
+        # rule-b.md contains a fenced JSON block; rule-a.md does not.
+        files = {entry['file']: entry['format'] for entry in schema}
+        assert 'marketplace/bundles/b1/skills/my-skill/standards/rule-b.md' in files
+        assert files['marketplace/bundles/b1/skills/my-skill/standards/rule-b.md'] == 'json'
+        assert 'marketplace/bundles/b1/skills/my-skill/standards/rule-a.md' not in files
+
+    def test_radius_zero_only_includes_immediate_directory(self, tmp_path: Path):
+        project = _build_skill_fixture(tmp_path)
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/do_thing.py'
+        # radius=0 means only the modified file's own parent dir is scanned.
+        # do_thing.py's parent is scripts/, which has no markdown files.
+        _, schema = _detect_contract_sources([rel], project, radius=0)
+        assert schema == []
+
+    def test_deduplicates_schema_bearing_files_across_modified_files(self, tmp_path: Path):
+        project = _build_skill_fixture(tmp_path)
+        rels = [
+            'marketplace/bundles/b1/skills/my-skill/scripts/do_thing.py',
+            'marketplace/bundles/b1/skills/my-skill/SKILL.md',
+        ]
+        _, schema = _detect_contract_sources(rels, project, radius=3)
+        files = [entry['file'] for entry in schema]
+        # rule-b.md should appear at most once even though two modified files
+        # are within radius of it.
+        assert files.count('marketplace/bundles/b1/skills/my-skill/standards/rule-b.md') == 1
+
+    def test_toon_block_is_recognized_alongside_json(self, tmp_path: Path):
+        project = tmp_path / 'project'
+        skill = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
+        skill.mkdir(parents=True)
+        (skill / 'SKILL.md').write_text('---\nname: my-skill\n---\n')
+        standards = skill / 'standards'
+        standards.mkdir()
+        (standards / 'toon-schema.md').write_text('# Schema\n```toon\nstatus: ok\n```\n')
+        scripts = skill / 'scripts'
+        scripts.mkdir()
+        (scripts / 'mod.py').write_text('')
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        _, schema = _detect_contract_sources([rel], project, radius=3)
+        files = {entry['file']: entry['format'] for entry in schema}
+        assert files.get('marketplace/bundles/b1/skills/my-skill/standards/toon-schema.md') == 'toon'

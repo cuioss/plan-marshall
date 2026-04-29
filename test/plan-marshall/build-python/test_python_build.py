@@ -334,3 +334,84 @@ def test_min_timeout_is_enforced():
     from _build_execute import MIN_TIMEOUT
 
     assert MIN_TIMEOUT == 60  # 1 minute minimum, enforced for all build systems
+
+
+# =============================================================================
+# Test: Root build.py cmd_quality_gate plugin-doctor integration
+# =============================================================================
+
+
+def _load_root_build():
+    """Load the root build.py module so cmd_quality_gate can be exercised in
+    isolation without running the full pipeline."""
+    spec = importlib.util.spec_from_file_location('root_build', PROJECT_ROOT / 'build.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_quality_gate_full_tree_invokes_plugin_doctor():
+    """cmd_quality_gate(None) must run mypy + ruff + plugin-doctor quality-gate
+    in that order. Captures the run() invocations and verifies the third call
+    is the plugin-doctor subcommand."""
+    root_build = _load_root_build()
+    invocations: list[list[str]] = []
+
+    def fake_run(cmd, _description, env=None):
+        invocations.append(list(cmd))
+        return 0
+
+    with patch.object(root_build, 'run', side_effect=fake_run):
+        exit_code = root_build.cmd_quality_gate(None)
+
+    assert exit_code == 0
+    plugin_doctor_calls = [
+        cmd for cmd in invocations
+        if 'pm-plugin-development:plugin-doctor:doctor-marketplace' in cmd
+    ]
+    assert len(plugin_doctor_calls) == 1, (
+        f'Expected exactly one plugin-doctor invocation, got: {invocations}'
+    )
+    cmd = plugin_doctor_calls[0]
+    assert cmd[0] == 'python3'
+    assert '.plan/execute-script.py' in cmd
+    assert 'quality-gate' in cmd, f'Expected quality-gate subcommand, got: {cmd}'
+
+
+def test_quality_gate_full_tree_propagates_plugin_doctor_failure():
+    """When plugin-doctor returns non-zero, cmd_quality_gate must propagate it."""
+    root_build = _load_root_build()
+    plugin_doctor_notation = 'pm-plugin-development:plugin-doctor:doctor-marketplace'
+
+    def fake_run(cmd, _description, env=None):
+        if plugin_doctor_notation in cmd:
+            return 1
+        return 0
+
+    with patch.object(root_build, 'run', side_effect=fake_run):
+        exit_code = root_build.cmd_quality_gate(None)
+
+    assert exit_code == 1, 'cmd_quality_gate must propagate plugin-doctor exit code'
+
+
+def test_quality_gate_module_scoped_skips_plugin_doctor():
+    """Module-scoped quality-gate must NOT invoke the marketplace-wide
+    plugin-doctor sweep — it is scoped to a single bundle."""
+    root_build = _load_root_build()
+    invocations: list[list[str]] = []
+
+    def fake_run(cmd, _description, env=None):
+        invocations.append(list(cmd))
+        return 0
+
+    with patch.object(root_build, 'run', side_effect=fake_run):
+        exit_code = root_build.cmd_quality_gate('plan-marshall')
+
+    assert exit_code == 0
+    plugin_doctor_calls = [
+        cmd for cmd in invocations
+        if 'pm-plugin-development:plugin-doctor:doctor-marketplace' in cmd
+    ]
+    assert len(plugin_doctor_calls) == 0, (
+        f'Module-scoped quality-gate must skip plugin-doctor sweep, got: {invocations}'
+    )
