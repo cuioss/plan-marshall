@@ -1175,7 +1175,9 @@ def test_quality_gate_help():
     """Test quality-gate --help is available and explains the build-gate role."""
     result = run_script(SCRIPT_PATH, 'quality-gate', '--help')
     combined = result.stdout + result.stderr
-    assert 'bundles' in combined.lower(), 'Help should mention bundles option'
+    assert 'marketplace-root' in combined.lower(), 'Help should mention --marketplace-root override'
+    # quality-gate is intentionally marketplace-wide — no --bundles filter exposed
+    assert '--bundles' not in combined, 'quality-gate must NOT expose a --bundles flag'
 
 
 def test_quality_gate_clean_fixture_passes(tmp_path):

@@ -127,9 +127,15 @@ def cmd_quality_gate(module: str | None) -> int:
         return exit_code
 
     if module is None:
+        doctor_script = (
+            BUNDLES_DIR / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
+            / 'scripts' / 'doctor-marketplace.py'
+        )
+        doctor_env = {**os.environ, 'PYTHONPATH': _compute_mypypath()}
         exit_code = run(
-            ['python3', '.plan/execute-script.py', 'pm-plugin-development:plugin-doctor:doctor-marketplace', 'quality-gate'],
+            ['python3', str(doctor_script), 'quality-gate'],
             'quality-gate: plugin-doctor static-analysis (marketplace-wide invariants)',
+            env=doctor_env,
         )
 
     return exit_code

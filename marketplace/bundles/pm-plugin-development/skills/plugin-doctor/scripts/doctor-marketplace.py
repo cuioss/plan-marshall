@@ -365,6 +365,9 @@ def cmd_quality_gate(args) -> dict:
     if not marketplace_root:
         return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
 
+    # quality-gate is intentionally marketplace-wide — bundle filtering would
+    # break the "real marketplace must produce zero findings" invariant the
+    # gate exists to enforce. No --bundles flag is exposed.
     all_issues: list[dict] = []
     rule_summaries: list[dict] = []
 
@@ -572,10 +575,9 @@ Examples:
     # quality-gate subcommand
     p_quality_gate = subparsers.add_parser(
         'quality-gate',
-        help='Run pure-static-analysis rules as a build gate (exit 1 on findings)',
+        help='Run pure-static-analysis rules as a build gate (exit 1 on findings, marketplace-wide only)',
         allow_abbrev=False,
     )
-    p_quality_gate.add_argument('--bundles', help='Comma-separated list of bundle names (default: all)')
     p_quality_gate.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_quality_gate.set_defaults(func=cmd_quality_gate)
 
