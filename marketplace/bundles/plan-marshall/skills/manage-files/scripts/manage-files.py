@@ -26,6 +26,7 @@ from file_ops import atomic_write_file, get_plan_dir, output_toon, safe_main  # 
 from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
     is_valid_relative_path,
+    parse_args_with_toon_errors,
     require_valid_plan_id,
 )
 from plan_logging import log_entry  # type: ignore[import-not-found]
@@ -364,7 +365,7 @@ def main() -> int:
     )
     discover_parser.set_defaults(func=cmd_discover)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     if result is not None:
         output_toon(result)

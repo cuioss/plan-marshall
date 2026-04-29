@@ -19,7 +19,11 @@ Usage:
 import argparse
 
 from file_ops import output_toon, safe_main  # type: ignore[import-not-found]
-from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_field_arg,
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 
 
 @safe_main
@@ -42,12 +46,12 @@ def main() -> int:
     # get
     get_parser = subparsers.add_parser('get', help='Get specific field', allow_abbrev=False)
     add_plan_id_arg(get_parser)
-    get_parser.add_argument('--field', required=True, help='Field name')
+    add_field_arg(get_parser)
 
     # set
     set_parser = subparsers.add_parser('set', help='Set specific field', allow_abbrev=False)
     add_plan_id_arg(set_parser)
-    set_parser.add_argument('--field', required=True, help='Field name')
+    add_field_arg(set_parser)
     set_parser.add_argument('--value', required=True, help='Field value')
 
     # add-file
@@ -69,7 +73,7 @@ def main() -> int:
         'add-list', help='Add multiple values to a list field', allow_abbrev=False
     )
     add_plan_id_arg(add_list_parser)
-    add_list_parser.add_argument('--field', required=True, help='List field name')
+    add_field_arg(add_list_parser)
     add_list_parser.add_argument('--values', required=True, help='Comma-separated values to add')
 
     # set-list
@@ -77,7 +81,7 @@ def main() -> int:
         'set-list', help='Set a list field (replaces existing)', allow_abbrev=False
     )
     add_plan_id_arg(set_list_parser)
-    set_list_parser.add_argument('--field', required=True, help='List field name')
+    add_field_arg(set_list_parser)
     set_list_parser.add_argument('--values', required=True, help='Comma-separated values')
 
     # get-context
@@ -104,7 +108,7 @@ def main() -> int:
         help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
     )
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     # Import command handlers
     from _cmd_context import cmd_get_context

@@ -51,7 +51,14 @@ from _findings_core import (
     resolve_qgate_finding,
 )
 from file_ops import output_toon, safe_main
-from input_validation import add_phase_arg, add_plan_id_arg  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_component_arg,
+    add_hash_id_arg,
+    add_module_arg,
+    add_phase_arg,
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 
 
 def cmd_add(args: argparse.Namespace) -> dict:
@@ -214,8 +221,8 @@ def main() -> int:
     add_parser.add_argument('--detail', required=True, help='Detailed description')
     add_parser.add_argument('--file-path', help='File path (for code-related)')
     add_parser.add_argument('--line', type=int, help='Line number')
-    add_parser.add_argument('--component', help='Component reference')
-    add_parser.add_argument('--module', help='Module name (for architecture)')
+    add_component_arg(add_parser, required=False)
+    add_module_arg(add_parser, required=False)
     add_parser.add_argument('--rule', help='Rule ID (for lint/sonar)')
     add_parser.add_argument('--severity', choices=SEVERITIES, help='Severity level')
     add_parser.set_defaults(func=cmd_add)
@@ -232,13 +239,13 @@ def main() -> int:
     # get
     get_parser = subparsers.add_parser('get', help='Get single finding', allow_abbrev=False)
     add_plan_id_arg(get_parser)
-    get_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
+    add_hash_id_arg(get_parser)
     get_parser.set_defaults(func=cmd_get)
 
     # resolve
     resolve_parser = subparsers.add_parser('resolve', help='Resolve a finding', allow_abbrev=False)
     add_plan_id_arg(resolve_parser)
-    resolve_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
+    add_hash_id_arg(resolve_parser)
     resolve_parser.add_argument(
         '--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status'
     )
@@ -248,7 +255,7 @@ def main() -> int:
     # promote
     promote_parser = subparsers.add_parser('promote', help='Promote a finding', allow_abbrev=False)
     add_plan_id_arg(promote_parser)
-    promote_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
+    add_hash_id_arg(promote_parser)
     promote_parser.add_argument('--promoted-to', required=True, dest='promoted_to', help='Target ID or "architecture"')
     promote_parser.set_defaults(func=cmd_promote)
 
@@ -265,7 +272,7 @@ def main() -> int:
     q_add_parser.add_argument('--title', required=True, help='Short title')
     q_add_parser.add_argument('--detail', required=True, help='Detailed description')
     q_add_parser.add_argument('--file-path', help='File path (optional)')
-    q_add_parser.add_argument('--component', help='Component reference (optional)')
+    add_component_arg(q_add_parser, required=False)
     q_add_parser.add_argument('--severity', choices=SEVERITIES, help='Severity level')
     q_add_parser.add_argument('--iteration', type=int, help='Phase iteration number')
     q_add_parser.set_defaults(func=cmd_qgate_add)
@@ -282,7 +289,7 @@ def main() -> int:
     # qgate resolve
     q_resolve_parser = qgate_sub.add_parser('resolve', help='Resolve a Q-Gate finding', allow_abbrev=False)
     add_plan_id_arg(q_resolve_parser)
-    q_resolve_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Finding hash ID')
+    add_hash_id_arg(q_resolve_parser)
     q_resolve_parser.add_argument(
         '--resolution', required=True, choices=RESOLUTIONS, dest='resolution', help='Resolution status'
     )
@@ -327,7 +334,7 @@ def main() -> int:
     # assessment get
     a_get_parser = assessment_sub.add_parser('get', help='Get single assessment', allow_abbrev=False)
     add_plan_id_arg(a_get_parser)
-    a_get_parser.add_argument('--hash-id', required=True, dest='hash_id', help='Assessment hash ID')
+    add_hash_id_arg(a_get_parser)
     a_get_parser.set_defaults(func=cmd_assessment_get)
 
     # assessment clear
@@ -336,7 +343,7 @@ def main() -> int:
     a_clear_parser.add_argument('--agent', help='Only clear assessments from this agent')
     a_clear_parser.set_defaults(func=cmd_assessment_clear)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     if hasattr(args, 'func'):
         result = args.func(args)

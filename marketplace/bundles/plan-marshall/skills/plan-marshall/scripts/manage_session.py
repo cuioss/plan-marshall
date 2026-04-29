@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -29,9 +28,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from file_ops import output_toon, output_toon_error, safe_main  # type: ignore[import-not-found]
-
-_SESSION_ID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+from input_validation import (  # type: ignore[import-not-found]
+    SESSION_ID_RE,
+    add_session_id_arg,
+    parse_args_with_toon_errors,
 )
 
 
@@ -106,8 +106,8 @@ def _cwd_to_slug(cwd: str) -> str:
 
 def cmd_transcript_path(args: argparse.Namespace) -> int:
     session_id = args.session_id
-    if not _SESSION_ID_RE.match(session_id):
-        output_toon_error("invalid_session_id", "session_id must be a UUID (8-4-4-4-12 hex)")
+    if not SESSION_ID_RE.match(session_id):
+        output_toon_error("invalid_session_id", f"session_id must match {SESSION_ID_RE.pattern}")
         return 0
 
     projects = _projects_root()
@@ -148,13 +148,9 @@ def main() -> int:
         help="Resolve the absolute path of a session transcript JSONL",
         allow_abbrev=False,
     )
-    transcript_parser.add_argument(
-        "--session-id",
-        required=True,
-        help="Claude Code session id whose transcript should be resolved",
-    )
+    add_session_id_arg(transcript_parser)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     if args.command == "current":
         return cmd_current(args)
     if args.command == "transcript-path":

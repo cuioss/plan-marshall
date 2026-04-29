@@ -36,6 +36,7 @@ from file_ops import (  # type: ignore[import-not-found]
 )
 from input_validation import (  # type: ignore[import-not-found]
     add_plan_id_arg,
+    parse_args_with_toon_errors,
     require_valid_plan_id,
 )
 from toon_parser import parse_toon, serialize_toon  # type: ignore[import-not-found]
@@ -1260,7 +1261,7 @@ def _build_parser() -> argparse.ArgumentParser:
 @safe_main
 def main() -> int:
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     handlers = {
         'compose': cmd_compose,

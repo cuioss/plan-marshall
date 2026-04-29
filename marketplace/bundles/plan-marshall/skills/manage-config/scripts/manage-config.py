@@ -37,6 +37,11 @@ from _cmd_system_plan import cmd_plan, cmd_system
 
 # Direct imports - PYTHONPATH set by executor
 from file_ops import output_toon, safe_main
+from input_validation import (  # type: ignore[import-not-found]
+    add_domain_arg,
+    add_field_arg,
+    parse_args_with_toon_errors,
+)
 
 
 def _add_phase_subparser(
@@ -65,11 +70,11 @@ def _add_phase_subparser(
 
     # get (with optional --field)
     phase_get = phase_sub.add_parser('get', help=f'Get {phase_name} config', allow_abbrev=False)
-    phase_get.add_argument('--field', help='Field name (optional, shows all if omitted)')
+    add_field_arg(phase_get, required=False)
 
     if has_scalar:
         phase_set = phase_sub.add_parser('set', help=f'Set {phase_name} field', allow_abbrev=False)
-        phase_set.add_argument('--field', required=True, help='Field name')
+        add_field_arg(phase_set)
         phase_set.add_argument('--value', required=True, help='Field value')
 
     if has_pipeline:
@@ -114,14 +119,14 @@ def _add_phase_subparser(
         phase_set_ds = phase_sub.add_parser(
             'set-domain-step', help='Enable/disable domain verification step', allow_abbrev=False
         )
-        phase_set_ds.add_argument('--domain', required=True, help='Domain key (e.g., java)')
+        add_domain_arg(phase_set_ds)
         phase_set_ds.add_argument('--step', required=True, help='Step key (e.g., 1_technical_impl)')
         phase_set_ds.add_argument('--enabled', required=True, help='true or false')
 
         phase_set_dsa = phase_sub.add_parser(
             'set-domain-step-agent', help='Set domain step agent reference', allow_abbrev=False
         )
-        phase_set_dsa.add_argument('--domain', required=True, help='Domain key (e.g., java)')
+        add_domain_arg(phase_set_dsa)
         phase_set_dsa.add_argument('--step', required=True, help='Step key (e.g., 1_technical_impl)')
         phase_set_dsa.add_argument('--agent', required=True, help='Fully-qualified agent reference')
 
@@ -145,16 +150,16 @@ def main() -> int:
     sd_sub.add_parser('list', help='List all domains', allow_abbrev=False)
 
     sd_get = sd_sub.add_parser('get', help='Get domain config', allow_abbrev=False)
-    sd_get.add_argument('--domain', required=True, help='Domain name')
+    add_domain_arg(sd_get)
 
     sd_get_def = sd_sub.add_parser('get-defaults', help='Get domain default skills', allow_abbrev=False)
-    sd_get_def.add_argument('--domain', required=True, help='Domain name')
+    add_domain_arg(sd_get_def)
 
     sd_get_opt = sd_sub.add_parser('get-optionals', help='Get domain optional skills', allow_abbrev=False)
-    sd_get_opt.add_argument('--domain', required=True, help='Domain name')
+    add_domain_arg(sd_get_opt)
 
     sd_set = sd_sub.add_parser('set', help='Set domain config', allow_abbrev=False)
-    sd_set.add_argument('--domain', required=True, help='Domain name')
+    add_domain_arg(sd_set)
     sd_set.add_argument('--profile', help='Profile name (core, implementation, testing, quality)')
     sd_set.add_argument('--defaults', help='Comma-separated default skills')
     sd_set.add_argument('--optionals', help='Comma-separated optional skills')
@@ -162,20 +167,20 @@ def main() -> int:
     sd_get_ext = sd_sub.add_parser(
         'get-extensions', help='Get workflow skill extensions for domain', allow_abbrev=False
     )
-    sd_get_ext.add_argument('--domain', required=True, help='Domain name')
+    add_domain_arg(sd_get_ext)
 
     sd_set_ext = sd_sub.add_parser('set-extensions', help='Set workflow skill extension', allow_abbrev=False)
-    sd_set_ext.add_argument('--domain', required=True, help='Domain name')
+    add_domain_arg(sd_set_ext)
     sd_set_ext.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type')
     sd_set_ext.add_argument('--skill', required=True, help='Extension skill reference (bundle:skill)')
 
     sd_add = sd_sub.add_parser('add', help='Add new domain', allow_abbrev=False)
-    sd_add.add_argument('--domain', required=True, help='Domain name')
+    add_domain_arg(sd_add)
     sd_add.add_argument('--defaults', help='Comma-separated default skills')
     sd_add.add_argument('--optionals', help='Comma-separated optional skills')
 
     sd_val = sd_sub.add_parser('validate', help='Validate skill in domain', allow_abbrev=False)
-    sd_val.add_argument('--domain', required=True, help='Domain name')
+    add_domain_arg(sd_val)
     sd_val.add_argument('--skill', required=True, help='Skill to validate')
 
     sd_sub.add_parser('detect', help='Auto-detect domains from project files', allow_abbrev=False)
@@ -194,7 +199,7 @@ def main() -> int:
     sd_attach = sd_sub.add_parser(
         'attach-project', help='Attach project-level skills to a domain', allow_abbrev=False
     )
-    sd_attach.add_argument('--domain', required=True, help='Domain to attach skills to')
+    add_domain_arg(sd_attach)
     sd_attach.add_argument('--skills', required=True, help='Comma-separated project:skill notations')
 
     # active-profiles subcommands
@@ -205,12 +210,12 @@ def main() -> int:
         'set', help='Set active profiles (global or per-domain)', allow_abbrev=False
     )
     sd_ap_set.add_argument('--profiles', required=True, help='Comma-separated profile names')
-    sd_ap_set.add_argument('--domain', help='Domain to set profiles for (omit for global)')
+    add_domain_arg(sd_ap_set, required=False)
 
     sd_ap_remove = sd_ap_sub.add_parser(
         'remove', help='Remove active profiles config', allow_abbrev=False
     )
-    sd_ap_remove.add_argument('--domain', help='Domain to remove profiles from (omit for global)')
+    add_domain_arg(sd_ap_remove, required=False)
 
     # --- system ---
     p_sys = subparsers.add_parser('system', help='Manage system settings', allow_abbrev=False)
@@ -222,7 +227,7 @@ def main() -> int:
     ret_sub.add_parser('get', help='Get retention settings', allow_abbrev=False)
 
     ret_set = ret_sub.add_parser('set', help='Set retention field', allow_abbrev=False)
-    ret_set.add_argument('--field', required=True, help='Field name')
+    add_field_arg(ret_set)
     ret_set.add_argument('--value', required=True, help='Field value')
 
     # --- plan (phase-based sub-nouns) ---
@@ -270,7 +275,7 @@ def main() -> int:
     p_rds = subparsers.add_parser(
         'resolve-domain-skills', help='Resolve skills for domain and profile', allow_abbrev=False
     )
-    p_rds.add_argument('--domain', required=True, help='Domain name (java, javascript)')
+    add_domain_arg(p_rds)
     p_rds.add_argument('--profile', required=True, help='Profile name (implementation, testing)')
 
     # --- resolve-workflow-skill-extension ---
@@ -279,7 +284,7 @@ def main() -> int:
         help='Resolve workflow skill extension for domain and type',
         allow_abbrev=False,
     )
-    p_rwse.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
+    add_domain_arg(p_rwse)
     p_rwse.add_argument('--type', required=True, choices=['outline', 'triage'], help='Extension type (outline, triage)')
 
     # --- get-skills-by-profile ---
@@ -288,7 +293,7 @@ def main() -> int:
         help='Get skills organized by profile for architecture enrichment',
         allow_abbrev=False,
     )
-    p_gsbp.add_argument('--domain', required=True, help='Domain name (java, javascript, etc.)')
+    add_domain_arg(p_gsbp)
 
     # --- configure-execute-task-skills ---
     subparsers.add_parser(
@@ -316,7 +321,7 @@ def main() -> int:
     p_ros = subparsers.add_parser(
         'resolve-outline-skill', help='Resolve outline skill for domain', allow_abbrev=False
     )
-    p_ros.add_argument('--domain', required=True, help='Domain key (e.g., plan-marshall-plugin-dev, java)')
+    add_domain_arg(p_ros)
 
     # --- list-finalize-steps ---
     subparsers.add_parser('list-finalize-steps', help='List all available finalize steps', allow_abbrev=False)
@@ -324,7 +329,7 @@ def main() -> int:
     # --- list-verify-steps ---
     subparsers.add_parser('list-verify-steps', help='List all available verify steps', allow_abbrev=False)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     if args.noun is None:
         parser.print_help()

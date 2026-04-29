@@ -17,6 +17,10 @@ from _architecture_core import (  # type: ignore[import-not-found]
 )
 from _config_core import ext_defaults_get  # type: ignore[import-not-found]
 from file_ops import print_toon_list, print_toon_table  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_module_arg,
+    parse_args_with_toon_errors,
+)
 from toon_parser import serialize_toon  # type: ignore[import-not-found]
 
 # Extension defaults keys for profile configuration
@@ -359,7 +363,7 @@ def main() -> int:
 
     # list - List all profiles
     list_parser = subparsers.add_parser('list', help='List Maven profiles from all modules', allow_abbrev=False)
-    list_parser.add_argument('--module', help='Filter by module name')
+    add_module_arg(list_parser, required=False)
 
     # unmatched - List unmatched profiles
     subparsers.add_parser('unmatched', help='List unmatched profiles (NO-MATCH-FOUND)', allow_abbrev=False)
@@ -371,7 +375,7 @@ def main() -> int:
     # suggest - Suggest classifications for unmatched
     subparsers.add_parser('suggest', help='Suggest classifications for unmatched profiles', allow_abbrev=False)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
 
     handlers = {
         'list': cmd_list,

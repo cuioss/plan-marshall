@@ -41,7 +41,10 @@ from file_ops import (  # type: ignore[import-not-found]
     output_toon_error,
     safe_main,
 )
-from input_validation import add_plan_id_arg  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 from marketplace_paths import git_main_checkout_root  # type: ignore[import-not-found]
 
 PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
@@ -348,7 +351,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     args.func(args)
     return 0
 

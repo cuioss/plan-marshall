@@ -384,8 +384,19 @@ def require_plan_file(plan_id: str, *path_parts: str) -> Path:
 
 
 def add_plan_id_arg(parser, required: bool = True) -> None:
-    """Add the standard --plan-id argument to a parser or subparser."""
-    parser.add_argument('--plan-id', required=required, help='Plan identifier (kebab-case)')
+    """Add the standard --plan-id argument to a parser or subparser.
+
+    The argument is validated with the canonical PLAN_ID_RE (kebab-case)
+    so malformed input is rejected at parse time. The ``type=`` validator
+    cooperates with ``parse_args_with_toon_errors`` to emit the canonical
+    ``status: error / error: invalid_plan_id`` TOON on stdout.
+    """
+    parser.add_argument(
+        '--plan-id',
+        required=required,
+        type=validate_plan_id,
+        help='Plan identifier (kebab-case)',
+    )
 
 
 def add_phase_arg(parser, *, choices=None, required: bool = True) -> None:
@@ -443,12 +454,28 @@ def add_session_id_arg(parser, required: bool = True) -> None:
     )
 
 
+def _validate_task_number_int(raw: str) -> int:
+    """Validator suitable for argparse ``type=`` that returns an ``int``.
+
+    ``validate_task_number`` returns the original string for chaining, but
+    every call site in the marketplace consumes ``args.task_number`` as an
+    integer. Wrapping it here keeps the canonical regex check at the
+    argparse boundary while preserving the pre-existing int contract.
+    """
+    validate_task_number(raw)
+    return int(raw)
+
+
 def add_task_number_arg(parser, required: bool = True) -> None:
-    """Add the standard --task-number argument to a parser or subparser."""
+    """Add the standard --task-number argument to a parser or subparser.
+
+    The argument is validated with the canonical TASK_NUMBER_RE (non-negative
+    integer string) and stored as ``int`` on the resulting Namespace.
+    """
     parser.add_argument(
         '--task-number',
         required=required,
-        type=validate_task_number,
+        type=_validate_task_number_int,
         help='Task number (non-negative integer)',
     )
 
@@ -685,3 +712,105 @@ def is_valid_resource_name(resource_name: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+# --- Argparse boundary helper: emit TOON errors for validator failures ---
+
+# Map argument flag (--<id>) to canonical error code emitted on validation
+# failure. Used by ``parse_args_with_toon_errors`` to translate argparse's
+# default stderr-based error reporting into the TOON contract:
+# ``status: error / error: invalid_<field>``.
+_FLAG_TO_ERROR_CODE: dict[str, str] = {
+    '--plan-id': 'invalid_plan_id',
+    '--lesson-id': 'invalid_lesson_id',
+    '--session-id': 'invalid_session_id',
+    '--task-number': 'invalid_task_number',
+    '--task-id': 'invalid_task_id',
+    '--component': 'invalid_component',
+    '--hash-id': 'invalid_hash_id',
+    '--phase': 'invalid_phase',
+    '--memory-id': 'invalid_memory_id',
+    '--field': 'invalid_field',
+    '--module': 'invalid_module',
+    '--package': 'invalid_package',
+    '--domain': 'invalid_domain',
+    '--name': 'invalid_name',
+}
+
+
+def _iter_all_parsers(root):
+    """Yield ``root`` plus every subparser registered (recursively).
+
+    argparse subparsers are stored in their own ``ArgumentParser`` instances
+    and have independent ``error`` methods. To intercept validator failures
+    on subcommands, every subparser must also be patched.
+    """
+    yield root
+    for action in getattr(root, '_actions', []):
+        choices = getattr(action, 'choices', None)
+        if isinstance(choices, dict):  # _SubParsersAction.choices is dict[str, ArgumentParser]
+            for sub in choices.values():
+                yield from _iter_all_parsers(sub)
+
+
+def parse_args_with_toon_errors(parser):
+    """Run ``parser.parse_args()`` and translate validator failures into TOON.
+
+    When an argparse ``type=`` validator (e.g. ``validate_plan_id``) raises
+    ``ValueError``, argparse converts the error into an ``ArgumentTypeError``
+    and calls ``parser.error()``, which prints a stderr message and exits
+    with code 2. That contract is incompatible with manage-* scripts, which
+    must emit ``status: error / error: invalid_<field>`` TOON on stdout
+    before any side-effects.
+
+    This helper installs a one-shot ``parser.error`` override on the root
+    parser AND every subparser registered under it. The override scans the
+    formatted error message for any of the known identifier flags
+    (``--plan-id``, ``--lesson-id``, …) and, when one matches, emits the
+    canonical TOON error and exits with code 0. All other argparse errors
+    (missing subcommand, unknown flag, etc.) fall through to the original
+    behaviour.
+
+    Returns the parsed ``argparse.Namespace`` on success.
+    """
+    from toon_parser import serialize_toon  # type: ignore[import-not-found]
+
+    parsers = list(_iter_all_parsers(parser))
+    originals = {id(p): p.error for p in parsers}
+
+    def make_toon_error(orig):
+        def toon_error(message: str):  # type: ignore[no-untyped-def]
+            # argparse error messages for type-validator failures look like:
+            #   "argument --plan-id: Invalid plan_id format: 'BAD!'. Must match ..."
+            # We match only when the offending flag is the SUBJECT of the
+            # error — i.e. the message starts with ``argument {flag}:``.
+            # Generic argparse errors that incidentally mention a flag
+            # (e.g. mutually-exclusive-group errors that name BOTH the
+            # offending flag and another flag) must fall through to the
+            # default handler so the contract is "this flag's value
+            # failed canonical validation", not "any error mentioning
+            # this flag".
+            for flag, code in _FLAG_TO_ERROR_CODE.items():
+                if message.startswith(f'argument {flag}:'):
+                    print(
+                        serialize_toon(
+                            {
+                                'status': 'error',
+                                'error': code,
+                                'message': message,
+                            }
+                        )
+                    )
+                    sys.exit(0)
+            # Not an identifier-validator failure: defer to argparse default.
+            orig(message)
+
+        return toon_error
+
+    for p in parsers:
+        p.error = make_toon_error(originals[id(p)])  # type: ignore[method-assign]
+    try:
+        return parser.parse_args()
+    finally:
+        for p in parsers:
+            p.error = originals[id(p)]  # type: ignore[method-assign]

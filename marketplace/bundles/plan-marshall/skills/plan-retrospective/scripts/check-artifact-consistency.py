@@ -34,6 +34,10 @@ from _plan_parsing import (  # type: ignore[import-not-found]
     parse_document_sections,
 )
 from file_ops import base_path, output_toon, safe_main  # type: ignore[import-not-found]
+from input_validation import (  # type: ignore[import-not-found]
+    add_plan_id_arg,
+    parse_args_with_toon_errors,
+)
 
 # Manifest filename — kept in sync with manage-execution-manifest.py.
 # When the manifest exists, the affected_files_exact_match check defers to
@@ -343,7 +347,7 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     run_parser = subparsers.add_parser('run', help='Run all checks', allow_abbrev=False)
-    run_parser.add_argument('--plan-id', help='Plan identifier (live mode)')
+    add_plan_id_arg(run_parser, required=False)
     run_parser.add_argument(
         '--archived-plan-path',
         help='Absolute path to archived plan directory (archived mode)',
@@ -356,7 +360,7 @@ def main() -> int:
     )
     run_parser.set_defaults(func=cmd_run)
 
-    args = parser.parse_args()
+    args = parse_args_with_toon_errors(parser)
     result = args.func(args)
     output_toon(result)
     return 0
