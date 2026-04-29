@@ -98,48 +98,48 @@ def test_resolve_all_mappings():
 
 
 # =============================================================================
-# TESTS: extract_trace_plan_id
+# TESTS: extract_audit_plan_id
 # =============================================================================
 
 
-def test_extract_trace_plan_id_space_separated():
-    """Extract --trace-plan-id with space-separated value."""
+def test_extract_audit_plan_id_space_separated():
+    """Extract --audit-plan-id with space-separated value."""
     executor = load_executor_module()
-    plan_id, cleaned = executor.extract_trace_plan_id(['--trace-plan-id', 'my-plan', '--include-descriptions'])
+    plan_id, cleaned = executor.extract_audit_plan_id(['--audit-plan-id', 'my-plan', '--include-descriptions'])
     assert plan_id == 'my-plan', f"Expected 'my-plan', got {plan_id}"
     assert cleaned == ['--include-descriptions'], f"Expected ['--include-descriptions'], got {cleaned}"
 
 
-def test_extract_trace_plan_id_equals_format():
-    """Extract --trace-plan-id=value format."""
+def test_extract_audit_plan_id_equals_format():
+    """Extract --audit-plan-id=value format."""
     executor = load_executor_module()
-    plan_id, cleaned = executor.extract_trace_plan_id(['--trace-plan-id=my-plan', '--bundles', 'planning'])
+    plan_id, cleaned = executor.extract_audit_plan_id(['--audit-plan-id=my-plan', '--bundles', 'planning'])
     assert plan_id == 'my-plan', f"Expected 'my-plan', got {plan_id}"
     assert cleaned == ['--bundles', 'planning'], f"Expected ['--bundles', 'planning'], got {cleaned}"
 
 
-def test_extract_trace_plan_id_not_present():
-    """No trace-plan-id returns None and unchanged args."""
+def test_extract_audit_plan_id_not_present():
+    """No audit-plan-id returns None and unchanged args."""
     executor = load_executor_module()
-    plan_id, cleaned = executor.extract_trace_plan_id(['--plan-id', 'my-plan', '--flag'])
+    plan_id, cleaned = executor.extract_audit_plan_id(['--plan-id', 'my-plan', '--flag'])
     assert plan_id is None, f'Expected None, got {plan_id}'
     assert cleaned == ['--plan-id', 'my-plan', '--flag'], 'Args should be unchanged'
 
 
-def test_extract_trace_plan_id_preserves_other_args():
-    """trace-plan-id extraction preserves all other arguments."""
+def test_extract_audit_plan_id_preserves_other_args():
+    """audit-plan-id extraction preserves all other arguments."""
     executor = load_executor_module()
-    plan_id, cleaned = executor.extract_trace_plan_id(
-        ['verb', '--trace-plan-id', 'test-plan', '--flag', 'value', '--other']
+    plan_id, cleaned = executor.extract_audit_plan_id(
+        ['verb', '--audit-plan-id', 'test-plan', '--flag', 'value', '--other']
     )
     assert plan_id == 'test-plan', f"Expected 'test-plan', got {plan_id}"
     assert cleaned == ['verb', '--flag', 'value', '--other'], 'Other args should be preserved'
 
 
-def test_extract_trace_plan_id_at_end():
-    """trace-plan-id at end of args."""
+def test_extract_audit_plan_id_at_end():
+    """audit-plan-id at end of args."""
     executor = load_executor_module()
-    plan_id, cleaned = executor.extract_trace_plan_id(['--bundles', 'pm-dev-java', '--trace-plan-id', 'end-plan'])
+    plan_id, cleaned = executor.extract_audit_plan_id(['--bundles', 'pm-dev-java', '--audit-plan-id', 'end-plan'])
     assert plan_id == 'end-plan', f"Expected 'end-plan', got {plan_id}"
     assert cleaned == ['--bundles', 'pm-dev-java'], f"Expected ['--bundles', 'pm-dev-java'], got {cleaned}"
 

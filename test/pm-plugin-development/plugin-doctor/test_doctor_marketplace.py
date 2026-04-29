@@ -85,6 +85,7 @@ def test_main_help():
     assert 'analyze' in combined, 'analyze subcommand in help'
     assert 'fix' in combined, 'fix subcommand in help'
     assert 'report' in combined, 'report subcommand in help'
+    assert 'quality-gate' in combined, 'quality-gate subcommand in help'
 
 
 def test_no_command_shows_help():
@@ -1104,6 +1105,136 @@ def test_marketplace_root_invalid_path_errors_clearly(tmp_path, monkeypatch):
     # of bundles/, not bundles/ itself — this is what callers need to fix.
     assert 'marketplace root' in msg or 'parent of bundles' in msg, (
         f'Error message should clarify the parent-of-bundles contract, got: {msg}'
+    )
+
+
+# =============================================================================
+# Quality-Gate Subcommand Tests
+# =============================================================================
+
+
+def _build_clean_fixture(temp_root: Path) -> Path:
+    """Build a fixture marketplace whose components are clean of static-analysis findings."""
+    bundles_dir = temp_root / 'marketplace' / 'bundles'
+    bundles_dir.mkdir(parents=True)
+    bundle = bundles_dir / 'qg-clean'
+    bundle.mkdir()
+
+    plugin_dir = bundle / '.claude-plugin'
+    plugin_dir.mkdir()
+    (plugin_dir / 'plugin.json').write_text(json.dumps({'name': 'qg-clean', 'version': '1.0.0'}))
+
+    skill_dir = bundle / 'skills' / 'noop-skill'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text("""---
+name: noop-skill
+description: Does nothing
+user-invocable: false
+---
+
+# Noop Skill
+
+No-op.
+""")
+    return temp_root
+
+
+def _build_argparse_violation_fixture(temp_root: Path) -> Path:
+    """Build a fixture marketplace whose script violates argparse_safety (no allow_abbrev=False)."""
+    bundles_dir = temp_root / 'marketplace' / 'bundles'
+    bundles_dir.mkdir(parents=True)
+    bundle = bundles_dir / 'qg-violation'
+    bundle.mkdir()
+
+    plugin_dir = bundle / '.claude-plugin'
+    plugin_dir.mkdir()
+    (plugin_dir / 'plugin.json').write_text(json.dumps({'name': 'qg-violation', 'version': '1.0.0'}))
+
+    skill_dir = bundle / 'skills' / 'bad-skill'
+    skill_dir.mkdir(parents=True)
+    (skill_dir / 'SKILL.md').write_text("""---
+name: bad-skill
+description: A skill with a violating script
+user-invocable: false
+---
+
+# Bad Skill
+""")
+    scripts_dir = skill_dir / 'scripts'
+    scripts_dir.mkdir()
+    (scripts_dir / 'bad_script.py').write_text(
+        'import argparse\n'
+        '\n'
+        "parser = argparse.ArgumentParser(description='no allow_abbrev')\n"
+        "parser.add_argument('--foo')\n"
+    )
+    return temp_root
+
+
+def test_quality_gate_help():
+    """Test quality-gate --help is available and explains the build-gate role."""
+    result = run_script(SCRIPT_PATH, 'quality-gate', '--help')
+    combined = result.stdout + result.stderr
+    assert 'marketplace-root' in combined.lower(), 'Help should mention --marketplace-root override'
+    # quality-gate is intentionally marketplace-wide — no --bundles filter exposed
+    assert '--bundles' not in combined, 'quality-gate must NOT expose a --bundles flag'
+
+
+def test_quality_gate_clean_fixture_passes(tmp_path):
+    """quality-gate exits 0 with status: pass on a fixture with no findings."""
+    temp_root = _build_clean_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        env_overrides={
+            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
+            'PLAN_BASE_DIR': str(temp_root / '.plan'),
+            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
+        },
+    )
+    assert result.returncode == 0, f'Expected exit 0 on clean fixture, got {result.returncode}: {result.stderr}'
+
+    data = parse_output(result)
+    assert data['status'] == 'pass', f"Expected status: pass on clean fixture, got: {data}"
+    assert data['total_issues'] == 0, f'Clean fixture should have zero issues, got {data["total_issues"]}'
+    assert 'rules_run' in data, 'Output should enumerate rules_run for transparency'
+
+
+def test_quality_gate_argparse_violation_fails(tmp_path):
+    """quality-gate exits non-zero with status: fail on argparse_safety violation."""
+    temp_root = _build_argparse_violation_fixture(tmp_path)
+    result = run_script(
+        SCRIPT_PATH,
+        'quality-gate',
+        env_overrides={
+            'PM_MARKETPLACE_ROOT': str(temp_root / 'marketplace'),
+            'PLAN_BASE_DIR': str(temp_root / '.plan'),
+            'PLAN_MARSHALL_CREDENTIALS_DIR': str(temp_root / 'credentials'),
+        },
+    )
+    assert result.returncode == 1, (
+        f'Expected exit 1 on argparse_safety violation fixture, got {result.returncode}: {result.stderr}'
+    )
+
+    data = parse_output(result)
+    assert data['status'] == 'fail', f"Expected status: fail on violation fixture, got: {data}"
+    assert data['total_issues'] >= 1, 'Should report at least one finding'
+
+
+def test_quality_gate_real_marketplace_passes():
+    """quality-gate run against the real marketplace must pass — the tree is clean."""
+    if not marketplace_available():
+        return  # Skip if marketplace not available
+
+    result = run_script(SCRIPT_PATH, 'quality-gate')
+    assert result.returncode == 0, (
+        f'Real marketplace quality-gate must pass, got exit {result.returncode}: {result.stderr}'
+    )
+
+    data = parse_output(result)
+    assert data['status'] == 'pass', f'Expected status: pass on real marketplace, got: {data}'
+    assert data['total_issues'] == 0, (
+        f'Real marketplace must have zero quality-gate findings, got {data["total_issues"]}'
     )
 
 

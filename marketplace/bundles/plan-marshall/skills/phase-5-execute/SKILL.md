@@ -121,7 +121,7 @@ Cache the commit strategy for the entire execute loop:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --trace-plan-id {plan_id}
+  plan phase-5-execute get --audit-plan-id {plan_id}
 ```
 
 Extract `commit_strategy` from output. Valid values: `per_deliverable`, `per_plan`, `none`.
@@ -217,7 +217,7 @@ Inlined flow:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     plan phase-5-execute get --field rebase_on_execute_start --trace-plan-id {plan_id}
+     plan phase-5-execute get --field rebase_on_execute_start --audit-plan-id {plan_id}
    ```
 
    If the returned `value` is `false`, skip this step and log:
@@ -234,7 +234,7 @@ Inlined flow:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     plan phase-5-execute get --field rebase_strategy --trace-plan-id {plan_id}
+     plan phase-5-execute get --field rebase_strategy --audit-plan-id {plan_id}
    ```
 
    Record the returned `value` as `{strategy}` — it is referenced in points 6, 7, and 8 below.
@@ -483,6 +483,28 @@ If `commit_strategy` is `per_plan` or `none` → Skip this step entirely.
 - A `profile=verification` task completes with `verification.passed: false` / `next_action: requires_triage`, OR
 - Step 9 marked a task `blocked` with reason `no_changes_detected` or `verification_mismatch`
 
+#### Planned-failure exception (breaking-refactor task split)
+
+**Applies before** the standard triage branches below. When a task with `profile: implementation` produces a verification failure and a downstream task with `profile: module_testing` and explicit `depends_on: [TASK-{current_task_number}]` exists, the dispatcher MAY proceed to the dependent task without flagging the failure as an error — this is the only case where "tests fail" is the planned outcome of the implementation step.
+
+**Boundary conditions** (ALL must hold; if any fails, fall through to the standard triage branches below):
+
+1. The downstream task's `profile` is `module_testing` AND its `deliverable` matches the current task's `deliverable` AND its description enumerates the pre-existing tests being rewritten.
+2. The downstream task has explicit `depends_on: [TASK-{current_task_number}]` linkage declared at planning time. A downstream task that happens to run later without a `depends_on` edge does NOT qualify.
+3. The set of failing tests reported by the implementation task's verification command is a subset of the tests enumerated in the downstream task's description. New failures (tests not on the list) are real regressions and MUST fall through to standard triage.
+
+When all three boundary conditions hold, log the planned-failure decision, mark the implementation task as `done` (not `blocked`), and proceed to the next task in the queue (which will be the test-contract task by `depends_on` ordering):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:phase-5-execute) Planned-failure exception applied for {task_id}: verification failed as expected; downstream test-contract task TASK-{downstream_number} will rewrite the affected tests"
+```
+
+After the test-contract task completes, the standard verification path resumes — the test-contract task itself MUST produce a green test run; if it does not, that is a real failure and goes through standard triage.
+
+**Rationale and boundary documentation**: see [`../phase-4-plan/standards/breaking-refactor-task-split.md`](../phase-4-plan/standards/breaking-refactor-task-split.md) for the full contract spanning phase-4-plan task allocation and this phase-5-execute exception.
+
 **For `no_changes_detected` blocks**: The implementation task produced no file changes. Triage options:
 - **RETRY** → reset task to `pending` for re-execution
 - **FAIL** → mark task `failed` with outcome `no_changes_detected`, log, continue
@@ -529,7 +551,7 @@ After every task in the phase has completed (and Step 11 has resolved any per-ta
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-     resolve --command quality-gate --trace-plan-id {plan_id}
+     resolve --command quality-gate --audit-plan-id {plan_id}
    ```
 
 2. Execute the returned `executable`. On non-zero exit, route the failure through the Step 11 triage loop (treat as a single-finding verification failure) so the Step 11 fix-task / suppress / accept branch handles remediation. After triage resolves, do **NOT** re-run the sweep — Step 11b runs at most once per phase entry.
@@ -641,7 +663,7 @@ This automatically updates status.json and moves to the next phase.
 **After transition**, check `finalize_without_asking` config:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field finalize_without_asking --trace-plan-id {plan_id}
+  plan phase-5-execute get --field finalize_without_asking --audit-plan-id {plan_id}
 ```
 
 - **IF `finalize_without_asking == true`**: Log and auto-continue to finalize phase

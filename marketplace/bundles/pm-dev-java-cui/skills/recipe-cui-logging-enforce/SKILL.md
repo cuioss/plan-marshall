@@ -142,7 +142,7 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-  resolve --command module-tests --module {module} --trace-plan-id {plan_id}
+  resolve --command module-tests --module {module} --audit-plan-id {plan_id}
 ```
 
 **4e. Write the solution outline** using the Write tool to `{resolved_path}`. The document MUST include these sections in order:

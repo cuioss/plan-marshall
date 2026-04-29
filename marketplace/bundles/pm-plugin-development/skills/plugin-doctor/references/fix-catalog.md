@@ -410,15 +410,15 @@ Risky fixes require user confirmation because they involve judgment calls or may
 
 ### 12. wrong-plan-parameter (PM-003)
 
-**Description**: Uses `--plan-id` where `--trace-plan-id` required or vice versa.
+**Description**: Uses `--plan-id` where `--audit-plan-id` required or vice versa.
 
 **Detection**: Script calls with incorrect plan parameter based on script type:
-- `manage-config` should use `--trace-plan-id`
-- `manage-log` should use `--trace-plan-id`
+- `manage-config` should use `--audit-plan-id`
+- `manage-log` should use `--audit-plan-id`
 - `manage-files`, `manage-tasks`, `manage-references` should use `--plan-id`
 
 **Fix Strategy**:
-- Swap `--plan-id` to `--trace-plan-id` or vice versa
+- Swap `--plan-id` to `--audit-plan-id` or vice versa
 - Consult parameter matrix in `plan-marshall:plan-marshall-plugin/references/plan-marshall-guide.md`
 
 **Why Safe** (when pattern is clear):
@@ -429,11 +429,11 @@ Risky fixes require user confirmation because they involve judgment calls or may
 
 **Description**: Plan-related script call without required plan identifier.
 
-**Detection**: Script calls to plan-related scripts missing both `--plan-id` and `--trace-plan-id`
+**Detection**: Script calls to plan-related scripts missing both `--plan-id` and `--audit-plan-id`
 
 **Fix Strategy**:
 - Determine which parameter is needed from matrix
-- Add appropriate `--plan-id {plan_id}` or `--trace-plan-id {plan_id}`
+- Add appropriate `--plan-id {plan_id}` or `--audit-plan-id {plan_id}`
 
 **Why Safe** (when context is clear):
 - Adding required parameter makes call complete

@@ -44,24 +44,24 @@ Analyze the component:
 
 ### Step 4: Build Deliverables
 
-Always exactly 2 deliverables:
+Always exactly 2 deliverables. The "2 deliverables" rule counts deliverables, not files or change-sites.
 
-**Deliverable 1: Fix** — include extra section:
+**Deliverable 1: Fix** — MAY bundle multiple coordinated source edits plus their co-located unit tests when those edits share a single test surface (e.g., a multi-site bug fix where every site is verified by the same test surface). D1 may therefore have multiple `Affected files` entries spanning production code AND co-located unit tests. Include extra section:
 
 ```markdown
 **Root Cause:**
 {Brief description of what's causing the bug}
 ```
 
-**Deliverable 2: Regression Test** — test that would have caught this bug.
+**Deliverable 2: Regression Test** — the cross-cutting / end-to-end / integration regression test that exercises the fix from a user-visible angle. It earns its own deliverable because its verification contract differs from D1's local unit tests. Independent regression coverage that has a different verification scope from D1's unit tests always becomes D2 — D1 cannot absorb it.
 
 Validate all deliverables (ext-outline-workflow **Deliverable Validation**). Use verification commands from ext-outline-workflow **Verification Commands**.
 
 ### Constraints
 
-**MUST NOT**: Use full inventory (targeted search only). Make unnecessary changes (minimal fix principle). Skip regression test deliverable.
+**MUST NOT**: Use full inventory (targeted search only). Make unnecessary changes (minimal fix principle — "minimal" means smallest correct fix, not "single file"). Skip the cross-cutting regression-test deliverable.
 
-**MUST DO**: Document root cause. Keep fix minimal and focused. Always produce exactly 2 deliverables (fix + regression test). Use ext-outline-workflow shared constraints.
+**MUST DO**: Document root cause. Keep fix minimal and focused. Always produce exactly 2 deliverables (fix + regression test) — the rule counts deliverables, not files; D1 may bundle multiple coordinated source edits plus their co-located unit tests when they share a single test surface. Use ext-outline-workflow shared constraints.
 
 ---
 

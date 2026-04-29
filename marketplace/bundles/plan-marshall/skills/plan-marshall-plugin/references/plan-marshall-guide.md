@@ -50,19 +50,19 @@ SCAN document for:
 
 **Fix**: Replace with explicit command examples showing all parameters.
 
-## pm-wrong-plan-parameter (PM-003) / pm-missing-plan-parameter (PM-004): Correct plan-id vs trace-plan-id Usage
+## pm-wrong-plan-parameter (PM-003) / pm-missing-plan-parameter (PM-004): Correct plan-id vs audit-plan-id Usage
 
 **Requirement**: Plan-related components must use correct parameter:
 - `--plan-id`: For data operations (read/write plan files, artifacts)
-- `--trace-plan-id`: For config lookups and logging context
+- `--audit-plan-id`: For config lookups and logging context
 
 **Check**:
 ```
 FOR each script call:
   IF script is manage-config:
-    REQUIRE --trace-plan-id (not --plan-id)
+    REQUIRE --audit-plan-id (not --plan-id)
   IF script is manage-log:
-    REQUIRE --trace-plan-id for context
+    REQUIRE --audit-plan-id for context
   IF script is manage-files, manage-tasks, manage-references:
     REQUIRE --plan-id for data operations
 ```
@@ -70,8 +70,8 @@ FOR each script call:
 **Parameter Matrix**:
 | Script Pattern | Required Parameter |
 |---------------|-------------------|
-| `manage-config` | `--trace-plan-id` |
-| `manage-log` | `--trace-plan-id` |
+| `manage-config` | `--audit-plan-id` |
+| `manage-log` | `--audit-plan-id` |
 | `manage-files` | `--plan-id` |
 | `manage-tasks` | `--plan-id` |
 | `manage-references` | `--plan-id` |
@@ -107,7 +107,7 @@ IF frontmatter contains implements:
 |----|-----------------|----------|-------------|
 | PM-001 | pm-implicit-script-call | error | Script call missing explicit parameters |
 | PM-002 | pm-generic-api-reference | error | References API docs instead of explicit call |
-| PM-003 | pm-wrong-plan-parameter | error | Uses --plan-id where --trace-plan-id required or vice versa |
+| PM-003 | pm-wrong-plan-parameter | error | Uses --plan-id where --audit-plan-id required or vice versa |
 | PM-004 | pm-missing-plan-parameter | error | Script call missing required plan parameter |
 | PM-005 | pm-invalid-contract-path | error | implements: points to non-existent file |
 | PM-006 | pm-contract-non-compliance | warning | Component doesn't follow contract requirements |
@@ -144,13 +144,13 @@ execute-script\.py[^`]*#\s*See
 1. Extract script name from `execute-script.py {bundle}:{skill}:{script}`
 2. Check parameter against matrix above
 3. Flag if `--plan-id` used with config/log scripts
-4. Flag if `--trace-plan-id` used with data scripts
+4. Flag if `--audit-plan-id` used with data scripts
 
 ### PM-004 (pm-missing-plan-parameter)
 
 **Detection logic**:
 1. Identify script calls to plan-related scripts
-2. Check if any plan parameter (`--plan-id` or `--trace-plan-id`) is present
+2. Check if any plan parameter (`--plan-id` or `--audit-plan-id`) is present
 3. Flag if neither parameter found
 
 ### PM-005 (pm-invalid-contract-path)
@@ -188,13 +188,13 @@ execute-script\.py[^`]*#\s*See
 ### PM-003 (pm-wrong-plan-parameter) Fix: Swap Parameter
 
 1. Determine correct parameter from matrix
-2. Replace `--plan-id` with `--trace-plan-id` or vice versa
+2. Replace `--plan-id` with `--audit-plan-id` or vice versa
 3. Verify parameter name matches script expectations
 
 ### PM-004 (pm-missing-plan-parameter) Fix: Add Plan Parameter
 
 1. Determine which parameter is needed from matrix
-2. Add appropriate `--plan-id {plan_id}` or `--trace-plan-id {plan_id}`
+2. Add appropriate `--plan-id {plan_id}` or `--audit-plan-id {plan_id}`
 3. Ensure variable name matches context
 
 ### PM-005 (pm-invalid-contract-path) Fix: Correct Contract Path

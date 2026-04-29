@@ -423,11 +423,11 @@ def main() -> int:
         help='Repository root for diff and wrapper scans. '
              'Defaults to the current working directory.',
     )
-    # Accepted for parity with other scripts that forward --trace-plan-id;
-    # logging is handled by the executor, so the flag is a passthrough here.
+    # Accepted for parity with other scripts that forward --audit-plan-id;
+    # audit logging is handled by the executor, so the flag is a passthrough here.
     run_parser.add_argument(
-        '--trace-plan-id',
-        help='Plan identifier for execution-log tracing (executor-level)',
+        '--audit-plan-id',
+        help='Plan identifier for executor-level audit logging (passthrough)',
     )
     run_parser.set_defaults(func=cmd_run)
 

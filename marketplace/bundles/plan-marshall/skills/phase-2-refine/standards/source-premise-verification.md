@@ -11,7 +11,7 @@ Plan sources (lessons, issues, PR reviews, free-form descriptions) capture obser
 This step activates when the request narrative contains **verifiable code references** -- any of:
 
 - File paths (e.g., `marketplace/bundles/plan-marshall/skills/phase-2-refine/SKILL.md`)
-- Flag or option names (e.g., `--force`, `--trace-plan-id`)
+- Flag or option names (e.g., `--force`, `--audit-plan-id`)
 - API references (e.g., function names, class names, method signatures)
 - Specific behavior descriptions tied to identifiable code (e.g., "the `add` subcommand ignores duplicates")
 

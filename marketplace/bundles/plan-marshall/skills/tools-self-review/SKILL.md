@@ -37,10 +37,11 @@ Surfaces four candidate lists from the worktree's staged diff against the base b
 | `--plan-id PLAN_ID` | Yes | Plan identifier (kebab-case). Used to read `references.modified_files`. |
 | `--project-dir PROJECT_DIR` | Yes | Absolute path to the active git worktree. All `git` calls run as `git -C {project_dir} ...`. |
 | `--base-branch BRANCH` | No | Base branch for diff computation. Defaults to `main`. |
+| `--contract-radius N` | No | Directory levels to walk up when collecting schema-bearing markdown files (default: 3). |
 
 ### Output
 
-TOON to stdout. The four candidate-list keys are always present (possibly empty):
+TOON to stdout. The candidate-list keys are always present (possibly empty):
 
 ```toon
 status: success
@@ -52,6 +53,8 @@ counts:
   user_facing_strings: N2
   markdown_sections: N3
   symmetric_pairs: N4
+  contract_sources: N5
+  schema_bearing_files: N6
   total: N1+N2+N3+N4
 
 regexes[N1]{file,line,pattern}:
@@ -61,11 +64,19 @@ user_facing_strings[N2]{file,line,context,text}:
   {repo-relative-path},{line},{context-tag},{string-text}
 
 markdown_sections[N3]{file,line,heading,siblings}:
-  {repo-relative-path},{heading},{semicolon-joined-sibling-headings}
+  {repo-relative-path},{line},{heading},{semicolon-joined-sibling-headings}
 
 symmetric_pairs[N4]{file,line,name,partner}:
   {repo-relative-path},{line},{function-name},{inferred-partner-name}
+
+contract_sources[N5]{file,sources}:
+  {repo-relative-path},{semicolon-joined-contract-source-paths}
+
+schema_bearing_files[N6]{file,format}:
+  {repo-relative-path},{json|toon}
 ```
+
+> The `total` count covers the four line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`) only. `contract_sources` and `schema_bearing_files` are review-anchor categories with their own counts; they are not summed into `total` because each modified file contributes at most one `contract_sources` entry whose payload is references rather than candidates.
 
 ### Detection Rules
 
@@ -92,6 +103,10 @@ symmetric_pairs[N4]{file,line,name,partner}:
    - The `siblings` field is a semicolon-joined list of sibling heading texts (peer headings under the same parent), excluding the entry's own heading
 
 4. **Symmetric-pair candidates** — added lines in `.py` files matching `^def\s+(\w+)`. The captured function name is split on `_` and inspected for any of the 6 pair tokens: `save/load`, `init/restore`, `push/pop`, `acquire/release`, `open/close`, `start/stop`. When a match is found, the `partner` field is the same function name with the matched token swapped to its pair (e.g., `save_state` → `load_state`).
+
+5. **Contract sources** — for each path in `references.modified_files`, walk up the directory tree (bounded by `--project-dir`) looking for the nearest ancestor containing `SKILL.md`. When found, the `sources` field is a `; `-joined list of repo-relative paths to that `SKILL.md` plus every `*.md` under the same skill's `standards/` subdirectory. Modified files outside any skill directory contribute no entry. The list anchors the LLM cognitive review on the contract documents that govern the changed code.
+
+6. **Schema-bearing files** — `*.md` files within `--contract-radius` directory levels of any modified file (default 3 levels up, bounded by `--project-dir`) whose content contains a fenced JSON or TOON block (`` ``` ``json` or `` ``` ``toon`). The list is deduplicated; the `format` field reports the first fence type found. Schema-bearing files surface schema/contract documents the LLM pass must cross-reference against hunks that touch the same schema (e.g., a helper output schema declared in a markdown reference).
 
 ### Errors
 

@@ -136,7 +136,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field pr_merge_strategy --trace-plan-id {plan_id}
+  plan phase-6-finalize get --field pr_merge_strategy --audit-plan-id {plan_id}
 ```
 
 Extract `value` as `{pr_merge_strategy}` (default: `squash`). Valid values: `squash`, `merge`, `rebase`.

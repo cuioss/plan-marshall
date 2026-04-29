@@ -302,17 +302,17 @@ Extract `phase_6.steps` — the ordered list of step IDs (e.g., `commit-push`, `
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --trace-plan-id {plan_id}
+  plan phase-6-finalize get --audit-plan-id {plan_id}
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --trace-plan-id {plan_id}
+  plan phase-5-execute get --audit-plan-id {plan_id}
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-1-init get --trace-plan-id {plan_id}
+  plan phase-1-init get --audit-plan-id {plan_id}
 ```
 
 Read the config blocks for `review_bot_buffer_seconds`, `max_iterations`, `commit_strategy`, and `branch_strategy`. **Do not** read the `steps` field from `marshal.json` here — that field is the candidate set consumed by `phase-4-plan` Step 8b, not by this skill. The manifest's `phase_6.steps` list is the only valid source for runtime dispatch.

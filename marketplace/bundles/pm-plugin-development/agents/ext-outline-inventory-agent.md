@@ -68,7 +68,7 @@ Execute the inventory script with provided parameters.
 ```bash
 python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --trace-plan-id {plan_id} \
+  --audit-plan-id {plan_id} \
   --resource-types {component_types as comma-separated} \
   --full \
   --output {work_dir_path}/inventory_raw.toon
@@ -88,7 +88,7 @@ python3 .plan/execute-script.py \
 ```bash
 python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --trace-plan-id {plan_id} \
+  --audit-plan-id {plan_id} \
   --resource-types {component_types as comma-separated} \
   --content-pattern "{content_pattern}" \
   --bundles {bundle_scope} \
@@ -108,7 +108,7 @@ Read the raw inventory file:
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
   --plan-id {plan_id} \
   --file work/inventory_raw.toon \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 The inventory output uses bundle-block format where bundles are top-level keys:
@@ -165,7 +165,7 @@ Build the filtered inventory TOON content and persist it:
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files write \
   --plan-id {plan_id} \
   --file work/inventory_filtered.toon \
-  --trace-plan-id {plan_id} \
+  --audit-plan-id {plan_id} \
   --content "# Filtered Inventory
 
 scope:
@@ -195,7 +195,7 @@ Note: Include `tests` section only when `include_tests` is true and tests were d
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (ext-outline-inventory-agent) Persisted inventory: work/inventory_filtered.toon ({total_files} files)" \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 ## Output

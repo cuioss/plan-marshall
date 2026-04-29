@@ -28,7 +28,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id {plan_id} --field domains
 
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
+  plan phase-2-refine get --field compatibility --audit-plan-id {plan_id}
 ```
 
 Derive `compatibility_description` from the compatibility value.
@@ -52,7 +52,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files mkdir \
 
 python3 .plan/execute-script.py \
   pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --trace-plan-id {plan_id} \
+  --audit-plan-id {plan_id} \
   --resource-types {comma_separated_types} \
   --bundles {bundle_scope} \
   --include-tests \
@@ -70,7 +70,7 @@ Read and extract file paths:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
-  --plan-id {plan_id} --file work/inventory_raw.toon --trace-plan-id {plan_id}
+  --plan-id {plan_id} --file work/inventory_raw.toon --audit-plan-id {plan_id}
 ```
 
 Path conventions:
@@ -262,10 +262,10 @@ Plugin development deliverables have different verification depending on content
 | Deliverable Content | Profiles | Implementation Verification | Module_testing Verification |
 |---------------------|----------|---------------------------|----------------------------|
 | Markdown components (skills/agents/commands) | `implementation` only | plugin-doctor | N/A |
-| Scripts without test files | `implementation` only | `plan-marshall:manage-architecture:architecture resolve --command compile --module {module} --trace-plan-id {plan_id}` | N/A |
-| Scripts with test files | `implementation`, `module_testing` | `plan-marshall:manage-architecture:architecture resolve --command compile --module {module} --trace-plan-id {plan_id}` | `plan-marshall:manage-architecture:architecture resolve --command module-tests --module {module} --trace-plan-id {plan_id}` |
+| Scripts without test files | `implementation` only | `plan-marshall:manage-architecture:architecture resolve --command compile --module {module} --audit-plan-id {plan_id}` | N/A |
+| Scripts with test files | `implementation`, `module_testing` | `plan-marshall:manage-architecture:architecture resolve --command compile --module {module} --audit-plan-id {plan_id}` | `plan-marshall:manage-architecture:architecture resolve --command module-tests --module {module} --audit-plan-id {plan_id}` |
 
-Resolve commands from architecture (`plan-marshall:manage-architecture:architecture`) — do NOT hardcode build tool invocations. Always pass `--trace-plan-id {plan_id}` for execution logging.
+Resolve commands from architecture (`plan-marshall:manage-architecture:architecture`) — do NOT hardcode build tool invocations. Always pass `--audit-plan-id {plan_id}` for execution logging.
 
 **Key rule**: Markdown-only deliverables never get `module_testing` — there are no tests to run. Only deliverables that create or modify Python/Bash test files should include the `module_testing` profile.
 

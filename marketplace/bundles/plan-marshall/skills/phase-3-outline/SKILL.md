@@ -134,7 +134,7 @@ The `compatibility` and `compatibility_description` values are received from the
 **If compatibility not provided in input**, read from marshal.json:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
+  plan phase-2-refine get --field compatibility --audit-plan-id {plan_id}
 ```
 
 Store as `compatibility` and derive `compatibility_description` from the value:
