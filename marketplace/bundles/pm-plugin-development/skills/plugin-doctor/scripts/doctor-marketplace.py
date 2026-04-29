@@ -7,6 +7,8 @@ Provides automated batch operations across the entire marketplace:
 - analyze: Batch analyze all components for issues
 - fix: Apply safe fixes automatically across marketplace
 - report: Generate comprehensive report for LLM review
+- quality-gate: Run pure-static-analysis rules as a build gate
+  (exit 1 on findings; intended for invocation from `quality-gate` build target)
 
 This is Phase 1 of the hybrid doctor workflow. It handles deterministic
 operations that can be fully automated. Phase 2 (LLM) handles semantic
@@ -23,6 +25,7 @@ Usage:
 
 import argparse
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -332,6 +335,70 @@ def cmd_fix(args) -> dict:
     }
 
 
+def cmd_quality_gate(args) -> dict:
+    """Run pure-static-analysis invariant rules across the marketplace as a build gate.
+
+    Runs only the marketplace-wide rules whose violations are currently enforced
+    by the pytest suite as "real marketplace must produce zero findings"
+    invariants (i.e., the rules that fail CI when violated). All rules in this
+    set operate on the marketplace tree without pytest fixtures, network access,
+    or mutating I/O, so they are cheap enough to run on every fast iteration.
+
+    Per-component advisory rules (`analyze_component`'s `check_*` cluster) are
+    intentionally NOT included — they emit informational findings on the real
+    marketplace today and are not enforced as build-failing invariants.
+
+    Rule set:
+      - scan_argparse_safety       (AST: ArgumentParser/add_parser missing
+                                    allow_abbrev=False — enforced by
+                                    test_argparse_safety.py
+                                    test_real_marketplace_has_zero_findings)
+      - validate_extension_contracts (extension-point contract compliance —
+                                      enforced by test_plugin_doctor_extension.py
+                                      test_contract_validation_real_marketplace)
+      - analyze_argument_naming    (notation/subcommand/flag/canonical-forms
+                                    cluster — gated by
+                                    PM_ARGUMENT_NAMING_ENABLED env var; emits
+                                    nothing when gated off)
+    """
+    marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
+    if not marketplace_root:
+        return {'status': 'error', 'error': 'not_found', 'message': 'Marketplace directory not found'}
+
+    # quality-gate is intentionally marketplace-wide — bundle filtering would
+    # break the "real marketplace must produce zero findings" invariant the
+    # gate exists to enforce. No --bundles flag is exposed.
+    all_issues: list[dict] = []
+    rule_summaries: list[dict] = []
+
+    argparse_findings = scan_argparse_safety(marketplace_root)
+    all_issues.extend(argparse_findings)
+    rule_summaries.append({'rule': 'scan_argparse_safety', 'findings': len(argparse_findings)})
+
+    contract_result = validate_extension_contracts(marketplace_root.parent)
+    contract_errors = contract_result.get('errors', [])
+    for err in contract_errors:
+        all_issues.append({
+            'type': 'extension_contract',
+            'rule': err.get('rule', ''),
+            'file': err.get('file', ''),
+            'message': err.get('message', ''),
+            'severity': 'error',
+        })
+    rule_summaries.append({'rule': 'validate_extension_contracts', 'findings': len(contract_errors)})
+
+    naming_findings = analyze_argument_naming(marketplace_root)
+    all_issues.extend(naming_findings)
+    rule_summaries.append({'rule': 'analyze_argument_naming', 'findings': len(naming_findings)})
+
+    return {
+        'status': 'fail' if all_issues else 'pass',
+        'total_issues': len(all_issues),
+        'rules_run': rule_summaries,
+        'issues': all_issues,
+    }
+
+
 def cmd_report(args) -> dict:
     """Generate comprehensive report for LLM review."""
     marketplace_root = find_marketplace_root(getattr(args, 'marketplace_root', None))
@@ -505,6 +572,15 @@ Examples:
     p_report.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
     p_report.set_defaults(func=cmd_report)
 
+    # quality-gate subcommand
+    p_quality_gate = subparsers.add_parser(
+        'quality-gate',
+        help='Run pure-static-analysis rules as a build gate (exit 1 on findings, marketplace-wide only)',
+        allow_abbrev=False,
+    )
+    p_quality_gate.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)
+    p_quality_gate.set_defaults(func=cmd_quality_gate)
+
     # validate-contracts subcommand
     p_contracts = subparsers.add_parser('validate-contracts', help='Validate extension point contract compliance', allow_abbrev=False)
     p_contracts.add_argument('--extension-type', help='Filter by extension type (triage,outline,recipe,build,credential)')
@@ -520,8 +596,12 @@ Examples:
 
     result = args.func(args)
     output_toon(result)
+    if args.command == 'quality-gate' and result.get('status') == 'fail':
+        return 1
+    if result.get('status') == 'error':
+        return 1
     return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

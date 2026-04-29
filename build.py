@@ -98,7 +98,14 @@ def cmd_module_tests(module: str | None, parallel: bool = False) -> int:
 
 
 def cmd_quality_gate(module: str | None) -> int:
-    """Run mypy + ruff on production sources."""
+    """Run mypy + ruff + plugin-doctor static-analysis on production sources.
+
+    For full-tree quality-gate (module is None), also runs the plugin-doctor
+    quality-gate subcommand which enforces marketplace-wide static-analysis
+    invariants (argparse safety, extension-point contracts, argument-naming
+    cluster). Module-scoped quality-gate skips the marketplace-wide sweep
+    because it is scoped to a single bundle.
+    """
     exit_code = cmd_compile(module)
     if exit_code != 0:
         return exit_code
@@ -115,7 +122,23 @@ def cmd_quality_gate(module: str | None) -> int:
         # Include .claude/ scripts when running full quality-gate
         paths = [str(BUNDLES_DIR), str(TEST_DIR), str(CLAUDE_DIR)]
 
-    return run(['uv', 'run', 'ruff', 'check'] + paths, f'quality-gate: ruff check {" ".join(paths)}')
+    exit_code = run(['uv', 'run', 'ruff', 'check'] + paths, f'quality-gate: ruff check {" ".join(paths)}')
+    if exit_code != 0:
+        return exit_code
+
+    if module is None:
+        doctor_script = (
+            BUNDLES_DIR / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
+            / 'scripts' / 'doctor-marketplace.py'
+        )
+        doctor_env = {**os.environ, 'PYTHONPATH': _compute_mypypath()}
+        exit_code = run(
+            ['python3', str(doctor_script), 'quality-gate'],
+            'quality-gate: plugin-doctor static-analysis (marketplace-wide invariants)',
+            env=doctor_env,
+        )
+
+    return exit_code
 
 
 def cmd_coverage(module: str | None) -> int:
