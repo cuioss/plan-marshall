@@ -67,7 +67,7 @@ Do not abbreviate (`WARN`), do not invent new level names, and do not rename exi
 
 The table below records the canonical argument form for each in-scope script after this convention lands. Future scripts in scope MUST follow these conventions; existing scripts that diverge are renamed to match.
 
-The cross-cutting `--plan-id` and `--trace-plan-id` flags are accepted by virtually every `manage-*` script and are not enumerated row-by-row.
+The cross-cutting `--plan-id` and `--audit-plan-id` flags are accepted by virtually every `manage-*` script and are not enumerated row-by-row.
 
 ### `manage-*` scripts
 

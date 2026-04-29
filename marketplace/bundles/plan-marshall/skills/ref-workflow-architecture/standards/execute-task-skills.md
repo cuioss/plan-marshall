@@ -245,7 +245,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   resolve --command {resolve_command} --module {module} \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 Where `{resolve_command}` depends on the profile:

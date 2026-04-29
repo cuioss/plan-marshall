@@ -381,7 +381,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-1-init get --trace-plan-id {plan_id}
+  plan phase-1-init get --audit-plan-id {plan_id}
 ```
 
 Extract `branch_strategy` (default: `feature`) and `use_worktree` (default: `true`).
@@ -494,7 +494,7 @@ Query configured domains from marshal.json and select appropriate domain for the
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  skill-domains list --trace-plan-id {plan_id}
+  skill-domains list --audit-plan-id {plan_id}
 ```
 
 **Domain selection logic**:

@@ -215,7 +215,7 @@ Read the confidence threshold from project configuration.
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine get --field confidence_threshold --trace-plan-id {plan_id}
+  plan phase-2-refine get --field confidence_threshold --audit-plan-id {plan_id}
 ```
 
 **Default**: If not configured or field not found, use `95` (95% confidence required).
@@ -237,7 +237,7 @@ Read the compatibility approach from project configuration and persist to refere
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-2-refine get --field compatibility --trace-plan-id {plan_id}
+  plan phase-2-refine get --field compatibility --audit-plan-id {plan_id}
 ```
 
 **No fallback** — if not configured, fail with error: "compatibility not configured. Run /marshall-steward first".
@@ -267,7 +267,7 @@ Query project architecture BEFORE any analysis. Architecture data is pre-compute
 **EXECUTE**:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture info \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 Output format: `plan-marshall:manage-architecture/standards/client-api.md`
@@ -363,7 +363,7 @@ Identify candidate modules for each requirement using `arch_context.modules[].na
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture module \
-  --name {candidate_module} --trace-plan-id {plan_id}
+  --name {candidate_module} --audit-plan-id {plan_id}
 ```
 
 The response exposes `responsibility`, `key_packages`, `key_dependencies`, and `internal_dependencies`. For cross-cutting changes, also run `architecture graph` to understand the dependency flow between candidate modules. Query detailed info only when the request is not already a direct module-name match.

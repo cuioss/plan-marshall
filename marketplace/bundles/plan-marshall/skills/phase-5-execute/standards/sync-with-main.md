@@ -30,10 +30,10 @@ Between `phase-1-init` and `phase-5-execute` the user may spend significant time
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field rebase_on_execute_start --trace-plan-id {plan_id}
+  plan phase-5-execute get --field rebase_on_execute_start --audit-plan-id {plan_id}
 
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field rebase_strategy --trace-plan-id {plan_id}
+  plan phase-5-execute get --field rebase_strategy --audit-plan-id {plan_id}
 ```
 
 If `rebase_on_execute_start` is `false`, skip the remainder of this procedure and emit:
