@@ -547,7 +547,7 @@ def _capture_config_hash(plan_id: str, _metadata: dict[str, Any], phase: str) ->
             'plan',
             f'phase-{phase}',
             'get',
-            '--trace-plan-id',
+            '--audit-plan-id',
             plan_id,
         ]
     )

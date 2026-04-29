@@ -21,7 +21,7 @@ user-invocable: false
 **Constraints:**
 - All scripts use `python3 .plan/execute-script.py {notation} {subcommand} {args}`
 - Bootstrap pattern is only for first run when executor does not exist yet
-- Plan-scoped logging requires `--plan-id` or `--trace-plan-id`
+- Plan-scoped logging requires `--plan-id` or `--audit-plan-id`
 - Plan-metadata scripts resolve `.plan/` via `script_shared.marketplace_paths.get_plan_dir()`; worktree-scoped scripts accept an explicit `--project-dir` or use `git -C {worktree_path}`; meta-tools always run against the main checkout
 
 ---
@@ -88,7 +88,7 @@ When a plan ID is provided, logs to:
 | Parameter | Use Case | Behavior |
 |-----------|----------|----------|
 | `--plan-id` | Scripts that accept it (manage-* scripts) | Script uses value + logging picks it up |
-| `--trace-plan-id` | Scripts without `--plan-id` (scan-*, analyze-*) | Stripped before passing to script, logging only |
+| `--audit-plan-id` | Scripts without `--plan-id` (scan-*, analyze-*) | Stripped before passing to script, audit logging only |
 
 **Example with --plan-id** (script uses it):
 ```bash
@@ -96,13 +96,13 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add \
   --plan-id my-plan --file task.md
 ```
 
-**Example with --trace-plan-id** (logging only, stripped):
+**Example with --audit-plan-id** (audit logging only, stripped):
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
-  --trace-plan-id my-plan --include-descriptions
+  --audit-plan-id my-plan --include-descriptions
 ```
 
-The `--trace-plan-id` parameter is removed before the script executes, so the script never sees it. This enables plan-scoped logging for scripts that don't have their own `--plan-id` parameter.
+The `--audit-plan-id` parameter is audit-only — it is removed before the script executes, so the script never sees it and its behavior is unaffected. The flag exists purely to route the executor's own log entry to the plan-specific audit log for scripts that don't have their own `--plan-id` parameter.
 
 **Benefits**:
 - Tied to plan lifecycle (deleted when plan archived/deleted)

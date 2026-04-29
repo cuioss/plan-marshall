@@ -119,6 +119,85 @@ recovery: "Tag the lesson with one of the supported kinds, then re-run."
 
 ---
 
+## Step 2b: Verify Proposed Fix Against Current Code (phase-2-refine Step 3c surrogate)
+
+Runs after the lesson kind is mapped (Step 2) and BEFORE Step 3 composes the deterministic outline. This step closes a structural gap: lesson-sourced plans set `source: lesson` in `request.md`, which makes phase-2-refine take its **Recipe Shortcut** (skipping the iterative refine loop and forcing confidence to 100). That shortcut bypasses phase-2-refine **Step 3c — Proposed-Fix Verification**, so the lesson's `## Recommended Fix` (or equivalent "Recommended Follow-Up" / "Solution / Action" / "Application" section) would otherwise flow straight into Step 3's deliverable composition without ever being challenged against the current code path.
+
+This step is the recipe's surrogate for that bypassed verification. It runs before **any** `request.md` Clarifications block update and before any `solution_outline.md` content is composed, so divergences are recorded into the plan inputs rather than retro-fitted afterwards.
+
+**Authoritative patterns**: This sub-step deliberately does NOT redefine the proposed-fix extraction, probe construction, or result-handling heuristics. The reusable patterns live in `marketplace/bundles/plan-marshall/skills/phase-2-refine/standards/proposed-fix-verification.md`, which is the canonical source for the trigger condition, extraction fields, probe budget, and Valid/Insufficient/Inconclusive result table. Read that document and apply its passes against the current lesson body.
+
+The recipe layer adds one constraint on top of the canonical patterns: the lesson's `## Recommended Fix` (or equivalent) is a **starting hypothesis only** — never authoritative implementation guidance. The recipe re-derives the minimal correct change from disk; it does not transcribe the recommendation.
+
+**Sub-step a — Treat the lesson's recommended fix as a hypothesis.** Locate the lesson's "what to do" section. Common headings include `## Recommended Fix`, `## Recommended Follow-Up`, `## Solution / Action`, and `## Application`. Capture the recommendation verbatim as `hypothesis_fix` for each directive that survived Step 1b. A lesson with no such section skips this sub-step entirely — there is no hypothesis to challenge, and the directives stand as written.
+
+**Sub-step b — Re-derive the minimal correct change from the live tree.** For each surviving directive, read the surrounding code path on disk using `Glob`, `Grep`, and `Read`:
+
+- Resolve every component the directive touches (skill notations, file paths, function names, scripts) in the live worktree.
+- Trace the actual current behavior — what the code does today, what it calls, what its callers expect.
+- Derive the **minimal correct change** that addresses the directive's symptom against this current state. The minimal change is the smallest edit that makes the symptom stop manifesting; it is NOT the largest edit that the recommendation suggests.
+
+**Sub-step c — Compare hypothesis against verified-correct minimal change and note divergences.** For each directive with a `hypothesis_fix`, compare it against the minimal correct change derived in sub-step b. Classify each comparison into one of four divergence categories:
+
+| Category | Meaning |
+|----------|---------|
+| `convergent` | Hypothesis matches the minimal correct change — no action needed |
+| `over-broad` | Hypothesis prescribes more than the minimal change requires (e.g., touches unrelated files, adds defensive code beyond the symptom) |
+| `redundant` | Part or all of the hypothesis is already satisfied by code that landed elsewhere after the lesson was authored |
+| `mis-targeted` | Hypothesis addresses a contract / API / pattern that no longer exists, or addresses the wrong layer |
+
+Record each non-convergent comparison as `(directive, category, hypothesis_summary, verified_change_summary, evidence)` for use in sub-step d.
+
+**Sub-step d — When verified-correct fix diverges, update the plan inputs.** For each directive in `over-broad`, `redundant`, or `mis-targeted`:
+
+1. Update the plan's `request.md` Clarifications block with the verified-correct fix and the rationale for divergence. The Clarifications block is the canonical place phase-3-outline reads for refined intent — by writing here, the recipe ensures Step 3's deliverable composition sees the verified version, not the hypothesis.
+2. Record the divergence so it surfaces in the eventual commit message or PR body. Both `phase-6-finalize:commit-push` and `phase-6-finalize:create-pr` consume the decision log and the request.md Clarifications block when composing message bodies — the entry below feeds both.
+
+Resolve the canonical `request.md` path, then update `## Clarifications` and `## Clarified Request` directly via Edit/Write — the same three-step path-allocate flow phase-2-refine uses:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request path --plan-id {plan_id}
+```
+
+Use `Edit` (or `Write`, when no file exists yet) against the resolved path to append a Clarifications entry per divergent directive in this shape:
+
+```
+- Directive: {directive_title}
+  Hypothesis: {hypothesis_summary}
+  Verified fix: {verified_change_summary}
+  Rationale: {category} — {evidence}
+```
+
+When all divergences are written, mark the request clarified so phase-3-outline picks up the refined intent:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-documents \
+  request mark-clarified --plan-id {plan_id}
+```
+
+Then emit a decision-log entry per divergence so reviewers can audit the scope adjustment:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:recipe-lesson-cleanup:fix-verification) Diverged from hypothesis for '{directive_title}' — {category}: hypothesis was '{hypothesis_summary}', verified change is '{verified_change_summary}'"
+```
+
+`convergent` directives are NOT logged individually — only divergences, since divergences alter scope and require audit visibility.
+
+**Sub-step e — Log the verification summary.** Emit one work.log entry summarizing the pass:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[RECIPE:2b] (plan-marshall:recipe-lesson-cleanup) Proposed-fix verification: {N} directives probed, {C} convergent, {D} divergent ({over_broad} over-broad, {redundant} redundant, {mis_targeted} mis-targeted)"
+```
+
+**Hand-off to Step 3.** Step 3 composes deliverables from the **verified directive set** — i.e., the residual directives from Step 1b with each `over-broad` / `redundant` / `mis-targeted` directive replaced by its verified-correct minimal change. The hypothesis text is not used directly. Step 3 reads the updated Clarifications block and composes deliverables from there.
+
+---
+
 ## Step 3: Compose Deterministic Outline (Phase 3 surrogate)
 
 For each lesson directive, emit one deliverable. The outline is purely structural — no LLM reasoning, no Q-Gate, no decomposition pass.
@@ -207,6 +286,7 @@ next_phase: 4-plan
 ## Related
 
 - `plan-marshall:phase-1-init` Step 5b — Moves the lesson into the plan directory before this recipe runs.
+- `plan-marshall:phase-2-refine` Step 3c — Canonical proposed-fix verification, defined in `marketplace/bundles/plan-marshall/skills/phase-2-refine/standards/proposed-fix-verification.md`. Lesson-sourced plans (`source: lesson` in `request.md`) take phase-2-refine's Recipe Shortcut and bypass Step 3c, so this recipe's Step 2b is the surrogate that closes the gap.
 - `plan-marshall:phase-3-outline` § Recipe Path — Loads this skill with the input parameters and skips Q-Gate accordingly.
 - `plan-marshall:phase-4-plan` § Manifest Composition — Reads `scope_estimate=surgical` and applies cascade rules.
 - `plan-marshall:recipe-refactor-to-profile-standards` — Sister recipe; same shape, different scope (codebase-wide tech-debt sweep vs. single-lesson surgical cleanup).

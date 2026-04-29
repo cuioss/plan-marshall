@@ -7,15 +7,17 @@ Usage: python3 .plan/execute-script.py {notation} [subcommand] [args...]
 
 Notation format: {bundle}:{skill}:{script}
 
-Tracing:
-    --trace-plan-id <id>  Log execution to plan-specific log (stripped before passing to script)
+Audit logging:
+    --audit-plan-id <id>  Log execution to plan-specific log (stripped before passing to script)
                           Use for scripts that don't accept --plan-id themselves.
                           Scripts with --plan-id use that for both logic AND logging.
+                          The flag is audit-only: it never alters script behavior, only routes
+                          the executor's own log entry to the plan-specific log file.
 
 Examples:
     python3 .plan/execute-script.py planning:manage-files:manage-files add --plan-id my-plan
     python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify
-    python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --trace-plan-id my-plan --include-descriptions
+    python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --audit-plan-id my-plan --include-descriptions
 """
 
 import os
@@ -85,20 +87,22 @@ def should_skip_logging(notation: str, exit_code: int) -> bool:
     return notation in SILENT_ON_SUCCESS and exit_code == 0
 
 
-def extract_trace_plan_id(args: list[str]) -> tuple[str | None, list[str]]:
+def extract_audit_plan_id(args: list[str]) -> tuple[str | None, list[str]]:
     """
-    Extract --trace-plan-id from args and return cleaned args.
+    Extract --audit-plan-id from args and return cleaned args.
 
-    --trace-plan-id is for logging only - it's stripped before passing to the script.
-    Use for scripts that don't accept --plan-id themselves.
+    --audit-plan-id is audit-only: it routes the executor's own log entry to the
+    plan-specific log file and is stripped before passing args to the script.
+    The flag never alters the script's behavior — use it for scripts that do not
+    accept --plan-id themselves.
 
     Args:
         args: Command line arguments
 
     Returns:
-        Tuple of (trace_plan_id or None, cleaned_args without --trace-plan-id)
+        Tuple of (audit_plan_id or None, cleaned_args without --audit-plan-id)
     """
-    trace_plan_id = None
+    audit_plan_id = None
     cleaned = []
     skip_next = False
 
@@ -106,16 +110,16 @@ def extract_trace_plan_id(args: list[str]) -> tuple[str | None, list[str]]:
         if skip_next:
             skip_next = False
             continue
-        if arg == '--trace-plan-id':
+        if arg == '--audit-plan-id':
             if i + 1 < len(args):
-                trace_plan_id = args[i + 1]
+                audit_plan_id = args[i + 1]
                 skip_next = True
-        elif arg.startswith('--trace-plan-id='):
-            trace_plan_id = arg.split('=', 1)[1]
+        elif arg.startswith('--audit-plan-id='):
+            audit_plan_id = arg.split('=', 1)[1]
         else:
             cleaned.append(arg)
 
-    return trace_plan_id, cleaned
+    return audit_plan_id, cleaned
 
 
 def resolve_notation(notation: str) -> str | None:
@@ -202,13 +206,13 @@ def main():
 
     remaining_args = sys.argv[2:]
 
-    # Extract --trace-plan-id (logging only, stripped before passing to script)
-    trace_plan_id, script_args = extract_trace_plan_id(remaining_args)
+    # Extract --audit-plan-id (audit logging only, stripped before passing to script)
+    audit_plan_id, script_args = extract_audit_plan_id(remaining_args)
 
     # Strip empty string args (defensive: agents may pass empty args from shell variable expansion)
     script_args = [a for a in script_args if a]
 
-    # Subcommand is first arg after stripping trace-plan-id
+    # Subcommand is first arg after stripping audit-plan-id
     subcommand = script_args[0] if script_args else ''
 
     script_path = resolve_notation(notation)
@@ -219,7 +223,7 @@ def main():
         print(f"SCRIPT_ERROR\t{notation}\t1\tScript not found: {script_path}", file=sys.stderr)
         sys.exit(1)
 
-    # Execute the script (with cleaned args, no --trace-plan-id)
+    # Execute the script (with cleaned args, no --audit-plan-id)
     start = time.time()
     stdout_capture = ''
     stderr_capture = ''
@@ -257,11 +261,11 @@ def main():
 
     duration = time.time() - start
 
-    # Build args for logging: inject --plan-id if trace_plan_id was provided
+    # Build args for logging: inject --plan-id if audit_plan_id was provided
     # This allows log_script_execution to route to plan-specific log
     args_for_logging = script_args.copy()
-    if trace_plan_id:
-        args_for_logging = ['--plan-id', trace_plan_id] + args_for_logging
+    if audit_plan_id:
+        args_for_logging = ['--plan-id', audit_plan_id] + args_for_logging
 
     # Log execution (skip for logging scripts on success to avoid meta-logging noise)
     if not should_skip_logging(notation, exit_code):

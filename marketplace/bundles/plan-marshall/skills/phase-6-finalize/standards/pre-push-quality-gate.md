@@ -35,7 +35,7 @@ The query also surfaces `dropped[]` (ledger entries no longer in the working tre
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize get --field pre_push_quality_gate.activation_globs \
-  --trace-plan-id {plan_id}
+  --audit-plan-id {plan_id}
 ```
 
 Extract `value` (list[string]). The manifest composer guarantees the list is non-empty when this step is dispatched, but the executor reads it again for defense-in-depth.

@@ -297,7 +297,7 @@ The outline presented here has already passed Q-Gate verification. The user revi
 **Config check** — Read `plan_without_asking` to determine gate behavior:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-3-outline get --field plan_without_asking --trace-plan-id {plan_id}
+  plan phase-3-outline get --field plan_without_asking --audit-plan-id {plan_id}
 ```
 
 **IF `plan_without_asking == true`**:
@@ -411,7 +411,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
 **Step 4c**: Check `execute_without_asking` config to determine next action:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-4-plan get --field execute_without_asking --trace-plan-id {plan_id}
+  plan phase-4-plan get --field execute_without_asking --audit-plan-id {plan_id}
 ```
 
 **IF `execute_without_asking == true`**:

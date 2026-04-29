@@ -123,7 +123,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status transi
 **Config check** — Read `finalize_without_asking` to determine next action:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-5-execute get --field finalize_without_asking --trace-plan-id {plan_id}
+  plan phase-5-execute get --field finalize_without_asking --audit-plan-id {plan_id}
 ```
 
 **IF `finalize_without_asking == true`**:
