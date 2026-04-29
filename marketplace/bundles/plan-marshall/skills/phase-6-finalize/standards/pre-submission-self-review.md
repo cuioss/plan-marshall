@@ -36,10 +36,22 @@ Parse the TOON output. The candidate lists are:
 | `user_facing_strings[N]{file,line,context,text}` | Added strings in skill prose, error messages, CLI help (docstrings, `print(` arguments, `description=`, `help=`, markdown bullet/heading text) | Wording disambiguation |
 | `markdown_sections[N]{file,line,heading,siblings}` | Added/edited markdown sections per file with sibling-section list scoped to the same file | Duplication scanning |
 | `symmetric_pairs[N]{file,line,name,partner}` | Functions whose names match save/load, init/restore, push/pop, acquire/release, open/close, start/stop pairings | Symmetric pair test-coverage check |
+| `contract_sources[N]{file,sources}` | Per modified file: nearby `SKILL.md` and `standards/*.md` (semicolon-joined repo-relative paths) | Contract cross-reference anchor |
+| `schema_bearing_files[N]{file,format}` | Markdown files within the configured contract radius whose content contains a fenced JSON or TOON block | Contract drift detection |
 
 If the helper exits non-zero, halt and proceed to **Mark Step Complete (Failure)** below — surface the helper error in the `display_detail` payload.
 
-### LLM cognitive phase: apply four checks
+### LLM cognitive phase: load contracts, then apply five checks
+
+#### Step 0 — Cross-reference setup (MUST run before any check)
+
+Before scanning the line-level candidate lists, load the contract sources surfaced by the deterministic phase. This step is the workflow-shape fix for the failure mode where the LLM reviews each surfaced hunk in isolation and overlooks contract drift.
+
+1. For every entry in `contract_sources`, read every path listed in the `sources` field. These are the `SKILL.md` and `standards/*.md` files governing the changed code. Read them in full — not excerpts.
+2. For every entry in `schema_bearing_files`, read the file. These are nearby markdown documents that declare a fenced JSON or TOON schema; they govern the post-image of any hunk that touches the same schema.
+3. Hold the loaded contract content in working memory for the rest of the cognitive phase. The five checks below cross-reference hunks against this content; do not re-discover contracts on demand.
+
+#### Checks
 
 For each non-empty candidate list, apply the corresponding cognitive check to the surfaced items only — never expand the review to candidates the helper did not surface.
 
@@ -51,7 +63,23 @@ For each non-empty candidate list, apply the corresponding cognitive check to th
 
 4. **Duplication scan** — for each `markdown_sections` entry, compare the new/edited section's contract against its sibling sections (provided in the `siblings` field) within the same file. Two sections that describe the same check, table, or rule with subtly different wording are a defect — operators do not know which to follow. Record finding `{file, heading, defect_class: duplicate_prose, rationale: <which sibling overlaps and where they diverge>}`.
 
+5. **Contract drift cross-check** — for every modified file that appears in `contract_sources`, AND every hunk in the diff that touches a schema declared in any `schema_bearing_files` entry, verify the post-image of the change against the documented contract. Specifically:
+    - For every `markdown_sections` entry whose `file` equals (or shares a parent skill with) a `contract_sources` entry, verify that the new/edited section's documented schema, table fields, or detection heuristic agrees with what the code under that skill actually emits or enforces.
+    - For every code hunk that adds or modifies a function emitting a schema (e.g., `output_toon({...})`, `print(json.dumps({...}))`), verify that the emitted field set matches the schema declared in the corresponding `schema_bearing_files` entry. Missing fields, renamed fields, or extra undocumented fields are all drift.
+    - For every detection heuristic added or modified (e.g., regex over a project marker, glob over a path category), verify that the heuristic agrees with the contract section that documents the same detection rule. A loosened heuristic (substring where the contract specifies a structured marker) is drift.
+
+    Defect → record finding `{file, line, defect_class: contract_drift, rationale: <which contract source disagrees with the hunk, and what the drift is — missing field, loosened heuristic, divergent schema, etc.>}`.
+
 Concatenate all findings into a single `findings[N]{file,line,defect_class,rationale}` list. Empty list → success path. Non-empty list → failure path.
+
+#### Worked example: the lesson that drove this step
+
+The defects this cross-reference step exists to catch:
+
+- **Missing schema field**: a helper emitted `markdown_sections[N]{file,heading,siblings}` while the consumer's documented schema declared `markdown_sections[N]{file,line,heading,siblings}` (the `line` field anchors findings). The hunk modifying the helper would surface as both a `markdown_sections` entry (in the helper SKILL or standards) AND in the corresponding code hunk; cross-checking the emitted dict against the schema declared in the same change set catches the omission. Without this step, the reviewer treats each hunk as locally correct and ships the contract drift.
+- **Loosened detection heuristic**: a CI-provider detection routine matched on a substring (`'github' in url`) where the contract section documented a structured project marker (`.github/workflows/*.yml`). The hunk surfaces as a `regexes`/`user_facing_strings` entry and the contract section surfaces in `markdown_sections`; cross-checking the new heuristic against the documented marker catches the over-broad match before it produces false positives in production.
+
+Both defect classes were missed in the dogfood PR that drove this step's introduction (lesson `2026-04-28-09-001`); the LLM pass was reviewing surfaced hunks one at a time without consulting the contracts that lived in the same diff. The Step 0 cross-reference setup plus check 5 close that gap.
 
 ## Mark Step Complete
 

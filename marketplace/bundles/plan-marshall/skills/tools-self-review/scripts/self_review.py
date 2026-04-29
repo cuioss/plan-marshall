@@ -366,6 +366,133 @@ def _detect_markdown_sections(
     return out
 
 
+_FENCED_SCHEMA_BLOCK = re.compile(r'^```(json|toon)\b', re.MULTILINE)
+
+
+def _find_skill_dir(modified_path: Path, project_dir: Path) -> Path | None:
+    """Walk up from a modified file looking for a directory that contains SKILL.md.
+
+    Returns the skill directory or None when the modified file is not nested
+    inside a skill. The walk is bounded by ``project_dir`` so we never escape
+    the worktree.
+    """
+    current = modified_path.parent if modified_path.is_file() else modified_path
+    while True:
+        try:
+            current.relative_to(project_dir)
+        except ValueError:
+            return None
+        if (current / 'SKILL.md').is_file():
+            return current
+        if current == project_dir or current.parent == current:
+            return None
+        current = current.parent
+
+
+def _collect_skill_contract_sources(skill_dir: Path) -> list[Path]:
+    """Return SKILL.md plus every standards/*.md inside the skill directory."""
+    sources: list[Path] = []
+    skill_md = skill_dir / 'SKILL.md'
+    if skill_md.is_file():
+        sources.append(skill_md)
+    standards_dir = skill_dir / 'standards'
+    if standards_dir.is_dir():
+        sources.extend(sorted(standards_dir.glob('*.md')))
+    return sources
+
+
+def _collect_schema_bearing_within_radius(
+    modified_path: Path, project_dir: Path, radius: int
+) -> list[tuple[Path, str]]:
+    """Find *.md files reachable within ``radius`` directory levels of the
+    modified file whose content contains a fenced JSON or TOON block.
+
+    Walks up at most ``radius`` parents from the modified file's parent
+    directory (bounded by ``project_dir``) to choose an anchor, then
+    recursively collects every *.md file in the anchor's subtree. ``radius=0``
+    restricts the scan to the modified file's own parent directory only.
+
+    Returns a list of (path, format) tuples where format is 'json' or 'toon'.
+    """
+    if not modified_path.is_file():
+        return []
+    anchor = modified_path.parent
+    for _ in range(radius):
+        if anchor == project_dir or anchor.parent == anchor:
+            break
+        try:
+            anchor.parent.relative_to(project_dir)
+        except ValueError:
+            break
+        anchor = anchor.parent
+
+    out: list[tuple[Path, str]] = []
+    try:
+        if radius == 0:
+            md_iter = sorted(anchor.glob('*.md'))
+        else:
+            md_iter = sorted(anchor.rglob('*.md'))
+    except OSError:
+        return []
+
+    for md in md_iter:
+        try:
+            text = md.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        m = _FENCED_SCHEMA_BLOCK.search(text)
+        if m is not None:
+            out.append((md, m.group(1)))
+    return out
+
+
+def _detect_contract_sources(
+    modified_files: list[str], project_dir: Path, radius: int
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return (contract_sources, schema_bearing_files).
+
+    ``contract_sources``: one entry per modified file inside a skill directory.
+    The ``sources`` field is a ``; ``-joined string of repo-relative paths to
+    SKILL.md and every standards/*.md in the same skill.
+
+    ``schema_bearing_files``: a flat, deduplicated list of *.md files within
+    ``radius`` directory levels of any modified file whose content contains a
+    fenced JSON or TOON block. Entries reflect the dominant fence format.
+    """
+    contract_entries: list[dict[str, Any]] = []
+    schema_seen: dict[Path, str] = {}
+
+    for rel in modified_files:
+        modified_path = (project_dir / rel).resolve()
+        try:
+            modified_path.relative_to(project_dir)
+        except ValueError:
+            continue
+
+        skill_dir = _find_skill_dir(modified_path, project_dir)
+        if skill_dir is not None:
+            sources = _collect_skill_contract_sources(skill_dir)
+            if sources:
+                rel_sources = [str(p.relative_to(project_dir)) for p in sources]
+                contract_entries.append(
+                    {
+                        'file': rel,
+                        'sources': '; '.join(rel_sources),
+                    }
+                )
+
+        for path, fmt in _collect_schema_bearing_within_radius(
+            modified_path, project_dir, radius
+        ):
+            schema_seen.setdefault(path, fmt)
+
+    schema_entries = [
+        {'file': str(p.relative_to(project_dir)), 'format': fmt}
+        for p, fmt in sorted(schema_seen.items())
+    ]
+    return contract_entries, schema_entries
+
+
 def _detect_symmetric_pairs(added: list[tuple[str, int, str]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for path, lineno, content in added:
@@ -448,6 +575,9 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     user_facing = _detect_user_facing_strings(added)
     md_sections = _detect_markdown_sections(added, project_dir)
     sym_pairs = _detect_symmetric_pairs(added)
+    contract_sources, schema_bearing = _detect_contract_sources(
+        modified_files, project_dir, args.contract_radius
+    )
 
     output = {
         'status': 'success',
@@ -459,12 +589,16 @@ def _cmd_surface(args: argparse.Namespace) -> int:
             'user_facing_strings': len(user_facing),
             'markdown_sections': len(md_sections),
             'symmetric_pairs': len(sym_pairs),
+            'contract_sources': len(contract_sources),
+            'schema_bearing_files': len(schema_bearing),
             'total': len(regexes) + len(user_facing) + len(md_sections) + len(sym_pairs),
         },
         'regexes': regexes,
         'user_facing_strings': user_facing,
         'markdown_sections': md_sections,
         'symmetric_pairs': sym_pairs,
+        'contract_sources': contract_sources,
+        'schema_bearing_files': schema_bearing,
     }
     output_toon(output)
     return 0
@@ -497,6 +631,12 @@ def _build_parser() -> argparse.ArgumentParser:
         '--base-branch',
         default='main',
         help='Base branch for diff computation (default: main).',
+    )
+    p_surface.add_argument(
+        '--contract-radius',
+        type=int,
+        default=3,
+        help='Directory levels to walk up when collecting schema-bearing markdown files (default: 3).',
     )
     p_surface.set_defaults(func=_cmd_surface)
     return parser

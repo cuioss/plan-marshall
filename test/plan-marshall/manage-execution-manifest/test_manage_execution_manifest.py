@@ -2715,3 +2715,116 @@ class TestBotEnforcementGuardRemediation:
             assert manifest is not None
             assert 'automated-review' in manifest['phase_6']['steps']
             assert self._remediation_messages(captured, 'github') == []
+
+
+# =============================================================================
+# Compose-time placement validator (lesson 2026-04-28-13-002)
+#
+# The remediation guard guarantees ``automated-review`` is *present* on
+# GitHub/GitLab plans, but a future pre-filter or recipe interaction could
+# leave it *misplaced* — sitting at an index later than a plan-mutating step
+# (``archive-plan``, ``record-metrics``, ``branch-cleanup``, or
+# ``plan-marshall:plan-retrospective``). The new ``_validate_automated_review_placement``
+# check rejects such manifests with ``status='error'`` and
+# ``error='bot_enforcement_violation'``. The diagnostic carries both step
+# names so downstream auditing can pinpoint the ordering breach.
+#
+# Construction trick: the bot-enforcement remediation guard returns early on
+# its membership check (``'automated-review' in phase_6_steps``) and therefore
+# does NOT reposition a misplaced occurrence. To exercise the validator we
+# pass an explicit ``--phase-6-steps`` candidate list where ``automated-review``
+# is already present in the wrong position; Row 7 (default) preserves the
+# candidate ordering verbatim, the guard is a no-op, and the misplacement
+# survives to the validator.
+# =============================================================================
+
+
+class TestAutomatedReviewPlacement:
+    """Compose-time validator rejects ``automated-review`` after plan-mutating anchors."""
+
+    @staticmethod
+    def _candidates_with_review_after(anchor: str) -> str:
+        """Build a phase_6 candidate CSV where ``automated-review`` follows ``anchor``.
+
+        The candidate list mirrors the canonical ordering for the steps that
+        always remain (commit-push, create-pr, lessons-capture) so the manifest
+        is otherwise plausible; only the ``automated-review`` / ``anchor`` pair
+        is deliberately misordered. The anchor is inserted before
+        ``automated-review`` so the validator's earliest-anchor scan returns
+        precisely the parametrized name.
+        """
+        return ','.join(
+            ['commit-push', 'create-pr', 'lessons-capture', anchor, 'automated-review']
+        )
+
+    def test_compose_rejects_automated_review_after_archive_plan(self):
+        """Misplaced ``automated-review`` after ``archive-plan`` → bot_enforcement_violation."""
+        plan_id = 'placement-archive-plan'
+        with PlanContext(plan_id=plan_id) as ctx:
+            # GitHub provider so the existing remediation guard runs but
+            # short-circuits on the membership check (line 845), leaving the
+            # misplacement intact for the new validator to catch.
+            _write_marshal_with_ci(ctx, provider='github')
+
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=5,
+                    phase_6_steps=self._candidates_with_review_after('archive-plan'),
+                )
+            )
+
+            assert result is not None
+            assert result['status'] == 'error', (
+                f'expected error status, got {result!r}'
+            )
+            assert result['error'] == 'bot_enforcement_violation'
+            # Diagnostic must name BOTH step identifiers so downstream auditing
+            # can pinpoint the ordering breach without re-deriving it.
+            assert 'automated-review' in result['message']
+            assert 'archive-plan' in result['message']
+            # No manifest is persisted on rejection — read_manifest returns None.
+            assert read_manifest(plan_id) is None
+
+    @pytest.mark.parametrize(
+        'anchor',
+        ['record-metrics', 'branch-cleanup', 'plan-marshall:plan-retrospective'],
+    )
+    def test_compose_rejects_automated_review_after_other_plan_mutating_steps(
+        self, anchor: str
+    ):
+        """Misplaced ``automated-review`` after each remaining anchor → bot_enforcement_violation.
+
+        Parametrized over the three plan-mutating anchors NOT covered by the
+        ``archive-plan`` test above. Together these cover the full anchor set
+        in ``_validate_automated_review_placement``'s ``plan_mutating`` set:
+        ``archive-plan``, ``record-metrics``, ``branch-cleanup``,
+        ``plan-marshall:plan-retrospective``.
+        """
+        # Plan IDs must be kebab-case; the colon-prefixed retrospective anchor
+        # would otherwise leak a ``:`` into the directory name.
+        anchor_slug = anchor.replace(':', '-').replace('plan-marshall-', 'pm-')
+        plan_id = f'placement-{anchor_slug}'
+        with PlanContext(plan_id=plan_id) as ctx:
+            _write_marshal_with_ci(ctx, provider='github')
+
+            result = cmd_compose(
+                _compose_ns(
+                    plan_id=plan_id,
+                    change_type='feature',
+                    scope_estimate='multi_module',
+                    affected_files_count=5,
+                    phase_6_steps=self._candidates_with_review_after(anchor),
+                )
+            )
+
+            assert result is not None
+            assert result['status'] == 'error', (
+                f'expected error status for anchor={anchor!r}, got {result!r}'
+            )
+            assert result['error'] == 'bot_enforcement_violation'
+            assert 'automated-review' in result['message']
+            assert anchor in result['message']
+            assert read_manifest(plan_id) is None

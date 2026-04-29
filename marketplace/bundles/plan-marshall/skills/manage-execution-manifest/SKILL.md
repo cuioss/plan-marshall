@@ -212,3 +212,4 @@ For each rule fired, `compose` emits one `decision.log` entry via `manage-loggin
 - `manage-references` — Plan-scoped references including `affected_files` and `scope_estimate` consumed by the composer
 - `manage-logging` — Decision-log target for the per-rule reasoning entries emitted by `compose`
 - `manage-config` — Source of `marshal.json` candidate Phase 5/6 step lists
+- [standards/self-blocking-guards.md](standards/self-blocking-guards.md) — Generalised meta-pattern for enforcement mechanisms that ship inside the marketplace they police (anchor-relative insertion contracts and override-flag fallback). Pattern-level reference, not bot-enforcement-specific implementation notes.
