@@ -22,7 +22,7 @@ If any single condition above is true, do not apply the task split — pick the 
 
 ## (b) The phase-4-plan rule
 
-When composing tasks for a `tech_debt` or `feature_breaking` deliverable that touches code paths covered by existing module tests, phase-4-plan MUST:
+When composing tasks for a deliverable where `compatibility=breaking` OR the `change_type` is `tech_debt` or `feature_breaking`, and it touches code paths covered by existing module tests, phase-4-plan MUST:
 
 1. **Allocate the implementation task** with `profile: implementation` and the implementation skill set resolved from `module.skills_by_profile.implementation`. Steps target only production code paths from the deliverable's `Affected files` section. The implementation task carries no `depends_on` linkage to the test-contract task.
 2. **Allocate the test-contract-update task** with `profile: module_testing`, the testing skill set resolved from `module.skills_by_profile.module_testing`, and `depends_on: [TASK-{implementation_number}]`. The dependency arrow points from the test-contract task to the implementation task — phase-5-execute will not start the test-contract task until the implementation task has finished, even if the implementation task's verification failed (see (c) below).
